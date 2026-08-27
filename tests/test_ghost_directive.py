@@ -558,7 +558,7 @@ class GhostDirectiveTests(unittest.TestCase):
         directive = render_ghost_directive((
             _node(
                 node_id="secret",
-                label="API key sk-test_SECRET_1234567890 and password should be remembered.",
+                label="API key SECRET_TOKEN_FIXTURE and password should be remembered.",
             ),
             _node(
                 node_id="good",
@@ -569,7 +569,7 @@ class GhostDirectiveTests(unittest.TestCase):
         ))
 
         self.assertIn("reply length = concise", directive.text)
-        self.assertNotIn("sk-test", directive.text)
+        self.assertNotIn("SECRET_TOKEN_FIXTURE", directive.text)
         self.assertNotIn("password", directive.text)
         self.assertIn("sensitive_directive_skipped", " ".join(directive.warnings))
 

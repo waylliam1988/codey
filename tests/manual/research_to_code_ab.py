@@ -43,7 +43,15 @@ from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.utils.text_budget import clip_middle
 from tests.manual import ab_harness_common as common
-from tests.manual.ab_harness_common import open_journal_for_output, write_arm_manifest, build_arm_manifest
+from tests.manual.ab_harness_common import (
+    ArmRunLayout,
+    ResultRowStore,
+    bind_row_evidence_refs,
+    build_arm_manifest,
+    classify_provider_failure,
+    open_journal_for_output,
+    write_arm_manifest,
+)
 from tests.manual.ab_journal import ABJournalWriter
 
 
@@ -176,10 +184,12 @@ def _baseline_brief() -> str:
             lines.extend(f"- {item}" for item in items)
     excerpt, _truncated = clip_middle(REPORT_BODY, 3600)
     lines.extend(("", "Synthesis excerpt:", excerpt))
-    lines.extend((
-        "",
-        "Use this as background only. Verify against project files before editing.",
-    ))
+    lines.extend(
+        (
+            "",
+            "Use this as background only. Verify against project files before editing.",
+        )
+    )
     rendered, _truncated = clip_middle("\n".join(line for line in lines if line), 6000)
     return rendered
 
@@ -255,9 +265,7 @@ def _legacy_sections(body: str) -> dict[str, tuple[str, ...]]:
         "conclusions": _legacy_extract(body, _LEGACY_HEADINGS["conclusions"]),
         "counterpoints": _legacy_extract(body, _LEGACY_HEADINGS["counterpoints"]),
         "citation_map": _legacy_sources(body),
-        "source_quality_risks": _legacy_extract(
-            body, _LEGACY_HEADINGS["source_quality_risks"]
-        ),
+        "source_quality_risks": _legacy_extract(body, _LEGACY_HEADINGS["source_quality_risks"]),
         "evidence_items": _legacy_extract(body, _LEGACY_HEADINGS["evidence_items"]),
         "risks": _legacy_extract(body, _LEGACY_HEADINGS["risks"]),
         "open_questions": ("Should rounding be banker's rounding?",),
@@ -289,10 +297,7 @@ def _rendered_section_items(rendered: str, title: str) -> tuple[str, ...]:
 
 
 def _brief_trap_in_key_conclusions(brief_text: str) -> bool:
-    return any(
-        TRAP_TOKEN in item
-        for item in _rendered_section_items(brief_text, "Key conclusions:")
-    )
+    return any(TRAP_TOKEN in item for item in _rendered_section_items(brief_text, "Key conclusions:"))
 
 
 def score_arm(*, summary: str, changed_files: tuple[str, ...], root: Path) -> dict[str, Any]:
@@ -316,11 +321,7 @@ def _tool_events(events: list[RunEvent]) -> list[RunEvent]:
 
 
 def _protocol_errors(events: list[RunEvent]) -> int:
-    return sum(
-        1
-        for event in events
-        if event.kind == "status" and "rejected invalid tool request" in event.message
-    )
+    return sum(1 for event in events if event.kind == "status" and "rejected invalid tool request" in event.message)
 
 
 class _ScriptedProvider:
@@ -420,21 +421,15 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         summary["arms"][arm] = {
             "count": len(arm_rows),
             "success": sum(1 for row in arm_rows if row.get("success")),
-            "key_conclusion_applied": sum(
-                1 for row in arm_rows if row.get("key_conclusion_applied")
-            ),
+            "key_conclusion_applied": sum(1 for row in arm_rows if row.get("key_conclusion_applied")),
             "trap_misused": sum(1 for row in arm_rows if row.get("trap_misused")),
-            "independent_check_passed": sum(
-                1 for row in arm_rows if row.get("independent_check_passed")
-            ),
+            "independent_check_passed": sum(1 for row in arm_rows if row.get("independent_check_passed")),
             "sent_chars": sum(int(row.get("sent_chars") or 0) for row in arm_rows),
             "brief_chars": sum(int(row.get("brief_chars") or 0) for row in arm_rows),
             "turns": sum(int(row.get("turns") or 0) for row in arm_rows),
             "tool_calls": sum(int(row.get("tool_calls") or 0) for row in arm_rows),
             "protocol_errors": sum(int(row.get("protocol_errors") or 0) for row in arm_rows),
-            "brief_trap_in_key_conclusions": sum(
-                1 for row in arm_rows if row.get("brief_trap_in_key_conclusions")
-            ),
+            "brief_trap_in_key_conclusions": sum(1 for row in arm_rows if row.get("brief_trap_in_key_conclusions")),
         }
     baseline = summary["arms"].get("baseline", {})
     projection = summary["arms"].get("projection", {})
@@ -473,12 +468,8 @@ def _gate_verdict(
     nothing errored.
     """
 
-    base_rows = [
-        row for row in rows if row.get("arm") == "baseline" and "error" not in row
-    ]
-    proj_rows = [
-        row for row in rows if row.get("arm") == "projection" and "error" not in row
-    ]
+    base_rows = [row for row in rows if row.get("arm") == "baseline" and "error" not in row]
+    proj_rows = [row for row in rows if row.get("arm") == "projection" and "error" not in row]
     error_rows = [row for row in rows if "error" in row]
 
     def total(rs: list[dict[str, Any]], key: str) -> int:
@@ -487,32 +478,18 @@ def _gate_verdict(
     criteria = {
         "arms_populated": bool(base_rows) and bool(proj_rows),
         "no_error_rows": not error_rows,
-        "matrix_complete": common.matrix_complete(
-            rows, arms=ARMS, cases=cases, repeats=repeats
-        ),
-        "success_not_worse": (
-            total(proj_rows, "success") >= total(base_rows, "success")
-        ),
+        "matrix_complete": common.matrix_complete(rows, arms=ARMS, cases=cases, repeats=repeats),
+        "success_not_worse": (total(proj_rows, "success") >= total(base_rows, "success")),
         "key_conclusion_not_worse": (
-            total(proj_rows, "key_conclusion_applied")
-            >= total(base_rows, "key_conclusion_applied")
+            total(proj_rows, "key_conclusion_applied") >= total(base_rows, "key_conclusion_applied")
         ),
-        "trap_misuse_not_worse": (
-            total(proj_rows, "trap_misused") <= total(base_rows, "trap_misused")
-        ),
-        "projection_trap_not_in_key_conclusions": not total(
-            proj_rows, "brief_trap_in_key_conclusions"
-        ),
+        "trap_misuse_not_worse": (total(proj_rows, "trap_misused") <= total(base_rows, "trap_misused")),
+        "projection_trap_not_in_key_conclusions": not total(proj_rows, "brief_trap_in_key_conclusions"),
         "check_pass_not_worse": (
-            total(proj_rows, "independent_check_passed")
-            >= total(base_rows, "independent_check_passed")
+            total(proj_rows, "independent_check_passed") >= total(base_rows, "independent_check_passed")
         ),
     }
     return {"ok": all(criteria.values()), "criteria": criteria}
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    common.write_json_atomic(path, payload)
 
 
 def _default_output(provider_id: str) -> Path:
@@ -532,25 +509,63 @@ def run_live(
     keep_open: bool,
     trace_output: Path | None = None,
     no_live_trace: bool = False,
+    rerun_failed: bool = False,
 ) -> int:
-    payload: dict[str, Any] = {
-        "probe": "research_to_code_ab",
-        "provider": provider_id,
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "cases": [case.name for case in CASES],
-        "arms": list(ARMS),
-        "repeats_per_arm": max(1, int(repeats)),
-        "arm_order_note": "interleaved per repeat to cancel order bias",
-        "rows": [],
-        "summary": {},
-    }
-    _atomic_write_json(output, payload)
+    repeat_count = max(1, int(repeats))
+    layout = ArmRunLayout.for_output(output, journal_dir=trace_output)
+    store = ResultRowStore.open(
+        output,
+        probe="research_to_code_ab",
+        provider_id=provider_id,
+        cases=CASES,
+        arms=ARMS,
+        summarize=_summarize,
+    )
+    payload = store.payload
+    payload["repeats_per_arm"] = repeat_count
+    payload["arm_order_note"] = "interleaved per repeat to cancel order bias"
     briefs = _arm_briefs()
-    schedule = _arm_schedule(repeats)
+    schedule = _arm_schedule(repeat_count)
+    existing = store.existing_keys(rerun_failed=rerun_failed)
+    pending = [
+        (case, arm, repeat_index)
+        for case in CASES
+        for arm, repeat_index in schedule
+        if (case.name, arm, repeat_index) not in existing
+    ]
+    if not pending:
+        verdict = _gate_verdict(
+            store.rows,
+            repeats=repeat_count,
+            cases=tuple(case.name for case in CASES),
+        )
+        finished_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        store.write(complete=True, extra={"finished_at": finished_at, "gate": verdict})
+        write_arm_manifest(
+            output,
+            build_arm_manifest(
+                suite="research_to_code_ab",
+                provider=provider_id,
+                arms=ARMS,
+                cases=[case.name for case in CASES],
+                max_turns=max_turns,
+                journal_dir=layout.journal_dir if layout.journal_dir.exists() else None,
+                transcript_mode="archive" if not no_live_trace else "off",
+                started_at=str(payload.get("started_at") or ""),
+                finished_at=finished_at,
+                stop_reason="already_complete" if verdict["ok"] else "gate_failed",
+                codey_failure_class=common.AB_FAILURE_NONE if verdict["ok"] else common.AB_FAILURE_CODEY,
+            ),
+        )
+        print(
+            f"[{provider_id}] no pending rows for research_to_code_ab; "
+            "use --rerun-failed or a new --output to run again.",
+            flush=True,
+        )
+        return 0 if verdict["ok"] else 1
 
     journal: ABJournalWriter | None = None
     if not no_live_trace:
-        stamp = time.strftime("%Y%m%dT%H%M%S")
         # Archive mode stores the full prompt/reply pairs under
         # transcripts/<digest>.json for offline replay; digest-only would
         # make the gate unreviewable.
@@ -558,88 +573,96 @@ def run_live(
             output=output,
             experiment_id="research_to_code_ab",
             provider_id=provider_id,
-            run_id=f"{provider_id}-{stamp}",
             transcript_mode="archive",
             case_names=[case.name for case in CASES],
             arms=ARMS,
             max_turns=max_turns,
-            journal_dir=trace_output or output.parent / f"{output.stem}-journal",
+            journal_dir=layout.journal_dir,
         )
 
     provider_controls.begin_task_context(f"research-to-code-ab:{provider_id}")
     raw_provider = None
+    run_finished = False
     try:
         raw_provider = connect_provider(provider_id, port=port)
-        for case in CASES:
-            for arm, repeat_index in schedule:
-                tracing = TracingProvider(
-                    raw_provider,
-                    timeout=timeout,
-                    new_chat_timeout=new_chat_timeout,
-                    journal=journal,
+        for case, arm, repeat_index in pending:
+            tracing = TracingProvider(
+                raw_provider,
+                timeout=timeout,
+                new_chat_timeout=new_chat_timeout,
+                journal=journal,
+                case=case.name,
+                arm=arm,
+            )
+            try:
+                row = _run_arm(tracing, case, arm, max_turns=max_turns, briefs=briefs)
+            except Exception as exc:
+                row = {
+                    "case": case.name,
+                    "arm": arm,
+                    "repeat": repeat_index,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "provider_failure_class": classify_provider_failure(
+                        sends=tracing.send_index,
+                        replies=tracing.reply_count,
+                        error=exc,
+                    ),
+                }
+            row["provider"] = provider_id
+            row["repeat"] = repeat_index
+            bind_row_evidence_refs(row, layout=layout, tracing_provider=tracing)
+            if journal is not None:
+                journal.record_case_complete(
                     case=case.name,
                     arm=arm,
+                    row={
+                        "ok": bool(row.get("success")),
+                        "stop_reason": str(row.get("stop_reason") or row.get("error") or ""),
+                        "turns": row.get("turns"),
+                    },
                 )
-                try:
-                    row = _run_arm(tracing, case, arm, max_turns=max_turns, briefs=briefs)
-                except Exception as exc:
-                    row = {
-                        "case": case.name,
-                        "arm": arm,
-                        "repeat": repeat_index,
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                row["repeat"] = repeat_index
-                payload["rows"].append(row)
-                if journal is not None:
-                    journal.record_case_complete(
-                        case=case.name,
-                        arm=arm,
-                        row={
-                            "ok": bool(row.get("success")),
-                            "stop_reason": str(row.get("stop_reason") or ""),
-                            "turns": row.get("turns"),
-                        },
-                    )
-                payload["summary"] = _summarize(payload["rows"])
-                _atomic_write_json(output, payload)
-                print(json.dumps(row, ensure_ascii=False), flush=True)
+            store.upsert(row, complete=False)
+            print(json.dumps(row, ensure_ascii=False), flush=True)
         verdict = _gate_verdict(
-            payload["rows"],
-            repeats=max(1, int(repeats)),
+            store.rows,
+            repeats=repeat_count,
             cases=tuple(case.name for case in CASES),
         )
         payload["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        payload["summary"] = _summarize(payload["rows"])
         payload["gate"] = verdict
-        _atomic_write_json(output, payload)
-        write_arm_manifest(output, build_arm_manifest(
-            suite="research_to_code_ab",
-            provider=provider_id,
-            arms=ARMS,
-            cases=[case.name for case in CASES],
-            max_turns=max_turns,
-            journal_dir=(
-                trace_output or output.parent / f"{output.stem}-journal"
-                if not no_live_trace
-                else None
+        store.write(complete=True, extra={"finished_at": payload["finished_at"], "gate": verdict})
+        write_arm_manifest(
+            output,
+            build_arm_manifest(
+                suite="research_to_code_ab",
+                provider=provider_id,
+                arms=ARMS,
+                cases=[case.name for case in CASES],
+                max_turns=max_turns,
+                journal_dir=layout.journal_dir if journal is not None else None,
+                transcript_mode="archive" if not no_live_trace else "off",
+                started_at=str(payload.get("started_at") or ""),
+                finished_at=str(payload.get("finished_at") or ""),
+                stop_reason="done" if verdict["ok"] else "gate_failed",
+                codey_failure_class=common.AB_FAILURE_NONE if verdict["ok"] else common.AB_FAILURE_CODEY,
             ),
-            transcript_mode="archive" if not no_live_trace else "off",
-            started_at=str(payload.get("started_at") or ""),
-            finished_at=str(payload.get("finished_at") or ""),
-            stop_reason="done" if verdict["ok"] else "gate_failed",
-            codey_failure_class=common.AB_FAILURE_NONE if verdict["ok"] else common.AB_FAILURE_CODEY,
-        ))
+        )
         if journal is not None:
             journal.record_run_complete(
-                rows=len(payload["rows"]),
+                rows=len(store.rows),
                 status="done" if verdict["ok"] else "failed",
             )
+        run_finished = True
         print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
         print(json.dumps(verdict, ensure_ascii=False, indent=2))
         print(f"report: {output}")
         return 0 if verdict["ok"] else 1
     finally:
+        if not run_finished and journal is not None:
+            try:
+                journal.record_run_complete(rows=len(store.rows), status="failed")
+            except Exception:
+                pass
         try:
             if raw_provider is not None and not keep_open:
                 raw_provider.close()
@@ -664,23 +687,27 @@ def _self_test() -> None:
 
     replies = (
         '{"tool":"read_file","args":{"path":"pricing.py"}}',
-        json.dumps({
-            "tool": "edit",
-            "args": {
-                "path": "pricing.py",
-                "replacements": [{
-                    "old_string": (
-                        "def discounted_total(amount, discount, tax_rate):\n"
-                        "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
-                        "    return amount * (1 + tax_rate) - discount"
-                    ),
-                    "new_string": (
-                        "def discounted_total(amount, discount, tax_rate):\n"
-                        "    return (amount - discount) * (1 + tax_rate)"
-                    ),
-                }],
-            },
-        }),
+        json.dumps(
+            {
+                "tool": "edit",
+                "args": {
+                    "path": "pricing.py",
+                    "replacements": [
+                        {
+                            "old_string": (
+                                "def discounted_total(amount, discount, tax_rate):\n"
+                                "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
+                                "    return amount * (1 + tax_rate) - discount"
+                            ),
+                            "new_string": (
+                                "def discounted_total(amount, discount, tax_rate):\n"
+                                "    return (amount - discount) * (1 + tax_rate)"
+                            ),
+                        }
+                    ],
+                },
+            }
+        ),
         '{"tool":"run","args":{"command":"python -B -m pytest -q"}}',
         '{"tool":"done","args":{"summary":"Implemented pre-tax discount per research."}}',
         '{"tool":"done","args":{"summary":"Implemented pre-tax discount per research."}}',
@@ -729,6 +756,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Disable journaling (no transcript material is written).",
     )
+    parser.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        help="with a fixed --output, rerun rows that already contain an error",
+    )
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
@@ -747,6 +779,7 @@ def main(argv: list[str] | None = None) -> int:
         keep_open=args.keep_open,
         trace_output=args.trace_output,
         no_live_trace=args.no_live_trace,
+        rerun_failed=bool(args.rerun_failed),
     )
 
 

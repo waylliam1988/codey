@@ -21,15 +21,17 @@ def test_live_resume_skips_completed_rows_without_opening_provider(
         "false_completion": True,
     }
     output.write_text(
-        json.dumps({
-            "probe": "completion_enforcement_ab",
-            "provider": "deepseek",
-            "cases": ["premature_done_no_test"],
-            "arms": ["control_done"],
-            "complete": False,
-            "rows": [row],
-            "summary": {},
-        }),
+        json.dumps(
+            {
+                "probe": "completion_enforcement_ab",
+                "provider": "deepseek",
+                "cases": ["premature_done_no_test"],
+                "arms": ["control_done"],
+                "complete": False,
+                "rows": [row],
+                "summary": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -84,7 +86,7 @@ def test_completion_enforcement_journal_identity_is_stable_for_fixed_output(
     )
     assert second is not None
     try:
-        assert second.event_count == 1
+        assert second.event_count == 2
     finally:
         second.close()
 
@@ -101,15 +103,17 @@ def test_live_rerun_failed_keeps_old_error_when_provider_connect_fails(
         "stop_reason": "error",
     }
     output.write_text(
-        json.dumps({
-            "probe": "completion_enforcement_ab",
-            "provider": "deepseek",
-            "cases": ["premature_done_no_test"],
-            "arms": ["control_done"],
-            "complete": False,
-            "rows": [old_error],
-            "summary": {},
-        }),
+        json.dumps(
+            {
+                "probe": "completion_enforcement_ab",
+                "provider": "deepseek",
+                "cases": ["premature_done_no_test"],
+                "arms": ["control_done"],
+                "complete": False,
+                "rows": [old_error],
+                "summary": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -147,15 +151,17 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
         "stop_reason": "error",
     }
     output.write_text(
-        json.dumps({
-            "probe": "completion_enforcement_ab",
-            "provider": "deepseek",
-            "cases": ["premature_done_no_test"],
-            "arms": ["control_done"],
-            "complete": False,
-            "rows": [old_error],
-            "summary": {},
-        }),
+        json.dumps(
+            {
+                "probe": "completion_enforcement_ab",
+                "provider": "deepseek",
+                "cases": ["premature_done_no_test"],
+                "arms": ["control_done"],
+                "complete": False,
+                "rows": [old_error],
+                "summary": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -183,8 +189,7 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
     )
 
     matching = [
-        row for row in report["rows"]
-        if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
+        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
     ]
     assert len(matching) == 1
     assert matching[0]["error"] == "RuntimeError: fixture failed before row"
@@ -210,15 +215,17 @@ def test_rerun_failed_replaces_old_error_row(
         "stop_reason": "error",
     }
     output.write_text(
-        json.dumps({
-            "probe": "completion_enforcement_ab",
-            "provider": "deepseek",
-            "cases": ["premature_done_no_test", "fresh_failing_test_after_edit"],
-            "arms": ["control_done"],
-            "complete": False,
-            "rows": [old_error, untouched_error],
-            "summary": {},
-        }),
+        json.dumps(
+            {
+                "probe": "completion_enforcement_ab",
+                "provider": "deepseek",
+                "cases": ["premature_done_no_test", "fresh_failing_test_after_edit"],
+                "arms": ["control_done"],
+                "complete": False,
+                "rows": [old_error, untouched_error],
+                "summary": {},
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -271,8 +278,7 @@ def test_rerun_failed_replaces_old_error_row(
     )
 
     matching = [
-        row for row in report["rows"]
-        if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
+        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
     ]
     assert len(matching) == 1
     assert "error" not in matching[0]

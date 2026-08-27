@@ -92,6 +92,7 @@ class BrowserSearchProvider:
         self._session = None
         self._search_page = None
         self._fetch_page = None
+        self._last_worker_health: dict[str, object] = {}
 
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = ""):
         if self._session is not None:
@@ -179,7 +180,11 @@ class BrowserSearchProvider:
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
         cancellation.check()
-        results = _search_browser_call(self._search_on_browser_thread, query, limit)
+        try:
+            results = _search_browser_call(self._search_on_browser_thread, query, limit)
+        except (TimeoutError, cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            self._record_worker_health()
+            raise
         cancellation.check()
         return results
 
@@ -255,7 +260,11 @@ class BrowserSearchProvider:
         if _is_pdf_url(url):
             page = _download_pdf_streaming(url)
         else:
-            page = _search_browser_call(self._fetch_on_browser_thread, url)
+            try:
+                page = _search_browser_call(self._fetch_on_browser_thread, url)
+            except (TimeoutError, cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                self._record_worker_health()
+                raise
             if page.get("content_kind") == "pdf_download":
                 cancellation.check()
                 page = _download_pdf_streaming(
@@ -319,6 +328,17 @@ class BrowserSearchProvider:
         if self._session is None:
             return
         _search_browser_call(self._close_on_browser_thread)
+
+    def worker_health(self) -> dict[str, object]:
+        """Last passive research-browser worker health snapshot."""
+
+        return dict(self._last_worker_health)
+
+    def _record_worker_health(self) -> None:
+        try:
+            self._last_worker_health = _search_browser_worker().health_snapshot().to_payload()
+        except Exception:
+            self._last_worker_health = {"state": "unavailable", "stuck_detected": False}
 
     def _close_on_browser_thread(self) -> None:
         try:

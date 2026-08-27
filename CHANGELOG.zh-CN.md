@@ -6,6 +6,32 @@
 
 ## Unreleased
 
+## 0.4.19 - A/B Evidence Polish and Passive Worker Health
+
+- 统一 manual A/B 证据落盘结构（`tests/manual/ab_harness_common.py`）。
+  - 新增 `ArmRunLayout`、`ArmManifest`、`ResultRowStore`，让固定 `--output` 运行同时绑定 result JSON、journal 目录、transcript 目录、manifest 路径、provider、git commit 和 dirty 状态。
+  - 重跑同一 provider/case/arm/repeat 时改为原子替换旧 row，不再 append 旧失败 row 污染 summary。
+  - pending 计算阶段不会修改旧 result 文件，所以 provider 连接失败不会提前擦掉历史证据。
+  - transcript 默认 digest-only；只有 archive 文件真实存在时，row 才会标记为 replayable。
+  - provider failure 改为闭合枚举（`provider_send_error`、`provider_no_reply`、`native_search_stall`、`webpage_ui_changed`、`unknown`、`none`），和 Codey/runtime failure 分开。
+- 将 `completion_enforcement_ab.py`、`research_to_code_ab.py`、`bounded_research_planner_ab.py`、`ghost_research_continuity_ab.py` 的 live-output 路径迁移到 common result/journal 布局。
+  - journal 使用基于 output 的稳定 identity，resume 时允许追加带 `resumed_attempt` / `attempt_index` 的 `run_start`。
+  - journal 打开后如果外层失败，会补一个 terminal failed `run_complete`，但不会删除旧 result row。
+- 增加 BrowserWorker 被动健康快照。
+  - `BrowserWorker.health_snapshot()` 记录 queue size、当前 job 状态、运行时长、stuck 阈值、job 计数和线程存活状态。
+  - `BrowserSearchProvider` 在 worker 边界 timeout/cancel 时记录最新 worker health，方便把 Qwen/native-search 卡住归因到 provider/worker 层，而不是误判为 planner 质量。
+  - 回归测试使用非协作 job 复现“调用方已经 timeout，但 worker 线程仍被占用”，并证明这里只观测、不自动重启。
+- 加固显式原子写权限。
+  - `mode=` 显式传入时，如果 `fchmod/chmod` 无法应用权限，现在 hard fail。
+  - `preserve_mode=True` 仍保持 best-effort，普通状态替换行为不变。
+- 将 Ghost Work Queue 状态迁移规则固定成显式 invariant。
+  - `WORK_ITEM_TRANSITION_MATRIX` 成为 action/status transition 的唯一 authority，并用测试绑定 patch schema。
+- 将成功的 `NetworkStatus` 状态名从 `PUBLIC_WEB` 改为 `POLICY_ALLOWED`。
+  - 保持 `NetworkDecision.allowed` 和 `check_fetch_url()` 行为不变，但让状态名更贴近真实契约。
+  - `POLICY_ALLOWED` 只表示 URL 通过了 Codey 当前配置的 fetch policy；在启用 TUN/透明代理 fake DNS 兼容时，它不是 DNS 解析到真实公网地址的证明。
+  - 增加回归测试，防止允许状态的名称或值重新漂移回 `public` / `web` 语义。
+- 更新 roadmap，固定窄 0.4.x stabilization track、post-0.5 exit gate 和 0.6 consolidation 路线。
+
 ## 0.4.18 - Network Boundary, Cooperative Cancellation, and Storage Unification
 
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
@@ -27,10 +53,10 @@
   - 队列中尚未开始的 job 被取消后直接跳过执行；
   - `BrowserSearchProvider` 在页面导航、解析及循环中增加密集 cancellation check；抓取与搜索路径统一封装在页面丢弃清理边界内（`_discard_fetch_page_on_browser_thread`、`_discard_search_page_on_browser_thread`），在取消或超时发生时彻底关闭底层页面并置空引用，消除中间态重试与页面泄漏。
 - 收敛统一 NetworkPolicy 单一来源与 DNS 缓存机制（`codey.policies.network`、`codey.research.connector_search`、`codey.research.tools`）：
-  - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`PUBLIC_WEB`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
+  - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`POLICY_ALLOWED`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
   - 恢复严格保守的非公网 IP 拦截逻辑（`not ip.is_global or ip.is_multicast`），彻底覆盖 `100.64.0.0/10`（CGNAT）与所有保留地址空间；
   - 支持 `allow_dns_fake_ip=True`，兼容 TUN/透明代理的 `198.18.0.0/15` fake-ip 域名解析，同时坚决阻断字面量 fake-ip 并杜绝空解析 fail-open 风险；
-  - 明确记录 `PUBLIC_WEB` 只表示“按当前 policy 允许”，不是在所有本地代理配置下都证明 DNS 解析到了真实公网地址；
+  - 明确记录 `POLICY_ALLOWED` 只表示“按当前 policy 允许”，不是在所有本地代理配置下都证明 DNS 解析到了真实公网地址；
   - 在 `ResearchTools.open_url()` 公共工具入口处前置执行 URL policy 校验，并在 fetch 后 final URL 二次校验中复用短 TTL policy cache，避免同一短窗口内重复 DNS；
   - Connector 请求（`connector_search.py`）采用无自动重定向的 opener，对每一步重定向目标进行逐跳（hop-by-hop）URL 策略校验（`check_fetch_url(use_cache=True)`）并限制最大重定向深度；
   - 新增共享 `codey.research.http_redirects`，统一承载无自动重定向 opener、redirect status 解析、Location header 解析与 best-effort response close helper，供 connector 和 browser PDF fetch 路径复用；
@@ -38,7 +64,7 @@
   - Connector 的 `HTTPError` redirect 响应会在跟随下一跳之前显式关闭；redirect 测试也改为逐跳 mock policy 判断，不再依赖 fixture URL 的真实 DNS；
   - Connector redirect 多跳共享同一个 request 总 deadline；每一跳只拿剩余 socket timeout，redirect 链不会把单次 connector 请求预算按跳数放大；
   - `check_fetch_url()` 直接从 `codey.policies.network` 导出；清理彻底删除了多余的 `codey/research/url_policy.py` 兼容层；
-  - 为浏览器自动化子资源拦截引入差异化 TTL/LRU 缓存（允许域名 5s，拦截/未解析 45s），兼顾性能与安全防护边界。
+  - 为浏览器自动化子资源拦截引入差异化 bounded TTL cache（允许域名 5s，拦截/未解析 45s），兼顾性能与安全防护边界。
 - Agent Runner 协议交互优化（`codey.agents.runner`）：
   - 移除当模型返回有效工具调用但遗漏 `<continue>` / `<done>` 控制元素时的隐式终止行为，改为将工具执行结果规范格式化后带协议提醒返回给模型继续下一轮推理。
 - Edit 工具严格化与路径模型说明（`codey.toolchain.runtime`）：

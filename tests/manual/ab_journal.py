@@ -55,9 +55,7 @@ MAX_FACTS_BYTES = 8 * 1024
 
 _URL_RE = re.compile(r"(?i)^[a-z][a-z0-9+.-]*://|^www\.")
 _HTML_RE = re.compile(r"(?i)<\s*(html|body|div|script|textarea|input)\b")
-_SECRET_VALUE_RE = re.compile(
-    r"(?i)(api[-_]?key|authorization|bearer\s|passwd|password|secret)"
-)
+_SECRET_VALUE_RE = re.compile(r"(?i)(api[-_]?key|authorization|bearer\s|passwd|password|secret)")
 _SECRET_TOKEN_SHAPE_RE = re.compile(r"\b(?:sk|ghp|github_pat)-?[A-Za-z0-9_-]{16,}\b")
 _TRANSCRIPT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _TRANSCRIPT_FILE_RE = re.compile(r"^[0-9a-f]{64}\.json$")
@@ -134,25 +132,27 @@ def sanitize_fact_value(value: object) -> tuple[bool, object]:
     return False, None
 
 
-_PROVIDER_OBSERVATION_FACTS = frozenset({
-    "input_empty",
-    "question_count_increased",
-    "response_count_increased",
-    "typing_true",
-    "typing_false",
-    "stop_visible",
-    "stop_hidden",
-    "response_stable",
-    "response_nonempty",
-    "response_chars",
-    "profile_hash",
-    "failure_kind",
-    "failure_stage",
-    "elapsed_ms",
-})
+_PROVIDER_OBSERVATION_FACTS = frozenset(
+    {
+        "input_empty",
+        "question_count_increased",
+        "response_count_increased",
+        "typing_true",
+        "typing_false",
+        "stop_visible",
+        "stop_hidden",
+        "response_stable",
+        "response_nonempty",
+        "response_chars",
+        "profile_hash",
+        "failure_kind",
+        "failure_stage",
+        "elapsed_ms",
+    }
+)
 
 _FACT_ALLOWLIST_BY_EVENT: dict[str, frozenset[str]] = {
-    "run_start": frozenset({"cases", "arms", "max_turns"}),
+    "run_start": frozenset({"cases", "arms", "max_turns", "resumed_attempt", "attempt_index"}),
     "case_start": frozenset({"question_chars"}),
     "send_start": frozenset(),
     "reply": frozenset(),
@@ -307,11 +307,7 @@ class TranscriptReplayCache:
     def delete_transcript(self, ref_or_digest: TranscriptRef | str) -> bool:
         """Delete one archived transcript by digest or TranscriptRef."""
 
-        digest = (
-            ref_or_digest.content_digest
-            if isinstance(ref_or_digest, TranscriptRef)
-            else str(ref_or_digest or "")
-        )
+        digest = ref_or_digest.content_digest if isinstance(ref_or_digest, TranscriptRef) else str(ref_or_digest or "")
         target = self._transcript_path(digest)
         try:
             target.unlink()
@@ -500,9 +496,7 @@ def read_events_with_tail_recovery(path: Path) -> tuple[list[dict[str, Any]], in
     if not path.is_file():
         return [], 0, 0
     lines = [
-        stripped
-        for stripped in path.read_text(encoding="utf-8", errors="replace").splitlines()
-        if stripped.strip()
+        stripped for stripped in path.read_text(encoding="utf-8", errors="replace").splitlines() if stripped.strip()
     ]
     parsed: list[dict[str, Any] | None] = []
     for line in lines:
@@ -545,9 +539,7 @@ class ABJournalWriter:
         if not self.experiment_id or not self.run_id or not self.provider:
             raise ValueError("experiment_id, run_id, and provider are required")
 
-        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
-            self.events_path
-        )
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(self.events_path)
         problems = verify_event_chain(events)
         if problems:
             raise ValueError(
@@ -574,13 +566,10 @@ class ABJournalWriter:
             expected = (self.experiment_id, self.run_id, self.provider)
             if found != expected:
                 raise ABJournalIdentityMismatch(
-                    f"{self.directory} belongs to experiment/run/provider {found}; "
-                    f"refusing to write {expected}"
+                    f"{self.directory} belongs to experiment/run/provider {found}; refusing to write {expected}"
                 )
         self._last_seq = int(events[-1].get("seq")) if events else 0
-        self._last_digest = (
-            str(events[-1].get("event_digest")) if events else GENESIS_DIGEST
-        )
+        self._last_digest = str(events[-1].get("event_digest")) if events else GENESIS_DIGEST
         if tail_invalid:
             # Only trailing unparseable lines reach here once the chain above
             # verified and no mid-file corruption exists.
@@ -624,8 +613,7 @@ class ABJournalWriter:
         expected = (self.experiment_id, self.run_id, self.provider)
         if found != expected:
             raise ABJournalIdentityMismatch(
-                f"{self.directory} belongs to experiment/run/provider {found}; "
-                f"refusing to write {expected}"
+                f"{self.directory} belongs to experiment/run/provider {found}; refusing to write {expected}"
             )
 
     # -- low level ----------------------------------------------------------
@@ -746,16 +734,40 @@ class ABJournalWriter:
             facts=facts,
         )
 
-    def record_run_start(self, *, cases: tuple[str, ...], arms: tuple[str, ...], max_turns: int) -> None:
-        self._append_event(
+    def record_run_start(
+        self,
+        *,
+        cases: tuple[str, ...],
+        arms: tuple[str, ...],
+        max_turns: int,
+        resumed_attempt: bool = False,
+    ) -> ABJournalEvent:
+        manifest = self._read_manifest()
+        try:
+            previous_attempt = max(0, int(manifest.get("attempt_index") or 0))
+        except (TypeError, ValueError):
+            previous_attempt = 0
+        minimum_attempt = 2 if resumed_attempt else 1
+        attempt_index = max(minimum_attempt, previous_attempt + 1)
+        event = self._append_event(
             event_type="run_start",
             stage="run_start",
-            facts={"cases": list(cases), "arms": list(arms), "max_turns": max_turns},
+            facts={
+                "cases": list(cases),
+                "arms": list(arms),
+                "max_turns": max_turns,
+                "resumed_attempt": resumed_attempt,
+                "attempt_index": attempt_index,
+            },
         )
-        self._write_manifest()
+        manifest["status"] = "running"
+        manifest["resumed_attempt"] = bool(resumed_attempt)
+        manifest["attempt_index"] = attempt_index
+        self._write_manifest_with(manifest)
+        return event
 
-    def record_case_start(self, *, case: str, arm: str, question_chars: int = 0) -> None:
-        self._append_event(
+    def record_case_start(self, *, case: str, arm: str, question_chars: int = 0) -> ABJournalEvent:
+        event = self._append_event(
             event_type="case_start",
             case_id=case,
             arm=arm,
@@ -763,6 +775,7 @@ class ABJournalWriter:
             facts={"question_chars": question_chars},
         )
         self._write_manifest()
+        return event
 
     def record_send_start(
         self,
@@ -772,8 +785,8 @@ class ABJournalWriter:
         turn: int,
         prompt: str,
         stage: str = "",
-    ) -> None:
-        self._append_event(
+    ) -> ABJournalEvent:
+        return self._append_event(
             event_type="send_start",
             case_id=case,
             arm=arm,
@@ -791,8 +804,8 @@ class ABJournalWriter:
         prompt: str,
         reply: str,
         stage: str = "",
-    ) -> None:
-        self._append_event(
+    ) -> ABJournalEvent:
+        return self._append_event(
             event_type="reply",
             case_id=case,
             arm=arm,
@@ -813,13 +826,13 @@ class ABJournalWriter:
         failure_kind: str = "",
         stage: str = "",
         provider_failure: Mapping[str, object] | None = None,
-    ) -> None:
+    ) -> ABJournalEvent:
         facts: dict[str, object] = {"error_class": str(error).split(":", 1)[0][:80]}
         if provider_failure:
             # Flattened one level by sanitize_facts, so kind/stage survive as
             # provider_failure_kind / provider_failure_stage scalars.
             facts["provider_failure"] = dict(provider_failure)
-        self._append_event(
+        return self._append_event(
             event_type="send_error",
             case_id=case,
             arm=arm,
@@ -836,12 +849,12 @@ class ABJournalWriter:
         arm: str,
         observation: str,
         facts: Mapping[str, object] | None = None,
-    ) -> None:
+    ) -> ABJournalEvent:
         """Record a typed provider observation (timeout / adapter_failure)."""
 
         if observation not in ("timeout", "adapter_failure"):
             raise ValueError(f"unsupported observation: {observation}")
-        self._append_event(
+        return self._append_event(
             event_type=observation,
             case_id=case,
             arm=arm,
@@ -856,7 +869,7 @@ class ABJournalWriter:
         case: str,
         arm: str,
         row: Mapping[str, object],
-    ) -> None:
+    ) -> ABJournalEvent:
         turns_raw = row.get("turns")
         try:
             turns = max(0, int(turns_raw))
@@ -870,7 +883,7 @@ class ABJournalWriter:
         }
         if isinstance(score, (int, float)) and not isinstance(score, bool):
             facts["score"] = round(float(score), 4)
-        self._append_event(
+        event = self._append_event(
             event_type="case_complete",
             case_id=case,
             arm=arm,
@@ -878,9 +891,10 @@ class ABJournalWriter:
             facts=facts,
         )
         self._write_manifest()
+        return event
 
-    def record_run_complete(self, *, rows: int, status: str = "done") -> None:
-        self._append_event(
+    def record_run_complete(self, *, rows: int, status: str = "done") -> ABJournalEvent:
+        event = self._append_event(
             event_type="run_complete",
             stage="run_complete",
             facts={"rows": rows},
@@ -888,6 +902,7 @@ class ABJournalWriter:
         manifest = self._read_manifest()
         manifest["status"] = status
         self._write_manifest_with(manifest)
+        return event
 
     def _write_manifest_with(self, manifest: dict[str, Any]) -> None:
         manifest["updated_at"] = _timestamp()
@@ -922,9 +937,7 @@ class ABJournalReader:
         return events
 
     def _events_with_integrity_problems(self) -> tuple[list[dict[str, Any]], list[str]]:
-        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
-            self.events_path
-        )
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(self.events_path)
         problems = verify_event_chain(events)
         if mid_file_invalid:
             problems.append(f"unparseable-lines:mid_file={mid_file_invalid}")
@@ -951,9 +964,7 @@ class ABJournalReader:
         :meth:`verify_hash_chain` until investigated.
         """
 
-        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
-            self.events_path
-        )
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(self.events_path)
         dropped = tail_invalid + mid_file_invalid
         if dropped and self.events_path.is_file():
             temporary = self.events_path.with_name(f".{self.events_path.name}.recover")

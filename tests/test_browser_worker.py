@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 
 from codey.automation import browser_worker
@@ -112,6 +113,62 @@ class BrowserWorkerTests(unittest.TestCase):
 
         self.assertTrue(saw_cancellation.wait(2.0))
         self.assertTrue(any(isinstance(exc, cancellation.TaskCancelled) for exc in worker_error))
+
+    def test_health_snapshot_reports_idle_metrics(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-health-worker")
+
+        self.assertEqual(worker.call(lambda: 7), 7)
+        health = worker.health_snapshot()
+
+        self.assertEqual(health.state, "idle")
+        self.assertEqual(health.current_job_state, "")
+        self.assertFalse(health.stuck_detected)
+        self.assertGreaterEqual(health.completed_jobs, 1)
+        self.assertEqual(health.failed_jobs, 0)
+        self.assertTrue(health.thread_alive)
+        self.assertEqual(health.to_payload()["state"], "idle")
+
+    def test_health_snapshot_detects_stuck_cancel_requested_job(self) -> None:
+        worker = browser_worker.BrowserWorker(
+            name="test-stuck-health-worker",
+            stuck_after_seconds=0.01,
+        )
+        started = threading.Event()
+        release = threading.Event()
+        errors: list[Exception] = []
+
+        def blocking_job() -> None:
+            started.set()
+            release.wait(timeout=2.0)
+
+        def caller() -> None:
+            try:
+                worker.call(blocking_job, timeout=0.05)
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=caller)
+        thread.start()
+        self.assertTrue(started.wait(2.0))
+        thread.join(timeout=1.0)
+        self.assertTrue(any(isinstance(exc, TimeoutError) for exc in errors))
+
+        time.sleep(0.03)
+        health = worker.health_snapshot()
+
+        self.assertEqual(health.state, "stuck")
+        self.assertEqual(health.current_job_state, "cancellation_requested")
+        self.assertTrue(health.stuck_detected)
+        self.assertGreaterEqual(health.running_for_seconds, health.stuck_after_seconds)
+
+        probe_ran = threading.Event()
+        worker.submit(probe_ran.set)
+        self.assertFalse(probe_ran.wait(0.05))
+        self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+
+        release.set()
+        self.assertTrue(probe_ran.wait(2.0))
+        self.assertEqual(worker.call(lambda: 123, timeout=2.0), 123)
 
 
 if __name__ == "__main__":

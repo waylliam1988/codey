@@ -1606,3 +1606,31 @@ def test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed() -> None:
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:
     assert work_queue_module.WORK_QUEUE_SCHEMA_VERSION == 1
+
+
+def test_work_queue_transition_matrix_is_single_authority() -> None:
+    expected = {
+        "claim": {"queued": frozenset({"running"})},
+        "complete": {"running": frozenset({"done"})},
+        "block": {
+            "candidate": frozenset({"blocked"}),
+            "queued": frozenset({"blocked"}),
+            "running": frozenset({"blocked"}),
+        },
+        "release": {"running": frozenset({"queued", "blocked"})},
+        "release_stale": {"running": frozenset({"queued", "blocked"})},
+        "reject": {
+            "candidate": frozenset({"rejected"}),
+            "queued": frozenset({"rejected"}),
+            "blocked": frozenset({"rejected"}),
+        },
+        "queue": {
+            "candidate": frozenset({"queued"}),
+            "blocked": frozenset({"queued"}),
+            "rejected": frozenset({"queued"}),
+        },
+    }
+
+    assert work_queue_module.WORK_ITEM_TRANSITION_MATRIX == expected
+    assert work_queue_module.WORK_ITEM_TRANSITION_ACTIONS == frozenset(expected)
+    assert set(work_queue_module._WORK_TRANSITION_PATCH_KEYS) == set(expected)

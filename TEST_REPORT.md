@@ -1,5 +1,86 @@
 # Codey Test Report
 
+## 0.4.19 Release - A/B Evidence Polish and Passive Worker Health (2026-08-28)
+
+This release keeps production prompts and default task behavior unchanged. It
+hardens the 0.4 A/B evidence spine so fixed-output live runs can be resumed and
+reviewed from result JSON, journal events, manifest metadata, and optional
+archived transcripts without stale failed rows polluting summaries. It also
+adds passive BrowserWorker stuck observation, tightens explicit atomic file
+mode enforcement, makes Ghost Work Queue transitions an explicit invariant, and
+renames the successful network-policy status to the more accurate
+`POLICY_ALLOWED`.
+
+Closed items:
+
+- Added `ArmRunLayout`, `ArmManifest`, and `ResultRowStore` to
+  `tests/manual/ab_harness_common.py`.
+- Migrated the live-output paths for `completion_enforcement_ab.py`,
+  `research_to_code_ab.py`, `bounded_research_planner_ab.py`, and
+  `ghost_research_continuity_ab.py` onto fixed result/journal/manifest layout.
+- Re-running a failed provider/case/arm/repeat row now atomically replaces the
+  old row after the new row exists; pending calculation and provider connection
+  do not destroy previous result evidence.
+- Journal resume attempts append explicit `run_start` events with
+  `resumed_attempt` and `attempt_index`; outer failures after journal open add a
+  terminal failed `run_complete` event.
+- Transcript refs stay digest-only unless archive mode actually writes a
+  replayable transcript file.
+- Added a closed provider-failure vocabulary for manual A/B rows:
+  `provider_send_error`, `provider_no_reply`, `native_search_stall`,
+  `webpage_ui_changed`, `unknown`, and `none`.
+- Added `BrowserWorker.health_snapshot()` and wired
+  `BrowserSearchProvider.worker_health()` to capture the latest passive health
+  payload on worker-boundary timeout/cancel.
+- Added a non-cooperative BrowserWorker regression test proving a caller can
+  time out while the worker remains occupied and is only observed, not
+  restarted.
+- Explicit `mode=` atomic writes now fail hard when `fchmod/chmod` cannot apply
+  the requested permissions; `preserve_mode=True` remains best-effort.
+- Ghost Work Queue action/status transitions now live in
+  `WORK_ITEM_TRANSITION_MATRIX`, with tests binding the transition matrix to the
+  action set and patch schemas.
+- Replaced `NetworkStatus.PUBLIC_WEB` with `NetworkStatus.POLICY_ALLOWED` while
+  keeping `check_fetch_url()` and `NetworkDecision.allowed` behavior unchanged.
+- Removed old `sk-*` shaped fixture literals from affected tests.
+- Updated the 0.4.x roadmap to constrain remaining 0.4 work to A/B evidence
+  polish, A/B-discovered bugfixes, and non-model-visible safety/hygiene; added
+  post-0.5 exit criteria and defined 0.6 as consolidation.
+
+Validation commands and results:
+
+```powershell
+python -m ruff check codey\automation\browser_worker.py codey\research\browser_search.py codey\storage\atomic_io.py codey\ghost\work_queue.py codey\policies\network.py tests\manual\ab_harness_common.py tests\manual\ab_journal.py tests\manual\bounded_research_planner_ab.py tests\manual\completion_enforcement_ab.py tests\manual\ghost_research_continuity_ab.py tests\manual\research_to_code_ab.py tests\test_atomic_io.py tests\test_browser_worker.py tests\test_completion_enforcement_ab.py tests\test_ghost_directive.py tests\test_ghost_research_continuity_ab.py tests\test_ghost_work_queue.py tests\test_knowledge.py tests\test_manual_ab_harness_common.py tests\test_research.py tests\test_research_interest_queue.py tests\test_research_to_code_ab.py tests\test_server.py
+# All checks passed!
+
+python -B -m pytest tests\test_atomic_io.py tests\test_browser_worker.py tests\test_manual_ab_harness_common.py tests\test_ab_observation_journal.py tests\test_research.py::ResearchBoundaryTests::test_browser_search_records_worker_health_on_boundary_timeout tests\test_research.py::NetworkPolicyTests tests\test_ghost_work_queue.py tests\test_research_to_code_ab.py tests\test_completion_enforcement_ab.py tests\test_ghost_research_continuity_ab.py tests\test_ghost_directive.py tests\test_knowledge.py tests\test_research_interest_queue.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+# 242 passed, 2 skipped in 62.00s (0:01:02)
+
+python -B tests\manual\completion_enforcement_ab.py --self-test
+# self-test passed
+
+python -B tests\manual\research_to_code_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\longitudinal_research_harness_ab.py --self-test
+# deterministic longitudinal gate passed; self-test ok
+
+python -B tests\manual\research_comparison_benchmark_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\ghost_research_continuity_ab.py --self-test
+# self-test ok
+
+python -B -m pytest
+# 3068 passed, 15 skipped in 294.31s (0:04:54)
+
+python -B -m pytest tests\test_ghost_directive.py tests\test_knowledge.py tests\test_research_interest_queue.py
+# 86 passed in 31.38s
+```
+
 ## 0.4.18 Release - Network Boundary, Cooperative Cancellation, and Storage Unification (2026-08-27)
 
 This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, establishes full cooperative read / compaction locking across all Ghost stores, refactors `BrowserWorker` with cooperative cancellation, unifies research network policy with DNS caching, finalizes connector redirect/opening semantics, removes implicit terminal in agent runner, and hardens edit tool exact replacement.
@@ -24,10 +105,10 @@ Closed items:
   - Queued jobs cancelled prior to dispatch skip execution cleanly.
   - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; fetch and search paths wrap entire browser lifecycle in unified discard boundaries (`_discard_fetch_page_on_browser_thread`, `_discard_search_page_on_browser_thread`), resetting page references and propagating cancellation without intermediate retries or corrupted page leaks.
 - Unified Network Policy single source of truth and DNS caching (`codey.policies.network`, `codey.research.connector_search`, `codey.research.tools`):
-  - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
+  - Created centralized `NetworkPolicy` with `NetworkStatus` (`POLICY_ALLOWED`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
   - Strict conservative non-global IP rejection (`not ip.is_global or ip.is_multicast`) covering `100.64.0.0/10` (CGNAT) and all reserved address spaces.
   - Integrated `allow_dns_fake_ip=True` support for TUN/transparent proxy environments (`198.18.0.0/15` DNS fake IPs on resolved hostnames) while strictly rejecting literal fake IPs and preventing empty DNS resolution fail-open.
-  - `PUBLIC_WEB` is documented as policy-allowed, not as hard proof that DNS resolved to a globally routed address under all local proxy configurations.
+  - `POLICY_ALLOWED` is documented as policy-allowed, not as hard proof that DNS resolved to a globally routed address under all local proxy configurations.
   - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers and reuses the short TTL policy cache for the post-fetch final URL check.
   - Connector requests (`connector_search.py`) use non-redirecting openers with explicit hop-by-hop URL policy validation (`check_fetch_url(use_cache=True)`) and bounded redirect loop limits.
   - Shared `codey.research.http_redirects` owns the no-redirect opener, redirect-status parsing, Location-header parsing, and best-effort response close helpers used by connector and browser PDF fetch paths.
@@ -35,7 +116,7 @@ Closed items:
   - Connector `HTTPError` redirect responses are explicitly closed before following the next hop, and redirect tests mock policy decisions per hop instead of depending on live DNS for fixture URLs.
   - Connector redirect hops share one total request deadline; each hop receives only the remaining socket timeout.
   - `check_fetch_url()` is exported directly from `codey.policies.network`; removed redundant `codey/research/url_policy.py` shim.
-  - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
+  - Introduced a bounded TTL cache (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
   - Removed implicit terminal when the model returns valid tool actions without an explicit `<continue>` or `<done>` control element; tool results are now cleanly formatted and returned to the model with a protocol reminder.
 - Edit tool hardening and threat model clarification (`codey.toolchain.runtime`):

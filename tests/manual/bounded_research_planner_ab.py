@@ -26,10 +26,13 @@ if __package__ in (None, ""):
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
+    ArmRunLayout,
     FixtureDocument,
     FixtureSearchProvider,
     OutputProviderMismatch,
+    ResultRowStore,
     TracingProvider,
+    bind_row_evidence_refs,
     build_arm_manifest,
     fixture_material_phase,
     fixture_network_policy_bypass,
@@ -38,7 +41,6 @@ from tests.manual.ab_harness_common import (
     normalize_payload_metadata,
     timestamp,
     write_arm_manifest,
-    write_payload_bounded,
 )
 from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
@@ -107,18 +109,12 @@ CASES = {
     ),
     "widget_noop": Case(
         name="widget_noop",
-        question=(
-            "Research the current Widget Storage API recommendation and cite the "
-            "recommended endpoint."
-        ),
+        question=("Research the current Widget Storage API recommendation and cite the recommended endpoint."),
         documents=(
             FixtureDocument(
                 "https://source-a.test/widget-storage",
                 "Benchmark source A",
-                (
-                    "The Widget Storage standard still recommends the stable-v2 "
-                    "endpoint for client storage integration."
-                ),
+                ("The Widget Storage standard still recommends the stable-v2 endpoint for client storage integration."),
                 keywords=("widget", "storage", "endpoint", "stable-v2", "recommend"),
                 default=True,
             ),
@@ -285,6 +281,7 @@ def run_case(
     max_turns: int,
     run_id: str,
     trace: ABJournalWriter | None,
+    layout: ArmRunLayout,
 ) -> dict[str, Any]:
     started = time.time()
     model_actions: list[dict[str, Any]] = []
@@ -337,13 +334,15 @@ def run_case(
                     infos.append(str(event.message or "")[:240])
                 if event.kind == "tool" and event.call is not None:
                     args = event.call.args if isinstance(event.call.args, dict) else {}
-                    tool_calls.append({
-                        "turn": event.turn,
-                        "name": event.call.name,
-                        "args": _safe_args(args),
-                        "ok": bool(event.outcome.ok) if event.outcome is not None else False,
-                        "status": event.outcome.presentation_status() if event.outcome is not None else "",
-                    })
+                    tool_calls.append(
+                        {
+                            "turn": event.turn,
+                            "name": event.call.name,
+                            "args": _safe_args(args),
+                            "ok": bool(event.outcome.ok) if event.outcome is not None else False,
+                            "status": event.outcome.presentation_status() if event.outcome is not None else "",
+                        }
+                    )
             if runner.result is None:
                 raise RuntimeError("research finished without result")
             iteration = ResearchIterationRun(result=runner.result, tools=runner.tools)
@@ -375,13 +374,15 @@ def run_case(
                 actions = _safe_model_actions(run_provider.last_turn, run_provider.last_reply)[:3]
                 model_actions.extend(actions)
                 for action in actions or [{"tool": "", "args": {}}]:
-                    tool_calls.append({
-                        "turn": run_provider.last_turn,
-                        "name": str(action.get("tool") or ""),
-                        "args": action.get("args", {}) if isinstance(action.get("args"), dict) else {},
-                        "ok": bool(result.ok),
-                        "status": result.stop_reason or ("ok" if result.ok else "error"),
-                    })
+                    tool_calls.append(
+                        {
+                            "turn": run_provider.last_turn,
+                            "name": str(action.get("tool") or ""),
+                            "args": action.get("args", {}) if isinstance(action.get("args"), dict) else {},
+                            "ok": bool(result.ok),
+                            "status": result.stop_reason or ("ok" if result.ok else "error"),
+                        }
+                    )
             return result
 
         try:
@@ -437,15 +438,9 @@ def run_case(
                 "proof_ok": bool(proof.ok) if proof is not None else False,
                 "proof_answer_status": proof.answer_status if proof is not None else "",
                 "proof_coverage": proof.answer_coverage_score if proof is not None else None,
-                "citation_locator_verified": (
-                    bool(proof.citation_locator_verified) if proof is not None else False
-                ),
-                "support_relation_verified": (
-                    bool(proof.support_relation_verified) if proof is not None else False
-                ),
-                "counterevidence_checked": (
-                    bool(proof.counterevidence_checked) if proof is not None else False
-                ),
+                "citation_locator_verified": (bool(proof.citation_locator_verified) if proof is not None else False),
+                "support_relation_verified": (bool(proof.support_relation_verified) if proof is not None else False),
+                "counterevidence_checked": (bool(proof.counterevidence_checked) if proof is not None else False),
                 "proof_missing_evidence": list(proof.missing_evidence[:8]) if proof is not None else [],
                 "expected_terms_present": _expected_terms_present(result.summary, case.expected_terms),
                 "followup_applied": pipeline_result.followup_applied,
@@ -458,13 +453,9 @@ def run_case(
                 "attempted_fresh_source_count": pipeline_result.attempted_fresh_source_count,
                 "attempted_new_evidence_count": pipeline_result.attempted_new_evidence_count,
                 "ab_followup_mode": (
-                    AB_EVIDENCE_ONLY_FOLLOWUP_MODE
-                    if arm == "planner" and pipeline_result.followup_rounds
-                    else ""
+                    AB_EVIDENCE_ONLY_FOLLOWUP_MODE if arm == "planner" and pipeline_result.followup_rounds else ""
                 ),
-                "ab_followup_max_turns": (
-                    1 if arm == "planner" and pipeline_result.followup_rounds else 0
-                ),
+                "ab_followup_max_turns": (1 if arm == "planner" and pipeline_result.followup_rounds else 0),
                 "fixture_queries": search.queries[:12],
                 "fixture_fetches": search.fetches[:12],
                 "provider_send_count": run_provider.send_index,
@@ -478,6 +469,7 @@ def run_case(
                 "summary_preview": _clip(result.summary, 1600),
             }
             row["score"] = _score_row(row)
+            bind_row_evidence_refs(row, layout=layout, tracing_provider=run_provider)
             if trace is not None:
                 trace.record_case_complete(case=case.name, arm=arm, row=row)
             return row
@@ -499,6 +491,7 @@ def run_case(
                 "tool_calls": tool_calls[:60],
                 "info": infos[:16],
             }
+            bind_row_evidence_refs(row, layout=layout, tracing_provider=run_provider)
             if trace is not None:
                 trace.record_case_complete(case=case.name, arm=arm, row=row)
             return row
@@ -555,12 +548,15 @@ def _run_pipeline_with_ab_experiment(
         pipeline_module.PlanExecutor = _FreshMaterialExecutor
         pipeline_module._has_actionable_gap = _ab_needs_new_material
         pipeline_module._pipeline_stop_reason = ab_pipeline_stop_reason
-        pipeline_module._is_followup_eligible_stop = lambda stop_reason: str(stop_reason or "") in {
-            "done",
-            "max_turns",
-            "no_progress",
-            "protocol",
-        }
+        pipeline_module._is_followup_eligible_stop = lambda stop_reason: (
+            str(stop_reason or "")
+            in {
+                "done",
+                "max_turns",
+                "no_progress",
+                "protocol",
+            }
+        )
         return pipeline.run()
     finally:
         pipeline_module.PlanExecutor = original_executor
@@ -576,16 +572,18 @@ def _ab_has_actionable_gap(review: object | None) -> bool:
         return True
     missing = set(getattr(review, "missing_evidence", ()) or ())
     return bool(
-        missing.intersection({
-            "assumption_used_as_answer",
-            "claim_missing_citation",
-            "claim_missing_evidence_ref",
-            "claim_missing_support_relation",
-            "claim_not_evidence_backed",
-            "support_relation_bad_locator",
-            "support_relation_missing_evidence",
-            "unsupported_claims",
-        })
+        missing.intersection(
+            {
+                "assumption_used_as_answer",
+                "claim_missing_citation",
+                "claim_missing_evidence_ref",
+                "claim_missing_support_relation",
+                "claim_not_evidence_backed",
+                "support_relation_bad_locator",
+                "support_relation_missing_evidence",
+                "unsupported_claims",
+            }
+        )
         or getattr(review, "overclaim_warnings", ())
     )
 
@@ -601,11 +599,13 @@ def _ab_needs_new_material(review: object | None) -> bool:
         getattr(review, "coverage_gaps", ())
         or getattr(review, "followup_questions", ())
         or getattr(review, "query_rewrite_candidates", ())
-        or missing.intersection({
-            "answer_coverage_gap",
-            "counterevidence_not_checked",
-            "partial_answer",
-        })
+        or missing.intersection(
+            {
+                "answer_coverage_gap",
+                "counterevidence_not_checked",
+                "partial_answer",
+            }
+        )
         or getattr(review, "source_trust_warnings", ())
     )
 
@@ -627,11 +627,13 @@ def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:
         args = obj.get("args")
         if not isinstance(args, dict):
             args = {}
-        actions.append({
-            "turn": int(turn or 0),
-            "tool": _clip(tool, 80),
-            "args": _safe_args(args),
-        })
+        actions.append(
+            {
+                "turn": int(turn or 0),
+                "tool": _clip(tool, 80),
+                "args": _safe_args(args),
+            }
+        )
     if not actions and str(reply or "").strip():
         actions.append({"turn": int(turn or 0), "tool": "<no_json>", "args": {}})
     return actions
@@ -732,9 +734,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_score": baseline.get("score"),
             "planner_score": planner.get("score"),
             "delta": (
-                int(planner.get("score") or 0) - int(baseline.get("score") or 0)
-                if baseline and planner
-                else None
+                int(planner.get("score") or 0) - int(baseline.get("score") or 0) if baseline and planner else None
             ),
             "planner_followup_rounds": planner.get("followup_rounds"),
             "planner_stop_reason": planner.get("planner_stop_reason"),
@@ -824,10 +824,7 @@ def _followup_usefulness(
     quality_gain = bool(quality_reasons)
     quality_regression = bool(quality_regressions)
     useful = bool(
-        int(planner.get("followup_rounds") or 0) > 0
-        and material_gain
-        and quality_gain
-        and not quality_regression
+        int(planner.get("followup_rounds") or 0) > 0 and material_gain and quality_gain and not quality_regression
     )
     return {
         "evaluated": True,
@@ -869,28 +866,35 @@ def run_provider(
     trace: ABJournalWriter | None,
     run_id: str,
 ) -> dict[str, Any]:
-    payload = load_or_new_payload(
+    layout = ArmRunLayout.for_output(output, journal_dir=trace.directory if trace is not None else None)
+    store = ResultRowStore.open(
         output,
         probe="bounded_research_planner_ab",
         provider_id=provider_id,
         cases=cases,
         arms=arms,
+        summarize=summarize,
     )
-    normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
+    payload = store.payload
     if trace is not None:
         payload["trace_output"] = str(trace.directory)
-    existing = {
-        (str(row.get("case") or ""), str(row.get("arm") or ""))
-        for row in payload["rows"]
-        if row.get("ok") or not rerun_failed
-    }
-    pending = _pending_case_keys(cases=cases, arms=arms, existing=existing)
+    pending = [
+        (case_name, arm)
+        for case_name, arm, _repeat in store.pending_keys(
+            cases=cases,
+            arms=arms,
+            rerun_failed=rerun_failed,
+        )
+    ]
+    pending_set = set(pending)
     if trace is not None:
         trace.record_run_start(
             cases=tuple(case.name for case in cases),
             arms=arms,
             max_turns=max_turns,
+            resumed_attempt=trace.event_count > 0,
         )
+    run_finished = False
     if not pending:
         if trace is not None:
             trace.append_event(
@@ -901,21 +905,19 @@ def run_provider(
                     "cases": [case.name for case in cases],
                     "arms": list(arms),
                     "rerun_failed": bool(rerun_failed),
-                    "existing_rows": len(payload["rows"]),
+                    "existing_rows": len(store.rows),
                 },
             )
-            trace.record_run_complete(rows=len(payload["rows"]))
-        payload["complete"] = True
-        payload["summary"] = summarize(payload["rows"])
-        payload["updated_at"] = timestamp()
-        write_payload_bounded(output, payload)
+            trace.record_run_complete(rows=len(store.rows))
+        run_finished = True
+        store.write(complete=True, extra={"finished_at": timestamp(), "stop_reason": "already_complete"})
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
             flush=True,
         )
         return payload
-    write_payload_bounded(output, payload)
+    store.write(complete=False)
     provider_controls.begin_task_context(f"bounded-research-planner-ab:{provider_id}")
     provider = None
     try:
@@ -932,8 +934,7 @@ def run_provider(
             )
             for case in cases:
                 for arm in arms:
-                    key = (case.name, arm)
-                    if key in existing:
+                    if (case.name, arm) not in pending_set:
                         continue
                     row = run_case(
                         provider,
@@ -943,11 +944,9 @@ def run_provider(
                         max_turns=max_turns,
                         run_id=run_id,
                         trace=trace,
+                        layout=layout,
                     )
-                    payload["rows"].append(row)
-                    payload["summary"] = summarize(payload["rows"])
-                    payload["updated_at"] = timestamp()
-                    write_payload_bounded(output, payload)
+                    store.upsert(row, complete=False)
                     print(
                         f"[{provider_id} {case.name} {arm}] "
                         f"ok={row.get('ok')} score={row.get('score')} "
@@ -955,14 +954,17 @@ def run_provider(
                         f"stop={row.get('planner_stop_reason') or row.get('stop_reason', row.get('error', ''))}",
                         flush=True,
                     )
-            payload["complete"] = True
-            payload["summary"] = summarize(payload["rows"])
-            payload["updated_at"] = timestamp()
-            write_payload_bounded(output, payload)
+            store.write(complete=True, extra={"finished_at": timestamp(), "stop_reason": "done"})
             if trace is not None:
-                trace.record_run_complete(rows=len(payload["rows"]))
+                trace.record_run_complete(rows=len(store.rows))
+            run_finished = True
             return payload
     finally:
+        if not run_finished and trace is not None:
+            try:
+                trace.record_run_complete(rows=len(store.rows), status="failed")
+            except Exception:
+                pass
         provider_controls.end_task_context()
         if provider is not None:
             try:
@@ -977,12 +979,7 @@ def _pending_case_keys(
     arms: tuple[str, ...],
     existing: set[tuple[str, str]],
 ) -> list[tuple[str, str]]:
-    return [
-        (case.name, arm)
-        for case in cases
-        for arm in arms
-        if (case.name, arm) not in existing
-    ]
+    return [(case.name, arm) for case in cases for arm in arms if (case.name, arm) not in existing]
 
 
 def _default_output(provider_id: str) -> Path:
@@ -1108,15 +1105,17 @@ def _self_test() -> None:
                 session_id="self-test",
             )
             tools.sources_read.add("https://source-a.test/widget-storage")
-            tools.ledger.record_open_document(SourceDocument.html(
-                requested_url="https://source-a.test/widget-storage",
-                final_url="https://source-a.test/widget-storage",
-                title="Benchmark source A",
-                text=(
-                    "The Widget Storage standard still recommends the stable-v2 "
-                    "endpoint for client storage integration."
-                ),
-            ))
+            tools.ledger.record_open_document(
+                SourceDocument.html(
+                    requested_url="https://source-a.test/widget-storage",
+                    final_url="https://source-a.test/widget-storage",
+                    title="Benchmark source A",
+                    text=(
+                        "The Widget Storage standard still recommends the stable-v2 "
+                        "endpoint for client storage integration."
+                    ),
+                )
+            )
             with fixture_network_policy_bypass():
                 material_result = executor.execute(
                     ResearchPlan(
@@ -1148,40 +1147,46 @@ def _self_test() -> None:
             )
             url = "https://source-b.test/widget-storage-update"
             tools.sources_read.add(url)
-            tools.ledger.record_open_document(SourceDocument.html(
-                requested_url=url,
-                final_url=url,
-                title="Benchmark source B",
-                text=(
-                    "The Widget Storage working group has not adopted a stable-v3 "
-                    "successor; stable-v2 remains the recommended endpoint."
-                ),
-            ))
+            tools.ledger.record_open_document(
+                SourceDocument.html(
+                    requested_url=url,
+                    final_url=url,
+                    title="Benchmark source B",
+                    text=(
+                        "The Widget Storage working group has not adopted a stable-v3 "
+                        "successor; stable-v2 remains the recommended endpoint."
+                    ),
+                )
+            )
 
             class _ReplyProvider:
                 def send(self, prompt: str) -> str:
                     assert '"tool": "knowledge_write"' in prompt
-                    return json.dumps({
-                        "tool": "knowledge_write",
-                        "args": {
-                            "type": "fact",
-                            "title": "Evidence from Benchmark source B",
-                            "body": (
-                                "The Widget Storage working group has not adopted a stable-v3 "
-                                "successor; stable-v2 remains the recommended endpoint."
-                            ),
-                            "sources": [url],
-                            "evidence": [{
-                                "claim": "stable-v2 remains the recommended endpoint.",
-                                "source_url": url,
-                                "excerpt": (
+                    return json.dumps(
+                        {
+                            "tool": "knowledge_write",
+                            "args": {
+                                "type": "fact",
+                                "title": "Evidence from Benchmark source B",
+                                "body": (
                                     "The Widget Storage working group has not adopted a stable-v3 "
                                     "successor; stable-v2 remains the recommended endpoint."
                                 ),
-                                "stance": "supports",
-                            }],
-                        },
-                    })
+                                "sources": [url],
+                                "evidence": [
+                                    {
+                                        "claim": "stable-v2 remains the recommended endpoint.",
+                                        "source_url": url,
+                                        "excerpt": (
+                                            "The Widget Storage working group has not adopted a stable-v3 "
+                                            "successor; stable-v2 remains the recommended endpoint."
+                                        ),
+                                        "stance": "supports",
+                                    }
+                                ],
+                            },
+                        }
+                    )
 
             replay = run_evidence_followup(
                 provider=_ReplyProvider(),
@@ -1241,9 +1246,9 @@ def _self_test() -> None:
     assert material_only["quality_regression"] is True
     assert material_only["useful"] is False
     assert _expected_terms_present("stable-v2 endpoint", ("stable-v2",))
-    assert journal_directory_for_output(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
-        "bounded_research_planner_ab-deepseek.trace"
-    )
+    assert journal_directory_for_output(
+        Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")
+    ).name == ("bounded_research_planner_ab-deepseek.trace")
     assert _pending_case_keys(
         cases=(CASES["warehouse_gap"],),
         arms=("baseline",),
@@ -1337,7 +1342,12 @@ def main() -> int:
     parser.add_argument("--arms", default="baseline,planner")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--trace-output", type=Path, default=None, help="journal directory; default is <output-stem>.trace/ next to the result file")
+    parser.add_argument(
+        "--trace-output",
+        type=Path,
+        default=None,
+        help="journal directory; default is <output-stem>.trace/ next to the result file",
+    )
     parser.add_argument("--max-turns", type=int, default=14)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
@@ -1399,36 +1409,28 @@ def main() -> int:
                 run_id=run_id,
             )
             try:
-                result_payload = (
-                    json.loads(output.read_text(encoding="utf-8"))
-                    if output.exists()
-                    else {}
-                )
+                result_payload = json.loads(output.read_text(encoding="utf-8")) if output.exists() else {}
             except (OSError, json.JSONDecodeError):
                 result_payload = {}
             if not isinstance(result_payload, dict):
                 result_payload = {}
             ok = bool(result_payload.get("ok"))
-            write_arm_manifest(output, build_arm_manifest(
-                suite="bounded_research_planner_ab",
-                provider=provider_id,
-                arms=selected_arms,
-                cases=[case.name for case in selected_cases],
-                max_turns=max(1, args.max_turns),
-                journal_dir=(
-                    Path(trace_output) if trace is not None else None
+            write_arm_manifest(
+                output,
+                build_arm_manifest(
+                    suite="bounded_research_planner_ab",
+                    provider=provider_id,
+                    arms=selected_arms,
+                    cases=[case.name for case in selected_cases],
+                    max_turns=max(1, args.max_turns),
+                    journal_dir=(Path(trace_output) if trace is not None else None),
+                    transcript_mode="off" if args.no_live_trace else "digest-only",
+                    started_at=str(result_payload.get("started_at") or ""),
+                    finished_at=str(result_payload.get("finished_at") or timestamp()),
+                    stop_reason=str(result_payload.get("stop_reason") or ("done" if ok else "unknown")),
+                    codey_failure_class=(AB_FAILURE_NONE if ok else AB_FAILURE_CODEY),
                 ),
-                transcript_mode="off" if args.no_live_trace else "digest-only",
-                started_at=str(result_payload.get("started_at") or ""),
-                finished_at=str(result_payload.get("finished_at") or timestamp()),
-                stop_reason=str(
-                    result_payload.get("stop_reason")
-                    or ("done" if ok else "unknown")
-                ),
-                codey_failure_class=(
-                    AB_FAILURE_NONE if ok else AB_FAILURE_CODEY
-                ),
-            ))
+            )
         except OutputProviderMismatch as exc:
             print(str(exc), file=sys.stderr)
             return 2

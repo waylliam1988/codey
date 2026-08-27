@@ -2719,7 +2719,7 @@ user interruption count
 
 ## 0.5 主线 - Durable Runtime + Local Adaptation + Protocol Portability
 
-0.4.15 和 0.4.16 是 0.4 进入 A/B stabilization 前的安全与证据卫生收口：
+0.4.15 到 0.4.19 是 0.4 进入 A/B stabilization 前的安全、证据和命名语义收口：
 
 ```text
 run command argv 文件系统 operand 边界闭合
@@ -2728,6 +2728,7 @@ provider override 安装面收窄到 adapter repair surface
 manual A/B manifest / journal / failed-row 续跑语义统一
 Ghost affinity 不再把 ref 数量当 reward 强度
 Ghost Affinity / Work Queue event log 只接受 canonical event shape，畸形本地记录 fail closed
+NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 ```
 
 这些改动不改变模型可见 prompt，不新增 TaskRunner/core facts 抽象，目标是让
@@ -2751,9 +2752,11 @@ Provider/protocol outcome learning -> 0.5.4，不回流 evidence / permission / 
 | World Model | 0.5.7 / 0.5.8 | belief / prediction / calibration 都不是 truth confidence |
 | 本地 read-modify-write 状态并发写保护 | 0.5.0 / 0.5.1 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
 | command/action 语义 IR | 0.5.2 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
+| NetworkPolicy allow 语义 | 0.4.19 已收口，0.5 只维护 regression | policy allowed 不是 public-internet proof；调用方判断允许访问用 `decision.allowed` |
 
 已在 0.4.15 收口的 provider override、CDP session lifecycle、CI matrix、README
-结构文档问题，以及已在 0.4.16 收口的 Ghost event-log canonical ingestion，不再作为
+结构文档问题，已在 0.4.16 收口的 Ghost event-log canonical ingestion，以及已在
+0.4.19 收口的 NetworkPolicy 允许状态命名，不再作为
 0.5 能力项；后续只在 regression test 或 release evidence 中维护。
 
 Research untrusted source wrapper 的顺序必须是 A/B-first：
@@ -2768,6 +2771,145 @@ Research untrusted source wrapper 的顺序必须是 A/B-first：
 
 也就是说，不先把 wrapper 直接塞进生产 prompt；先用 A/B 证明它减少 prompt-injection
 风险且没有明显损害 Research 质量。
+
+### 0.4.x Stabilization Track
+
+0.4.18 之后的 0.4.x 不再继续堆系统。它只允许三类改动：
+
+```text
+1. A/B 证据链更完整
+2. A/B 暴露的真实 bugfix
+3. 不改变模型可见文本的安全/卫生收口
+```
+
+不做：
+
+```text
+RunOperationState
+EffectLog
+ReplayPolicy
+World Model
+TaskRunner 大拆
+插件化 / hooks / lanes
+默认 prompt 大改
+```
+
+版本节奏固定为：
+
+```text
+0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
+0.4.20：Coding / Completion A/B bugfix，只修 transcript/journal 证明的真实问题
+0.4.21：Research / Ghost A/B bugfix，只修 evidence 污染、stale、citation、stall 归因问题
+0.4.22：0.4 final stabilization report，决定是否进入 0.5
+```
+
+0.4.19 的交付边界：
+
+```text
+tests/manual/ab_harness_common.py
+tests/manual/ab_journal.py
+tests/manual/completion_enforcement_ab.py
+tests/manual/research_to_code_ab.py
+tests/manual/bounded_research_planner_ab.py
+tests/manual/ghost_research_continuity_ab.py
+docs/0.4_ab_stabilization_plan.zh-CN.md
+TEST_REPORT.md
+```
+
+已收紧：
+
+```text
+固定 --output 续跑语义
+同 provider / suite / arm / case 重跑替换旧 row，而不是 append 污染 summary
+旧 row 只在新 row 原子写入时被替换，不在 pending / provider connect 阶段提前删除
+result JSON / journal / transcript / manifest 互相有 ref
+journal 打开后外层失败会写 terminal failed run_complete
+transcript 只有 archive 文件真实存在时才算 replayable
+journal 只记录事件，不决定 arm verdict
+BrowserWorker stuck 只做 passive health observation，不自动重启
+显式 mode= 原子写权限应用失败时 hard fail，preserve_mode 仍 best-effort
+Ghost Work Queue 状态迁移矩阵成为唯一 transition authority
+NetworkStatus.POLICY_ALLOWED 避免把 policy allow 误读成公网证明
+```
+
+0.4.20 只跑并修 Coding / Completion 核心：
+
+```text
+control_done
+proof_only_block
+repair_context
+repair_context_minimal
+read_before_edit
+scoped_task_plan
+verification_review
+impact_guard
+```
+
+允许修的生产问题仅限：
+
+```text
+false completion 漏过
+unobserved 被当 failed
+environment failure 被当 product failure
+repair context 太吵或太少
+repair 多跑 / 不该跑
+read-before-edit 漏判
+verification candidate 选错
+```
+
+0.4.21 只跑并修 Research / Ghost：
+
+```text
+bounded_research_planner_ab.py
+longitudinal_research_harness_ab.py
+research_comparison_benchmark_ab.py
+source_connector_done_ab.py
+search_coverage_ab.py
+ghost_continuity_ab.py
+ghost_research_continuity_ab.py
+ghost_router_ab.py
+ghost_signal_extractor_ab.py
+ghost_work_queue_production_ab.py
+```
+
+允许修的问题仅限：
+
+```text
+SearchResult 被当 Evidence
+open_url failure 被写成事实
+stale claim 没标注
+unsupported claim 进 brief
+citation 和 claim 对不上
+native_search_stall 没归因
+memory 被当 evidence
+旧事实变 citation
+Ghost 自动扩大任务范围
+work queue 误触发 Research
+continuity hint 影响事实结论
+```
+
+0.4.22 产出最终稳定化报告，至少记录：
+
+```text
+每个 provider 跑了哪些 arm
+哪些 arm pass / pass_with_provider_noise / fail_codey_bug / fail_harness_or_provider
+每个 fail 的根因
+哪些 bug 已修
+哪些留到 0.5
+transcript 是否可 replay
+journal 是否完整
+```
+
+进入 0.5 的门槛：
+
+```text
+DeepSeek 全套核心通过
+至少第二个 provider 通过 coding + research 核心
+Qwen native-search stall 有明确分类
+Ghost 不污染 evidence
+所有 Codey bug 都有 deterministic test
+每个 arm 都能从 JSON + journal + transcript 复盘
+```
 
 0.5 不做插件系统，也不做 UI 扩张。0.5 的目标是把 0.4 已经完成的
 Evidence / Completion / Repair / Ghost / Protocol telemetry，收成一条更耐用的
@@ -4039,6 +4181,58 @@ maintenance 不 import provider/browser/tool_runtime/task_runner
 
 不需要。它不改变模型可见内容。需要长跑 smoke 和 corruption fixture。
 
+## 0.5 Exit Gate 与 0.6 收敛线
+
+0.5 做完前，不能因为“功能项都写完了”就直接进入下一条大能力路线。必须先通过
+Exit Gate：
+
+```text
+RunOperationState / EffectLog / ReplayPolicy 已经稳定
+TaskRunner 不再继续吸收新生命周期状态
+CompletionProof / Evidence / Verification 的 source of truth 明确
+Ghost / World Model / Protocol affinity 没有污染 evidence / permission / completion
+Research untrusted source wrapper 只有 A/B 通过后才默认启用
+至少两个 provider 完成 coding + research + ghost 核心 A/B
+所有 A/B 失败都能通过 JSON / journal / transcript 复盘
+```
+
+0.6 的主线应是 consolidation，不是继续加能力：
+
+```text
+0.6 = Operation Runtime Consolidation + Source-of-Truth Cleanup
+```
+
+0.6 做：
+
+```text
+TaskRunner 瘦身
+operation / effect / proof / ledger 语义统一
+重复 projection 删除
+过时 fallback 删除
+core fact model 文档化
+A/B 发现的高收益 prompt / protocol 策略默认化
+```
+
+0.6 不做：
+
+```text
+新 Manager
+新 autonomous planner
+插件市场
+World Model 自动决策
+跨 provider 自动仲裁
+大 UI
+```
+
+判断原则：
+
+```text
+0.5 增加 durable runtime 的必要语义
+0.6 删除、收敛、默认化 A/B 证明有效的部分
+0.6+ 不再承接旧文档里的 Tool Protocol Adapter / classifier / World Model shadow ranker 等能力项
+这些能力已经并入 0.5.xx；0.6+ 只承接稳定化、产品化和复杂度回收
+```
+
 ## 0.5 插件开放边界
 
 0.5 完成前仍不做有限插件化。即使 0.5.12 引入 structured provider path，
@@ -4063,13 +4257,19 @@ Local context 直接写入 accepted state
 connector 任意读写本地文件或联网
 ```
 
-## 0.4.13-0.4.16 收口与 0.5 切入
+## 0.4.13-0.4.19 收口与 0.5 切入
 
 0.4.13 已经完成核心：一轮 bounded repair、CompletionProof provenance、
 repair context admission、protocol telemetry。0.4.14 完成目录冷迁移，0.4.15 完成
 run-command boundary、provider override、locked JSON mutation 和 A/B evidence hygiene
 收口。0.4.16 完成 Ghost Affinity / Work Queue event-log canonical ingestion 和
-fail-closed replay 收口。Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性主线。
+fail-closed replay 收口。0.4.17-0.4.18 完成 OS-backed file locks、event-state reset、
+network boundary、cooperative cancellation 和 redirect/DNS 性能边界收口。0.4.19 进一步完成
+A/B evidence polish 和非模型可见卫生收口：固定 output 的 result/journal/transcript/manifest
+绑定、failed row 原子替换、resume attempt 显式记录、BrowserWorker stuck 被动观测、
+显式 `mode=` 原子写权限 hard fail、Ghost Work Queue transition matrix，以及将
+`NetworkStatus.PUBLIC_WEB` 这类容易误读的状态命名改为 `NetworkStatus.POLICY_ALLOWED`。
+Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性主线。
 
 0.4 收口只保留这些 release boundary：
 
@@ -4078,6 +4278,7 @@ fail-closed replay 收口。Pi-style durable harness 不再回塞 0.4；它属�
 0.4.14：冷迁移后的结构基线
 0.4.15：A/B 前安全与证据卫生基线
 0.4.16：A/B 前 Ghost 本地事件日志 canonical replay 基线
+0.4.17-0.4.19：A/B 前运行、存储、网络、worker health 和证据语义收口
 0.4 stabilization：只修 A/B 暴露的真实 bug，不再堆能力
 ```
 

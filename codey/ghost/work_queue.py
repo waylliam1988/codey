@@ -53,17 +53,28 @@ _WORK_EVENT_TYPES = frozenset(
         "ghost_work_snapshot",
     }
 )
-WORK_ITEM_TRANSITION_ACTIONS = frozenset(
-    {
-        "claim",
-        "complete",
-        "block",
-        "release",
-        "release_stale",
-        "reject",
-        "queue",
-    }
-)
+WORK_ITEM_TRANSITION_MATRIX = {
+    "claim": {"queued": frozenset({"running"})},
+    "complete": {"running": frozenset({"done"})},
+    "block": {
+        "candidate": frozenset({"blocked"}),
+        "queued": frozenset({"blocked"}),
+        "running": frozenset({"blocked"}),
+    },
+    "release": {"running": frozenset({"queued", "blocked"})},
+    "release_stale": {"running": frozenset({"queued", "blocked"})},
+    "reject": {
+        "candidate": frozenset({"rejected"}),
+        "queued": frozenset({"rejected"}),
+        "blocked": frozenset({"rejected"}),
+    },
+    "queue": {
+        "candidate": frozenset({"queued"}),
+        "blocked": frozenset({"queued"}),
+        "rejected": frozenset({"queued"}),
+    },
+}
+WORK_ITEM_TRANSITION_ACTIONS = frozenset(WORK_ITEM_TRANSITION_MATRIX)
 _WORK_PRECONDITION_KEYS = frozenset({"expected_status", "expected_started_run_id", "expected_retry_count"})
 _WORK_DELETE_PAYLOAD_KEYS = frozenset({"reason", "item_ids", "expected_items", "scope", "project_ref", "session_ref"})
 _WORK_EVENT_KEYS = {
@@ -2322,23 +2333,7 @@ def _precondition_matches(item: GhostWorkItem, precondition: Mapping[str, object
 
 
 def _transition_allowed(item: GhostWorkItem, target_status: str, *, action: str) -> bool:
-    if target_status == "running":
-        return action == "claim" and item.status == "queued"
-    if target_status == "done":
-        return action == "complete" and item.status == "running"
-    if target_status == "blocked":
-        if action == "block":
-            return item.status in {"running", "queued", "candidate"}
-        if action in {"release", "release_stale"}:
-            return item.status == "running"
-        return False
-    if target_status == "queued":
-        if action in {"release", "release_stale"}:
-            return item.status == "running"
-        return action == "queue" and item.status in {"candidate", "blocked", "rejected"}
-    if target_status == "rejected":
-        return action == "reject" and item.status in {"candidate", "queued", "blocked"}
-    return False
+    return target_status in WORK_ITEM_TRANSITION_MATRIX.get(action, {}).get(item.status, frozenset())
 
 
 def _stable_item_id(

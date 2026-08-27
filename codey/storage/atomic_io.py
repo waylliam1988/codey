@@ -46,9 +46,7 @@ def write_bytes_atomic(
     tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
     existing_mode = _existing_mode(target)
     creation_mode = (
-        mode
-        if mode is not None
-        else (existing_mode if (preserve_mode and existing_mode is not None) else 0o666)
+        mode if mode is not None else (existing_mode if (preserve_mode and existing_mode is not None) else 0o666)
     )
     try:
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -58,9 +56,9 @@ def write_bytes_atomic(
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             if mode is not None:
-                _apply_mode(handle.fileno(), tmp, mode)
+                _apply_mode(handle.fileno(), tmp, mode, required=True)
             elif preserve_mode and existing_mode is not None:
-                _apply_mode(handle.fileno(), tmp, existing_mode)
+                _apply_mode(handle.fileno(), tmp, existing_mode, required=False)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(tmp, target)
@@ -69,17 +67,21 @@ def write_bytes_atomic(
         _cleanup_temp_file(tmp)
 
 
-def _apply_mode(fileno: int, path: Path, mode: int) -> None:
+def _apply_mode(fileno: int, path: Path, mode: int, *, required: bool = False) -> None:
+    first_error: OSError | None = None
     if hasattr(os, "fchmod"):
         try:
             os.fchmod(fileno, mode)
             return
-        except OSError:
-            pass
+        except OSError as exc:
+            first_error = exc
     try:
         os.chmod(path, mode)
-    except OSError:
-        pass
+    except OSError as exc:
+        if required:
+            if first_error is not None:
+                raise exc from first_error
+            raise
 
 
 def _fsync_dir(directory: Path) -> None:

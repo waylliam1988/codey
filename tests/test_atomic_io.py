@@ -143,8 +143,68 @@ class AtomicWriteTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             secret = Path(td, "secret.json")
-            write_json_atomic(secret, {"api_key": "sk-test"}, mode=0o600)
+            write_json_atomic(secret, {"api_key": "SECRET_TOKEN"}, mode=0o600)
             self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
+
+    def test_explicit_mode_failure_is_hard_failure(self) -> None:
+        from codey.storage import atomic_io
+
+        with tempfile.TemporaryDirectory() as td:
+            secret = Path(td, "secret.json")
+            secret.write_text("before\n", encoding="utf-8")
+            patches = [
+                mock.patch(
+                    "codey.storage.atomic_io.os.chmod",
+                    side_effect=PermissionError("chmod denied"),
+                )
+            ]
+            if hasattr(atomic_io.os, "fchmod"):
+                patches.append(
+                    mock.patch(
+                        "codey.storage.atomic_io.os.fchmod",
+                        side_effect=PermissionError("fchmod denied"),
+                    )
+                )
+
+            with patches[0]:
+                if len(patches) == 1:
+                    with self.assertRaises(PermissionError):
+                        atomic_io.write_text_atomic(secret, "after\n", mode=0o600)
+                else:
+                    with patches[1]:
+                        with self.assertRaises(PermissionError):
+                            atomic_io.write_text_atomic(secret, "after\n", mode=0o600)
+
+            self.assertEqual(secret.read_text(encoding="utf-8"), "before\n")
+
+    def test_preserve_mode_failure_is_best_effort(self) -> None:
+        from codey.storage import atomic_io
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "state.json")
+            path.write_text("before\n", encoding="utf-8")
+            patches = [
+                mock.patch(
+                    "codey.storage.atomic_io.os.chmod",
+                    side_effect=PermissionError("chmod denied"),
+                )
+            ]
+            if hasattr(atomic_io.os, "fchmod"):
+                patches.append(
+                    mock.patch(
+                        "codey.storage.atomic_io.os.fchmod",
+                        side_effect=PermissionError("fchmod denied"),
+                    )
+                )
+
+            with patches[0]:
+                if len(patches) == 1:
+                    atomic_io.write_text_atomic(path, "after\n", preserve_mode=True)
+                else:
+                    with patches[1]:
+                        atomic_io.write_text_atomic(path, "after\n", preserve_mode=True)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "after\n")
 
 
 if __name__ == "__main__":

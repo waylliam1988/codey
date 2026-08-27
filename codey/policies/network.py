@@ -7,8 +7,8 @@ connections independently.
 
 When ``allow_dns_fake_ip`` is enabled, DNS-resolved 198.18.0.0/15 addresses are
 treated as policy-allowed for TUN/transparent-proxy setups. That compatibility
-path is not proof that the destination is a public internet host; it only means
-the URL passed this application's configured fetch policy.
+path is not proof that the destination is a globally routed public host; it only
+means the URL passed this application's configured fetch policy.
 """
 
 from __future__ import annotations
@@ -44,9 +44,9 @@ def _ip_is_dns_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> boo
 
 
 class NetworkStatus(Enum):
-    # PUBLIC_WEB means "allowed by this policy", not a hard proof that DNS
+    # POLICY_ALLOWED means "allowed by this policy", not a hard proof that DNS
     # resolved to a globally routed address in all local proxy configurations.
-    PUBLIC_WEB = "public_web"
+    POLICY_ALLOWED = "policy_allowed"
     BLOCKED_PRIVATE = "blocked_private"
     BLOCKED_UNRESOLVED = "blocked_unresolved"
     INVALID_URL = "invalid_url"
@@ -59,7 +59,7 @@ class NetworkDecision:
 
     @property
     def allowed(self) -> bool:
-        return self.status == NetworkStatus.PUBLIC_WEB
+        return self.status == NetworkStatus.POLICY_ALLOWED
 
 
 class NetworkPolicy:
@@ -81,7 +81,7 @@ class NetworkPolicy:
     def evaluate_url(self, url: str, *, resolve: bool = True, use_cache: bool = False) -> NetworkDecision:
         reason = self.check_url(url, resolve=resolve, use_cache=use_cache)
         if reason is None:
-            return NetworkDecision(NetworkStatus.PUBLIC_WEB)
+            return NetworkDecision(NetworkStatus.POLICY_ALLOWED)
         if reason in (
             "invalid URL",
             "invalid URL host",

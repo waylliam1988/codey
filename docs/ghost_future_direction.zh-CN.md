@@ -1275,17 +1275,22 @@ Ghost Explain provider verbalizer
 
 ### 0.6+
 
-如果 0.5.x 的 telemetry 足够稳定，再考虑：
+0.6+ 不再承接旧计划里的新能力清单。小型 Tool Protocol Adapter、local classifier、
+optional training export、multi-provider dialect A/B、bounded Ghost Explain、World Model
+shadow strategy ranker、claim-gap / verification strategy evaluation 已经并入 0.5.xx。
+
+0.6+ 的重点是收敛、默认化和删除：
 
 ```text
-小型 Tool Protocol Adapter
-local classifier
-optional fine-tuning pipeline
-multi-provider dialect A/B
-optional bounded Ghost Explain verbalizer
-World Model shadow strategy ranker
-claim-gap and verification strategy evaluation
+TaskRunner 瘦身
+operation / effect / proof / ledger source-of-truth cleanup
+删除重复 projection 和过时 fallback
+默认化 A/B 已证明有净收益的 prompt / protocol 策略
+产品化 Ghost Explain / World Model Inspector 的只读解释面
+把无收益的 adapter / classifier / strategy 保持 shadow 或删除
 ```
+
+0.6+ 仍不做 Ghost persona、World Model 自动决策、跨 provider 自动仲裁、插件市场或大 UI。
 
 ## 最终目标
 

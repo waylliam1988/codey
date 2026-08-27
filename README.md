@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.18-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.19-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.18`
+Version: `0.4.19`
 
 [Version history](CHANGELOG.md)
 
@@ -854,7 +854,10 @@ Manual A/B harnesses record provider send/reply observations through a shared
 durable journal (`tests/manual/ab_journal.py`): append-only JSONL events with a
 verifiable hash chain under `<output-stem>.trace/`, digest-only by default, with
 optional transcript archival for offline replay and explicit delete/prune
-helpers. This is developer tooling; it does not change agent behavior.
+helpers. Fixed-output runs also bind result JSON, arm manifest, journal, and
+transcript refs through `tests/manual/ab_harness_common.py`; re-running a failed
+case/arm replaces that row atomically instead of polluting summaries with stale
+failures. This is developer tooling; it does not change agent behavior.
 
 The explicit MoA snake flow is kept under `tests/` because it is a real smoke
 test, not a general tool. It writes its checkpoints and timing log inside the

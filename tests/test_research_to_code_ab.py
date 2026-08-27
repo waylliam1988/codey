@@ -32,8 +32,7 @@ def test_arm_briefs_differ_only_in_rendering_not_facts() -> None:
 def test_score_arm_detects_applied_formula_and_trap_misuse(tmp_path: Path) -> None:
     good = tmp_path / "pricing.py"
     good.write_text(
-        "def discounted_total(amount, discount, tax_rate):\n"
-        "    return (amount - discount) * (1 + tax_rate)\n",
+        "def discounted_total(amount, discount, tax_rate):\n    return (amount - discount) * (1 + tax_rate)\n",
         encoding="utf-8",
     )
     scores = probe.score_arm(
@@ -44,9 +43,7 @@ def test_score_arm_detects_applied_formula_and_trap_misuse(tmp_path: Path) -> No
     assert scores == {"key_conclusion_applied": True, "trap_misused": False}
 
     bad = tmp_path / "notes.py"
-    bad.write_text(
-        f"# TODO: prepare for {probe.TRAP_TOKEN}\n", encoding="utf-8"
-    )
+    bad.write_text(f"# TODO: prepare for {probe.TRAP_TOKEN}\n", encoding="utf-8")
     trap_scores = probe.score_arm(
         summary="added migration note",
         changed_files=("notes.py",),
@@ -56,8 +53,7 @@ def test_score_arm_detects_applied_formula_and_trap_misuse(tmp_path: Path) -> No
 
     untouched = tmp_path / "pricing.py"
     untouched.write_text(
-        "def discounted_total(amount, discount, tax_rate):\n"
-        "    return amount * (1 + tax_rate) - discount\n",
+        "def discounted_total(amount, discount, tax_rate):\n    return amount * (1 + tax_rate) - discount\n",
         encoding="utf-8",
     )
     wrong_order = probe.score_arm(
@@ -165,32 +161,40 @@ def test_gate_verdict_passes_for_full_interleaved_matrix() -> None:
 
 
 def test_gate_verdict_fails_when_projection_regresses_or_trap_fires() -> None:
-    regressed = probe._gate_verdict([
-        _row("baseline"),
-        _row("projection", success=False),
-    ])
+    regressed = probe._gate_verdict(
+        [
+            _row("baseline"),
+            _row("projection", success=False),
+        ]
+    )
     assert regressed["ok"] is False
     assert regressed["criteria"]["success_not_worse"] is False
 
-    trap = probe._gate_verdict([
-        _row("baseline"),
-        _row("projection", trap_misused=True),
-    ])
+    trap = probe._gate_verdict(
+        [
+            _row("baseline"),
+            _row("projection", trap_misused=True),
+        ]
+    )
     assert trap["ok"] is False
     assert trap["criteria"]["trap_misuse_not_worse"] is False
 
-    key_trap = probe._gate_verdict([
-        _row("baseline", brief_trap_in_key_conclusions=True),
-        _row("projection", brief_trap_in_key_conclusions=True),
-    ])
+    key_trap = probe._gate_verdict(
+        [
+            _row("baseline", brief_trap_in_key_conclusions=True),
+            _row("projection", brief_trap_in_key_conclusions=True),
+        ]
+    )
     assert key_trap["ok"] is False
     assert key_trap["criteria"]["projection_trap_not_in_key_conclusions"] is False
 
-    errored = probe._gate_verdict([
-        _row("baseline"),
-        _row("projection"),
-        {"case": "x", "arm": "projection", "error": "boom"},
-    ])
+    errored = probe._gate_verdict(
+        [
+            _row("baseline"),
+            _row("projection"),
+            {"case": "x", "arm": "projection", "error": "boom"},
+        ]
+    )
     assert errored["ok"] is False
     assert errored["criteria"]["no_error_rows"] is False
 
@@ -202,22 +206,26 @@ def test_gate_verdict_fails_when_projection_regresses_or_trap_fires() -> None:
 def test_gate_verdict_rejects_unbalanced_arms() -> None:
     # 2 baseline vs 1 projection: metric totals could hide a regression, so
     # the run matrix itself must fail the gate.
-    unbalanced = probe._gate_verdict([
-        _row("baseline"),
-        _row("baseline", repeat=2),
-        _row("projection"),
-    ])
+    unbalanced = probe._gate_verdict(
+        [
+            _row("baseline"),
+            _row("baseline", repeat=2),
+            _row("projection"),
+        ]
+    )
 
     assert unbalanced["ok"] is False
     assert unbalanced["criteria"]["matrix_complete"] is False
 
 
 def test_gate_verdict_rejects_duplicate_pair_rows() -> None:
-    duplicated = probe._gate_verdict([
-        _row("baseline"),
-        _row("projection"),
-        _row("projection"),
-    ])
+    duplicated = probe._gate_verdict(
+        [
+            _row("baseline"),
+            _row("projection"),
+            _row("projection"),
+        ]
+    )
 
     assert duplicated["ok"] is False
     assert duplicated["criteria"]["matrix_complete"] is False
@@ -282,10 +290,7 @@ def test_tracing_provider_journals_send_reply_and_transcript(tmp_path) -> None:
     assert provider.replies == ["ok-reply"]
     journal.close()
 
-    events = [
-        json.loads(line)
-        for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     kinds = [event.get("event_type") or event.get("type") for event in events]
     assert any(kind == "send_start" for kind in kinds), kinds
     assert any(kind == "reply" for kind in kinds), kinds
@@ -322,23 +327,27 @@ def test_tracing_provider_without_journal_still_counts(tmp_path=None) -> None:
 def _successful_live_replies() -> tuple[str, ...]:
     return (
         '{"tool":"read_file","args":{"path":"pricing.py"}}',
-        json.dumps({
-            "tool": "edit",
-            "args": {
-                "path": "pricing.py",
-                "replacements": [{
-                    "old_string": (
-                        "def discounted_total(amount, discount, tax_rate):\n"
-                        "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
-                        "    return amount * (1 + tax_rate) - discount"
-                    ),
-                    "new_string": (
-                        "def discounted_total(amount, discount, tax_rate):\n"
-                        "    return (amount - discount) * (1 + tax_rate)"
-                    ),
-                }],
-            },
-        }),
+        json.dumps(
+            {
+                "tool": "edit",
+                "args": {
+                    "path": "pricing.py",
+                    "replacements": [
+                        {
+                            "old_string": (
+                                "def discounted_total(amount, discount, tax_rate):\n"
+                                "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
+                                "    return amount * (1 + tax_rate) - discount"
+                            ),
+                            "new_string": (
+                                "def discounted_total(amount, discount, tax_rate):\n"
+                                "    return (amount - discount) * (1 + tax_rate)"
+                            ),
+                        }
+                    ],
+                },
+            }
+        ),
         '{"tool":"run","args":{"command":"python -B -m pytest -q"}}',
         '{"tool":"done","args":{"summary":"Implemented pre-tax discount."}}',
     )
@@ -385,8 +394,39 @@ def test_run_live_marks_journal_complete(tmp_path: Path, monkeypatch) -> None:
     assert report["gate"]["ok"] is True
     manifest = json.loads((journal_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["status"] == "done"
-    events = [
-        json.loads(line)
-        for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     assert events[-1]["event_type"] == "run_complete"
+
+
+def test_run_live_records_failed_terminal_event_when_connect_fails(tmp_path: Path, monkeypatch) -> None:
+    def _connect_provider(_provider_id: str, *, port: int):
+        del port
+        raise RuntimeError("provider connect failed")
+
+    monkeypatch.setattr(probe, "connect_provider", _connect_provider)
+    output = tmp_path / "report.json"
+    journal_dir = tmp_path / "journal"
+
+    try:
+        probe.run_live(
+            provider_id="deepseek",
+            port=0,
+            timeout=5.0,
+            new_chat_timeout=5.0,
+            repeats=1,
+            max_turns=6,
+            output=output,
+            keep_open=False,
+            trace_output=journal_dir,
+        )
+    except RuntimeError as exc:
+        assert "provider connect failed" in str(exc)
+    else:
+        raise AssertionError("provider connect failure should propagate")
+
+    events = [json.loads(line) for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["event_type"] for event in events] == ["run_start", "run_complete"]
+    manifest = json.loads((journal_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "failed"
+    assert manifest["event_count"] == 2
+    assert not output.exists()

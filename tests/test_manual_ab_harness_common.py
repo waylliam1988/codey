@@ -164,10 +164,7 @@ def test_tracing_provider_journals_send_reply(tmp_path: Path) -> None:
     assert provider.send_index == 1
     assert provider.last_reply == "r1"
     journal.close()
-    events = [
-        json.loads(line)
-        for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     kinds = [event.get("event_type") or event.get("type") for event in events]
     assert any(kind == "send_start" for kind in kinds), kinds
     assert any(kind == "reply" for kind in kinds), kinds
@@ -239,9 +236,7 @@ def test_provider_identity_mismatch_fails_closed(tmp_path: Path) -> None:
     assert excinfo.value.expected == "deepseek"
     assert excinfo.value.found == "qwen"
 
-    resumed = common.load_or_new_payload(
-        output, probe="p", provider_id="qwen", cases=("c1",), arms=("a",)
-    )
+    resumed = common.load_or_new_payload(output, probe="p", provider_id="qwen", cases=("c1",), arms=("a",))
     assert resumed["complete"] is False
     assert isinstance(resumed["rows"], list)
 
@@ -280,6 +275,211 @@ def test_case_names_accepts_objects_or_strings() -> None:
         name = "named"
 
     assert common.case_names((_Case(), "plain")) == ["named", "plain"]
+
+
+def test_arm_run_layout_binds_result_journal_manifest_and_transcripts(tmp_path: Path) -> None:
+    output = tmp_path / "suite" / "result.json"
+    layout = common.ArmRunLayout.for_output(output)
+
+    assert layout.output_json == output
+    assert layout.journal_dir == tmp_path / "suite" / "result.trace"
+    assert layout.manifest_path == tmp_path / "suite" / "result-manifest.json"
+    assert layout.transcript_dir == layout.journal_dir / "transcripts"
+
+
+def test_result_row_store_replaces_failed_row_for_fixed_output(tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
+    store = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+        summarize=common.summarize_arm_rows,
+    )
+    store.upsert({"case": "case-a", "arm": "arm-a", "repeat": 1, "error": "boom"})
+
+    resumed = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+        summarize=common.summarize_arm_rows,
+    )
+    assert resumed.pending_keys(cases=("case-a",), arms=("arm-a",), rerun_failed=True) == [("case-a", "arm-a", 1)]
+    resumed.upsert({"case": "case-a", "arm": "arm-a", "repeat": 1, "ok": True}, complete=True)
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["complete"] is True
+    assert payload["ok"] is True
+    assert payload["summary"]["rows"] == 1
+    assert payload["summary"]["errors"] == 0
+    assert payload["rows"] == [{"case": "case-a", "arm": "arm-a", "repeat": 1, "ok": True}]
+
+
+def test_result_row_store_pending_does_not_destroy_old_evidence(tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
+    output.write_text(
+        json.dumps(
+            {
+                "probe": "probe",
+                "provider": "deepseek",
+                "rows": [{"case": "case-a", "arm": "arm-a", "repeat": 1, "error": "old"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = output.read_text(encoding="utf-8")
+
+    store = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+    )
+
+    assert store.pending_keys(cases=("case-a",), arms=("arm-a",), rerun_failed=True)
+    assert output.read_text(encoding="utf-8") == before
+
+
+def test_result_row_store_allows_domain_ok_gate(tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
+    store = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+        ok=lambda rows, complete: bool(complete and rows and rows[0].get("exact")),
+    )
+
+    store.upsert({"case": "case-a", "arm": "arm-a", "repeat": 1, "exact": True}, complete=False)
+    assert json.loads(output.read_text(encoding="utf-8"))["ok"] is False
+
+    store.write(complete=True)
+    assert json.loads(output.read_text(encoding="utf-8"))["ok"] is True
+
+
+def test_bind_row_evidence_refs_and_transcript_path(tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
+    layout = common.ArmRunLayout.for_output(output)
+    transcript = layout.journal_dir / "transcripts" / ("a" * 64 + ".json")
+    transcript.parent.mkdir(parents=True)
+    transcript.write_text("{}", encoding="utf-8")
+
+    provider = _EchoProvider()
+    provider.transcript_refs = [  # type: ignore[attr-defined]
+        {
+            "mode": "archive",
+            "content_digest": "sha256:" + "a" * 64,
+            "path": f"transcripts/{'a' * 64}.json",
+        }
+    ]
+
+    row = common.bind_row_evidence_refs(
+        {"case": "case-a", "arm": "arm-a"},
+        layout=layout,
+        tracing_provider=provider,  # type: ignore[arg-type]
+    )
+
+    assert row["output_json"] == str(output)
+    assert row["journal_dir"] == str(layout.journal_dir)
+    assert row["transcript_replayable"] is True
+    assert common.transcript_path_for_row(row, layout=layout) == transcript
+
+
+def test_digest_only_transcript_ref_is_not_replayable(tmp_path: Path) -> None:
+    layout = common.ArmRunLayout.for_output(tmp_path / "result.json")
+    provider = _EchoProvider()
+    provider.transcript_refs = [  # type: ignore[attr-defined]
+        {
+            "mode": "digest_only",
+            "content_digest": "sha256:" + "b" * 64,
+            "path": "",
+        }
+    ]
+
+    row = common.bind_row_evidence_refs(
+        {"case": "case-a", "arm": "arm-a"},
+        layout=layout,
+        tracing_provider=provider,  # type: ignore[arg-type]
+    )
+
+    assert row["transcript_replayable"] is False
+    assert common.transcript_path_for_row(row, layout=layout) is None
+
+
+def test_provider_failure_classifier_uses_closed_vocabulary() -> None:
+    assert (
+        common.classify_provider_failure(sends=1, replies=0, error=TimeoutError("timed out"))
+        == common.PROVIDER_FAILURE_NATIVE_SEARCH_STALL
+    )
+    assert (
+        common.classify_provider_failure(error=RuntimeError("browser target closed"))
+        == common.PROVIDER_FAILURE_SEND_ERROR
+    )
+    assert (
+        common.classify_provider_failure(error=RuntimeError("selector not visible"))
+        == common.PROVIDER_FAILURE_WEBPAGE_UI_CHANGED
+    )
+    assert common.classify_provider_failure() == common.PROVIDER_FAILURE_NONE
+
+
+def test_arm_manifest_accepts_provider_failure_class(tmp_path: Path) -> None:
+    manifest = common.build_arm_manifest(
+        suite="suite",
+        provider="deepseek",
+        arms=("arm-a",),
+        cases=("case-a",),
+        max_turns=4,
+        journal_dir=tmp_path / "trace",
+        transcript_mode="digest-only",
+        started_at="2026-08-28T00:00:00Z",
+        provider_error_class=common.PROVIDER_FAILURE_NATIVE_SEARCH_STALL,
+        repo=tmp_path,
+    )
+
+    assert manifest["provider_error_class"] == common.PROVIDER_FAILURE_NATIVE_SEARCH_STALL
+
+
+def test_open_journal_for_output_records_resume_attempt(tmp_path: Path) -> None:
+    from tests.manual.ab_journal import ABJournalReader
+
+    output = tmp_path / "result.json"
+    first = common.open_journal_for_output(
+        output=output,
+        experiment_id="resume-test",
+        provider_id="deepseek",
+        transcript_mode="digest-only",
+        case_names=("case-a",),
+        arms=("arm-a",),
+        max_turns=4,
+    )
+    assert first is not None
+    first.record_run_complete(rows=0)
+    first.close()
+
+    second = common.open_journal_for_output(
+        output=output,
+        experiment_id="resume-test",
+        provider_id="deepseek",
+        transcript_mode="digest-only",
+        case_names=("case-a",),
+        arms=("arm-a",),
+        max_turns=4,
+    )
+    assert second is not None
+    second.close()
+
+    events = ABJournalReader(common.journal_directory_for_output(output)).events()
+    starts = [event for event in events if event["event_type"] == "run_start"]
+    assert len(starts) == 2
+    assert starts[0]["facts"]["resumed_attempt"] is False
+    assert starts[1]["facts"]["resumed_attempt"] is True
+    assert starts[0]["facts"]["attempt_index"] == 1
+    assert starts[1]["facts"]["attempt_index"] == 2
 
 
 def test_fixture_search_provider_matches_legacy_behavior() -> None:

@@ -696,6 +696,30 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result, sentinel)
         search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)
 
+    def test_browser_search_records_worker_health_on_boundary_timeout(self) -> None:
+        provider = BrowserSearchProvider()
+        fake_worker = mock.Mock()
+        fake_worker.health_snapshot.return_value.to_payload.return_value = {
+            "state": "stuck",
+            "stuck_detected": True,
+            "queue_size": 1,
+        }
+
+        with (
+            mock.patch(
+                "codey.research.browser_search._search_browser_call",
+                side_effect=TimeoutError("browser worker call timed out"),
+            ),
+            mock.patch("codey.research.browser_search._search_browser_worker", return_value=fake_worker),
+        ):
+            with self.assertRaises(TimeoutError):
+                provider.search("alpha", limit=3)
+
+        self.assertEqual(
+            provider.worker_health(),
+            {"state": "stuck", "stuck_detected": True, "queue_size": 1},
+        )
+
     def test_browser_search_defaults_to_isolated_browser(self) -> None:
         session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
         provider = BrowserSearchProvider()
@@ -4050,7 +4074,21 @@ class NetworkPolicyTests(unittest.TestCase):
 
         # Resolve=False for syntactically valid public URLs
         decision = policy.evaluate_url("https://example.com/api", resolve=False)
-        self.assertEqual(decision.status, NetworkStatus.PUBLIC_WEB)
+        self.assertEqual(decision.status, NetworkStatus.POLICY_ALLOWED)
+        self.assertTrue(decision.allowed)
+
+    def test_policy_allowed_status_is_not_public_internet_proof(self) -> None:
+        from codey.policies.network import NetworkPolicy, NetworkStatus
+
+        policy = NetworkPolicy()
+        decision = policy.evaluate_url("https://example.com/api", resolve=False)
+
+        self.assertEqual(decision.status, NetworkStatus.POLICY_ALLOWED)
+        self.assertEqual(decision.status.value, "policy_allowed")
+        self.assertNotIn("public", decision.status.name.lower())
+        self.assertNotIn("web", decision.status.name.lower())
+        self.assertNotIn("public", decision.status.value)
+        self.assertNotIn("web", decision.status.value)
         self.assertTrue(decision.allowed)
 
     def test_cache_hits_for_subresource_checks(self) -> None:
@@ -4271,7 +4309,7 @@ class NetworkPolicyTests(unittest.TestCase):
         )
 
     def test_network_policy_fake_dns_ip_handling(self) -> None:
-        from codey.policies.network import DEFAULT_NETWORK_POLICY, NetworkPolicy
+        from codey.policies.network import DEFAULT_NETWORK_POLICY, NetworkPolicy, NetworkStatus
 
         # 198.18.0.1 as literal IP is always rejected as non-public
         self.assertEqual(
@@ -4285,6 +4323,10 @@ class NetworkPolicyTests(unittest.TestCase):
             # Default policy treats DNS-resolved fake IP as policy-allowed for
             # TUN/transparent proxy environments; it is not a public-IP proof.
             self.assertIsNone(DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True))
+            self.assertEqual(
+                DEFAULT_NETWORK_POLICY.evaluate_url("https://example.com/api", resolve=True).status,
+                NetworkStatus.POLICY_ALLOWED,
+            )
 
             # Strict policy with allow_dns_fake_ip=False rejects it
             strict_policy = NetworkPolicy(allow_dns_fake_ip=False)

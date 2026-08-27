@@ -49,16 +49,17 @@ from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
     AB_FAILURE_PROVIDER,
+    ArmRunLayout,
+    ResultRowStore,
     TracingProvider,
-    append_or_replace_failed_row as _append_or_replace_failed_row,
+    bind_row_evidence_refs,
     build_arm_manifest,
     classify_ab_failure,
-    load_or_new_payload,
-    normalize_payload_metadata,
+    classify_provider_failure,
+    journal_directory_for_output,
     open_journal_for_output,
     timestamp,
     write_arm_manifest,
-    write_payload_bounded,
 )
 from tests.manual.ab_journal import ABJournalWriter
 
@@ -256,20 +257,20 @@ def _start_arm_patches(arm: str) -> list:
         mock.patch.object(tr, "COMPLETION_ENFORCEMENT_MODE", ARM_MODES[arm]),
     ]
     if arm == "repair_context_minimal":
-        patches.append(mock.patch.object(
-            tr,
-            "project_repair_context",
-            _minimal_detail_wrapper(tr.project_repair_context),
-        ))
+        patches.append(
+            mock.patch.object(
+                tr,
+                "project_repair_context",
+                _minimal_detail_wrapper(tr.project_repair_context),
+            )
+        )
     return patches
 
 
 def _pytest_project(root: Path, *, docs_only: bool = False) -> Path:
     project = root / "project"
     (project / "src").mkdir(parents=True)
-    (project / "pyproject.toml").write_text(
-        "[tool.pytest.ini_options]\n", encoding="utf-8"
-    )
+    (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     if not docs_only:
         (project / "src" / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
     return project
@@ -359,11 +360,7 @@ def _finish_row(
     # admitted repair round, live mode included. The scripted-writer
     # collector only exists in self-test mode, so it can never be the sole
     # source -- that gap is exactly what made live reports show 0 repairs.
-    repair_rows = [
-        row
-        for row in manifest.get("completion_repair_context", [])
-        if isinstance(row, dict)
-    ]
+    repair_rows = [row for row in manifest.get("completion_repair_context", []) if isinstance(row, dict)]
     done = event.get("stop_reason") == "done"
     blocked = event.get("stop_reason") == "blocked"
     if independent_ok is None:
@@ -382,9 +379,7 @@ def _finish_row(
         "blocked_honestly": bool(blocked and not independent_ok),
         "unnecessary_repair": bool(repair_rounds > 0 and initial_proof.get("satisfied")),
         "repair_rounds": repair_rounds,
-        "repair_success": bool(
-            repair_rounds > 0 and done and independent_ok
-        ),
+        "repair_success": bool(repair_rounds > 0 and done and independent_ok),
         "regression_after_repair": bool(
             repair_rounds > 0 and independent_ok and initial_proof.get("status") == "complete"
         ),
@@ -392,8 +387,7 @@ def _finish_row(
         # Live rows carry counts only (no prompt text); their bounded
         # summary_chars is the closest honest size signal.
         "repair_context_chars": max(
-            [len(t) for t in texts]
-            + [int(row.get("summary_chars") or 0) for row in repair_rows],
+            [len(t) for t in texts] + [int(row.get("summary_chars") or 0) for row in repair_rows],
             default=0,
         ),
         "writer_phases": writer_phases,
@@ -423,15 +417,17 @@ def run_self_test() -> None:
                     for patch in patches:
                         patch.start()
                     try:
-                        runner.run(TaskRequest(
-                            f"s-ab-{case_name}",
-                            str(project),
-                            "Change the module and verify",
-                            8,
-                            False,
-                            "deepseek",
-                            intent="project",
-                        ))
+                        runner.run(
+                            TaskRequest(
+                                f"s-ab-{case_name}",
+                                str(project),
+                                "Change the module and verify",
+                                8,
+                                False,
+                                "deepseek",
+                                intent="project",
+                            )
+                        )
                     finally:
                         for patch in patches:
                             patch.stop()
@@ -448,9 +444,7 @@ def run_self_test() -> None:
                     elapsed_s=time.monotonic() - started,
                     # Control runs only the first scripted phase, so its
                     # ground truth is that phase's workspace state.
-                    independent_ok=case.phase_ok[
-                        0 if arm == "control_done" else len(case.phase_ok) - 1
-                    ],
+                    independent_ok=case.phase_ok[0 if arm == "control_done" else len(case.phase_ok) - 1],
                 )
             expected = SELF_TEST_MATRIX[(case_name, arm)]
             assert row["stop_reason"] == expected[0], (case_name, arm, row)
@@ -492,14 +486,10 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 arm_rows,
                 lambda r: bool(r.get("unnecessary_repair")),
             ),
-            "regression_after_repair_count": sum(
-                1 for r in arm_rows if r.get("regression_after_repair")
-            ),
+            "regression_after_repair_count": sum(1 for r in arm_rows if r.get("regression_after_repair")),
             "total_repair_rounds": sum(int_field(r, "repair_rounds") for r in arm_rows),
             "repair_success_rate": rate(repaired, lambda r: bool(r.get("repair_success"))),
-            "repair_context_chars_total": sum(
-                int_field(r, "repair_context_chars") for r in arm_rows
-            ),
+            "repair_context_chars_total": sum(int_field(r, "repair_context_chars") for r in arm_rows),
         }
     return summary
 
@@ -512,19 +502,13 @@ LIVE_CASES: dict[str, dict[str, Any]] = {
     # only produce a claim-only done -- control records a false completion,
     # enforcement blocks it.
     "premature_done_no_test": {
-        "task": (
-            "In src/mod.py change VALUE from 1 to 2. Do not run any "
-            "commands; report done once edited."
-        ),
+        "task": ("In src/mod.py change VALUE from 1 to 2. Do not run any commands; report done once edited."),
         "docs_only": False,
         "expected_ok": True,
     },
     # Index 2: a failing test exists; a correct edit fixes it.
     "fresh_failing_test_after_edit": {
-        "task": (
-            "In src/mod.py change VALUE from 1 to 2 so the failing test "
-            "passes. Run the project's verification."
-        ),
+        "task": ("In src/mod.py change VALUE from 1 to 2 so the failing test passes. Run the project's verification."),
         "docs_only": False,
         "expected_ok": True,
     },
@@ -593,17 +577,19 @@ def _live_error_row(
     elapsed_s: float,
 ) -> dict[str, Any]:
     failure_class = classify_ab_failure(exc)
+    provider_failure = classify_provider_failure(
+        sends=tracing_provider.send_index,
+        replies=tracing_provider.reply_count,
+        error=exc,
+    )
     return {
         "case": case_name,
         "arm": arm,
         "error": f"{type(exc).__name__}: {exc}",
         "stop_reason": "error",
-        "provider_error_class": (
-            failure_class if failure_class == AB_FAILURE_PROVIDER else AB_FAILURE_NONE
-        ),
-        "codey_failure_class": (
-            failure_class if failure_class == AB_FAILURE_CODEY else AB_FAILURE_NONE
-        ),
+        "provider_error_class": (failure_class if failure_class == AB_FAILURE_PROVIDER else AB_FAILURE_NONE),
+        "codey_failure_class": (failure_class if failure_class == AB_FAILURE_CODEY else AB_FAILURE_NONE),
+        "provider_failure_class": provider_failure,
         "false_completion": False,
         "blocked_honestly": False,
         "unnecessary_repair": False,
@@ -636,50 +622,47 @@ def run_live(
     from codey.providers.registry import connect_provider
 
     import time
+
     raw_provider = None
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
     stamp = time.strftime("%Y%m%dT%H%M%S")
     out = output or results_dir / f"completion_enforcement_ab_{provider_id}_{stamp}.json"
-    report = load_or_new_payload(
+    layout = ArmRunLayout.for_output(out)
+    store = ResultRowStore.open(
         out,
         probe="completion_enforcement_ab",
         provider_id=provider_id,
         cases=case_names,
         arms=arms,
+        summarize=summarize,
     )
-    normalize_payload_metadata(report, provider_id=provider_id, cases=case_names, arms=arms)
-    rows = report["rows"] if isinstance(report.get("rows"), list) else []
-    report["rows"] = rows
-    existing = {
-        (str(row.get("case") or ""), str(row.get("arm") or ""))
-        for row in rows
-        if not row.get("error") or not rerun_failed
-    }
+    report = store.payload
     pending = [
         (case_name, arm)
-        for case_name in case_names
-        for arm in arms
-        if (case_name, arm) not in existing
-    ]
-    report["summary"] = summarize(rows)
-    report["updated_at"] = timestamp()
-    report["ok"] = not any(row.get("error") for row in rows)
-    if not pending:
-        report["complete"] = True
-        write_payload_bounded(out, report)
-        write_arm_manifest(out, build_arm_manifest(
-            suite="completion_enforcement_ab",
-            provider=provider_id,
-            arms=arms,
+        for case_name, arm, _repeat in store.pending_keys(
             cases=case_names,
-            max_turns=max_turns,
-            journal_dir=out.parent / f"{out.stem}-journal",
-            transcript_mode=transcript_mode,
-            started_at=str(report.get("started_at") or timestamp()),
-            finished_at=timestamp(),
-            stop_reason="already_complete",
-        ))
+            arms=arms,
+            rerun_failed=rerun_failed,
+        )
+    ]
+    if not pending:
+        store.write(complete=True, extra={"finished_at": timestamp()})
+        write_arm_manifest(
+            out,
+            build_arm_manifest(
+                suite="completion_enforcement_ab",
+                provider=provider_id,
+                arms=arms,
+                cases=case_names,
+                max_turns=max_turns,
+                journal_dir=layout.journal_dir if layout.journal_dir.exists() else None,
+                transcript_mode=transcript_mode,
+                started_at=str(report.get("started_at") or timestamp()),
+                finished_at=timestamp(),
+                stop_reason="already_complete",
+            ),
+        )
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case_names)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
@@ -689,7 +672,6 @@ def run_live(
     report["complete"] = False
     journal: ABJournalWriter | None = None
     run_finished = False
-    rows_recorded_this_run = 0
 
     try:
         raw_provider = connect_provider(provider_id, port=port)
@@ -702,7 +684,7 @@ def run_live(
             case_names=case_names,
             arms=arms,
         )
-        write_payload_bounded(out, report)
+        store.write(complete=False)
         for case_name, arm in pending:
             spec = LIVE_CASES[case_name]
             started = time.monotonic()
@@ -729,15 +711,17 @@ def run_live(
                         for patch in patches:
                             patch.start()
                         try:
-                            runner.run(TaskRequest(
-                                f"s-ab-live-{case_name}",
-                                str(project),
-                                spec["task"],
-                                max_turns,
-                                False,
-                                provider_id,
-                                intent="project",
-                            ))
+                            runner.run(
+                                TaskRequest(
+                                    f"s-ab-live-{case_name}",
+                                    str(project),
+                                    spec["task"],
+                                    max_turns,
+                                    False,
+                                    provider_id,
+                                    intent="project",
+                                )
+                            )
                         finally:
                             for patch in patches:
                                 patch.stop()
@@ -765,8 +749,8 @@ def run_live(
                     tracing_provider=tracing_provider,
                     elapsed_s=time.monotonic() - started,
                 )
-            _append_or_replace_failed_row(rows, row, rerun_failed=rerun_failed)
-            rows_recorded_this_run += 1
+            bind_row_evidence_refs(row, layout=layout, tracing_provider=tracing_provider)
+            row["provider"] = provider_id
             if journal is not None:
                 journal.record_case_complete(
                     case=case_name,
@@ -782,41 +766,40 @@ def run_live(
                         "turns": row.get("turns"),
                     },
                 )
-            report["summary"] = summarize(rows)
-            report["ok"] = not any(row.get("error") for row in rows)
-            report["updated_at"] = timestamp()
-            write_payload_bounded(out, report)
+            store.upsert(row, complete=False)
             print(
                 f"[{case_name} {arm}] stop={row['stop_reason']} "
                 f"independent_ok={row['independent_ok']} "
                 f"repairs={row['repair_rounds']}"
             )
-        report["complete"] = True
-        report["finished_at"] = timestamp()
-        report["summary"] = summarize(rows)
-        report["ok"] = not any(row.get("error") for row in rows)
-        write_payload_bounded(out, report)
-        write_arm_manifest(out, build_arm_manifest(
-            suite="completion_enforcement_ab",
-            provider=provider_id,
-            arms=arms,
-            cases=case_names,
-            max_turns=max_turns,
-            journal_dir=out.parent / f"{out.stem}-journal",
-            transcript_mode=transcript_mode,
-            started_at=str(report.get("started_at") or timestamp()),
-            finished_at=str(report.get("finished_at") or timestamp()),
-            stop_reason="complete" if report["ok"] else "rows_failed",
-        ))
+        store.write(complete=True, extra={"finished_at": timestamp()})
+        write_arm_manifest(
+            out,
+            build_arm_manifest(
+                suite="completion_enforcement_ab",
+                provider=provider_id,
+                arms=arms,
+                cases=case_names,
+                max_turns=max_turns,
+                journal_dir=journal_directory_for_output(out) if journal is not None else None,
+                transcript_mode=transcript_mode,
+                started_at=str(report.get("started_at") or timestamp()),
+                finished_at=str(report.get("finished_at") or timestamp()),
+                stop_reason="complete" if report["ok"] else "rows_failed",
+            ),
+        )
         if journal is not None:
             journal.record_run_complete(
-                rows=len(rows),
-                status="failed" if any(row.get("error") for row in rows) else "done",
+                rows=len(store.rows),
+                status="failed" if any(row.get("error") for row in store.rows) else "done",
             )
         run_finished = True
     finally:
-        if not run_finished and journal is not None and rows_recorded_this_run:
-            journal.record_run_complete(rows=len(rows), status="failed")
+        if not run_finished and journal is not None:
+            try:
+                journal.record_run_complete(rows=len(store.rows), status="failed")
+            except Exception:
+                pass
         if raw_provider is not None:
             try:
                 raw_provider.close()
@@ -830,9 +813,7 @@ def run_live(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="A/B for verified completion enforcement + repair context."
-    )
+    parser = argparse.ArgumentParser(description="A/B for verified completion enforcement + repair context.")
     parser.add_argument("--provider", default="deepseek")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--cases", default="", help="e.g. 2-3 or 1,3")
@@ -844,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=("off", "digest-only", "archive"),
         default="digest-only",
         help="digest-only keeps prompt/reply hashes; archive stores bounded "
-             "manual-layer transcripts; off disables the journal",
+        "manual-layer transcripts; off disables the journal",
     )
     parser.add_argument(
         "--rerun-failed",

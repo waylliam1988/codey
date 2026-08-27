@@ -44,7 +44,10 @@ if __package__ in (None, ""):
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
+    ArmRunLayout,
+    ResultRowStore,
     TracingProvider,
+    bind_row_evidence_refs,
     build_arm_manifest,
     open_journal_for_output,
     timestamp,
@@ -93,29 +96,21 @@ DEFAULT_CASES = (
     ContinuityCase(name="empty-state-stays-baseline", expected_mode="", task="hello"),
     ContinuityCase(
         name="old-claim-must-be-rechecked",
-        seed_note_open_question=(
-            "Should provider recovery be re-checked against fresh sources?"
-        ),
+        seed_note_open_question=("Should provider recovery be re-checked against fresh sources?"),
         seed_prior_claim=True,
     ),
     ContinuityCase(
         name="open-question-improves-next-search",
-        seed_note_open_question=(
-            "Which 2026 sources track helium supply constraints?"
-        ),
+        seed_note_open_question=("Which 2026 sources track helium supply constraints?"),
     ),
     ContinuityCase(
         name="preference-hint-affects-framing-only",
-        seed_note_open_question=(
-            "Do shorter summaries change source coverage?"
-        ),
+        seed_note_open_question=("Do shorter summaries change source coverage?"),
         seed_preference=True,
     ),
     ContinuityCase(
         name="missing-ghost-store-still-uses-interests",
-        seed_note_open_question=(
-            "Should interest leads survive a missing continuity store?"
-        ),
+        seed_note_open_question=("Should interest leads survive a missing continuity store?"),
         drop_ghost_store=True,
     ),
 )
@@ -186,11 +181,42 @@ def run_cases(
     live: bool = False,
     max_turns: int = 8,
     journal: ABJournalWriter | None = None,
+    rerun_failed: bool = False,
 ) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
-    _write_progress(output, provider_id, rows, complete=False)
+    layout = ArmRunLayout.for_output(output) if output is not None else None
+    store = (
+        ResultRowStore.open(
+            output,
+            probe="ghost_research_continuity_ab",
+            provider_id=provider_id,
+            cases=cases,
+            arms=ARMS,
+            summarize=lambda rows: _payload(provider_id, rows, complete=True)["summary"],
+            ok=lambda rows, complete: bool(_payload(provider_id, rows, complete=complete)["ok"]),
+        )
+        if output is not None
+        else None
+    )
+    rows = store.rows if store is not None else []
+    pending = (
+        [
+            (case_name, arm)
+            for case_name, arm, _repeat in store.pending_keys(
+                cases=cases,
+                arms=ARMS,
+                rerun_failed=rerun_failed,
+            )
+        ]
+        if store is not None
+        else [(case.name, arm) for case in cases for arm in ARMS]
+    )
+    pending_set = set(pending)
+    if store is not None:
+        store.write(complete=False)
     for case in cases:
         for arm in ARMS:
+            if (case.name, arm) not in pending_set:
+                continue
             row = _run_case(
                 case,
                 arm=arm,
@@ -199,8 +225,8 @@ def run_cases(
                 live=live,
                 max_turns=max_turns,
                 journal=journal,
+                layout=layout,
             )
-            rows.append(row)
             if journal is not None:
                 journal.record_case_complete(
                     case=case.name,
@@ -211,14 +237,19 @@ def run_cases(
                         "failure_class": str(row.get("failure_class") or ""),
                     },
                 )
-            _write_progress(output, provider_id, rows, complete=False)
+            if store is not None:
+                store.upsert(row, complete=False)
+            else:
+                rows.append(row)
     payload = _payload(provider_id, rows, complete=True)
     if journal is not None:
         journal.record_run_complete(
             rows=len(rows),
             status="done" if payload.get("ok") else "failed",
         )
-    _write_progress(output, provider_id, rows, complete=True)
+    if store is not None:
+        store.write(complete=True)
+        payload = store.payload
     return payload
 
 
@@ -231,6 +262,7 @@ def _run_case(
     live: bool = False,
     max_turns: int = 8,
     journal: ABJournalWriter | None = None,
+    layout: ArmRunLayout | None = None,
 ) -> dict[str, Any]:
     started = time.time()
     gate_open = arm == "continuity"
@@ -296,6 +328,7 @@ def _run_case(
         runner._build_research_context = spy_build_context
 
         if not live:
+
             def research_task(**kwargs):
                 question = str(kwargs.get("task") or "research")
                 record = _proof_record(question, run_id=str(kwargs.get("run_id") or ""))
@@ -329,15 +362,19 @@ def _run_case(
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(state, "get_provider", return_value=tracing_provider))
                 if not live and seeded_interest_candidates:
-                    stack.enter_context(mock.patch(
-                        "codey.app.task_runner.build_research_interest_candidates",
-                        return_value=seeded_interest_candidates,
-                    ))
+                    stack.enter_context(
+                        mock.patch(
+                            "codey.app.task_runner.build_research_interest_candidates",
+                            return_value=seeded_interest_candidates,
+                        )
+                    )
                 if not gate_open:
-                    stack.enter_context(mock.patch(
-                        "codey.app.task_runner.allows_context_source",
-                        return_value=False,
-                    ))
+                    stack.enter_context(
+                        mock.patch(
+                            "codey.app.task_runner.allows_context_source",
+                            return_value=False,
+                        )
+                    )
                 request = TaskRequest(
                     session_id=session_id,
                     project=project,
@@ -367,14 +404,8 @@ def _run_case(
 
     admitted_text = admission_results[0][0] if admission_results else ""
     payload = admission_results[0][1] if admission_results else None
-    context_text = (
-        research_contexts[0].topic_continuity_context
-        if research_contexts else ""
-    )
-    stale_rows = [
-        row for row in ((payload or {}).get("items") or [])
-        if row.get("stale")
-    ]
+    context_text = research_contexts[0].topic_continuity_context if research_contexts else ""
+    stale_rows = [row for row in ((payload or {}).get("items") or []) if row.get("stale")]
     observed_mode = "research" if research_ran else str(done.get("mode") or "chat")
     leaked = _leaked_internal_terms(admitted_text, str(done.get("summary") or ""))
     exact = not error and not leaked
@@ -391,10 +422,7 @@ def _run_case(
         exact = exact and not admitted_text
     exact = exact and not leaked
     raw_payload = json.dumps(payload or {}, ensure_ascii=False)
-    seeded_question_leaked = bool(
-        case.seed_note_open_question
-        and case.seed_note_open_question in raw_payload
-    )
+    seeded_question_leaked = bool(case.seed_note_open_question and case.seed_note_open_question in raw_payload)
     row: dict[str, Any] = {
         "case": case.name,
         "arm": arm,
@@ -414,9 +442,7 @@ def _run_case(
         "elapsed": round(time.time() - started, 3),
     }
     if case.seed_prior_claim:
-        row["prior_claim_flagged"] = any(
-            stale_row.get("kind") == "prior_claim" for stale_row in stale_rows
-        )
+        row["prior_claim_flagged"] = any(stale_row.get("kind") == "prior_claim" for stale_row in stale_rows)
     if live:
         stop_reason = str(done.get("stop_reason") or "")
         send_error_text = error
@@ -428,7 +454,8 @@ def _run_case(
         row["prompt_chars"] = int(getattr(tracing_provider, "prompt_chars", 0) or 0)
         row["reply_chars"] = int(getattr(tracing_provider, "reply_chars", 0) or 0)
         row["failure_class"] = (
-            "ok" if exact and not error
+            "ok"
+            if exact and not error
             else classify_outcome(
                 sends=row["sends"],
                 replies=row["replies"],
@@ -436,6 +463,8 @@ def _run_case(
                 stop_reason=stop_reason or observed_mode,
             )
         )
+    if layout is not None:
+        bind_row_evidence_refs(row, layout=layout, tracing_provider=tracing_provider)
     return row
 
 
@@ -453,18 +482,20 @@ def _seed_case(
 ) -> tuple[Any, ...]:
     assert state.knowledge_store is not None
     if case.seed_note_open_question:
-        state.knowledge_store.write_note(KnowledgeNote.create(
-            id=f"synthesis-{case.name}",
-            type="synthesis",
-            title="Continuity synthesis",
-            body="Research synthesis with an open follow-up.",
-            open_questions=[case.seed_note_open_question],
-            tags=["research"],
-            session_id=session_id,
-            # Production syntheses carry the resolved project so scoped
-            # continuity queries can find them.
-            project=project,
-        ))
+        state.knowledge_store.write_note(
+            KnowledgeNote.create(
+                id=f"synthesis-{case.name}",
+                type="synthesis",
+                title="Continuity synthesis",
+                body="Research synthesis with an open follow-up.",
+                open_questions=[case.seed_note_open_question],
+                tags=["research"],
+                session_id=session_id,
+                # Production syntheses carry the resolved project so scoped
+                # continuity queries can find them.
+                project=project,
+            )
+        )
     if case.seed_prior_claim:
         _seed_prior_claim(state, session_id=session_id, project=project)
     if case.seed_preference:
@@ -473,15 +504,21 @@ def _seed_case(
         assert state.ghost_inbox is not None
         assert state.ghost_hebbian is not None
         created = state.ghost_inbox.ingest_signals(
-            GhostSignalParseResult(signals=(GhostSignal(
-                kind="style_preference",
-                scope="session",
-                summary="Prefer concise summaries with numbered sources.",
-                evidence_quote="shorter please",
-                confidence=0.9,
-                metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                source="continuity-ab-seed",
-            ),), ok=True, provider_id="continuity-ab-seed"),
+            GhostSignalParseResult(
+                signals=(
+                    GhostSignal(
+                        kind="style_preference",
+                        scope="session",
+                        summary="Prefer concise summaries with numbered sources.",
+                        evidence_quote="shorter please",
+                        confidence=0.9,
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                        source="continuity-ab-seed",
+                    ),
+                ),
+                ok=True,
+                provider_id="continuity-ab-seed",
+            ),
             session_id=session_id,
             run_id=f"seed-{case.name}",
             user_text="shorter please",
@@ -489,9 +526,7 @@ def _seed_case(
         reviewed = state.ghost_inbox.review_candidate(created[0].id, "accept", reviewed_by="seed")
         if reviewed is not None:
             state.ghost_hebbian.reinforce_candidate(reviewed)
-    if state.ghost_continuity is not None and (
-        case.seed_note_open_question or case.seed_preference
-    ):
+    if state.ghost_continuity is not None and (case.seed_note_open_question or case.seed_preference):
         state.ghost_continuity.sync_from_sources(
             knowledge_store=state.knowledge_store,
             hebbian_store=getattr(state, "ghost_hebbian", None),
@@ -542,11 +577,16 @@ def _seed_prior_claim(
         f"[1] Prior claim article - {url}"
     )
     ledger = ResearchLedger()
-    ledger.record_search("provider recovery", [{
-        "title": "Prior claim article",
-        "url": url,
-        "snippet": claim,
-    }])
+    ledger.record_search(
+        "provider recovery",
+        [
+            {
+                "title": "Prior claim article",
+                "url": url,
+                "snippet": claim,
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -554,12 +594,14 @@ def _seed_prior_claim(
         text=source_text,
     )
     prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": claim,
-            "source_url": url,
-            "excerpt": claim,
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": claim,
+                "source_url": url,
+                "excerpt": claim,
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim=claim,
         fallback_body=source_text,
@@ -617,11 +659,16 @@ def _proof_record(question: str, *, run_id: str):
         f"[1] Research proof article - {url}"
     )
     ledger = ResearchLedger()
-    ledger.record_search(question, [{
-        "title": "Research proof article",
-        "url": url,
-        "snippet": claim,
-    }])
+    ledger.record_search(
+        question,
+        [
+            {
+                "title": "Research proof article",
+                "url": url,
+                "snippet": claim,
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -629,12 +676,14 @@ def _proof_record(question: str, *, run_id: str):
         text=source_text,
     )
     prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": claim,
-            "source_url": url,
-            "excerpt": claim,
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": claim,
+                "source_url": url,
+                "excerpt": claim,
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim=claim,
         fallback_body=source_text,
@@ -676,12 +725,8 @@ def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) ->
         }
     continuity_rows = [row for row in rows if row.get("arm") == "continuity"]
     summary["attribution"] = {
-        "prior_claims_flagged": sum(
-            1 for row in continuity_rows if row.get("prior_claim_flagged")
-        ),
-        "context_carried": sum(
-            1 for row in continuity_rows if row.get("context_carried")
-        ),
+        "prior_claims_flagged": sum(1 for row in continuity_rows if row.get("prior_claim_flagged")),
+        "context_carried": sum(1 for row in continuity_rows if row.get("context_carried")),
     }
     failure_classes: dict[str, int] = {}
     for row in rows:
@@ -691,6 +736,7 @@ def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) ->
     summary["failure_classes"] = failure_classes
     ok = (
         complete
+        and bool(rows)
         and summary["continuity"]["exact"] == summary["continuity"]["total"]
         and summary["baseline"]["exact"] == summary["baseline"]["total"]
         and summary["continuity"]["internal_leaks"] == 0
@@ -704,22 +750,6 @@ def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) ->
         "summary": summary,
         "rows": rows,
     }
-
-
-def _write_progress(path: Path | None, provider_id: str, rows: list[dict[str, Any]], *, complete: bool) -> None:
-    if path is None:
-        return
-    _atomic_write_json(path, _payload(provider_id, rows, complete=complete))
-
-
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
-        handle.flush()
-    temporary.replace(path)
 
 
 def _selected_cases(names: list[str]) -> tuple[ContinuityCase, ...]:
@@ -737,7 +767,6 @@ def _open_journal(
     *,
     output: Path,
     provider_id: str,
-    stamp: str,
     transcript_mode: str,
     max_turns: int,
     case_names: list[str],
@@ -747,7 +776,6 @@ def _open_journal(
         output=output,
         experiment_id="ghost_research_continuity_ab",
         provider_id=provider_id,
-        run_id=f"{provider_id}-{stamp}",
         transcript_mode=transcript_mode,
         case_names=case_names,
         arms=ARMS,
@@ -760,24 +788,22 @@ def _self_test() -> None:
     if not payload["ok"]:
         raise AssertionError(json.dumps(payload["summary"], ensure_ascii=False))
     flagged = [
-        row for row in payload["rows"]
-        if row["case"] == "old-claim-must-be-rechecked"
-        and row["arm"] == "continuity"
+        row for row in payload["rows"] if row["case"] == "old-claim-must-be-rechecked" and row["arm"] == "continuity"
     ]
     if not flagged or not flagged[0].get("prior_claim_flagged"):
         raise AssertionError("old claim was not carried as a stale ref")
-    assert classify_outcome(
-        sends=1, replies=0, send_error_text="", stop_reason=""
-    ) == "native_search_stall_suspected"
-    assert classify_outcome(
-        sends=0, replies=0, send_error_text="ConnectionError: x", stop_reason=""
-    ) == "provider_send_error"
-    assert classify_outcome(
-        sends=1, replies=0, send_error_text="TimeoutError: send", stop_reason=""
-    ) == "native_search_stall_suspected"
-    assert classify_outcome(
-        sends=3, replies=3, send_error_text="", stop_reason="max_turns"
-    ) == "planner_quality:max_turns"
+    assert classify_outcome(sends=1, replies=0, send_error_text="", stop_reason="") == "native_search_stall_suspected"
+    assert (
+        classify_outcome(sends=0, replies=0, send_error_text="ConnectionError: x", stop_reason="")
+        == "provider_send_error"
+    )
+    assert (
+        classify_outcome(sends=1, replies=0, send_error_text="TimeoutError: send", stop_reason="")
+        == "native_search_stall_suspected"
+    )
+    assert (
+        classify_outcome(sends=3, replies=3, send_error_text="", stop_reason="max_turns") == "planner_quality:max_turns"
+    )
     print("self-test ok")
 
 
@@ -789,13 +815,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        help="with a fixed --output, rerun rows that already contain an error",
+    )
+    parser.add_argument(
         "--transcript-mode",
         choices=TRANSCRIPT_MODES,
         default="digest-only",
         help="digest-only keeps hashes (default, minimal retention); archive "
-             "additionally stores full prompt/reply transcripts for offline "
-             "prompt-lab diagnosis; off disables journaling entirely "
-             "(manual layer only, never release evidence)",
+        "additionally stores full prompt/reply transcripts for offline "
+        "prompt-lab diagnosis; off disables journaling entirely "
+        "(manual layer only, never release evidence)",
     )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
@@ -808,19 +839,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.provider == "fake":
         # Offline stubs produce no transcript-worthy traffic: journaling
         # stays off regardless of --transcript-mode.
-        payload = run_cases(provider_id="fake", cases=cases)
         output = args.output or RESULTS_DIR / "ghost_research_continuity_ab_offline.json"
-        _atomic_write_json(output, payload)
+        payload = run_cases(
+            provider_id="fake",
+            cases=cases,
+            output=output,
+            rerun_failed=bool(args.rerun_failed),
+        )
     else:
         stamp = time.strftime("%Y%m%dT%H%M%S")
-        output = args.output or RESULTS_DIR / (
-            f"ghost_research_continuity_live_{args.provider}_{stamp}.json"
-        )
+        output = args.output or RESULTS_DIR / (f"ghost_research_continuity_live_{args.provider}_{stamp}.json")
         journal = _open_journal(
             output=output,
             provider_id=str(args.provider),
-            stamp=stamp,
-            transcript_mode=str(args.transcript_mode),
+            transcript_mode="off" if args.provider == "fake" else str(args.transcript_mode),
             max_turns=max(4, int(args.max_turns)),
             case_names=[case.name for case in cases],
         )
@@ -828,34 +860,35 @@ def main(argv: list[str] | None = None) -> int:
             payload = run_cases(
                 provider_id=str(args.provider),
                 cases=cases,
-                provider_factory=lambda _label: connect_fresh_provider_tab(
-                    args.provider, port=args.port
-                ),
+                provider_factory=lambda _label: connect_fresh_provider_tab(args.provider, port=args.port),
                 live=True,
                 max_turns=max(4, int(args.max_turns)),
                 journal=journal,
+                output=output,
+                rerun_failed=bool(args.rerun_failed),
             )
         finally:
             if journal is not None:
                 journal.close()
-        _atomic_write_json(output, payload)
-    write_arm_manifest(output, build_arm_manifest(
-        suite="ghost_research_continuity_ab",
-        provider=str(args.provider),
-        arms=ARMS,
-        cases=[case.name for case in cases],
-        max_turns=max(4, int(args.max_turns)),
-        journal_dir=(
-            output.parent / f"{output.stem}-journal"
-            if str(args.transcript_mode) != "off" and args.provider != "fake"
-            else None
+    layout = ArmRunLayout.for_output(output)
+    write_arm_manifest(
+        output,
+        build_arm_manifest(
+            suite="ghost_research_continuity_ab",
+            provider=str(args.provider),
+            arms=ARMS,
+            cases=[case.name for case in cases],
+            max_turns=max(4, int(args.max_turns)),
+            journal_dir=(
+                layout.journal_dir if str(args.transcript_mode) != "off" and args.provider != "fake" else None
+            ),
+            transcript_mode=str(args.transcript_mode),
+            started_at=str(payload.get("started_at") or ""),
+            finished_at=str(payload.get("finished_at") or timestamp()),
+            stop_reason="done" if payload.get("ok") else "failed",
+            codey_failure_class=AB_FAILURE_NONE if payload.get("ok") else AB_FAILURE_CODEY,
         ),
-        transcript_mode=str(args.transcript_mode),
-        started_at=str(payload.get("started_at") or ""),
-        finished_at=str(payload.get("finished_at") or timestamp()),
-        stop_reason="done" if payload.get("ok") else "failed",
-        codey_failure_class=AB_FAILURE_NONE if payload.get("ok") else AB_FAILURE_CODEY,
-    ))
+    )
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
     return 0 if payload.get("ok") else 1
 

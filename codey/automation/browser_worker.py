@@ -18,6 +18,7 @@ from codey.runtime import cancellation
 
 T = TypeVar("T")
 _POLL_INTERVAL = 0.05
+DEFAULT_STUCK_AFTER_SECONDS = 30.0
 
 
 class _JobState(Enum):
@@ -41,10 +42,50 @@ class _Job:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
+@dataclass(frozen=True)
+class BrowserWorkerHealth:
+    state: str
+    queue_size: int
+    current_job_state: str
+    running_for_seconds: float
+    stuck_after_seconds: float
+    stuck_detected: bool
+    completed_jobs: int
+    failed_jobs: int
+    cancelled_jobs: int
+    thread_alive: bool
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "queue_size": self.queue_size,
+            "current_job_state": self.current_job_state,
+            "running_for_seconds": round(self.running_for_seconds, 3),
+            "stuck_after_seconds": round(self.stuck_after_seconds, 3),
+            "stuck_detected": self.stuck_detected,
+            "completed_jobs": self.completed_jobs,
+            "failed_jobs": self.failed_jobs,
+            "cancelled_jobs": self.cancelled_jobs,
+            "thread_alive": self.thread_alive,
+        }
+
+
 class BrowserWorker:
-    def __init__(self, *, name: str = "codey-browser") -> None:
+    def __init__(
+        self,
+        *,
+        name: str = "codey-browser",
+        stuck_after_seconds: float = DEFAULT_STUCK_AFTER_SECONDS,
+    ) -> None:
         self._queue: queue.Queue[_Job] = queue.Queue()
         self._thread_id: int | None = None
+        self._stuck_after_seconds = max(_POLL_INTERVAL, float(stuck_after_seconds))
+        self._state_lock = threading.Lock()
+        self._current_job: _Job | None = None
+        self._current_started_at = 0.0
+        self._completed_jobs = 0
+        self._failed_jobs = 0
+        self._cancelled_jobs = 0
         self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
         self._thread.start()
 
@@ -54,21 +95,74 @@ class BrowserWorker:
             job = self._queue.get()
             with job.lock:
                 if job.state == _JobState.CANCELLED:
+                    with self._state_lock:
+                        self._cancelled_jobs += 1
                     job.done.set()
                     continue
                 job.state = _JobState.RUNNING
+            with self._state_lock:
+                self._current_job = job
+                self._current_started_at = time.monotonic()
 
+            failed = False
             try:
                 with cancellation.scope(job.cancel_event):
                     with cancellation.deadline_scope(job.deadline):
                         job.slot.append(job.fn(*job.args, **job.kwargs))
             except Exception as exc:
+                failed = True
                 job.slot.append(exc)
             finally:
                 with job.lock:
                     if job.state != _JobState.CANCELLED:
                         job.state = _JobState.COMPLETED
+                    final_state = job.state
+                with self._state_lock:
+                    if self._current_job is job:
+                        self._current_job = None
+                        self._current_started_at = 0.0
+                    if final_state == _JobState.CANCELLED:
+                        self._cancelled_jobs += 1
+                    elif failed:
+                        self._failed_jobs += 1
+                    else:
+                        self._completed_jobs += 1
                 job.done.set()
+
+    def health_snapshot(self, *, now: float | None = None) -> BrowserWorkerHealth:
+        """Return passive worker health without restarting or mutating jobs."""
+
+        observed_at = time.monotonic() if now is None else float(now)
+        with self._state_lock:
+            current = self._current_job
+            started_at = self._current_started_at
+            completed_jobs = self._completed_jobs
+            failed_jobs = self._failed_jobs
+            cancelled_jobs = self._cancelled_jobs
+        current_state = ""
+        running_for = 0.0
+        stuck = False
+        state = "idle"
+        if current is not None:
+            with current.lock:
+                job_state = current.state
+            current_state = job_state.value
+            if started_at:
+                running_for = max(0.0, observed_at - started_at)
+            stuck = job_state == _JobState.CANCELLATION_REQUESTED and running_for >= self._stuck_after_seconds
+            state = "stuck" if stuck else job_state.value
+        return BrowserWorkerHealth(
+            state=state,
+            queue_size=max(0, int(self._queue.qsize())),
+            current_job_state=current_state,
+            running_for_seconds=running_for,
+            stuck_after_seconds=self._stuck_after_seconds,
+            stuck_detected=stuck,
+            completed_jobs=completed_jobs,
+            failed_jobs=failed_jobs,
+            cancelled_jobs=cancelled_jobs,
+            thread_alive=self._thread.is_alive(),
+        )
 
     def submit(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
         """Schedule work on the browser thread without blocking the caller."""
@@ -161,3 +255,7 @@ def submit(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
 
 def call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     return WORKER.call(fn, *args, **kwargs)
+
+
+def health_snapshot() -> BrowserWorkerHealth:
+    return WORKER.health_snapshot()

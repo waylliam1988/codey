@@ -21,7 +21,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 from tests.manual.ab_journal import (
     TRANSCRIPT_MODE_ARCHIVE,
@@ -46,6 +46,97 @@ AB_FAILURE_CLASSES = (
     AB_FAILURE_ENVIRONMENT,
 )
 
+PROVIDER_FAILURE_NONE = "none"
+PROVIDER_FAILURE_SEND_ERROR = "provider_send_error"
+PROVIDER_FAILURE_NO_REPLY = "provider_no_reply"
+PROVIDER_FAILURE_NATIVE_SEARCH_STALL = "native_search_stall"
+PROVIDER_FAILURE_WEBPAGE_UI_CHANGED = "webpage_ui_changed"
+PROVIDER_FAILURE_UNKNOWN = "unknown"
+PROVIDER_FAILURE_CLASSES = (
+    PROVIDER_FAILURE_NONE,
+    PROVIDER_FAILURE_SEND_ERROR,
+    PROVIDER_FAILURE_NO_REPLY,
+    PROVIDER_FAILURE_NATIVE_SEARCH_STALL,
+    PROVIDER_FAILURE_WEBPAGE_UI_CHANGED,
+    PROVIDER_FAILURE_UNKNOWN,
+)
+
+
+@dataclass(frozen=True)
+class ArmRunLayout:
+    """Stable file layout for one provider/suite/arm result output."""
+
+    output_json: Path
+    journal_dir: Path
+    manifest_path: Path
+    transcript_dir: Path
+
+    @classmethod
+    def for_output(cls, output: Path, *, journal_dir: Path | None = None) -> "ArmRunLayout":
+        output_path = Path(output)
+        trace_dir = Path(journal_dir) if journal_dir is not None else journal_directory_for_output(output_path)
+        return cls(
+            output_json=output_path,
+            journal_dir=trace_dir,
+            manifest_path=output_path.with_name(f"{output_path.stem}-manifest.json"),
+            transcript_dir=trace_dir / "transcripts",
+        )
+
+
+@dataclass(frozen=True)
+class ArmManifest:
+    """Human/audit-readable manifest bound to a result JSON."""
+
+    suite: str
+    provider: str
+    arms: tuple[str, ...]
+    cases: tuple[str, ...]
+    max_turns: int
+    output_json: str
+    manifest_path: str
+    journal_dir: str
+    transcript_mode: str
+    transcript_dir: str
+    started_at: str
+    finished_at: str = ""
+    stop_reason: str = ""
+    provider_error_class: str = PROVIDER_FAILURE_NONE
+    codey_failure_class: str = AB_FAILURE_NONE
+    resumed_attempt: bool = False
+    attempt_index: int = 1
+    git_commit: str = ""
+    git_dirty: bool | None = None
+    dirty_state: str = "unknown"
+
+    def to_payload(self) -> dict[str, Any]:
+        if self.provider_error_class not in PROVIDER_FAILURE_CLASSES:
+            raise ValueError(f"unknown provider_error_class: {self.provider_error_class}")
+        if self.codey_failure_class not in AB_FAILURE_CLASSES:
+            raise ValueError(f"unknown codey_failure_class: {self.codey_failure_class}")
+        return {
+            "suite": self.suite,
+            "provider": self.provider,
+            "arms": list(self.arms),
+            "cases": list(self.cases),
+            "max_turns": max(1, int(self.max_turns)),
+            "output_json": self.output_json,
+            "manifest_path": self.manifest_path,
+            "journal_dir": self.journal_dir,
+            "transcript_mode": self.transcript_mode,
+            "transcript_dir": self.transcript_dir,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "stop_reason": self.stop_reason,
+            "provider_error_class": self.provider_error_class,
+            "codey_failure_class": self.codey_failure_class,
+            "resumed_attempt": bool(self.resumed_attempt),
+            "attempt_index": max(1, int(self.attempt_index)),
+            "git_commit": self.git_commit,
+            "git_dirty": self.git_dirty,
+            "dirty_state": self.dirty_state,
+        }
+
+
 # CLI transcript flags -> journal modes; "off" means no journal at all.
 TRANSCRIPT_MODE_FLAGS: dict[str, str | None] = {
     "off": None,
@@ -61,9 +152,7 @@ class OutputProviderMismatch(ValueError):
         self.path = path
         self.expected = expected
         self.found = found
-        super().__init__(
-            f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}"
-        )
+        super().__init__(f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}")
 
 
 class TracingProvider:
@@ -95,15 +184,14 @@ class TracingProvider:
         self.case = case
         self.arm = arm
         self.timeout = None if timeout is None else max(1.0, float(timeout))
-        self.new_chat_timeout = (
-            None if new_chat_timeout is None else max(1.0, float(new_chat_timeout))
-        )
+        self.new_chat_timeout = None if new_chat_timeout is None else max(1.0, float(new_chat_timeout))
         self.send_index = 0
         self.reply_count = 0
         self.prompt_chars = 0
         self.reply_chars = 0
         self.prompts: list[str] = []
         self.replies: list[str] = []
+        self.transcript_refs: list[dict[str, object]] = []
         self.last_turn = 0
         self.last_reply = ""
         self.name = getattr(provider, "name", "provider")
@@ -146,9 +234,8 @@ class TracingProvider:
         self.last_turn = turn
         self.last_reply = reply_text
         if self.journal is not None:
-            self.journal.record_reply(
-                case=self.case, arm=self.arm, turn=turn, prompt=prompt, reply=reply_text
-            )
+            event = self.journal.record_reply(case=self.case, arm=self.arm, turn=turn, prompt=prompt, reply=reply_text)
+            self.transcript_refs.append(dict(event.content_ref))
         return reply_text
 
     def _send_through(self, prompt: str, timeout: float | None) -> Any:
@@ -177,9 +264,7 @@ def interleaved_arm_schedule(arms: Sequence[str], repeats: int) -> list[tuple[st
 
 def expected_matrix_keys(cases: Sequence[str], repeats: int) -> set[tuple[str, int]]:
     repeat_count = max(1, int(repeats))
-    return {
-        (case, index + 1) for case in tuple(cases) for index in range(repeat_count)
-    }
+    return {(case, index + 1) for case in tuple(cases) for index in range(repeat_count)}
 
 
 def matrix_complete(
@@ -237,6 +322,127 @@ def write_payload_bounded(path: Path, payload: Mapping[str, Any]) -> None:
 
 def timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _row_key(row: Mapping[str, Any], *, provider_id: str = "") -> tuple[str, str, str, int]:
+    return (
+        str(provider_id or row.get("provider") or "").strip().lower(),
+        str(row.get("case") or "").strip(),
+        str(row.get("arm") or "").strip(),
+        max(1, int(row.get("repeat") or 1)),
+    )
+
+
+def transcript_path_for_row(
+    row: Mapping[str, Any],
+    *,
+    layout: ArmRunLayout | None = None,
+) -> Path | None:
+    """Return the archived transcript path referenced by a row, if any."""
+
+    raw_refs = row.get("transcript_refs") or row.get("transcript_ref") or ()
+    refs: Iterable[object]
+    if isinstance(raw_refs, Mapping):
+        refs = (raw_refs,)
+    elif isinstance(raw_refs, (list, tuple)):
+        refs = raw_refs
+    else:
+        refs = ()
+    for ref in refs:
+        if not isinstance(ref, Mapping):
+            continue
+        raw_path = str(ref.get("path") or "").strip()
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        if path.is_absolute():
+            return path
+        if layout is not None:
+            return layout.journal_dir / path
+        return path
+    return None
+
+
+def bind_row_evidence_refs(
+    row: dict[str, Any],
+    *,
+    layout: ArmRunLayout,
+    tracing_provider: TracingProvider | None = None,
+) -> dict[str, Any]:
+    """Attach result/journal/transcript refs without raw transcript content."""
+
+    row["output_json"] = str(layout.output_json)
+    row["journal_dir"] = str(layout.journal_dir)
+    refs = list(getattr(tracing_provider, "transcript_refs", []) or ())
+    if refs:
+        row["transcript_refs"] = refs
+        row["transcript_replayable"] = bool(refs) and all(
+            _transcript_ref_is_replayable(ref, layout=layout) for ref in refs
+        )
+    return row
+
+
+def _transcript_ref_is_replayable(ref: object, *, layout: ArmRunLayout) -> bool:
+    if not isinstance(ref, Mapping):
+        return False
+    raw_path = str(ref.get("path") or "").strip()
+    if not raw_path:
+        return False
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = layout.journal_dir / path
+    return path.is_file()
+
+
+def upsert_case_row(
+    rows: list[dict[str, Any]],
+    row: Mapping[str, Any],
+    *,
+    provider_id: str = "",
+) -> None:
+    """Replace an existing provider/case/arm/repeat row, then append new row."""
+
+    replacement = dict(row)
+    key = _row_key(replacement, provider_id=provider_id)
+    if not key[1] or not key[2]:
+        raise ValueError("row must include non-empty case and arm")
+    rows[:] = [existing for existing in rows if _row_key(existing, provider_id=provider_id) != key]
+    rows.append(replacement)
+
+
+def summarize_arm_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Generic summary for scripts without a richer domain scorer."""
+
+    by_arm: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        arm = str(row.get("arm") or "").strip() or "<unknown>"
+        item = by_arm.setdefault(
+            arm,
+            {
+                "total": 0,
+                "ok": 0,
+                "errors": 0,
+                "provider_failures": 0,
+                "codey_failures": 0,
+                "transcript_replayable": 0,
+            },
+        )
+        item["total"] += 1
+        if row.get("error"):
+            item["errors"] += 1
+        if row.get("ok") or row.get("success") or row.get("exact"):
+            item["ok"] += 1
+        if str(row.get("provider_failure_class") or "") not in ("", AB_FAILURE_NONE):
+            item["provider_failures"] += 1
+        if str(row.get("codey_failure_class") or "") not in ("", AB_FAILURE_NONE):
+            item["codey_failures"] += 1
+        if row.get("transcript_replayable"):
+            item["transcript_replayable"] += 1
+    return {
+        "rows": len(rows),
+        "errors": sum(1 for row in rows if row.get("error")),
+        "by_arm": by_arm,
+    }
 
 
 def merge_unique_names(*values: object) -> list[str]:
@@ -334,6 +540,117 @@ def load_or_new_payload(
     return new_payload(probe, provider_id=provider_id, cases=cases, arms=arms)
 
 
+class ResultRowStore:
+    """Resume-safe result JSON writer for one fixed manual A/B output.
+
+    The store never removes rows on disk while deciding what is pending. A
+    replacement row is first assembled in memory and only becomes visible via
+    the final atomic write, so a provider connection failure before the new row
+    exists leaves the previous report intact.
+    """
+
+    def __init__(
+        self,
+        output: Path,
+        payload: dict[str, Any],
+        *,
+        provider_id: str,
+        summarize: Callable[[list[dict[str, Any]]], Mapping[str, Any]] | None = None,
+        ok: Callable[[list[dict[str, Any]], bool], bool] | None = None,
+    ) -> None:
+        self.output = Path(output)
+        self.payload = payload
+        self.provider_id = str(provider_id or "").strip().lower()
+        self.summarize = summarize or summarize_arm_rows
+        self.ok = ok
+        rows = self.payload.get("rows")
+        if not isinstance(rows, list):
+            rows = []
+        self.payload["rows"] = [dict(row) for row in rows if isinstance(row, Mapping)]
+
+    @classmethod
+    def open(
+        cls,
+        output: Path,
+        *,
+        probe: str,
+        provider_id: str,
+        cases: Iterable[object],
+        arms: Sequence[str],
+        summarize: Callable[[list[dict[str, Any]]], Mapping[str, Any]] | None = None,
+        ok: Callable[[list[dict[str, Any]], bool], bool] | None = None,
+    ) -> "ResultRowStore":
+        payload = load_or_new_payload(
+            output,
+            probe=probe,
+            provider_id=provider_id,
+            cases=cases,
+            arms=arms,
+        )
+        normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
+        return cls(output, payload, provider_id=provider_id, summarize=summarize, ok=ok)
+
+    @property
+    def rows(self) -> list[dict[str, Any]]:
+        return self.payload["rows"]
+
+    def existing_keys(self, *, rerun_failed: bool = False) -> set[tuple[str, str, int]]:
+        keys: set[tuple[str, str, int]] = set()
+        for row in self.rows:
+            if rerun_failed and row.get("error"):
+                continue
+            _provider, case, arm, repeat = _row_key(row, provider_id=self.provider_id)
+            keys.add((case, arm, repeat))
+        return keys
+
+    def pending_keys(
+        self,
+        *,
+        cases: Iterable[object],
+        arms: Sequence[str],
+        repeats: int = 1,
+        rerun_failed: bool = False,
+    ) -> list[tuple[str, str, int]]:
+        existing = self.existing_keys(rerun_failed=rerun_failed)
+        names = case_names(cases)
+        repeat_count = max(1, int(repeats))
+        return [
+            (case, arm, repeat)
+            for case in names
+            for repeat in range(1, repeat_count + 1)
+            for arm in arms
+            if (case, str(arm), repeat) not in existing
+        ]
+
+    def upsert(
+        self,
+        row: Mapping[str, Any],
+        *,
+        complete: bool = False,
+        extra: Mapping[str, Any] | None = None,
+    ) -> None:
+        upsert_case_row(self.rows, row, provider_id=self.provider_id)
+        self.write(complete=complete, extra=extra)
+
+    def write(
+        self,
+        *,
+        complete: bool = False,
+        extra: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.payload["summary"] = dict(self.summarize(self.rows))
+        self.payload["ok"] = (
+            bool(self.ok(self.rows, bool(complete)))
+            if self.ok is not None
+            else not any(row.get("error") for row in self.rows)
+        )
+        self.payload["complete"] = bool(complete)
+        self.payload["updated_at"] = timestamp()
+        if extra:
+            self.payload.update(dict(extra))
+        write_payload_bounded(self.output, self.payload)
+
+
 def journal_directory_for_output(output: Path) -> Path:
     return journal_directory_for(output)
 
@@ -378,39 +695,60 @@ def build_arm_manifest(
     started_at: str,
     finished_at: str = "",
     stop_reason: str = "",
-    provider_error_class: str = AB_FAILURE_NONE,
+    provider_error_class: str = PROVIDER_FAILURE_NONE,
     codey_failure_class: str = AB_FAILURE_NONE,
+    resumed_attempt: bool = False,
+    attempt_index: int = 1,
     repo: Path | None = None,
 ) -> dict[str, Any]:
     """The fixed per-arm evidence schema every manual A/B must persist."""
 
-    if provider_error_class not in AB_FAILURE_CLASSES:
-        raise ValueError(f"unknown provider_error_class: {provider_error_class}")
-    if codey_failure_class not in AB_FAILURE_CLASSES:
-        raise ValueError(f"unknown codey_failure_class: {codey_failure_class}")
-    manifest: dict[str, Any] = {
-        "suite": str(suite or "").strip(),
-        "provider": str(provider or "").strip(),
-        "arms": [str(arm) for arm in arms],
-        "cases": [str(case) for case in cases],
-        "max_turns": max(1, int(max_turns)),
-        "journal_dir": str(journal_dir) if journal_dir is not None else "",
-        "transcript_mode": str(transcript_mode or "off"),
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "stop_reason": stop_reason,
-        "provider_error_class": provider_error_class,
-        "codey_failure_class": codey_failure_class,
-    }
-    manifest.update(git_state(repo))
-    return manifest
+    state = git_state(repo)
+    dirty = state.get("git_dirty")
+    dirty_state = "unknown" if dirty is None else "dirty" if dirty else "clean"
+    return ArmManifest(
+        suite=str(suite or "").strip(),
+        provider=str(provider or "").strip(),
+        arms=tuple(str(arm) for arm in arms),
+        cases=tuple(str(case) for case in cases),
+        max_turns=max(1, int(max_turns)),
+        output_json="",
+        manifest_path="",
+        journal_dir=str(journal_dir) if journal_dir is not None else "",
+        transcript_mode=str(transcript_mode or "off"),
+        transcript_dir="",
+        started_at=started_at,
+        finished_at=finished_at,
+        stop_reason=stop_reason,
+        provider_error_class=provider_error_class,
+        codey_failure_class=codey_failure_class,
+        resumed_attempt=bool(resumed_attempt),
+        attempt_index=max(1, int(attempt_index)),
+        git_commit=str(state.get("git_commit") or ""),
+        git_dirty=dirty if isinstance(dirty, bool) else None,
+        dirty_state=dirty_state,
+    ).to_payload()
 
 
 def write_arm_manifest(output: Path, manifest: Mapping[str, Any]) -> Path:
     """Persist the arm manifest next to its result JSON, atomically."""
 
-    path = output.with_name(f"{output.stem}-manifest.json")
-    write_json_atomic(path, dict(manifest))
+    layout = ArmRunLayout.for_output(
+        output,
+        journal_dir=Path(str(manifest.get("journal_dir") or ""))
+        if str(manifest.get("journal_dir") or "").strip()
+        else None,
+    )
+    path = layout.manifest_path
+    payload = dict(manifest)
+    payload["output_json"] = str(layout.output_json)
+    payload["manifest_path"] = str(path)
+    if payload.get("journal_dir"):
+        payload["journal_dir"] = str(layout.journal_dir)
+        payload["transcript_dir"] = str(layout.transcript_dir)
+    else:
+        payload["transcript_dir"] = ""
+    write_json_atomic(path, payload)
     return path
 
 
@@ -438,7 +776,8 @@ def open_journal_for_output(
         raise ValueError(f"unknown transcript mode: {transcript_mode}")
     if mode is None:
         return None
-    resolved_dir = journal_dir or output.parent / f"{output.stem}-journal"
+    layout = ArmRunLayout.for_output(output, journal_dir=journal_dir)
+    resolved_dir = layout.journal_dir
     writer = ABJournalWriter(
         directory=resolved_dir,
         experiment_id=experiment_id,
@@ -446,12 +785,12 @@ def open_journal_for_output(
         provider=provider_id,
         transcript_cache=TranscriptReplayCache(resolved_dir, mode=mode),
     )
-    if writer.event_count == 0:
-        writer.record_run_start(
-            cases=tuple(case_names),
-            arms=tuple(arms),
-            max_turns=max(4, int(max_turns)),
-        )
+    writer.record_run_start(
+        cases=tuple(case_names),
+        arms=tuple(arms),
+        max_turns=max(4, int(max_turns)),
+        resumed_attempt=writer.event_count > 0,
+    )
     return writer
 
 
@@ -464,24 +803,41 @@ def append_or_replace_failed_row(
     """Append a row; with rerun_failed, drop prior error rows for the pair."""
 
     if rerun_failed:
-        key = (str(row.get("case") or ""), str(row.get("arm") or ""))
-        rows[:] = [
-            existing
-            for existing in rows
-            if (
-                (str(existing.get("case") or ""), str(existing.get("arm") or "")) != key
-                or not existing.get("error")
-            )
-        ]
-    rows.append(row)
+        upsert_case_row(rows, row)
+        return
+    rows.append(dict(row))
+
+
+def classify_provider_failure(
+    *,
+    sends: int = 0,
+    replies: int = 0,
+    error: object = "",
+    stage: str = "",
+) -> str:
+    """Manual A/B provider failure classifier with closed reason codes."""
+
+    text = f"{type(error).__name__ if isinstance(error, BaseException) else ''} {error} {stage}".lower()
+    if any(token in text for token in ("selector", "locator", "element", "not visible", "strict mode")):
+        return PROVIDER_FAILURE_WEBPAGE_UI_CHANGED
+    if any(token in text for token in ("timeout", "timed out")) and int(sends or 0) > int(replies or 0):
+        return PROVIDER_FAILURE_NATIVE_SEARCH_STALL
+    if any(token in text for token in ("connection", "socket", "http", "send", "browser closed", "target closed")):
+        return PROVIDER_FAILURE_SEND_ERROR
+    if int(sends or 0) > 0 and int(replies or 0) <= 0:
+        return PROVIDER_FAILURE_NO_REPLY
+    if text.strip():
+        return PROVIDER_FAILURE_UNKNOWN
+    return PROVIDER_FAILURE_NONE
 
 
 def classify_ab_failure(exc: BaseException) -> str:
     """Coarse first-pass classification for crashed (case, arm) cells."""
 
-    text = f"{type(exc).__name__}: {exc}".lower()
-    if any(token in text for token in ("timeout", "connection", "http", "socket")):
+    provider_failure = classify_provider_failure(error=exc)
+    if provider_failure not in (PROVIDER_FAILURE_NONE, PROVIDER_FAILURE_UNKNOWN):
         return AB_FAILURE_PROVIDER
+    text = f"{type(exc).__name__}: {exc}".lower()
     if any(token in text for token in ("permissionerror", "nospaceleft", "os error")):
         return AB_FAILURE_ENVIRONMENT
     return AB_FAILURE_CODEY
@@ -614,16 +970,28 @@ __all__ = [
     "AB_FAILURE_ENVIRONMENT",
     "AB_FAILURE_NONE",
     "AB_FAILURE_PROVIDER",
+    "ArmManifest",
+    "ArmRunLayout",
     "FixtureDocument",
     "FixtureSearchProvider",
     "OutputProviderMismatch",
+    "PROVIDER_FAILURE_CLASSES",
+    "PROVIDER_FAILURE_NATIVE_SEARCH_STALL",
+    "PROVIDER_FAILURE_NONE",
+    "PROVIDER_FAILURE_NO_REPLY",
+    "PROVIDER_FAILURE_SEND_ERROR",
+    "PROVIDER_FAILURE_UNKNOWN",
+    "PROVIDER_FAILURE_WEBPAGE_UI_CHANGED",
+    "ResultRowStore",
     "TRANSCRIPT_MODE_FLAGS",
     "TracingProvider",
     "append_or_replace_failed_row",
+    "bind_row_evidence_refs",
     "bounded_error_row",
     "build_arm_manifest",
     "case_names",
     "classify_ab_failure",
+    "classify_provider_failure",
     "expected_matrix_keys",
     "fixture_material_phase",
     "fixture_network_policy_bypass",
@@ -636,7 +1004,9 @@ __all__ = [
     "new_payload",
     "normalize_payload_metadata",
     "open_journal_for_output",
+    "transcript_path_for_row",
     "timestamp",
+    "upsert_case_row",
     "write_arm_manifest",
     "write_json_atomic",
     "write_payload_bounded",
