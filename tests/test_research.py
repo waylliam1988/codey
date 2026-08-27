@@ -309,7 +309,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(hasattr(research, "EvidenceReviewResult"))
         self.assertFalse((Path(__file__).resolve().parents[1] / "codey" / "research" / "evidence_review.py").exists())
 
-    def test_url_policy_rejects_private_targets_without_network(self) -> None:
+    def test_network_policy_rejects_private_targets_without_network(self) -> None:
         self.assertIn("local", check_fetch_url("http://localhost:8000", resolve=False))
         self.assertIn("non-public", check_fetch_url("http://127.0.0.1/", resolve=False))
         self.assertEqual(check_fetch_url("http://example.com:99999/x", resolve=False), "invalid URL port")
@@ -3885,6 +3885,70 @@ class NetworkPolicyTests(unittest.TestCase):
 
                 discard_mock.assert_called_once_with(mock_page)
                 self.assertIsNone(provider._fetch_page)
+
+    def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
+        from codey.research.browser_search import BrowserSearchProvider
+        from codey.runtime import cancellation
+
+        provider = BrowserSearchProvider()
+        mock_page = unittest.mock.MagicMock()
+        mock_page.url = "https://example.com/item"
+        mock_response = unittest.mock.MagicMock()
+        mock_response.headers = {"content-type": "text/html"}
+        cancel_event = threading.Event()
+
+        def fake_goto(url, wait_until="domcontentloaded"):
+            # Set cancellation during goto execution
+            cancel_event.set()
+            return mock_response
+
+        mock_page.goto.side_effect = fake_goto
+        provider._fetch_page = mock_page
+
+        with cancellation.scope(cancel_event):
+            with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page):
+                with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
+                    with self.assertRaises(cancellation.TaskCancelled):
+                        provider._fetch_on_browser_thread("https://example.com/item")
+
+                    discard_mock.assert_called_once_with(mock_page)
+                    self.assertIsNone(provider._fetch_page)
+
+    def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:
+        from codey.research.connector_search import _read_url_text
+
+        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("100.64.0.1", 443))]
+            with unittest.mock.patch("urllib.request.urlopen") as mock_urlopen:
+                with self.assertRaises(ValueError) as ctx:
+                    _read_url_text("https://eutils.ncbi.nlm.nih.gov/test", timeout=2.0)
+
+                self.assertIn("non-public", str(ctx.exception))
+                mock_urlopen.assert_not_called()
+
+    def test_network_policy_fake_dns_ip_handling(self) -> None:
+        from codey.policies.network import DEFAULT_NETWORK_POLICY, NetworkPolicy
+
+        # 198.18.0.1 as literal IP is always rejected as non-public
+        self.assertEqual(
+            DEFAULT_NETWORK_POLICY.check_url("http://198.18.0.1/", resolve=False),
+            "refusing to open a non-public address",
+        )
+
+        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
+
+            # Default policy allows DNS-resolved fake IP for transparent proxies
+            self.assertIsNone(
+                DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True)
+            )
+
+            # Strict policy with allow_dns_fake_ip=False rejects it
+            strict_policy = NetworkPolicy(allow_dns_fake_ip=False)
+            self.assertEqual(
+                strict_policy.check_url("https://example.com/api", resolve=True),
+                "refusing to open a non-public address",
+            )
 
 
 if __name__ == "__main__":

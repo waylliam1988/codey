@@ -420,7 +420,7 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
 
 
 def _read_url_text(url: str, *, timeout: float) -> str:
-    reason = check_fetch_url(url, resolve=False)
+    reason = check_fetch_url(url, use_cache=True)
     if reason:
         raise ValueError(reason)
     request = urllib.request.Request(

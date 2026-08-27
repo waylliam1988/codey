@@ -566,10 +566,10 @@ def fixture_material_phase(search: object) -> Iterator[None]:
 
 
 @contextmanager
-def fixture_url_policy_bypass(
+def fixture_network_policy_bypass(
     allowed_prefixes: Sequence[str] = ("https://source-a.test/", "https://source-b.test/"),
 ) -> Iterator[None]:
-    """Allow *.test fixture hosts through the research URL policy, scoped."""
+    """Allow *.test fixture hosts through the network policy, scoped."""
 
     from codey.research import plan_executor as research_plan_executor_module
     from codey.research import tools as research_tools_module
@@ -626,7 +626,7 @@ __all__ = [
     "classify_ab_failure",
     "expected_matrix_keys",
     "fixture_material_phase",
-    "fixture_url_policy_bypass",
+    "fixture_network_policy_bypass",
     "git_state",
     "interleaved_arm_schedule",
     "journal_directory_for_output",

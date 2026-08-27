@@ -62,10 +62,12 @@ class NetworkPolicy:
         allowed_cache_ttl_seconds: float = 5.0,
         blocked_cache_ttl_seconds: float = 45.0,
         max_cache_entries: int = 1024,
+        allow_dns_fake_ip: bool = True,
     ) -> None:
         self.allowed_cache_ttl_seconds = max(0.0, float(allowed_cache_ttl_seconds))
         self.blocked_cache_ttl_seconds = max(0.0, float(blocked_cache_ttl_seconds))
         self.max_cache_entries = max(1, int(max_cache_entries))
+        self.allow_dns_fake_ip = bool(allow_dns_fake_ip)
         self._cache: dict[tuple[str, str, int], tuple[float, str | None]] = {}
         self._lock = threading.Lock()
 
@@ -154,7 +156,7 @@ class NetworkPolicy:
                 resolved = ipaddress.ip_address(address)
             except ValueError:
                 continue
-            if _ip_is_blocked(resolved) and not _ip_is_dns_fake_ip(resolved):
+            if _ip_is_blocked(resolved) and not (self.allow_dns_fake_ip and _ip_is_dns_fake_ip(resolved)):
                 reason = "refusing to open a non-public address"
                 break
 

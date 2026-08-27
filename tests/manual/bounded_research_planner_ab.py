@@ -32,7 +32,7 @@ from tests.manual.ab_harness_common import (
     TracingProvider,
     build_arm_manifest,
     fixture_material_phase,
-    fixture_url_policy_bypass,
+    fixture_network_policy_bypass,
     journal_directory_for_output,
     load_or_new_payload,
     normalize_payload_metadata,
@@ -919,7 +919,7 @@ def run_provider(
     provider_controls.begin_task_context(f"bounded-research-planner-ab:{provider_id}")
     provider = None
     try:
-        with fixture_url_policy_bypass():
+        with fixture_network_policy_bypass():
             provider = TimedProvider(
                 connect_provider(
                     provider_id,
@@ -1117,7 +1117,7 @@ def _self_test() -> None:
                     "endpoint for client storage integration."
                 ),
             ))
-            with fixture_url_policy_bypass():
+            with fixture_network_policy_bypass():
                 material_result = executor.execute(
                     ResearchPlan(
                         plan_ref="research_plan:" + "d" * 16,

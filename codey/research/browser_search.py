@@ -189,15 +189,11 @@ class BrowserSearchProvider:
             try:
                 return self._search_page_results_on_browser_thread(page, query, limit)
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                self._discard_page_on_browser_thread(page)
-                if page is self._search_page:
-                    self._search_page = None
+                self._discard_search_page_on_browser_thread(page)
                 raise
             except Exception as exc:
                 last_error = exc
-                self._discard_page_on_browser_thread(page)
-                if page is self._search_page:
-                    self._search_page = None
+                self._discard_search_page_on_browser_thread(page)
         if last_error is not None:
             raise last_error
         return []
@@ -271,45 +267,38 @@ class BrowserSearchProvider:
         if _is_pdf_url(url):
             return _pdf_download_sentinel(url)
         page = self._ensure_fetch_page_on_browser_thread(url)
-        cancellation.check()
         try:
-            response = page.goto(url, wait_until="domcontentloaded")
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            self._discard_page_on_browser_thread(page)
-            if page is self._fetch_page:
-                self._fetch_page = None
-            raise
-        except Exception as exc:
-            self._discard_page_on_browser_thread(page)
-            if page is self._fetch_page:
-                self._fetch_page = None
-            return {"url": url, "title": "", "text": f"ERROR: could not load page: {exc}", "truncated": False}
-        cancellation.check()
-        final_url = page.url or url
-        if final_url != url:
-            reason = check_fetch_url(final_url)
-            if reason:
-                return {"url": final_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}
-        if response is not None:
-            ctype = (response.headers.get("content-type") or "").lower()
-            if _is_pdf_response(ctype, final_url):
-                return _pdf_download_sentinel(final_url, mime_type=ctype)
-            if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
-                return {"url": final_url, "title": "", "text": f"ERROR: unsupported content type: {ctype}", "truncated": False}
-        cancellation.check()
-        try:
+            cancellation.check()
+            try:
+                response = page.goto(url, wait_until="domcontentloaded")
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception as exc:
+                self._discard_fetch_page_on_browser_thread(page)
+                return {"url": url, "title": "", "text": f"ERROR: could not load page: {exc}", "truncated": False}
+            cancellation.check()
+            final_url = page.url or url
+            if final_url != url:
+                reason = check_fetch_url(final_url)
+                if reason:
+                    return {"url": final_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}
+            if response is not None:
+                ctype = (response.headers.get("content-type") or "").lower()
+                if _is_pdf_response(ctype, final_url):
+                    return _pdf_download_sentinel(final_url, mime_type=ctype)
+                if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
+                    return {"url": final_url, "title": "", "text": f"ERROR: unsupported content type: {ctype}", "truncated": False}
+            cancellation.check()
             html = _page_content_after_navigation(page)
+            cancellation.check()
+            text = extract_text(html)
+            truncated = len(text) > _MAX_PAGE_CHARS
+            if truncated:
+                text = text[:_MAX_PAGE_CHARS]
+            return {"url": final_url, "title": extract_title(html), "text": text, "truncated": truncated}
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            self._discard_page_on_browser_thread(page)
-            if page is self._fetch_page:
-                self._fetch_page = None
+            self._discard_fetch_page_on_browser_thread(page)
             raise
-        cancellation.check()
-        text = extract_text(html)
-        truncated = len(text) > _MAX_PAGE_CHARS
-        if truncated:
-            text = text[:_MAX_PAGE_CHARS]
-        return {"url": final_url, "title": extract_title(html), "text": text, "truncated": truncated}
 
     def close(self) -> None:
         if self._session is None:
@@ -346,6 +335,16 @@ class BrowserSearchProvider:
             page.close()
         except Exception:
             pass
+
+    def _discard_fetch_page_on_browser_thread(self, page) -> None:
+        self._discard_page_on_browser_thread(page)
+        if page is self._fetch_page:
+            self._fetch_page = None
+
+    def _discard_search_page_on_browser_thread(self, page) -> None:
+        self._discard_page_on_browser_thread(page)
+        if page is self._search_page:
+            self._search_page = None
 
 
 def _page_content_after_navigation(page) -> str:

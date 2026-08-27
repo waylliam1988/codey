@@ -22,10 +22,12 @@ Closed items:
   - Caller cancellations and timeouts propagate into job-specific cancellation events and execution deadlines, running inside `cancellation.scope` and `cancellation.deadline_scope`.
   - Reentrant `BrowserWorker.call()` executes under active cancellation and deadline scopes for nested timeouts.
   - Queued jobs cancelled prior to dispatch skip execution cleanly.
-  - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; cancelled fetch and search jobs discard their active pages, reset `_fetch_page` / `_search_page` references, and propagate cancellation without retrying or returning erroneous content.
-- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`):
+  - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; fetch and search paths wrap entire browser lifecycle in unified discard boundaries (`_discard_fetch_page_on_browser_thread`, `_discard_search_page_on_browser_thread`), resetting page references and propagating cancellation without intermediate retries or corrupted page leaks.
+- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`, `codey.research.connector_search`):
   - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
   - Strict conservative non-global IP rejection (`not ip.is_global or ip.is_multicast`) covering `100.64.0.0/10` (CGNAT) and all reserved address spaces.
+  - Configurable `allow_dns_fake_ip` support (defaulting to True for TUN/transparent proxy environments like `198.18.0.0/15`, while rejecting literal fake IPs).
+  - Connector network requests (`connector_search.py`) evaluate live DNS checks with caching (`check_fetch_url(url, use_cache=True)`).
   - `check_fetch_url()` is exported directly from `codey.policies.network`; removed redundant `codey/research/url_policy.py` shim.
   - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
@@ -49,10 +51,10 @@ python -m ruff check codey tests
 # All checks passed!
 
 pytest tests/test_action_policy.py tests/test_browser_worker.py tests/test_atomic_io.py tests/test_research.py tests/test_agent.py tests/test_tool_runtime.py tests/test_event_state.py
-# 371 passed, 2 skipped in 21.60s
+# 374 passed, 2 skipped in 20.96s
 
 pytest
-# 3052 passed, 3 skipped in 290.69s (0:04:50)
+# 3055 passed, 3 skipped in 295.42s (0:04:55)
 ```
 
 
@@ -2514,8 +2516,7 @@ Production changes:
 - `agent.py` evaluates tool calls before local execution. Policy denial returns
   a structured `ToolOutcome` with `error_code="policy_denied"`; shell requests
   still use the existing approval flow when approval is available.
-- `research/url_policy.py` keeps its public API and denial text while delegating
-  URL safety checks to the shared policy source; invalid URL ports return a
+- `codey.policies.network` provides unified URL safety checks for the policy source; invalid URL ports return a
   policy denial reason instead of raising parser exceptions.
 - Managed output artifact writes now pass through policy metadata; size/count
   denials and missing/insufficient profiles skip full-artifact retention without
