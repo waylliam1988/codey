@@ -25,10 +25,11 @@
   - 调用方超时或取消事件自动桥接至 worker 线程的 `cancellation.scope` 和 `cancellation.deadline_scope`；
   - `BrowserWorker.call()` 重入分支在当前线程执行时继承 active cancellation 和 deadline scopes，支持嵌套超时；
   - 队列中尚未开始的 job 被取消后直接跳过执行；
-  - `BrowserSearchProvider` 在页面导航、解析及循环中增加密集 cancellation check；任务被取消时单独丢弃 page 对象并向外传播取消异常，不再返回普通错误字符串。
+  - `BrowserSearchProvider` 在页面导航、解析及循环中增加密集 cancellation check；搜索与抓取任务被取消时统一丢弃底层 page 对象，置空 `_fetch_page` / `_search_page` 引用，并直接向外传播取消异常（不再重试或返回错误字符串）。
 - 收敛统一 NetworkPolicy 单一来源与 DNS 缓存机制（`codey.policies.network`）：
   - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`PUBLIC_WEB`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
-  - `codey.research.url_policy.check_fetch_url()` 与 `codey.policies.action.research_url_denial_reason()` 统一收敛为薄封装；
+  - 恢复严格保守的非公网 IP 拦截逻辑（`not ip.is_global or ip.is_multicast`），彻底覆盖 `100.64.0.0/10`（CGNAT）与所有保留地址空间；
+  - `check_fetch_url()` 直接从 `codey.policies.network` 导出；清理彻底删除了多余的 `codey/research/url_policy.py` 兼容层；
   - 为浏览器自动化子资源拦截引入差异化 TTL/LRU 缓存（允许域名 5s，拦截/未解析 45s），兼顾性能与安全防护边界。
 - Agent Runner 协议交互优化（`codey.agents.runner`）：
   - 移除当模型返回有效工具调用但遗漏 `<continue>` / `<done>` 控制元素时的隐式终止行为，改为将工具执行结果规范格式化后带协议提醒返回给模型继续下一轮推理。
@@ -37,7 +38,7 @@
   - 在 `safe_join()` 中明确补充路径遍历威胁模型说明。
 - 存储原语统一与权限收敛（`codey.storage.atomic_io`、`codey.storage.local_store`、`codey.workspace.changes`、`codey.storage.managed_outputs`、`codey.knowledge.store`）：
   - 统一 `write_bytes_atomic`、`write_text_atomic`、`write_json_atomic` 原子写入原语；
-  - `write_bytes_atomic` 在创建临时文件时直接通过 `os.open(..., O_CREAT | O_EXCL | O_WRONLY, creation_mode)` 应用目标权限，消除 umask 暴露窗口；
+  - `write_bytes_atomic` 在创建临时文件时直接通过 `os.open(..., O_CREAT | O_EXCL | O_WRONLY, creation_mode)` 应用目标权限，并在写入后、flush/fsync 前应用 chmod/fchmod，消除 umask 暴露窗口并优化元数据持久性顺序；
   - POSIX 环境下补充目录同步（`_fsync_dir`），提升文件系统崩溃容灾持久性；
   - 本地凭据存储（`save_local_config`）强制使用 `0o600` 权限；
   - 将工作区快照（`changes.py`）、工具大输出（`managed_outputs.py`）及知识库（`store.py`）的原子写入统一收敛至 `atomic_io`。

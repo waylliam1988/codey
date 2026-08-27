@@ -19,7 +19,7 @@ from codey.automation.browser import DEFAULT_PORT, open_chat_page
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.research.extract import extract_text, extract_title
 from codey.research.pdf_extract import PDF_MAX_BYTES
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -188,7 +188,10 @@ class BrowserSearchProvider:
             )
             try:
                 return self._search_page_results_on_browser_thread(page, query, limit)
-            except cancellation.TaskCancelled:
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                self._discard_page_on_browser_thread(page)
+                if page is self._search_page:
+                    self._search_page = None
                 raise
             except Exception as exc:
                 last_error = exc

@@ -31,14 +31,7 @@ _DNS_FAKE_IP_NETS = (
 
 
 def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
+    return not ip.is_global or ip.is_multicast
 
 
 def _ip_is_dns_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -186,10 +179,16 @@ class NetworkPolicy:
 DEFAULT_NETWORK_POLICY = NetworkPolicy()
 
 
+def check_fetch_url(url: str, *, resolve: bool = True, use_cache: bool = False) -> str | None:
+    """Evaluate ``url`` against default network policy."""
+    return DEFAULT_NETWORK_POLICY.check_url(url, resolve=resolve, use_cache=use_cache)
+
+
 __all__ = [
     "DEFAULT_NETWORK_POLICY",
     "NetworkDecision",
     "NetworkPolicy",
     "NetworkStatus",
+    "check_fetch_url",
     "is_valid_hostname",
 ]

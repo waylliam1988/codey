@@ -10,7 +10,7 @@ from codey.research.context import ResearchPipelineConfig
 from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 
 
 @dataclass(frozen=True)

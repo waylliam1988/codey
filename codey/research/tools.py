@@ -26,7 +26,7 @@ from codey.research.source_search import (
     search_pages,
     search_text,
 )
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 from codey.utils.text_budget import clip_middle
 
 OPEN_DEFAULT_LIMIT = 6000

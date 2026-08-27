@@ -34,7 +34,7 @@ from codey.research.source_connectors import (
     safe_connector_query,
 )
 from codey.research.shape import bounded_limit as _bounded_limit, connector_id as _connector_id
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")

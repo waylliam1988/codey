@@ -38,7 +38,7 @@ from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 from codey.research.tool_contract import research_tool_contract_hash
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 
 
 class FakeProvider:
@@ -785,7 +785,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(results[0]["url"], "https://example.com/recovered")
         self.assertEqual(results[0]["title"], "Recovered result")
 
-    def test_browser_search_cancellation_does_not_retry_or_discard_page(self) -> None:
+    def test_browser_search_cancellation_discards_page_and_does_not_retry(self) -> None:
         class FakePage:
             def __init__(self) -> None:
                 self.closed = False
@@ -832,9 +832,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         with self.assertRaises(cancellation.TaskCancelled):
             provider._search_on_browser_thread("alpha", 3)
 
-        self.assertFalse(page.closed)
+        self.assertTrue(page.closed)
         self.assertEqual(context.created, [])
-        self.assertIs(provider._search_page, page)
+        self.assertIsNone(provider._search_page)
 
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
@@ -3846,6 +3846,7 @@ class NetworkPolicyTests(unittest.TestCase):
         self.assertEqual(policy.evaluate_url("http://").status, NetworkStatus.INVALID_URL)
         self.assertEqual(policy.evaluate_url("http://127.0.0.1/").status, NetworkStatus.BLOCKED_PRIVATE)
         self.assertEqual(policy.evaluate_url("http://localhost/").status, NetworkStatus.BLOCKED_PRIVATE)
+        self.assertEqual(policy.evaluate_url("http://100.64.0.1/").status, NetworkStatus.BLOCKED_PRIVATE)
 
         # Resolve=False for syntactically valid public URLs
         decision = policy.evaluate_url("https://example.com/api", resolve=False)

@@ -331,6 +331,20 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertIn("non_public", decision.reason_code)
         self.assertNotIn("127.0.0.1", json.dumps(payload))
 
+    def test_research_url_guard_rejects_cgnat_and_non_global_ips(self) -> None:
+        # 100.64.0.0/10 (Shared Address Space / CGNAT) is not global and must be rejected
+        self.assertEqual(
+            research_url_denial_reason("http://100.64.0.1/", resolve=False),
+            "refusing to open a non-public address",
+        )
+
+        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("100.64.0.1", 443))]
+            self.assertEqual(
+                research_url_denial_reason("https://cgnat-domain.example/", resolve=True),
+                "refusing to open a non-public address",
+            )
+
     def test_managed_output_guards_count_and_size(self) -> None:
         count = evaluate_action(ActionSubject(
             "managed_output",

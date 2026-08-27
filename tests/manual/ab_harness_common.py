@@ -573,28 +573,28 @@ def fixture_url_policy_bypass(
 
     from codey.research import plan_executor as research_plan_executor_module
     from codey.research import tools as research_tools_module
-    from codey.research import url_policy as research_url_policy_module
+    from codey.policies import network as network_module
 
     original = (
-        research_url_policy_module.check_fetch_url,
+        network_module.check_fetch_url,
         research_tools_module.check_fetch_url,
         research_plan_executor_module.check_fetch_url,
     )
 
-    def _allow_fixture_urls(url: str, *, resolve: bool = True) -> str | None:
+    def _allow_fixture_urls(url: str, *, resolve: bool = True, use_cache: bool = False) -> str | None:
         text = str(url or "").strip().lower()
         if text.startswith(tuple(allowed_prefixes)):
             return None
-        return original[0](url, resolve=resolve)
+        return original[0](url, resolve=resolve, use_cache=use_cache)
 
-    research_url_policy_module.check_fetch_url = _allow_fixture_urls
+    network_module.check_fetch_url = _allow_fixture_urls
     research_tools_module.check_fetch_url = _allow_fixture_urls
     research_plan_executor_module.check_fetch_url = _allow_fixture_urls
     try:
         yield
     finally:
         (
-            research_url_policy_module.check_fetch_url,
+            network_module.check_fetch_url,
             research_tools_module.check_fetch_url,
             research_plan_executor_module.check_fetch_url,
         ) = original

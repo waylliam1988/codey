@@ -47,7 +47,7 @@ from codey.research.shape import (
     generated_ref as _generated_ref,
 )
 from codey.research.source_document import SourceDocument
-from codey.research.url_policy import check_fetch_url
+from codey.policies.network import check_fetch_url
 
 
 CONNECTOR_STATUS_AVAILABLE = "available"
