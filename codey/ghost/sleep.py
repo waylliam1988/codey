@@ -118,8 +118,7 @@ class GhostSleepReport:
         if payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
             return None
         steps = tuple(
-            step for step in (_step_from_payload(row) for row in _list(payload.get("steps")))
-            if step is not None
+            step for step in (_step_from_payload(row) for row in _list(payload.get("steps"))) if step is not None
         )
         cycle_id = clip_signal_text(payload.get("cycle_id"), 120)
         if not cycle_id:
@@ -632,10 +631,7 @@ class GhostSleepStore:
             except json.JSONDecodeError:
                 warnings.append(f"sleep_events.jsonl:{index}:bad_json")
                 continue
-            if (
-                isinstance(payload, dict)
-                and payload.get("schema_version") == SLEEP_SCHEMA_VERSION
-            ):
+            if isinstance(payload, dict) and payload.get("schema_version") == SLEEP_SCHEMA_VERSION:
                 rows.append(payload)
         self.last_warnings = _bounded_warnings(warnings)
         return rows
@@ -807,12 +803,15 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
 
 
 def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def _now() -> str:

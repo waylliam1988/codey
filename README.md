@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.16-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.17-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.16`
+Version: `0.4.17`
 
 [Version history](CHANGELOG.md)
 
@@ -961,7 +961,7 @@ codey/
   reviews/                  diff review lifecycle, impact map, report sections, and scan reports
   runs/                     run trace, append-only ledger, details projection, receipts, and work checkpoints
   runtime/                  cancellation, events, execution evidence, prompt envelope, and tool-call data models
-  storage/                  atomic I/O, local stores, transactional JSON mutation, managed outputs, UI state, and conversation state
+  storage/                  atomic I/O, OS-backed file locks, event-backed reset helpers, managed outputs, UI state, and conversation state
   toolchain/                coding tool metadata/runtime and tolerant final JSON tool-reply repair
   utils/                    citation scanner, bounded references, refs, and text budgeting
   workspace/                bounded scans, diffs, project config/facts/map, setup context, task context, and context epochs

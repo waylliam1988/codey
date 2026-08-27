@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.16-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.17-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.16`
+版本：`0.4.17`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -813,7 +813,7 @@ codey/
   reviews/                  diff review 生命周期、impact map、报告 section 和 scan report
   runs/                     run trace、append-only ledger、details 投影、receipt 和 work checkpoint
   runtime/                  cancellation、events、execution evidence、prompt envelope 和工具调用数据模型
-  storage/                  atomic I/O、本地 store、transactional JSON mutation、managed output、UI state 和 conversation state
+  storage/                  atomic I/O、OS-backed file lock、event-backed reset helper、managed output、UI state 和 conversation state
   toolchain/                coding 工具元数据/runtime 和最终 JSON tool reply 的宽容修复
   utils/                    citation scanner、有界 reference、refs 和 text budget helper
   workspace/                有界扫描、diff、项目 config/facts/map、setup context、task context 和 context epoch

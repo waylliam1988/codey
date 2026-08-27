@@ -101,6 +101,7 @@ def _verified_writer_agent_run(summary: str, *, turns: int = 3):
 
     return _scripted_agent_run((RunResult(summary, "done", turns, True, True), True))
 
+
 _PROVIDER_TAB_GUARDS: list[mock.Mock] = []
 
 
@@ -121,10 +122,12 @@ def setUpModule() -> None:
             "instead of opening live pages"
         )
 
-    _PROVIDER_TAB_GUARDS.extend([
-        mock.patch.object(server, "connect_existing_provider", side_effect=_deny),
-        mock.patch.object(server, "connect_fresh_provider_tab", side_effect=_deny),
-    ])
+    _PROVIDER_TAB_GUARDS.extend(
+        [
+            mock.patch.object(server, "connect_existing_provider", side_effect=_deny),
+            mock.patch.object(server, "connect_fresh_provider_tab", side_effect=_deny),
+        ]
+    )
     for guard in _PROVIDER_TAB_GUARDS:
         guard.start()
 
@@ -319,7 +322,7 @@ class GitChangesTests(unittest.TestCase):
 class ApprovedShellTests(unittest.TestCase):
     def test_execute_approved_shell_runs_in_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.execute_approved_shell(td, ".", 'python -c "print(\'approved\')"')
+            data = server.execute_approved_shell(td, ".", "python -c \"print('approved')\"")
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["exit_code"], 0)
@@ -327,7 +330,7 @@ class ApprovedShellTests(unittest.TestCase):
 
     def test_execute_approved_shell_rejects_escaped_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.execute_approved_shell(td, "..", 'python -c "print(\'approved\')"')
+            data = server.execute_approved_shell(td, "..", "python -c \"print('approved')\"")
 
             self.assertFalse(data["ok"])
         self.assertIn("escapes project root", data["error"])
@@ -362,9 +365,7 @@ class ApprovedShellTests(unittest.TestCase):
                 "- If a trusted local check is available, run it before done."
             ),
             setup_context=(
-                "Setup Context (read-only diagnosis; no setup commands were run):\n"
-                "Local tools:\n"
-                "- npm: available"
+                "Setup Context (read-only diagnosis; no setup commands were run):\nLocal tools:\n- npm: available"
             ),
             followup_hints=(
                 "Follow-up hints:\n"
@@ -386,14 +387,18 @@ class ApprovedShellTests(unittest.TestCase):
 
     def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
         with mock.patch.object(server, "safe_setup_context", return_value="Setup Context"):
-            setup = server._shell_continuation_setup_context({
-                "project": "E:/demo",
-                "risk_label": "dependency_install",
-            })
-            generic = server._shell_continuation_setup_context({
-                "project": "E:/demo",
-                "risk_label": "generic",
-            })
+            setup = server._shell_continuation_setup_context(
+                {
+                    "project": "E:/demo",
+                    "risk_label": "dependency_install",
+                }
+            )
+            generic = server._shell_continuation_setup_context(
+                {
+                    "project": "E:/demo",
+                    "risk_label": "generic",
+                }
+            )
 
         self.assertEqual(setup, "Setup Context")
         self.assertEqual(generic, "")
@@ -622,9 +627,7 @@ class ProviderStatusTests(unittest.TestCase):
     def test_run_review_includes_safe_review_impact_map(self) -> None:
         state = server.State()
         reviewer = mock.Mock()
-        reviewer.send.return_value = (
-            '{"verdict":"approved","summary":"Looks good","findings":[]}'
-        )
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -640,8 +643,7 @@ class ProviderStatusTests(unittest.TestCase):
                 server,
                 "safe_review_impact_map",
                 return_value=(
-                    "Review Impact Map (bounded hints; not coverage proof):\n"
-                    "- oldName: src/view.ts:2 (call)"
+                    "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
                 ),
             ) as impact_map,
         ):
@@ -664,19 +666,14 @@ class ProviderStatusTests(unittest.TestCase):
     def test_run_review_reuses_precomputed_review_impact_map(self) -> None:
         state = server.State()
         reviewer = mock.Mock()
-        reviewer.send.return_value = (
-            '{"verdict":"approved","summary":"Looks good","findings":[]}'
-        )
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "src/api.ts", "status": "M"}],
             "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
         }
-        impact = (
-            "Review Impact Map (bounded hints; not coverage proof):\n"
-            "- oldName: src/view.ts:2 (call)"
-        )
+        impact = "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -703,9 +700,7 @@ class ProviderStatusTests(unittest.TestCase):
     def test_run_review_treats_empty_precomputed_review_impact_map_as_final(self) -> None:
         state = server.State()
         reviewer = mock.Mock()
-        reviewer.send.return_value = (
-            '{"verdict":"approved","summary":"Looks good","findings":[]}'
-        )
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -741,9 +736,7 @@ class ProviderStatusTests(unittest.TestCase):
         state.set_provider_session("deepseek", "session-1")
         events = state.subscribe()
         reviewer = mock.Mock()
-        reviewer.send.return_value = (
-            '{"verdict":"approved","summary":"Looks good","findings":[]}'
-        )
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -1165,16 +1158,18 @@ class ResearchServerHelperTests(unittest.TestCase):
         ):
             builder = builder_cls.return_value
             builder.build_for_session.return_value = graph
-            status, payload = server._research_graph_response({
-                "session_id": ["s1"],
-                "focus": ["fact-1"],
-                "synthesis_id": ["synthesis-1"],
-                "depth": ["9"],
-                "limit": ["999"],
-                "edge_limit": ["bad"],
-                "include_sources": ["false"],
-                "counterpoint": ["one,two", "three"],
-            })
+            status, payload = server._research_graph_response(
+                {
+                    "session_id": ["s1"],
+                    "focus": ["fact-1"],
+                    "synthesis_id": ["synthesis-1"],
+                    "depth": ["9"],
+                    "limit": ["999"],
+                    "edge_limit": ["bad"],
+                    "include_sources": ["false"],
+                    "counterpoint": ["one,two", "three"],
+                }
+            )
 
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"ok": True, "graph": {"nodes": [], "edges": []}})
@@ -1258,7 +1253,9 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(ok_payload, {"ok": True, "restored": []})
 
     def test_run_submit_response_validation_and_submit_mapping(self) -> None:
-        self.assertEqual(server._run_submit_response({"task": "hello", "intent": "bad"}), (400, {"error": "invalid intent"}))
+        self.assertEqual(
+            server._run_submit_response({"task": "hello", "intent": "bad"}), (400, {"error": "invalid intent"})
+        )
         self.assertEqual(
             server._run_submit_response({"task": "hello", "max_turns": "bad"}),
             (400, {"error": "invalid max_turns"}),
@@ -1270,14 +1267,16 @@ class ResearchServerHelperTests(unittest.TestCase):
         )
 
         with mock.patch.object(server, "_submit_task", return_value="run-1") as submit:
-            status, payload = server._run_submit_response({
-                "task": "hello",
-                "session_id": "",
-                "provider": "deepseek",
-                "max_turns": "999",
-                "continue_task": True,
-                "intent": "research",
-            })
+            status, payload = server._run_submit_response(
+                {
+                    "task": "hello",
+                    "session_id": "",
+                    "provider": "deepseek",
+                    "max_turns": "999",
+                    "continue_task": True,
+                    "intent": "research",
+                }
+            )
 
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"ok": True, "run_id": "run-1"})
@@ -1288,17 +1287,24 @@ class ResearchServerHelperTests(unittest.TestCase):
             (400, {"error": "project required for review"}),
         )
 
-        with tempfile.TemporaryDirectory() as td, mock.patch.object(server, "_submit_task", return_value="run-2") as submit:
-            review_status, review_payload = server._run_submit_response({
-                "task": "review diff",
-                "project": td,
-                "provider": "deepseek",
-                "intent": "review",
-            })
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "_submit_task", return_value="run-2") as submit,
+        ):
+            review_status, review_payload = server._run_submit_response(
+                {
+                    "task": "review diff",
+                    "project": td,
+                    "provider": "deepseek",
+                    "intent": "review",
+                }
+            )
 
         self.assertEqual(review_status, 200)
         self.assertEqual(review_payload, {"ok": True, "run_id": "run-2"})
-        submit.assert_called_once_with("default", td, "review diff", server.DEFAULT_MAX_TURNS, False, "deepseek", "review")
+        submit.assert_called_once_with(
+            "default", td, "review diff", server.DEFAULT_MAX_TURNS, False, "deepseek", "review"
+        )
 
         with mock.patch.object(server, "_submit_task", return_value=None):
             busy_status, busy_payload = server._run_submit_response({"task": "hello"})
@@ -1327,10 +1333,12 @@ class ResearchServerHelperTests(unittest.TestCase):
             )
             writer.finish(stop_reason="done", turns=1, max_turns=8, provider="deepseek")
             with mock.patch.object(server, "STATE", state):
-                status, payload = server._run_details_response({
-                    "session_id": ["session-details"],
-                    "run_id": ["run-details"],
-                })
+                status, payload = server._run_details_response(
+                    {
+                        "session_id": ["session-details"],
+                        "run_id": ["run-details"],
+                    }
+                )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
@@ -1344,10 +1352,12 @@ class ResearchServerHelperTests(unittest.TestCase):
     def test_run_details_response_quiet_unavailable_without_stores(self) -> None:
         state = server.State()
         with mock.patch.object(server, "STATE", state):
-            status, payload = server._run_details_response({
-                "session_id": ["session-missing"],
-                "run_id": ["run-missing"],
-            })
+            status, payload = server._run_details_response(
+                {
+                    "session_id": ["session-missing"],
+                    "run_id": ["run-missing"],
+                }
+            )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
@@ -1445,7 +1455,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.4.16")
+        self.assertEqual(__version__, "0.4.17")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -1563,11 +1573,14 @@ class LocalProviderApiTests(unittest.TestCase):
                 provider_id="deepseek",
             )
             assert run is not None
-            state.finish_run(run.run_id, {
-                "type": "task_done",
-                "summary": "done",
-                "stop_reason": "done",
-            })
+            state.finish_run(
+                run.run_id,
+                {
+                    "type": "task_done",
+                    "summary": "done",
+                    "stop_reason": "done",
+                },
+            )
             try:
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -1626,10 +1639,14 @@ class LocalProviderApiTests(unittest.TestCase):
         httpd, host, port = self._start_server()
         try:
             with (
-                mock.patch.object(server, "load_local_config", return_value={
-                    "base_url": "http://127.0.0.1:1234/v1",
-                    "api_key": "old-secret",
-                }),
+                mock.patch.object(
+                    server,
+                    "load_local_config",
+                    return_value={
+                        "base_url": "http://127.0.0.1:1234/v1",
+                        "api_key": "old-secret",
+                    },
+                ),
                 mock.patch.object(server, "probe_local_endpoint") as probe,
                 mock.patch.object(server, "save_local_config") as save,
             ):
@@ -1637,10 +1654,12 @@ class LocalProviderApiTests(unittest.TestCase):
                 conn.request(
                     "POST",
                     "/api/local_provider",
-                    body=json.dumps({
-                        "base_url": "http://attacker.example/v1",
-                        "model": "steal",
-                    }),
+                    body=json.dumps(
+                        {
+                            "base_url": "http://attacker.example/v1",
+                            "model": "steal",
+                        }
+                    ),
                     headers={"Content-Type": "application/json"},
                 )
                 response = conn.getresponse()
@@ -1662,10 +1681,14 @@ class LocalProviderApiTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "load_local_config", return_value={
-                    "base_url": "http://127.0.0.1:1234/v1",
-                    "api_key": "old-secret",
-                }),
+                mock.patch.object(
+                    server,
+                    "load_local_config",
+                    return_value={
+                        "base_url": "http://127.0.0.1:1234/v1",
+                        "api_key": "old-secret",
+                    },
+                ),
                 mock.patch.object(
                     server,
                     "probe_local_endpoint",
@@ -1678,11 +1701,13 @@ class LocalProviderApiTests(unittest.TestCase):
                 conn.request(
                     "POST",
                     "/api/local_provider",
-                    body=json.dumps({
-                        "base_url": "http://127.0.0.1:1234/v1",
-                        "model": "llama",
-                        "api_key": "",
-                    }),
+                    body=json.dumps(
+                        {
+                            "base_url": "http://127.0.0.1:1234/v1",
+                            "model": "llama",
+                            "api_key": "",
+                        }
+                    ),
                     headers={"Content-Type": "application/json"},
                 )
                 response = conn.getresponse()
@@ -1718,10 +1743,12 @@ class LocalProviderApiTests(unittest.TestCase):
                 conn.request(
                     "POST",
                     "/api/local_provider",
-                    body=json.dumps({
-                        "base_url": "http://127.0.0.1:1234/v1",
-                        "model": "llama",
-                    }),
+                    body=json.dumps(
+                        {
+                            "base_url": "http://127.0.0.1:1234/v1",
+                            "model": "llama",
+                        }
+                    ),
                     headers={"Content-Type": "application/json"},
                 )
                 response = conn.getresponse()
@@ -1826,12 +1853,14 @@ class RunSnapshotTests(unittest.TestCase):
 
         def reserve() -> None:
             barrier.wait()
-            results.append(state.reserve_run(
-                session_id="session-1",
-                project=None,
-                task="hello",
-                provider_id="deepseek",
-            ))
+            results.append(
+                state.reserve_run(
+                    session_id="session-1",
+                    project=None,
+                    task="hello",
+                    provider_id="deepseek",
+                )
+            )
 
         threads = [threading.Thread(target=reserve) for _ in range(8)]
         for thread in threads:
@@ -2146,12 +2175,14 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_active_run_does_not_restore_an_unrelated_old_card(self) -> None:
         state = server.State()
-        state.pending_shell["old"] = {"ui_event": {
-            "type": "shell_request",
-            "run_id": "run_old",
-            "session_id": "session-old",
-            "id": "old",
-        }}
+        state.pending_shell["old"] = {
+            "ui_event": {
+                "type": "shell_request",
+                "run_id": "run_old",
+                "session_id": "session-old",
+                "id": "old",
+            }
+        }
         run = state.reserve_run(
             session_id="session-new",
             project=None,
@@ -2166,13 +2197,17 @@ class RunSnapshotTests(unittest.TestCase):
         old_state = server.STATE
         try:
             server.STATE = server.State(None)
-            status, payload = server._ghost_summary_response({
-                "session_id": ["s1"],
-                "project": ["E:/project"],
-            })
-            action_status, action_payload = server._ghost_action_response({
-                "action": "disable_updates",
-            })
+            status, payload = server._ghost_summary_response(
+                {
+                    "session_id": ["s1"],
+                    "project": ["E:/project"],
+                }
+            )
+            action_status, action_payload = server._ghost_action_response(
+                {
+                    "action": "disable_updates",
+                }
+            )
         finally:
             server.STATE = old_state
 
@@ -2360,12 +2395,8 @@ class RunSnapshotTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(server, "submit_browser_task") as submit,
         ):
-            run_id = server._submit_task(
-                "session-1", None, "hello", 8, False, "deepseek"
-            )
-            rejected = server._submit_task(
-                "session-2", None, "second", 8, False, "qwen"
-            )
+            run_id = server._submit_task("session-1", None, "hello", 8, False, "deepseek")
+            rejected = server._submit_task("session-2", None, "second", 8, False, "qwen")
 
         self.assertIsNotNone(run_id)
         self.assertIsNone(rejected)
@@ -2427,11 +2458,14 @@ class RunSnapshotTests(unittest.TestCase):
 
         def release_previous() -> None:
             time.sleep(0.05)
-            state.finish_run(previous.run_id, {
-                "type": "task_done",
-                "summary": "shell command requires approval",
-                "stop_reason": "approval",
-            })
+            state.finish_run(
+                previous.run_id,
+                {
+                    "type": "task_done",
+                    "summary": "shell command requires approval",
+                    "stop_reason": "approval",
+                },
+            )
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -2496,13 +2530,15 @@ class RunSnapshotTests(unittest.TestCase):
         state = server.State()
         state.stop_flag.set()
 
-        self.assertIsNone(state.reserve_run(
-            session_id="s",
-            project=None,
-            task="continue after shell",
-            provider_id="deepseek",
-            abort_if_stopped=True,
-        ))
+        self.assertIsNone(
+            state.reserve_run(
+                session_id="s",
+                project=None,
+                task="continue after shell",
+                provider_id="deepseek",
+                abort_if_stopped=True,
+            )
+        )
         self.assertTrue(state.stop_flag.is_set())
         self.assertIsNone(state.active_run)
         self.assertFalse(state.busy)
@@ -2568,9 +2604,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_mock = self.consensus_patch.start()
         self.project_audit_patch = mock.patch.object(server, "_run_project_audit", return_value=())
         self.project_audit_mock = self.project_audit_patch.start()
-        self.research_advisors_patch = mock.patch.object(
-            server, "_run_research_advisors", return_value=None
-        )
+        self.research_advisors_patch = mock.patch.object(server, "_run_research_advisors", return_value=None)
         self.research_advisors_mock = self.research_advisors_patch.start()
 
     def tearDown(self) -> None:
@@ -2674,7 +2708,7 @@ class SessionThreadingTests(unittest.TestCase):
                 '"evidence_quote":"以后回答短一点",'
                 '"confidence":0.94,'
                 '"metadata":{"conflict_key":"reply_length","value_key":"concise"}'
-                '}]}'
+                "}]}"
             )
             state.ghost_learning_provider_factory = mock.Mock(return_value=learning_provider)
 
@@ -3109,9 +3143,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
         helper.send.assert_called_once()
         self.assertGreater(helper.send.call_args.kwargs["timeout"], 0)
-        self.assertLessEqual(
-            helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT
-        )
+        self.assertLessEqual(helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT)
         helper.close.assert_called_once_with()
         self.assertTrue(state.provider_session_changed("stepfun", "old-session"))
 
@@ -3184,9 +3216,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(
-            server, "borrow_open_provider", side_effect=[first, second]
-        ):
+        with mock.patch.object(server, "borrow_open_provider", side_effect=[first, second]):
             selected = state.handle_profile_doctor(request)
 
         self.assertEqual(selected, "c1")
@@ -3206,9 +3236,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(
-            server, "borrow_open_provider", side_effect=helpers
-        ) as borrowed:
+        with mock.patch.object(server, "borrow_open_provider", side_effect=helpers) as borrowed:
             selected = state.handle_profile_doctor(request)
 
         self.assertIsNone(selected)
@@ -3400,13 +3428,7 @@ class SessionThreadingTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 ["python", "large.py"],
                 1,
-                stdout=(
-                    "HEAD"
-                    + ("x" * 200)
-                    + "MIDDLE_MANAGED_OUTPUT"
-                    + ("y" * 200)
-                    + "TAIL"
-                ),
+                stdout=("HEAD" + ("x" * 200) + "MIDDLE_MANAGED_OUTPUT" + ("y" * 200) + "TAIL"),
                 stderr="",
             )
 
@@ -3421,18 +3443,22 @@ class SessionThreadingTests(unittest.TestCase):
                     permission_profile=kwargs["permission_profile"],
                     tool_id="1:0",
                 )
-                kwargs["on_event"](RunEvent.tool_finished(
-                    1,
-                    ToolCall("run", {"path": ".", "command": "python large.py"}),
-                    outcome,
-                ))
+                kwargs["on_event"](
+                    RunEvent.tool_finished(
+                        1,
+                        ToolCall("run", {"path": ".", "command": "python large.py"}),
+                        outcome,
+                    )
+                )
                 return RunResult("checked", "done", 1, False, False, True)
 
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
-                mock.patch.object(server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
+                mock.patch.object(
+                    server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
+                ),
                 mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
                 mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
@@ -3447,17 +3473,8 @@ class SessionThreadingTests(unittest.TestCase):
                 )
 
             run_id = state.last_terminal_event["run_id"]
-            rows = [
-                item.payload
-                for item in read_ledger(
-                    state.run_ledgers.path_for("session-managed-output", run_id)
-                )
-            ]
-            run_row = next(
-                item
-                for item in rows
-                if item["type"] == "tool_finished" and item["tool"] == "run"
-            )
+            rows = [item.payload for item in read_ledger(state.run_ledgers.path_for("session-managed-output", run_id))]
+            run_row = next(item for item in rows if item["type"] == "tool_finished" and item["tool"] == "run")
             handle = run_row["output_handle"]
             self.assertTrue(str(handle).startswith("out_"))
             self.assertGreater(run_row["output_bytes"], 0)
@@ -3605,15 +3622,17 @@ class SessionThreadingTests(unittest.TestCase):
         second = mock.Mock()
         second.name = "GLM Chat"
         second.location = "https://chat.z.ai/"
-        failure = ProviderActionError(ProviderFailure(
-            "DeepSeek",
-            "send",
-            "",
-            "",
-            "missing",
-            "now",
-            "response_missing",
-        ))
+        failure = ProviderActionError(
+            ProviderFailure(
+                "DeepSeek",
+                "send",
+                "",
+                "",
+                "missing",
+                "now",
+                "response_missing",
+            )
+        )
 
         with (
             tempfile.TemporaryDirectory() as td,
@@ -3664,15 +3683,17 @@ class SessionThreadingTests(unittest.TestCase):
         second = mock.Mock()
         second.name = "StepFun Chat"
         second.location = "https://chat.stepfun.com/chats/"
-        failure = ProviderActionError(ProviderFailure(
-            "DeepSeek",
-            "send",
-            "",
-            "",
-            "missing",
-            "now",
-            "response_missing",
-        ))
+        failure = ProviderActionError(
+            ProviderFailure(
+                "DeepSeek",
+                "send",
+                "",
+                "",
+                "missing",
+                "now",
+                "response_missing",
+            )
+        )
 
         with (
             tempfile.TemporaryDirectory() as td,
@@ -3727,9 +3748,7 @@ class SessionThreadingTests(unittest.TestCase):
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
         provider.location = "https://chat.deepseek.com/"
-        provider.send.return_value = (
-            '{"tool":"shell","args":{"path":".","command":"npm install"}}'
-        )
+        provider.send.return_value = '{"tool":"shell","args":{"path":".","command":"npm install"}}'
 
         with (
             tempfile.TemporaryDirectory() as td,
@@ -3788,11 +3807,13 @@ class SessionThreadingTests(unittest.TestCase):
     def test_run_task_with_research_intent_uses_research_runner(self) -> None:
         class Search:
             def search(self, query, limit=8):
-                return [{
-                    "title": "Helium source",
-                    "url": "https://example.com/helium",
-                    "snippet": "Helium data",
-                }]
+                return [
+                    {
+                        "title": "Helium source",
+                        "url": "https://example.com/helium",
+                        "snippet": "Helium data",
+                    }
+                ]
 
             def fetch(self, url):
                 return {
@@ -3809,16 +3830,19 @@ class SessionThreadingTests(unittest.TestCase):
             state = server.State(td)
             seed_ghost_style_memory(state, session_id="session-research")
             from codey.knowledge import KnowledgeStore
+
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             conversation = state.conversation_for("session-research")
             conversation.begin_window("deepseek", "chat")
-            conversation.update_snapshot(ConversationSnapshot(
-                mode="chat",
-                goal="Choose the storage layer",
-                provider_id="deepseek",
-                latest_user="SQLite or a flat file?",
-                latest_reply="SQLite is better once querying matters.",
-            ))
+            conversation.update_snapshot(
+                ConversationSnapshot(
+                    mode="chat",
+                    goal="Choose the storage layer",
+                    provider_id="deepseek",
+                    latest_user="SQLite or a flat file?",
+                    latest_reply="SQLite is better once querying matters.",
+                )
+            )
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -3826,19 +3850,27 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps({
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Helium fixture source",
-                        "body": "Helium is separated from natural gas.",
-                        "sources": ["s1"],
-                    },
-                }),
-                json.dumps({
-                    "tool": "done",
-                    "args": {"answer": valid_research_report("https://example.com/helium", "Helium data are sufficient for this fixture.")},
-                }),
+                json.dumps(
+                    {
+                        "tool": "knowledge_write",
+                        "args": {
+                            "type": "fact",
+                            "title": "Helium fixture source",
+                            "body": "Helium is separated from natural gas.",
+                            "sources": ["s1"],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "tool": "done",
+                        "args": {
+                            "answer": valid_research_report(
+                                "https://example.com/helium", "Helium data are sufficient for this fixture."
+                            )
+                        },
+                    }
+                ),
             ]
 
             with (
@@ -3935,6 +3967,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = self._state(td)
             from codey.knowledge import KnowledgeStore
+
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()
             provider = mock.Mock()
@@ -3943,22 +3976,26 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps({
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "PDF report is readable",
-                        "body": "The PDF report describes four possible paths after talks stumble.",
-                        "sources": ["s1"],
-                        "evidence": [{
-                            "claim": "The PDF report describes four possible paths after talks stumble.",
-                            "source_url": "s1",
-                            "excerpt": "This sentence is not present in the opened page.",
-                            "stance": "supports",
-                            "page": 1,
-                        }],
-                    },
-                }),
+                json.dumps(
+                    {
+                        "tool": "knowledge_write",
+                        "args": {
+                            "type": "fact",
+                            "title": "PDF report is readable",
+                            "body": "The PDF report describes four possible paths after talks stumble.",
+                            "sources": ["s1"],
+                            "evidence": [
+                                {
+                                    "claim": "The PDF report describes four possible paths after talks stumble.",
+                                    "source_url": "s1",
+                                    "excerpt": "This sentence is not present in the opened page.",
+                                    "stance": "supports",
+                                    "page": 1,
+                                }
+                            ],
+                        },
+                    }
+                ),
                 json.dumps({"tool": "done", "args": {"answer": report}}),
             ]
 
@@ -3967,22 +4004,29 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
-                mock.patch.dict(sys.modules, {
-                    "pypdf": SimpleNamespace(
-                        PdfReader=lambda _stream: SimpleNamespace(pages=[
-                            SimpleNamespace(
-                                extract_text=lambda: (
-                                    "The PDF report describes four possible paths after talks stumble. "
-                                    "It frames military escalation, diplomatic reset, proxy conflict, "
-                                    "and a managed stalemate as possible scenarios."
-                                ),
-                                get_contents=lambda: [],
+                mock.patch.dict(
+                    sys.modules,
+                    {
+                        "pypdf": SimpleNamespace(
+                            PdfReader=lambda _stream: SimpleNamespace(
+                                pages=[
+                                    SimpleNamespace(
+                                        extract_text=lambda: (
+                                            "The PDF report describes four possible paths after talks stumble. "
+                                            "It frames military escalation, diplomatic reset, proxy conflict, "
+                                            "and a managed stalemate as possible scenarios."
+                                        ),
+                                        get_contents=lambda: [],
+                                    )
+                                ]
                             )
-                        ])
-                    )
-                }),
+                        )
+                    },
+                ),
             ):
-                server._run_task("session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research")
+                server._run_task(
+                    "session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research"
+                )
 
             emitted = []
             while not events.empty():
@@ -4014,11 +4058,13 @@ class SessionThreadingTests(unittest.TestCase):
     def test_followup_research_intent_includes_previous_research_context(self) -> None:
         class Search:
             def search(self, query, limit=8):
-                return [{
-                    "title": "Storage source",
-                    "url": "https://example.com/storage",
-                    "snippet": "The storage plan source supports the SQLite-backed plan.",
-                }]
+                return [
+                    {
+                        "title": "Storage source",
+                        "url": "https://example.com/storage",
+                        "snippet": "The storage plan source supports the SQLite-backed plan.",
+                    }
+                ]
 
             def fetch(self, url):
                 return {
@@ -4034,6 +4080,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             from codey.knowledge import KnowledgeStore
+
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -4041,34 +4088,48 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "storage plan"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps({
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Storage plan source",
-                        "body": "The storage plan source supports the SQLite-backed plan.",
-                        "sources": ["s1"],
-                    },
-                }),
-                json.dumps({
-                    "tool": "done",
-                    "args": {"answer": valid_research_report("https://example.com/storage", "First research summary: prefer the SQLite-backed plan.")},
-                }),
+                json.dumps(
+                    {
+                        "tool": "knowledge_write",
+                        "args": {
+                            "type": "fact",
+                            "title": "Storage plan source",
+                            "body": "The storage plan source supports the SQLite-backed plan.",
+                            "sources": ["s1"],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "tool": "done",
+                        "args": {
+                            "answer": valid_research_report(
+                                "https://example.com/storage", "First research summary: prefer the SQLite-backed plan."
+                            )
+                        },
+                    }
+                ),
                 json.dumps({"tool": "web_search", "args": {"query": "storage plan followup"}}),
                 json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-                json.dumps({
-                    "tool": "knowledge_write",
-                    "args": {
-                        "type": "fact",
-                        "title": "Storage plan followup",
-                        "body": "The storage plan source supports the SQLite-backed plan.",
-                        "sources": ["s1"],
-                    },
-                }),
-                json.dumps({
-                    "tool": "done",
-                    "args": {"answer": valid_research_report("https://example.com/storage", "Second research summary.")},
-                }),
+                json.dumps(
+                    {
+                        "tool": "knowledge_write",
+                        "args": {
+                            "type": "fact",
+                            "title": "Storage plan followup",
+                            "body": "The storage plan source supports the SQLite-backed plan.",
+                            "sources": ["s1"],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "tool": "done",
+                        "args": {
+                            "answer": valid_research_report("https://example.com/storage", "Second research summary.")
+                        },
+                    }
+                ),
             ]
 
             with (
@@ -4078,8 +4139,12 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
-                server._run_task("session-research", None, "Research the storage plan", 4, False, "deepseek", "research")
-                server._run_task("session-research", None, "Continue researching that plan", 4, False, "deepseek", "research")
+                server._run_task(
+                    "session-research", None, "Research the storage plan", 4, False, "deepseek", "research"
+                )
+                server._run_task(
+                    "session-research", None, "Continue researching that plan", 4, False, "deepseek", "research"
+                )
 
             state.knowledge_store.close()
 
@@ -4095,19 +4160,22 @@ class SessionThreadingTests(unittest.TestCase):
             project_text = str(project.resolve())
             state = server.State(td)
             from codey.knowledge import KnowledgeStore
+
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             state.set_provider_session("deepseek", "session-hybrid")
             conversation = state.conversation_for("session-hybrid")
             conversation.begin_window("deepseek", "project", project_text)
-            conversation.update_snapshot(ConversationSnapshot(
-                mode="project",
-                goal="Implement the API client",
-                project=project_text,
-                provider_id="deepseek",
-                summary="Use the requests-based client wrapper.",
-                latest_user="Build the client here.",
-                latest_reply="The wrapper should centralize retries.",
-            ))
+            conversation.update_snapshot(
+                ConversationSnapshot(
+                    mode="project",
+                    goal="Implement the API client",
+                    project=project_text,
+                    provider_id="deepseek",
+                    summary="Use the requests-based client wrapper.",
+                    latest_user="Build the client here.",
+                    latest_reply="The wrapper should centralize retries.",
+                )
+            )
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -4398,32 +4466,38 @@ class SessionThreadingTests(unittest.TestCase):
             state = server.State(state_home)
             context = state.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
-            context.update_snapshot(ConversationSnapshot(
-                mode="chat",
-                goal="Choose a database",
-                provider_id="deepseek",
-                latest_user="Choose a database",
-                latest_reply="SQLite is enough.",
-            ))
-            state.save_ui_state({
-                "active_id": "session-1",
-                "updated_at": 1,
-                "revision": 1,
-                "sessions": [{
-                    "id": "session-1",
-                    "title": "Database plan",
-                    "messages": [
-                        {"type": "user", "text": "Earlier UI detail"},
-                        {"type": "asst", "text": "Keep UI-HISTORY-MARKER"},
-                        {"type": "user", "text": "Add a migration plan"},
+            context.update_snapshot(
+                ConversationSnapshot(
+                    mode="chat",
+                    goal="Choose a database",
+                    provider_id="deepseek",
+                    latest_user="Choose a database",
+                    latest_reply="SQLite is enough.",
+                )
+            )
+            state.save_ui_state(
+                {
+                    "active_id": "session-1",
+                    "updated_at": 1,
+                    "revision": 1,
+                    "sessions": [
+                        {
+                            "id": "session-1",
+                            "title": "Database plan",
+                            "messages": [
+                                {"type": "user", "text": "Earlier UI detail"},
+                                {"type": "asst", "text": "Keep UI-HISTORY-MARKER"},
+                                {"type": "user", "text": "Add a migration plan"},
+                            ],
+                            "terminalRuns": [],
+                            "createdAt": 0,
+                            "projectId": None,
+                            "provider": "deepseek",
+                        }
                     ],
-                    "terminalRuns": [],
-                    "createdAt": 0,
-                    "projectId": None,
-                    "provider": "deepseek",
-                }],
-                "projects": [],
-            })
+                    "projects": [],
+                }
+            )
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -4452,38 +4526,46 @@ class SessionThreadingTests(unittest.TestCase):
             (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
             context = state.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
-            context.update_snapshot(ConversationSnapshot(
-                mode="chat",
-                goal="Build a small notes app",
-                provider_id="deepseek",
-                latest_user="Pick storage",
-                latest_reply="Use SQLite for simple local persistence.",
-            ))
-            state.save_ui_state({
-                "active_id": "session-1",
-                "updated_at": 1,
-                "revision": 1,
-                "sessions": [{
-                    "id": "session-1",
-                    "title": "Notes plan",
-                    "messages": [
-                        {"type": "user", "text": "Pick storage"},
-                        {"type": "asst", "text": "Keep WRITER-HANDOFF-MARKER with SQLite."},
-                        {"type": "user", "text": "Apply the plan here."},
+            context.update_snapshot(
+                ConversationSnapshot(
+                    mode="chat",
+                    goal="Build a small notes app",
+                    provider_id="deepseek",
+                    latest_user="Pick storage",
+                    latest_reply="Use SQLite for simple local persistence.",
+                )
+            )
+            state.save_ui_state(
+                {
+                    "active_id": "session-1",
+                    "updated_at": 1,
+                    "revision": 1,
+                    "sessions": [
+                        {
+                            "id": "session-1",
+                            "title": "Notes plan",
+                            "messages": [
+                                {"type": "user", "text": "Pick storage"},
+                                {"type": "asst", "text": "Keep WRITER-HANDOFF-MARKER with SQLite."},
+                                {"type": "user", "text": "Apply the plan here."},
+                            ],
+                            "terminalRuns": [],
+                            "createdAt": 0,
+                            "projectId": "project-1",
+                            "provider": "deepseek",
+                        }
                     ],
-                    "terminalRuns": [],
-                    "createdAt": 0,
-                    "projectId": "project-1",
-                    "provider": "deepseek",
-                }],
-                "projects": [{
-                    "id": "project-1",
-                    "name": "notes-app",
-                    "path": str(project),
-                    "expanded": True,
-                    "createdAt": 0,
-                }],
-            })
+                    "projects": [
+                        {
+                            "id": "project-1",
+                            "name": "notes-app",
+                            "path": str(project),
+                            "expanded": True,
+                            "createdAt": 0,
+                        }
+                    ],
+                }
+            )
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -4539,40 +4621,46 @@ class SessionThreadingTests(unittest.TestCase):
                     latest_reply="Use SQLite for simple local persistence.",
                 ),
             )
-            first.save_ui_state({
-                "active_id": "session-1",
-                "updated_at": 1,
-                "revision": 1,
-                "sessions": [{
-                    "id": "session-1",
-                    "title": "Notes plan",
-                    "messages": [
-                        {"type": "user", "text": "Pick storage"},
+            first.save_ui_state(
+                {
+                    "active_id": "session-1",
+                    "updated_at": 1,
+                    "revision": 1,
+                    "sessions": [
                         {
-                            "type": "asst",
-                            "text": "Keep RESTART-ATTACH-MARKER with SQLite.",
-                        },
-                        {
-                            "type": "tool",
-                            "kind": "read_file",
-                            "result": "secret tool output",
-                        },
-                        {"type": "shell_result", "output": "secret shell output"},
-                        {"type": "user", "text": "Apply the plan here."},
+                            "id": "session-1",
+                            "title": "Notes plan",
+                            "messages": [
+                                {"type": "user", "text": "Pick storage"},
+                                {
+                                    "type": "asst",
+                                    "text": "Keep RESTART-ATTACH-MARKER with SQLite.",
+                                },
+                                {
+                                    "type": "tool",
+                                    "kind": "read_file",
+                                    "result": "secret tool output",
+                                },
+                                {"type": "shell_result", "output": "secret shell output"},
+                                {"type": "user", "text": "Apply the plan here."},
+                            ],
+                            "terminalRuns": [],
+                            "createdAt": 0,
+                            "projectId": "project-1",
+                            "provider": "deepseek",
+                        }
                     ],
-                    "terminalRuns": [],
-                    "createdAt": 0,
-                    "projectId": "project-1",
-                    "provider": "deepseek",
-                }],
-                "projects": [{
-                    "id": "project-1",
-                    "name": "notes-app",
-                    "path": str(project),
-                    "expanded": True,
-                    "createdAt": 0,
-                }],
-            })
+                    "projects": [
+                        {
+                            "id": "project-1",
+                            "name": "notes-app",
+                            "path": str(project),
+                            "expanded": True,
+                            "createdAt": 0,
+                        }
+                    ],
+                }
+            )
 
             restarted = server.State(state_home)
             provider = mock.Mock()
@@ -4795,16 +4883,20 @@ class SessionThreadingTests(unittest.TestCase):
 
             def fake_agent_run(*_args, **kwargs):
                 on_event = kwargs["on_event"]
-                on_event(RunEvent.tool_finished(
-                    1,
-                    ToolCall("edit", {"path": "app.py"}),
-                    ToolOutcome("edited", True, changed=True),
-                ))
-                on_event(RunEvent.tool_finished(
-                    2,
-                    ToolCall("run", {"command": "python -m unittest", "path": "."}),
-                    ToolOutcome("OK", True, exit_code=0),
-                ))
+                on_event(
+                    RunEvent.tool_finished(
+                        1,
+                        ToolCall("edit", {"path": "app.py"}),
+                        ToolOutcome("edited", True, changed=True),
+                    )
+                )
+                on_event(
+                    RunEvent.tool_finished(
+                        2,
+                        ToolCall("run", {"command": "python -m unittest", "path": "."}),
+                        ToolOutcome("OK", True, exit_code=0),
+                    )
+                )
                 return RunResult("implemented", "done", 2, True, True)
 
             with (
@@ -4869,9 +4961,7 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer = mock.Mock()
         reviewer.name = "StepFun Chat"
         reviewer.location = "https://chat.stepfun.com/chats/"
-        reviewer.send.return_value = (
-            '{"verdict":"approved","summary":"Looks good","findings":[]}'
-        )
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         final_changes = {
             "ok": True,
             "mode": "snapshot",
@@ -5099,15 +5189,17 @@ class SessionThreadingTests(unittest.TestCase):
             '"findings":[{"path":"app.py","issue":"Bug",'
             '"suggested_fix":"Repair it"}]}'
         )
-        provider_failure = ProviderActionError(ProviderFailure(
-            "DeepSeek",
-            "send",
-            "",
-            "",
-            "response missing",
-            "now",
-            "response_missing",
-        ))
+        provider_failure = ProviderActionError(
+            ProviderFailure(
+                "DeepSeek",
+                "send",
+                "",
+                "",
+                "response missing",
+                "now",
+                "response_missing",
+            )
+        )
         changes = {
             "ok": True,
             "changed_count": 1,
@@ -5409,10 +5501,12 @@ class SessionThreadingTests(unittest.TestCase):
 
         def send_review(_prompt, timeout=None):
             del timeout
-            states.append((
-                provider_controls.can_teach(),
-                provider_controls.can_doctor(),
-            ))
+            states.append(
+                (
+                    provider_controls.can_teach(),
+                    provider_controls.can_doctor(),
+                )
+            )
             return '{"verdict":"approved","summary":"Looks good","findings":[]}'
 
         reviewer.send.side_effect = send_review
@@ -5532,9 +5626,7 @@ class SessionThreadingTests(unittest.TestCase):
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
-        self.project_audit_mock.return_value = (
-            ConsensusAdvice("qwen", "Qwen", "Possible bug in app.py."),
-        )
+        self.project_audit_mock.return_value = (ConsensusAdvice("qwen", "Qwen", "Possible bug in app.py."),)
 
         with (
             tempfile.TemporaryDirectory() as td,
@@ -5709,10 +5801,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "deletions": 0,
                 }
             ],
-            "diff": (
-                "diff --git a/backend/src/app.ts b/backend/src/app.ts\n"
-                "+export const value = 2;\n"
-            ),
+            "diff": ("diff --git a/backend/src/app.ts b/backend/src/app.ts\n+export const value = 2;\n"),
         }
 
         with (
@@ -5909,16 +5998,19 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["stop_reason"], "error")
-        self.assertEqual(task_done["provider_failure"], {
-            "model": "StepFun",
-            "action": "task",
-            "url": "",
-            "title": "",
-            "message": "response timed out",
-            "kind": "transient",
-            "stage": "",
-            "time": task_done["provider_failure"]["time"],
-        })
+        self.assertEqual(
+            task_done["provider_failure"],
+            {
+                "model": "StepFun",
+                "action": "task",
+                "url": "",
+                "title": "",
+                "message": "response timed out",
+                "kind": "transient",
+                "stage": "",
+                "time": task_done["provider_failure"]["time"],
+            },
+        )
         self.assertIsNot(state.last_provider_failure, provider.last_failure)
 
     def test_run_task_records_connect_failure_without_provider_page(self) -> None:
@@ -6121,15 +6213,17 @@ class UiLaunchTests(unittest.TestCase):
                 "active_id": "chat-1",
                 "updated_at": 123,
                 "revision": 1,
-                "sessions": [{
-                    "id": "chat-1",
-                    "title": "你好",
-                    "messages": [],
-                    "terminalRuns": [],
-                    "createdAt": 0,
-                    "projectId": None,
-                    "provider": "deepseek",
-                }],
+                "sessions": [
+                    {
+                        "id": "chat-1",
+                        "title": "你好",
+                        "messages": [],
+                        "terminalRuns": [],
+                        "createdAt": 0,
+                        "projectId": None,
+                        "provider": "deepseek",
+                    }
+                ],
                 "projects": [],
             }
 

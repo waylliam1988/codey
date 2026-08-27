@@ -102,6 +102,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
         try:
             # When events_path is locked, reset_all attempting to acquire with short timeout will fail gracefully
             import codey.storage.file_lock as fl
+
             orig_timeout = fl.LOCK_TIMEOUT_SECONDS
             fl.LOCK_TIMEOUT_SECONDS = 0.1
             try:

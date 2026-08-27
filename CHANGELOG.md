@@ -6,6 +6,8 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+## 0.4.17 - OS-Backed File Locks and Event State Reset
+
 - Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
   - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
   - `LockTimeout` inherits `TimeoutError` (a subclass of `OSError`), aligning with store error handling contracts (`except OSError`).

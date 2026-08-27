@@ -1,6 +1,6 @@
 # Codey Test Report
 
-## Unreleased - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
+## 0.4.17 Release - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
 
 This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset (`codey.storage.event_state`).
 
@@ -27,8 +27,14 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-pytest
-# 3036 passed, 2 skipped in 292.83s
+python -m ruff format --check codey\storage\file_lock.py codey\storage\event_state.py codey\ghost\affinity.py codey\ghost\work_queue.py codey\ghost\continuity.py codey\ghost\hebbian.py codey\ghost\inbox.py codey\ghost\router.py codey\ghost\sleep.py tests\test_file_lock.py tests\test_event_state.py tests\test_server.py
+# 12 files already formatted
+
+python -B -m pytest tests\test_file_lock.py tests\test_event_state.py tests\test_research_evidence_ledger.py tests\test_ghost_affinity.py tests\test_ghost_work_queue.py tests\test_ghost_continuity.py tests\test_ghost_hebbian.py tests\test_ghost_inbox.py tests\test_ghost_router.py tests\test_ghost_sleep.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
+# 276 passed, 76 subtests passed in 25.35s
+
+python -B -m pytest -q
+# 3024 passed, 14 skipped, 966 subtests passed in 290.89s (0:04:50)
 ```
 
 
@@ -168,7 +174,8 @@ python -m ruff check .
 
 python -B -m pytest tests\test_run_command_semantics.py `
   tests\test_action_policy.py tests\test_tool_runtime.py `
-  tests\test_adapter_self_repair.py tests\test_transactional_json.py `
+  tests\test_adapter_self_repair.py tests\test_file_lock.py `
+  tests\test_event_state.py `
   tests\test_research_evidence_ledger.py tests\test_ghost_affinity.py `
   tests\test_ghost_work_queue.py tests\test_manual_ab_harness_common.py `
   tests\test_completion_enforcement_ab.py tests\test_provider_revival.py `

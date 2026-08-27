@@ -39,20 +39,24 @@ MAX_CONTINUITY_TEXT_CHARS = 160
 MAX_CONTINUITY_METADATA_KEYS = 12
 _PROJECTION_KIND = "ghost_continuity_projection"
 
-CONTINUITY_KINDS = frozenset({
-    "recent_focus",
-    "open_question",
-    "fresh_correction",
-    "recently_reinforced_preference",
-    "long_term_goal",
-    "active_project",
-})
-CONTINUITY_SOURCES = frozenset({
-    "hebbian",
-    "task_done",
-    "run_ledger",
-    "research_note",
-})
+CONTINUITY_KINDS = frozenset(
+    {
+        "recent_focus",
+        "open_question",
+        "fresh_correction",
+        "recently_reinforced_preference",
+        "long_term_goal",
+        "active_project",
+    }
+)
+CONTINUITY_SOURCES = frozenset(
+    {
+        "hebbian",
+        "task_done",
+        "run_ledger",
+        "research_note",
+    }
+)
 KIND_LABELS = {
     "recent_focus": "Recent focus",
     "open_question": "Open question",
@@ -234,28 +238,34 @@ class GhostContinuityStore:
                     )
                 candidates: list[GhostContinuityItem] = []
                 candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
-                candidates.extend(_items_from_task(
-                    user_focus_excerpt,
-                    now=now,
-                    session_id=session_id,
-                    run_id=run_id,
-                    project=project,
-                    mode=mode,
-                    warnings=warnings,
-                ))
-                candidates.extend(_items_from_run_projection(
-                    run_projection,
-                    now=now,
-                    project=project,
-                    warnings=warnings,
-                ))
-                candidates.extend(_items_from_knowledge(
-                    knowledge_store,
-                    now=now,
-                    session_id=session_id,
-                    project=project,
-                    warnings=warnings,
-                ))
+                candidates.extend(
+                    _items_from_task(
+                        user_focus_excerpt,
+                        now=now,
+                        session_id=session_id,
+                        run_id=run_id,
+                        project=project,
+                        mode=mode,
+                        warnings=warnings,
+                    )
+                )
+                candidates.extend(
+                    _items_from_run_projection(
+                        run_projection,
+                        now=now,
+                        project=project,
+                        warnings=warnings,
+                    )
+                )
+                candidates.extend(
+                    _items_from_knowledge(
+                        knowledge_store,
+                        now=now,
+                        session_id=session_id,
+                        project=project,
+                        warnings=warnings,
+                    )
+                )
 
                 active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
                 merged, changed_items = _merge_items(active_existing, candidates, now=now)
@@ -271,18 +281,20 @@ class GhostContinuityStore:
                     )
                 if changed_items:
                     events = [_item_event(item, action="upsert") for item in changed_items]
-                    events.append(_control_event(
-                        "ghost_continuity_synced",
-                        {
-                            "run_id": clip_signal_text(run_id, 120),
-                            "session_id": clip_signal_text(session_id, 120),
-                            "project": _normalize_project(project),
-                            "mode": clip_signal_text(mode, 40),
-                            "items_seen": len(candidates),
-                            "items_changed": len(changed_items),
-                            "items_total": len(merged),
-                        },
-                    ))
+                    events.append(
+                        _control_event(
+                            "ghost_continuity_synced",
+                            {
+                                "run_id": clip_signal_text(run_id, 120),
+                                "session_id": clip_signal_text(session_id, 120),
+                                "project": _normalize_project(project),
+                                "mode": clip_signal_text(mode, 40),
+                                "items_seen": len(candidates),
+                                "items_changed": len(changed_items),
+                                "items_total": len(merged),
+                            },
+                        )
+                    )
                     if not self._append_events(events):
                         self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
                         return GhostContinuityResult(
@@ -316,7 +328,8 @@ class GhostContinuityStore:
         project_ref = _normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         rows = [
-            item for item in items
+            item
+            for item in items
             if _scope_filter_matches(item, scope=scope, project_ref=project_ref, session_ref=session_ref)
         ]
         return tuple(sorted(rows, key=_item_sort_key))
@@ -364,7 +377,8 @@ class GhostContinuityStore:
         with with_file_lock(self.events_path):
             items = list(self._load_items())
             kept = [
-                item for item in items
+                item
+                for item in items
                 if not _scope_filter_matches(
                     item,
                     scope=normalized_scope,
@@ -500,10 +514,7 @@ class GhostContinuityStore:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if (
-                isinstance(payload, dict)
-                and payload.get("schema_version") == CONTINUITY_SCHEMA_VERSION
-            ):
+            if isinstance(payload, dict) and payload.get("schema_version") == CONTINUITY_SCHEMA_VERSION:
                 rows.append(payload)
         return rows
 
@@ -626,10 +637,7 @@ def _read_projected_items_from_path(path: Path) -> tuple[GhostContinuityItem, ..
     raw_items = payload.get("items")
     if not isinstance(raw_items, list):
         return ()
-    return tuple(
-        item for item in (GhostContinuityItem.from_payload(row) for row in raw_items)
-        if item is not None
-    )
+    return tuple(item for item in (GhostContinuityItem.from_payload(row) for row in raw_items) if item is not None)
 
 
 def _items_from_hebbian(
@@ -661,24 +669,26 @@ def _items_from_hebbian(
         if not text:
             warnings.append(f"unrenderable_continuity_node:{node.kind}:{node.conflict_key}")
             continue
-        rows.append(_item(
-            kind=kind,
-            scope=node.scope,
-            scope_ref=node.scope_ref,
-            text=text,
-            source="hebbian",
-            source_ref=node.id,
-            weight=node.weight,
-            confidence=node.confidence,
-            now=now,
-            created_at=node.created_at or now,
-            updated_at=node.last_reinforced_at or node.updated_at or now,
-            metadata={
-                "node_kind": node.kind,
-                "conflict_key": node.conflict_key,
-                "value_key": node.value_key,
-            },
-        ))
+        rows.append(
+            _item(
+                kind=kind,
+                scope=node.scope,
+                scope_ref=node.scope_ref,
+                text=text,
+                source="hebbian",
+                source_ref=node.id,
+                weight=node.weight,
+                confidence=node.confidence,
+                now=now,
+                created_at=node.created_at or now,
+                updated_at=node.last_reinforced_at or node.updated_at or now,
+                metadata={
+                    "node_kind": node.kind,
+                    "conflict_key": node.conflict_key,
+                    "value_key": node.value_key,
+                },
+            )
+        )
     return rows
 
 
@@ -699,31 +709,35 @@ def _items_from_task(
     if normalized_mode not in {"chat", "planning"}:
         return []
     session_ref = clip_signal_text(session_id, 120)
-    rows = [_item(
-        kind="recent_focus",
-        scope="session" if session_ref else "project" if project else "user",
-        scope_ref=session_ref or _normalize_project(project),
-        text=focus,
-        source="task_done",
-        source_ref=clip_signal_text(run_id, 120),
-        weight=0.35,
-        confidence=0.7,
-        now=now,
-        metadata={"mode": normalized_mode},
-    )]
-    if _looks_like_question(focus):
-        rows.append(_item(
-            kind="open_question",
+    rows = [
+        _item(
+            kind="recent_focus",
             scope="session" if session_ref else "project" if project else "user",
             scope_ref=session_ref or _normalize_project(project),
             text=focus,
             source="task_done",
             source_ref=clip_signal_text(run_id, 120),
-            weight=0.3,
-            confidence=0.65,
+            weight=0.35,
+            confidence=0.7,
             now=now,
             metadata={"mode": normalized_mode},
-        ))
+        )
+    ]
+    if _looks_like_question(focus):
+        rows.append(
+            _item(
+                kind="open_question",
+                scope="session" if session_ref else "project" if project else "user",
+                scope_ref=session_ref or _normalize_project(project),
+                text=focus,
+                source="task_done",
+                source_ref=clip_signal_text(run_id, 120),
+                weight=0.3,
+                confidence=0.65,
+                now=now,
+                metadata={"mode": normalized_mode},
+            )
+        )
     return rows
 
 
@@ -741,24 +755,26 @@ def _items_from_run_projection(
     if project_ref:
         project_name = _project_display_name(project_ref)
         if project_name and _safe_prompt_text(project_name, warnings=warnings, kind="active_project"):
-            rows.append(_item(
-                kind="active_project",
-                scope="project",
-                scope_ref=project_ref,
-                text=project_name,
-                source="run_ledger",
-                source_ref=projection.run_id,
-                weight=0.25,
-                confidence=0.75,
-                now=now,
-                created_at=projection.started_at or now,
-                updated_at=projection.finished_at or now,
-                metadata={
-                    "mode": projection.mode,
-                    "complete": projection.complete,
-                    "tool_calls": projection.tool_calls,
-                },
-            ))
+            rows.append(
+                _item(
+                    kind="active_project",
+                    scope="project",
+                    scope_ref=project_ref,
+                    text=project_name,
+                    source="run_ledger",
+                    source_ref=projection.run_id,
+                    weight=0.25,
+                    confidence=0.75,
+                    now=now,
+                    created_at=projection.started_at or now,
+                    updated_at=projection.finished_at or now,
+                    metadata={
+                        "mode": projection.mode,
+                        "complete": projection.complete,
+                        "tool_calls": projection.tool_calls,
+                    },
+                )
+            )
     return rows
 
 
@@ -774,19 +790,23 @@ def _items_from_knowledge(
         return []
     rows: list[dict] = []
     try:
-        rows = list(store.index.recent(
-            5,
-            session_id=clip_signal_text(session_id, 120),
-            project=_normalize_project(project),
-            types=("synthesis", "decision"),
-        ))
-    except Exception:
-        try:
-            rows = list(store.index.recent(
+        rows = list(
+            store.index.recent(
                 5,
                 session_id=clip_signal_text(session_id, 120),
+                project=_normalize_project(project),
                 types=("synthesis", "decision"),
-            ))
+            )
+        )
+    except Exception:
+        try:
+            rows = list(
+                store.index.recent(
+                    5,
+                    session_id=clip_signal_text(session_id, 120),
+                    types=("synthesis", "decision"),
+                )
+            )
         except Exception:
             warnings.append("knowledge_unreadable")
             return []
@@ -800,38 +820,42 @@ def _items_from_knowledge(
         title = _clean_context_text(row.get("title"))
         if title and _safe_prompt_text(title, warnings=warnings, kind="research_note"):
             kind = "open_question" if _looks_like_question(title) else "recent_focus"
-            out.append(_item(
-                kind=kind,
-                scope=scope,
-                scope_ref=scope_ref,
-                text=title,
-                source="research_note",
-                source_ref=source_ref,
-                weight=0.25,
-                confidence=0.7,
-                now=now,
-                updated_at=clip_signal_text(row.get("updated"), 80) or now,
-                metadata={"note_type": clip_signal_text(row.get("type"), 40)},
-            ))
+            out.append(
+                _item(
+                    kind=kind,
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    text=title,
+                    source="research_note",
+                    source_ref=source_ref,
+                    weight=0.25,
+                    confidence=0.7,
+                    now=now,
+                    updated_at=clip_signal_text(row.get("updated"), 80) or now,
+                    metadata={"note_type": clip_signal_text(row.get("type"), 40)},
+                )
+            )
         for question in _structured_open_questions(row.get("open_questions")):
             if not _safe_prompt_text(question, warnings=warnings, kind="open_question"):
                 continue
-            out.append(_item(
-                kind="open_question",
-                scope=scope,
-                scope_ref=scope_ref,
-                text=question,
-                source="research_note",
-                source_ref=source_ref,
-                weight=0.3,
-                confidence=0.7,
-                now=now,
-                updated_at=clip_signal_text(row.get("updated"), 80) or now,
-                metadata={
-                    "note_type": clip_signal_text(row.get("type"), 40),
-                    "field": "open_questions",
-                },
-            ))
+            out.append(
+                _item(
+                    kind="open_question",
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    text=question,
+                    source="research_note",
+                    source_ref=source_ref,
+                    weight=0.3,
+                    confidence=0.7,
+                    now=now,
+                    updated_at=clip_signal_text(row.get("updated"), 80) or now,
+                    metadata={
+                        "note_type": clip_signal_text(row.get("type"), 40),
+                        "field": "open_questions",
+                    },
+                )
+            )
     return out
 
 
@@ -865,14 +889,16 @@ def _item(
         scope = "user"
     cleaned = _clean_context_text(text)
     expires_at = _expires_at(now, KIND_TTL_DAYS.get(kind, 30))
-    payload_key = "|".join((
-        kind,
-        scope,
-        clip_signal_text(scope_ref, 240),
-        source,
-        clip_signal_text(source_ref, 160),
-        cleaned.casefold(),
-    ))
+    payload_key = "|".join(
+        (
+            kind,
+            scope,
+            clip_signal_text(scope_ref, 240),
+            source,
+            clip_signal_text(source_ref, 160),
+            cleaned.casefold(),
+        )
+    )
     return GhostContinuityItem(
         id="cont_" + hashlib.sha256(payload_key.encode("utf-8")).hexdigest()[:24],
         kind=kind,
@@ -1030,7 +1056,11 @@ def _scope_filter_matches(
 ) -> bool:
     normalized_scope = str(scope or "").strip().lower()
     if not normalized_scope:
-        return _scope_matches(item, project_ref=project_ref, session_ref=session_ref) if (project_ref or session_ref) else True
+        return (
+            _scope_matches(item, project_ref=project_ref, session_ref=session_ref)
+            if (project_ref or session_ref)
+            else True
+        )
     if item.scope != normalized_scope:
         return False
     if normalized_scope == "project":
@@ -1131,9 +1161,7 @@ def _clean_metadata(value: object) -> dict[str, object]:
 
 def _expires_at(now: str, days: int) -> str:
     parsed = _parse_ts(now)
-    return (parsed + timedelta(days=max(1, int(days or 1)))).isoformat(
-        timespec="seconds"
-    ).replace("+00:00", "Z")
+    return (parsed + timedelta(days=max(1, int(days or 1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _is_expired(item: GhostContinuityItem, now: str) -> bool:
@@ -1211,12 +1239,15 @@ def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
 
 
 def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:

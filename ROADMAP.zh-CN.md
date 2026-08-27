@@ -2890,8 +2890,8 @@ repair_settled
 terminal
 ```
 
-落盘方式先复用 `storage.transactional_json.mutate_json_atomic()` 这类 locked mutation
-原语；纯一次性快照仍可用 atomic write。路径限定在：
+落盘方式统一使用 `storage.file_lock.with_file_lock()` 包住 read/compute/write，并通过
+`write_json_atomic()` 写入；纯一次性快照仍可用 atomic write。路径限定在：
 
 ```text
 state/run_operations/<session_key>/<run_id>.json

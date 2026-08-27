@@ -304,7 +304,8 @@ class GhostRouteStore:
                 warning = self.last_warnings[0] if self.last_warnings else "router_events_unreadable"
                 raise OSError(warning)
             kept = [
-                record for record in records
+                record
+                for record in records
                 if not _record_scope_matches(
                     record,
                     normalized_scope,
@@ -743,21 +744,18 @@ def _forbids_project_access(text: str) -> bool:
     normalized = _normalize_policy_text(text)
     if _contains_any_marker(normalized, _CHAT_ONLY_MARKERS):
         return True
-    return (
-        _contains_ordered_markers(
-            normalized,
-            _PROJECT_ACCESS_DENIAL_MARKERS,
-            _PROJECT_ACCESS_ACTION_MARKERS,
-            _PROJECT_ACCESS_OBJECT_MARKERS,
-            max_span=_PROJECT_ACCESS_DENIAL_WINDOW,
-        )
-        or _contains_ordered_markers(
-            normalized,
-            _PROJECT_ACCESS_DENIAL_MARKERS,
-            _PROJECT_ACCESS_OBJECT_MARKERS,
-            _PROJECT_ACCESS_ACTION_MARKERS,
-            max_span=_PROJECT_ACCESS_DENIAL_WINDOW,
-        )
+    return _contains_ordered_markers(
+        normalized,
+        _PROJECT_ACCESS_DENIAL_MARKERS,
+        _PROJECT_ACCESS_ACTION_MARKERS,
+        _PROJECT_ACCESS_OBJECT_MARKERS,
+        max_span=_PROJECT_ACCESS_DENIAL_WINDOW,
+    ) or _contains_ordered_markers(
+        normalized,
+        _PROJECT_ACCESS_DENIAL_MARKERS,
+        _PROJECT_ACCESS_OBJECT_MARKERS,
+        _PROJECT_ACCESS_ACTION_MARKERS,
+        max_span=_PROJECT_ACCESS_DENIAL_WINDOW,
     )
 
 
@@ -776,7 +774,7 @@ def _contains_ordered_markers(
     for first in first_markers:
         start = _find_marker(text, first)
         while start >= 0:
-            window = text[start:start + max_span]
+            window = text[start : start + max_span]
             for second in second_markers:
                 second_index = _find_marker(window, second)
                 if second_index < 0:
@@ -1000,7 +998,7 @@ def _json_objects(text: str) -> tuple[str, ...]:
                 continue
             depth -= 1
             if depth == 0 and start >= 0:
-                objects.append(stripped[start:index + 1])
+                objects.append(stripped[start : index + 1])
                 start = -1
     return tuple(objects)
 
@@ -1117,12 +1115,15 @@ def _list(value: object) -> list:
 
 
 def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def _now() -> str:

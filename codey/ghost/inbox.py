@@ -351,19 +351,18 @@ class GhostInboxStore:
                     candidates[index] = superseded
                     changed.append((superseded, "superseded"))
                     superseded_ids.append(superseded.id)
-            events = [
-                self._candidate_event(candidate, action=event_action)
-                for candidate, event_action in changed
-            ]
-            events.append(self._control_event(
-                "ghost_memory_candidate_reviewed",
-                {
-                    "candidate_id": target.id,
-                    "action": normalized_action,
-                    "reviewed_by": reviewer,
-                    "superseded_ids": superseded_ids,
-                },
-            ))
+            events = [self._candidate_event(candidate, action=event_action) for candidate, event_action in changed]
+            events.append(
+                self._control_event(
+                    "ghost_memory_candidate_reviewed",
+                    {
+                        "candidate_id": target.id,
+                        "action": normalized_action,
+                        "reviewed_by": reviewer,
+                        "superseded_ids": superseded_ids,
+                    },
+                )
+            )
             if not self._append_events(events):
                 return None
             try:
@@ -440,12 +439,14 @@ class GhostInboxStore:
         try:
             with with_file_lock(self.events_path):
                 write_json_atomic(self.settings_path, payload, max_bytes=MAX_INBOX_BYTES)
-                audit_ok = self._append_events([
-                    self._control_event(
-                        "ghost_learning_settings_updated",
-                        {"learning_enabled": bool(enabled)},
-                    )
-                ])
+                audit_ok = self._append_events(
+                    [
+                        self._control_event(
+                            "ghost_learning_settings_updated",
+                            {"learning_enabled": bool(enabled)},
+                        )
+                    ]
+                )
         except (OSError, TypeError, ValueError):
             return False
         return audit_ok
@@ -763,8 +764,7 @@ class GhostInboxStore:
         control_event: dict[str, object] | None = None,
     ) -> None:
         events: list[dict[str, object]] = [
-            self._candidate_event(candidate, action="compacted")
-            for candidate in self._bounded_candidates(candidates)
+            self._candidate_event(candidate, action="compacted") for candidate in self._bounded_candidates(candidates)
         ]
         if control_event is not None:
             events.append(control_event)
@@ -802,14 +802,17 @@ class GhostInboxStore:
             return
         reason = "event_bytes_limit" if event_bytes > MAX_EVENTS_BYTES else "event_count_limit"
         try:
-            self._rewrite_events_from_candidates(candidates, control_event=self._control_event(
-                "ghost_memory_store_compacted",
-                {
-                    "reason": reason,
-                    "max_events": MAX_GHOST_EVENTS,
-                    "max_event_bytes": MAX_EVENTS_BYTES,
-                },
-            ))
+            self._rewrite_events_from_candidates(
+                candidates,
+                control_event=self._control_event(
+                    "ghost_memory_store_compacted",
+                    {
+                        "reason": reason,
+                        "max_events": MAX_GHOST_EVENTS,
+                        "max_event_bytes": MAX_EVENTS_BYTES,
+                    },
+                ),
+            )
         except (OSError, TypeError, ValueError):
             pass
 
@@ -976,11 +979,7 @@ def _status_filter(value: str | Iterable[str] | None) -> set[str]:
         raw_values = value.split(",")
     else:
         raw_values = list(value)
-    return {
-        str(item).strip().lower()
-        for item in raw_values
-        if str(item).strip().lower() in CANDIDATE_STATUSES
-    }
+    return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in CANDIDATE_STATUSES}
 
 
 def _should_store_decision(decision: GhostGateDecision) -> bool:
@@ -1095,9 +1094,12 @@ def _compact_timestamp() -> str:
 
 
 def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )

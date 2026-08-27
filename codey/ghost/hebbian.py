@@ -222,23 +222,24 @@ class GhostHebbianStore:
                     changed_nodes: list[GhostNode] = []
                     if _candidate_is_manual_accept(candidate) and current is not None:
                         changed_nodes.extend(_supersede_conflicting_nodes(node_by_id, current, now=now))
-                    changed_edges = _reinforce_coactivation_edges(
-                        edge_by_key,
-                        node_by_id,
-                        current,
-                        candidate,
-                        related_candidates,
-                        reward=reward,
-                        now=now,
-                    ) if current is not None else []
+                    changed_edges = (
+                        _reinforce_coactivation_edges(
+                            edge_by_key,
+                            node_by_id,
+                            current,
+                            candidate,
+                            related_candidates,
+                            reward=reward,
+                            now=now,
+                        )
+                        if current is not None
+                        else []
+                    )
                     if not changed_nodes and not changed_edges:
                         return GhostReinforceResult(False, "duplicate_evidence")
                     nodes = _bounded_nodes(node_by_id.values())
                     edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
-                    events = [
-                        _node_event(node, action="superseded")
-                        for node in changed_nodes
-                    ]
+                    events = [_node_event(node, action="superseded") for node in changed_nodes]
                     events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
                     if not self._append_events(events):
                         return GhostReinforceResult(False, "event_write_failed")
@@ -279,7 +280,9 @@ class GhostHebbianStore:
                 nodes = _bounded_nodes(node_by_id.values())
                 edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                 events = [
-                    _node_event(changed_node, action="superseded" if changed_node.status == "superseded" else "reinforced")
+                    _node_event(
+                        changed_node, action="superseded" if changed_node.status == "superseded" else "reinforced"
+                    )
                     for changed_node in changed_nodes
                 ]
                 events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
@@ -310,10 +313,12 @@ class GhostHebbianStore:
                 results.append(GhostReinforceResult(False, "remove_failed"))
                 continue
             removed_count = int(removed.get("nodes", 0)) + int(removed.get("edges", 0))
-            results.append(GhostReinforceResult(
-                removed_count > 0,
-                f"removed_{row.status}_candidate" if removed_count else f"no_{row.status}_state",
-            ))
+            results.append(
+                GhostReinforceResult(
+                    removed_count > 0,
+                    f"removed_{row.status}_candidate" if removed_count else f"no_{row.status}_state",
+                )
+            )
         for row in accepted_rows:
             related = [item for item in by_run.get(row.run_id or row.id, []) if item.id != row.id]
             results.append(self.reinforce_candidate(row, related_candidates=related))
@@ -326,19 +331,14 @@ class GhostHebbianStore:
                 raise OSError("hebbian events are unreadable")
             candidate_node_id = node_id_for_candidate(candidate)
             removed_ids = {
-                node.id for node in nodes
-                if node.id == candidate_node_id or candidate.id in node.candidate_ids
+                node.id for node in nodes if node.id == candidate_node_id or candidate.id in node.candidate_ids
             }
             if not removed_ids:
                 return {"nodes": 0, "edges": 0}
             remaining_nodes = [node for node in nodes if node.id not in removed_ids]
-            removed_edges = [
-                edge for edge in edges
-                if edge.source in removed_ids or edge.target in removed_ids
-            ]
+            removed_edges = [edge for edge in edges if edge.source in removed_ids or edge.target in removed_ids]
             remaining_edges = [
-                edge for edge in edges
-                if edge.source not in removed_ids and edge.target not in removed_ids
+                edge for edge in edges if edge.source not in removed_ids and edge.target not in removed_ids
             ]
             self._rewrite_events_from_state(
                 remaining_nodes,
@@ -392,10 +392,7 @@ class GhostHebbianStore:
         except Exception:
             return ()
         normalized_relation = str(relation or "").strip().lower()
-        rows = [
-            edge for edge in edges
-            if not normalized_relation or edge.relation == normalized_relation
-        ]
+        rows = [edge for edge in edges if not normalized_relation or edge.relation == normalized_relation]
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
     def export_state(self) -> dict[str, object]:
@@ -432,19 +429,16 @@ class GhostHebbianStore:
         with with_file_lock(self.events_path):
             nodes, edges = self._load_state()
             removed_ids = {
-                node.id for node in nodes
+                node.id
+                for node in nodes
                 if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
             }
             if not removed_ids:
                 return {"nodes": 0, "edges": 0}
             remaining_nodes = [node for node in nodes if node.id not in removed_ids]
-            removed_edges = [
-                edge for edge in edges
-                if edge.source in removed_ids or edge.target in removed_ids
-            ]
+            removed_edges = [edge for edge in edges if edge.source in removed_ids or edge.target in removed_ids]
             remaining_edges = [
-                edge for edge in edges
-                if edge.source not in removed_ids and edge.target not in removed_ids
+                edge for edge in edges if edge.source not in removed_ids and edge.target not in removed_ids
             ]
             self._rewrite_events_from_state(
                 remaining_nodes,
@@ -504,12 +498,12 @@ class GhostHebbianStore:
             removed_nodes = len(nodes) - len(bounded_nodes)
             removed_edges = len(edges) - len(bounded_edges)
             decayed_node_count = sum(
-                1 for before, after in zip(nodes, decayed_nodes, strict=False)
+                1
+                for before, after in zip(nodes, decayed_nodes, strict=False)
                 if before.weight != after.weight or before.status != after.status
             )
             decayed_edge_count = sum(
-                1 for before, after in zip(edges, decayed_edges, strict=False)
-                if before.weight != after.weight
+                1 for before, after in zip(edges, decayed_edges, strict=False) if before.weight != after.weight
             )
             if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
                 return {
@@ -629,12 +623,12 @@ class GhostHebbianStore:
         if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
             return None, None
         nodes = [
-            node for node in (GhostNode.from_payload(item) for item in raw_nodes[:MAX_GHOST_NODES])
-            if node is not None
+            node for node in (GhostNode.from_payload(item) for item in raw_nodes[:MAX_GHOST_NODES]) if node is not None
         ]
         node_ids = {node.id for node in nodes}
         edges = [
-            edge for edge in (GhostEdge.from_payload(item) for item in raw_edges[:MAX_GHOST_EDGES])
+            edge
+            for edge in (GhostEdge.from_payload(item) for item in raw_edges[:MAX_GHOST_EDGES])
             if edge is not None and edge.source in node_ids and edge.target in node_ids
         ]
         return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
@@ -741,10 +735,7 @@ class GhostHebbianStore:
         node_rows = _bounded_nodes(nodes)
         events = [_node_event(node, action="compacted") for node in node_rows]
         node_ids = {node.id for node in node_rows}
-        events.extend(
-            _edge_event(edge, action="compacted")
-            for edge in _bounded_edges(edges, node_ids=node_ids)
-        )
+        events.extend(_edge_event(edge, action="compacted") for edge in _bounded_edges(edges, node_ids=node_ids))
         if control_event is not None:
             events.append(control_event)
         self._write_events_atomic(events)
@@ -809,13 +800,15 @@ class GhostHebbianStore:
 
 
 def node_id_for_candidate(candidate: GhostMemoryCandidate) -> str:
-    raw = "|".join((
-        candidate.scope,
-        _scope_ref_for_candidate(candidate),
-        candidate.signal_kind,
-        candidate.conflict_key,
-        candidate.value_key,
-    ))
+    raw = "|".join(
+        (
+            candidate.scope,
+            _scope_ref_for_candidate(candidate),
+            candidate.signal_kind,
+            candidate.conflict_key,
+            candidate.value_key,
+        )
+    )
     digest = hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:24]
     return f"ghn_{digest}"
 
@@ -1012,8 +1005,7 @@ def _bounded_nodes(nodes: Iterable[GhostNode]) -> list[GhostNode]:
 
 def _bounded_edges(edges: Iterable[GhostEdge], *, node_ids: set[str]) -> list[GhostEdge]:
     rows = [
-        edge for edge in edges
-        if edge.source in node_ids and edge.target in node_ids and edge.weight >= MIN_EDGE_WEIGHT
+        edge for edge in edges if edge.source in node_ids and edge.target in node_ids and edge.weight >= MIN_EDGE_WEIGHT
     ]
     rows.sort(key=lambda item: (item.weight, item.updated_at), reverse=True)
     bounded: list[GhostEdge] = []
@@ -1141,7 +1133,7 @@ def _merge_refs(
         ref = clip_signal_text(value, 160)
         if ref and ref not in out:
             out.append(ref)
-    return tuple(out[-max(1, int(limit or 1)):])
+    return tuple(out[-max(1, int(limit or 1)) :])
 
 
 def _clean_refs(value: object, *, limit: int) -> tuple[str, ...]:
@@ -1157,11 +1149,7 @@ def _status_filter(value: str | Iterable[str] | None, *, allowed: tuple[str, ...
         raw_values = value.split(",")
     else:
         raw_values = list(value)
-    return {
-        str(item).strip().lower()
-        for item in raw_values
-        if str(item).strip().lower() in allowed
-    }
+    return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in allowed}
 
 
 def _coerce_weight(value: object) -> float | None:
@@ -1226,9 +1214,12 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
 
 
 def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )

@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.4.17 - OS-Backed File Locks and Event State Reset
+
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
   - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
   - `LockTimeout` 继承自 `TimeoutError`（`OSError` 的子类），与既有 store 的 `except OSError` 错误处理契约完美保持一致。
