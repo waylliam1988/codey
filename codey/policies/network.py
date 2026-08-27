@@ -1,4 +1,4 @@
-"""Unified network policy and address verification for research web reads.
+"""Unified network policy and address verification for research and web reads.
 
 This policy lowers SSRF risk by preventing requests to local, private, and
 unresolved network endpoints. Note that this is an application-level SSRF guard
@@ -16,12 +16,33 @@ import threading
 import time
 from urllib.parse import urlparse
 
-from codey.policies.action import (
-    _BLOCKED_HOSTS,
-    _ip_is_blocked,
-    _ip_is_dns_fake_ip,
-    is_valid_hostname,
+from codey.utils.refs import is_valid_hostname
+
+_BLOCKED_HOSTS = frozenset({
+    "localhost",
+    "localhost.localdomain",
+    "ip6-localhost",
+    "ip6-loopback",
+})
+
+_DNS_FAKE_IP_NETS = (
+    ipaddress.ip_network("198.18.0.0/15"),
 )
+
+
+def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _ip_is_dns_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return any(ip in net for net in _DNS_FAKE_IP_NETS)
 
 
 class NetworkStatus(Enum):
@@ -42,8 +63,15 @@ class NetworkDecision:
 
 
 class NetworkPolicy:
-    def __init__(self, *, cache_ttl_seconds: float = 45.0, max_cache_entries: int = 1024) -> None:
-        self.cache_ttl_seconds = max(0.0, float(cache_ttl_seconds))
+    def __init__(
+        self,
+        *,
+        allowed_cache_ttl_seconds: float = 5.0,
+        blocked_cache_ttl_seconds: float = 45.0,
+        max_cache_entries: int = 1024,
+    ) -> None:
+        self.allowed_cache_ttl_seconds = max(0.0, float(allowed_cache_ttl_seconds))
+        self.blocked_cache_ttl_seconds = max(0.0, float(blocked_cache_ttl_seconds))
         self.max_cache_entries = max(1, int(max_cache_entries))
         self._cache: dict[tuple[str, str, int], tuple[float, str | None]] = {}
         self._lock = threading.Lock()
@@ -102,12 +130,17 @@ class NetworkPolicy:
         cache_key = (parsed.scheme, normalized_host, effective_port)
 
         now = time.monotonic()
-        if use_cache and self.cache_ttl_seconds > 0:
+        if use_cache:
             with self._lock:
                 entry = self._cache.get(cache_key)
                 if entry is not None:
                     cached_at, cached_reason = entry
-                    if now - cached_at <= self.cache_ttl_seconds:
+                    ttl = (
+                        self.allowed_cache_ttl_seconds
+                        if cached_reason is None
+                        else self.blocked_cache_ttl_seconds
+                    )
+                    if now - cached_at <= ttl:
                         return cached_reason
 
         if not resolve:
@@ -117,7 +150,7 @@ class NetworkPolicy:
             infos = socket.getaddrinfo(normalized_host, effective_port, proto=socket.IPPROTO_TCP)
         except OSError:
             reason = "could not resolve host"
-            if use_cache and self.cache_ttl_seconds > 0:
+            if use_cache:
                 self._record_cache(cache_key, reason, now)
             return reason
 
@@ -132,7 +165,7 @@ class NetworkPolicy:
                 reason = "refusing to open a non-public address"
                 break
 
-        if use_cache and self.cache_ttl_seconds > 0:
+        if use_cache:
             self._record_cache(cache_key, reason, now)
 
         return reason
@@ -158,4 +191,5 @@ __all__ = [
     "NetworkDecision",
     "NetworkPolicy",
     "NetworkStatus",
+    "is_valid_hostname",
 ]

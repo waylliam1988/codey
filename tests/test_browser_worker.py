@@ -27,6 +27,25 @@ class BrowserWorkerTests(unittest.TestCase):
             done.set()
 
         browser_worker.submit(job)
+        self.assertTrue(done.wait(2.0))
+
+    def test_reentrant_call_honors_timeout_and_scopes(self) -> None:
+        from codey.runtime import cancellation
+
+        worker = browser_worker.BrowserWorker(name="test-reentrant-worker")
+
+        def outer_job() -> None:
+            def inner_job() -> int:
+                return 999
+
+            res = worker.call(inner_job, timeout=1.0)
+            self.assertEqual(res, 999)
+
+            deadline = cancellation.current_deadline()
+            self.assertIsNotNone(deadline)
+
+        worker.call(outer_job, timeout=2.0)
+
     def test_call_timeout_cancels_queued_job_and_raises_timeout_error(self) -> None:
         worker = browser_worker.BrowserWorker(name="test-timeout-worker")
         blocker_started = threading.Event()

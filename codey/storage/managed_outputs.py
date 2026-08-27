@@ -7,9 +7,7 @@ are not a model-readable tool surface.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -236,17 +234,6 @@ def _cap_utf8_text(text: object, max_bytes: int) -> tuple[str, int, int, bool]:
 
 
 def _write_text_atomic(path: Path, text: str) -> None:
-    data = text.encode("utf-8")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("xb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
+    from codey.storage.atomic_io import write_text_atomic
+
+    write_text_atomic(path, text)

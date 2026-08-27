@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import os
 import shutil
 import subprocess
 import threading
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.storage.atomic_io import write_text_atomic
+from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     delete_file,
@@ -268,20 +266,7 @@ class SnapshotStore:
 
 
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
-    directory = path.parent
-    directory.mkdir(parents=True, exist_ok=True)
-    tmp = directory / f".{path.name}.{uuid.uuid4().hex}.tmp"
-    try:
-        with tmp.open("xb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+    write_bytes_atomic(path, data)
 
 
 def _remove_file(path: Path) -> None:

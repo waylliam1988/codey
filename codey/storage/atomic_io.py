@@ -45,18 +45,49 @@ def write_bytes_atomic(
     directory.mkdir(parents=True, exist_ok=True)
     tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
     existing_mode = _existing_mode(target)
+    creation_mode = mode if mode is not None else (existing_mode if (preserve_mode and existing_mode is not None) else 0o666)
     try:
-        with tmp.open("xb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if mode is not None:
-            os.chmod(tmp, mode)
-        elif preserve_mode and existing_mode is not None:
-            os.chmod(tmp, existing_mode)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        fd = os.open(tmp, flags, creation_mode)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+                if mode is not None:
+                    try:
+                        os.chmod(tmp, mode)
+                    except OSError:
+                        pass
+                elif preserve_mode and existing_mode is not None:
+                    try:
+                        os.chmod(tmp, existing_mode)
+                    except OSError:
+                        pass
+        except Exception:
+            # If fdopen or write fails, fd might already be closed by context or not
+            raise
         os.replace(tmp, target)
+        _fsync_dir(directory)
     finally:
         _cleanup_temp_file(tmp)
+
+
+def _fsync_dir(directory: Path) -> None:
+    if os.name == "posix":
+        try:
+            flags = os.O_RDONLY
+            if hasattr(os, "O_DIRECTORY"):
+                flags |= os.O_DIRECTORY
+            dir_fd = os.open(str(directory), flags)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
 
 
 def write_text_atomic(

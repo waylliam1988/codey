@@ -82,9 +82,18 @@ class BrowserWorker:
         timeout: float | None = None,
         **kwargs: Any,
     ) -> T:
-        """Run work on the browser thread and wait for the result."""
         if threading.get_ident() == self._thread_id:
-            return fn(*args, **kwargs)
+            caller_event = cancellation.current_event()
+            caller_deadline = cancellation.current_deadline()
+            timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+            if caller_deadline is not None and timeout_deadline is not None:
+                active_deadline = min(caller_deadline, timeout_deadline)
+            else:
+                active_deadline = caller_deadline if caller_deadline is not None else timeout_deadline
+
+            with cancellation.scope(caller_event):
+                with cancellation.deadline_scope(active_deadline):
+                    return fn(*args, **kwargs)
 
         caller_event = cancellation.current_event()
         caller_deadline = cancellation.current_deadline()

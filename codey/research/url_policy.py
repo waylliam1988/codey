@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codey.research.network_policy import DEFAULT_NETWORK_POLICY
+from codey.policies.network import DEFAULT_NETWORK_POLICY
 
 
 def check_fetch_url(
@@ -10,7 +10,6 @@ def check_fetch_url(
     *,
     resolve: bool = True,
     use_cache: bool = False,
-    **kwargs: object,
 ) -> str | None:
     return DEFAULT_NETWORK_POLICY.check_url(
         url,

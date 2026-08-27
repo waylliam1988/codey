@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
-import uuid
 from pathlib import Path
 
 from codey.knowledge.changes import KnowledgeChanges
@@ -187,16 +185,6 @@ def _content_hash(text: str) -> str:
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
+    from codey.storage.atomic_io import write_text_atomic
+
+    write_text_atomic(path, text)

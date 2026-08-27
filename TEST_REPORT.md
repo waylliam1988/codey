@@ -20,18 +20,25 @@ Closed items:
 - Hardened `BrowserWorker` with cooperative cancellation and decoupled job lifecycle (`codey.automation.browser_worker`):
   - Added `_Job` dataclass with `_JobState` (`QUEUED`, `RUNNING`, `COMPLETED`, `CANCELLED`, `CANCELLATION_REQUESTED`).
   - Caller cancellations and timeouts propagate into job-specific cancellation events and execution deadlines, running inside `cancellation.scope` and `cancellation.deadline_scope`.
-  - Queued jobs cancelled prior to dispatch skip execution cleanly, and running jobs observe cancellation checks.
-- Unified Research Network Policy and DNS caching (`codey.research.network_policy`):
-  - Created `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for centralized SSRF mitigation.
-  - Introduced TTL/LRU caching for subresource requests in browser automation route guards, avoiding redundant DNS resolution for scripts, styles, and fonts.
+  - Reentrant `BrowserWorker.call()` executes under active cancellation and deadline scopes for nested timeouts.
+  - Queued jobs cancelled prior to dispatch skip execution cleanly.
+  - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; cancelled fetch/search jobs discard their active pages and propagate cancellation without returning erroneous content.
+- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`):
+  - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
+  - `codey.research.url_policy.check_fetch_url()` and `codey.policies.action.research_url_denial_reason()` thin-wrap `DEFAULT_NETWORK_POLICY`.
+  - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
   - Removed implicit terminal when the model returns valid tool actions without an explicit `<continue>` or `<done>` control element; tool results are now cleanly formatted and returned to the model with a protocol reminder.
-- Edit tool hardening (`codey.toolchain.runtime`):
+- Edit tool hardening and threat model clarification (`codey.toolchain.runtime`):
   - Removed heuristic write paths in `_replace_unique_indentation_recovery()`; indentation mismatches now fail safely with diagnostic bounded context and line guidance without mutating user files.
-- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`):
-  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic` supporting explicit POSIX permission modes and preserving existing file modes.
+  - Documented path traversal threat model on `safe_join()`.
+- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`, `codey.workspace.changes`, `codey.storage.managed_outputs`, `codey.knowledge.store`):
+  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic`.
+  - Temporary files in `write_bytes_atomic` are opened directly with `creation_mode` via `os.open(..., O_CREAT | O_EXCL | O_WRONLY, creation_mode)` preventing umask permission exposure windows.
+  - Directory sync (`_fsync_dir`) on POSIX systems ensures directory entry crash durability.
   - Local credential storage (`save_local_config`) enforces `0o600` permissions.
-- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, and `tests/test_atomic_io.py`.
+  - Standardized atomic writes across workspace snapshots, managed tool outputs, and knowledge stores onto `atomic_io`.
+- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, `tests/test_research.py`, `tests/test_action_policy.py`, and `tests/test_atomic_io.py`.
 
 Validation commands and results:
 
@@ -39,11 +46,11 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-pytest tests/test_browser_worker.py tests/test_event_state.py tests/test_agent.py tests/test_tool_runtime.py tests/test_atomic_io.py tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_ghost_router.py
-# 366 passed, 2 skipped in 12.37s
+pytest tests/test_action_policy.py tests/test_browser_worker.py tests/test_atomic_io.py tests/test_research.py tests/test_agent.py tests/test_tool_runtime.py tests/test_event_state.py
+# 370 passed, 2 skipped in 21.21s
 
 pytest
-# 3049 passed, 3 skipped in 300.49s (0:05:00)
+# 3051 passed, 3 skipped in 280.60s (0:04:40)
 ```
 
 

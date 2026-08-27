@@ -23,17 +23,24 @@ This file records Codey's release history. The newest release appears first.
 - Hardened `BrowserWorker` with cooperative cancellation and decoupled job lifecycle (`codey.automation.browser_worker`):
   - Added `_Job` dataclass with `_JobState` (`QUEUED`, `RUNNING`, `COMPLETED`, `CANCELLED`, `CANCELLATION_REQUESTED`).
   - Caller cancellations and timeouts propagate into job-specific cancellation events and execution deadlines, running inside `cancellation.scope` and `cancellation.deadline_scope`.
-  - Queued jobs cancelled prior to dispatch skip execution cleanly, and running jobs observe cancellation checks.
-- Unified Research Network Policy and DNS caching (`codey.research.network_policy`):
-  - Created `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for centralized SSRF mitigation.
-  - Introduced TTL/LRU caching for subresource requests in browser automation route guards, avoiding redundant DNS resolution for scripts, styles, and fonts.
+  - Reentrant `BrowserWorker.call()` executes under active cancellation and deadline scopes for nested timeouts.
+  - Queued jobs cancelled prior to dispatch skip execution cleanly.
+  - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; cancelled fetch/search jobs discard their active pages and propagate cancellation without returning erroneous content.
+- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`):
+  - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
+  - `codey.research.url_policy.check_fetch_url()` and `codey.policies.action.research_url_denial_reason()` thin-wrap `DEFAULT_NETWORK_POLICY`.
+  - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
   - Removed implicit terminal when the model returns valid tool actions without an explicit `<continue>` or `<done>` control element; tool results are now cleanly formatted and returned to the model with a protocol reminder.
-- Edit tool hardening (`codey.toolchain.runtime`):
+- Edit tool hardening and threat model clarification (`codey.toolchain.runtime`):
   - Removed heuristic write paths in `_replace_unique_indentation_recovery()`; indentation mismatches now fail safely with diagnostic bounded context and line guidance without mutating user files.
-- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`):
-  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic` supporting explicit POSIX permission modes and preserving existing file modes.
+  - Documented path traversal threat model on `safe_join()`.
+- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`, `codey.workspace.changes`, `codey.storage.managed_outputs`, `codey.knowledge.store`):
+  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic`.
+  - Temporary files in `write_bytes_atomic` are opened directly with `creation_mode` via `os.open(..., O_CREAT | O_EXCL | O_WRONLY, creation_mode)` preventing umask permission exposure windows.
+  - Directory sync (`_fsync_dir`) on POSIX systems ensures directory entry crash durability.
   - Local credential storage (`save_local_config`) enforces `0o600` permissions.
+  - Standardized atomic writes across workspace snapshots, managed tool outputs, and knowledge stores onto `atomic_io`.
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

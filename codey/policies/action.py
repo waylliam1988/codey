@@ -7,22 +7,18 @@ execute tools, open browsers, dispatch providers, or mutate runtime state.
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import math
-import socket
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
+from codey.policies.network import DEFAULT_NETWORK_POLICY
+from codey.policies.permissions import PermissionProfile, profile_for_name
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
-from codey.policies.permissions import PermissionProfile, profile_for_name
-from codey.utils.refs import is_valid_hostname
 
 
 DECISION_ALLOW = "allow"
@@ -94,15 +90,7 @@ DANGEROUS_ACTIONS = WRITE_ACTIONS | frozenset({
     "local_context_action",
 })
 
-_BLOCKED_HOSTS = {
-    "localhost",
-    "localhost.localdomain",
-    "ip6-localhost",
-    "ip6-loopback",
-}
-_DNS_FAKE_IP_NETS = (
-    ipaddress.ip_network("198.18.0.0/15"),
-)
+
 
 
 @dataclass(frozen=True)
@@ -582,50 +570,7 @@ def is_suite_run_command(argv: list[str]) -> bool:
 
 
 def research_url_denial_reason(url: str, *, resolve: bool = True) -> str | None:
-    try:
-        parsed = urlparse((url or "").strip())
-    except ValueError:
-        return "invalid URL"
-    if parsed.scheme not in ("http", "https"):
-        return "only http(s) URLs are allowed"
-    try:
-        host = parsed.hostname
-        port = parsed.port
-    except ValueError as exc:
-        message = str(exc).lower()
-        return "invalid URL port" if "port" in message else "invalid URL"
-    if not host:
-        return "URL has no host"
-    if host.lower() in _BLOCKED_HOSTS:
-        return "refusing to open a local/loopback address"
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        ip = None
-    if ip is not None:
-        return "refusing to open a non-public address" if _ip_is_blocked(ip) else None
-    if not is_valid_hostname(host):
-        # Malformed hostnames (empty labels, doubled dots, bad characters)
-        # are denied here instead of escaping as resolver errors downstream.
-        return "invalid URL host"
-    port = port or (443 if parsed.scheme == "https" else 80)
-    if not resolve:
-        return None
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except OSError:
-        # The hostname-shape gate above rejects everything the IDNA codec
-        # would raise on, so only real resolution failures land here.
-        return "could not resolve host"
-    for info in infos:
-        address = info[4][0].split("%")[0]
-        try:
-            resolved = ipaddress.ip_address(address)
-        except ValueError:
-            continue
-        if _ip_is_blocked(resolved) and not _ip_is_dns_fake_ip(resolved):
-            return "refusing to open a non-public address"
-    return None
+    return DEFAULT_NETWORK_POLICY.check_url(url, resolve=resolve)
 
 
 def _node_script_allowed(argv: list[str]) -> bool:
@@ -699,12 +644,7 @@ def _permission_denied(subject: ActionSubject) -> ActionPolicyDecision:
     )
 
 
-def _ip_is_blocked(ip: ipaddress._BaseAddress) -> bool:
-    return not ip.is_global or ip.is_multicast
 
-
-def _ip_is_dns_fake_ip(ip: ipaddress._BaseAddress) -> bool:
-    return any(ip in net for net in _DNS_FAKE_IP_NETS)
 
 
 def _reason_code(reason: str) -> str:

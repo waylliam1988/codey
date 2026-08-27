@@ -201,9 +201,12 @@ class BrowserSearchProvider:
 
     def _search_page_results_on_browser_thread(self, page, query: str, limit: int) -> list[dict]:
         url = self._profile["search_url"].format(query=quote_plus(query))
+        cancellation.check()
         page.goto(url, wait_until="domcontentloaded")
+        cancellation.check()
         results: list[dict] = []
         for block in page.query_selector_all(self._profile["result_selector"])[: limit * 2]:
+            cancellation.check()
             link = block.query_selector(self._profile["link_selector"])
             if link is None:
                 continue
@@ -219,13 +222,16 @@ class BrowserSearchProvider:
             if len(results) >= limit:
                 break
         if not results:
+            cancellation.check()
             results = self._fallback_results(page, limit)
+        cancellation.check()
         return results
 
     def _fallback_results(self, page, limit: int) -> list[dict]:
         results: list[dict] = []
         seen: set[str] = set()
         for link in page.query_selector_all("a[href]"):
+            cancellation.check()
             href = _normalize_result_url(link.get_attribute("href") or "")
             if href in seen or not _looks_like_public_result_url(href):
                 continue
@@ -262,13 +268,20 @@ class BrowserSearchProvider:
         if _is_pdf_url(url):
             return _pdf_download_sentinel(url)
         page = self._ensure_fetch_page_on_browser_thread(url)
+        cancellation.check()
         try:
             response = page.goto(url, wait_until="domcontentloaded")
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            self._discard_page_on_browser_thread(page)
+            if page is self._fetch_page:
+                self._fetch_page = None
+            raise
         except Exception as exc:
             self._discard_page_on_browser_thread(page)
             if page is self._fetch_page:
                 self._fetch_page = None
             return {"url": url, "title": "", "text": f"ERROR: could not load page: {exc}", "truncated": False}
+        cancellation.check()
         final_url = page.url or url
         if final_url != url:
             reason = check_fetch_url(final_url)
@@ -280,7 +293,15 @@ class BrowserSearchProvider:
                 return _pdf_download_sentinel(final_url, mime_type=ctype)
             if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
                 return {"url": final_url, "title": "", "text": f"ERROR: unsupported content type: {ctype}", "truncated": False}
-        html = _page_content_after_navigation(page)
+        cancellation.check()
+        try:
+            html = _page_content_after_navigation(page)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            self._discard_page_on_browser_thread(page)
+            if page is self._fetch_page:
+                self._fetch_page = None
+            raise
+        cancellation.check()
         text = extract_text(html)
         truncated = len(text) > _MAX_PAGE_CHARS
         if truncated:

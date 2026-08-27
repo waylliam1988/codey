@@ -219,6 +219,13 @@ class EditBlock:
 
 
 def safe_join(root: Path, rel: str) -> Path:
+    """Resolve ``rel`` under ``root`` and prevent relative path traversal.
+
+    Threat model: This guard defends against model-generated relative path
+    escapes (e.g. ``../../etc/passwd`` or absolute escape strings). It is an
+    application-level path validation guard and not an operating-system-level
+    capability sandbox (e.g. symlink races / TOCTOU across directory swaps).
+    """
     path = (root / rel).resolve()
     resolved_root = root.resolve()
     if resolved_root not in path.parents and path != resolved_root:

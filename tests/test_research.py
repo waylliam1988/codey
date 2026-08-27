@@ -3837,9 +3837,9 @@ class ProtocolTelemetryTests(unittest.TestCase):
 
 class NetworkPolicyTests(unittest.TestCase):
     def test_evaluates_public_and_blocked_urls(self) -> None:
-        from codey.research.network_policy import NetworkPolicy, NetworkStatus
+        from codey.policies.network import NetworkPolicy, NetworkStatus
 
-        policy = NetworkPolicy(cache_ttl_seconds=30.0)
+        policy = NetworkPolicy(allowed_cache_ttl_seconds=5.0, blocked_cache_ttl_seconds=30.0)
 
         # Invalid schemes/hosts
         self.assertEqual(policy.evaluate_url("ftp://example.com").status, NetworkStatus.INVALID_URL)
@@ -3853,9 +3853,9 @@ class NetworkPolicyTests(unittest.TestCase):
         self.assertTrue(decision.allowed)
 
     def test_cache_hits_for_subresource_checks(self) -> None:
-        from codey.research.network_policy import NetworkPolicy
+        from codey.policies.network import NetworkPolicy
 
-        policy = NetworkPolicy(cache_ttl_seconds=30.0)
+        policy = NetworkPolicy(allowed_cache_ttl_seconds=5.0, blocked_cache_ttl_seconds=30.0)
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
             # First call populates cache
@@ -3867,6 +3867,23 @@ class NetworkPolicyTests(unittest.TestCase):
             r2 = policy.check_url("https://example.com/font.woff", resolve=True, use_cache=True)
             self.assertIsNone(r2)
             self.assertEqual(mock_dns.call_count, 1)
+
+    def test_fetch_on_browser_thread_discards_page_on_cancellation(self) -> None:
+        from codey.research.browser_search import BrowserSearchProvider
+        from codey.runtime import cancellation
+
+        provider = BrowserSearchProvider()
+        mock_page = unittest.mock.MagicMock()
+        mock_page.goto.side_effect = cancellation.TaskCancelled("operation cancelled")
+        provider._fetch_page = mock_page
+
+        with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page):
+            with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
+                with self.assertRaises(cancellation.TaskCancelled):
+                    provider._fetch_on_browser_thread("https://example.com/item")
+
+                discard_mock.assert_called_once_with(mock_page)
+                self.assertIsNone(provider._fetch_page)
 
 
 if __name__ == "__main__":
