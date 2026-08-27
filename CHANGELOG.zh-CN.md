@@ -26,11 +26,12 @@
   - `BrowserWorker.call()` 重入分支在当前线程执行时继承 active cancellation 和 deadline scopes，支持嵌套超时；
   - 队列中尚未开始的 job 被取消后直接跳过执行；
   - `BrowserSearchProvider` 在页面导航、解析及循环中增加密集 cancellation check；抓取与搜索路径统一封装在页面丢弃清理边界内（`_discard_fetch_page_on_browser_thread`、`_discard_search_page_on_browser_thread`），在取消或超时发生时彻底关闭底层页面并置空引用，消除中间态重试与页面泄漏。
-- 收敛统一 NetworkPolicy 单一来源与 DNS 缓存机制（`codey.policies.network`、`codey.research.connector_search`）：
+- 收敛统一 NetworkPolicy 单一来源与 DNS 缓存机制（`codey.policies.network`、`codey.research.connector_search`、`codey.research.tools`）：
   - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`PUBLIC_WEB`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
   - 恢复严格保守的非公网 IP 拦截逻辑（`not ip.is_global or ip.is_multicast`），彻底覆盖 `100.64.0.0/10`（CGNAT）与所有保留地址空间；
-  - 支持显式配置的 `allow_dns_fake_ip`（默认开启，以兼容 TUN/透明代理的 `198.18.0.0/15` fake-ip 机制，同时仍绝对阻断字面量 fake-ip）；
-  - Connector 网络请求（`connector_search.py`）启用带缓存的 DNS 解析安全检查（`check_fetch_url(url, use_cache=True)`）；
+  - 支持 `allow_dns_fake_ip=True`，兼容 TUN/透明代理的 `198.18.0.0/15` fake-ip 域名解析，同时坚决阻断字面量 fake-ip 并杜绝空解析 fail-open 风险；
+  - 在 `ResearchTools.open_url()` 公共工具入口处前置执行 URL policy 校验，避免非公网地址穿透到具体 provider；
+  - Connector 请求（`connector_search.py`）采用无自动重定向的 opener，对每一步重定向目标进行逐跳（hop-by-hop）URL 策略校验（`check_fetch_url(use_cache=True)`）并限制最大重定向深度；
   - `check_fetch_url()` 直接从 `codey.policies.network` 导出；清理彻底删除了多余的 `codey/research/url_policy.py` 兼容层；
   - 为浏览器自动化子资源拦截引入差异化 TTL/LRU 缓存（允许域名 5s，拦截/未解析 45s），兼顾性能与安全防护边界。
 - Agent Runner 协议交互优化（`codey.agents.runner`）：

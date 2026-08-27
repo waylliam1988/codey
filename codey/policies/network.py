@@ -121,6 +121,9 @@ class NetworkPolicy:
         if not is_valid_hostname(normalized_host):
             return "invalid URL host"
 
+        if not resolve:
+            return None
+
         effective_port = port or (443 if parsed.scheme == "https" else 80)
         cache_key = (parsed.scheme, normalized_host, effective_port)
 
@@ -138,9 +141,6 @@ class NetworkPolicy:
                     if now - cached_at <= ttl:
                         return cached_reason
 
-        if not resolve:
-            return None
-
         try:
             infos = socket.getaddrinfo(normalized_host, effective_port, proto=socket.IPPROTO_TCP)
         except OSError:
@@ -149,6 +149,7 @@ class NetworkPolicy:
                 self._record_cache(cache_key, reason, now)
             return reason
 
+        saw_resolved_address = False
         reason = None
         for info in infos:
             address = info[4][0].split("%")[0]
@@ -156,9 +157,13 @@ class NetworkPolicy:
                 resolved = ipaddress.ip_address(address)
             except ValueError:
                 continue
+            saw_resolved_address = True
             if _ip_is_blocked(resolved) and not (self.allow_dns_fake_ip and _ip_is_dns_fake_ip(resolved)):
                 reason = "refusing to open a non-public address"
                 break
+
+        if not saw_resolved_address and reason is None:
+            reason = "could not resolve host"
 
         if use_cache:
             self._record_cache(cache_key, reason, now)

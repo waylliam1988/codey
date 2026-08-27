@@ -23,11 +23,12 @@ Closed items:
   - Reentrant `BrowserWorker.call()` executes under active cancellation and deadline scopes for nested timeouts.
   - Queued jobs cancelled prior to dispatch skip execution cleanly.
   - `BrowserSearchProvider` integrates cancellation checks across navigation, parsing, and item iterations; fetch and search paths wrap entire browser lifecycle in unified discard boundaries (`_discard_fetch_page_on_browser_thread`, `_discard_search_page_on_browser_thread`), resetting page references and propagating cancellation without intermediate retries or corrupted page leaks.
-- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`, `codey.research.connector_search`):
+- Unified Network Policy single source of truth and DNS caching (`codey.policies.network`, `codey.research.connector_search`, `codey.research.tools`):
   - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
   - Strict conservative non-global IP rejection (`not ip.is_global or ip.is_multicast`) covering `100.64.0.0/10` (CGNAT) and all reserved address spaces.
-  - Configurable `allow_dns_fake_ip` support (defaulting to True for TUN/transparent proxy environments like `198.18.0.0/15`, while rejecting literal fake IPs).
-  - Connector network requests (`connector_search.py`) evaluate live DNS checks with caching (`check_fetch_url(url, use_cache=True)`).
+  - Integrated `allow_dns_fake_ip=True` support for TUN/transparent proxy environments (`198.18.0.0/15` DNS fake IPs on resolved hostnames) while strictly rejecting literal fake IPs and preventing empty DNS resolution fail-open.
+  - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers.
+  - Connector requests (`connector_search.py`) use non-redirecting openers with explicit hop-by-hop URL policy validation (`check_fetch_url(use_cache=True)`) and bounded redirect loop limits.
   - `check_fetch_url()` is exported directly from `codey.policies.network`; removed redundant `codey/research/url_policy.py` shim.
   - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
@@ -42,7 +43,7 @@ Closed items:
   - Directory sync (`_fsync_dir`) on POSIX systems ensures directory entry crash durability.
   - Local credential storage (`save_local_config`) enforces `0o600` permissions.
   - Standardized atomic writes across workspace snapshots, managed tool outputs, and knowledge stores onto `atomic_io`.
-- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, `tests/test_research.py`, `tests/test_action_policy.py`, and `tests/test_atomic_io.py`.
+- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, `tests/test_research.py`, `tests/test_action_policy.py`, `tests/test_connector_search.py`, and `tests/test_atomic_io.py`.
 
 Validation commands and results:
 
@@ -50,11 +51,11 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-pytest tests/test_action_policy.py tests/test_browser_worker.py tests/test_atomic_io.py tests/test_research.py tests/test_agent.py tests/test_tool_runtime.py tests/test_event_state.py
-# 374 passed, 2 skipped in 20.96s
+pytest tests/test_action_policy.py tests/test_browser_worker.py tests/test_atomic_io.py tests/test_research.py tests/test_agent.py tests/test_tool_runtime.py tests/test_event_state.py tests/test_connector_search.py
+# 395 passed, 2 skipped in 21.84s
 
 pytest
-# 3055 passed, 3 skipped in 295.42s (0:04:55)
+# 3057 passed, 3 skipped in 294.81s (0:04:54)
 ```
 
 
@@ -2535,7 +2536,7 @@ Production changes:
 Validation during implementation:
 
 ```text
-python -m pytest tests\test_action_policy.py tests\test_tool_runtime.py tests\test_research.py::ResearchBoundaryTests::test_url_policy_rejects_private_targets_without_network tests\test_run_trace.py tests\test_managed_outputs.py tests\test_agent_tools.py tests\test_agent.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_architecture.py tests\test_server.py -q -p no:cacheprovider
+python -m pytest tests\test_action_policy.py tests\test_tool_runtime.py tests\test_research.py::ResearchBoundaryTests::test_network_policy_rejects_private_targets_without_network tests\test_run_trace.py tests\test_managed_outputs.py tests\test_agent_tools.py tests\test_agent.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_architecture.py tests\test_server.py -q -p no:cacheprovider
 # 428 passed, 6 skipped, 80 subtests passed
 
 python -m pytest -q -p no:cacheprovider

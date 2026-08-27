@@ -113,6 +113,10 @@ class ResearchTools:
             return "ERROR: open_url needs a url"
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
+        reason = check_fetch_url(url, use_cache=True)
+        if reason:
+            self._record_failure("browser", "open", reason, url=url)
+            return f"ERROR: {reason}"
         cancellation.check()
         try:
             page = self.search.fetch(url)

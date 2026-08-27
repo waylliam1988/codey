@@ -3890,41 +3890,123 @@ class NetworkPolicyTests(unittest.TestCase):
         from codey.research.browser_search import BrowserSearchProvider
         from codey.runtime import cancellation
 
+        class FakeCloseablePage:
+            def __init__(self) -> None:
+                self.url = "https://example.com/item"
+                self.closed = False
+                self.routes = []
+
+            def is_closed(self) -> bool:
+                return self.closed
+
+            def route(self, pattern, handler) -> None:
+                self.routes.append((pattern, handler))
+
+            def unroute(self, _pattern, _handler) -> None:
+                return None
+
+            def close(self) -> None:
+                self.closed = True
+
+            def goto(self, url, wait_until="domcontentloaded"):
+                del url, wait_until
+                cancel_event.set()
+                mock_response = unittest.mock.MagicMock()
+                mock_response.headers = {"content-type": "text/html"}
+                return mock_response
+
         provider = BrowserSearchProvider()
-        mock_page = unittest.mock.MagicMock()
-        mock_page.url = "https://example.com/item"
-        mock_response = unittest.mock.MagicMock()
-        mock_response.headers = {"content-type": "text/html"}
+        page = FakeCloseablePage()
+        provider._fetch_page = page
         cancel_event = threading.Event()
 
-        def fake_goto(url, wait_until="domcontentloaded"):
-            # Set cancellation during goto execution
-            cancel_event.set()
-            return mock_response
-
-        mock_page.goto.side_effect = fake_goto
-        provider._fetch_page = mock_page
-
         with cancellation.scope(cancel_event):
-            with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page):
-                with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
-                    with self.assertRaises(cancellation.TaskCancelled):
-                        provider._fetch_on_browser_thread("https://example.com/item")
+            with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page):
+                with self.assertRaises(cancellation.TaskCancelled):
+                    provider._fetch_on_browser_thread("https://example.com/item")
 
-                    discard_mock.assert_called_once_with(mock_page)
-                    self.assertIsNone(provider._fetch_page)
+                self.assertTrue(page.closed)
+                self.assertIsNone(provider._fetch_page)
 
     def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:
         from codey.research.connector_search import _read_url_text
 
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("100.64.0.1", 443))]
-            with unittest.mock.patch("urllib.request.urlopen") as mock_urlopen:
-                with self.assertRaises(ValueError) as ctx:
-                    _read_url_text("https://eutils.ncbi.nlm.nih.gov/test", timeout=2.0)
+            with self.assertRaises(ValueError) as ctx:
+                _read_url_text("https://eutils.ncbi.nlm.nih.gov/test", timeout=2.0)
 
-                self.assertIn("non-public", str(ctx.exception))
-                mock_urlopen.assert_not_called()
+            self.assertIn("non-public", str(ctx.exception))
+
+    def test_connector_redirect_hop_by_hop_guards(self) -> None:
+        import io
+        from codey.research.connector_search import _read_url_text
+
+        # 1. Redirect to private address is blocked at second hop
+        class RedirectResponse:
+            def __init__(self, location: str, status: int = 302) -> None:
+                self.status = status
+                self.code = status
+                self.headers = {"Location": location}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        class FinalResponse:
+            def __init__(self, body: bytes = b"ok content", status: int = 200) -> None:
+                self.status = status
+                self.code = status
+                self.headers = unittest.mock.MagicMock()
+                self.headers.get_content_charset.return_value = "utf-8"
+                self._stream = io.BytesIO(body)
+
+            def read(self, n: int = -1) -> bytes:
+                return self._stream.read(n)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
+            mock_open.return_value = RedirectResponse("http://127.0.0.1/private")
+            with self.assertRaises(ValueError) as ctx:
+                _read_url_text("https://example.com/start", timeout=2.0)
+            self.assertTrue("non-public" in str(ctx.exception) or "local/loopback" in str(ctx.exception))
+
+        # 2. Redirect loop exceeding limit is stopped
+        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
+            mock_open.return_value = RedirectResponse("https://example.com/loop")
+            with self.assertRaises(ValueError) as ctx:
+                _read_url_text("https://example.com/loop", timeout=2.0)
+            self.assertIn("too many redirects", str(ctx.exception))
+
+        # 3. Valid redirect to allowed URL succeeds
+        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
+            mock_open.side_effect = [
+                RedirectResponse("https://example.com/final"),
+                FinalResponse(b"valid payload"),
+            ]
+            result = _read_url_text("https://example.com/start", timeout=2.0)
+            self.assertEqual(result, "valid payload")
+
+    def test_research_tools_open_url_entrance_guard_blocks_local_target(self) -> None:
+        from codey.research.tools import ResearchTools
+
+        mock_search = unittest.mock.MagicMock()
+        mock_search.fetch.side_effect = AssertionError("fetch must not be called for blocked URL")
+        mock_store = unittest.mock.MagicMock()
+        mock_changes = unittest.mock.MagicMock()
+        tools = ResearchTools(search=mock_search, store=mock_store, changes=mock_changes)
+
+        result = tools.open_url("http://127.0.0.1/private")
+        self.assertTrue(result.startswith("ERROR:"))
+        self.assertTrue("non-public" in result or "local/loopback" in result)
+        mock_search.fetch.assert_not_called()
 
     def test_network_policy_fake_dns_ip_handling(self) -> None:
         from codey.policies.network import DEFAULT_NETWORK_POLICY, NetworkPolicy
@@ -3938,7 +4020,7 @@ class NetworkPolicyTests(unittest.TestCase):
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
 
-            # Default policy allows DNS-resolved fake IP for transparent proxies
+            # Default policy allows DNS-resolved fake IP for TUN/transparent proxy environments
             self.assertIsNone(
                 DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True)
             )

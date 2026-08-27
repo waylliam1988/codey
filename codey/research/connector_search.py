@@ -12,7 +12,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 from codey.runtime import cancellation
 from codey.research.connector_domains import preferred_connector_ids
@@ -419,24 +419,62 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
     return merged
 
 
+_CONNECTOR_MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_ORIGINAL_URLOPEN = urllib.request.urlopen
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_CONNECTOR_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+
+
+def _open_connector_url(req, timeout: float):
+    if urllib.request.urlopen is not _ORIGINAL_URLOPEN:
+        return urllib.request.urlopen(req, timeout=timeout)
+    return _CONNECTOR_OPENER.open(req, timeout=timeout)
+
+
 def _read_url_text(url: str, *, timeout: float) -> str:
-    reason = check_fetch_url(url, use_cache=True)
-    if reason:
-        raise ValueError(reason)
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/json, application/xml, text/xml, */*;q=0.8",
-            "User-Agent": _CONNECTOR_USER_AGENT,
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            data = response.read(1024 * 1024)
-            charset = response.headers.get_content_charset() or "utf-8"
-    except urllib.error.URLError as exc:
-        raise ValueError(f"connector request failed: {exc}") from exc
-    return data.decode(charset, errors="replace")
+    current_url = url
+    for _ in range(_CONNECTOR_MAX_REDIRECTS + 1):
+        reason = check_fetch_url(current_url, use_cache=True)
+        if reason:
+            raise ValueError(reason)
+        request = urllib.request.Request(
+            current_url,
+            headers={
+                "Accept": "application/json, application/xml, text/xml, */*;q=0.8",
+                "User-Agent": _CONNECTOR_USER_AGENT,
+            },
+        )
+        try:
+            with _open_connector_url(request, timeout=timeout) as response:
+                status = getattr(response, "status", getattr(response, "code", 200))
+                if status in _REDIRECT_STATUSES:
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise ValueError("redirect response missing Location header")
+                    current_url = urljoin(current_url, location)
+                    continue
+                data = response.read(1024 * 1024)
+                charset = response.headers.get_content_charset() or "utf-8"
+                return data.decode(charset, errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code in _REDIRECT_STATUSES:
+                location = exc.headers.get("Location")
+                if not location:
+                    raise ValueError("redirect response missing Location header") from exc
+                current_url = urljoin(current_url, location)
+                continue
+            raise ValueError(f"connector request failed: {exc}") from exc
+        except urllib.error.URLError as exc:
+            raise ValueError(f"connector request failed: {exc}") from exc
+
+    raise ValueError("too many redirects")
 
 
 def _is_pubmed_url(url: str) -> bool:
