@@ -13,10 +13,18 @@ This file records Codey's release history. The newest release appears first.
   transitions, delete events, and snapshot anchors through the reducer. The
   cold-start schema constants remain `1`; old upsert event types are
   unsupported and fail closed for mutation.
+- Ghost Work Queue now enforces strict action and target-status semantic
+  validation for `ghost_work_item_transitioned` events (e.g. `running` requires
+  `started_run_id`, `done` requires `proof_refs`). Any malformed transition is
+  flagged as `invalid_event` and fails closed on read.
 - Ghost Affinity and Work Queue mutating APIs now run their read -> reduce ->
   decide -> append/rewrite -> project flow under the store file lock, closing
   semantic lost-update races such as concurrent reinforcement and double
-  claim attempts.
+  claim attempts. Mutation results are rebuilt with current `last_warnings`
+  after projection write and compaction steps so callers do not miss diagnostic
+  warnings.
+- Ghost Work Queue's `compact_if_needed()` adds isomorphic check for missing
+  events files when projection exists and reports `work_events_missing`.
 
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 

@@ -926,5 +926,148 @@ def test_work_transition_missing_precondition_is_unsupported_for_mutation() -> N
     assert any("invalid_event" in warning for warning in result.warnings)
 
 
+def test_work_transition_malformed_running_missing_started_run_id_is_fail_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="queued",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        # Transition to running but with empty started_run_id
+        bad_transition = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-claim-event",
+            "ts": FRESH_TS,
+            "action": "claim",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "queued",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "running",
+                "started_run_id": "",  # missing / empty started_run_id
+                "retry_count": 1,
+            },
+        }
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), bad_transition)
+            ),
+            encoding="utf-8",
+        )
+
+        result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="running",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        bad_complete_transition = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-complete-event",
+            "ts": FRESH_TS,
+            "action": "complete",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "running",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "done",
+                "proof_refs": [],  # empty proof_refs is invalid for done
+            },
+        }
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), bad_complete_transition)
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.complete_item(item.id, run_id="run-1", proof_refs=("checkpoint:1",))
+
+        assert store.last_warnings
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+
+        claim_result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
+        assert not claim_result.ok
+        assert claim_result.skipped_reason == "events_read_blocked"
+
+
+def test_work_queue_compact_if_needed_detects_missing_events_file() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        store.projection_path.parent.mkdir(parents=True, exist_ok=True)
+        store.projection_path.write_text("{}", encoding="utf-8")
+        assert not store.events_path.exists()
+        assert store.projection_path.exists()
+
+        compacted = store.compact_if_needed()
+
+    assert not compacted["ok"]
+    assert "work_events_missing" in compacted["warnings"]
+    assert store.last_warnings == ("work_events_missing",)
+
+
+def test_work_queue_mutation_result_propagates_projection_write_failure_warning() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        with mock.patch.object(store, "_write_projection", side_effect=OSError("disk full")):
+            result = store.sync_from_sources(
+                research_interest_candidates=(_interest_candidate(
+                    candidate_id="c1",
+                    question="Research provider recovery follow-up",
+                    source_ref="source",
+                    source_refs=("note:source",),
+                    priority=0.8,
+                ),),
+                session_id="s1",
+            )
+
+    assert result.ok
+    assert "work_projection_write_failed" in result.warnings
+    assert "work_projection_write_failed" in store.last_warnings
+
+
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:
     assert work_queue_module.WORK_QUEUE_SCHEMA_VERSION == 1

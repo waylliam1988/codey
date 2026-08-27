@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## Ghost Event Reducer Hardening - Fail-Closed Transition Validation, Warning Propagation, Missing Events Check (2026-08-27)
+
+This hardening addresses the reviewed Ghost Work Queue and Affinity event log gaps without adding compatibility wrappers. Ghost transitions are strictly validated at the action and target-status semantic level, mutation results propagate post-projection/compaction warnings, and Work Queue compact isomorphic checks report missing events files.
+
+Closed items:
+
+- `ghost_work_item_transitioned` validation in `codey.ghost.work_queue` is elevated to fail closed: `action` must belong to the allowed action set, `target_status` must match action semantics, `running` requires non-empty `started_run_id`, `done` requires non-empty `proof_refs`, and malformed patch items fail closed on read instead of silently skipping;
+- `_mutate_event_log()` in both `GhostWorkQueueStore` and `GhostAffinityStore` rebuilds the returned dataclass or dict result with `self.last_warnings` after projection write and compaction steps, eliminating diagnostic warning drops such as `work_projection_write_failed` and `affinity_projection_write_failed`;
+- `GhostWorkQueueStore.compact_if_needed()` adds an isomorphic check for missing events files when the projection file exists, returning `ok=False` and recording `work_events_missing`;
+- added unit tests covering malformed running transitions missing `started_run_id`, malformed done transitions missing `proof_refs`, missing events file detection during compaction, and projection warning propagation on mutations.
+
+Validation commands and results:
+
+```powershell
+python -m ruff check .
+# All checks passed!
+
+python -B -m pytest tests\test_ghost_work_queue.py tests\test_ghost_affinity.py -q
+# 68 passed in 4.42s
+
+python -B -m pytest tests\test_task_runner_work_queue.py tests\test_task_runner_affinity.py -q
+# 14 passed in 4.82s
+
+python -B -m pytest tests\test_ghost_work_queue_ab.py -q
+# 2 passed in 2.86s
+
+python -B -m pytest tests\test_ghost_work_queue.py tests\test_ghost_affinity.py -k "concurrent or rebuild or snapshot" -q
+# 6 passed, 62 deselected in 0.76s
+
+python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\ghost_affinity_ab.py --self-test
+# complete: true, ok: true, 10/10 cases ok
+
+python -B -m pytest tests\test_architecture.py tests\test_git_history_hygiene.py -q
+# 51 passed in 6.60s
+```
+
+Final full-suite validation after the code, test, and documentation edits:
+
+```powershell
+python -B -m pytest
+# 2993 passed, 2 skipped in 288.83s (0:04:48)
+```
+
 ## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)
 
 This hardening closes the reviewed run-command operand gaps without adding

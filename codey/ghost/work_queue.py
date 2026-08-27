@@ -7,7 +7,7 @@ continue, but TaskRunner remains the only execution entry point.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -43,6 +43,15 @@ _WORK_EVENT_TYPES = frozenset({
     "ghost_work_item_transitioned",
     "ghost_work_items_deleted",
     "ghost_work_snapshot",
+})
+WORK_ITEM_TRANSITION_ACTIONS = frozenset({
+    "claim",
+    "complete",
+    "block",
+    "release",
+    "release_stale",
+    "reject",
+    "queue",
 })
 
 WORK_ITEM_KINDS = frozenset({
@@ -829,6 +838,10 @@ class GhostWorkQueueStore:
 
     def compact_if_needed(self) -> dict[str, object]:
         before = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+        if not self.events_path.exists() and self.projection_path.exists():
+            warning = "work_events_missing"
+            self.last_warnings = (warning,)
+            return _compact_payload(False, False, before, before, (warning,))
         if not before["readable"]:
             warning = str(before["warning"] or "work_events_unreadable")
             self.last_warnings = (warning,)
@@ -1023,7 +1036,12 @@ class GhostWorkQueueStore:
                 self._write_projection_best_effort(mutation.items)
             if mutation.compact:
                 self._compact_if_needed_locked(mutation.items)
-            return mutation.result
+            result = mutation.result
+            if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
+                return replace(result, warnings=self.last_warnings)
+            if isinstance(result, dict) and "warnings" in result:
+                return dict(result, warnings=list(self.last_warnings))
+            return result
 
     def _write_projection(self, items: Iterable[GhostWorkItem], *, warnings: Iterable[str]) -> None:
         write_json_atomic(
@@ -1694,14 +1712,7 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
     if event_type == "ghost_work_item_observed":
         return GhostWorkItem.from_payload(event.get("item")) is not None
     if event_type == "ghost_work_item_transitioned":
-        patch = event.get("patch")
-        return (
-            bool(clip_signal_text(event.get("item_id"), 120))
-            and bool(clip_signal_text(event.get("action"), 40))
-            and _valid_work_precondition(event.get("precondition"))
-            and isinstance(patch, Mapping)
-            and bool(_clean_status(patch.get("status")))
-        )
+        return _valid_work_transition(event)
     if event_type == "ghost_work_items_deleted":
         payload = event.get("payload")
         if not isinstance(payload, Mapping):
@@ -1720,6 +1731,43 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
             return bool(scope and (scope == "user" or project_ref or session_ref))
         return False
     return False
+
+
+def _valid_work_transition(event: Mapping[str, object]) -> bool:
+    item_id = clip_signal_text(event.get("item_id"), 120)
+    action = clip_signal_text(event.get("action"), 40)
+    precondition = event.get("precondition")
+    patch = event.get("patch")
+    if not item_id or action not in WORK_ITEM_TRANSITION_ACTIONS:
+        return False
+    if not _valid_work_precondition(precondition) or not isinstance(patch, Mapping):
+        return False
+    target_status = _clean_status(patch.get("status"))
+    if not target_status:
+        return False
+    if action == "claim" and target_status != "running":
+        return False
+    if action == "complete" and target_status != "done":
+        return False
+    if action == "block" and target_status != "blocked":
+        return False
+    if action in {"release", "release_stale"} and target_status not in {"queued", "blocked"}:
+        return False
+    if action == "reject" and target_status != "rejected":
+        return False
+    if action == "queue" and target_status != "queued":
+        return False
+    if target_status == "running" and not clip_signal_text(patch.get("started_run_id"), 120):
+        return False
+    if target_status == "done" and not _bounded_refs(patch.get("proof_refs")):
+        return False
+    if "retry_count" in patch:
+        try:
+            if int(patch.get("retry_count")) < 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
 
 
 def _valid_work_snapshot(event: Mapping[str, object]) -> bool:

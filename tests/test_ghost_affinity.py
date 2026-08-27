@@ -794,5 +794,34 @@ def test_affinity_snapshot_with_invalid_row_is_unsupported_for_mutation() -> Non
     assert any("invalid_event" in warning for warning in result.warnings)
 
 
+def test_affinity_mutation_result_propagates_projection_write_failure_warning() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")):
+            result = affinity.sync_from_sources(
+                research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+                session_id="s1",
+            )
+
+    assert result.ok
+    assert "affinity_projection_write_failed" in result.warnings
+    assert "affinity_projection_write_failed" in affinity.last_warnings
+
+
+def test_affinity_delete_scope_propagates_projection_write_failure_warning() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")):
+            result = affinity.delete_scope("session", session_id="s1")
+
+    assert result["nodes"] > 0
+    assert "affinity_projection_write_failed" in result["warnings"]
+    assert "affinity_projection_write_failed" in affinity.last_warnings
+
+
 def test_affinity_schema_version_stays_cold_start_v1() -> None:
     assert affinity_module.AFFINITY_SCHEMA_VERSION == 1

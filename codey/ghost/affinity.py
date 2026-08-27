@@ -7,7 +7,7 @@ permission system, and not an execution policy.
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -1044,7 +1044,12 @@ class GhostAffinityStore:
                 self._write_projection_best_effort(mutation.nodes, mutation.edges)
             if mutation.compact:
                 self._compact_if_needed_locked(mutation.nodes, mutation.edges)
-            return mutation.result
+            result = mutation.result
+            if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
+                return replace(result, warnings=self.last_warnings)
+            if isinstance(result, dict) and "warnings" in result:
+                return dict(result, warnings=list(self.last_warnings))
+            return result
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
         rows = [event for event in events if isinstance(event, dict)]
