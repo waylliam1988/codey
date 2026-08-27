@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Any, Callable, TypeVar
 import urllib.error
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
 
 from codey.runtime import cancellation
@@ -18,6 +18,12 @@ from codey.automation import browser_worker
 from codey.automation.browser import DEFAULT_PORT, open_chat_page
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.research.extract import extract_text, extract_title
+from codey.research.http_redirects import (
+    build_no_redirect_opener,
+    close_response as _close_response,
+    is_redirect_status as _is_redirect_status,
+    redirect_target as _redirect_target,
+)
 from codey.research.pdf_extract import PDF_MAX_BYTES
 from codey.policies.network import check_fetch_url
 
@@ -32,7 +38,6 @@ _MAX_PAGE_CHARS = 200_000
 _PDF_DOWNLOAD_TIMEOUT = 20
 _PDF_CHUNK_BYTES = 64 * 1024
 _PDF_MAX_REDIRECTS = 5
-_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 T = TypeVar("T")
 _SEARCH_WORKER_LOCK = threading.Lock()
 _SEARCH_WORKER: browser_worker.BrowserWorker | None = None
@@ -281,13 +286,23 @@ class BrowserSearchProvider:
             if final_url != url:
                 reason = check_fetch_url(final_url)
                 if reason:
-                    return {"url": final_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}
+                    return {
+                        "url": final_url,
+                        "title": "",
+                        "text": f"ERROR: {reason} (after redirect)",
+                        "truncated": False,
+                    }
             if response is not None:
                 ctype = (response.headers.get("content-type") or "").lower()
                 if _is_pdf_response(ctype, final_url):
                     return _pdf_download_sentinel(final_url, mime_type=ctype)
                 if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
-                    return {"url": final_url, "title": "", "text": f"ERROR: unsupported content type: {ctype}", "truncated": False}
+                    return {
+                        "url": final_url,
+                        "title": "",
+                        "text": f"ERROR: unsupported content type: {ctype}",
+                        "truncated": False,
+                    }
             cancellation.check()
             html = _page_content_after_navigation(page)
             cancellation.check()
@@ -503,7 +518,9 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict:
                 current_url = redirect["url"]
                 redirects += 1
                 continue
-            return _pdf_skipped(current_url, mime_type or "application/pdf", f"PDF could not be downloaded: HTTP {exc.code}")
+            return _pdf_skipped(
+                current_url, mime_type or "application/pdf", f"PDF could not be downloaded: HTTP {exc.code}"
+            )
         except urllib.error.URLError as exc:
             return _pdf_skipped(current_url, mime_type or "application/pdf", f"PDF could not be downloaded: {exc}")
         except OSError as exc:
@@ -526,7 +543,9 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict:
             ctype = (headers.get("content-type") or mime_type or "application/pdf").lower()
             length = _content_length(headers)
             if length is not None and length > PDF_MAX_BYTES:
-                return _pdf_skipped(final_url, ctype, f"PDF is too large to read safely ({length} bytes > {PDF_MAX_BYTES})")
+                return _pdf_skipped(
+                    final_url, ctype, f"PDF is too large to read safely ({length} bytes > {PDF_MAX_BYTES})"
+                )
             body = bytearray()
             cancellation.check()
             while True:
@@ -565,13 +584,8 @@ def _pdf_request(url: str) -> urllib.request.Request:
     )
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
 def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int):
-    opener = urllib.request.build_opener(_NoRedirectHandler)
+    opener = build_no_redirect_opener()
     return opener.open(request, timeout=timeout)
 
 
@@ -586,18 +600,6 @@ def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict:
     }
 
 
-def _is_redirect_status(status: int) -> bool:
-    return int(status or 0) in _REDIRECT_STATUSES
-
-
-def _redirect_target(current_url: str, headers) -> str:
-    try:
-        location = headers.get("location") or headers.get("Location")
-    except AttributeError:
-        location = ""
-    return urljoin(current_url, str(location or "").strip()) if location else ""
-
-
 def _checked_redirect(current_url: str, next_url: str, redirects: int) -> dict:
     if not next_url:
         return {"error": _pdf_skipped(current_url, "application/pdf", "PDF redirect did not include a Location header")}
@@ -605,15 +607,10 @@ def _checked_redirect(current_url: str, next_url: str, redirects: int) -> dict:
         return {"error": _pdf_skipped(current_url, "application/pdf", "PDF redirect limit exceeded")}
     reason = check_fetch_url(next_url)
     if reason:
-        return {"error": {"url": next_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}}
+        return {
+            "error": {"url": next_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}
+        }
     return {"url": next_url}
-
-
-def _close_response(response) -> None:
-    try:
-        response.close()
-    except Exception:
-        pass
 
 
 def _response_code(response) -> int:

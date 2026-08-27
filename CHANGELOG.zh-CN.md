@@ -6,7 +6,7 @@
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks, Cooperative Cancellation, and Storage Unification
+## 0.4.18 - Network Boundary, Cooperative Cancellation, and Storage Unification
 
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
   - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
@@ -30,8 +30,13 @@
   - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`PUBLIC_WEB`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
   - 恢复严格保守的非公网 IP 拦截逻辑（`not ip.is_global or ip.is_multicast`），彻底覆盖 `100.64.0.0/10`（CGNAT）与所有保留地址空间；
   - 支持 `allow_dns_fake_ip=True`，兼容 TUN/透明代理的 `198.18.0.0/15` fake-ip 域名解析，同时坚决阻断字面量 fake-ip 并杜绝空解析 fail-open 风险；
-  - 在 `ResearchTools.open_url()` 公共工具入口处前置执行 URL policy 校验，避免非公网地址穿透到具体 provider；
+  - 明确记录 `PUBLIC_WEB` 只表示“按当前 policy 允许”，不是在所有本地代理配置下都证明 DNS 解析到了真实公网地址；
+  - 在 `ResearchTools.open_url()` 公共工具入口处前置执行 URL policy 校验，并在 fetch 后 final URL 二次校验中复用短 TTL policy cache，避免同一短窗口内重复 DNS；
   - Connector 请求（`connector_search.py`）采用无自动重定向的 opener，对每一步重定向目标进行逐跳（hop-by-hop）URL 策略校验（`check_fetch_url(use_cache=True)`）并限制最大重定向深度；
+  - 新增共享 `codey.research.http_redirects`，统一承载无自动重定向 opener、redirect status 解析、Location header 解析与 best-effort response close helper，供 connector 和 browser PDF fetch 路径复用；
+  - Connector URL 打开路径现在永远走无自动重定向 opener；移除旧的 `urllib.request.urlopen` monkeypatch fallback，测试不能再绕过生产 redirect 边界；
+  - Connector 的 `HTTPError` redirect 响应会在跟随下一跳之前显式关闭；redirect 测试也改为逐跳 mock policy 判断，不再依赖 fixture URL 的真实 DNS；
+  - Connector redirect 多跳共享同一个 request 总 deadline；每一跳只拿剩余 socket timeout，redirect 链不会把单次 connector 请求预算按跳数放大；
   - `check_fetch_url()` 直接从 `codey.policies.network` 导出；清理彻底删除了多余的 `codey/research/url_policy.py` 兼容层；
   - 为浏览器自动化子资源拦截引入差异化 TTL/LRU 缓存（允许域名 5s，拦截/未解析 45s），兼顾性能与安全防护边界。
 - Agent Runner 协议交互优化（`codey.agents.runner`）：
@@ -45,6 +50,16 @@
   - POSIX 环境下补充目录同步（`_fsync_dir`），提升文件系统崩溃容灾持久性；
   - 本地凭据存储（`save_local_config`）强制使用 `0o600` 权限；
   - 将工作区快照（`changes.py`）、工具大输出（`managed_outputs.py`）及知识库（`store.py`）的原子写入统一收敛至 `atomic_io`。
+
+## 0.4.17 - OS-Backed File Locks and Event State Reset
+
+- 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
+  - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
+  - `LockTimeout` 继承自 `TimeoutError`（`OSError` 的子类），与既有 store 的 `except OSError` 错误处理契约保持一致。
+  - `.lock` 文件作为常驻磁盘的锁载体，不再通过 `stat -> unlink` 表达所有权，消除 stale takeover 的 TOCTOU 竞态。
+  - 新增专用模块 `codey.storage.event_state` 提供 `reset_event_backed_state(events_path, *state_paths)` helper，确保 event log 与 derived projection 在权威事件锁保护下安全删除。
+  - 彻底清理移除无生产调用的 `transactional_json.py` 冗余抽象。
+  - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的 mutation 锁纪律：所有 append、replay、rebuild、delete_scope、reset 和 compaction 操作均在各 store 的 `events_path` 锁保护下执行。
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

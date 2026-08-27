@@ -6,7 +6,7 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks, Cooperative Cancellation, and Storage Unification
+## 0.4.18 - Network Boundary, Cooperative Cancellation, and Storage Unification
 
 - Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
   - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
@@ -30,8 +30,13 @@ This file records Codey's release history. The newest release appears first.
   - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
   - Strict conservative non-global IP rejection (`not ip.is_global or ip.is_multicast`) covering `100.64.0.0/10` (CGNAT) and all reserved address spaces.
   - Integrated `allow_dns_fake_ip=True` support for TUN/transparent proxy environments (`198.18.0.0/15` DNS fake IPs on resolved hostnames) while strictly rejecting literal fake IPs and preventing empty DNS resolution fail-open.
-  - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers.
+  - `PUBLIC_WEB` is documented as "allowed by this policy", not as hard proof that DNS resolved to a globally routed address under all local proxy configurations.
+  - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers, and reuses the short TTL policy cache for the post-fetch final URL check.
   - Connector requests (`connector_search.py`) use non-redirecting openers with explicit hop-by-hop URL policy validation (`check_fetch_url(use_cache=True)`) and bounded redirect loop limits.
+  - Shared `codey.research.http_redirects` now owns the no-redirect opener, redirect-status parsing, Location-header parsing, and best-effort response close helpers for connector and browser PDF fetch paths.
+  - Connector URL opening now always uses the non-redirecting opener; the old `urllib.request.urlopen` monkeypatch fallback is removed so tests cannot bypass the production redirect boundary.
+  - Connector `HTTPError` redirect responses are closed before following the next hop, and redirect tests mock policy decisions per hop instead of depending on live DNS for fixture URLs.
+  - Connector redirect hops share one total request deadline; each hop receives only the remaining socket timeout, so redirect chains cannot multiply a single connector request budget.
   - `check_fetch_url()` is exported directly from `codey.policies.network`; removed redundant `codey/research/url_policy.py` shim.
   - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
@@ -46,6 +51,16 @@ This file records Codey's release history. The newest release appears first.
   - Directory sync (`_fsync_dir`) on POSIX systems ensures directory entry crash durability.
   - Local credential storage (`save_local_config`) enforces `0o600` permissions.
   - Standardized atomic writes across workspace snapshots, managed tool outputs, and knowledge stores onto `atomic_io`.
+
+## 0.4.17 - OS-Backed File Locks and Event State Reset
+
+- Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
+  - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
+  - `LockTimeout` inherits `TimeoutError` (a subclass of `OSError`), aligning with store error handling contracts (`except OSError`).
+  - Sidecar `.lock` files remain permanently on disk as lock carriers, eliminating `stat -> unlink` time-of-check-to-time-of-use (TOCTOU) races and stale takeover bugs.
+  - Added dedicated `codey.storage.event_state` module with `reset_event_backed_state(events_path, *state_paths)` ensuring all event logs and derived projections are deleted safely under the authoritative event lock.
+  - Removed unused `transactional_json.py` abstraction.
+  - Standardized mutation concurrency discipline across all 7 Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`): all mutations (append, replay, rebuild, delete_scope, reset, and compaction) acquire the store's `events_path` lock.
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

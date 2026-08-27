@@ -1,8 +1,8 @@
 # Codey Test Report
 
-## 0.4.17 Release - OS-Backed Advisory Lock, Cooperative Cancellation, and Storage Unification (2026-08-27)
+## 0.4.18 Release - Network Boundary, Cooperative Cancellation, and Storage Unification (2026-08-27)
 
-This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, establishes full cooperative read / compaction locking across all Ghost stores, refactors `BrowserWorker` with cooperative cancellation, unifies research network policy with DNS caching, removes implicit terminal in agent runner, and hardens edit tool exact replacement.
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, establishes full cooperative read / compaction locking across all Ghost stores, refactors `BrowserWorker` with cooperative cancellation, unifies research network policy with DNS caching, finalizes connector redirect/opening semantics, removes implicit terminal in agent runner, and hardens edit tool exact replacement.
 
 Closed items:
 
@@ -27,8 +27,13 @@ Closed items:
   - Created centralized `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for application-level SSRF mitigation.
   - Strict conservative non-global IP rejection (`not ip.is_global or ip.is_multicast`) covering `100.64.0.0/10` (CGNAT) and all reserved address spaces.
   - Integrated `allow_dns_fake_ip=True` support for TUN/transparent proxy environments (`198.18.0.0/15` DNS fake IPs on resolved hostnames) while strictly rejecting literal fake IPs and preventing empty DNS resolution fail-open.
-  - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers.
+  - `PUBLIC_WEB` is documented as policy-allowed, not as hard proof that DNS resolved to a globally routed address under all local proxy configurations.
+  - `ResearchTools.open_url()` enforces policy verification at the public tool boundary prior to invoking search providers and reuses the short TTL policy cache for the post-fetch final URL check.
   - Connector requests (`connector_search.py`) use non-redirecting openers with explicit hop-by-hop URL policy validation (`check_fetch_url(use_cache=True)`) and bounded redirect loop limits.
+  - Shared `codey.research.http_redirects` owns the no-redirect opener, redirect-status parsing, Location-header parsing, and best-effort response close helpers used by connector and browser PDF fetch paths.
+  - Connector URL opening always uses the non-redirecting opener; the previous test-oriented `urllib.request.urlopen` fallback was removed.
+  - Connector `HTTPError` redirect responses are explicitly closed before following the next hop, and redirect tests mock policy decisions per hop instead of depending on live DNS for fixture URLs.
+  - Connector redirect hops share one total request deadline; each hop receives only the remaining socket timeout.
   - `check_fetch_url()` is exported directly from `codey.policies.network`; removed redundant `codey/research/url_policy.py` shim.
   - Introduced differential TTL/LRU caching (5s for allowed targets, 45s for blocked/unresolved targets) for subresource route guards in browser automation.
 - Agent runner protocol improvements (`codey.agents.runner`):
@@ -43,7 +48,7 @@ Closed items:
   - Directory sync (`_fsync_dir`) on POSIX systems ensures directory entry crash durability.
   - Local credential storage (`save_local_config`) enforces `0o600` permissions.
   - Standardized atomic writes across workspace snapshots, managed tool outputs, and knowledge stores onto `atomic_io`.
-- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, `tests/test_research.py`, `tests/test_action_policy.py`, `tests/test_connector_search.py`, and `tests/test_atomic_io.py`.
+- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, `tests/test_research.py`, `tests/test_action_policy.py`, `tests/test_connector_search.py`, `tests/test_http_redirects.py`, and `tests/test_atomic_io.py`.
 
 Validation commands and results:
 
@@ -51,11 +56,50 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-pytest tests/test_action_policy.py tests/test_browser_worker.py tests/test_atomic_io.py tests/test_research.py tests/test_agent.py tests/test_tool_runtime.py tests/test_event_state.py tests/test_connector_search.py
-# 395 passed, 2 skipped in 21.84s
+python -m ruff format --check codey\policies\network.py codey\research\http_redirects.py codey\research\browser_search.py codey\research\connector_search.py codey\research\tools.py tests\test_http_redirects.py tests\test_connector_search.py tests\test_research.py codey\__init__.py tests\test_server.py
+# 10 files already formatted
 
-pytest
-# 3057 passed, 3 skipped in 294.81s (0:04:54)
+python -B -m pytest tests\test_http_redirects.py tests\test_connector_search.py tests\test_research.py::NetworkPolicyTests tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
+# 33 passed in 1.93s
+
+python -B -m pytest tests\test_research.py -q
+# 135 passed, 7 subtests passed in 15.57s
+
+python -B -m pytest tests\test_http_redirects.py tests\test_research.py::NetworkPolicyTests tests\test_connector_search.py tests\test_browser_worker.py tests\test_atomic_io.py tests\test_file_lock.py tests\test_event_state.py tests\test_action_policy.py tests\test_tool_runtime.py -q
+# 162 passed, 5 skipped, 18 subtests passed in 7.60s
+
+python -B -m pytest -q
+# 3050 passed, 15 skipped, 966 subtests passed in 279.95s (0:04:39)
+```
+
+
+## 0.4.17 Release - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
+
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset (`codey.storage.event_state`).
+
+Closed items:
+
+- Created `codey.storage.file_lock` providing cross-process and cross-thread advisory file locking using operating-system native kernel locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) and process-local `threading.RLock` coordination.
+- `LockTimeout` inherits `TimeoutError` (`OSError` subclass), aligning with store public `except OSError` error handling contracts.
+- Sidecar lock files (`.<filename>.lock`) are permanent advisory lock carriers and are never deleted, eliminating TOCTOU races in `stat -> unlink` stale-lock takeovers.
+- Created dedicated `codey.storage.event_state` module with `reset_event_backed_state(events_path, *state_paths)` to safely delete projections and event logs under the event lock.
+- Cleaned up and removed unused `transactional_json.py` and its test suite.
+- Enforced authoritative `events_path` locking discipline across all Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`) across append, replay, rebuild, delete_scope, reset, and compaction operations.
+
+Validation commands and results:
+
+```powershell
+python -m ruff check codey tests
+# All checks passed!
+
+python -m ruff format --check codey\storage\file_lock.py codey\storage\event_state.py codey\ghost\affinity.py codey\ghost\work_queue.py codey\ghost\continuity.py codey\ghost\hebbian.py codey\ghost\inbox.py codey\ghost\router.py codey\ghost\sleep.py tests\test_file_lock.py tests\test_event_state.py tests\test_server.py
+# 12 files already formatted
+
+python -B -m pytest tests\test_file_lock.py tests\test_event_state.py tests\test_research_evidence_ledger.py tests\test_ghost_affinity.py tests\test_ghost_work_queue.py tests\test_ghost_continuity.py tests\test_ghost_hebbian.py tests\test_ghost_inbox.py tests\test_ghost_router.py tests\test_ghost_sleep.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
+# 276 passed, 76 subtests passed in 25.35s
+
+python -B -m pytest -q
+# 3024 passed, 14 skipped, 966 subtests passed in 290.89s (0:04:50)
 ```
 
 

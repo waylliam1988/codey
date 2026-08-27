@@ -4,6 +4,11 @@ This policy lowers SSRF risk by preventing requests to local, private, and
 unresolved network endpoints. Note that this is an application-level SSRF guard
 and not a hard DNS-rebinding sandbox, as browser navigation engines resolve
 connections independently.
+
+When ``allow_dns_fake_ip`` is enabled, DNS-resolved 198.18.0.0/15 addresses are
+treated as policy-allowed for TUN/transparent-proxy setups. That compatibility
+path is not proof that the destination is a public internet host; it only means
+the URL passed this application's configured fetch policy.
 """
 
 from __future__ import annotations
@@ -18,16 +23,16 @@ from urllib.parse import urlparse
 
 from codey.utils.refs import is_valid_hostname
 
-_BLOCKED_HOSTS = frozenset({
-    "localhost",
-    "localhost.localdomain",
-    "ip6-localhost",
-    "ip6-loopback",
-})
-
-_DNS_FAKE_IP_NETS = (
-    ipaddress.ip_network("198.18.0.0/15"),
+_BLOCKED_HOSTS = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback",
+    }
 )
+
+_DNS_FAKE_IP_NETS = (ipaddress.ip_network("198.18.0.0/15"),)
 
 
 def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -39,6 +44,8 @@ def _ip_is_dns_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> boo
 
 
 class NetworkStatus(Enum):
+    # PUBLIC_WEB means "allowed by this policy", not a hard proof that DNS
+    # resolved to a globally routed address in all local proxy configurations.
     PUBLIC_WEB = "public_web"
     BLOCKED_PRIVATE = "blocked_private"
     BLOCKED_UNRESOLVED = "blocked_unresolved"
@@ -133,11 +140,7 @@ class NetworkPolicy:
                 entry = self._cache.get(cache_key)
                 if entry is not None:
                     cached_at, cached_reason = entry
-                    ttl = (
-                        self.allowed_cache_ttl_seconds
-                        if cached_reason is None
-                        else self.blocked_cache_ttl_seconds
-                    )
+                    ttl = self.allowed_cache_ttl_seconds if cached_reason is None else self.blocked_cache_ttl_seconds
                     if now - cached_at <= ttl:
                         return cached_reason
 

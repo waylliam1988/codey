@@ -67,11 +67,13 @@ class FakeSearch:
     name = "fake-search"
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
-        return [{
-            "title": "Helium article",
-            "url": "https://example.com/helium",
-            "snippet": "Helium supply.",
-        }]
+        return [
+            {
+                "title": "Helium article",
+                "url": "https://example.com/helium",
+                "snippet": "Helium supply.",
+            }
+        ]
 
     def fetch(self, url: str) -> dict:
         return {
@@ -157,7 +159,9 @@ def fake_pypdf(*page_texts: str):
     return mock.patch.dict(sys.modules, {"pypdf": SimpleNamespace(PdfReader=FakePdfReader)})
 
 
-def valid_research_report(url: str = "https://example.com/helium", *, conclusion: str = "Helium supply depends on gas processing.") -> str:
+def valid_research_report(
+    url: str = "https://example.com/helium", *, conclusion: str = "Helium supply depends on gas processing."
+) -> str:
     return (
         "## 结论\n"
         f"- {conclusion} [1]\n\n"
@@ -179,11 +183,16 @@ def valid_research_report(url: str = "https://example.com/helium", *, conclusion
 
 def helium_ledger(url: str = "https://example.com/helium") -> ResearchLedger:
     ledger = ResearchLedger()
-    ledger.record_search("helium", [{
-        "title": "Helium article",
-        "url": url,
-        "snippet": "Helium supply.",
-    }])
+    ledger.record_search(
+        "helium",
+        [
+            {
+                "title": "Helium article",
+                "url": url,
+                "snippet": "Helium supply.",
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -191,12 +200,14 @@ def helium_ledger(url: str = "https://example.com/helium") -> ResearchLedger:
         text="Helium is separated from natural gas streams. 2026 supply note.",
     )
     evidence = ledger.prepare_evidence_items(
-        [{
-            "claim": "Helium supply depends on gas processing.",
-            "source_url": url,
-            "excerpt": "Helium is separated from natural gas streams.",
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": "Helium supply depends on gas processing.",
+                "source_url": url,
+                "excerpt": "Helium is separated from natural gas streams.",
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim="Helium supply depends on gas processing.",
         fallback_body="Helium is separated from natural gas streams.",
@@ -209,33 +220,44 @@ def helium_ledger(url: str = "https://example.com/helium") -> ResearchLedger:
 
 def pdf_ledger(url: str = "https://example.com/report.pdf") -> ResearchLedger:
     ledger = ResearchLedger()
-    ledger.record_search("report pdf", [{
-        "title": "Report PDF",
-        "url": url,
-        "snippet": "Report details.",
-    }])
-    ledger.record_open_document(SourceDocument(
-        requested_url=url,
-        final_url=url,
-        title="Report PDF",
-        content_kind="pdf",
-        mime_type="application/pdf",
-        text="[page 4]\nThe report states that PDF intake supports page-specific evidence.",
-        page_count=12,
-        pages_read=(4,),
-        page_texts=(SourcePage(
-            number=4,
-            text="The report states that PDF intake supports page-specific evidence.",
-        ),),
-    ))
+    ledger.record_search(
+        "report pdf",
+        [
+            {
+                "title": "Report PDF",
+                "url": url,
+                "snippet": "Report details.",
+            }
+        ],
+    )
+    ledger.record_open_document(
+        SourceDocument(
+            requested_url=url,
+            final_url=url,
+            title="Report PDF",
+            content_kind="pdf",
+            mime_type="application/pdf",
+            text="[page 4]\nThe report states that PDF intake supports page-specific evidence.",
+            page_count=12,
+            pages_read=(4,),
+            page_texts=(
+                SourcePage(
+                    number=4,
+                    text="The report states that PDF intake supports page-specific evidence.",
+                ),
+            ),
+        )
+    )
     evidence = ledger.prepare_evidence_items(
-        [{
-            "claim": "PDF intake supports page-specific evidence.",
-            "source_url": url,
-            "excerpt": "PDF intake supports page-specific evidence",
-            "stance": "supports",
-            "page": 4,
-        }],
+        [
+            {
+                "claim": "PDF intake supports page-specific evidence.",
+                "source_url": url,
+                "excerpt": "PDF intake supports page-specific evidence",
+                "stance": "supports",
+                "page": 4,
+            }
+        ],
         fallback_sources=[url],
         fallback_claim="PDF intake supports page-specific evidence.",
         fallback_body="The report states that PDF intake supports page-specific evidence.",
@@ -371,13 +393,16 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-        with tempfile.TemporaryDirectory() as td, fake_pypdf(
-            "page one",
-            "page two",
-            "page three",
-            "The fourth page contains page-specific PDF evidence.",
-            "page five",
-            "page six",
+        with (
+            tempfile.TemporaryDirectory() as td,
+            fake_pypdf(
+                "page one",
+                "page two",
+                "page three",
+                "The fourth page contains page-specific PDF evidence.",
+                "page five",
+                "page six",
+            ),
         ):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(PdfSearch(), store, KnowledgeChanges(store.root))
@@ -450,18 +475,22 @@ class ResearchBoundaryTests(unittest.TestCase):
             opened = tools.open_url(url, limit=600)
             found = tools.source_search(url, "stable-v2 endpoint")
             evidence_before_write = len(tools.ledger.evidence_items)
-            saved = tools.knowledge_write({
-                "type": "fact",
-                "title": "Stable endpoint",
-                "body": "The stable-v2 endpoint appears deep in the HTML source.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "The endpoint is stable-v2.",
-                    "source_url": url,
-                    "excerpt": "stable-v2 endpoint appears deep in the HTML source",
-                    "stance": "supports",
-                }],
-            })
+            saved = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Stable endpoint",
+                    "body": "The stable-v2 endpoint appears deep in the HTML source.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "The endpoint is stable-v2.",
+                            "source_url": url,
+                            "excerpt": "stable-v2 endpoint appears deep in the HTML source",
+                            "stance": "supports",
+                        }
+                    ],
+                }
+            )
             coverage = tools.ledger.coverage_payload()
             evidence_count = len(tools.ledger.evidence_items)
             store.close()
@@ -520,17 +549,20 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-        with tempfile.TemporaryDirectory() as td, fake_pypdf(
-            "page one",
-            "page two",
-            "page three",
-            "page four",
-            "page five",
-            "page six",
-            "page seven",
-            "page eight",
-            "The validation method uses stratified bootstrap validation.",
-            "page ten",
+        with (
+            tempfile.TemporaryDirectory() as td,
+            fake_pypdf(
+                "page one",
+                "page two",
+                "page three",
+                "page four",
+                "page five",
+                "page six",
+                "page seven",
+                "page eight",
+                "The validation method uses stratified bootstrap validation.",
+                "page ten",
+            ),
         ):
             store = KnowledgeStore(Path(td))
             search = PdfSearch()
@@ -540,33 +572,41 @@ class ResearchBoundaryTests(unittest.TestCase):
             located = tools.source_search(url, "stratified bootstrap validation")
             pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
             evidence_after_search = len(tools.ledger.evidence_items)
-            rejected = tools.knowledge_write({
-                "type": "fact",
-                "title": "Validation method",
-                "body": "The validation method uses stratified bootstrap validation.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "The method uses stratified bootstrap validation.",
-                    "source_url": url,
-                    "excerpt": "stratified bootstrap validation",
-                    "stance": "supports",
-                    "page": 9,
-                }],
-            })
+            rejected = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Validation method",
+                    "body": "The validation method uses stratified bootstrap validation.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "The method uses stratified bootstrap validation.",
+                            "source_url": url,
+                            "excerpt": "stratified bootstrap validation",
+                            "stance": "supports",
+                            "page": 9,
+                        }
+                    ],
+                }
+            )
             page = tools.open_url(url, pages="9")
-            accepted = tools.knowledge_write({
-                "type": "fact",
-                "title": "Validation method",
-                "body": "The validation method uses stratified bootstrap validation.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "The method uses stratified bootstrap validation.",
-                    "source_url": url,
-                    "excerpt": "stratified bootstrap validation",
-                    "stance": "supports",
-                    "page": 9,
-                }],
-            })
+            accepted = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Validation method",
+                    "body": "The validation method uses stratified bootstrap validation.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "The method uses stratified bootstrap validation.",
+                            "source_url": url,
+                            "excerpt": "stratified bootstrap validation",
+                            "stance": "supports",
+                            "page": 9,
+                        }
+                    ],
+                }
+            )
             pages_after_open = tools.ledger.opened_sources_payload()[0]["pages_read"]
             evidence_count = len(tools.ledger.evidence_items)
             store.close()
@@ -602,17 +642,20 @@ class ResearchBoundaryTests(unittest.TestCase):
                     "truncated": False,
                 }
 
-        with tempfile.TemporaryDirectory() as td, fake_pypdf(
-            "method overview only",
-            "method background only",
-            "method appendix only",
-            "page four",
-            "page five",
-            "page six",
-            "page seven",
-            "page eight",
-            "validation method target phrase",
-            "page ten",
+        with (
+            tempfile.TemporaryDirectory() as td,
+            fake_pypdf(
+                "method overview only",
+                "method background only",
+                "method appendix only",
+                "page four",
+                "page five",
+                "page six",
+                "page seven",
+                "page eight",
+                "validation method target phrase",
+                "page ten",
+            ),
         ):
             store = KnowledgeStore(Path(td))
             search = PdfSearch()
@@ -936,11 +979,16 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_report_quality_allows_source_quality_parent_domain_for_opened_subdomain(self) -> None:
         url = "https://docs.python.org/3/library/pathlib.html"
         ledger = ResearchLedger()
-        ledger.record_search("python pathlib docs", [{
-            "title": "pathlib docs",
-            "url": url,
-            "snippet": "Python pathlib documentation.",
-        }])
+        ledger.record_search(
+            "python pathlib docs",
+            [
+                {
+                    "title": "pathlib docs",
+                    "url": url,
+                    "snippet": "Python pathlib documentation.",
+                }
+            ],
+        )
         ledger.record_open(
             requested_url=url,
             final_url=url,
@@ -948,12 +996,14 @@ class ResearchBoundaryTests(unittest.TestCase):
             text="The pathlib module offers classes representing filesystem paths.",
         )
         evidence = ledger.prepare_evidence_items(
-            [{
-                "claim": "pathlib provides filesystem path classes.",
-                "source_url": url,
-                "excerpt": "classes representing filesystem paths",
-                "stance": "supports",
-            }],
+            [
+                {
+                    "claim": "pathlib provides filesystem path classes.",
+                    "source_url": url,
+                    "excerpt": "classes representing filesystem paths",
+                    "stance": "supports",
+                }
+            ],
             fallback_sources=[url],
             fallback_claim="pathlib provides filesystem path classes.",
             fallback_body="The pathlib module offers classes representing filesystem paths.",
@@ -991,7 +1041,9 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_report_quality_requires_counter_section(self) -> None:
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
-        report = valid_research_report(url).replace("## 反证与限制\n- 未找到强反证；本轮搜索了 helium，并会被新的 primary supply data 推翻。\n\n", "")
+        report = valid_research_report(url).replace(
+            "## 反证与限制\n- 未找到强反证；本轮搜索了 helium，并会被新的 primary supply data 推翻。\n\n", ""
+        )
 
         review = review_report_quality(
             report,
@@ -1058,11 +1110,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_report_quality_rejects_source_id_refs_in_preamble(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("Alpha Safety Program", [{
-            "title": "Alpha Safety Program official manual",
-            "url": "https://agency.gov/alpha-safety/manual",
-            "snippet": "Official manual.",
-        }])
+        ledger.record_search(
+            "Alpha Safety Program",
+            [
+                {
+                    "title": "Alpha Safety Program official manual",
+                    "url": "https://agency.gov/alpha-safety/manual",
+                    "snippet": "Official manual.",
+                }
+            ],
+        )
         report = (
             "source_id=s9 preamble leak\n\n"
             "## 结论\n"
@@ -1113,10 +1170,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
         report = (
             "## 结论\n"
             "- Alpha claim [1]\n"
@@ -1155,9 +1214,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             title="Analysis of [S1] Subunit Protein",
             text="Protein evidence.",
         )
-        ledger.add_evidence_items([
-            EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
+            ]
+        )
         report = (
             "## 结论\n"
             "- Protein evidence is available. [1]\n\n"
@@ -1191,9 +1252,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             title="Analysis of [S1] Subunit Protein",
             text="Protein evidence.",
         )
-        ledger.add_evidence_items([
-            EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
+            ]
+        )
         report = (
             "## 结论\n"
             "- Protein evidence is available. [1]\n\n"
@@ -1398,18 +1461,21 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_report_quality_allows_no_citable_source_report_for_failed_search_leads(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("Alpha Safety Program 72 hour threshold", [
-            {
-                "title": "Alpha Safety Program official manual",
-                "url": "https://agency.gov/alpha-safety/manual",
-                "snippet": "Official manual.",
-            },
-            {
-                "title": "Alpha Safety summary blog",
-                "url": "https://blog.example/alpha-safety-summary",
-                "snippet": "Secondary summary.",
-            },
-        ])
+        ledger.record_search(
+            "Alpha Safety Program 72 hour threshold",
+            [
+                {
+                    "title": "Alpha Safety Program official manual",
+                    "url": "https://agency.gov/alpha-safety/manual",
+                    "snippet": "Official manual.",
+                },
+                {
+                    "title": "Alpha Safety summary blog",
+                    "url": "https://blog.example/alpha-safety-summary",
+                    "snippet": "Secondary summary.",
+                },
+            ],
+        )
         report = (
             "## 结论\n"
             "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
@@ -1447,9 +1513,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             title="Opened source",
             text="Opened source text.",
         )
-        ledger.add_evidence_items([
-            EvidenceItem(claim="claim", source_url=url, excerpt=""),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="claim", source_url=url, excerpt=""),
+            ]
+        )
         report = (
             "preamble https://evil.example/secret\n\n"
             "## 结论\n"
@@ -1479,11 +1547,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_report_quality_rejects_no_citable_report_that_lists_unopened_url_as_source(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("Alpha Safety Program", [{
-            "title": "Alpha Safety Program official manual",
-            "url": "https://agency.gov/alpha-safety/manual",
-            "snippet": "Official manual.",
-        }])
+        ledger.record_search(
+            "Alpha Safety Program",
+            [
+                {
+                    "title": "Alpha Safety Program official manual",
+                    "url": "https://agency.gov/alpha-safety/manual",
+                    "snippet": "Official manual.",
+                }
+            ],
+        )
         report = (
             "## 结论\n"
             "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
@@ -1511,11 +1584,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_report_quality_rejects_source_id_in_no_citable_sources_section(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("Alpha Safety Program", [{
-            "title": "Alpha Safety Program official manual",
-            "url": "https://agency.gov/alpha-safety/manual",
-            "snippet": "Official manual.",
-        }])
+        ledger.record_search(
+            "Alpha Safety Program",
+            [
+                {
+                    "title": "Alpha Safety Program official manual",
+                    "url": "https://agency.gov/alpha-safety/manual",
+                    "snippet": "Official manual.",
+                }
+            ],
+        )
         report = (
             "## 结论\n"
             "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
@@ -1605,31 +1683,35 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_report_quality_accepts_pdf_page_range_when_pages_were_read(self) -> None:
         url = "https://example.com/report.pdf"
         ledger = ResearchLedger()
-        ledger.record_open_document(SourceDocument(
-            requested_url=url,
-            final_url=url,
-            title="Report PDF",
-            content_kind="pdf",
-            mime_type="application/pdf",
-            text=(
-                "[page 4]\nThe fourth page contains page-specific PDF evidence.\n\n"
-                "[page 5]\nThe fifth page adds context."
-            ),
-            page_count=12,
-            pages_read=(4, 5),
-            page_texts=(
-                SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),
-                SourcePage(number=5, text="The fifth page adds context."),
-            ),
-        ))
+        ledger.record_open_document(
+            SourceDocument(
+                requested_url=url,
+                final_url=url,
+                title="Report PDF",
+                content_kind="pdf",
+                mime_type="application/pdf",
+                text=(
+                    "[page 4]\nThe fourth page contains page-specific PDF evidence.\n\n"
+                    "[page 5]\nThe fifth page adds context."
+                ),
+                page_count=12,
+                pages_read=(4, 5),
+                page_texts=(
+                    SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),
+                    SourcePage(number=5, text="The fifth page adds context."),
+                ),
+            )
+        )
         evidence = ledger.prepare_evidence_items(
-            [{
-                "claim": "PDF intake supports page-specific evidence.",
-                "source_url": url,
-                "excerpt": "page-specific PDF evidence",
-                "stance": "supports",
-                "page": 4,
-            }],
+            [
+                {
+                    "claim": "PDF intake supports page-specific evidence.",
+                    "source_url": url,
+                    "excerpt": "page-specific PDF evidence",
+                    "stance": "supports",
+                    "page": 4,
+                }
+            ],
             fallback_sources=[url],
             fallback_claim="PDF intake supports page-specific evidence.",
             fallback_body="The fourth page contains page-specific PDF evidence.",
@@ -1665,27 +1747,29 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_report_quality_keeps_pdf_pages_read_across_multiple_opens(self) -> None:
         url = "https://example.com/report.pdf"
         ledger = ResearchLedger()
-        ledger.record_open_document(SourceDocument(
-            requested_url=url,
-            final_url=url,
-            title="Report PDF",
-            content_kind="pdf",
-            mime_type="application/pdf",
-            text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
-            page_count=12,
-            pages_read=(4,),
-            page_texts=(
-                SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),
-            ),
-        ))
+        ledger.record_open_document(
+            SourceDocument(
+                requested_url=url,
+                final_url=url,
+                title="Report PDF",
+                content_kind="pdf",
+                mime_type="application/pdf",
+                text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
+                page_count=12,
+                pages_read=(4,),
+                page_texts=(SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),),
+            )
+        )
         evidence = ledger.prepare_evidence_items(
-            [{
-                "claim": "PDF intake supports page-specific evidence.",
-                "source_url": url,
-                "excerpt": "page-specific PDF evidence",
-                "stance": "supports",
-                "page": 4,
-            }],
+            [
+                {
+                    "claim": "PDF intake supports page-specific evidence.",
+                    "source_url": url,
+                    "excerpt": "page-specific PDF evidence",
+                    "stance": "supports",
+                    "page": 4,
+                }
+            ],
             fallback_sources=[url],
             fallback_claim="PDF intake supports page-specific evidence.",
             fallback_body="The fourth page contains page-specific PDF evidence.",
@@ -1693,17 +1777,19 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         self.assertFalse(evidence.error)
         ledger.add_evidence_items(list(evidence.items), note_id="fact-pdf")
-        ledger.record_open_document(SourceDocument(
-            requested_url=url,
-            final_url=url,
-            title="Report PDF",
-            content_kind="pdf",
-            mime_type="application/pdf",
-            text="[page 5]\nThe fifth page adds context.",
-            page_count=12,
-            pages_read=(5,),
-            page_texts=(SourcePage(number=5, text="The fifth page adds context."),),
-        ))
+        ledger.record_open_document(
+            SourceDocument(
+                requested_url=url,
+                final_url=url,
+                title="Report PDF",
+                content_kind="pdf",
+                mime_type="application/pdf",
+                text="[page 5]\nThe fifth page adds context.",
+                page_count=12,
+                pages_read=(5,),
+                page_texts=(SourcePage(number=5, text="The fifth page adds context."),),
+            )
+        )
         report = (
             "## 结论\n"
             "- PDF intake supports page-specific evidence. [1 p.4]\n\n"
@@ -1747,10 +1833,13 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_ledger_tracks_search_coverage_and_opened_results(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("helium supply", [
-            {"title": "Helium article", "url": "https://example.com/helium", "snippet": "supply note"},
-            {"title": "Other", "url": "https://example.com/other", "snippet": "other"},
-        ])
+        ledger.record_search(
+            "helium supply",
+            [
+                {"title": "Helium article", "url": "https://example.com/helium", "snippet": "supply note"},
+                {"title": "Other", "url": "https://example.com/other", "snippet": "other"},
+            ],
+        )
         ledger.record_open(
             requested_url="https://example.com/helium",
             final_url="https://example.com/helium",
@@ -1772,19 +1861,23 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
 
-            rejected = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": ["https://example.com/helium"],
-            })
+            rejected = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": ["https://example.com/helium"],
+                }
+            )
             tools.sources_read.add("https://example.com/helium")
-            accepted = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": ["https://example.com/helium"],
-            })
+            accepted = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": ["https://example.com/helium"],
+                }
+            )
             store.close()
 
         self.assertTrue(rejected.startswith("ERROR:"))
@@ -1796,12 +1889,14 @@ class ResearchBoundaryTests(unittest.TestCase):
             tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
             tools.search_result_urls.add("https://example.com/helium")
 
-            result = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": ["https://example.com/helium"],
-            })
+            result = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": ["https://example.com/helium"],
+                }
+            )
             count = store.index.count()
             store.close()
 
@@ -1814,12 +1909,15 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
             runner.tools.search_result_urls.add("https://example.com/helium")
-            call = ToolCall("knowledge_write", {
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": ["https://example.com/helium"],
-            })
+            call = ToolCall(
+                "knowledge_write",
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": ["https://example.com/helium"],
+                },
+            )
 
             outcome = runner._dispatch(call)
             payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
@@ -1841,12 +1939,15 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
             runner.tools.sources_read.add("https://example.com/helium")
-            call = ToolCall("knowledge_write", {
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": ["https://example.com/helium"],
-            })
+            call = ToolCall(
+                "knowledge_write",
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": ["https://example.com/helium"],
+                },
+            )
 
             outcome = runner._dispatch(call)
             payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
@@ -1930,30 +2031,38 @@ class ResearchBoundaryTests(unittest.TestCase):
                 text="Helium is separated from natural gas streams.",
             )
 
-            saved = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "Helium is useful.",
-                    "source_url": url,
-                    "excerpt": "This sentence was never opened.",
-                    "stance": "supports",
-                }],
-            })
-            accepted = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium source",
-                "body": "Helium comes from gas processing.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "Helium comes from gas processing.",
-                    "source_url": url,
-                    "excerpt": "Helium is separated from natural gas streams.",
-                    "stance": "supports",
-                }],
-            })
+            saved = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "Helium is useful.",
+                            "source_url": url,
+                            "excerpt": "This sentence was never opened.",
+                            "stance": "supports",
+                        }
+                    ],
+                }
+            )
+            accepted = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium source",
+                    "body": "Helium comes from gas processing.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "Helium comes from gas processing.",
+                            "source_url": url,
+                            "excerpt": "Helium is separated from natural gas streams.",
+                            "stance": "supports",
+                        }
+                    ],
+                }
+            )
             store.close()
 
         self.assertIn("saved fact note", saved)
@@ -1973,46 +2082,58 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
             tools.sources_read.add(url)
-            tools.ledger.record_open_document(SourceDocument(
-                requested_url=url,
-                final_url=url,
-                title="Report PDF",
-                content_kind="pdf",
-                mime_type="application/pdf",
-                text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
-                page_count=8,
-                pages_read=(4,),
-                page_texts=(SourcePage(
-                    number=4,
-                    text="The fourth page contains page-specific PDF evidence.",
-                ),),
-            ))
+            tools.ledger.record_open_document(
+                SourceDocument(
+                    requested_url=url,
+                    final_url=url,
+                    title="Report PDF",
+                    content_kind="pdf",
+                    mime_type="application/pdf",
+                    text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
+                    page_count=8,
+                    pages_read=(4,),
+                    page_texts=(
+                        SourcePage(
+                            number=4,
+                            text="The fourth page contains page-specific PDF evidence.",
+                        ),
+                    ),
+                )
+            )
 
-            inferred = tools.knowledge_write({
-                "type": "fact",
-                "title": "PDF page evidence",
-                "body": "The fourth page contains page-specific PDF evidence.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "The PDF has page-specific evidence.",
-                    "source_url": url,
-                    "excerpt": "page-specific PDF evidence",
-                    "stance": "supports",
-                }],
-            })
-            replaced = tools.knowledge_write({
-                "type": "fact",
-                "title": "PDF page replacement",
-                "body": "The fourth page contains page-specific PDF evidence.",
-                "sources": [url],
-                "evidence": [{
-                    "claim": "The PDF has page-specific evidence.",
-                    "source_url": url,
-                    "excerpt": "not in the PDF",
-                    "stance": "supports",
-                    "page": 4,
-                }],
-            })
+            inferred = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "PDF page evidence",
+                    "body": "The fourth page contains page-specific PDF evidence.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "The PDF has page-specific evidence.",
+                            "source_url": url,
+                            "excerpt": "page-specific PDF evidence",
+                            "stance": "supports",
+                        }
+                    ],
+                }
+            )
+            replaced = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "PDF page replacement",
+                    "body": "The fourth page contains page-specific PDF evidence.",
+                    "sources": [url],
+                    "evidence": [
+                        {
+                            "claim": "The PDF has page-specific evidence.",
+                            "source_url": url,
+                            "excerpt": "not in the PDF",
+                            "stance": "supports",
+                            "page": 4,
+                        }
+                    ],
+                }
+            )
             store.close()
 
         self.assertIn("saved fact note", inferred)
@@ -2028,12 +2149,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         prompt = codec.system_prompt()
         baseline_prompt = baseline_codec.system_prompt()
         repair = codec.repair_prompt()
-        followup = codec.format_results([
-            ToolResult(
-                ToolCall("knowledge_write", {"title": "Helium"}),
-                "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
-            )
-        ])
+        followup = codec.format_results(
+            [
+                ToolResult(
+                    ToolCall("knowledge_write", {"title": "Helium"}),
+                    "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
+                )
+            ]
+        )
 
         self.assertIn("A web_search result is not evidence yet", prompt)
         self.assertIn("call open_url", prompt)
@@ -2068,15 +2191,17 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_protocol_uses_only_model_text_projection(self) -> None:
         codec = JsonToolCodec()
-        followup = codec.format_results([
-            ToolResult(
-                ToolCall("web_search", {"query": "helium"}),
-                "MODEL_TEXT_SENTINEL",
-                presentation={"result": "PRESENTATION_SENTINEL"},
-                audit={"audit_id": "AUDIT_SENTINEL"},
-                canonical={"fact": "CANONICAL_SENTINEL"},
-            )
-        ])
+        followup = codec.format_results(
+            [
+                ToolResult(
+                    ToolCall("web_search", {"query": "helium"}),
+                    "MODEL_TEXT_SENTINEL",
+                    presentation={"result": "PRESENTATION_SENTINEL"},
+                    audit={"audit_id": "AUDIT_SENTINEL"},
+                    canonical={"fact": "CANONICAL_SENTINEL"},
+                )
+            ]
+        )
 
         self.assertIn("MODEL_TEXT_SENTINEL", followup)
         self.assertNotIn("PRESENTATION_SENTINEL", followup)
@@ -2111,14 +2236,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         surfaces = {
             "controller_system_prompt": controller_system_prompt(),
             "control_block": render_control_block(state),
-            "controller_followup": format_controller_results([
-                ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text")
-            ]),
+            "controller_followup": format_controller_results(
+                [ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text")]
+            ),
             "fallback_system_prompt": codec.system_prompt(),
             "fallback_repair_prompt": codec.repair_prompt(),
-            "fallback_followup": codec.format_results([
-                ToolResult(ToolCall("knowledge_write", {"title": "Alpha"}), "NEEDS_OPEN: open the source")
-            ]),
+            "fallback_followup": codec.format_results(
+                [ToolResult(ToolCall("knowledge_write", {"title": "Alpha"}), "NEEDS_OPEN: open the source")]
+            ),
             "advisor_prompt": render_research_advisor_prompt(pack),
         }
 
@@ -2128,10 +2253,12 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_protocol_rejects_multiple_tool_calls_per_reply(self) -> None:
         plan = JsonToolCodec().parse(
-            "\n".join([
-                json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
-                json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
-            ])
+            "\n".join(
+                [
+                    json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+                    json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
+                ]
+            )
         )
 
         self.assertFalse(plan.calls)
@@ -2140,10 +2267,12 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_protocol_rejects_duplicate_done_calls_per_reply(self) -> None:
         plan = JsonToolCodec().parse(
-            "\n".join([
-                json.dumps({"tool": "done", "args": {"answer": "first"}}),
-                json.dumps({"tool": "done", "args": {"answer": "second"}}),
-            ])
+            "\n".join(
+                [
+                    json.dumps({"tool": "done", "args": {"answer": "first"}}),
+                    json.dumps({"tool": "done", "args": {"answer": "second"}}),
+                ]
+            )
         )
 
         self.assertFalse(plan.calls)
@@ -2209,7 +2338,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         contract_calls = [
-            item for item in trace.calls if item[0] in {
+            item
+            for item in trace.calls
+            if item[0]
+            in {
                 "record_tool_contract_hash",
                 "record_runtime_tool_contract_hash",
             }
@@ -2262,27 +2394,39 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         error_calls = [item for item in trace.calls if item[0] == "record_research_connector_errors"]
-        self.assertEqual(error_calls, [(
-            "record_research_connector_errors",
-            ([{
-                "connector_id": "pubmed",
-                "action": "fetch_lookup",
-                "error": "ValueError",
-                "count": 2,
-            }, {
-                "connector_id": "SECRET_CLIENT_NAME",
-                "action": "fetch_lookup",
-                "error": "ValueError",
-            }],),
-            {},
-        )])
+        self.assertEqual(
+            error_calls,
+            [
+                (
+                    "record_research_connector_errors",
+                    (
+                        [
+                            {
+                                "connector_id": "pubmed",
+                                "action": "fetch_lookup",
+                                "error": "ValueError",
+                                "count": 2,
+                            },
+                            {
+                                "connector_id": "SECRET_CLIENT_NAME",
+                                "action": "fetch_lookup",
+                                "error": "ValueError",
+                            },
+                        ],
+                    ),
+                    {},
+                )
+            ],
+        )
 
     def test_research_runner_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
         provider = FakeProvider(
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {"title": "Alpha report", "content": "direct report"},
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {"title": "Alpha report", "content": "direct report"},
+                }
+            ),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -2369,10 +2513,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
+                }
+            ),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -2405,10 +2551,12 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_runner_unknown_tool_repair_respects_disabled_source_search(self) -> None:
         provider = FakeProvider(
-            json.dumps({
-                "tool": "source_search",
-                "args": {"url": "https://example.com/a", "query": "alpha"},
-            }),
+            json.dumps(
+                {
+                    "tool": "source_search",
+                    "args": {"url": "https://example.com/a", "query": "alpha"},
+                }
+            ),
             json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -2440,15 +2588,17 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium source",
-                    "body": "Helium comes from gas processing.",
-                    "sources": ["s1"],
-                },
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium source",
+                        "body": "Helium comes from gas processing.",
+                        "sources": ["s1"],
+                    },
+                }
+            ),
             json.dumps({"tool": "done", "args": {"answer": invalid}}),
             json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
         )
@@ -2467,13 +2617,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Supported conclusions need [n]", provider.sent[4])
         self.assertNotIn("[no tool output]", provider.sent[4])
         self.assertNotIn("Codey", provider.sent[4])
-        self.assertTrue(
-            any(
-                event.kind == "info"
-                and "Report quality failed" in event.message
-                for event in events
-            )
-        )
+        self.assertTrue(any(event.kind == "info" and "Report quality failed" in event.message for event in events))
 
     def test_research_advisors_get_only_the_evidence_pack(self) -> None:
         advisor = FakeAdvisorProvider("gap found")
@@ -2515,14 +2659,16 @@ class ResearchBoundaryTests(unittest.TestCase):
             url = "https://example.com/helium"
             tools.sources_read.add(url)
 
-            saved = tools.knowledge_write({
-                "type": "fact",
-                "title": "Helium",
-                "body": "Helium is useful.",
-                "sources": [url],
-                "session_id": "attacker",
-                "project": "E:/other",
-            })
+            saved = tools.knowledge_write(
+                {
+                    "type": "fact",
+                    "title": "Helium",
+                    "body": "Helium is useful.",
+                    "sources": [url],
+                    "session_id": "attacker",
+                    "project": "E:/other",
+                }
+            )
             rows = store.index.recent(5, session_id="s1")
             note = store.read_note(rows[0]["id"])
             store.close()
@@ -2539,22 +2685,26 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium source",
-                    "body": "Helium comes from gas processing.",
-                    "sources": ["s1"],
-                },
-            }),
-            json.dumps({
-                "tool": "done",
-                "args": {
-                    "answer": valid_research_report(url),
-                    "open_questions": ["Should helium routing be tracked next?"],
-                },
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium source",
+                        "body": "Helium comes from gas processing.",
+                        "sources": ["s1"],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "done",
+                    "args": {
+                        "answer": valid_research_report(url),
+                        "open_questions": ["Should helium routing be tracked next?"],
+                    },
+                }
+            ),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -2693,23 +2843,29 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium source",
-                    "body": "Helium comes from gas processing.",
-                    "sources": ["s1"],
-                },
-            }),
-            json.dumps({
-                "tool": "done",
-                "args": {"answer": valid_research_report(url, conclusion="Initial helium conclusion.")},
-            }),
-            json.dumps({
-                "tool": "done",
-                "args": {"answer": valid_research_report(url, conclusion="Revised helium conclusion.")},
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium source",
+                        "body": "Helium comes from gas processing.",
+                        "sources": ["s1"],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "done",
+                    "args": {"answer": valid_research_report(url, conclusion="Initial helium conclusion.")},
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "done",
+                    "args": {"answer": valid_research_report(url, conclusion="Revised helium conclusion.")},
+                }
+            ),
         )
         seen: list[EvidencePack] = []
 
@@ -2748,21 +2904,23 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium source",
-                    "body": "Helium is separated from natural gas streams.",
-                    "sources": ["s1"],
-                    "evidence": {
-                        "claim": "Helium supply depends on gas processing.",
-                        "source_url": url,
-                        "excerpt": "Helium is separated from natural gas streams.",
-                        "stance": "supports",
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium source",
+                        "body": "Helium is separated from natural gas streams.",
+                        "sources": ["s1"],
+                        "evidence": {
+                            "claim": "Helium supply depends on gas processing.",
+                            "source_url": url,
+                            "excerpt": "Helium is separated from natural gas streams.",
+                            "stance": "supports",
+                        },
                     },
-                },
-            }),
+                }
+            ),
             json.dumps({"tool": "done", "args": {"answer": "done"}}),
             json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
         )
@@ -2783,15 +2941,19 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_done_finalizer_compiles_source_ids_and_numbering(self) -> None:
         ledger = ResearchLedger()
         url = "https://example.com/a"
-        ledger.record_open_document(SourceDocument.html(
-            requested_url=url,
-            final_url=url,
-            title="Example A",
-            text="Alpha evidence line.",
-        ))
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=url, excerpt="Alpha evidence line."),
-        ])
+        ledger.record_open_document(
+            SourceDocument.html(
+                requested_url=url,
+                final_url=url,
+                title="Example A",
+                text="Alpha evidence line.",
+            )
+        )
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=url, excerpt="Alpha evidence line."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\nAlpha [s1]\n\n## 关键证据\n- Alpha [s1]\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[s1] Example A - https://example.com/a",
@@ -2884,10 +3046,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n"
@@ -2956,10 +3120,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n- Alpha claim [10]\n- Beta claim [20]\n\n"
@@ -3051,10 +3217,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n- Alpha claim [1]\n\n"
@@ -3075,10 +3243,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n- Alpha claim [s1]\n\n"
@@ -3110,10 +3280,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n- Beta claim [2], and the table ranked item [2nd].\n\n"
@@ -3137,10 +3309,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         ledger = ResearchLedger()
         ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
         ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
-            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
 
         finalized = finalize_done_answer(
             "## 结论\n- Beta claim [s2]\n\n"
@@ -3163,9 +3337,11 @@ class ResearchBoundaryTests(unittest.TestCase):
         url = "https://example.com/empty"
         ledger = ResearchLedger()
         ledger.record_open(requested_url=url, final_url=url, title="Empty Evidence", text="Alpha.")
-        ledger.add_evidence_items([
-            EvidenceItem(claim="alpha", source_url=url, excerpt=""),
-        ])
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=url, excerpt=""),
+            ]
+        )
 
         finalized = finalize_done_answer(valid_research_report(url), ledger)
 
@@ -3174,11 +3350,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_done_finalizer_renders_no_citable_sections(self) -> None:
         ledger = ResearchLedger()
-        ledger.record_search("Alpha Safety Program", [{
-            "title": "Alpha Safety Program official manual",
-            "url": "https://agency.gov/alpha-safety/manual",
-            "snippet": "Official manual.",
-        }])
+        ledger.record_search(
+            "Alpha Safety Program",
+            [
+                {
+                    "title": "Alpha Safety Program official manual",
+                    "url": "https://agency.gov/alpha-safety/manual",
+                    "snippet": "Official manual.",
+                }
+            ],
+        )
         report = (
             "preamble https://evil.example/secret\n\n"
             "## 结论\n"
@@ -3213,34 +3394,38 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium supply",
-                    "body": "Helium supply depends on gas processing.",
-                    "sources": ["s1"],
-                    "evidence": {
-                        "claim": "Helium supply depends on gas processing.",
-                        "source_url": "s1",
-                        "excerpt": "Helium is separated from natural gas streams.",
-                        "stance": "supports",
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium supply",
+                        "body": "Helium supply depends on gas processing.",
+                        "sources": ["s1"],
+                        "evidence": {
+                            "claim": "Helium supply depends on gas processing.",
+                            "source_url": "s1",
+                            "excerpt": "Helium is separated from natural gas streams.",
+                            "stance": "supports",
+                        },
                     },
-                },
-            }),
-            json.dumps({
-                "tool": "done",
-                "args": {
-                    "answer": (
-                        "## 结论\n- Helium supply depends on gas processing. [s1]\n\n"
-                        "## 关键证据\n- [s1] Helium is separated from natural gas streams.\n\n"
-                        "## 反证与限制\n- 未找到强反证；本轮搜索了 helium。\n\n"
-                        "## 来源质量\n- [s1] secondary · web · undated · example.com\n\n"
-                        "## 搜索覆盖\n- query: helium\n- opened: Helium article\n- skipped: none representative\n- stop: enough for this narrow fixture\n\n"
-                        "## 来源\n[s1] Helium article - https://example.com/helium"
-                    )
-                },
-            }),
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "done",
+                    "args": {
+                        "answer": (
+                            "## 结论\n- Helium supply depends on gas processing. [s1]\n\n"
+                            "## 关键证据\n- [s1] Helium is separated from natural gas streams.\n\n"
+                            "## 反证与限制\n- 未找到强反证；本轮搜索了 helium。\n\n"
+                            "## 来源质量\n- [s1] secondary · web · undated · example.com\n\n"
+                            "## 搜索覆盖\n- query: helium\n- opened: Helium article\n- skipped: none representative\n- stop: enough for this narrow fixture\n\n"
+                            "## 来源\n[s1] Helium article - https://example.com/helium"
+                        )
+                    },
+                }
+            ),
         )
         search = FakeSearch()
         trace = RecordingTrace()
@@ -3264,33 +3449,40 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("[1] Helium article - https://example.com/helium", result.summary)
         self.assertNotIn("[s1]", result.summary)
-        compilation_calls = [
-            item for item in trace.calls if item[0] == "record_research_done_compilation"
-        ]
-        self.assertEqual(compilation_calls, [(
-            "record_research_done_compilation",
-            ({"reason": "compiled_citations", "source_count": 1},),
-            {},
-        )])
+        compilation_calls = [item for item in trace.calls if item[0] == "record_research_done_compilation"]
+        self.assertEqual(
+            compilation_calls,
+            [
+                (
+                    "record_research_done_compilation",
+                    ({"reason": "compiled_citations", "source_count": 1},),
+                    {},
+                )
+            ],
+        )
 
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
             json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
-            json.dumps({
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Helium source",
-                    "body": "Helium comes from gas processing.",
-                    "sources": ["s1"],
-                },
-            }),
-            json.dumps({
-                "tool": "done",
-                "args": {"answer": valid_research_report(url)},
-            }),
+            json.dumps(
+                {
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium source",
+                        "body": "Helium comes from gas processing.",
+                        "sources": ["s1"],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "tool": "done",
+                    "args": {"answer": valid_research_report(url)},
+                }
+            ),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -3338,10 +3530,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         context = FakeContext()
         search_page = FakePage(context)
         context.pages.append(search_page)
-        session = type("Session", (), {
-            "page": search_page,
-            "browser": type("Browser", (), {"contexts": [context]})(),
-        })()
+        session = type(
+            "Session",
+            (),
+            {
+                "page": search_page,
+                "browser": type("Browser", (), {"contexts": [context]})(),
+            },
+        )()
         provider = BrowserSearchProvider()
         provider._session = session
         provider._search_page = search_page
@@ -3355,10 +3551,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         front_context = FakeContext()
         front_search_page = FakePage(front_context)
         front_context.pages.append(front_search_page)
-        front_session = type("Session", (), {
-            "page": front_search_page,
-            "browser": type("Browser", (), {"contexts": [front_context]})(),
-        })()
+        front_session = type(
+            "Session",
+            (),
+            {
+                "page": front_search_page,
+                "browser": type("Browser", (), {"contexts": [front_context]})(),
+            },
+        )()
         front_provider = BrowserSearchProvider(bring_to_front=True)
         front_provider._session = front_session
         front_provider._search_page = front_search_page
@@ -3418,7 +3618,9 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         response = StreamingResponse()
         provider = BrowserSearchProvider()
-        provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=AssertionError("PDF should not open a browser page"))
+        provider._ensure_fetch_page_on_browser_thread = mock.Mock(
+            side_effect=AssertionError("PDF should not open a browser page")
+        )
 
         with (
             mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
@@ -3627,16 +3829,18 @@ class ConceptRelationsTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(object(), store, KnowledgeChanges(store.root))
 
-            saved = tools.knowledge_write({
-                "type": "hypothesis",
-                "title": "War constrains helium",
-                "body": "War may constrain helium exports.",
-                "tags": ["war"],
-                "relations": [
-                    {"src": "War", "dst": "Helium Supply", "kind": "affects"},
-                    {"src": "war", "dst": "war"},
-                ],
-            })
+            saved = tools.knowledge_write(
+                {
+                    "type": "hypothesis",
+                    "title": "War constrains helium",
+                    "body": "War may constrain helium exports.",
+                    "tags": ["war"],
+                    "relations": [
+                        {"src": "War", "dst": "Helium Supply", "kind": "affects"},
+                        {"src": "war", "dst": "war"},
+                    ],
+                }
+            )
             note_id = saved.split("id=")[1].split(" ")[0]
             note = store.read_note(note_id)
             edge_rows = store.index.concept_edge_rows()
@@ -3822,16 +4026,12 @@ class ProtocolTelemetryTests(unittest.TestCase):
             store.close()
             trace.finish(status=runner.result.stop_reason if runner.result else "done")
 
-            serialized = (
-                trace_store.path_for(
-                    "session-research-unknown",
-                    "run-research-unknown",
-                ).read_text(encoding="utf-8")
-            )
+            serialized = trace_store.path_for(
+                "session-research-unknown",
+                "run-research-unknown",
+            ).read_text(encoding="utf-8")
 
-        tools = json.loads(serialized)["protocol_telemetry"]["phases"]["research"][
-            "unknown_tools"
-        ]
+        tools = json.loads(serialized)["protocol_telemetry"]["phases"]["research"]["unknown_tools"]
         self.assertTrue(tools[0]["digest"].startswith("sha256:"))
 
 
@@ -3940,14 +4140,22 @@ class NetworkPolicyTests(unittest.TestCase):
 
     def test_connector_redirect_hop_by_hop_guards(self) -> None:
         import io
+        import urllib.error
+
+        from codey.research import connector_search
         from codey.research.connector_search import _read_url_text
 
-        # 1. Redirect to private address is blocked at second hop
         class RedirectResponse:
-            def __init__(self, location: str, status: int = 302) -> None:
+            def __init__(
+                self,
+                location: str,
+                status: object = 302,
+                *,
+                header_name: str = "Location",
+            ) -> None:
                 self.status = status
                 self.code = status
-                self.headers = {"Location": location}
+                self.headers = {header_name: location}
 
             def __enter__(self):
                 return self
@@ -3972,27 +4180,54 @@ class NetworkPolicyTests(unittest.TestCase):
             def __exit__(self, *args):
                 pass
 
-        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
-            mock_open.return_value = RedirectResponse("http://127.0.0.1/private")
-            with self.assertRaises(ValueError) as ctx:
-                _read_url_text("https://example.com/start", timeout=2.0)
+        def allow_public_urls(target: str, *, use_cache: bool = False) -> str | None:
+            del use_cache
+            if target.startswith("http://127.0.0.1"):
+                return "non-public target"
+            return None
+
+        # 1. Redirect to private address is blocked at second hop
+        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+                mock_open.return_value = RedirectResponse("http://127.0.0.1/private")
+                with self.assertRaises(ValueError) as ctx:
+                    _read_url_text("https://example.com/start", timeout=2.0)
             self.assertTrue("non-public" in str(ctx.exception) or "local/loopback" in str(ctx.exception))
 
         # 2. Redirect loop exceeding limit is stopped
-        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
-            mock_open.return_value = RedirectResponse("https://example.com/loop")
-            with self.assertRaises(ValueError) as ctx:
-                _read_url_text("https://example.com/loop", timeout=2.0)
+        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+                mock_open.return_value = RedirectResponse("https://example.com/loop")
+                with self.assertRaises(ValueError) as ctx:
+                    _read_url_text("https://example.com/loop", timeout=2.0)
             self.assertIn("too many redirects", str(ctx.exception))
 
         # 3. Valid redirect to allowed URL succeeds
-        with unittest.mock.patch("urllib.request.OpenerDirector.open") as mock_open:
-            mock_open.side_effect = [
-                RedirectResponse("https://example.com/final"),
-                FinalResponse(b"valid payload"),
-            ]
-            result = _read_url_text("https://example.com/start", timeout=2.0)
+        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+                mock_open.side_effect = [
+                    RedirectResponse("https://example.com/final", status="302", header_name="location"),
+                    FinalResponse(b"valid payload"),
+                ]
+                result = _read_url_text("https://example.com/start", timeout=2.0)
             self.assertEqual(result, "valid payload")
+
+        # 4. HTTPError redirect responses are closed before following the next hop
+        close_tracker = unittest.mock.Mock()
+        redirect_error = urllib.error.HTTPError(
+            "https://example.com/start",
+            302,
+            "Found",
+            {"location": "https://example.com/final"},
+            close_tracker,
+        )
+        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+                mock_open.side_effect = [redirect_error, FinalResponse(b"after http error redirect")]
+                result = _read_url_text("https://example.com/start", timeout=2.0)
+
+        self.assertEqual(result, "after http error redirect")
+        close_tracker.close.assert_called_once()
 
     def test_research_tools_open_url_entrance_guard_blocks_local_target(self) -> None:
         from codey.research.tools import ResearchTools
@@ -4008,6 +4243,33 @@ class NetworkPolicyTests(unittest.TestCase):
         self.assertTrue("non-public" in result or "local/loopback" in result)
         mock_search.fetch.assert_not_called()
 
+    def test_research_tools_open_url_uses_policy_cache_before_and_after_fetch(self) -> None:
+        from codey.research.tools import ResearchTools
+
+        class RedirectingSearch:
+            def fetch(self, _url: str) -> dict:
+                return {
+                    "url": "https://example.com/final",
+                    "title": "Final",
+                    "text": "Readable page body.",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(RedirectingSearch(), store, KnowledgeChanges(store.root))
+            with mock.patch("codey.research.tools.check_fetch_url", return_value=None) as policy:
+                result = tools.open_url("https://example.com/start")
+            store.close()
+
+        self.assertIn("Readable page body.", result)
+        policy.assert_has_calls(
+            [
+                mock.call("https://example.com/start", use_cache=True),
+                mock.call("https://example.com/final", use_cache=True),
+            ]
+        )
+
     def test_network_policy_fake_dns_ip_handling(self) -> None:
         from codey.policies.network import DEFAULT_NETWORK_POLICY, NetworkPolicy
 
@@ -4020,10 +4282,9 @@ class NetworkPolicyTests(unittest.TestCase):
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
 
-            # Default policy allows DNS-resolved fake IP for TUN/transparent proxy environments
-            self.assertIsNone(
-                DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True)
-            )
+            # Default policy treats DNS-resolved fake IP as policy-allowed for
+            # TUN/transparent proxy environments; it is not a public-IP proof.
+            self.assertIsNone(DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True))
 
             # Strict policy with allow_dns_fake_ip=False rejects it
             strict_policy = NetworkPolicy(allow_dns_fake_ip=False)

@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.17-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.18-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.17`
+版本：`0.4.18`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -790,7 +790,7 @@ codey/
   completion/               CompletionProof、verification map/policy 和有边界的 repair context 投影
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、graph/FTS 索引、restore、concept 和 Research Brief
-  policies/                 action/capability/permission/prompt safety、命令分词、run-command 语义和 shell 风险
+  policies/                 action/capability/permission/prompt/network safety、命令分词、run-command 语义和 shell 风险
   protocols/                codec 接口和 JSON-only 工具协议
   providers/                provider registry、profile、control、discovery、revival/supervision、worker 隔离、本地 OpenAI 和网页驱动
     profiles.json           支持模型网页的版本化选择器
@@ -807,6 +807,7 @@ codey/
     pipeline.py             Research 生命周期 owner 和 bounded follow-up 编排
     topic_continuity.py     有界、非证据的 continuity 和 topic candidate 投影
     regression_gate.py      确定性的评测脊柱 regression read model
+    http_redirects.py       connector 和 PDF fetch 共用的 no-redirect HTTP helper
     plan_executor.py        有界 fresh-material ResearchPlan 执行器
     evidence_followup.py    单轮 knowledge_write-only evidence 提取
     record_merge.py         确定性 evidence patch merge 和引用重编号

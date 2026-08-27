@@ -131,12 +131,12 @@ class ResearchTools:
         if page_text.startswith("SKIPPED:"):
             return page_text
         if page_text.startswith("ERROR:"):
-            message = page_text[len("ERROR:"):].strip()
+            message = page_text[len("ERROR:") :].strip()
             if message.lower().startswith("unsupported content type:"):
                 return f"SKIPPED: {message}. Choose an HTML source or another readable page."
             self._record_failure("browser", "open", message, url=url)
             return f"ERROR: {message}"
-        reason = check_fetch_url(page_url)
+        reason = check_fetch_url(page_url, use_cache=True)
         if reason:
             return f"ERROR: {reason} (after redirect)"
         document = self._source_document_from_fetch(url, page, pages=pages)
@@ -156,7 +156,9 @@ class ResearchTools:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
         return body
 
-    def _source_document_from_fetch(self, requested_url: str, page: dict, *, pages: str = "") -> SourceDocument | PdfSkipped:
+    def _source_document_from_fetch(
+        self, requested_url: str, page: dict, *, pages: str = ""
+    ) -> SourceDocument | PdfSkipped:
         final_url = str(page.get("url") or requested_url)
         content_kind = str(page.get("content_kind") or "").lower()
         mime_type = str(page.get("mime_type") or "")
@@ -196,10 +198,13 @@ class ResearchTools:
         if source.content_kind == "pdf":
             hits = search_pages(self.ledger.source_pages_for_url(final_url), query, hit_limit)
             if self._pdf_source_search_scan_needed(source.final_url):
-                hits = _merge_source_hits([
-                    *hits,
-                    *self._pdf_source_search_hits(source.final_url, query, hit_limit),
-                ], hit_limit)
+                hits = _merge_source_hits(
+                    [
+                        *hits,
+                        *self._pdf_source_search_hits(source.final_url, query, hit_limit),
+                    ],
+                    hit_limit,
+                )
         else:
             hits = search_text(self.ledger.source_text_for_url(final_url), query, hit_limit)
         self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
@@ -276,9 +281,7 @@ class ResearchTools:
             conf = "" if row.get("confidence") is None else f" conf={row['confidence']}"
             status = row.get("status") or "active"
             snippet = _clip_tail(str(row.get("snippet") or ""), 140)
-            lines.append(
-                f"[{row['type']}] {row['title']} (id={row['id']}, {status}{conf})\n   {snippet}".rstrip()
-            )
+            lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}{conf})\n   {snippet}".rstrip())
         return "\n".join(lines)
 
     def knowledge_read(self, note_id: str) -> str:
@@ -455,7 +458,7 @@ def _clip_tail(value: str, limit: int) -> str:
         return text
     if limit <= 3:
         return text[-limit:]
-    return "..." + text[-(limit - 3):]
+    return "..." + text[-(limit - 3) :]
 
 
 def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:

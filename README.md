@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.17-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.18-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.17`
+Version: `0.4.18`
 
 [Version history](CHANGELOG.md)
 
@@ -938,7 +938,7 @@ codey/
   completion/               CompletionProof, verification maps/policy, and bounded repair-context projection
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, graph/FTS index, restore, concepts, and Research Briefs
-  policies/                 action/capability/permission/prompt safety, command tokenizer, run-command semantics, and shell risk
+  policies/                 action/capability/permission/prompt/network safety, command tokenizer, run-command semantics, and shell risk
   protocols/                codec interfaces and JSON-only tool protocol
   providers/                provider registry, profiles, controls, discovery, revival/supervision, worker isolation, local OpenAI, and web drivers
     profiles.json           versioned selectors for supported model pages
@@ -955,6 +955,7 @@ codey/
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
     topic_continuity.py     bounded non-evidence continuity and topic-candidate projection
     regression_gate.py      deterministic evaluation-spine regression read model
+    http_redirects.py       shared no-redirect HTTP helpers for connector and PDF fetch paths
     plan_executor.py        bounded fresh-material ResearchPlan execution
     evidence_followup.py    single-turn knowledge_write-only evidence extraction
     record_merge.py         deterministic evidence patch merge and citation re-indexing

@@ -12,10 +12,16 @@ import json
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import urlencode, urlparse
 
 from codey.runtime import cancellation
 from codey.research.connector_domains import preferred_connector_ids
+from codey.research.http_redirects import (
+    build_no_redirect_opener,
+    close_response as _close_response,
+    is_redirect_status as _is_redirect_status,
+    redirect_target as _redirect_target,
+)
 from codey.utils.refs import clip
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
@@ -66,9 +72,7 @@ class ConnectorAwareSearchProvider:
         self.base_provider = base_provider
         self.registry = registry or built_in_connector_registry()
         self.connector_ids = tuple(
-            item
-            for item in connector_ids
-            if self._connector_available(item, capability="search_supported")
+            item for item in connector_ids if self._connector_available(item, capability="search_supported")
         )
         self.connector_limit = _bounded_limit(
             connector_limit,
@@ -136,9 +140,7 @@ class ConnectorAwareSearchProvider:
             return results
         previous_deadline = self._search_deadline
         self._search_deadline = (
-            time.monotonic() + self.connector_budget_seconds
-            if self.connector_budget_seconds > 0
-            else None
+            time.monotonic() + self.connector_budget_seconds if self.connector_budget_seconds > 0 else None
         )
         try:
             for connector_id in _preferred_connectors(safe_query, self.connector_ids):
@@ -187,13 +189,15 @@ class ConnectorAwareSearchProvider:
         return self._pubmed_fetch_ids(ids, query=connector_query, limit=limit)
 
     def _pubmed_ids(self, query: str, *, limit: int) -> tuple[str, ...]:
-        params = urlencode({
-            "db": "pubmed",
-            "term": query,
-            "retmax": str(_bounded_limit(limit, default=self.connector_limit, upper=MAX_CONNECTOR_HITS)),
-            "retmode": "json",
-            "tool": _PUBMED_TOOL_NAME,
-        })
+        params = urlencode(
+            {
+                "db": "pubmed",
+                "term": query,
+                "retmax": str(_bounded_limit(limit, default=self.connector_limit, upper=MAX_CONNECTOR_HITS)),
+                "retmode": "json",
+                "tool": _PUBMED_TOOL_NAME,
+            }
+        )
         payload = json.loads(self._read_connector_url("pubmed", f"{_PUBMED_SEARCH_URL}?{params}"))
         raw_ids = payload.get("esearchresult", {}).get("idlist", [])
         return tuple(str(item).strip() for item in raw_ids if is_valid_pubmed_id(item))
@@ -208,12 +212,14 @@ class ConnectorAwareSearchProvider:
         clean_ids = tuple(item for item in ids if is_valid_pubmed_id(item))[:MAX_CONNECTOR_HITS]
         if not clean_ids:
             return SourceConnectorResult(connector_id="pubmed")
-        params = urlencode({
-            "db": "pubmed",
-            "id": ",".join(clean_ids),
-            "retmode": "xml",
-            "tool": _PUBMED_TOOL_NAME,
-        })
+        params = urlencode(
+            {
+                "db": "pubmed",
+                "id": ",".join(clean_ids),
+                "retmode": "xml",
+                "tool": _PUBMED_TOOL_NAME,
+            }
+        )
         xml_text = self._read_connector_url("pubmed", f"{_PUBMED_FETCH_URL}?{params}")
         return parse_pubmed_fixture(xml_text, query=query, limit=limit)
 
@@ -221,13 +227,15 @@ class ConnectorAwareSearchProvider:
         connector_query = _connector_query(safe_query.terms, "arxiv")
         if not connector_query:
             return SourceConnectorResult(connector_id="arxiv")
-        params = urlencode({
-            "search_query": "all:" + connector_query,
-            "start": "0",
-            "max_results": str(_bounded_limit(limit, default=self.connector_limit, upper=MAX_CONNECTOR_HITS)),
-            "sortBy": "relevance",
-            "sortOrder": "descending",
-        })
+        params = urlencode(
+            {
+                "search_query": "all:" + connector_query,
+                "start": "0",
+                "max_results": str(_bounded_limit(limit, default=self.connector_limit, upper=MAX_CONNECTOR_HITS)),
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            }
+        )
         xml_text = self._read_connector_url("arxiv", f"{_ARXIV_SEARCH_URL}?{params}")
         return parse_arxiv_atom_fixture(xml_text, query=connector_query, limit=limit)
 
@@ -287,19 +295,23 @@ class ConnectorAwareSearchProvider:
         self._last_request_at[connector_id] = time.monotonic()
 
     def _record_error(self, connector_id: str, action: str, exc: object) -> None:
-        self.last_connector_errors.append({
-            "connector_id": _connector_id(connector_id),
-            "action": _connector_id(action),
-            "error": clip(type(exc).__name__ or str(exc), 80),
-        })
+        self.last_connector_errors.append(
+            {
+                "connector_id": _connector_id(connector_id),
+                "action": _connector_id(action),
+                "error": clip(type(exc).__name__ or str(exc), 80),
+            }
+        )
         del self.last_connector_errors[:-8]
 
     def _record_skip(self, connector_id: str, action: str, reason: str) -> None:
-        self.last_connector_errors.append({
-            "connector_id": _connector_id(connector_id),
-            "action": _connector_id(action),
-            "error": _connector_id(reason),
-        })
+        self.last_connector_errors.append(
+            {
+                "connector_id": _connector_id(connector_id),
+                "action": _connector_id(action),
+                "error": _connector_id(reason),
+            }
+        )
         del self.last_connector_errors[:-8]
 
     def _connector_available(self, connector_id: object, *, capability: str) -> bool:
@@ -350,9 +362,7 @@ def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
     elif connector_id == "arxiv":
         blocked.update({"arxiv", "preprint", "preprints", "paper", "papers"})
     terms = [
-        item
-        for item in safe_terms[:MAX_CONNECTOR_HITS]
-        if item.strip().casefold().strip(".,:;()[]{}") not in blocked
+        item for item in safe_terms[:MAX_CONNECTOR_HITS] if item.strip().casefold().strip(".,:;()[]{}") not in blocked
     ]
     return " ".join(terms)
 
@@ -392,11 +402,13 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
         if key in seen_connector:
             continue
         seen_connector.add(key)
-        merged.append({
-            "title": str(row.get("title") or "").strip(),
-            "url": url,
-            "snippet": str(row.get("snippet") or "").strip(),
-        })
+        merged.append(
+            {
+                "title": str(row.get("title") or "").strip(),
+                "url": url,
+                "snippet": str(row.get("snippet") or "").strip(),
+            }
+        )
         if len(merged) >= limit:
             break
     for row in base_results:
@@ -409,38 +421,47 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
         if key in seen_base:
             continue
         seen_base.add(key)
-        merged.append({
-            "title": str(row.get("title") or "").strip(),
-            "url": url,
-            "snippet": str(row.get("snippet") or "").strip(),
-        })
+        merged.append(
+            {
+                "title": str(row.get("title") or "").strip(),
+                "url": url,
+                "snippet": str(row.get("snippet") or "").strip(),
+            }
+        )
         if len(merged) >= limit:
             break
     return merged
 
 
 _CONNECTOR_MAX_REDIRECTS = 5
-_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
-_ORIGINAL_URLOPEN = urllib.request.urlopen
 
-
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
-
-
-_CONNECTOR_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+_CONNECTOR_OPENER = build_no_redirect_opener()
 
 
 def _open_connector_url(req, timeout: float):
-    if urllib.request.urlopen is not _ORIGINAL_URLOPEN:
-        return urllib.request.urlopen(req, timeout=timeout)
     return _CONNECTOR_OPENER.open(req, timeout=timeout)
+
+
+def _response_charset(headers) -> str:
+    try:
+        charset = headers.get_content_charset()
+    except AttributeError:
+        charset = ""
+    return str(charset or "utf-8")
+
+
+def _remaining_timeout(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("connector request timed out")
+    return remaining
 
 
 def _read_url_text(url: str, *, timeout: float) -> str:
     current_url = url
+    deadline = time.monotonic() + max(0.0, float(timeout))
     for _ in range(_CONNECTOR_MAX_REDIRECTS + 1):
+        cancellation.check()
         reason = check_fetch_url(current_url, use_cache=True)
         if reason:
             raise ValueError(reason)
@@ -452,24 +473,26 @@ def _read_url_text(url: str, *, timeout: float) -> str:
             },
         )
         try:
-            with _open_connector_url(request, timeout=timeout) as response:
+            with _open_connector_url(request, timeout=_remaining_timeout(deadline)) as response:
                 status = getattr(response, "status", getattr(response, "code", 200))
-                if status in _REDIRECT_STATUSES:
-                    location = response.headers.get("Location")
-                    if not location:
+                if _is_redirect_status(status):
+                    next_url = _redirect_target(current_url, response.headers)
+                    if not next_url:
                         raise ValueError("redirect response missing Location header")
-                    current_url = urljoin(current_url, location)
+                    current_url = next_url
                     continue
                 data = response.read(1024 * 1024)
-                charset = response.headers.get_content_charset() or "utf-8"
-                return data.decode(charset, errors="replace")
+                return data.decode(_response_charset(response.headers), errors="replace")
         except urllib.error.HTTPError as exc:
-            if exc.code in _REDIRECT_STATUSES:
-                location = exc.headers.get("Location")
-                if not location:
-                    raise ValueError("redirect response missing Location header") from exc
-                current_url = urljoin(current_url, location)
-                continue
+            if _is_redirect_status(exc.code):
+                try:
+                    next_url = _redirect_target(current_url, exc.headers)
+                    if not next_url:
+                        raise ValueError("redirect response missing Location header") from exc
+                    current_url = next_url
+                    continue
+                finally:
+                    _close_response(exc)
             raise ValueError(f"connector request failed: {exc}") from exc
         except urllib.error.URLError as exc:
             raise ValueError(f"connector request failed: {exc}") from exc
