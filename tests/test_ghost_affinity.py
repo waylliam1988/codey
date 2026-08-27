@@ -297,9 +297,7 @@ def test_reference_count_does_not_scale_reinforcement() -> None:
             source_refs=refs,
         )
 
-    one = affinity_module._reinforce_node(
-        None, node_spec(("ref:1",)), now=FRESH_TS
-    )[0]
+    one = affinity_module._reinforce_node(None, node_spec(("ref:1",)), now=FRESH_TS)[0]
     five = affinity_module._reinforce_node(
         None,
         node_spec(tuple(f"ref:{index}" for index in range(5))),
@@ -322,9 +320,7 @@ def test_reference_count_does_not_scale_reinforcement() -> None:
             source_refs=refs,
         )
 
-    edge_one = affinity_module._reinforce_edge(
-        None, edge_spec(("ref:1",)), now=FRESH_TS
-    )[0]
+    edge_one = affinity_module._reinforce_edge(None, edge_spec(("ref:1",)), now=FRESH_TS)[0]
     edge_five = affinity_module._reinforce_edge(
         None,
         edge_spec(tuple(f"ref:{index}" for index in range(5))),
@@ -369,20 +365,24 @@ def test_work_priority_hints_use_relevant_target_edge_among_irrelevant_edges() -
             _affinity_node(task_id, "task_type", "research", scope, scope_ref, weight=0.05),
         ]
         edges = [
-            _affinity_edge(project_id, task_id, "used_in_task", scope, scope_ref, weight=0.9, source_ref="edge:relevant"),
+            _affinity_edge(
+                project_id, task_id, "used_in_task", scope, scope_ref, weight=0.9, source_ref="edge:relevant"
+            ),
         ]
         for index in range(20):
             other_task_id = affinity_module._node_id("task_type", scope, scope_ref, f"other-{index}")
             nodes.append(_affinity_node(other_task_id, "task_type", f"other-{index}", scope, scope_ref, weight=0.05))
-            edges.append(_affinity_edge(
-                project_id,
-                other_task_id,
-                "used_in_task",
-                scope,
-                scope_ref,
-                weight=0.2,
-                source_ref=f"edge:other-{index}",
-            ))
+            edges.append(
+                _affinity_edge(
+                    project_id,
+                    other_task_id,
+                    "used_in_task",
+                    scope,
+                    scope_ref,
+                    weight=0.2,
+                    source_ref=f"edge:other-{index}",
+                )
+            )
         _write_affinity_snapshot(affinity, nodes, edges)
         item = _work_item(item_id_seed="target", status="queued", project=project, kind="research")
 
@@ -416,12 +416,18 @@ def test_scope_isolation_and_project_hints_do_not_leak() -> None:
         affinity = GhostAffinityStore(td)
         affinity.sync_from_sources(
             research_interest_candidates=(
-                _candidate(candidate_id="one", session_id="", project=project_one, concepts=("alpha", "beta"), neighbors=()),
-                _candidate(candidate_id="two", session_id="", project=project_two, concepts=("gamma", "delta"), neighbors=()),
+                _candidate(
+                    candidate_id="one", session_id="", project=project_one, concepts=("alpha", "beta"), neighbors=()
+                ),
+                _candidate(
+                    candidate_id="two", session_id="", project=project_two, concepts=("gamma", "delta"), neighbors=()
+                ),
             ),
             project=project_one,
         )
-        candidate_one = _candidate(candidate_id="target-one", session_id="", project=project_one, concepts=("alpha",), neighbors=())
+        candidate_one = _candidate(
+            candidate_id="target-one", session_id="", project=project_one, concepts=("alpha",), neighbors=()
+        )
         candidate_two = _candidate(
             candidate_id="target-two",
             session_id="",
@@ -460,7 +466,7 @@ def test_provider_failure_does_not_store_raw_secret_message() -> None:
                     "provider": "deepseek",
                     "kind": "response_missing",
                     "action": "send",
-                    "message": "raw sk-test-secret password should not persist",
+                    "message": "raw SECRET_TOKEN_FIXTURE password should not persist",
                 },
             },
             session_id="s1",
@@ -471,7 +477,7 @@ def test_provider_failure_does_not_store_raw_secret_message() -> None:
     assert result.ok
     assert nodes
     assert "response_missing" in raw
-    assert "sk-test-secret" not in raw
+    assert "SECRET_TOKEN_FIXTURE" not in raw
     assert "password" not in raw
 
 
@@ -589,9 +595,7 @@ def test_reinforcement_weight_uses_only_new_refs() -> None:
         with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
             for index in range(3):
                 affinity.sync_from_sources(
-                    research_interest_candidates=(
-                        _candidate(candidate_id=f"alpha-{index}", concepts=("alpha",)),
-                    ),
+                    research_interest_candidates=(_candidate(candidate_id=f"alpha-{index}", concepts=("alpha",)),),
                     session_id="s1",
                 )
                 weights.append(affinity.list_nodes(kind="research_concept", session_id="s1")[0].weight)
@@ -603,10 +607,7 @@ def test_reinforcement_weight_uses_only_new_refs() -> None:
 
 
 def test_ref_cap_does_not_break_replay_idempotency() -> None:
-    candidates = tuple(
-        _candidate(candidate_id=f"alpha-{index}", concepts=("alpha",))
-        for index in range(40)
-    )
+    candidates = tuple(_candidate(candidate_id=f"alpha-{index}", concepts=("alpha",)) for index in range(40))
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
         first = affinity.sync_from_sources(research_interest_candidates=candidates, session_id="s1")
@@ -689,7 +690,9 @@ def test_concurrent_reinforce_accumulates_both_events() -> None:
         seed = GhostAffinityStore(td)
         with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
             assert seed.sync_from_sources(
-                research_interest_candidates=(_candidate(candidate_id="alpha-base", concepts=("alpha",), neighbors=()),),
+                research_interest_candidates=(
+                    _candidate(candidate_id="alpha-base", concepts=("alpha",), neighbors=()),
+                ),
                 session_id="s1",
             ).ok
             base_weight = seed.list_nodes(kind="research_concept", session_id="s1")[0].weight
@@ -697,7 +700,9 @@ def test_concurrent_reinforce_accumulates_both_events() -> None:
             def reinforce(candidate_id: str) -> None:
                 store = GhostAffinityStore(td)
                 result = store.sync_from_sources(
-                    research_interest_candidates=(_candidate(candidate_id=candidate_id, concepts=("alpha",), neighbors=()),),
+                    research_interest_candidates=(
+                        _candidate(candidate_id=candidate_id, concepts=("alpha",), neighbors=()),
+                    ),
                     session_id="s1",
                 )
                 assert result.ok
@@ -747,13 +752,16 @@ def test_old_affinity_upsert_event_is_unsupported_for_mutation() -> None:
         affinity = GhostAffinityStore(td)
         affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
         affinity.events_path.write_text(
-            json.dumps({
-                "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
-                "type": "ghost_affinity_node_upsert",
-                "event_id": "old",
-                "ts": FRESH_TS,
-                "node": {},
-            }) + "\n",
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_node_upsert",
+                    "event_id": "old",
+                    "ts": FRESH_TS,
+                    "node": {},
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -772,15 +780,414 @@ def test_affinity_snapshot_with_invalid_row_is_unsupported_for_mutation() -> Non
         affinity = GhostAffinityStore(td)
         affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
         affinity.events_path.write_text(
-            json.dumps({
-                "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
-                "type": "ghost_affinity_snapshot",
-                "event_id": "bad-snapshot",
-                "ts": FRESH_TS,
-                "reason": "test",
-                "nodes": [{"id": "missing-required-fields"}],
-                "edges": [],
-            }) + "\n",
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_snapshot",
+                    "event_id": "bad-snapshot",
+                    "ts": FRESH_TS,
+                    "reason": "test",
+                    "nodes": [{"id": "missing-required-fields"}],
+                    "edges": [],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_event_with_extra_top_level_field_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        assert affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        ).ok
+        events = [
+            json.loads(line) for line in affinity.events_path.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
+        events[0]["raw_extra"] = "raw-extra-fixture"
+        affinity.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events
+            ),
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="beta", concepts=("beta",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [("confidence", False), ("confidence", 1), ("reward", False), ("reward", 1)],
+)
+def test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed(field: str, bad_value: object) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        spec = affinity_module._NodeSpec(
+            kind="research_concept",
+            key="alpha",
+            label="alpha",
+            scope="session",
+            scope_ref="s1",
+            confidence=0.8,
+            reward=0.7,
+            source_refs=("ref:node",),
+        )
+        event = affinity_module._node_reinforced_event(spec, ts=FRESH_TS)
+        event["spec"][field] = bad_value
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_edge_reinforcement_without_source_nodes_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        edge = affinity_module._EdgeSpec(
+            source="missing-source",
+            target="missing-target",
+            relation="associated_with",
+            scope="session",
+            scope_ref="s1",
+            confidence=0.8,
+            reward=0.7,
+            source_refs=("ref:edge",),
+        )
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                affinity_module._edge_reinforced_event(edge, ts=FRESH_TS),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [("confidence", False), ("confidence", 1), ("reward", False), ("reward", 1)],
+)
+def test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed(field: str, bad_value: object) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        source = affinity_module._node_id("research_concept", "session", "s1", "alpha")
+        target = affinity_module._node_id("research_concept", "session", "s1", "beta")
+        source_node = affinity_module._NodeSpec(
+            kind="research_concept",
+            key="alpha",
+            label="alpha",
+            scope="session",
+            scope_ref="s1",
+            confidence=0.8,
+            reward=0.7,
+            source_refs=("ref:source",),
+        )
+        target_node = affinity_module._NodeSpec(
+            kind="research_concept",
+            key="beta",
+            label="beta",
+            scope="session",
+            scope_ref="s1",
+            confidence=0.8,
+            reward=0.7,
+            source_refs=("ref:target",),
+        )
+        edge = affinity_module._EdgeSpec(
+            source=source,
+            target=target,
+            relation="associated_with",
+            scope="session",
+            scope_ref="s1",
+            confidence=0.8,
+            reward=0.7,
+            source_refs=("ref:edge",),
+        )
+        edge_event = affinity_module._edge_reinforced_event(edge, ts=FRESH_TS)
+        edge_event["spec"][field] = bad_value
+        events = (
+            affinity_module._node_reinforced_event(source_node, ts=FRESH_TS),
+            affinity_module._node_reinforced_event(target_node, ts=FRESH_TS),
+            edge_event,
+        )
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events
+            ),
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="gamma", concepts=("gamma",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize(
+    ("row_kind", "field", "bad_value"),
+    [
+        ("node", "weight", False),
+        ("node", "weight", 1),
+        ("node", "confidence", False),
+        ("node", "confidence", 1),
+        ("edge", "weight", False),
+        ("edge", "weight", 1),
+        ("edge", "confidence", False),
+        ("edge", "confidence", 1),
+    ],
+)
+def test_affinity_snapshot_numeric_type_mismatch_fails_closed(row_kind: str, field: str, bad_value: object) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        source = affinity_module._node_id("research_concept", "session", "s1", "alpha")
+        target = affinity_module._node_id("research_concept", "session", "s1", "beta")
+        node_rows = [
+            _affinity_node(source, "research_concept", "alpha", "session", "s1", weight=0.4).to_payload(),
+            _affinity_node(target, "research_concept", "beta", "session", "s1", weight=0.4).to_payload(),
+        ]
+        edge_rows = [
+            _affinity_edge(
+                source, target, "associated_with", "session", "s1", weight=0.4, source_ref="edge:alpha-beta"
+            ).to_payload()
+        ]
+        if row_kind == "node":
+            node_rows[0][field] = bad_value
+        else:
+            edge_rows[0][field] = bad_value
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_snapshot",
+                    "event_id": "bad-snapshot",
+                    "ts": FRESH_TS,
+                    "reason": "test",
+                    "nodes": node_rows,
+                    "edges": edge_rows,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="gamma", concepts=("gamma",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_scope_deleted_payload_with_missing_count_fields_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_scope_deleted",
+                    "event_id": "bad-scope-delete",
+                    "ts": FRESH_TS,
+                    "payload": {"scope": "user", "scope_ref": ""},
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize("bad_value", ["0", False])
+def test_affinity_scope_deleted_payload_with_noncanonical_count_is_unsupported_for_mutation(
+    bad_value: object,
+) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        event = affinity_module._scope_deleted_event(
+            "project",
+            "project:alpha",
+            removed_nodes=1,
+            removed_edges=0,
+            ts=FRESH_TS,
+        )
+        event["payload"]["removed_nodes"] = bad_value
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_decay_payload_with_extra_field_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_decay_applied",
+                    "event_id": "bad-decay",
+                    "ts": FRESH_TS,
+                    "payload": {
+                        "removed_nodes": 0,
+                        "removed_edges": 0,
+                        "decayed_nodes": 0,
+                        "decayed_edges": 0,
+                        "min_interval_seconds": 0,
+                        "raw_extra": "raw-extra-fixture",
+                    },
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_decay_payload_with_missing_field_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_decay_applied",
+                    "event_id": "bad-decay",
+                    "ts": FRESH_TS,
+                    "payload": {
+                        "removed_nodes": 0,
+                        "removed_edges": 0,
+                        "decayed_nodes": 0,
+                        "decayed_edges": 0,
+                    },
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize("bad_value", ["0", True])
+def test_affinity_decay_payload_with_noncanonical_count_is_unsupported_for_mutation(bad_value: object) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                    "type": "ghost_affinity_decay_applied",
+                    "event_id": "bad-decay",
+                    "ts": FRESH_TS,
+                    "payload": {
+                        "removed_nodes": bad_value,
+                        "removed_edges": 0,
+                        "decayed_nodes": 0,
+                        "decayed_edges": 0,
+                        "min_interval_seconds": 0,
+                    },
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -828,7 +1235,9 @@ def test_affinity_decay_propagates_projection_write_failure_warning() -> None:
         affinity = GhostAffinityStore(td)
         with mock.patch("codey.ghost.affinity._now", return_value="2026-01-01T00:00:00Z"):
             affinity.sync_from_sources(
-                research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha", "beta"), neighbors=()),),
+                research_interest_candidates=(
+                    _candidate(candidate_id="alpha", concepts=("alpha", "beta"), neighbors=()),
+                ),
                 session_id="s1",
             )
         with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")):

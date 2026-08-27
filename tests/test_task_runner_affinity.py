@@ -135,11 +135,16 @@ def _research_record(concept: str):
         f"[1] {concept} provider recovery article - {url}"
     )
     ledger = ResearchLedger()
-    ledger.record_search(f"{concept} provider recovery", [{
-        "title": f"{concept} provider recovery article",
-        "url": url,
-        "snippet": claim,
-    }])
+    ledger.record_search(
+        f"{concept} provider recovery",
+        [
+            {
+                "title": f"{concept} provider recovery article",
+                "url": url,
+                "snippet": claim,
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -147,12 +152,14 @@ def _research_record(concept: str):
         text=source_text,
     )
     prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": claim,
-            "source_url": url,
-            "excerpt": claim,
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": claim,
+                "source_url": url,
+                "excerpt": claim,
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim=claim,
         fallback_body=source_text,
@@ -198,17 +205,19 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
             state,
             router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
-        runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(
-            result=ResearchRunResult(
-                "Research alpha provider recovery",
-                "researched",
-                "done",
-                1,
-                synthesis_id="alpha-result",
-                citation_map=[{"claim": "x"}],
-                research_record=_research_record("alpha"),
-            ),
-        ))
+        runner._run_research_iteration = mock.Mock(
+            return_value=ResearchIterationRun(
+                result=ResearchRunResult(
+                    "Research alpha provider recovery",
+                    "researched",
+                    "done",
+                    1,
+                    synthesis_id="alpha-result",
+                    citation_map=[{"claim": "x"}],
+                    research_record=_research_record("alpha"),
+                ),
+            )
+        )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner.run(TaskRequest("s1", None, "continue", 8, False, "deepseek"))
@@ -229,15 +238,21 @@ def test_task_runner_syncs_affinity_after_turn_from_local_sources() -> None:
         assert state.ghost_hebbian is not None
         assert state.ghost_affinity is not None
         created = state.ghost_inbox.ingest_signals(
-            GhostSignalParseResult(signals=(GhostSignal(
-                kind="style_preference",
-                scope="user",
-                summary="Prefer concise replies.",
-                evidence_quote="short please",
-                confidence=0.9,
-                metadata={"conflict_key": "reply_length", "value_key": "concise"},
-                source="test",
-            ),), ok=True, provider_id="test"),
+            GhostSignalParseResult(
+                signals=(
+                    GhostSignal(
+                        kind="style_preference",
+                        scope="user",
+                        summary="Prefer concise replies.",
+                        evidence_quote="short please",
+                        confidence=0.9,
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                        source="test",
+                    ),
+                ),
+                ok=True,
+                provider_id="test",
+            ),
             session_id="s1",
             run_id="r1",
             user_text="short please",
@@ -290,7 +305,7 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
         with mock.patch.object(
             state,
             "get_provider",
-            return_value=_Provider(error=RuntimeError("raw sk-test-secret provider failure")),
+            return_value=_Provider(error=RuntimeError("raw SECRET_TOKEN_FIXTURE provider failure")),
         ):
             runner.run(TaskRequest("s1", None, "hello", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
@@ -299,4 +314,4 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
 
     assert nodes
     assert "transient" in raw
-    assert "sk-test-secret" not in raw
+    assert "SECRET_TOKEN_FIXTURE" not in raw

@@ -6,6 +6,8 @@
 
 ## Unreleased
 
+## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants
+
 - Ghost Affinity 和 Work Queue 事件日志现在记录语义意图事件，不再记录已计算
   好的 upsert 结果。Affinity replay 通过 reducer 应用 node/edge reinforcement
   spec、scope delete、decay event 和 snapshot anchor；Work Queue replay 通过
@@ -31,6 +33,13 @@
   统一返回结构化诊断字典并合并 `self.last_warnings`，确保调用方诊断不漏报。
 - Ghost Work Queue 的 `compact_if_needed()` 增加“projection 存在但 events 缺失”
   的同构检查并上报 `work_events_missing`；清理 `_transition_item()` 无用参数，并移除未使用的死代码 `_release_stale_claims()`。
+- Ghost Affinity 和 Work Queue 的 validator 现在拒绝非 canonical 原始事件
+  payload，不再靠 silent normalization 放过：顶层多余字段、snapshot/spec/item
+  多余字段、畸形 delete/scope payload、缺失的 Affinity decay counter、字符串或
+  bool 计数字段、bool 伪装 number 或 int 伪装 float 的类型混淆，以及没有
+  source/target node 的 edge reinforcement，都会在 mutation 前 fail closed。
+- 这次 hardening 不改变 prompt、provider tool、UI/SSE payload、permission
+  profile 或默认 Research/Writer 行为；它只收紧本地 Ghost event log 的读取和 replay。
 
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 

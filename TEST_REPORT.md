@@ -1,8 +1,8 @@
 # Codey Test Report
 
-## Ghost WorkQueue Action-Specific Fail-Closed Hardening, Diagnostic Unification & Full Suite Verification (2026-08-27)
+## 0.4.16 Release - Ghost Event Canonicalization and Work Queue Invariants (2026-08-27)
 
-This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, resolves review findings across producer, validator, reducer, and snapshot/item state invariant layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
+This hardening completes strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, canonicalizes Ghost Affinity event-log payloads, resolves review findings across producer, validator, reducer, and snapshot/item state invariant layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
 
 Closed items:
 
@@ -24,6 +24,19 @@ Closed items:
 - `_read_events()` in `GhostWorkQueueStore` performs full sequence replay validation during event ingestion; any invalid transition or observed item parsing failure triggers `invalid_event` warning and sets `events_read_blocked = True`.
 - `GhostWorkQueueStore.delete_scope()` return signature is unified to `{"removed": n, "warnings": [...]}` with diagnostic warnings from projection write failures propagated directly to callers and CLI JSON output.
 - `GhostAffinityStore.decay()` and `_mutate_event_log()` in both stores ensure all dictionary mutation results merge `self.last_warnings` (e.g. `affinity_projection_write_failed` / `work_projection_write_failed`).
+- Ghost Work Queue delete-event payloads now require the exact canonical field
+  set and raw canonical values. Malformed list fields, invalid scopes that
+  would previously be cleaned to empty, extra item/snapshot fields, and
+  non-canonical preconditions fail closed before mutation.
+- Ghost Affinity event payloads now require exact canonical shapes for
+  reinforced node/edge specs, snapshots, scope-deleted payloads, and decay
+  payloads. `scope_deleted` and `decay` counters must be non-negative integers
+  and not bools; missing counters, string counters, bool counters, extra fields,
+  int/float equality tricks, and orphan edge reinforcement events fail closed.
+- Newly added non-redaction fixtures use `raw-extra-fixture` /
+  `SECRET_TOKEN_FIXTURE` instead of `sk-*` shaped literals, avoiding accidental
+  push-protection or repository-hygiene noise while preserving the redaction
+  assertions that need sensitive marker behavior.
 - Cleaned up unused parameters in `GhostWorkQueueStore._transition_item()` and removed dead helper `_release_stale_claims()`.
 - Added unit tests covering:
   - `test_complete_item_requires_run_id_without_corrupting_events`
@@ -32,21 +45,26 @@ Closed items:
   - `test_work_snapshot_with_invalid_state_invariants_fails_closed`
   - `test_work_snapshot_done_item_missing_completed_run_id_fails_closed`
   - Action-specific malformed claim/release/complete/queue transitions, kind-specific proof mismatch replay failure, and warning propagation on delete_scope and decay.
+  - Canonical event-log payload rejection for extra raw fields, malformed
+    Work Queue delete payloads, Work Queue item bool/int/float type
+    confusion, Affinity `scope_deleted` counters, Affinity `decay` counters,
+    Affinity node/edge spec type confusion, Affinity snapshot type confusion,
+    and orphan Affinity edge reinforcement events.
 
 Validation commands and results:
 
 ```powershell
-python -m ruff check codey/ghost/affinity.py codey/ghost/work_queue.py codey/app/cli.py tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_cli.py
+python -m ruff check codey/ghost/affinity.py codey/ghost/work_queue.py tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_task_runner_affinity.py
 # All checks passed!
 
-ruff format --check codey/ghost/work_queue.py tests/test_ghost_work_queue.py
-# 2 files already formatted
+python -m ruff format --check codey/ghost/affinity.py codey/ghost/work_queue.py tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_task_runner_affinity.py
+# 5 files already formatted
 
-pytest tests/test_ghost_work_queue.py tests/test_ghost_work_queue_ab.py tests/test_task_runner_work_queue.py -v
-# 62 passed in 9.27s
+python -B -m pytest tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_task_runner_affinity.py -q
+# 116 passed in 6.93s
 
-pytest -k ghost -v
-# 325 passed, 2680 deselected in 36.36s
+secret-shaped fixture scan over touched Ghost tests and release docs
+# No deprecated secret-shaped fixture token matches
 
 git diff --check
 # Clean
@@ -56,7 +74,7 @@ Final full-suite validation after the code, test, and documentation edits:
 
 ```powershell
 pytest
-# 3003 passed, 2 skipped in 296.00s (0:04:56)
+# 3025 passed, 14 skipped, 966 subtests passed in 289.60s (0:04:49)
 ```
 
 ## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)

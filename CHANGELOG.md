@@ -6,6 +6,8 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants
+
 - Ghost Affinity and Work Queue event logs now store semantic intent events
   instead of computed upsert results. Affinity replay applies reinforced
   node/edge specs, scope deletes, decay events, and snapshot anchors through
@@ -39,6 +41,15 @@ This file records Codey's release history. The newest release appears first.
   events files when projection exists and reports `work_events_missing`.
   Unused arguments in `_transition_item()` and dead helper `_release_stale_claims()`
   have been cleaned up.
+- Ghost Affinity and Work Queue validators now reject non-canonical raw event
+  payloads instead of silently normalizing them: extra top-level fields,
+  extra snapshot/spec/item fields, malformed delete/scope payloads, missing
+  Affinity decay counters, string/bool counters, bool-vs-number or
+  int-vs-float type confusion, and orphan edge reinforcements all fail closed
+  before mutation.
+- The new hardening does not change prompts, provider tools, UI/SSE payloads,
+  permission profiles, or default Research/Writer behavior; it only tightens
+  local Ghost event-log ingestion and replay.
 
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 

@@ -20,9 +20,10 @@ Own the semantics, minimize the syntax.
 
 这不是 0.4.13 的主线功能。0.4.13 仍然以 Verified Completion Enforcement + Repair Context Admission v1 为主。本计划只规定哪些预留可以在 0.4.13 安全完成，哪些必须留到 0.5 之后。
 
-截至 0.4.15，0.4.13 的 trace-only protocol telemetry 已落地，0.4.15 又闭合了
-`run` 命令 argv 文件系统 operand 的项目边界。本文档中 0.5 之后的部分仍是后续
-protocol portability 的有效计划；0.4.13 小节保留为已完成版本的设计边界记录。
+截至 0.4.16，0.4.13 的 trace-only protocol telemetry 已落地，0.4.15 又闭合了
+`run` 命令 argv 文件系统 operand 的项目边界，0.4.16 则收口 Ghost 本地 event-log
+canonical ingestion。本文档中 0.5 之后的部分仍是后续 protocol portability 的有效计划；
+0.4.13 小节保留为已完成版本的设计边界记录。
 
 ## 核心结论
 

@@ -1445,5 +1445,164 @@ def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None
             store.complete_item("gwi_test_done_1", run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
 
 
+def test_work_observed_event_with_extra_item_field_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="queued",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        payload = item.to_payload()
+        payload["raw_extra"] = "raw-extra-fixture"
+        event = _work_observed_event(item)
+        event["item"] = payload
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_value"),
+    [
+        ("priority", False),
+        ("priority", 1),
+        ("confidence", False),
+        ("confidence", 1),
+        ("retry_count", False),
+        ("retry_count", 0.0),
+    ],
+)
+def test_work_observed_event_with_noncanonical_numeric_field_fails_closed(
+    field: str,
+    bad_value: object,
+) -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="queued",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        payload = item.to_payload()
+        payload[field] = bad_value
+        event = _work_observed_event(item)
+        event["item"] = payload
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_work_expired_delete_event_with_noncanonical_empty_fields_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="queued",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        event = work_queue_module._items_deleted_event(reason="expired", expected_items=(item,), ts=FRESH_TS)
+        event["payload"]["item_ids"] = [None]
+        event["payload"]["scope"] = "not-a-scope"
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        event = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_items_deleted",
+            "event_id": "bad-scope-delete",
+            "ts": FRESH_TS,
+            "payload": {
+                "reason": "scope_deleted",
+                "item_ids": [],
+                "expected_items": [],
+                "scope": "project",
+                "project_ref": "",
+                "session_ref": "s1",
+            },
+        }
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.sync_from_sources(
+            research_interest_candidates=(
+                _interest_candidate(
+                    candidate_id="candidate",
+                    question="Research provider recovery follow-up",
+                    source_ref="source",
+                    source_refs=("note:source",),
+                    priority=0.8,
+                ),
+            ),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:
     assert work_queue_module.WORK_QUEUE_SCHEMA_VERSION == 1

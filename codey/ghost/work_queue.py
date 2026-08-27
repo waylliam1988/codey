@@ -64,6 +64,48 @@ WORK_ITEM_TRANSITION_ACTIONS = frozenset(
         "queue",
     }
 )
+_WORK_PRECONDITION_KEYS = frozenset({"expected_status", "expected_started_run_id", "expected_retry_count"})
+_WORK_DELETE_PAYLOAD_KEYS = frozenset({"reason", "item_ids", "expected_items", "scope", "project_ref", "session_ref"})
+_WORK_EVENT_KEYS = {
+    "ghost_work_item_observed": frozenset({"schema_version", "type", "event_id", "ts", "item"}),
+    "ghost_work_item_transitioned": frozenset(
+        {"schema_version", "type", "event_id", "ts", "action", "item_id", "precondition", "patch"}
+    ),
+    "ghost_work_items_deleted": frozenset({"schema_version", "type", "event_id", "ts", "payload"}),
+    "ghost_work_snapshot": frozenset({"schema_version", "type", "event_id", "ts", "reason", "items"}),
+}
+_WORK_TRANSITION_PATCH_KEYS = {
+    "claim": frozenset({"status", "started_run_id", "retry_count", "lease_expires_at", "blocked_reason", "updated_at"}),
+    "complete": frozenset(
+        {"status", "completed_run_id", "proof_refs", "lease_expires_at", "blocked_reason", "updated_at"}
+    ),
+    "release": frozenset({"status", "started_run_id", "lease_expires_at", "blocked_reason", "updated_at"}),
+    "release_stale": frozenset({"status", "started_run_id", "lease_expires_at", "blocked_reason", "updated_at"}),
+    "block": frozenset({"status", "blocked_reason", "lease_expires_at", "updated_at"}),
+    "reject": frozenset(
+        {
+            "status",
+            "started_run_id",
+            "completed_run_id",
+            "proof_refs",
+            "lease_expires_at",
+            "blocked_reason",
+            "updated_at",
+        }
+    ),
+    "queue": frozenset(
+        {
+            "status",
+            "started_run_id",
+            "completed_run_id",
+            "proof_refs",
+            "retry_count",
+            "lease_expires_at",
+            "blocked_reason",
+            "updated_at",
+        }
+    ),
+}
 
 WORK_ITEM_KINDS = frozenset(
     {
@@ -1855,27 +1897,40 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
     if not clip_signal_text(event.get("ts"), 80):
         return False
     event_type = str(event.get("type") or "")
+    if not _mapping_keys_within(event, _WORK_EVENT_KEYS.get(event_type, ())):
+        return False
     if event_type == "ghost_work_snapshot":
         return _valid_work_snapshot(event)
     if event_type == "ghost_work_item_observed":
-        return GhostWorkItem.from_payload(event.get("item")) is not None
+        return _valid_work_item_payload(event.get("item"))
     if event_type == "ghost_work_item_transitioned":
         return _valid_work_transition(event)
     if event_type == "ghost_work_items_deleted":
         payload = event.get("payload")
-        if not isinstance(payload, Mapping):
+        if not _valid_work_delete_payload(payload):
             return False
-        reason = clip_signal_text(payload.get("reason"), 80)
+        reason = str(payload.get("reason") or "") if isinstance(payload, Mapping) else ""
+        item_ids = payload.get("item_ids") if isinstance(payload, Mapping) else []
+        expected_items = payload.get("expected_items") if isinstance(payload, Mapping) else []
+        scope = str(payload.get("scope") or "") if isinstance(payload, Mapping) else ""
+        project_ref = str(payload.get("project_ref") or "") if isinstance(payload, Mapping) else ""
+        session_ref = str(payload.get("session_ref") or "") if isinstance(payload, Mapping) else ""
         if reason == "expired":
-            expected_items = _list(payload.get("expected_items"))
+            if item_ids or scope or project_ref or session_ref:
+                return False
             return bool(expected_items) and all(
                 _valid_work_precondition(row, require_id=True) for row in expected_items
             )
         if reason == "scope_deleted":
-            scope = _clean_scope(payload.get("scope"))
-            project_ref = clip_signal_text(payload.get("project_ref"), 120)
-            session_ref = clip_signal_text(payload.get("session_ref"), 120)
-            return bool(scope and (scope == "user" or project_ref or session_ref))
+            if item_ids or expected_items:
+                return False
+            if scope == "user":
+                return not project_ref and not session_ref
+            if scope == "project":
+                return bool(project_ref and not session_ref)
+            if scope == "session":
+                return bool(session_ref and not project_ref)
+            return False
         return False
     return False
 
@@ -1889,6 +1944,8 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
         return False
     if not _valid_work_precondition(precondition) or not isinstance(patch, Mapping):
         return False
+    if not _mapping_keys_within(patch, _WORK_TRANSITION_PATCH_KEYS.get(action, ())):
+        return False
     target_status = _clean_status(patch.get("status"))
     if not target_status:
         return False
@@ -1898,9 +1955,8 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
 
     expected_status = _clean_status(precondition.get("expected_status"))
     expected_started_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
-    try:
-        expected_retry_count = int(precondition.get("expected_retry_count", 0))
-    except (TypeError, ValueError):
+    expected_retry_count = precondition.get("expected_retry_count")
+    if not _valid_nonnegative_int_payload(expected_retry_count):
         return False
 
     if action == "claim":
@@ -1914,11 +1970,10 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if "retry_count" not in patch:
             return False
-        try:
-            retry_count = int(patch["retry_count"])
-            if retry_count < 1 or retry_count != expected_retry_count + 1:
-                return False
-        except (TypeError, ValueError):
+        retry_count = patch["retry_count"]
+        if not _valid_nonnegative_int_payload(retry_count):
+            return False
+        if retry_count < 1 or retry_count != expected_retry_count + 1:
             return False
         if clip_signal_text(patch.get("blocked_reason"), 120):
             return False
@@ -1962,6 +2017,9 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
         elif target_status == "blocked":
             if not clip_signal_text(patch.get("blocked_reason"), 120):
                 return False
+            started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+            if started_run_id and started_run_id != expected_started_run_id:
+                return False
         return True
 
     if action == "block":
@@ -1997,10 +2055,8 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if "retry_count" not in patch:
             return False
-        try:
-            if int(patch["retry_count"]) != 0:
-                return False
-        except (TypeError, ValueError):
+        retry_count = patch["retry_count"]
+        if not _valid_nonnegative_int_payload(retry_count) or retry_count != 0:
             return False
         if clip_signal_text(patch.get("started_run_id"), 120):
             return False
@@ -2026,6 +2082,8 @@ def _valid_work_snapshot(event: Mapping[str, object]) -> bool:
         item = GhostWorkItem.from_payload(row)
         if item is None or item.id in item_ids:
             return False
+        if not _valid_work_item_payload(row):
+            return False
         item_ids.add(item.id)
     return True
 
@@ -2033,16 +2091,17 @@ def _valid_work_snapshot(event: Mapping[str, object]) -> bool:
 def _valid_work_precondition(value: object, *, require_id: bool = False) -> bool:
     if not isinstance(value, Mapping):
         return False
-    if require_id and not clip_signal_text(value.get("id"), 120):
+    allowed = _WORK_PRECONDITION_KEYS | (frozenset({"id"}) if require_id else frozenset())
+    if set(value.keys()) != allowed:
         return False
-    if not _clean_status(value.get("expected_status")):
+    if require_id and not _valid_canonical_text(value.get("id"), 120, required=True):
         return False
-    if "expected_started_run_id" not in value or "expected_retry_count" not in value:
+    expected_status = value.get("expected_status")
+    if not isinstance(expected_status, str) or _clean_status(expected_status) != expected_status:
         return False
-    try:
-        return int(value.get("expected_retry_count")) >= 0
-    except (TypeError, ValueError):
+    if not _valid_canonical_text(value.get("expected_started_run_id"), 120):
         return False
+    return _valid_nonnegative_int_payload(value.get("expected_retry_count"))
 
 
 def _event_ts(event: Mapping[str, object]) -> str:
@@ -2098,11 +2157,10 @@ def _apply_transition_event(
         lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
         if not started_run_id or not lease_expires_at or "retry_count" not in patch:
             return "invalid"
-        try:
-            retry_count = int(patch["retry_count"])
-            if retry_count < 1 or retry_count != current.retry_count + 1:
-                return "invalid"
-        except (TypeError, ValueError):
+        retry_count = patch["retry_count"]
+        if not _valid_nonnegative_int_payload(retry_count):
+            return "invalid"
+        if retry_count < 1 or retry_count != current.retry_count + 1:
             return "invalid"
         updated = replace(
             current,
@@ -2506,6 +2564,82 @@ def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
         if len(out) >= MAX_WORK_WARNINGS:
             break
     return tuple(out)
+
+
+def _valid_work_item_payload(payload: object) -> bool:
+    item = GhostWorkItem.from_payload(payload)
+    return item is not None and _strict_payload_equal(payload, item.to_payload())
+
+
+def _valid_work_delete_payload(payload: object) -> bool:
+    if not isinstance(payload, Mapping) or set(payload.keys()) != _WORK_DELETE_PAYLOAD_KEYS:
+        return False
+    reason = payload.get("reason")
+    if not isinstance(reason, str) or reason not in {"expired", "scope_deleted"}:
+        return False
+    item_ids = payload.get("item_ids")
+    expected_items = payload.get("expected_items")
+    if not _valid_ref_list_payload(item_ids) or not isinstance(expected_items, list):
+        return False
+    if not all(_valid_work_precondition(row, require_id=True) for row in expected_items):
+        return False
+    scope = payload.get("scope")
+    project_ref = payload.get("project_ref")
+    session_ref = payload.get("session_ref")
+    if not _valid_scope_payload(scope):
+        return False
+    if not _valid_canonical_text(project_ref, 120) or not _valid_canonical_text(session_ref, 120):
+        return False
+    if reason == "expired":
+        return item_ids == [] and bool(expected_items) and scope == "" and project_ref == "" and session_ref == ""
+    if item_ids or expected_items:
+        return False
+    if scope == "user":
+        return project_ref == "" and session_ref == ""
+    if scope == "project":
+        return bool(project_ref) and session_ref == ""
+    if scope == "session":
+        return bool(session_ref) and project_ref == ""
+    return False
+
+
+def _valid_ref_list_payload(value: object) -> bool:
+    return isinstance(value, list) and list(_bounded_refs(value)) == value
+
+
+def _valid_scope_payload(value: object) -> bool:
+    return isinstance(value, str) and (value == "" or _clean_scope(value) == value)
+
+
+def _valid_canonical_text(value: object, limit: int, *, required: bool = False) -> bool:
+    if not isinstance(value, str):
+        return False
+    if required and not value:
+        return False
+    return clip_signal_text(value, limit) == value and not contains_sensitive_signal_text(value)
+
+
+def _valid_nonnegative_int_payload(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _strict_payload_equal(value: object, expected: object) -> bool:
+    if isinstance(expected, Mapping):
+        if not isinstance(value, Mapping) or set(value.keys()) != set(expected.keys()):
+            return False
+        return all(_strict_payload_equal(value[key], expected[key]) for key in expected)
+    if isinstance(expected, list):
+        if not isinstance(value, list) or len(value) != len(expected):
+            return False
+        return all(
+            _strict_payload_equal(item, expected_item) for item, expected_item in zip(value, expected, strict=True)
+        )
+    return type(value) is type(expected) and value == expected
+
+
+def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
+    allowed_keys = set(allowed)
+    return all(isinstance(key, str) and key in allowed_keys for key in value.keys())
 
 
 def _meaningful_item_payload(item: GhostWorkItem) -> tuple[object, ...]:

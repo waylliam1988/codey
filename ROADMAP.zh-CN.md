@@ -2719,7 +2719,7 @@ user interruption count
 
 ## 0.5 主线 - Durable Runtime + Local Adaptation + Protocol Portability
 
-0.4.15 是 0.4 进入 A/B stabilization 前的安全与证据卫生收口：
+0.4.15 和 0.4.16 是 0.4 进入 A/B stabilization 前的安全与证据卫生收口：
 
 ```text
 run command argv 文件系统 operand 边界闭合
@@ -2727,6 +2727,7 @@ provider override 安装面收窄到 adapter repair surface
 本地 read-modify-write 状态引入 locked JSON mutation
 manual A/B manifest / journal / failed-row 续跑语义统一
 Ghost affinity 不再把 ref 数量当 reward 强度
+Ghost Affinity / Work Queue event log 只接受 canonical event shape，畸形本地记录 fail closed
 ```
 
 这些改动不改变模型可见 prompt，不新增 TaskRunner/core facts 抽象，目标是让
@@ -2751,8 +2752,9 @@ Provider/protocol outcome learning -> 0.5.4，不回流 evidence / permission / 
 | 本地 read-modify-write 状态并发写保护 | 0.5.0 / 0.5.1 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
 | command/action 语义 IR | 0.5.2 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
 
-已在 0.4.15 收口的 provider override、CDP session lifecycle、CI matrix 和 README
-结构文档问题，不再作为 0.5 能力项；后续只在 regression test 或 release evidence 中维护。
+已在 0.4.15 收口的 provider override、CDP session lifecycle、CI matrix、README
+结构文档问题，以及已在 0.4.16 收口的 Ghost event-log canonical ingestion，不再作为
+0.5 能力项；后续只在 regression test 或 release evidence 中维护。
 
 Research untrusted source wrapper 的顺序必须是 A/B-first：
 
@@ -4061,12 +4063,13 @@ Local context 直接写入 accepted state
 connector 任意读写本地文件或联网
 ```
 
-## 0.4.13-0.4.15 收口与 0.5 切入
+## 0.4.13-0.4.16 收口与 0.5 切入
 
 0.4.13 已经完成核心：一轮 bounded repair、CompletionProof provenance、
 repair context admission、protocol telemetry。0.4.14 完成目录冷迁移，0.4.15 完成
 run-command boundary、provider override、locked JSON mutation 和 A/B evidence hygiene
-收口。Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性主线。
+收口。0.4.16 完成 Ghost Affinity / Work Queue event-log canonical ingestion 和
+fail-closed replay 收口。Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性主线。
 
 0.4 收口只保留这些 release boundary：
 
@@ -4074,6 +4077,7 @@ run-command boundary、provider override、locked JSON mutation 和 A/B evidence
 0.4.13：proof enforcement + repair admission + telemetry
 0.4.14：冷迁移后的结构基线
 0.4.15：A/B 前安全与证据卫生基线
+0.4.16：A/B 前 Ghost 本地事件日志 canonical replay 基线
 0.4 stabilization：只修 A/B 暴露的真实 bug，不再堆能力
 ```
 
@@ -4328,6 +4332,7 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
 0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
 0.4.15 Run Command Boundary / A-B Evidence Hygiene（不改 prompt；deterministic + self-test gate，live A/B 用于后续稳定化）
+0.4.16 Ghost Event Canonicalization（不改 prompt；deterministic gate，live A/B 用于后续稳定化）
 0.5.0 RunOperationState（durability-only，不需要 live A/B）
 0.5.1 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
 0.5.2 Tool Args Repair（parser 接受范围变宽，需要 A/B）

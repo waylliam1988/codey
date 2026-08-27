@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.15-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.16-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.15`
+版本：`0.4.16`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -35,6 +35,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   Research、Writer、Hybrid 还是 Review；手动选择和权限边界仍然优先。
 - **记忆可控**：显式偏好和很短的 continuity context 会保存在本地有界文件里，
   可以预览、导出、删除、重置、禁用，并在任务结束后安静维护。
+- **Ghost 本地状态更严格**：Ghost affinity 和 work queue 的事件日志现在只接受
+  canonical event shape；畸形本地原始记录会 fail closed，不再靠清洗后的默认值
+  悄悄通过，排队 follow-up 和 affinity 学习更容易复盘。
 - **按需审计本地上下文**：从 topbar `...` 菜单打开 `Local context`，可以检查、
   导出、删除、重置或禁用有界本地状态；它不新增常驻 sidebar，也不打断任务流。
 - **安静追踪模型输入组成**：每次 run 可以保存有界 prompt envelope manifest，

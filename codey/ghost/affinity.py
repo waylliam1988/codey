@@ -19,7 +19,14 @@ import uuid
 
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    delete_file,
+    project_key,
+    read_json,
+    session_key,
+    write_json_atomic,
+)
 from codey.storage.transactional_json import with_file_lock
 
 
@@ -42,39 +49,64 @@ MIN_NODE_WEIGHT = 0.04
 MIN_EDGE_WEIGHT = 0.01
 MAX_HINTS = 16
 _STATE_KIND = "ghost_affinity_state_projection"
-_AFFINITY_EVENT_TYPES = frozenset({
-    "ghost_affinity_node_reinforced",
-    "ghost_affinity_edge_reinforced",
-    "ghost_affinity_scope_deleted",
-    "ghost_affinity_decay_applied",
-    "ghost_affinity_snapshot",
-})
+_AFFINITY_EVENT_TYPES = frozenset(
+    {
+        "ghost_affinity_node_reinforced",
+        "ghost_affinity_edge_reinforced",
+        "ghost_affinity_scope_deleted",
+        "ghost_affinity_decay_applied",
+        "ghost_affinity_snapshot",
+    }
+)
+_NODE_SPEC_KEYS = frozenset(
+    {"kind", "key", "label", "scope", "scope_ref", "confidence", "reward", "source_refs", "evidence_refs", "metadata"}
+)
+_EDGE_SPEC_KEYS = frozenset(
+    {"source", "target", "relation", "scope", "scope_ref", "confidence", "reward", "source_refs", "proof_refs"}
+)
+_SCOPE_DELETED_PAYLOAD_KEYS = frozenset({"scope", "scope_ref", "removed_nodes", "removed_edges"})
+_DECAY_PAYLOAD_KEYS = frozenset(
+    {"removed_nodes", "removed_edges", "decayed_nodes", "decayed_edges", "min_interval_seconds"}
+)
+_AFFINITY_EVENT_KEYS = {
+    "ghost_affinity_node_reinforced": frozenset({"schema_version", "type", "event_id", "ts", "spec"}),
+    "ghost_affinity_edge_reinforced": frozenset({"schema_version", "type", "event_id", "ts", "spec"}),
+    "ghost_affinity_scope_deleted": frozenset({"schema_version", "type", "event_id", "ts", "payload"}),
+    "ghost_affinity_decay_applied": frozenset({"schema_version", "type", "event_id", "ts", "payload"}),
+    "ghost_affinity_snapshot": frozenset({"schema_version", "type", "event_id", "ts", "reason", "nodes", "edges"}),
+}
 
 AFFINITY_SCOPES = frozenset({"user", "project", "session"})
-AFFINITY_NODE_KINDS = frozenset({
-    "user_preference",
-    "project",
-    "research_concept",
-    "correction",
-    "action_tendency",
-    "provider_behavior",
-    "task_type",
-})
+AFFINITY_NODE_KINDS = frozenset(
+    {
+        "user_preference",
+        "project",
+        "research_concept",
+        "correction",
+        "action_tendency",
+        "provider_behavior",
+        "task_type",
+    }
+)
 AFFINITY_NODE_STATUSES = frozenset({"active", "expired", "superseded"})
-AFFINITY_EDGE_RELATIONS = frozenset({
-    "associated_with",
-    "prefers_for",
-    "works_well_for",
-    "struggles_with",
-    "mentions_concept",
-    "used_in_task",
-})
+AFFINITY_EDGE_RELATIONS = frozenset(
+    {
+        "associated_with",
+        "prefers_for",
+        "works_well_for",
+        "struggles_with",
+        "mentions_concept",
+        "used_in_task",
+    }
+)
 AFFINITY_EDGE_STATUSES = frozenset({"active", "expired"})
-HINT_KINDS = frozenset({
-    "directive_order",
-    "work_priority",
-    "research_priority",
-})
+HINT_KINDS = frozenset(
+    {
+        "directive_order",
+        "work_priority",
+        "research_priority",
+    }
+)
 
 _HEBBIAN_KIND_MAP = {
     "style_preference": "user_preference",
@@ -88,20 +120,22 @@ _WORK_STATUS_REWARD = {
     "done": 0.9,
     "blocked": 0.35,
 }
-_PROVIDER_ERROR_KINDS = frozenset({
-    "timeout",
-    "parse_error",
-    "tool_protocol_error",
-    "transient",
-    "rate_limited",
-    "control_missing",
-    "submission_uncertain",
-    "response_missing",
-    "readiness_stale",
-    "authentication_required",
-    "challenge_required",
-    "transient_send_failed",
-})
+_PROVIDER_ERROR_KINDS = frozenset(
+    {
+        "timeout",
+        "parse_error",
+        "tool_protocol_error",
+        "transient",
+        "rate_limited",
+        "control_missing",
+        "submission_uncertain",
+        "response_missing",
+        "readiness_stale",
+        "authentication_required",
+        "challenge_required",
+        "transient_send_failed",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -476,7 +510,9 @@ class GhostAffinityStore:
             ):
                 continue
             rows.append(node)
-        return tuple(sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True))
+        return tuple(
+            sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
+        )
 
     def list_edges(
         self,
@@ -509,7 +545,9 @@ class GhostAffinityStore:
             ):
                 continue
             rows.append(edge)
-        return tuple(sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True))
+        return tuple(
+            sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
+        )
 
     def query_hints(
         self,
@@ -557,14 +595,16 @@ class GhostAffinityStore:
             hebbian_id = clip_signal_text(dict(node.metadata).get("hebbian_node_id"), 120)
             if not hebbian_id or hebbian_id not in wanted:
                 continue
-            hints.append(_hint(
-                "directive_order",
-                hebbian_id,
-                node.weight,
-                node.confidence,
-                "confirmed_memory_reinforced",
-                node.source_refs,
-            ))
+            hints.append(
+                _hint(
+                    "directive_order",
+                    hebbian_id,
+                    node.weight,
+                    node.confidence,
+                    "confirmed_memory_reinforced",
+                    node.source_refs,
+                )
+            )
         return _bounded_hints(hints)
 
     def query_work_priority_hints(
@@ -620,14 +660,16 @@ class GhostAffinityStore:
                 confidence = max(confidence, edge.confidence)
                 refs.extend(edge.source_refs)
             if weight > 0.0:
-                hints.append(_hint(
-                    "work_priority",
-                    item_id,
-                    weight,
-                    confidence or 0.5,
-                    reason or "affinity_reinforced",
-                    refs,
-                ))
+                hints.append(
+                    _hint(
+                        "work_priority",
+                        item_id,
+                        weight,
+                        confidence or 0.5,
+                        reason or "affinity_reinforced",
+                        refs,
+                    )
+                )
         return _bounded_hints(hints)
 
     def query_research_priority_hints(
@@ -656,23 +698,27 @@ class GhostAffinityStore:
                 best_confidence = max(best_confidence, node.confidence)
                 refs.extend(node.source_refs)
             if best_weight > 0.0:
-                hints.append(_hint(
-                    "research_priority",
-                    candidate_id,
-                    best_weight,
-                    best_confidence or 0.5,
-                    "research_concept_reinforced",
-                    refs,
-                ))
+                hints.append(
+                    _hint(
+                        "research_priority",
+                        candidate_id,
+                        best_weight,
+                        best_confidence or 0.5,
+                        "research_concept_reinforced",
+                        refs,
+                    )
+                )
         return _bounded_hints(hints)
 
     def export_state(self) -> dict[str, object]:
         events = self._read_events()
         orphan_projection = not self.events_path.exists() and self.projection_path.exists()
-        event_warnings = _bounded_warnings((
-            *self.last_warnings,
-            *(("affinity_events_missing",) if orphan_projection else ()),
-        ))
+        event_warnings = _bounded_warnings(
+            (
+                *self.last_warnings,
+                *(("affinity_events_missing",) if orphan_projection else ()),
+            )
+        )
         if self._events_read_blocked or orphan_projection:
             nodes, edges = self._load_projection_rows()
         else:
@@ -712,6 +758,7 @@ class GhostAffinityStore:
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
         try:
+
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:
                 nodes, edges = _rows_from_events(events)
                 kept_nodes, kept_edges, removed_nodes, removed_edges = _delete_scope_rows(
@@ -763,6 +810,7 @@ class GhostAffinityStore:
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
         interval = max(0, int(min_interval_seconds or 0))
         try:
+
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:
                 nodes, edges = _rows_from_events(events)
                 now = _now()
@@ -785,11 +833,13 @@ class GhostAffinityStore:
                 bounded_nodes = _bounded_nodes(decayed_nodes)
                 bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
                 decayed_node_count = sum(
-                    1 for before, after in zip(nodes, decayed_nodes, strict=False)
+                    1
+                    for before, after in zip(nodes, decayed_nodes, strict=False)
                     if before.weight != after.weight or before.status != after.status
                 )
                 decayed_edge_count = sum(
-                    1 for before, after in zip(edges, decayed_edges, strict=False)
+                    1
+                    for before, after in zip(edges, decayed_edges, strict=False)
                     if before.weight != after.weight or before.status != after.status
                 )
                 removed_nodes = len(nodes) - len(bounded_nodes)
@@ -833,14 +883,18 @@ class GhostAffinityStore:
                 )
 
             result = self._mutate_event_log(decide)
-            return result if isinstance(result, dict) else {
-                "removed_nodes": 0,
-                "removed_edges": 0,
-                "decayed_nodes": 0,
-                "decayed_edges": 0,
-                "skipped_reason": "affinity_error",
-                "warnings": list(self.last_warnings),
-            }
+            return (
+                result
+                if isinstance(result, dict)
+                else {
+                    "removed_nodes": 0,
+                    "removed_edges": 0,
+                    "decayed_nodes": 0,
+                    "decayed_edges": 0,
+                    "skipped_reason": "affinity_error",
+                    "warnings": list(self.last_warnings),
+                }
+            )
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
                 return {
@@ -950,12 +1004,12 @@ class GhostAffinityStore:
         if payload.get("kind") != _STATE_KIND:
             return [], []
         nodes = [
-            node for node in (AffinityNode.from_payload(row) for row in _list(payload.get("nodes")))
-            if node is not None
+            node for node in (AffinityNode.from_payload(row) for row in _list(payload.get("nodes"))) if node is not None
         ]
         node_ids = {node.id for node in nodes}
         edges = [
-            edge for edge in (AffinityEdge.from_payload(row) for row in _list(payload.get("edges")))
+            edge
+            for edge in (AffinityEdge.from_payload(row) for row in _list(payload.get("edges")))
             if edge is not None and edge.source in node_ids and edge.target in node_ids
         ]
         return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
@@ -1008,6 +1062,11 @@ class GhostAffinityStore:
             rows.append(payload)
         self.last_warnings = _bounded_warnings(warnings)
         if self._events_read_blocked:
+            self._events_blocked_reason = "events_read_blocked"
+            return []
+        if not _affinity_events_replay_cleanly(rows):
+            self.last_warnings = _bounded_warnings(("affinity_events.jsonl:semantic_invalid_event",))
+            self._events_read_blocked = True
             self._events_blocked_reason = "events_read_blocked"
             return []
         return rows
@@ -1162,34 +1221,35 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[_NodeSpec]:
             continue
         key = _clean_key(f"{getattr(node, 'kind', '')}:{conflict_key}:{value_key}", 180)
         label = _clean_label(f"{getattr(node, 'kind', '')}:{conflict_key}={value_key}", 180)
-        source_refs = _bounded_refs((
-            f"hebbian_node:{clip_signal_text(getattr(node, 'id', ''), 120)}",
-            *(f"hebbian_evidence:{ref}" for ref in _list(getattr(node, "evidence_refs", ()))),
-        ))
+        source_refs = _bounded_refs(
+            (
+                f"hebbian_node:{clip_signal_text(getattr(node, 'id', ''), 120)}",
+                *(f"hebbian_evidence:{ref}" for ref in _list(getattr(node, "evidence_refs", ()))),
+            )
+        )
         if not key or not label or not source_refs:
             continue
-        evidence_refs = _bounded_refs(tuple(
-            f"hebbian:{ref}"
-            for ref in _list(getattr(node, "evidence_refs", ()))
-        ))
-        specs.append(_NodeSpec(
-            kind=affinity_kind,
-            key=key,
-            label=label,
-            scope=scope,
-            scope_ref=scope_ref,
-            confidence=_unit_float(getattr(node, "confidence", 0.0)),
-            reward=max(0.2, _unit_float(getattr(node, "weight", 0.0))),
-            source_refs=source_refs,
-            evidence_refs=evidence_refs,
-            metadata={
-                "source": "hebbian",
-                "hebbian_node_id": clip_signal_text(getattr(node, "id", ""), 120),
-                "hebbian_kind": clip_signal_text(getattr(node, "kind", ""), 80),
-                "conflict_key": conflict_key,
-                "value_key": value_key,
-            },
-        ))
+        evidence_refs = _bounded_refs(tuple(f"hebbian:{ref}" for ref in _list(getattr(node, "evidence_refs", ()))))
+        specs.append(
+            _NodeSpec(
+                kind=affinity_kind,
+                key=key,
+                label=label,
+                scope=scope,
+                scope_ref=scope_ref,
+                confidence=_unit_float(getattr(node, "confidence", 0.0)),
+                reward=max(0.2, _unit_float(getattr(node, "weight", 0.0))),
+                source_refs=source_refs,
+                evidence_refs=evidence_refs,
+                metadata={
+                    "source": "hebbian",
+                    "hebbian_node_id": clip_signal_text(getattr(node, "id", ""), 120),
+                    "hebbian_kind": clip_signal_text(getattr(node, "kind", ""), 80),
+                    "conflict_key": conflict_key,
+                    "value_key": value_key,
+                },
+            )
+        )
     return specs
 
 
@@ -1246,31 +1306,35 @@ def _specs_from_work_queue(
             )
             node_specs.append(project_node)
             project_id = _node_id(project_node.kind, project_node.scope, project_node.scope_ref, project_node.key)
-            edge_specs.append(_EdgeSpec(
-                source=project_id,
-                target=task_id,
-                relation="used_in_task",
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=_unit_float(_field(item, "confidence")),
-                reward=reward,
-                source_refs=item_ref,
-                proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
-            ))
+            edge_specs.append(
+                _EdgeSpec(
+                    source=project_id,
+                    target=task_id,
+                    relation="used_in_task",
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    confidence=_unit_float(_field(item, "confidence")),
+                    reward=reward,
+                    source_refs=item_ref,
+                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
+                )
+            )
         relation = "works_well_for" if status == "done" else "struggles_with" if status == "blocked" else ""
         if relation and scope == "project" and scope_ref:
             provider_or_project = _node_id("project", scope, scope_ref, scope_ref)
-            edge_specs.append(_EdgeSpec(
-                source=task_id,
-                target=provider_or_project,
-                relation=relation,
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=_unit_float(_field(item, "confidence")),
-                reward=reward,
-                source_refs=item_ref,
-                proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else item_ref,
-            ))
+            edge_specs.append(
+                _EdgeSpec(
+                    source=task_id,
+                    target=provider_or_project,
+                    relation=relation,
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    confidence=_unit_float(_field(item, "confidence")),
+                    reward=reward,
+                    source_refs=item_ref,
+                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else item_ref,
+                )
+            )
         for concept in _concepts_from_work_item(item):
             concept_node = _NodeSpec(
                 kind="research_concept",
@@ -1285,17 +1349,19 @@ def _specs_from_work_queue(
             )
             node_specs.append(concept_node)
             concept_id = _node_id(concept_node.kind, concept_node.scope, concept_node.scope_ref, concept_node.key)
-            edge_specs.append(_EdgeSpec(
-                source=task_id,
-                target=concept_id,
-                relation="mentions_concept",
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=_unit_float(_field(item, "confidence")),
-                reward=min(0.8, reward),
-                source_refs=item_ref,
-                proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
-            ))
+            edge_specs.append(
+                _EdgeSpec(
+                    source=task_id,
+                    target=concept_id,
+                    relation="mentions_concept",
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    confidence=_unit_float(_field(item, "confidence")),
+                    reward=min(0.8, reward),
+                    source_refs=item_ref,
+                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
+                )
+            )
     return node_specs, edge_specs
 
 
@@ -1314,10 +1380,12 @@ def _specs_from_research_candidates(
         scope, scope_ref = _scope_from_source(candidate, fallback_session_id=session_id, fallback_project=project)
         confidence = _unit_float(_field(candidate, "confidence"))
         reward = max(0.35, _unit_float(_field(candidate, "priority")))
-        refs = _bounded_refs((
-            f"research_interest:{candidate_id}",
-            *_list(_field(candidate, "source_refs")),
-        ))
+        refs = _bounded_refs(
+            (
+                f"research_interest:{candidate_id}",
+                *_list(_field(candidate, "source_refs")),
+            )
+        )
         concepts = _concepts_from_candidate(candidate)
         concept_ids: list[str] = []
         for concept in concepts:
@@ -1340,18 +1408,20 @@ def _specs_from_research_candidates(
             concept_ids.append(_node_id(node_spec.kind, node_spec.scope, node_spec.scope_ref, node_spec.key))
         if len(concept_ids) >= 2:
             for index, source in enumerate(concept_ids):
-                for target in concept_ids[index + 1:]:
-                    edge_specs.append(_EdgeSpec(
-                        source=source,
-                        target=target,
-                        relation="associated_with",
-                        scope=scope,
-                        scope_ref=scope_ref,
-                        confidence=confidence,
-                        reward=reward,
-                        source_refs=refs,
-                        proof_refs=(),
-                    ))
+                for target in concept_ids[index + 1 :]:
+                    edge_specs.append(
+                        _EdgeSpec(
+                            source=source,
+                            target=target,
+                            relation="associated_with",
+                            scope=scope,
+                            scope_ref=scope_ref,
+                            confidence=confidence,
+                            reward=reward,
+                            source_refs=refs,
+                            proof_refs=(),
+                        )
+                    )
     return node_specs, edge_specs
 
 
@@ -1381,7 +1451,11 @@ def _specs_from_router(router_store: Any) -> tuple[list[_NodeSpec], list[_EdgeSp
         else:
             scope = "user"
             scope_ref = ""
-        refs = _bounded_refs((f"router:{clip_signal_text(record.get('run_id'), 120)}:{clip_signal_text(record.get('task_hash'), 80)}:{final_mode}",))
+        refs = _bounded_refs(
+            (
+                f"router:{clip_signal_text(record.get('run_id'), 120)}:{clip_signal_text(record.get('task_hash'), 80)}:{final_mode}",
+            )
+        )
         confidence = _unit_float(record.get("confidence"))
         final_spec = _NodeSpec(
             kind="task_type",
@@ -1408,16 +1482,20 @@ def _specs_from_router(router_store: Any) -> tuple[list[_NodeSpec], list[_EdgeSp
                 metadata={"source": "router"},
             )
             node_specs.append(baseline_spec)
-            edge_specs.append(_EdgeSpec(
-                source=_node_id(baseline_spec.kind, baseline_spec.scope, baseline_spec.scope_ref, baseline_spec.key),
-                target=_node_id(final_spec.kind, final_spec.scope, final_spec.scope_ref, final_spec.key),
-                relation="associated_with",
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=confidence,
-                reward=0.25,
-                source_refs=refs,
-            ))
+            edge_specs.append(
+                _EdgeSpec(
+                    source=_node_id(
+                        baseline_spec.kind, baseline_spec.scope, baseline_spec.scope_ref, baseline_spec.key
+                    ),
+                    target=_node_id(final_spec.kind, final_spec.scope, final_spec.scope_ref, final_spec.key),
+                    relation="associated_with",
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    confidence=confidence,
+                    reward=0.25,
+                    source_refs=refs,
+                )
+            )
     return node_specs, edge_specs
 
 
@@ -1445,7 +1523,9 @@ def _specs_from_provider_outcome(
         or "task",
         80,
     )
-    run_ref = _bounded_refs((f"run:{clip_signal_text(getattr(run_projection, 'run_id', '') or (terminal_event or {}).get('run_id'), 120)}",))
+    run_ref = _bounded_refs(
+        (f"run:{clip_signal_text(getattr(run_projection, 'run_id', '') or (terminal_event or {}).get('run_id'), 120)}",)
+    )
     task_spec = _NodeSpec(
         kind="task_type",
         key=task_mode,
@@ -1460,24 +1540,32 @@ def _specs_from_provider_outcome(
         node_specs.append(task_spec)
     task_id = _node_id(task_spec.kind, task_spec.scope, task_spec.scope_ref, task_spec.key) if task_mode else ""
     for failure in failures:
-        provider = _clean_key(_field(failure, "provider") or _field(failure, "model") or (terminal_event or {}).get("provider"), 80)
+        provider = _clean_key(
+            _field(failure, "provider") or _field(failure, "model") or (terminal_event or {}).get("provider"), 80
+        )
         error_kind = _clean_provider_error_kind(_field(failure, "kind"))
         action = _clean_key(_field(failure, "action"), 80)
         stage = _clean_key(_field(failure, "stage"), 80)
         if not provider or not error_kind:
             continue
-        refs = _bounded_refs((
-            "provider_failure:"
-            + hashlib.sha256(
-                "|".join((
-                    clip_signal_text(getattr(run_projection, "run_id", "") or (terminal_event or {}).get("run_id"), 120),
-                    provider,
-                    error_kind,
-                    action,
-                    stage,
-                )).encode("utf-8", errors="replace")
-            ).hexdigest()[:24],
-        ))
+        refs = _bounded_refs(
+            (
+                "provider_failure:"
+                + hashlib.sha256(
+                    "|".join(
+                        (
+                            clip_signal_text(
+                                getattr(run_projection, "run_id", "") or (terminal_event or {}).get("run_id"), 120
+                            ),
+                            provider,
+                            error_kind,
+                            action,
+                            stage,
+                        )
+                    ).encode("utf-8", errors="replace")
+                ).hexdigest()[:24],
+            )
+        )
         if not refs:
             continue
         provider_spec = _NodeSpec(
@@ -1499,16 +1587,20 @@ def _specs_from_provider_outcome(
         )
         node_specs.append(provider_spec)
         if task_id:
-            edge_specs.append(_EdgeSpec(
-                source=_node_id(provider_spec.kind, provider_spec.scope, provider_spec.scope_ref, provider_spec.key),
-                target=task_id,
-                relation="struggles_with",
-                scope=scope,
-                scope_ref=scope_ref,
-                confidence=0.75,
-                reward=0.45,
-                source_refs=refs,
-            ))
+            edge_specs.append(
+                _EdgeSpec(
+                    source=_node_id(
+                        provider_spec.kind, provider_spec.scope, provider_spec.scope_ref, provider_spec.key
+                    ),
+                    target=task_id,
+                    relation="struggles_with",
+                    scope=scope,
+                    scope_ref=scope_ref,
+                    confidence=0.75,
+                    reward=0.45,
+                    source_refs=refs,
+                )
+            )
     return node_specs, edge_specs
 
 
@@ -1674,7 +1766,8 @@ def _any_decay_due(
 
 def _bounded_nodes(nodes: Iterable[AffinityNode]) -> list[AffinityNode]:
     rows = [
-        node for node in nodes
+        node
+        for node in nodes
         if isinstance(node, AffinityNode) and (node.status != "active" or node.weight >= MIN_NODE_WEIGHT)
     ]
     rows.sort(key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
@@ -1683,7 +1776,8 @@ def _bounded_nodes(nodes: Iterable[AffinityNode]) -> list[AffinityNode]:
 
 def _bounded_edges(edges: Iterable[AffinityEdge], *, node_ids: set[str]) -> list[AffinityEdge]:
     rows = [
-        edge for edge in edges
+        edge
+        for edge in edges
         if isinstance(edge, AffinityEdge)
         and edge.source in node_ids
         and edge.target in node_ids
@@ -1765,13 +1859,11 @@ def _rows_from_events(events: Iterable[dict[str, object]]) -> tuple[list[Affinit
 
 
 def _snapshot_rows(event: Mapping[str, object]) -> tuple[list[AffinityNode], list[AffinityEdge]]:
-    nodes = [
-        node for node in (AffinityNode.from_payload(row) for row in _list(event.get("nodes")))
-        if node is not None
-    ]
+    nodes = [node for node in (AffinityNode.from_payload(row) for row in _list(event.get("nodes"))) if node is not None]
     node_ids = {node.id for node in nodes}
     edges = [
-        edge for edge in (AffinityEdge.from_payload(row) for row in _list(event.get("edges")))
+        edge
+        for edge in (AffinityEdge.from_payload(row) for row in _list(event.get("edges")))
         if edge is not None and edge.source in node_ids and edge.target in node_ids
     ]
     return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
@@ -1787,13 +1879,15 @@ def _delete_scope_rows(
     node_rows = list(nodes)
     edge_rows = list(edges)
     removed_node_ids = {
-        node.id for node in node_rows
+        node.id
+        for node in node_rows
         if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
     }
     kept_nodes = [node for node in node_rows if node.id not in removed_node_ids]
     kept_node_ids = {node.id for node in kept_nodes}
     kept_edges = [
-        edge for edge in edge_rows
+        edge
+        for edge in edge_rows
         if edge.source in kept_node_ids
         and edge.target in kept_node_ids
         and not (edge.scope == normalized_scope and (normalized_scope == "user" or edge.scope_ref == scope_ref))
@@ -1916,21 +2010,18 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
     if not clip_signal_text(event.get("ts"), 80):
         return False
     event_type = str(event.get("type") or "")
+    if not _mapping_keys_within(event, _AFFINITY_EVENT_KEYS.get(event_type, ())):
+        return False
     if event_type == "ghost_affinity_snapshot":
         return _valid_affinity_snapshot(event)
     if event_type == "ghost_affinity_node_reinforced":
-        return _node_spec_from_payload(event.get("spec")) is not None
+        return _valid_node_spec_payload(event.get("spec"))
     if event_type == "ghost_affinity_edge_reinforced":
-        return _edge_spec_from_payload(event.get("spec")) is not None
+        return _valid_edge_spec_payload(event.get("spec"))
     if event_type == "ghost_affinity_scope_deleted":
-        payload = event.get("payload")
-        if not isinstance(payload, Mapping):
-            return False
-        scope = _clean_scope(payload.get("scope"))
-        scope_ref = clip_signal_text(payload.get("scope_ref"), 120)
-        return bool(scope and (scope == "user" or scope_ref))
+        return _valid_scope_deleted_payload(event.get("payload"))
     if event_type == "ghost_affinity_decay_applied":
-        return isinstance(event.get("payload"), Mapping)
+        return _valid_decay_payload(event.get("payload"))
     return False
 
 
@@ -1947,6 +2038,8 @@ def _valid_affinity_snapshot(event: Mapping[str, object]) -> bool:
         node = AffinityNode.from_payload(row)
         if node is None or node.id in node_ids:
             return False
+        if not _valid_affinity_node_payload(row):
+            return False
         nodes.append(node)
         node_ids.add(node.id)
     edge_ids: set[str] = set()
@@ -1954,9 +2047,65 @@ def _valid_affinity_snapshot(event: Mapping[str, object]) -> bool:
         edge = AffinityEdge.from_payload(row)
         if edge is None or edge.id in edge_ids:
             return False
+        if not _valid_affinity_edge_payload(row):
+            return False
         if edge.source not in node_ids or edge.target not in node_ids:
             return False
         edge_ids.add(edge.id)
+    return True
+
+
+def _affinity_events_replay_cleanly(events: Iterable[dict[str, object]]) -> bool:
+    nodes: dict[str, AffinityNode] = {}
+    edges: dict[str, AffinityEdge] = {}
+    for event in events:
+        event_type = str(event.get("type") or "")
+        now = _event_ts(event)
+        if event_type == "ghost_affinity_snapshot":
+            snapshot_nodes, snapshot_edges = _snapshot_rows(event)
+            nodes = {node.id: node for node in snapshot_nodes}
+            edges = {edge.id: edge for edge in snapshot_edges}
+        elif event_type == "ghost_affinity_node_reinforced":
+            spec = _node_spec_from_payload(event.get("spec"))
+            if spec is None:
+                return False
+            node, _changed = _reinforce_node(
+                nodes.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)),
+                spec,
+                now=now,
+            )
+            nodes[node.id] = node
+        elif event_type == "ghost_affinity_edge_reinforced":
+            spec = _edge_spec_from_payload(event.get("spec"))
+            if spec is None or spec.source not in nodes or spec.target not in nodes:
+                return False
+            edge, _changed = _reinforce_edge(
+                edges.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)),
+                spec,
+                now=now,
+            )
+            edges[edge.id] = edge
+        elif event_type == "ghost_affinity_scope_deleted":
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                return False
+            kept_nodes, kept_edges, _removed_nodes, _removed_edges = _delete_scope_rows(
+                nodes.values(),
+                edges.values(),
+                normalized_scope=_clean_scope(payload.get("scope")),
+                scope_ref=clip_signal_text(payload.get("scope_ref"), 120),
+            )
+            nodes = {node.id: node for node in kept_nodes}
+            edges = {edge.id: edge for edge in kept_edges}
+        elif event_type == "ghost_affinity_decay_applied":
+            decayed_nodes = [_decay_node(node, now=now) for node in nodes.values()]
+            bounded_nodes = _bounded_nodes(decayed_nodes)
+            decayed_edges = [_decay_edge(edge, now=now) for edge in edges.values()]
+            bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
+            nodes = {node.id: node for node in bounded_nodes}
+            edges = {edge.id: edge for edge in bounded_edges}
+        else:
+            return False
     return True
 
 
@@ -2055,7 +2204,9 @@ def _edge_spec_from_payload(payload: object) -> _EdgeSpec | None:
 
 
 def _node_id(kind: str, scope: str, scope_ref: str, key: str) -> str:
-    raw = "|".join((_clean_node_kind(kind), _clean_scope(scope), clip_signal_text(scope_ref, 120), _clean_key(key, 180)))
+    raw = "|".join(
+        (_clean_node_kind(kind), _clean_scope(scope), clip_signal_text(scope_ref, 120), _clean_key(key, 180))
+    )
     return "gan_" + hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[:24]
 
 
@@ -2156,14 +2307,18 @@ def _concepts_from_work_item(item: Any) -> tuple[str, ...]:
     metadata = _field(item, "metadata")
     if not isinstance(metadata, Mapping):
         return ()
-    return _clean_concepts((
-        *_metadata_sequence(metadata.get("related_concepts")),
-        *_metadata_sequence(metadata.get("shared_neighbors")),
-    ))
+    return _clean_concepts(
+        (
+            *_metadata_sequence(metadata.get("related_concepts")),
+            *_metadata_sequence(metadata.get("shared_neighbors")),
+        )
+    )
 
 
 def _concepts_from_candidate(candidate: Any) -> tuple[str, ...]:
-    return _clean_concepts((*_list(_field(candidate, "related_concepts")), *_list(_field(candidate, "shared_neighbors"))))
+    return _clean_concepts(
+        (*_list(_field(candidate, "related_concepts")), *_list(_field(candidate, "shared_neighbors")))
+    )
 
 
 def _clean_concepts(values: Iterable[object]) -> tuple[str, ...]:
@@ -2308,7 +2463,7 @@ def _merge_ref_hashes(
         digest = text if len(text) == 24 and all(char in "0123456789abcdef" for char in text) else _ref_hash(text)
         if digest and digest not in out:
             out.append(digest)
-    return tuple(out[-max(1, int(limit or 1)):])
+    return tuple(out[-max(1, int(limit or 1)) :])
 
 
 def _merge_refs(current: Iterable[object], incoming: Iterable[object], *, limit: int) -> tuple[str, ...]:
@@ -2321,7 +2476,7 @@ def _merge_refs(current: Iterable[object], incoming: Iterable[object], *, limit:
             continue
         if text not in out:
             out.append(text)
-    return tuple(out[-max(1, int(limit or 1)):])
+    return tuple(out[-max(1, int(limit or 1)) :])
 
 
 def _bounded_warnings(values: Iterable[object]) -> tuple[str, ...]:
@@ -2333,6 +2488,90 @@ def _bounded_warnings(values: Iterable[object]) -> tuple[str, ...]:
         if len(out) >= MAX_AFFINITY_WARNINGS:
             break
     return tuple(out)
+
+
+def _valid_affinity_node_payload(payload: object) -> bool:
+    node = AffinityNode.from_payload(payload)
+    return node is not None and _strict_payload_equal(payload, node.to_payload())
+
+
+def _valid_affinity_edge_payload(payload: object) -> bool:
+    edge = AffinityEdge.from_payload(payload)
+    return edge is not None and _strict_payload_equal(payload, edge.to_payload())
+
+
+def _valid_node_spec_payload(payload: object) -> bool:
+    spec = _node_spec_from_payload(payload)
+    return (
+        spec is not None
+        and isinstance(payload, Mapping)
+        and _mapping_keys_within(payload, _NODE_SPEC_KEYS)
+        and _strict_payload_equal(payload, _node_spec_payload(spec))
+    )
+
+
+def _valid_edge_spec_payload(payload: object) -> bool:
+    spec = _edge_spec_from_payload(payload)
+    return (
+        spec is not None
+        and isinstance(payload, Mapping)
+        and _mapping_keys_within(payload, _EDGE_SPEC_KEYS)
+        and _strict_payload_equal(payload, _edge_spec_payload(spec))
+    )
+
+
+def _valid_scope_deleted_payload(payload: object) -> bool:
+    if not isinstance(payload, Mapping) or set(payload.keys()) != _SCOPE_DELETED_PAYLOAD_KEYS:
+        return False
+    scope = payload.get("scope")
+    scope_ref = payload.get("scope_ref")
+    if not isinstance(scope, str) or _clean_scope(scope) != scope:
+        return False
+    if not isinstance(scope_ref, str) or clip_signal_text(scope_ref, 120) != scope_ref:
+        return False
+    if contains_sensitive_signal_text(scope_ref):
+        return False
+    if not _valid_nonnegative_int_payload(payload.get("removed_nodes")):
+        return False
+    if not _valid_nonnegative_int_payload(payload.get("removed_edges")):
+        return False
+    if scope == "user":
+        return scope_ref == ""
+    return bool(scope_ref)
+
+
+def _valid_decay_payload(payload: object) -> bool:
+    if not isinstance(payload, Mapping) or not _mapping_keys_within(payload, _DECAY_PAYLOAD_KEYS):
+        return False
+    if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
+        return False
+    for key in _DECAY_PAYLOAD_KEYS:
+        if not _valid_nonnegative_int_payload(payload.get(key)):
+            return False
+    return True
+
+
+def _valid_nonnegative_int_payload(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _strict_payload_equal(value: object, expected: object) -> bool:
+    if isinstance(expected, Mapping):
+        if not isinstance(value, Mapping) or set(value.keys()) != set(expected.keys()):
+            return False
+        return all(_strict_payload_equal(value[key], expected[key]) for key in expected)
+    if isinstance(expected, list):
+        if not isinstance(value, list) or len(value) != len(expected):
+            return False
+        return all(
+            _strict_payload_equal(item, expected_item) for item, expected_item in zip(value, expected, strict=True)
+        )
+    return type(value) is type(expected) and value == expected
+
+
+def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
+    allowed_keys = set(allowed)
+    return all(isinstance(key, str) and key in allowed_keys for key in value.keys())
 
 
 def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:

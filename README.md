@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.15-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.16-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.15`
+Version: `0.4.16`
 
 [Version history](CHANGELOG.md)
 
@@ -37,6 +37,10 @@ Version: `0.4.15`
 - **Keep memory controllable**: explicit preferences and short continuity
   context stay in bounded local files that can be previewed, exported, deleted,
   reset, disabled, and quietly maintained after tasks.
+- **Keep Ghost local state strict**: Ghost affinity and work-queue event logs
+  now accept only canonical event shapes and fail closed on malformed raw local
+  records, so queued follow-ups and learned affinities stay replayable without
+  trusting silently normalized junk.
 - **Audit local context on demand**: open `Local context` from the topbar
   `...` menu to inspect, export, delete, reset, or disable bounded local state
   without adding a persistent sidebar or interrupting the task flow.
