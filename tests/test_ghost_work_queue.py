@@ -533,6 +533,8 @@ def test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fi
             done,
             status="blocked",
             blocked_reason="manual",
+            completed_run_id="",
+            proof_refs=(),
         )
         _write_work_snapshot(store, [stale_blocked])
         queued = store.queue_item(item_id)
@@ -1357,6 +1359,90 @@ def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
             store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+
+
+def test_work_snapshot_with_invalid_state_invariants_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        # queued item carrying old completed_run_id or proof_refs
+        invalid_queued_payload = {
+            "id": "gwi_test_queued_1",
+            "kind": "research",
+            "status": "queued",
+            "scope": "session",
+            "scope_ref": "s1",
+            "title": "Research test task",
+            "why_now": "Bounded test.",
+            "priority": 0.8,
+            "confidence": 0.9,
+            "source": "user",
+            "source_ref": "seed",
+            "completed_run_id": "old-run",  # invalid on queued item
+            "proof_refs": ["research_proof:" + "a" * 16],  # invalid on queued item
+        }
+        event = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_snapshot",
+            "event_id": "test_bad_snapshot",
+            "ts": FRESH_TS,
+            "reason": "test_seed",
+            "items": [invalid_queued_payload],
+        }
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        claim_result = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
+        assert not claim_result.ok
+        assert claim_result.skipped_reason == "events_read_blocked"
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.queue_item("gwi_test_queued_1")
+
+
+def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        # done item with proof_refs but missing completed_run_id
+        invalid_done_payload = {
+            "id": "gwi_test_done_1",
+            "kind": "research",
+            "status": "done",
+            "scope": "session",
+            "scope_ref": "s1",
+            "title": "Research test task",
+            "why_now": "Bounded test.",
+            "priority": 0.8,
+            "confidence": 0.9,
+            "source": "user",
+            "source_ref": "seed",
+            "completed_run_id": "",  # missing completed_run_id on done item
+            "proof_refs": ["research_proof:" + "a" * 16],
+        }
+        event = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_snapshot",
+            "event_id": "test_bad_done_snapshot",
+            "ts": FRESH_TS,
+            "reason": "test_seed",
+            "items": [invalid_done_payload],
+        }
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        assert store.list_items() == ()
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.complete_item("gwi_test_done_1", run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
 
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:

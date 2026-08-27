@@ -2,11 +2,17 @@
 
 ## Ghost WorkQueue Action-Specific Fail-Closed Hardening, Diagnostic Unification & Full Suite Verification (2026-08-27)
 
-This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, resolves review findings across producer, validator, and reducer layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
+This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, resolves review findings across producer, validator, reducer, and snapshot/item state invariant layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
 
 Closed items:
 
 - `complete_item()` requires a non-empty `run_id` matching `current.started_run_id` before entering mutation or evaluating proof refs. This prevents producing invalid events (with empty `completed_run_id`) that fail closed on subsequent read, and prevents improperly blocking concurrent items owned by other runs.
+- `GhostWorkItem.from_payload()` enforces a strict state invariant matrix for snapshot and observed items:
+  - `done`: requires non-empty `completed_run_id` and non-empty `proof_refs`, with `lease_expires_at` and `blocked_reason` strictly empty.
+  - `queued` / `candidate` / `rejected`: strictly empty `started_run_id`, `completed_run_id`, `proof_refs`, `lease_expires_at`, and `blocked_reason`.
+  - `running`: requires non-empty `started_run_id`, with `completed_run_id`, `proof_refs`, and `blocked_reason` strictly empty.
+  - `blocked`: requires non-empty `blocked_reason`, with `lease_expires_at`, `completed_run_id`, and `proof_refs` strictly empty.
+  - Snapshot/observed items with malformed/inconsistent states fail closed on ingestion (`invalid_event`).
 - `GhostWorkQueueStore` transition validation (`_valid_work_transition`) enforces strict action-specific required fields and invariants:
   - `claim`: requires non-empty `started_run_id`, non-empty `lease_expires_at`, `retry_count == expected_retry_count + 1`, empty `expected_started_run_id`, and strictly empty `completed_run_id`, `proof_refs`, `blocked_reason`.
   - `complete`: strictly requires `completed_run_id == expected_started_run_id`, non-empty `expected_started_run_id`, non-empty `proof_refs`, and empty `lease_expires_at` and `blocked_reason`.
@@ -14,14 +20,17 @@ Closed items:
   - `queue`: strictly requires `retry_count == 0` (missing `retry_count` fails closed), and completely clears `started_run_id`, `completed_run_id`, `proof_refs`, `blocked_reason`, and `lease_expires_at`.
   - `block`: requires non-empty `blocked_reason`, empty `lease_expires_at`, and empty `completed_run_id`/`proof_refs`.
   - `reject`: requires empty `lease_expires_at`, `blocked_reason`, `started_run_id`, `completed_run_id`, and `proof_refs`.
-- `_apply_transition_event()` distinguishes `applied`, `stale`, and `invalid`, re-validating `completed_run_id == current.started_run_id` and kind-specific primary proof matches (`_primary_proof_matches_item_kind`) on `complete` replay to prevent mismatched proof replay.
+- `_apply_transition_event()` distinguishes `applied`, `stale`, and `invalid`, re-validating `completed_run_id == current.started_run_id` and kind-specific primary proof matches (`_primary_proof_matches_item_kind`) on `complete` replay, and explicitly clears unused fields on `claim`, `release`, and `block`.
 - `_read_events()` in `GhostWorkQueueStore` performs full sequence replay validation during event ingestion; any invalid transition or observed item parsing failure triggers `invalid_event` warning and sets `events_read_blocked = True`.
 - `GhostWorkQueueStore.delete_scope()` return signature is unified to `{"removed": n, "warnings": [...]}` with diagnostic warnings from projection write failures propagated directly to callers and CLI JSON output.
 - `GhostAffinityStore.decay()` and `_mutate_event_log()` in both stores ensure all dictionary mutation results merge `self.last_warnings` (e.g. `affinity_projection_write_failed` / `work_projection_write_failed`).
+- Cleaned up unused parameters in `GhostWorkQueueStore._transition_item()` and removed dead helper `_release_stale_claims()`.
 - Added unit tests covering:
   - `test_complete_item_requires_run_id_without_corrupting_events`
   - `test_work_transition_malformed_queue_missing_retry_count_fails_closed`
   - `test_work_transition_complete_mismatched_run_id_fails_closed`
+  - `test_work_snapshot_with_invalid_state_invariants_fails_closed`
+  - `test_work_snapshot_done_item_missing_completed_run_id_fails_closed`
   - Action-specific malformed claim/release/complete/queue transitions, kind-specific proof mismatch replay failure, and warning propagation on delete_scope and decay.
 
 Validation commands and results:
@@ -34,10 +43,10 @@ ruff format --check codey/ghost/work_queue.py tests/test_ghost_work_queue.py
 # 2 files already formatted
 
 pytest tests/test_ghost_work_queue.py tests/test_ghost_work_queue_ab.py tests/test_task_runner_work_queue.py -v
-# 60 passed in 10.35s
+# 62 passed in 9.27s
 
 pytest -k ghost -v
-# 323 passed, 2680 deselected in 36.68s
+# 325 passed, 2680 deselected in 36.36s
 
 git diff --check
 # Clean
@@ -47,7 +56,7 @@ Final full-suite validation after the code, test, and documentation edits:
 
 ```powershell
 pytest
-# 3001 passed, 2 skipped in 291.47s (0:04:51)
+# 3003 passed, 2 skipped in 296.00s (0:04:56)
 ```
 
 ## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)

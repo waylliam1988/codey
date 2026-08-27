@@ -21,6 +21,11 @@ This file records Codey's release history. The newest release appears first.
   and clears running fields; `release` to `queued` strictly clears lease and started run ID).
   `complete_item()` API verifies non-empty matching `run_id` before mutation, preventing
   malformed event generation or improper blocking of concurrent items.
+  `GhostWorkItem.from_payload()` enforces a strict state invariant matrix for snapshot
+  and observed items (`done` requires `completed_run_id` and `proof_refs`;
+  `queued`/`candidate`/`rejected` clear all running/completion fields;
+  `running` requires `started_run_id` and clears completion fields;
+  `blocked` requires `blocked_reason` and clears completion/lease fields).
   Replay applies kind-specific primary proof enforcement (`_primary_proof_matches_item_kind`)
   and full sequence validation. Any malformed transition is flagged as
   `invalid_event` and fails closed on read.
@@ -32,6 +37,8 @@ This file records Codey's release history. The newest release appears first.
   merging `self.last_warnings` so callers do not miss diagnostic warnings.
 - Ghost Work Queue's `compact_if_needed()` adds isomorphic check for missing
   events files when projection exists and reports `work_events_missing`.
+  Unused arguments in `_transition_item()` and dead helper `_release_stale_claims()`
+  have been cleaned up.
 
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 

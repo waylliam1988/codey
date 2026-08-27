@@ -223,10 +223,28 @@ class GhostWorkItem:
         why_now = _clean_item_text(payload.get("why_now"), max_chars=MAX_WORK_WHY_CHARS)
         if not item_id or not title:
             return None
-        if status == "running" and not clip_signal_text(payload.get("started_run_id"), 120):
+
+        started_run_id = clip_signal_text(payload.get("started_run_id"), 120)
+        completed_run_id = clip_signal_text(payload.get("completed_run_id"), 120)
+        proof_refs = _bounded_refs(payload.get("proof_refs"))
+        blocked_reason = clip_signal_text(payload.get("blocked_reason"), 120)
+        lease_expires_at = clip_signal_text(payload.get("lease_expires_at"), 80)
+
+        if status == "done":
+            if not completed_run_id or not proof_refs or lease_expires_at or blocked_reason:
+                return None
+        elif status in {"queued", "candidate", "rejected"}:
+            if started_run_id or completed_run_id or proof_refs or lease_expires_at or blocked_reason:
+                return None
+        elif status == "running":
+            if not started_run_id or completed_run_id or proof_refs or blocked_reason:
+                return None
+        elif status == "blocked":
+            if not blocked_reason or lease_expires_at or completed_run_id or proof_refs:
+                return None
+        else:
             return None
-        if status == "done" and not _bounded_refs(payload.get("proof_refs")):
-            return None
+
         return cls(
             id=item_id,
             kind=kind,
@@ -241,12 +259,12 @@ class GhostWorkItem:
             source_ref=clip_signal_text(payload.get("source_ref"), MAX_WORK_REF_CHARS),
             evidence_refs=_bounded_refs(payload.get("evidence_refs")),
             run_refs=_bounded_refs(payload.get("run_refs")),
-            started_run_id=clip_signal_text(payload.get("started_run_id"), 120),
-            completed_run_id=clip_signal_text(payload.get("completed_run_id"), 120),
-            proof_refs=_bounded_refs(payload.get("proof_refs")),
-            blocked_reason=clip_signal_text(payload.get("blocked_reason"), 120),
+            started_run_id=started_run_id,
+            completed_run_id=completed_run_id,
+            proof_refs=proof_refs,
+            blocked_reason=blocked_reason,
             retry_count=max(0, _int(payload.get("retry_count"))),
-            lease_expires_at=clip_signal_text(payload.get("lease_expires_at"), 80),
+            lease_expires_at=lease_expires_at,
             created_at=clip_signal_text(payload.get("created_at"), 80),
             updated_at=clip_signal_text(payload.get("updated_at"), 80),
             expires_at=clip_signal_text(payload.get("expires_at"), 80),
@@ -514,8 +532,10 @@ class GhostWorkQueueStore:
                     started_run_id=clip_signal_text(run_id, 120),
                     retry_count=candidate.retry_count + 1,
                     lease_expires_at=_future_ts(now, lease_seconds),
-                    updated_at=now,
+                    completed_run_id="",
+                    proof_refs=(),
                     blocked_reason="",
+                    updated_at=now,
                 )
                 append_events.append(
                     _transition_event(
@@ -586,6 +606,8 @@ class GhostWorkQueueStore:
                         current,
                         status="blocked",
                         blocked_reason="missing_proof",
+                        completed_run_id="",
+                        proof_refs=(),
                         lease_expires_at="",
                         updated_at=now,
                     )
@@ -673,6 +695,8 @@ class GhostWorkQueueStore:
                     current,
                     status=next_status,
                     started_run_id="" if next_status == "queued" else current.started_run_id,
+                    completed_run_id="",
+                    proof_refs=(),
                     lease_expires_at="",
                     blocked_reason=blocked_reason,
                     updated_at=now,
@@ -925,8 +949,6 @@ class GhostWorkQueueStore:
         *,
         status: str,
         expected_run_id: str = "",
-        proof_refs: tuple[str, ...] = (),
-        completed_run_id: str = "",
         blocked_reason: str = "",
         action: str,
     ) -> GhostWorkItem | None:
@@ -958,6 +980,8 @@ class GhostWorkQueueStore:
                         current,
                         status="blocked",
                         blocked_reason=reason,
+                        completed_run_id="",
+                        proof_refs=(),
                         lease_expires_at="",
                         updated_at=now,
                     )
@@ -2086,6 +2110,8 @@ def _apply_transition_event(
             started_run_id=started_run_id,
             retry_count=retry_count,
             lease_expires_at=lease_expires_at,
+            completed_run_id="",
+            proof_refs=(),
             blocked_reason="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
@@ -2113,6 +2139,8 @@ def _apply_transition_event(
             current,
             status=target_status,
             started_run_id="" if target_status == "queued" else current.started_run_id,
+            completed_run_id="",
+            proof_refs=(),
             lease_expires_at="",
             blocked_reason=blocked_reason,
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
@@ -2125,6 +2153,8 @@ def _apply_transition_event(
             current,
             status="blocked",
             blocked_reason=blocked_reason,
+            completed_run_id="",
+            proof_refs=(),
             lease_expires_at="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
@@ -2390,31 +2420,6 @@ def _is_expired(item: GhostWorkItem, now: str) -> bool:
     if not item.expires_at:
         return False
     return _parse_ts(item.expires_at) <= _parse_ts(now)
-
-
-def _release_stale_claims(
-    items: Iterable[GhostWorkItem],
-    *,
-    now: str,
-) -> tuple[list[GhostWorkItem], list[GhostWorkItem]]:
-    updated: list[GhostWorkItem] = []
-    stale: list[GhostWorkItem] = []
-    for item in items:
-        if _is_stale_claim(item, now):
-            next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
-            released = replace(
-                item,
-                status=next_status,
-                started_run_id="" if next_status == "queued" else item.started_run_id,
-                lease_expires_at="",
-                blocked_reason="stale_claim" if next_status == "blocked" else "",
-                updated_at=now,
-            )
-            updated.append(released)
-            stale.append(released)
-            continue
-        updated.append(item)
-    return _bounded_items(updated), stale
 
 
 def _is_stale_claim(item: GhostWorkItem, now: str) -> bool:

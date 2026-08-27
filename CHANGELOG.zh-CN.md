@@ -19,6 +19,10 @@
   `queue` 必须显式包含 `retry_count == 0` 并清空运行态字段；`release` 到 `queued` 必须显式清空 lease 和
   `started_run_id`）。`complete_item()` 在进入 mutation 前严格校验非空 `run_id` 与 running 状态匹配，
   阻止空 `run_id` 写出 invalid event 或误 block 其他 run 的 item。
+  `GhostWorkItem.from_payload()` 对 snapshot/observed item 执行严格的状态不变式校验（`done` 必须同时
+  具有 `completed_run_id` 与 `proof_refs` 且清空 lease/block reason；`queued`/`candidate`/`rejected` 清空全部
+  运行与完成字段；`running` 必须有 `started_run_id` 且清空完成/阻塞字段；`blocked` 必须有 `blocked_reason`
+  且清空 lease/完成字段），非法状态反序列化直接 fail-closed。
   Replay 增加 kind-specific primary proof 验证与全序序列回放校验，任何非法 transition 均判定为 `invalid_event` 并触发 fail-closed 阻断。
 - Ghost Affinity 和 Work Queue 的 mutation API 现在把 read -> reduce ->
   decide -> append/rewrite -> project 流程放进 store 文件锁内，关闭并发
@@ -26,7 +30,7 @@
   （包括 `GhostWorkQueueStore.delete_scope()` 和 `GhostAffinityStore.decay()`）
   统一返回结构化诊断字典并合并 `self.last_warnings`，确保调用方诊断不漏报。
 - Ghost Work Queue 的 `compact_if_needed()` 增加“projection 存在但 events 缺失”
-  的同构检查并上报 `work_events_missing`。
+  的同构检查并上报 `work_events_missing`；清理 `_transition_item()` 无用参数，并移除未使用的死代码 `_release_stale_claims()`。
 
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 
