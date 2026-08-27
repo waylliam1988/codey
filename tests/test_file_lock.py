@@ -1,4 +1,4 @@
-"""OS-backed advisory file locks and safe reset test suite."""
+"""OS-backed advisory file locks test suite."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from pathlib import Path
 
 from codey.storage.file_lock import (
     LockTimeout,
-    reset_event_backed_state,
     with_file_lock,
 )
 
@@ -22,6 +21,19 @@ class FileLockTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
+
+    def test_lock_timeout_inheritance(self) -> None:
+        self.assertTrue(issubclass(LockTimeout, TimeoutError))
+        self.assertTrue(issubclass(LockTimeout, OSError))
+
+    def test_os_error_catch_handles_lock_timeout(self) -> None:
+        def safe_operation() -> bool:
+            try:
+                raise LockTimeout("timed out")
+            except OSError:
+                return False
+
+        self.assertFalse(safe_operation())
 
     def test_lock_is_reentrant_within_thread(self) -> None:
         target = self.root / "test_state.json"
@@ -124,77 +136,6 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
-
-
-class ResetEventBackedStateTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-
-    def test_safely_deletes_all_specified_paths(self) -> None:
-        events = self.root / "store_events.jsonl"
-        proj1 = self.root / "store_projection.json"
-        proj2 = self.root / "store_settings.json"
-
-        events.write_text("event1\n", encoding="utf-8")
-        proj1.write_text("{}", encoding="utf-8")
-        proj2.write_text("{}", encoding="utf-8")
-
-        self.assertTrue(events.exists())
-        self.assertTrue(proj1.exists())
-        self.assertTrue(proj2.exists())
-
-        reset_event_backed_state(events, proj1, proj2)
-
-        self.assertFalse(events.exists())
-        self.assertFalse(proj1.exists())
-        self.assertFalse(proj2.exists())
-
-    def test_blocks_when_events_are_locked_by_another_thread(self) -> None:
-        events = self.root / "events.jsonl"
-        proj = self.root / "proj.json"
-        events.write_text("evt\n", encoding="utf-8")
-        proj.write_text("{}", encoding="utf-8")
-
-        started = threading.Event()
-        release_holder = threading.Event()
-        holder_finished = False
-
-        def holder() -> None:
-            nonlocal holder_finished
-            with with_file_lock(events, timeout_seconds=5.0):
-                started.set()
-                release_holder.wait(timeout=2.0)
-            holder_finished = True
-
-        t = threading.Thread(target=holder)
-        t.start()
-        started.wait(timeout=2.0)
-
-        reset_done = False
-
-        def run_reset() -> None:
-            nonlocal reset_done
-            reset_event_backed_state(events, proj)
-            reset_done = True
-
-        rt = threading.Thread(target=run_reset)
-        rt.start()
-
-        # Give reset thread a moment to try acquiring and block
-        time.sleep(0.1)
-        self.assertFalse(reset_done)
-        self.assertTrue(events.exists())
-
-        # Unblock holder
-        release_holder.set()
-        t.join()
-        rt.join()
-
-        self.assertTrue(reset_done)
-        self.assertFalse(events.exists())
-        self.assertFalse(proj.exists())
 
 
 if __name__ == "__main__":

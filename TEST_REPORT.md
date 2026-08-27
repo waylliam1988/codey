@@ -2,23 +2,24 @@
 
 ## Unreleased - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
 
-This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset.
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset (`codey.storage.event_state`).
 
 Closed items:
 
 - Created `codey.storage.file_lock` providing cross-process and cross-thread advisory file locking using operating-system native kernel locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) and process-local `threading.RLock` coordination.
+- `LockTimeout` inherits `TimeoutError` (`OSError` subclass), aligning with store public `except OSError` error handling contracts.
 - Sidecar lock files (`.<filename>.lock`) are permanent advisory lock carriers and are never deleted, eliminating TOCTOU races in `stat -> unlink` stale-lock takeovers.
-- Removed `LOCK_STALE_SECONDS` / `stale_seconds` from `transactional_json.py` and redirected storage locking to `codey.storage.file_lock`.
-- Added unified helper `reset_event_backed_state(events_path, *state_paths)` to safely delete projections and event logs under the event lock.
+- Created dedicated `codey.storage.event_state` module with `reset_event_backed_state(events_path, *state_paths)` to safely delete projections and event logs under the event lock.
+- Cleaned up and removed unused `transactional_json.py` and its test suite.
 - Enforced authoritative `events_path` locking discipline across all Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`) across append, replay, rebuild, delete_scope, reset, and compaction operations.
-- Added comprehensive unit tests in `tests/test_file_lock.py` verifying:
+- Added comprehensive unit tests in `tests/test_file_lock.py` and `tests/test_event_state.py` verifying:
+  - `LockTimeout` inheritance (`TimeoutError`, `OSError`) and graceful handling in `except OSError`.
   - Reentrancy within threads.
   - Mutual exclusion between concurrent threads.
   - Timeout enforcement (`LockTimeout`).
   - Lock carrier file persistence on disk after release.
   - Cross-process mutual exclusion with subprocesses.
-  - Safe event-backed state reset and reset blocking when events are locked.
-- Updated `tests/test_transactional_json.py` to remove obsolete stale-takeover assertions.
+  - Safe event-backed state reset, reset blocking when events are locked, and store `reset_all()` returning `False` upon lock timeout.
 
 Validation commands and results:
 
@@ -27,8 +28,9 @@ python -m ruff check codey tests
 # All checks passed!
 
 pytest
-# 3040 passed, 2 skipped in 281.40s
+# 3036 passed, 2 skipped in 292.83s
 ```
+
 
 
 

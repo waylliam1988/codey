@@ -1,4 +1,4 @@
-"""OS-backed advisory file locks and safe event-backed state reset.
+"""OS-backed advisory file locks.
 
 This module provides cross-process and cross-thread advisory file locking
 using operating-system native locks (msvcrt on Windows, fcntl on POSIX)
@@ -21,14 +21,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.storage.local_store import delete_file
-
 
 LOCK_TIMEOUT_SECONDS = 10.0
 LOCK_POLL_INTERVAL = 0.02
 
 
-class LockTimeout(RuntimeError):
+class LockTimeout(TimeoutError):
     """A file lock could not be acquired within the bounded timeout."""
 
 
@@ -137,9 +135,10 @@ def _release_os_lock(fd: int) -> None:
 def with_file_lock(
     path: str | Path,
     *,
-    timeout_seconds: float = LOCK_TIMEOUT_SECONDS,
+    timeout_seconds: float | None = None,
 ) -> Iterator[None]:
     """Serialize execution across processes and threads using OS advisory lock."""
+    timeout = LOCK_TIMEOUT_SECONDS if timeout_seconds is None else max(0.0, float(timeout_seconds))
     lock_path = _lock_path_for(Path(path))
     key = _lock_key(lock_path)
     held = _held_locks().get(key)
@@ -152,8 +151,8 @@ def with_file_lock(
         return
 
     process_lock = _process_lock_for(key)
-    deadline = time.monotonic() + max(0.0, timeout_seconds)
-    acquired_process = process_lock.acquire(timeout=max(0.0, timeout_seconds))
+    deadline = time.monotonic() + timeout
+    acquired_process = process_lock.acquire(timeout=timeout)
     if not acquired_process:
         raise LockTimeout(f"timed out acquiring thread lock: {lock_path.name}")
 
@@ -170,19 +169,9 @@ def with_file_lock(
         process_lock.release()
 
 
-def reset_event_backed_state(events_path: str | Path, *state_paths: str | Path) -> None:
-    """Safely reset event log and projection files under the event lock."""
-    ep = Path(events_path)
-    with with_file_lock(ep):
-        for sp in state_paths:
-            delete_file(Path(sp))
-        delete_file(ep)
-
-
 __all__ = [
     "LockTimeout",
     "LOCK_POLL_INTERVAL",
     "LOCK_TIMEOUT_SECONDS",
-    "reset_event_backed_state",
     "with_file_lock",
 ]

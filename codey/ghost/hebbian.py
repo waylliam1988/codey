@@ -15,7 +15,8 @@ from typing import Iterable
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
-from codey.storage.file_lock import reset_event_backed_state, with_file_lock
+from codey.storage.event_state import reset_event_backed_state
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 

@@ -21,7 +21,8 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.work_queue import GhostWorkQueueStore
-from codey.storage.file_lock import reset_event_backed_state, with_file_lock
+from codey.storage.event_state import reset_event_backed_state
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 

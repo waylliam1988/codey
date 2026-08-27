@@ -8,8 +8,10 @@
 
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
   - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
+  - `LockTimeout` 继承自 `TimeoutError`（`OSError` 的子类），与既有 store 的 `except OSError` 错误处理契约完美保持一致。
   - `.lock` 文件作为常驻磁盘的锁载体，不再通过 `stat -> unlink` 表达所有权，彻底消除 stale takeover 的 TOCTOU 竞态。
-  - 增加统一的 `reset_event_backed_state(events_path, *state_paths)` helper，确保 event log 与 derived projection 在权威事件锁保护下安全删除。
+  - 新增专用模块 `codey.storage.event_state` 提供 `reset_event_backed_state(events_path, *state_paths)` helper，确保 event log 与 derived projection 在权威事件锁保护下安全删除。
+  - 彻底清理移除无生产调用的 `transactional_json.py` 冗余抽象。
   - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的 mutation 锁纪律：所有 append、replay、rebuild、delete_scope、reset 和 compaction 操作均在各 store 的 `events_path` 锁保护下执行。
 
 
