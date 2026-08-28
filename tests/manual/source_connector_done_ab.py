@@ -53,9 +53,9 @@ BOUNDARY_ARMS = {"boundary"}
 QUALITY_CHECKLIST_ARMS = {"boundary", "batch"}
 BATCH_REVIEW_ARMS = {"batch"}
 MAX_RESULT_BYTES = base.MAX_RESULT_BYTES
-MAX_TRACE_BYTES = base.MAX_TRACE_BYTES * 4
-TRACE_PROMPT_CHARS = base.TRACE_PROMPT_CHARS
-TRACE_REPLY_CHARS = base.TRACE_REPLY_CHARS
+MAX_TRACE_BYTES = MAX_RESULT_BYTES * 4
+TRACE_PROMPT_CHARS = 6000
+TRACE_REPLY_CHARS = 6000
 
 CASES = {
     "pubmed": base.CASES["pubmed"],
@@ -840,7 +840,13 @@ def _trace_output_path(output: Path) -> Path:
     return output.with_name(f"{output.name}.trace.json")
 
 
-class LiveTrace(base.LiveTrace):
+class LiveTrace:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.started = time.monotonic()
+        self.started_at = _timestamp()
+        self.events: list[dict[str, Any]] = []
+
     def record(self, event: dict[str, Any]) -> None:
         payload = dict(event)
         payload["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
