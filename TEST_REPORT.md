@@ -1,5 +1,13 @@
 # Codey Test Report
 
+0.4 final stabilization 结论见：
+
+```text
+docs/0.4.22_final_stabilization_report.zh-CN.md
+docs/0.4_qwen_provider_baseline.zh-CN.md
+docs/0.4_deepseek_provider_baseline.zh-CN.md
+```
+
 ## 0.4.22 Interim - Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
 
 This records the Qwen coding/completion core pass plus the first Qwen Research
@@ -78,8 +86,8 @@ Current Qwen interpretation:
 - `repair_context_minimal` does not improve or worsen the Qwen missing-dependency
   behavior in this sample; the failure happens before a repair context can help.
 - Do not promote any Qwen-specific prompt or production behavior from this pass.
-- Qwen can now proceed to Ghost core only after the Research core smoke below is
-  treated as the current Research baseline.
+- Qwen coding / research / ghost core smoke is now closed for 0.4.22. Use the
+  final stabilization report before deciding on GLM/MiMo cross-checks or 0.5.
 
 Qwen Research core smoke:
 
