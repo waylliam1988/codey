@@ -151,7 +151,8 @@ def run_cases(
         "arms": list(ARMS),
         "cases": [case.name for case in cases],
         "ok": bool(summary["router"]["exact"] == summary["router"]["total"])
-        and summary["router"]["cost"] < summary["baseline"]["cost"],
+        and summary["delta"]["cost"] >= 0
+        and summary["delta"]["severe_errors"] >= 0,
         "summary": summary,
         "rows": rows,
     }

@@ -106,6 +106,21 @@ def test_route_error_cost_marks_writer_confusion_as_severe() -> None:
     assert ghost_router_ab.route_error_cost("chat", "planning_readonly") == 1
 
 
+def test_router_subset_ok_allows_no_regression_control_case() -> None:
+    case = next(item for item in ghost_router_ab.load_cases() if item.name == "plain_chat_no_project")
+
+    payload = ghost_router_ab.run_cases(
+        ghost_router_ab.FakeProvider(),
+        provider_id="fake",
+        cases=(case,),
+        timeout=1,
+        new_chat_timeout=1,
+    )
+
+    assert payload["ok"], payload
+    assert payload["summary"]["delta"]["cost"] == 0
+
+
 def test_load_cases_rejects_unknown_mode() -> None:
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "cases.jsonl"
