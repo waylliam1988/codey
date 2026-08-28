@@ -519,6 +519,49 @@ def test_finish_row_accepts_live_source_change_with_intact_fixture(tmp_path: Pat
     assert row["false_completion"] is False
 
 
+def test_live_docs_only_fixture_contains_module_context(tmp_path: Path) -> None:
+    spec = harness.LIVE_CASES["docs_only_change_with_limitations"]
+    project = harness._live_project(tmp_path, spec)
+
+    assert "current module layout" in str(spec["task"])
+    assert (project / "README.md").read_text(encoding="utf-8") == "# old layout\n"
+    assert (project / "src" / "mod.py").read_text(encoding="utf-8") == harness.DOCS_ONLY_MODULE_BODY
+
+
+def test_finish_row_rejects_live_docs_only_source_mutation(tmp_path: Path) -> None:
+    spec = harness.LIVE_CASES["docs_only_change_with_limitations"]
+    project = harness._live_project(tmp_path, spec)
+    (project / "README.md").write_text("# Module layout\n\nUses src/mod.py.\n", encoding="utf-8")
+    (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+    class FakeState:
+        last_terminal_event = {
+            "stop_reason": "done",
+        }
+        run_traces = None
+
+    row = harness._finish_row(
+        case_name="docs_only_change_with_limitations",
+        arm="control_done",
+        state=FakeState(),  # type: ignore[arg-type]
+        session_suffix="unit",
+        project=project,
+        observed={},
+        writer_phases=None,
+        tool_calls=1,
+        turns=1,
+        elapsed_s=0.01,
+        independent_ok=None,
+    )
+
+    assert row["independent_check_passed"] is None
+    assert row["source_ok"] is True
+    assert row["fixture_scope_ok"] is False
+    assert row["scope_error"] == "modified_docs_context"
+    assert row["independent_ok"] is False
+    assert row["false_completion"] is True
+
+
 def test_terminal_provider_no_reply_is_classified() -> None:
     class FakeTracing:
         send_index = 1
