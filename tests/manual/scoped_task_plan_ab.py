@@ -790,9 +790,6 @@ def main(argv: list[str] | None = None) -> int:
     bad_arms = [arm for arm in selected_arms if arm not in ARMS]
     if bad_arms:
         parser.error(f"unknown arm(s): {', '.join(bad_arms)}")
-    if "current" not in selected_arms:
-        parser.error("--arms must include current so deltas are meaningful")
-
     selected_providers = provider_ids() if args.provider == "all" else (args.provider,)
     reports = [
         run_provider(

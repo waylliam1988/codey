@@ -79,3 +79,77 @@ def test_summary_reports_scoped_delta() -> None:
     assert delta["test_hits"] == 1
     assert delta["top1_path_hits"] == 1
     assert delta["sent_chars"] == 120
+
+
+def test_summary_without_current_omits_deltas() -> None:
+    rows = [
+        {
+            "arm": "scoped",
+            "ok": True,
+            "score": {
+                "paths": {"hit_count": 2, "top1_hit": True},
+                "tests": {"hit_count": 1},
+                "terms": {"hit_count": 2},
+            },
+            "sent_chars": 220,
+            "provider_seconds": 3.0,
+        },
+    ]
+
+    summary = scoped_task_plan_ab._summarize_rows(rows, arms=("scoped",))
+
+    assert summary["by_arm"]["scoped"]["ok"] == 1
+    assert summary["deltas_vs_current"] == {}
+
+
+def test_main_allows_single_scoped_arm(tmp_path, monkeypatch) -> None:
+    case = scoped_task_plan_ab.ProbeCase(
+        name="single-scoped",
+        project=tmp_path,
+        task="Pick files.",
+        expected_paths=("codey/app/task_runner.py",),
+    )
+    row = {
+        "case": case.name,
+        "arm": "scoped",
+        "ok": True,
+        "score": {
+            "paths": {"hit_count": 1, "top1_hit": True},
+            "tests": {"hit_count": 0},
+            "terms": {"hit_count": 0},
+        },
+        "sent_chars": 100,
+        "provider_seconds": 1.0,
+    }
+    called: dict[str, tuple[str, ...]] = {}
+
+    def fake_run_provider(provider_id, selected_cases, *, port, timeout, order, arms):
+        called["arms"] = arms
+        assert provider_id == "deepseek"
+        assert selected_cases == (case,)
+        return {
+            "provider": provider_id,
+            "rows": [row],
+            "summary": scoped_task_plan_ab._summarize_rows([row], arms=arms),
+        }
+
+    monkeypatch.setattr(scoped_task_plan_ab, "provider_ids", lambda: ("deepseek",))
+    monkeypatch.setattr(scoped_task_plan_ab, "cases", lambda stockalarm=None: {case.name: case})
+    monkeypatch.setattr(scoped_task_plan_ab, "run_provider", fake_run_provider)
+
+    output = tmp_path / "result.json"
+
+    assert scoped_task_plan_ab.main(
+        [
+            "--provider",
+            "deepseek",
+            "--case",
+            case.name,
+            "--arms",
+            "scoped",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    assert called["arms"] == ("scoped",)
+    assert output.exists()
