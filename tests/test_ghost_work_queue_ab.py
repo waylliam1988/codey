@@ -21,11 +21,7 @@ def test_production_spine_work_queue_beats_no_queue_baseline() -> None:
 
 
 def test_work_queue_control_case_allows_no_regression() -> None:
-    case = next(
-        item
-        for item in ghost_work_queue_production_ab.DEFAULT_CASES
-        if item.name == "no-queue-continue-chat"
-    )
+    case = next(item for item in ghost_work_queue_production_ab.DEFAULT_CASES if item.name == "no-queue-continue-chat")
 
     payload = ghost_work_queue_production_ab.run_cases(
         provider_id="fake",

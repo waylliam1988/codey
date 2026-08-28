@@ -4,10 +4,7 @@ from tests.manual import scoped_task_plan_ab
 
 
 def test_extract_paths_and_tests_from_json_with_prose() -> None:
-    text = (
-        'ignore this\n{"paths":["./codey/app/task_runner.py"],'
-        '"test_paths":["tests/test_server.py"]}'
-    )
+    text = 'ignore this\n{"paths":["./codey/app/task_runner.py"],"test_paths":["tests/test_server.py"]}'
 
     assert scoped_task_plan_ab._paths_from_reply(text) == ("codey/app/task_runner.py",)
     assert scoped_task_plan_ab._test_paths_from_reply(text) == ("tests/test_server.py",)
@@ -139,17 +136,20 @@ def test_main_allows_single_scoped_arm(tmp_path, monkeypatch) -> None:
 
     output = tmp_path / "result.json"
 
-    assert scoped_task_plan_ab.main(
-        [
-            "--provider",
-            "deepseek",
-            "--case",
-            case.name,
-            "--arms",
-            "scoped",
-            "--output",
-            str(output),
-        ]
-    ) == 0
+    assert (
+        scoped_task_plan_ab.main(
+            [
+                "--provider",
+                "deepseek",
+                "--case",
+                case.name,
+                "--arms",
+                "scoped",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
     assert called["arms"] == ("scoped",)
     assert output.exists()

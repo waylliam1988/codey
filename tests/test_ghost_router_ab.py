@@ -125,13 +125,15 @@ def test_load_cases_rejects_unknown_mode() -> None:
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "cases.jsonl"
         path.write_text(
-            json.dumps({
-                "name": "bad",
-                "project": False,
-                "task": "hello",
-                "expected_mode": "magic",
-                "risk": "low",
-            }),
+            json.dumps(
+                {
+                    "name": "bad",
+                    "project": False,
+                    "task": "hello",
+                    "expected_mode": "magic",
+                    "risk": "low",
+                }
+            ),
             encoding="utf-8",
         )
 

@@ -204,35 +204,37 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
 
     stockalarm_root = stockalarm.expanduser().resolve() if stockalarm else None
     if stockalarm_root is not None and stockalarm_root.exists():
-        values.extend([
-            ProbeCase(
-                name="stockalarm-training-flow",
-                project=stockalarm_root,
-                task=(
-                    "Read-only navigation: explain how master_trainer.py main "
-                    "chooses, skips, and starts training stages, and how it connects "
-                    "to feature_engineering.py. Which files should be inspected first?"
+        values.extend(
+            [
+                ProbeCase(
+                    name="stockalarm-training-flow",
+                    project=stockalarm_root,
+                    task=(
+                        "Read-only navigation: explain how master_trainer.py main "
+                        "chooses, skips, and starts training stages, and how it connects "
+                        "to feature_engineering.py. Which files should be inspected first?"
+                    ),
+                    expected_paths=("master_trainer.py", "feature_engineering.py"),
+                    expected_terms=("main", "start_from", "feature_engineering"),
+                    tags=("external", "stockalarm"),
                 ),
-                expected_paths=("master_trainer.py", "feature_engineering.py"),
-                expected_terms=("main", "start_from", "feature_engineering"),
-                tags=("external", "stockalarm"),
-            ),
-            ProbeCase(
-                name="stockalarm-backtest-masks",
-                project=stockalarm_root,
-                task=(
-                    "Read-only navigation: find the backtest entry and exit tradable "
-                    "mask builders in stockalarm.py, their main callers, and their "
-                    "responsibilities. Which files should be inspected first?"
+                ProbeCase(
+                    name="stockalarm-backtest-masks",
+                    project=stockalarm_root,
+                    task=(
+                        "Read-only navigation: find the backtest entry and exit tradable "
+                        "mask builders in stockalarm.py, their main callers, and their "
+                        "responsibilities. Which files should be inspected first?"
+                    ),
+                    expected_paths=("stockalarm.py",),
+                    expected_terms=(
+                        "_build_stockalarm_backtest_entry_tradable_mask",
+                        "_build_stockalarm_backtest_exit_tradable_mask",
+                    ),
+                    tags=("external", "stockalarm"),
                 ),
-                expected_paths=("stockalarm.py",),
-                expected_terms=(
-                    "_build_stockalarm_backtest_entry_tradable_mask",
-                    "_build_stockalarm_backtest_exit_tradable_mask",
-                ),
-                tags=("external", "stockalarm"),
-            ),
-        ])
+            ]
+        )
     return {case.name: case for case in values}
 
 
@@ -354,11 +356,13 @@ def _score_terms(text: str, expected_terms: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _project_context(root: Path, task: str) -> str:
-    return "\n\n".join([
-        "Initial listing:",
-        list_directory(root, ".").model_text,
-        render_production_project_map(root, task=task),
-    ])
+    return "\n\n".join(
+        [
+            "Initial listing:",
+            list_directory(root, ".").model_text,
+            render_production_project_map(root, task=task),
+        ]
+    )
 
 
 def _deterministic_scope_hint(root: Path, task: str) -> str:
@@ -381,8 +385,7 @@ def _deterministic_scope_hint(root: Path, task: str) -> str:
         budget=budget,
         allow_dir=lambda item: not _path_blocked(_safe_relative(root, item)),
         allow_file=lambda item: (
-            item.suffix.lower() in SOURCE_SUFFIXES
-            and not _path_blocked(_safe_relative(root, item))
+            item.suffix.lower() in SOURCE_SUFFIXES and not _path_blocked(_safe_relative(root, item))
         ),
         skip_start_if_excluded=False,
     ):
@@ -396,10 +399,7 @@ def _deterministic_scope_hint(root: Path, task: str) -> str:
         if prior is None or score > prior[0]:
             candidates[rel] = (score, ())
 
-    scored = [
-        (score, rel, symbols)
-        for rel, (score, symbols) in candidates.items()
-    ]
+    scored = [(score, rel, symbols) for rel, (score, symbols) in candidates.items()]
     scored.sort(key=lambda item: (-item[0], item[1]))
 
     dir_scores: dict[str, int] = {}
@@ -433,91 +433,93 @@ def _deterministic_scope_hint(root: Path, task: str) -> str:
 
 
 def _current_prompt(case: ProbeCase) -> str:
-    return "\n".join([
-        "You are evaluating a local coding agent's project navigation.",
-        "Do not solve or implement the task. Choose the first files to inspect.",
-        "Use only relative paths. Prefer existing implementation files and focused tests.",
-        "Return exactly one JSON object, no markdown:",
-        (
-            '{"paths":["relative/implementation.py"],'
-            '"test_paths":["relative/test_file.py"],"reason":"short reason"}'
-        ),
-        "",
-        _project_context(case.project, case.task),
-        "",
-        "Task:",
-        case.task,
-    ])
+    return "\n".join(
+        [
+            "You are evaluating a local coding agent's project navigation.",
+            "Do not solve or implement the task. Choose the first files to inspect.",
+            "Use only relative paths. Prefer existing implementation files and focused tests.",
+            "Return exactly one JSON object, no markdown:",
+            ('{"paths":["relative/implementation.py"],"test_paths":["relative/test_file.py"],"reason":"short reason"}'),
+            "",
+            _project_context(case.project, case.task),
+            "",
+            "Task:",
+            case.task,
+        ]
+    )
 
 
 def _hint_prompt(case: ProbeCase) -> str:
-    return "\n".join([
-        "You are evaluating a local coding agent's project navigation.",
-        "Do not solve or implement the task. Choose the first files to inspect.",
-        "Use only relative paths. Prefer existing implementation files and focused tests.",
-        "The deterministic scope hint is local and advisory, not proof.",
-        "Return exactly one JSON object, no markdown:",
-        (
-            '{"paths":["relative/implementation.py"],'
-            '"test_paths":["relative/test_file.py"],"reason":"short reason"}'
-        ),
-        "",
-        _project_context(case.project, case.task),
-        "",
-        _deterministic_scope_hint(case.project, case.task),
-        "",
-        "Task:",
-        case.task,
-    ])
+    return "\n".join(
+        [
+            "You are evaluating a local coding agent's project navigation.",
+            "Do not solve or implement the task. Choose the first files to inspect.",
+            "Use only relative paths. Prefer existing implementation files and focused tests.",
+            "The deterministic scope hint is local and advisory, not proof.",
+            "Return exactly one JSON object, no markdown:",
+            ('{"paths":["relative/implementation.py"],"test_paths":["relative/test_file.py"],"reason":"short reason"}'),
+            "",
+            _project_context(case.project, case.task),
+            "",
+            _deterministic_scope_hint(case.project, case.task),
+            "",
+            "Task:",
+            case.task,
+        ]
+    )
 
 
 def _scoped_plan_prompt(case: ProbeCase) -> str:
-    return "\n".join([
-        "You are a hidden navigation planner for a local coding agent.",
-        "Do not solve or implement the task. Do not write code.",
-        "Create a temporary Scoped Task Plan whose only job is to shrink the first workset.",
-        "The plan is advisory, run-scoped, not persisted, not UI, and not impact proof.",
-        "Return exactly one JSON object, no markdown:",
-        (
-            '{"scopes":[{"name":"scope name","dirs":["relative/dir"],'
-            '"paths":["relative/file.py"],"test_paths":["relative/test_file.py"],'
-            '"queries":["literal search"],"checks":["candidate command"],'
-            '"reason":"why this scope is first"}],'
-            '"integration":{"checks":["candidate command"],"risks":["risk"]}}'
-        ),
-        "Rules:",
-        "- Use 2 to 4 scopes.",
-        "- Keep each scope small enough for one bounded Writer pass.",
-        "- Planner narrows navigation only; Writer must verify by reading files.",
-        "- Do not invent persistence, indexes, LSP, RAG, or new UI.",
-        "",
-        _project_context(case.project, case.task),
-        "",
-        "Task:",
-        case.task,
-    ])
+    return "\n".join(
+        [
+            "You are a hidden navigation planner for a local coding agent.",
+            "Do not solve or implement the task. Do not write code.",
+            "Create a temporary Scoped Task Plan whose only job is to shrink the first workset.",
+            "The plan is advisory, run-scoped, not persisted, not UI, and not impact proof.",
+            "Return exactly one JSON object, no markdown:",
+            (
+                '{"scopes":[{"name":"scope name","dirs":["relative/dir"],'
+                '"paths":["relative/file.py"],"test_paths":["relative/test_file.py"],'
+                '"queries":["literal search"],"checks":["candidate command"],'
+                '"reason":"why this scope is first"}],'
+                '"integration":{"checks":["candidate command"],"risks":["risk"]}}'
+            ),
+            "Rules:",
+            "- Use 2 to 4 scopes.",
+            "- Keep each scope small enough for one bounded Writer pass.",
+            "- Planner narrows navigation only; Writer must verify by reading files.",
+            "- Do not invent persistence, indexes, LSP, RAG, or new UI.",
+            "",
+            _project_context(case.project, case.task),
+            "",
+            "Task:",
+            case.task,
+        ]
+    )
 
 
 def _scoped_selection_prompt(case: ProbeCase, plan_reply: str) -> str:
     plan = _extract_json_object(plan_reply)
     plan_json = json.dumps(plan, ensure_ascii=False, indent=2) if plan else _clip(plan_reply)
-    return "\n".join([
-        "Now choose only the first files the Writer should inspect.",
-        "Use the temporary Scoped Task Plan as advisory navigation context.",
-        "Do not solve or implement the task. Return exactly one JSON object, no markdown:",
-        (
-            '{"chosen_scope":"scope name","paths":["relative/implementation.py"],'
-            '"test_paths":["relative/test_file.py"],"reason":"short reason"}'
-        ),
-        "",
-        "Scoped Task Plan:",
-        plan_json,
-        "",
-        _project_context(case.project, case.task),
-        "",
-        "Task:",
-        case.task,
-    ])
+    return "\n".join(
+        [
+            "Now choose only the first files the Writer should inspect.",
+            "Use the temporary Scoped Task Plan as advisory navigation context.",
+            "Do not solve or implement the task. Return exactly one JSON object, no markdown:",
+            (
+                '{"chosen_scope":"scope name","paths":["relative/implementation.py"],'
+                '"test_paths":["relative/test_file.py"],"reason":"short reason"}'
+            ),
+            "",
+            "Scoped Task Plan:",
+            plan_json,
+            "",
+            _project_context(case.project, case.task),
+            "",
+            "Task:",
+            case.task,
+        ]
+    )
 
 
 def _score_result(
@@ -596,11 +598,7 @@ def run_arm(
         "paths": list(paths),
         "test_paths": list(test_paths),
         "score": score,
-        "ok": (
-            score["paths"]["hit_count"] > 0
-            or score["tests"]["hit_count"] > 0
-            or score["terms"]["hit_count"] > 0
-        ),
+        "ok": (score["paths"]["hit_count"] > 0 or score["tests"]["hit_count"] > 0 or score["terms"]["hit_count"] > 0),
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "provider_seconds": round(provider.seconds - seconds_before, 3),
         "sends": provider.sends - sends_before,
@@ -642,9 +640,7 @@ def _summarize_rows(
             "path_hits": sum(row["score"]["paths"]["hit_count"] for row in arm_rows),
             "test_hits": sum(row["score"]["tests"]["hit_count"] for row in arm_rows),
             "term_hits": sum(row["score"]["terms"]["hit_count"] for row in arm_rows),
-            "top1_path_hits": sum(
-                1 for row in arm_rows if row["score"]["paths"]["top1_hit"]
-            ),
+            "top1_path_hits": sum(1 for row in arm_rows if row["score"]["paths"]["top1_hit"]),
             "sent_chars": sum(int(row.get("sent_chars") or 0) for row in arm_rows),
             "provider_seconds": round(
                 sum(float(row.get("provider_seconds") or 0.0) for row in arm_rows),
@@ -702,10 +698,14 @@ def run_provider(
                         "error": str(exc),
                     }
                 rows.append(row)
-                status = "ERR" if "error" in row else (
-                    f"paths={row['score']['paths']['hit_count']} "
-                    f"tests={row['score']['tests']['hit_count']} "
-                    f"terms={row['score']['terms']['hit_count']}"
+                status = (
+                    "ERR"
+                    if "error" in row
+                    else (
+                        f"paths={row['score']['paths']['hit_count']} "
+                        f"tests={row['score']['tests']['hit_count']} "
+                        f"terms={row['score']['terms']['hit_count']}"
+                    )
                 )
                 print(f"[{provider_id}] {case.name} {arm}: {status}", flush=True)
     finally:
@@ -743,8 +743,7 @@ def run_self_test() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare current Project Map navigation with deterministic hints "
-            "and/or a temporary Scoped Task Plan."
+            "Compare current Project Map navigation with deterministic hints and/or a temporary Scoped Task Plan."
         )
     )
     parser.add_argument("--provider", choices=(*provider_ids(), "all"), default=DEFAULT_PROVIDER_ID)
@@ -782,11 +781,7 @@ def main(argv: list[str] | None = None) -> int:
         selected = selected[: args.max_cases]
     if not selected:
         parser.error("no probe cases selected")
-    selected_arms = tuple(
-        arm.strip()
-        for arm in str(args.arms or "").split(",")
-        if arm.strip()
-    )
+    selected_arms = tuple(arm.strip() for arm in str(args.arms or "").split(",") if arm.strip())
     bad_arms = [arm for arm in selected_arms if arm not in ARMS]
     if bad_arms:
         parser.error(f"unknown arm(s): {', '.join(bad_arms)}")

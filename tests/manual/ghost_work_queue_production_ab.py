@@ -116,19 +116,23 @@ def run_cases(
     rows: list[dict[str, Any]] = []
     _write_progress(output, provider_id, rows, complete=False)
     for case in cases:
-        rows.append(_run_case(
-            case,
-            provider_id=provider_id,
-            arm="baseline",
-            provider_factory=provider_factory,
-        ))
+        rows.append(
+            _run_case(
+                case,
+                provider_id=provider_id,
+                arm="baseline",
+                provider_factory=provider_factory,
+            )
+        )
         _write_progress(output, provider_id, rows, complete=False)
-        rows.append(_run_case(
-            case,
-            provider_id=provider_id,
-            arm="queue",
-            provider_factory=provider_factory,
-        ))
+        rows.append(
+            _run_case(
+                case,
+                provider_id=provider_id,
+                arm="queue",
+                provider_factory=provider_factory,
+            )
+        )
         _write_progress(output, provider_id, rows, complete=False)
     payload = _payload(provider_id, rows, complete=True)
     _write_progress(output, provider_id, rows, complete=True)
@@ -225,15 +229,17 @@ def _run_case(
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
             with _patched_provider(state, provider):
-                runner.run(TaskRequest(
-                    session_id=session_id,
-                    project=str(project) if case.project else None,
-                    task=case.task,
-                    max_turns=8,
-                    continue_task=False,
-                    provider_id=provider_id,
-                    intent="auto",
-                ))
+                runner.run(
+                    TaskRequest(
+                        session_id=session_id,
+                        project=str(project) if case.project else None,
+                        task=case.task,
+                        max_turns=8,
+                        continue_task=False,
+                        provider_id=provider_id,
+                        intent="auto",
+                    )
+                )
             state.wait_for_ghost_sleep(timeout=2)
             error = ""
         except Exception as exc:
@@ -304,11 +310,16 @@ def _proof_record(question: str, *, run_id: str):
         f"[1] Work queue proof article - {url}"
     )
     ledger = ResearchLedger()
-    ledger.record_search(question, [{
-        "title": "Work queue proof article",
-        "url": url,
-        "snippet": claim,
-    }])
+    ledger.record_search(
+        question,
+        [
+            {
+                "title": "Work queue proof article",
+                "url": url,
+                "snippet": claim,
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -316,12 +327,14 @@ def _proof_record(question: str, *, run_id: str):
         text=source_text,
     )
     prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": claim,
-            "source_url": url,
-            "excerpt": claim,
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": claim,
+                "source_url": url,
+                "excerpt": claim,
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim=claim,
         fallback_body=source_text,

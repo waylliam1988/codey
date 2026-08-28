@@ -80,6 +80,7 @@ _QUALITY_CHECKLIST = """Probe quality-review checklist:
 6. If a source cannot be cited, mention it only as an unnumbered limitation.
 """
 
+
 @contextlib.contextmanager
 def _patched_quality_review(enabled: bool):
     if not enabled:
@@ -118,9 +119,7 @@ def _batched_quality_review(original: Callable[..., Any]) -> Callable[..., Any]:
         )
         if not blockers:
             return review
-        message = "Report quality failed with multiple blocker(s):\n" + "\n".join(
-            f"- {item}" for item in blockers[:8]
-        )
+        message = "Report quality failed with multiple blocker(s):\n" + "\n".join(f"- {item}" for item in blockers[:8])
         return report_quality_module.ReportQualityReview(
             False,
             message,
@@ -142,10 +141,7 @@ def _quality_blockers(
     blockers: list[str] = []
     missing = [key for key in REQUIRED_SECTIONS if not sections.get(key, "").strip()]
     if missing:
-        blockers.append(
-            "missing required section(s): "
-            + ", ".join(section_title(item) for item in missing)
-        )
+        blockers.append("missing required section(s): " + ", ".join(section_title(item) for item in missing))
         return blockers
     strict_problem = report_quality_module.provenance_problem(
         report_quality_module._strict_provenance_text(sections, summary),
@@ -192,9 +188,7 @@ def _quality_blockers(
     }
     missing_evidence = sorted({item.url for item in citations} - evidence_urls)
     if missing_evidence:
-        blockers.append(
-            "every cited source needs saved evidence; missing: " + ", ".join(missing_evidence[:3])
-        )
+        blockers.append("every cited source needs saved evidence; missing: " + ", ".join(missing_evidence[:3]))
     page_problem = report_quality_module._page_citation_problem(citations, ledger) if citations else ""
     if page_problem:
         blockers.append(page_problem)
@@ -369,13 +363,15 @@ def run_case(
                     if event.kind == "info":
                         infos.append(str(event.message or "")[:240])
                     if event.kind == "tool" and event.call is not None:
-                        tool_calls.append({
-                            "turn": event.turn,
-                            "name": event.call.name,
-                            "args": base._safe_args(event.call.args),
-                            "ok": bool(event.outcome.ok) if event.outcome is not None else False,
-                            "status": event.outcome.presentation_status() if event.outcome is not None else "",
-                        })
+                        tool_calls.append(
+                            {
+                                "turn": event.turn,
+                                "name": event.call.name,
+                                "args": base._safe_args(event.call.args),
+                                "ok": bool(event.outcome.ok) if event.outcome is not None else False,
+                                "status": event.outcome.presentation_status() if event.outcome is not None else "",
+                            }
+                        )
             if runner.result is None:
                 raise RuntimeError("research finished without result")
             result = runner.result
@@ -427,8 +423,7 @@ def run_case(
                 "quality_overlay_hits": run_provider.quality_overlay_hits,
                 "model_actions": model_actions[:40],
                 "used_controller_open_action": any(
-                    item.get("tool") in {"open_result", "reopen_source", "open_hit"}
-                    for item in model_actions
+                    item.get("tool") in {"open_result", "reopen_source", "open_hit"} for item in model_actions
                 ),
                 "used_legacy_open_url_id_action": any(
                     item.get("tool") == "open_url"
@@ -500,14 +495,16 @@ def run_provider(
         payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms, samples=samples)
     except base.OutputProviderMismatch as exc:
         if trace is not None:
-            trace.record({
-                "event": "provider_mismatch",
-                "run_id": run_id,
-                "provider": provider_id,
-                "output": str(output),
-                "expected_provider": exc.expected,
-                "found_provider": exc.found,
-            })
+            trace.record(
+                {
+                    "event": "provider_mismatch",
+                    "run_id": run_id,
+                    "provider": provider_id,
+                    "output": str(output),
+                    "expected_provider": exc.expected,
+                    "found_provider": exc.found,
+                }
+            )
         raise
     payload["trace_output"] = str(trace.path) if trace is not None else ""
     existing = {
@@ -528,17 +525,19 @@ def run_provider(
         )
     if not pending:
         if trace is not None:
-            trace.record({
-                "event": "no_pending_rows",
-                "run_id": run_id,
-                "provider": provider_id,
-                "output": str(output),
-                "cases": [case.name for case in cases],
-                "arms": list(arms),
-                "samples": max(1, int(samples)),
-                "rerun_failed": bool(rerun_failed),
-                "existing_rows": len(payload["rows"]),
-            })
+            trace.record(
+                {
+                    "event": "no_pending_rows",
+                    "run_id": run_id,
+                    "provider": provider_id,
+                    "output": str(output),
+                    "cases": [case.name for case in cases],
+                    "arms": list(arms),
+                    "samples": max(1, int(samples)),
+                    "rerun_failed": bool(rerun_failed),
+                    "existing_rows": len(payload["rows"]),
+                }
+            )
             trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(payload["rows"]))
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
@@ -756,10 +755,7 @@ def _needs_boundary_overlay(prompt: str) -> bool:
 
 def _needs_quality_checklist(prompt: str) -> bool:
     text = str(prompt or "")
-    return (
-        "Your last done.answer did not pass the research quality review" in text
-        or "Report quality failed" in text
-    )
+    return "Your last done.answer did not pass the research quality review" in text or "Report quality failed" in text
 
 
 def _done_allowed_in_prompt(prompt: str) -> bool:
@@ -864,16 +860,18 @@ class LiveTrace:
         samples: int,
         max_turns: int,
     ) -> None:
-        self.record({
-            "event": "run_start",
-            "run_id": run_id,
-            "provider": provider,
-            "trace_output": trace_output,
-            "cases": list(cases),
-            "arms": list(arms),
-            "samples": samples,
-            "max_turns": max_turns,
-        })
+        self.record(
+            {
+                "event": "run_start",
+                "run_id": run_id,
+                "provider": provider,
+                "trace_output": trace_output,
+                "cases": list(cases),
+                "arms": list(arms),
+                "samples": samples,
+                "max_turns": max_turns,
+            }
+        )
 
     def record_case_start(
         self,
@@ -885,15 +883,17 @@ class LiveTrace:
         sample: int,
         question: str,
     ) -> None:
-        self.record({
-            "event": "case_start",
-            "run_id": run_id,
-            "provider": provider,
-            "case": case,
-            "arm": arm,
-            "sample": sample,
-            "question": base._clip(question, 1200),
-        })
+        self.record(
+            {
+                "event": "case_start",
+                "run_id": run_id,
+                "provider": provider,
+                "case": case,
+                "arm": arm,
+                "sample": sample,
+                "question": base._clip(question, 1200),
+            }
+        )
 
     def record_send_start(
         self,
@@ -907,18 +907,20 @@ class LiveTrace:
         turn: int,
         prompt: str,
     ) -> None:
-        self.record({
-            "event": "send_start",
-            "run_id": run_id,
-            "provider": provider,
-            "provider_name": provider_name,
-            "case": case,
-            "arm": arm,
-            "sample": sample,
-            "turn": turn,
-            "prompt_chars": len(prompt or ""),
-            "prompt": base._clip(prompt, TRACE_PROMPT_CHARS),
-        })
+        self.record(
+            {
+                "event": "send_start",
+                "run_id": run_id,
+                "provider": provider,
+                "provider_name": provider_name,
+                "case": case,
+                "arm": arm,
+                "sample": sample,
+                "turn": turn,
+                "prompt_chars": len(prompt or ""),
+                "prompt": base._clip(prompt, TRACE_PROMPT_CHARS),
+            }
+        )
 
     def record_reply(
         self,
@@ -933,20 +935,22 @@ class LiveTrace:
         prompt: str,
         reply: str,
     ) -> None:
-        self.record({
-            "event": "reply",
-            "run_id": run_id,
-            "provider": provider,
-            "provider_name": provider_name,
-            "case": case,
-            "arm": arm,
-            "sample": sample,
-            "turn": turn,
-            "prompt_chars": len(prompt or ""),
-            "reply_chars": len(reply or ""),
-            "prompt": base._clip(prompt, TRACE_PROMPT_CHARS),
-            "reply": base._clip(reply, TRACE_REPLY_CHARS),
-        })
+        self.record(
+            {
+                "event": "reply",
+                "run_id": run_id,
+                "provider": provider,
+                "provider_name": provider_name,
+                "case": case,
+                "arm": arm,
+                "sample": sample,
+                "turn": turn,
+                "prompt_chars": len(prompt or ""),
+                "reply_chars": len(reply or ""),
+                "prompt": base._clip(prompt, TRACE_PROMPT_CHARS),
+                "reply": base._clip(reply, TRACE_REPLY_CHARS),
+            }
+        )
 
     def record_case_complete(
         self,
@@ -958,28 +962,32 @@ class LiveTrace:
         sample: int,
         row: dict[str, Any],
     ) -> None:
-        self.record({
-            "event": "case_complete",
-            "run_id": run_id,
-            "provider": provider,
-            "case": case,
-            "arm": arm,
-            "sample": sample,
-            "ok": bool(row.get("ok")),
-            "stop_reason": str(row.get("stop_reason") or row.get("error") or ""),
-            "turns": int(row.get("turns") or 0),
-            "score": row.get("score"),
-            "seconds": row.get("seconds"),
-            "summary": base._clip(row.get("summary_preview") or row.get("error") or "", 1200),
-        })
+        self.record(
+            {
+                "event": "case_complete",
+                "run_id": run_id,
+                "provider": provider,
+                "case": case,
+                "arm": arm,
+                "sample": sample,
+                "ok": bool(row.get("ok")),
+                "stop_reason": str(row.get("stop_reason") or row.get("error") or ""),
+                "turns": int(row.get("turns") or 0),
+                "score": row.get("score"),
+                "seconds": row.get("seconds"),
+                "summary": base._clip(row.get("summary_preview") or row.get("error") or "", 1200),
+            }
+        )
 
     def record_run_complete(self, *, run_id: str, provider: str, rows: int) -> None:
-        self.record({
-            "event": "run_complete",
-            "run_id": run_id,
-            "provider": provider,
-            "rows": rows,
-        })
+        self.record(
+            {
+                "event": "run_complete",
+                "run_id": run_id,
+                "provider": provider,
+                "rows": rows,
+            }
+        )
 
     def flush(self) -> None:
         payload = {
@@ -1058,8 +1066,26 @@ def _self_test() -> None:
     assert baseline_wrapper.overlay_hits == 0
     rows = [
         {"case": "pubmed", "arm": "baseline", "sample": 1, "score": 4, "done_attempts": 2, "quality_retry_count": 1},
-        {"case": "pubmed", "arm": "boundary", "sample": 1, "score": 7, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True, "eventual_done_passed": True},
-        {"case": "pubmed", "arm": "batch", "sample": 1, "score": 8, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True, "eventual_done_passed": True},
+        {
+            "case": "pubmed",
+            "arm": "boundary",
+            "sample": 1,
+            "score": 7,
+            "done_attempts": 1,
+            "quality_retry_count": 0,
+            "first_done_passed": True,
+            "eventual_done_passed": True,
+        },
+        {
+            "case": "pubmed",
+            "arm": "batch",
+            "sample": 1,
+            "score": 8,
+            "done_attempts": 1,
+            "quality_retry_count": 0,
+            "first_done_passed": True,
+            "eventual_done_passed": True,
+        },
     ]
     summary = summarize(rows)
     assert summary["by_case"]["pubmed"]["baseline_first_pass_rate"] == 0.0
@@ -1105,7 +1131,12 @@ def main() -> int:
     parser.add_argument("--samples", type=int, default=1, help="repeat each case/arm this many times")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--trace-output", type=Path, default=None, help="trace path; default is next to output with a .trace.json suffix")
+    parser.add_argument(
+        "--trace-output",
+        type=Path,
+        default=None,
+        help="trace path; default is next to output with a .trace.json suffix",
+    )
     parser.add_argument("--max-turns", type=int, default=24)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
@@ -1133,7 +1164,9 @@ def main() -> int:
             if args.trace_output is not None:
                 trace_output = args.trace_output
                 if args.provider == "all":
-                    trace_output = args.trace_output.with_name(f"{args.trace_output.stem}-{provider_id}{args.trace_output.suffix}")
+                    trace_output = args.trace_output.with_name(
+                        f"{args.trace_output.stem}-{provider_id}{args.trace_output.suffix}"
+                    )
             else:
                 trace_output = _trace_output_path(output)
             trace = LiveTrace(trace_output)

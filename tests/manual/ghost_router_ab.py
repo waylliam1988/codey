@@ -115,16 +115,18 @@ def run_cases(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for case in cases:
-        rows.append(_score_case(
-            case,
-            arm="baseline",
-            provider_id=provider_id,
-            decision=baseline_decision(case),
-            elapsed=0.0,
-            prompt="",
-            reply="",
-            error="",
-        ))
+        rows.append(
+            _score_case(
+                case,
+                arm="baseline",
+                provider_id=provider_id,
+                decision=baseline_decision(case),
+                elapsed=0.0,
+                prompt="",
+                reply="",
+                error="",
+            )
+        )
         prompt = render_router_prompt(case)
         started = time.time()
         try:
@@ -135,16 +137,18 @@ def run_cases(
             reply = ""
             error = f"{type(exc).__name__}: {clip_signal_text(exc, 240)}"
         decision = parse_router_reply(reply)
-        rows.append(_score_case(
-            case,
-            arm="router",
-            provider_id=provider_id,
-            decision=decision,
-            elapsed=round(time.time() - started, 3),
-            prompt=prompt,
-            reply=reply,
-            error=error,
-        ))
+        rows.append(
+            _score_case(
+                case,
+                arm="router",
+                provider_id=provider_id,
+                decision=decision,
+                elapsed=round(time.time() - started, 3),
+                prompt=prompt,
+                reply=reply,
+                error=error,
+            )
+        )
     summary = summarize_rows(rows)
     return {
         "provider": provider_id,
@@ -362,13 +366,15 @@ def main(argv: list[str] | None = None) -> int:
             "provider": provider_id,
             "ok": False,
             "error": f"{type(exc).__name__}: {clip_signal_text(exc, 240)}",
-            "rows": [{
-                "provider": provider_id,
-                "case": "connect_or_run",
-                "arm": "router",
-                "exact": False,
-                "error": f"{type(exc).__name__}: {clip_signal_text(exc, 240)}",
-            }],
+            "rows": [
+                {
+                    "provider": provider_id,
+                    "case": "connect_or_run",
+                    "arm": "router",
+                    "exact": False,
+                    "error": f"{type(exc).__name__}: {clip_signal_text(exc, 240)}",
+                }
+            ],
         }
     finally:
         provider_controls.end_task_context()

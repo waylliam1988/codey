@@ -6,6 +6,38 @@
 
 ## Unreleased
 
+## 0.4.21 - Research and Ghost A/B Stabilization
+
+- 将 `verification_review_ab.py` 迁移到 release-grade A/B 证据脊柱。
+  - 固定 output 运行现在会在同一个 arm layout 下写 result JSON、journal
+    event、transcript ref 和 manifest。
+  - `--self-test` 覆盖 baseline/current prompt 差异；固定 output 续跑会跳过
+    已完成 row；`--rerun-failed` 在 provider 连接失败且新 row 尚未落盘时保留旧证据。
+  - DeepSeek live smoke 显示了预期的 reviewer 行为差异：baseline 批准了合成
+    diff，current arm 则要求补测试并点名已有 check 路径。
+- 跑完第一轮 DeepSeek 单 provider live smoke，覆盖 coding extended、Research
+  和 Ghost A/B arms。
+  - `read_before_edit` 和 `impact_guard` 两臂均成功；其中 `impact_guard` 在
+    这一个样本里暴露 guard 后用更少 turn/tool 完成。
+  - `scoped_task_plan` 在 scoped arm 上优于 current arm，但 prompt surface 更大。
+  - `bounded_research_planner` 单 case 分数从 `3` 提升到 `5`；`search_coverage`
+    更明确地报告非 UTF-8 文件导致的 incomplete scan。
+  - `source_connector` 和 `source_connector_done` 给出有价值的负证据：这个样本里
+    connector 与 batch/checklist arm 没有减少 retry，也不应默认推广。
+  - Ghost continuity、router、signal extraction 和 work queue probes 通过
+    DeepSeek control/treatment smoke，未观察到 evidence/citation 污染。
+- 修复 DeepSeek 实机运行中暴露的 manual harness 问题：
+  - `read_before_edit_ab.py` 会为固定 `--out` 路径创建父目录。
+  - `scoped_task_plan_ab.py` 支持真正的单 arm live run。
+  - `source_connector_done_ab.py` 自己拥有 trace bound 和 `LiveTrace` helper，
+    不再依赖 `source_connector_ab.py` 已删除的内部实现。
+  - `bounded_research_planner_ab.py` 接收并转发 production `ResearchPipeline`
+    使用的 `topic_continuity_context` / payload 参数。
+  - `ghost_research_continuity_ab.py` 支持单 arm 运行和有界 provider/new-chat
+    timeout，避免混合 arm 流量与无限 live wait。
+  - `ghost_router_ab.py` 和 `ghost_work_queue_production_ab.py` 将 control case
+    判定为 no-regression，而不是强制要求 cost 严格下降。
+
 ## 0.4.20 - Completion A/B Stabilization
 
 - 跑完第一轮 DeepSeek coding/completion core 实机 A/B：

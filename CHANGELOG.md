@@ -6,6 +6,47 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+## 0.4.21 - Research and Ghost A/B Stabilization
+
+- Migrated `verification_review_ab.py` onto the release-grade A/B evidence
+  spine.
+  - Fixed-output runs now write result JSON, journal events, transcript refs,
+    and a manifest under the same arm layout.
+  - `--self-test` covers the baseline/current prompt split; fixed-output resume
+    skips completed rows; `--rerun-failed` preserves old evidence if provider
+    connection fails before a new row exists.
+  - The DeepSeek live smoke showed the intended reviewer behavior change:
+    baseline approved the synthetic diff, while the current arm requested tests
+    and named the existing check path.
+- Ran the first DeepSeek single-provider live smoke over the coding extended,
+  Research, and Ghost A/B arms.
+  - `read_before_edit` and `impact_guard` completed successfully in both arms;
+    `impact_guard` exposed the guard and finished with fewer turns/tool calls
+    in this one sample.
+  - `scoped_task_plan` improved the scoped smoke result versus the current arm,
+    but with a larger prompt surface.
+  - `bounded_research_planner` improved the one-case research score from `3`
+    to `5`; `search_coverage` made incomplete non-UTF-8 scans explicit.
+  - `source_connector` and `source_connector_done` produced useful negative
+    evidence: the connector and batch/checklist arms should not be promoted
+    from this sample because they did not reduce retries or improve score.
+  - Ghost continuity, router, signal extraction, and work-queue probes passed
+    the DeepSeek control/treatment smoke without evidence/citation pollution.
+- Fixed manual harness issues exposed while running the DeepSeek pass:
+  - `read_before_edit_ab.py` now creates parent directories for fixed `--out`
+    paths.
+  - `scoped_task_plan_ab.py` supports true single-arm live runs.
+  - `source_connector_done_ab.py` owns its trace bounds and `LiveTrace` helper
+    instead of relying on removed internals from `source_connector_ab.py`.
+  - `bounded_research_planner_ab.py` accepts and passes the production
+    `topic_continuity_context` / payload arguments used by `ResearchPipeline`.
+  - `ghost_research_continuity_ab.py` supports single-arm runs and bounded
+    provider/new-chat timeouts, preventing mixed-arm traffic and unbounded live
+    waits.
+  - `ghost_router_ab.py` and `ghost_work_queue_production_ab.py` now treat
+    control cases as no-regression checks instead of requiring strict cost
+    improvement.
+
 ## 0.4.20 - Completion A/B Stabilization
 
 - Ran the first DeepSeek live A/B pass for the coding/completion core arms:

@@ -1324,10 +1324,15 @@ the hidden Verification Map:
 python -B tests\manual\verification_review_ab.py `
   --provider deepseek `
   --arm current `
-  --port 9222
+  --port 9222 `
+  --transcript-mode archive `
+  --output tests\manual\results\0.4.20\deepseek\coding_completion_extended\verification_review\current\result.json
 ```
 
-It is review-only and never opens or changes a local project.
+It is review-only and never opens or changes a local project. Fixed-output live
+runs write the result JSON plus a sibling `.trace/` journal directory,
+transcript refs, and `result-manifest.json`; use `--self-test` before running a
+provider smoke.
 
 `scan_coverage_ab.py` compares the old low-level `find_reference_hints` output
 with Writer's production coverage rendering when the bounded reference scan

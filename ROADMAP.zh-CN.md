@@ -2799,7 +2799,7 @@ TaskRunner 大拆
 ```text
 0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
 0.4.20：Coding / Completion A/B bugfix，第一轮 DeepSeek core 已交付；后续只修 transcript/journal 证明的真实问题
-0.4.21：Research / Ghost A/B bugfix，只修 evidence 污染、stale、citation、stall 归因问题
+0.4.21：Research / Ghost A/B bugfix，第一轮 DeepSeek smoke 已交付；只修 evidence 污染、stale、citation、stall 归因问题
 0.4.22：0.4 final stabilization report，决定是否进入 0.5
 ```
 
@@ -2861,7 +2861,9 @@ read-before-edit 漏判
 verification candidate 选错
 ```
 
-0.4.21 只跑并修 Research / Ghost：
+0.4.21 只跑并修 Research / Ghost。第一轮 DeepSeek smoke 已经覆盖下列脚本；
+其中 `source_connector` connector arm 和 `source_connector_done` batch/checklist arm
+给出负信号，暂不默认推广，需先复盘 transcript / trace 再决定是否修改 prompt 或 harness：
 
 ```text
 bounded_research_planner_ab.py

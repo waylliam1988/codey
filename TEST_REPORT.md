@@ -1,5 +1,110 @@
 # Codey Test Report
 
+## 0.4.21 Release - Research/Ghost A/B Stabilization and Extended Evidence (2026-08-28)
+
+This release continues the narrow 0.4.x stabilization track. It does not change
+production prompts, tool schemas, UI, or TaskRunner behavior. The changes are
+manual A/B harness fixes plus a first DeepSeek single-provider live smoke over
+coding extended, Research, and Ghost probes.
+
+Scope:
+
+```text
+provider: deepseek
+mode: live smoke / first release-evidence pass
+transcripts: archived where the harness supports 0.4 evidence layout
+note: not a statistically complete provider comparison
+```
+
+Manual harness fixes:
+
+- `verification_review_ab.py` now writes fixed result JSON, journal events,
+  transcript refs, and a manifest; it supports `--self-test`, fixed-output
+  resume, and failure-preserving `--rerun-failed`.
+- `read_before_edit_ab.py` now creates parent directories for fixed `--out`
+  paths.
+- `scoped_task_plan_ab.py` now supports true single-arm live runs.
+- `source_connector_done_ab.py` owns its trace bounds and `LiveTrace` helper.
+- `bounded_research_planner_ab.py` accepts the production
+  `topic_continuity_context` / payload arguments.
+- `ghost_research_continuity_ab.py` now supports single-arm runs plus bounded
+  send/new-chat timeouts.
+- `ghost_router_ab.py` and `ghost_work_queue_production_ab.py` now treat control
+  cases as no-regression checks.
+
+Coding extended DeepSeek live smoke:
+
+| Probe | Baseline/current result | Treatment result | Interpretation |
+| --- | --- | --- | --- |
+| `verification_review` | baseline approved the synthetic diff, transcript replayable | current requested changes, named `tests/test_auth.py` and `python -m pytest` | Verification Map changed review behavior in the intended direction. |
+| `read_before_edit` | baseline success, `turns=4`, `tools=3` | guard success, `turns=4`, `tools=3` | No guard block was needed because DeepSeek read before editing. |
+| `scoped_task_plan` | current `ok=0`, no path/test hits | scoped `ok=1`, path/test hits, larger prompt | Useful smoke signal, but prompt surface is heavier. |
+| `impact_guard` | current success, `turns=8`, `tools=7` | guard success, `turns=7`, `tools=6`, refs found | Guard helped in this single sample without changing correctness. |
+
+Research DeepSeek live smoke:
+
+| Probe | Result | Interpretation |
+| --- | --- | --- |
+| `bounded_research_planner` | baseline score `3`, planner score `5` | Planner arm improved the one-case answer and stopped with `no_new_material`. |
+| `research_comparison_benchmark` | deterministic comparison passed | Only "OpenScience-style regression passed"; no real OpenScience superiority claim. |
+| `source_connector` | baseline score `9`/done, connector score `5`/max_turns | Connector arm is not promoted from this sample. |
+| `source_connector_done` | baseline score `9`, `done_attempts=2`, `quality_retries=1`; batch score `9`, `done_attempts=3`, `quality_retries=2` | Batch/checklist did not reduce retry and should remain experimental. |
+| `search_coverage` | both arms safe; coverage arm explicitly named skipped non-UTF-8 file | Coverage arm produced clearer incomplete-scan language. |
+
+Ghost DeepSeek live smoke:
+
+| Probe | Result | Interpretation |
+| --- | --- | --- |
+| `ghost_research_continuity` | baseline exact/no admission; continuity exact/admitted/context carried, `stale_ref_count=3`, `prior_claim_flagged=true` | Continuity was admitted as bounded non-evidence context; no internal leak observed. The run stopped at `max_turns`, so this proves continuity handling, not full research completion. |
+| `ghost_continuity` | current request override passed | Continuity did not override the user's current request. |
+| `ghost_router` | plain-chat control and readonly-plan case passed | Aggregation now accepts no-regression controls. |
+| `ghost_signal_extractor` | extracted grounded style preference | Baseline produced no signal; extractor produced one grounded signal. |
+| `ghost_work_queue_production` | no-queue control and research-item case passed | Aggregation now accepts no-regression controls; no unintended research trigger was observed. |
+
+Diagnostics:
+
+- The first `ghost_research_continuity_ab.py` live attempt appeared stuck after a
+  visible DeepSeek reply. The journal showed a later `send_start` with no
+  matching reply, not a completed row waiting on close. The harness now supports
+  one arm at a time plus bounded provider/new-chat timeouts.
+- Some successful DeepSeek runs emitted Playwright/Node `EPIPE` or
+  `TargetClosedError` teardown noise after rows had already been written. These
+  were treated as provider-driver cleanup noise, not Research or Ghost failures.
+
+Validation commands and results:
+
+```powershell
+python -B tests\manual\verification_review_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+python -B tests\manual\longitudinal_research_harness_ab.py --self-test
+python -B tests\manual\research_comparison_benchmark_ab.py --self-test
+python -B tests\manual\search_coverage_ab.py --self-test
+python -B tests\manual\source_connector_ab.py --self-test
+python -B tests\manual\source_connector_done_ab.py --self-test
+# self-tests ok
+
+python -B tests\manual\ghost_continuity_ab.py --self-test
+python -B tests\manual\ghost_research_continuity_ab.py --self-test
+python -B tests\manual\ghost_router_ab.py --self-test
+python -B tests\manual\ghost_signal_extractor_ab.py --self-test
+python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+# self-tests ok
+
+python -B -m pytest tests\test_verification_review_ab.py tests\test_read_before_edit_ab.py tests\test_scoped_task_plan_ab.py tests\test_source_connector_done_ab.py tests\test_bounded_research_planner_ab.py tests\test_ghost_research_continuity_ab.py tests\test_ghost_router_ab.py tests\test_ghost_work_queue_ab.py tests\test_manual_ab_harness_common.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+# 64 passed in 24.38s
+
+python -m ruff check tests\manual\verification_review_ab.py tests\manual\read_before_edit_ab.py tests\manual\scoped_task_plan_ab.py tests\manual\source_connector_done_ab.py tests\manual\bounded_research_planner_ab.py tests\manual\ghost_research_continuity_ab.py tests\manual\ghost_router_ab.py tests\manual\ghost_work_queue_production_ab.py tests\test_verification_review_ab.py tests\test_read_before_edit_ab.py tests\test_scoped_task_plan_ab.py tests\test_source_connector_done_ab.py tests\test_bounded_research_planner_ab.py tests\test_ghost_research_continuity_ab.py tests\test_ghost_router_ab.py tests\test_ghost_work_queue_ab.py tests\test_server.py
+# All checks passed!
+
+python -m ruff format --check tests\manual\verification_review_ab.py tests\manual\read_before_edit_ab.py tests\manual\scoped_task_plan_ab.py tests\manual\source_connector_done_ab.py tests\manual\bounded_research_planner_ab.py tests\manual\ghost_research_continuity_ab.py tests\manual\ghost_router_ab.py tests\manual\ghost_work_queue_production_ab.py tests\test_verification_review_ab.py tests\test_read_before_edit_ab.py tests\test_scoped_task_plan_ab.py tests\test_source_connector_done_ab.py tests\test_bounded_research_planner_ab.py tests\test_ghost_research_continuity_ab.py tests\test_ghost_router_ab.py tests\test_ghost_work_queue_ab.py tests\test_server.py
+# 17 files already formatted
+
+python -B -m pytest
+# 3102 passed, 3 skipped in 296.53s (0:04:56)
+```
+
 ## 0.4.20 Release - Completion A/B Stabilization (2026-08-28)
 
 This release is the first 0.4.x stabilization pass driven by live A/B evidence.
