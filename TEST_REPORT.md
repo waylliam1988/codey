@@ -2,10 +2,8 @@
 
 ## 0.4.22 Interim - Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
 
-This closes the Qwen coding/completion core pass after the
-`repair_context_minimal` arm. The next live step is Qwen Research core, but it
-should start from this documented coding baseline rather than being mixed into
-the same evidence commit.
+This records the Qwen coding/completion core pass and the first Qwen Research
+core smoke. Ghost has not been run in this Qwen pass yet.
 
 Scope:
 
@@ -80,8 +78,35 @@ Current Qwen interpretation:
 - `repair_context_minimal` does not improve or worsen the Qwen missing-dependency
   behavior in this sample; the failure happens before a repair context can help.
 - Do not promote any Qwen-specific prompt or production behavior from this pass.
-- Qwen can now proceed to Research core, still one case/arm at a time with fixed
-  output and archived transcripts.
+- Qwen can now proceed to Ghost core only after the Research core smoke below is
+  treated as the current Research baseline.
+
+Qwen Research core smoke:
+
+| Harness | Case/arm | Result | Interpretation |
+| --- | --- | --- | --- |
+| `bounded_research_planner_ab.py` | `warehouse_gap/baseline_after_browser_restart` | `ok=true`, score `5`, `proof_ok=false`, `planner_stop_reason=disabled` | Valid restart sample after the browser was closed during an earlier run; baseline answered from source A only and missed the limitation evidence. |
+| `bounded_research_planner_ab.py` | `warehouse_gap/planner_after_browser_restart` | `ok=true`, score `5`, `planner_stop_reason=no_new_material`, `proof_ok=false` | Planner did not find fresh source B; no quality delta over the restarted baseline. |
+| `source_connector_ab.py` | `arxiv/baseline` | `ok=true`, score `3`, `stop=max_turns`, `evidence_count=0` | Baseline opened an arXiv target URL but did not save evidence or answer before max turns. |
+| `source_connector_ab.py` | `arxiv/connector` | `ok=true`, score `5`, `stop=max_turns`, `sources_read=3`, `evidence_count=1` | Connector improved source reach and saved evidence, but still did not complete the report; do not claim proof-quality success. |
+| `source_connector_done_ab.py` | `arxiv/baseline` | `ok=true`, score `5`, `stop=max_turns`, `done_attempts=0`, `eventual_done_passed=false` | Qwen collected evidence but never reached the done boundary. |
+| `source_connector_done_ab.py` | `arxiv/batch` | `ok=true`, score `5`, `stop=max_turns`, `done_attempts=0`, `eventual_done_passed=false` | Batch/checklist had no net benefit in this sample and did not trigger a done attempt. |
+| `search_coverage_ab.py` | `search-non-utf8-omission/baseline` | `semantic_safe=false`, `false_complete=true` | Qwen confidently claimed absence despite a skipped non-UTF-8 file. |
+| `search_coverage_ab.py` | `search-non-utf8-omission/coverage` | `semantic_safe=true`, `false_complete=false` | Coverage hint made Qwen report that the search was incomplete and name the non-UTF-8 omission. |
+
+Research evidence notes:
+
+- The valid bounded planner baseline is
+  `baseline_after_browser_restart`; the earlier `warehouse_gap/baseline` sample
+  and interrupted `planner` sample are not counted because the browser state was
+  explicitly reset mid-run.
+- `bounded_research_planner_ab.py` currently records digest-only transcript refs;
+  `source_connector_ab.py` records archived transcripts.
+- `source_connector_ab.py` and `source_connector_done_ab.py` emitted Playwright
+  `EPIPE` teardown noise after successful row writes. These are classified as
+  provider/browser cleanup noise, not Research proof failures.
+- No new production Research bug was identified from this smoke. The weak rows
+  are quality/turn-budget/provider-behavior observations.
 
 Focused validation performed during these fixes:
 
