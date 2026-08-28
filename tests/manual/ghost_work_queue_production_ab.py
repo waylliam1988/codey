@@ -493,8 +493,11 @@ def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) ->
     return {
         "provider": provider_id,
         "complete": complete,
-        "ok": bool(summary["queue"]["exact"] == summary["queue"]["total"])
-        and summary["queue"]["cost"] < summary["baseline"]["cost"],
+        "ok": bool(complete)
+        and bool(rows)
+        and summary["queue"]["exact"] == summary["queue"]["total"]
+        and summary["delta"]["cost"] >= 0
+        and summary["delta"]["severe_errors"] >= 0,
         "summary": summary,
         "rows": rows,
     }

@@ -20,6 +20,23 @@ def test_production_spine_work_queue_beats_no_queue_baseline() -> None:
     assert payload["summary"]["baseline"]["cost"] > payload["summary"]["queue"]["cost"]
 
 
+def test_work_queue_control_case_allows_no_regression() -> None:
+    case = next(
+        item
+        for item in ghost_work_queue_production_ab.DEFAULT_CASES
+        if item.name == "no-queue-continue-chat"
+    )
+
+    payload = ghost_work_queue_production_ab.run_cases(
+        provider_id="fake",
+        cases=(case,),
+        provider_factory=lambda _provider_id: ghost_work_queue_production_ab._MainProvider(),
+    )
+
+    assert payload["ok"], payload
+    assert payload["summary"]["delta"]["cost"] == 0
+
+
 def test_work_queue_production_spine_writes_atomic_partial_progress(monkeypatch) -> None:
     with tempfile.TemporaryDirectory() as td:
         output = Path(td) / "work_queue_production.json"
