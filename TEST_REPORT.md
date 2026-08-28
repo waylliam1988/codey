@@ -3,12 +3,111 @@
 0.4 final stabilization 结论见：
 
 ```text
-docs/0.4.22_final_stabilization_report.zh-CN.md
+docs/0.4_final_stabilization_report.zh-CN.md
+docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
-## 0.4.22 Interim - Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
+## Post-0.4.21 MiMo Full Provider A/B Cross-check (2026-08-29)
+
+This records the MiMo full live A/B pass after the DeepSeek and Qwen baselines.
+MiMo was run one case / one arm at a time with fixed output paths under:
+
+```text
+tests/manual/results/0.4-stabilization/mimo/
+```
+
+Scope:
+
+```text
+provider: mimo
+suites: coding completion core, coding extended, research core, ghost core
+mode: live full third-provider cross-check
+execution rule: one case / one arm / fixed output, archive transcript where supported
+```
+
+High-level result:
+
+```text
+No new production Codey bug was found.
+One manual harness expected-path bug was found and fixed.
+MiMo confirms the 0.4 coding / research / ghost loop is not only a DeepSeek + Qwen artifact.
+```
+
+Coding / completion core:
+
+| Arm | Result |
+| --- | --- |
+| `control_done` | 4 rows; case 1/2/4 clean pass; case 3 expected fail with `modified_test_fixture`; 4/4 transcript replayable. |
+| `proof_only_block` | 4 rows; case 1/2/4 clean pass; case 3 expected fail with `modified_test_fixture`; 4/4 transcript replayable. |
+| `repair_context` | 4 rows; case 1/2/4 clean pass; case 3 expected fail with `modified_test_fixture`; 4/4 transcript replayable. |
+| `repair_context_minimal` | 4 rows; case 1/2/4 clean pass; case 3 expected fail with `modified_test_fixture`; 4/4 transcript replayable. |
+
+Coding extended:
+
+| Harness | Result | Interpretation |
+| --- | --- | --- |
+| `verification_review_ab.py` | baseline requested 1 change; current requested 2 changes and named the `None.strip()` regression plus missing tests. | Current review context helped. |
+| `read_before_edit_ab.py` | 3 cases x 2 arms; 6/6 final tests passed; guard blocks 0. | MiMo already read before editing in these samples. |
+| `scoped_task_plan_ab.py` | 6 cases x 3 arms; mixed result. | Good on writer failover and JSON protocol targeting; weak on manual probe/review context targeting. |
+| `impact_guard_ab.py` | 5 cases x 2 arms; 10/10 final success; missed callers 0; wrong extra edits 0. | Guard exposed refs in treatment rows without correctness regression. |
+
+Harness fix during MiMo:
+
+| Fix | Classification | Deterministic coverage |
+| --- | --- | --- |
+| `scoped_task_plan_ab.py` `monorepo-verification-selection` still expected pre-migration `codey/verification_policy.py` and `codey/verification_map.py`. | harness/eval bug | `tests\test_scoped_task_plan_ab.py` |
+
+Research core:
+
+| Harness | Result | Interpretation |
+| --- | --- | --- |
+| `search_coverage_ab.py` | 4 cases x 2 arms; 8/8 semantic safe; 8/8 safe answer; bad confident absence 0. | MiMo baseline was already safe; coverage was more efficient on non-UTF8/unreadable omissions. |
+| `bounded_research_planner_ab.py` | `warehouse_gap` score `3 -> 4`; `widget_noop` score `5 -> 6`; strict `proof_ok=false`. | Planner has a small signal, not proof-quality success. |
+| `source_connector_ab.py` | PubMed score `6 -> 9`; arXiv `9 -> 9`; open_guard `8 -> 8`. | Connector improved PubMed source reach; other cases held parity. |
+| `source_connector_done_ab.py` | PubMed boundary reduced done attempts/retries; PubMed batch regressed to score 6; arXiv arms all score 9. | Boundary has one useful sample; batch/checklist still not promoted. |
+
+Ghost core:
+
+| Harness | Result | Interpretation |
+| --- | --- | --- |
+| `ghost_research_continuity_ab.py` | 5 cases x 2 arms; 10/10 exact; hash-chain checks clean; no seeded claim/open-question leak. | Continuity stayed bounded and non-evidence. |
+| `ghost_continuity_ab.py` | 4 valid cases x baseline/continuity; all ok. | Recent focus works, current request overrides continuity, open question is not treated as fact, planning JSON remains valid. |
+| `ghost_work_queue_production_ab.py` | 5 cases x baseline/queue; all ok. | No queue stays chat; research item triggers research only in queue arm; explicit new request does not consume old queue. |
+
+Evidence notes:
+
+- MiMo research rows often took several minutes with no stdout; these were not
+  classified as failures unless the harness wrote a failed row.
+- `source_connector_ab.py`, `source_connector_done_ab.py`, and Ghost research
+  continuity emitted Playwright `EPIPE` / `TargetClosedError` teardown noise
+  after successful row writes. These were classified as provider/browser
+  cleanup noise.
+- `ghost_continuity_ab.py --isolated` lost MiMo login state and produced an
+  invalid `authentication_required` sample. The valid non-isolated rerun passed
+  and is the counted evidence.
+- MiMo and Qwen both showed `modified_test_fixture` behavior in the dependency
+  missing completion case. The scorer/report gate caught it in all MiMo core
+  arms, so no production repair-context change was made.
+
+Validation for the harness fix:
+
+```powershell
+python -m pytest tests\test_scoped_task_plan_ab.py
+# 8 passed
+```
+
+Current interpretation:
+
+- DeepSeek, Qwen, and MiMo now jointly prove the 0.4 coding / research / ghost
+  loop can work on real web providers.
+- 0.4 is ready to close as final stabilization unless the user wants an optional
+  GLM confidence run.
+- Do not rerun MiMo full suite unless a specific prompt/tool/harness surface
+  changes or a later provider exposes a cross-check question.
+
+## Post-0.4.21 Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
 
 This records the Qwen coding/completion core pass plus the first Qwen Research
 and Ghost core smoke.
@@ -86,8 +185,9 @@ Current Qwen interpretation:
 - `repair_context_minimal` does not improve or worsen the Qwen missing-dependency
   behavior in this sample; the failure happens before a repair context can help.
 - Do not promote any Qwen-specific prompt or production behavior from this pass.
-- Qwen coding / research / ghost core smoke is now closed for 0.4.22. Use the
-  final stabilization report before deciding on GLM/MiMo cross-checks or 0.5.
+- Qwen coding / research / ghost core smoke is now closed for 0.4 stabilization.
+  Use the final stabilization report before deciding on optional GLM confidence
+  runs or 0.5.
 
 Qwen Research core smoke:
 

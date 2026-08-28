@@ -190,8 +190,8 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "first?"
             ),
             expected_paths=(
-                "codey/verification_policy.py",
-                "codey/verification_map.py",
+                "codey/completion/verification_policy.py",
+                "codey/completion/verification_map.py",
             ),
             expected_tests=(
                 "tests/test_verification_policy.py",

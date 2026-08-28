@@ -587,7 +587,7 @@ contract/proof refs，不需要 A/B；改变 queued done 语义或用户可见�
 queue A/B。0.4.10 改 Writer 可见 brief 文案需要 A/B。0.4.12 Ghost continuity
 进入模型可见 prompt 必须 A/B。
 
-0.4.13 之后，0.4 进入 A/B stabilization / release evidence baseline，不再把
+0.4.13 之后，0.4 进入 A/B stabilization / evidence baseline，不再把
 新能力、目录迁移或大型抽象混进同一阶段。具体执行纪律、落盘 schema、失败归因、
 逐 provider / 逐 arm 停跑规则和 0.4 完成门槛固定在
 [`docs/0.4_ab_stabilization_plan.zh-CN.md`](docs/0.4_ab_stabilization_plan.zh-CN.md)。
@@ -2800,7 +2800,8 @@ TaskRunner 大拆
 0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
 0.4.20：Coding / Completion A/B bugfix，第一轮 DeepSeek core 已交付；后续只修 transcript/journal 证明的真实问题
 0.4.21：Research / Ghost A/B bugfix，第一轮 DeepSeek provider baseline 已冻结；只修 evidence 污染、stale、citation、stall 归因问题
-0.4.22：Qwen coding/completion、Research、Ghost core smoke 已收口；最终 0.4 report 已产出
+post-0.4.21 Qwen pass：coding/completion、Research、Ghost core smoke 已收口；最终 0.4 report 已产出
+post-0.4.21 MiMo pass：full provider cross-check 已收口；0.4 可进入 0.5，GLM 只作为可选 confidence run
 ```
 
 0.4.19 的交付边界：
@@ -2834,9 +2835,9 @@ NetworkStatus.POLICY_ALLOWED 避免把 policy allow 误读成公网证明
 
 0.4.20 只跑并修 Coding / Completion 核心；第一轮 DeepSeek
 `control_done` / `proof_only_block` / `repair_context` /
-`repair_context_minimal` 已作为 release evidence 落盘，extended arms 只有在
+`repair_context_minimal` 已作为 0.4 evidence 落盘，extended arms 只有在
 对应 harness 具备 result / journal / transcript / manifest 绑定后才进入
-release-grade A/B：
+stabilization-grade A/B：
 
 ```text
 control_done
@@ -2896,7 +2897,7 @@ work queue 误触发 Research
 continuity hint 影响事实结论
 ```
 
-0.4.22 产出最终稳定化报告，至少记录：
+post-0.4.21 A/B 产出最终稳定化报告，至少记录：
 
 ```text
 每个 provider 跑了哪些 arm
@@ -2908,7 +2909,7 @@ transcript 是否可 replay
 journal 是否完整
 ```
 
-0.4.22 当前状态：
+post-0.4.21 A/B 当前状态：
 
 ```text
 Qwen coding/completion core 已逐 case 跑完 control_done、proof_only_block、repair_context、repair_context_minimal
@@ -2917,16 +2918,21 @@ Qwen multi-case 同进程执行不稳定，后续继续使用 one case / one pro
 缺失依赖 case 反复变成 modified_test_fixture，归类为 provider/model false completion，由 scorer/report gate 捕获
 Qwen Research core 最小 smoke 已完成：bounded planner 无净收益，source connector 改善 source reach 但未完成 report，done batch 无净收益，search coverage hint 有明确安全收益
 Qwen Ghost core 最小 smoke 已完成：continuity 作为 stale/recheck hint，不污染 evidence；当前请求覆盖 continuity；work queue 不误触发 Research，显式新请求不消费旧队列
-0.4.22 final stabilization report 与 Qwen provider baseline 已产出：docs/0.4.22_final_stabilization_report.zh-CN.md、docs/0.4_qwen_provider_baseline.zh-CN.md
-下一步决定是否进入 0.5 或先补第三 provider 最小 cross-check
+MiMo 第三 provider full pass 已完成：coding completion core、coding extended、Research core、Ghost core 全部有固定 output evidence
+MiMo completion case 3 同样表现为 modified_test_fixture provider/model false completion，由 scorer/report gate 捕获
+MiMo Research 没有 evidence pollution 新 bug；source connector 对 PubMed 有收益，bounded planner 只有小幅 score 提升，done batch/checklist 不推广
+MiMo Ghost continuity / work queue 没有越界；无效 --isolated 登录态样本已排除并用非 isolated 样本重跑通过
+0.4 final stabilization report、Qwen provider baseline、MiMo provider baseline 已产出：docs/0.4_final_stabilization_report.zh-CN.md、docs/0.4_qwen_provider_baseline.zh-CN.md、docs/0.4_mimo_provider_baseline.zh-CN.md
+下一步建议进入 0.5；GLM 只作为可选 confidence run，不再阻塞 0.4 收口
 ```
 
 进入 0.5 的门槛：
 
 ```text
 DeepSeek 第一 provider baseline 已冻结，且没有未归因 Codey bug
-至少第二个 provider 通过 coding + research 核心
-Qwen native-search stall 有明确分类
+Qwen 第二 provider 通过 coding + research + ghost core smoke
+MiMo 第三 provider 完成 full coding + research + ghost pass
+Qwen native-search/browser stall 有明确分类
 Ghost 不污染 evidence
 所有 Codey bug 都有 deterministic test
 每个 arm 都能从 JSON + journal + transcript 复盘

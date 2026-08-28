@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from tests.manual import scoped_task_plan_ab
 
 
@@ -40,6 +42,17 @@ def test_deterministic_hint_is_local_and_advisory() -> None:
     assert "local and advisory" in prompt
     assert "Project Map" in prompt
     assert "codey/agents/writer_failover.py" in prompt
+
+
+def test_monorepo_verification_case_uses_current_package_paths() -> None:
+    case = scoped_task_plan_ab.cases()["monorepo-verification-selection"]
+
+    assert case.expected_paths == (
+        "codey/completion/verification_policy.py",
+        "codey/completion/verification_map.py",
+    )
+    for expected_path in case.expected_paths:
+        assert (Path(scoped_task_plan_ab.ROOT) / expected_path).exists()
 
 
 def test_summary_reports_scoped_delta() -> None:
