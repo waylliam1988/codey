@@ -314,6 +314,8 @@ def run_case(
             search: object,
             tools=None,
             iteration_context: str = "",
+            topic_continuity_context: str = "",
+            topic_continuity_payload: dict[str, object] | None = None,
         ) -> ResearchIterationRun:
             runner = ResearchRunner(
                 run_provider,
@@ -326,6 +328,8 @@ def run_case(
                 chat_handoff=chat_handoff,
                 tools=tools,
                 iteration_context=iteration_context,
+                topic_continuity_context=topic_continuity_context,
+                topic_continuity_payload=topic_continuity_payload,
             )
             for event in runner.run(task):
                 if event.kind == "turn":
