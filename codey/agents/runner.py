@@ -258,9 +258,9 @@ def _task_requests_verification(task: str) -> bool:
 
 def _verification_reminder(task: str) -> str:
     return (
-        "The user asked for verification, and files were changed, but no "
-        "successful run tool call has completed yet. Reply with exactly one "
-        'JSON object that calls run now, such as '
+        "The user asked for verification, and files were changed, but no run "
+        "tool call after the latest edit has been observed yet. Reply with "
+        "exactly one JSON object that calls run now, such as "
         '{"tool":"run","args":{"command":"python -m unittest","path":"."}}. '
         "After the run result is green, call done. Original task:\n"
         f"{task}"
@@ -700,6 +700,7 @@ def run(
     wrote_files = False
     checks_passed = False
     checks_ran = False
+    verification_attempts: list[tuple[str, str, int]] = []
     changed_files = set(conversation.snapshot.changed_files if conversation else ())
     changed_files.update(verification_changed_files)
     verification_paths = set(verification_changed_files)
@@ -1151,6 +1152,13 @@ def run(
             for command, cwd, epoch in successful_verifications
         )
 
+    def verification_attempted_after_latest_edit() -> bool:
+        return any(
+            epoch == edit_epoch for _command, _cwd, epoch in verification_attempts
+        ) or any(
+            epoch == edit_epoch for _command, _cwd, epoch in successful_verifications
+        )
+
     def current_coding_context() -> str:
         if not coding_context_enabled:
             return ""
@@ -1407,6 +1415,7 @@ def run(
                         tool_id=f"{turn}:{tool_index}",
                     )
                     checks_ran = True
+                    verification_attempts.append((command, path, edit_epoch))
                     checks_passed = outcome.ok
                     if outcome.ok:
                         successful_verifications.append((command, path, edit_epoch))
@@ -1518,9 +1527,13 @@ def run(
                 emit(RunEvent.status(
                     "[agent] `done` came with info action — treating as continue."
                 ))
-            elif verification_required and wrote_files and not checks_passed:
+            elif (
+                verification_required
+                and wrote_files
+                and not verification_attempted_after_latest_edit()
+            ):
                 emit(RunEvent.status(
-                    "[agent] verification was requested; asking model to run tests before done."
+                    "[agent] verification was requested; asking model to run a local check before done."
                 ))
                 if turn >= max_turns:
                     emit(RunEvent.status(

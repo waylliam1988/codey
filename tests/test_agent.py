@@ -2385,6 +2385,80 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(any("verification" in render_run_event(event).lower() for event in events))
         self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))
 
+    def test_requested_verification_requires_run_after_latest_edit(self) -> None:
+        run_before_edit = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}'
+        premature_done = '{"tool":"done","args":{"summary":"updated"}}'
+        run_after_edit = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        done = '{"tool":"done","args":{"summary":"updated and checked"}}'
+        provider = FakeProvider(
+            run_before_edit,
+            read,
+            edit,
+            premature_done,
+            run_after_edit,
+            done,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Update app.py, then run python -m py_compile app.py.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.checks_passed)
+        self.assertEqual(
+            sum(
+                "after the latest edit has been observed" in prompt
+                for prompt in provider.sent
+            ),
+            1,
+        )
+
+    def test_requested_verification_failure_reaches_completion_proof_layer(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"return 1","new_string":"return 2"}}'
+        run_tests = '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
+        done = '{"tool":"done","args":{"summary":"updated, but tests still fail"}}'
+        provider = FakeProvider(read, edit, run_tests, done)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+            (root / "test_app.py").write_text(
+                "import unittest\n"
+                "from app import value\n\n"
+                "class AppTests(unittest.TestCase):\n"
+                "    def test_value(self):\n"
+                "        self.assertEqual(value(), 3)\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "Fix app.py, then run python -m unittest.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.changed)
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(
+            sum(
+                "after the latest edit has been observed" in prompt
+                for prompt in provider.sent
+            ),
+            0,
+        )
+
     def test_edit_after_successful_run_requires_fresh_check(self) -> None:
         run = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
         read = '{"tool":"read_file","args":{"path":"app.py"}}'
