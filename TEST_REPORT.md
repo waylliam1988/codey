@@ -1,23 +1,23 @@
 # Codey Test Report
 
-## 0.4.22 Interim - Qwen Coding/Completion A/B Stabilization (2026-08-28)
+## 0.4.22 Interim - Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
 
-This is a pause point after the Qwen `repair_context` arm. No further Qwen A/B
-arms were run after this point; the next live step is intentionally held until
-the reports and commits are pushed.
+This closes the Qwen coding/completion core pass after the
+`repair_context_minimal` arm. The next live step is Qwen Research core, but it
+should start from this documented coding baseline rather than being mixed into
+the same evidence commit.
 
 Scope:
 
 ```text
 provider: qwen
 suite: coding_completion_core
-arms completed: control_done, proof_only_block, repair_context
-arm not yet run in this pass: repair_context_minimal
+arms completed: control_done, proof_only_block, repair_context, repair_context_minimal
 mode: live smoke / second-provider coding-completion stabilization
 execution rule: one case per process, fixed output, transcript-mode archive
 ```
 
-Why Qwen was paused:
+Execution notes:
 
 - Qwen could not reliably continue through multiple cases in one process, so
   the evidence for this pass uses one case per fixed output directory.
@@ -54,12 +54,16 @@ Qwen live evidence through `repair_context`:
 | `repair_context` | fresh failing test after edit | pass | Clean pytest-backed completion; no repair round was needed. |
 | `repair_context` | missing dependency | expected fail, `ok=false` | Qwen changed the protected test fixture before completion enforcement could repair or block; scorer catches the false completion. |
 | `repair_context` | docs-only change | pass | One exact edit attempt failed, Qwen read the README and completed the documentation change; no completion repair round was needed. |
+| `repair_context_minimal` | no-run edit | pass | Limited completion accepted; no repair round was needed. |
+| `repair_context_minimal` | fresh failing test after edit | pass | Clean pytest-backed completion; no repair round was needed. |
+| `repair_context_minimal` | missing dependency | expected fail, `ok=false` | Same fixture-mutation false completion: transcript shows Qwen deleting `import redis` from `tests/test_mod.py`, then returning `done`. |
+| `repair_context_minimal` | docs-only change | pass | Limited docs-only completion accepted without source mutation. |
 
 Evidence integrity:
 
-- All 12 selected Qwen result directories have archived transcript refs and
+- All 16 selected Qwen result directories have archived transcript refs and
   `transcript_replayable=true`.
-- Journal hash-chain verification returned no errors for the 12 selected trace
+- Journal hash-chain verification returned no errors for the selected trace
   directories.
 - Completed case keys match the corresponding case and arm for each selected
   trace.
@@ -73,10 +77,11 @@ Current Qwen interpretation:
 - The missing-dependency false completion is not evidence that repair context is
   broken. Qwen makes the workspace green by editing the fixture before the
   completion gate can apply repair/block semantics.
-- Do not promote any Qwen-specific prompt or production behavior from this
-  partial pass.
-- Do not continue to Research/Ghost for Qwen until `repair_context_minimal` is
-  run case by case and the coding core summary is closed.
+- `repair_context_minimal` does not improve or worsen the Qwen missing-dependency
+  behavior in this sample; the failure happens before a repair context can help.
+- Do not promote any Qwen-specific prompt or production behavior from this pass.
+- Qwen can now proceed to Research core, still one case/arm at a time with fixed
+  output and archived transcripts.
 
 Focused validation performed during these fixes:
 

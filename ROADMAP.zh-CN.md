@@ -2800,7 +2800,7 @@ TaskRunner 大拆
 0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
 0.4.20：Coding / Completion A/B bugfix，第一轮 DeepSeek core 已交付；后续只修 transcript/journal 证明的真实问题
 0.4.21：Research / Ghost A/B bugfix，第一轮 DeepSeek provider baseline 已冻结；只修 evidence 污染、stale、citation、stall 归因问题
-0.4.22：Qwen coding/completion stabilization 进行中；先跑到 repair_context 暂停收口报告，再决定是否进入 Research/Ghost 与最终 0.4 report
+0.4.22：Qwen coding/completion core 已收口；继续 Qwen Research/Ghost core 后产出最终 0.4 report
 ```
 
 0.4.19 的交付边界：
@@ -2911,11 +2911,11 @@ journal 是否完整
 0.4.22 当前状态：
 
 ```text
-Qwen coding/completion core 已逐 case 跑完 control_done、proof_only_block、repair_context
-Qwen repair_context_minimal 尚未跑；不要把当前状态写成 Qwen core 已完整冻结
+Qwen coding/completion core 已逐 case 跑完 control_done、proof_only_block、repair_context、repair_context_minimal
 Qwen multi-case 同进程执行不稳定，后续继续使用 one case / one process / fixed output / archive transcript
 已修 Codey 侧 no-run verification、fixture scope scorer、failed-row report gate、docs-only fixture、verification-forbidden limited completion
 缺失依赖 case 反复变成 modified_test_fixture，归类为 provider/model false completion，由 scorer/report gate 捕获
+下一步进入 Qwen Research core；不要把 Research/Ghost 结论混进 coding core 证据
 ```
 
 进入 0.5 的门槛：
