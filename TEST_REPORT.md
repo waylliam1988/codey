@@ -1,5 +1,102 @@
 # Codey Test Report
 
+## 0.4.22 Interim - Qwen Coding/Completion A/B Stabilization (2026-08-28)
+
+This is a pause point after the Qwen `repair_context` arm. No further Qwen A/B
+arms were run after this point; the next live step is intentionally held until
+the reports and commits are pushed.
+
+Scope:
+
+```text
+provider: qwen
+suite: coding_completion_core
+arms completed: control_done, proof_only_block, repair_context
+arm not yet run in this pass: repair_context_minimal
+mode: live smoke / second-provider coding-completion stabilization
+execution rule: one case per process, fixed output, transcript-mode archive
+```
+
+Why Qwen was paused:
+
+- Qwen could not reliably continue through multiple cases in one process, so
+  the evidence for this pass uses one case per fixed output directory.
+- The live run exposed real product and harness bugs. Each Codey-side issue was
+  fixed with deterministic tests before continuing the next case/arm.
+- The repeated dependency-missing case failure is now classified as provider /
+  model false completion: Qwen made tests pass by mutating the test fixture
+  instead of honestly treating the missing dependency as an environment
+  limitation.
+
+Codey bugs fixed during the Qwen pass:
+
+| Fix | Classification | Deterministic coverage |
+| --- | --- | --- |
+| Explicit "do not run commands" is no longer treated as a verification request merely because it contains the word `run`. | product behavior regression | `tests\test_agent.py`, `tests\test_coding_context.py` |
+| Completion A/B scorer now rejects mutation of protected fixtures, including the dependency-missing test fixture. | harness bug | `tests\test_completion_enforcement_ab.py`, manual self-test |
+| Completion A/B top-level `ok` now fails when any row reports false completion, unnecessary repair, repair regression, or terminal error. | harness bug | `tests\test_completion_enforcement_ab.py`, manual self-test |
+| The docs-only completion case now contains a real module fixture and rejects source mutation. | harness fixture bug | `tests\test_completion_enforcement_ab.py`, manual self-test |
+| When the user explicitly forbids local verification, completion enforcement may finish with `complete_with_limitations` instead of blocking forever or claiming clean verification. | production completion bug | `tests\test_completion_verification.py`, `tests\test_task_runner_completion_enforcement.py` |
+
+Qwen live evidence through `repair_context`:
+
+| Arm | Case | Result | Interpretation |
+| --- | --- | --- | --- |
+| `control_done` | no-run edit | pass | Qwen changed the source and stopped; this early artifact predates the final `complete_with_limitations` proof-label fix, but arm-level behavior and independent check passed. |
+| `control_done` | fresh failing test after edit | pass | Qwen edited source, ran pytest, and independent verification passed. |
+| `control_done` | missing dependency | expected fail, `ok=false` | Qwen removed/commented the protected `redis` test fixture and returned `done`; scorer reports `false_completion=true`, `fixture_scope_ok=false`, `scope_error=modified_test_fixture`. |
+| `control_done` | docs-only change | pass | After fixture repair, Qwen updated docs without mutating source; proof is `complete_with_limitations`. |
+| `proof_only_block` | no-run edit | pass | Current completion proof reports `complete_with_limitations`, `verified_receipt=false`, independent check passed. |
+| `proof_only_block` | fresh failing test after edit | pass | Qwen reached clean verified completion. |
+| `proof_only_block` | missing dependency | expected fail, `ok=false` | Qwen again mutated the protected test fixture, so this is a provider/model false completion caught by the scorer. |
+| `proof_only_block` | docs-only change | pass | Limited completion accepted without pretending local verification exists. |
+| `repair_context` | no-run edit | pass | Limited completion accepted; no repair round was needed. |
+| `repair_context` | fresh failing test after edit | pass | Clean pytest-backed completion; no repair round was needed. |
+| `repair_context` | missing dependency | expected fail, `ok=false` | Qwen changed the protected test fixture before completion enforcement could repair or block; scorer catches the false completion. |
+| `repair_context` | docs-only change | pass | One exact edit attempt failed, Qwen read the README and completed the documentation change; no completion repair round was needed. |
+
+Evidence integrity:
+
+- All 12 selected Qwen result directories have archived transcript refs and
+  `transcript_replayable=true`.
+- Journal hash-chain verification returned no errors for the 12 selected trace
+  directories.
+- Completed case keys match the corresponding case and arm for each selected
+  trace.
+- Early failed/obsolete output directories remain under ignored
+  `tests/manual/results/` for debugging, but they are not counted as release
+  evidence.
+
+Current Qwen interpretation:
+
+- The no-run and docs-only fixes are Codey improvements and should remain.
+- The missing-dependency false completion is not evidence that repair context is
+  broken. Qwen makes the workspace green by editing the fixture before the
+  completion gate can apply repair/block semantics.
+- Do not promote any Qwen-specific prompt or production behavior from this
+  partial pass.
+- Do not continue to Research/Ghost for Qwen until `repair_context_minimal` is
+  run case by case and the coding core summary is closed.
+
+Focused validation performed during these fixes:
+
+```powershell
+python -m pytest tests\test_completion_enforcement_ab.py
+# 14 passed
+
+python -B tests\manual\completion_enforcement_ab.py --self-test
+# self-test passed
+
+python -m pytest tests\test_completion_verification.py tests\test_task_runner_completion_enforcement.py
+# 39 passed
+
+python -m pytest tests\test_agent.py tests\test_coding_context.py
+# 126 passed, 2 skipped
+
+python -m ruff check tests\manual\completion_enforcement_ab.py tests\test_completion_enforcement_ab.py
+# All checks passed
+```
+
 ## 0.4.21 Release - Research/Ghost A/B Stabilization and Extended Evidence (2026-08-28)
 
 This release continues the narrow 0.4.x stabilization track. It does not change
