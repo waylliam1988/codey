@@ -613,6 +613,19 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+def _completion_row_failed(row: dict[str, Any]) -> bool:
+    return bool(
+        row_has_terminal_failure(row)
+        or row.get("false_completion")
+        or row.get("unnecessary_repair")
+        or row.get("regression_after_repair")
+    )
+
+
+def _completion_rows_ok(rows: list[dict[str, Any]], _complete: bool) -> bool:
+    return not any(_completion_row_failed(row) for row in rows)
+
+
 # ----------------------------------------------------------------- live mode ---
 
 
@@ -744,6 +757,7 @@ def run_live(
         cases=case_names,
         arms=arms,
         summarize=summarize,
+        ok=_completion_rows_ok,
     )
     report = store.payload
     pending = [
@@ -902,7 +916,7 @@ def run_live(
         if journal is not None:
             journal.record_run_complete(
                 rows=len(store.rows),
-                status="failed" if any(row_has_terminal_failure(row) for row in store.rows) else "done",
+                status="failed" if any(_completion_row_failed(row) for row in store.rows) else "done",
             )
         run_finished = True
     finally:
