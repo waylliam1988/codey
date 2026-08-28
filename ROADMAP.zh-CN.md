@@ -2798,7 +2798,7 @@ TaskRunner 大拆
 
 ```text
 0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
-0.4.20：Coding / Completion A/B bugfix，只修 transcript/journal 证明的真实问题
+0.4.20：Coding / Completion A/B bugfix，第一轮 DeepSeek core 已交付；后续只修 transcript/journal 证明的真实问题
 0.4.21：Research / Ghost A/B bugfix，只修 evidence 污染、stale、citation、stall 归因问题
 0.4.22：0.4 final stabilization report，决定是否进入 0.5
 ```
@@ -2832,7 +2832,11 @@ Ghost Work Queue 状态迁移矩阵成为唯一 transition authority
 NetworkStatus.POLICY_ALLOWED 避免把 policy allow 误读成公网证明
 ```
 
-0.4.20 只跑并修 Coding / Completion 核心：
+0.4.20 只跑并修 Coding / Completion 核心；第一轮 DeepSeek
+`control_done` / `proof_only_block` / `repair_context` /
+`repair_context_minimal` 已作为 release evidence 落盘，extended arms 只有在
+对应 harness 具备 result / journal / transcript / manifest 绑定后才进入
+release-grade A/B：
 
 ```text
 control_done

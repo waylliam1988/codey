@@ -6,6 +6,32 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+## 0.4.20 - Completion A/B Stabilization
+
+- Ran the first DeepSeek live A/B pass for the coding/completion core arms:
+  `control_done`, `proof_only_block`, `repair_context`, and
+  `repair_context_minimal`, using archived transcripts and fixed result/journal
+  output directories under `tests/manual/results/0.4.20/`.
+- Fixed a live A/B regression where requested-verification tasks could get
+  stuck in the low-level agent loop after an observed failing run.
+  - `codey.agents.runner` now only enforces that a run tool call was observed
+    after the latest edit when the user explicitly requested verification.
+  - Pass/fail/unavailable verification semantics remain owned by the
+    completion proof layer instead of the agent loop trying to force a green
+    run.
+  - A run before the latest edit no longer satisfies the requested-verification
+    observation guard.
+- Added deterministic regression tests for requested-verification observation
+  epochs and for failed verification reaching the completion proof layer.
+- Tightened `completion_enforcement_ab.py` evidence handling during this A/B
+  pass:
+  - terminal `stop_reason="error"` rows now fail the report even if the row did
+    not carry an `error` field yet;
+  - terminal error summaries are preserved in result rows;
+  - the live path now uses the real production agent runner and change
+    collector instead of `None` callables;
+  - provider failure class fields are aligned with the closed manual A/B schema.
+
 ## 0.4.19 - A/B Evidence Polish and Passive Worker Health
 
 - Standardized manual A/B evidence layout in `tests/manual/ab_harness_common.py`.

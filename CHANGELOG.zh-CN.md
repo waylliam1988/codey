@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+## 0.4.20 - Completion A/B Stabilization
+
+- 跑完第一轮 DeepSeek coding/completion core 实机 A/B：
+  `control_done`、`proof_only_block`、`repair_context`、
+  `repair_context_minimal`，结果、journal 和 archived transcript 均落盘到
+  `tests/manual/results/0.4.20/`。
+- 修复实机 A/B 暴露的 requested-verification 循环问题：模型已经在最新编辑后
+  观察到一次失败 run 时，低层 agent loop 不应继续强迫模型“跑到 green”。
+  - `codey.agents.runner` 现在只负责保证用户显式要求验证时，最新编辑之后至少
+    观察过一次 run tool call；
+  - run 的 pass / fail / unavailable 语义仍由 completion proof 层判断；
+  - 最新编辑之前的 run 不再能满足 requested-verification observation guard。
+- 补 deterministic 回归测试，覆盖 verification observation epoch 以及 failed
+  verification 能进入 completion proof 层。
+- 在本轮 A/B 中顺手收紧 `completion_enforcement_ab.py` 证据处理：
+  - terminal `stop_reason="error"` row 即使还没有 `error` 字段，也会让 report fail；
+  - terminal error summary 会保留到 result row；
+  - live path 使用真实 production agent runner 和 change collector，不再传
+    `None` callable；
+  - provider failure class 字段与 manual A/B 闭合 schema 对齐。
+
 ## 0.4.19 - A/B Evidence Polish and Passive Worker Health
 
 - 统一 manual A/B 证据落盘结构（`tests/manual/ab_harness_common.py`）。

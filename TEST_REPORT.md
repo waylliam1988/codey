@@ -1,5 +1,123 @@
 # Codey Test Report
 
+## 0.4.20 Release - Completion A/B Stabilization (2026-08-28)
+
+This release is the first 0.4.x stabilization pass driven by live A/B evidence.
+It keeps the scope narrow: one DeepSeek provider pass over the
+coding/completion core arms, one production bug fixed from the transcript, and
+deterministic regression coverage before continuing broader A/B.
+
+Closed items:
+
+- Fixed a live A/B behavior loop where requested-verification tasks kept asking
+  the model to run checks until green after a failing local run had already been
+  observed.
+- `codey.agents.runner` now tracks verification attempts by edit epoch. The
+  low-level loop only enforces "a run happened after the latest edit" for
+  explicitly requested verification; completion proof remains the owner of
+  pass/fail/environment/block semantics.
+- Added regression tests proving that a pre-edit run cannot satisfy the latest
+  verification request, and that a failed post-edit run reaches the completion
+  proof layer instead of triggering another low-level verification reminder.
+- Hardened the completion A/B harness while diagnosing the live run:
+  terminal error rows fail reports, terminal summaries are retained, live runs
+  use real production callables, and provider failure fields use the closed
+  manual A/B vocabulary.
+
+DeepSeek live A/B core evidence:
+
+```text
+commit: a88414f
+provider: deepseek
+suite: coding_completion_core
+cases:
+  - fresh_failing_test_after_edit
+  - dependency_missing_env_failure
+transcript_mode: archive
+note: live smoke / first stabilization pass, not a statistically complete A/B
+```
+
+| Arm | False completion | Task success | Honest block | Repair rounds | Transcript replay |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `control_done` | 0.50 | 0.50 | 0.00 | 0 | yes |
+| `proof_only_block` | 0.00 | 0.50 | 0.50 | 0 | yes |
+| `repair_context` | 0.00 | 0.50 | 0.50 | 0 | yes |
+| `repair_context_minimal` | 0.00 | 0.50 | 0.50 | 0 | yes |
+
+Interpretation:
+
+- `control_done` still allows the environment-failure case to finish as `done`
+  even though independent verification fails. This is the expected baseline
+  false-completion signal.
+- `proof_only_block`, `repair_context`, and `repair_context_minimal` all keep
+  the successful fix case as `done` and turn the dependency/verification case
+  into an honest `blocked` result.
+- No provider stall was observed in the final four-arm core pass. The earlier
+  `max_turns` loop was traced to Codey's requested-verification guard and fixed
+  before this final live pass.
+- The `read_before_edit`, `scoped_task_plan`, and `impact_guard` harness
+  self-tests passed, but those extended arms were not used as release evidence
+  in this pass. `verification_review_ab.py` still needs the 0.4 evidence schema
+  before it should count as release-grade live A/B.
+
+Validation commands and results:
+
+```powershell
+python -m ruff check codey\agents\runner.py tests\test_agent.py tests\test_task_runner_completion_enforcement.py tests\test_completion_enforcement_ab.py tests\test_manual_ab_harness_common.py
+# All checks passed!
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -B -m pytest tests\test_agent.py -k "requested_verification or done_after_edit_requires_requested_verification_run"
+# 3 passed, 118 deselected in 0.93s
+
+python -B -m pytest tests\test_task_runner_completion_enforcement.py tests\test_completion_enforcement_ab.py tests\test_manual_ab_harness_common.py
+# 50 passed in 5.37s
+
+python -B -m pytest tests\test_task_runner_completion_enforcement.py tests\test_completion_enforcement_ab.py tests\test_manual_ab_harness_common.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+# 51 passed in 5.47s
+
+python -B -m pytest tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+# 1 passed in 0.76s
+
+python -B tests\manual\read_before_edit_ab.py --self-test
+# self-test passed
+
+python -B tests\manual\scoped_task_plan_ab.py --self-test
+# self-test passed
+
+python -B tests\manual\impact_guard_ab.py --self-test
+# self-test passed
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 3 --arms proof_only_block --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\proof_only_block_after_verification_observation\result.json
+# [dependency_missing_env_failure proof_only_block] stop=blocked independent_ok=False repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 3 --arms control_done --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\control_done_after_verification_observation\result.json
+# [dependency_missing_env_failure control_done] stop=done independent_ok=False repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 3 --arms repair_context --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\repair_context_after_verification_observation\result.json
+# [dependency_missing_env_failure repair_context] stop=blocked independent_ok=False repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 3 --arms repair_context_minimal --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\repair_context_minimal_after_verification_observation\result.json
+# [dependency_missing_env_failure repair_context_minimal] stop=blocked independent_ok=False repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 2 --arms control_done --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\control_done_after_verification_observation\result.json
+# [fresh_failing_test_after_edit control_done] stop=done independent_ok=True repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 2 --arms proof_only_block --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\proof_only_block_after_verification_observation\result.json
+# [fresh_failing_test_after_edit proof_only_block] stop=done independent_ok=True repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 2 --arms repair_context --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\repair_context_after_verification_observation\result.json
+# [fresh_failing_test_after_edit repair_context] stop=done independent_ok=True repairs=0
+
+python -B tests\manual\completion_enforcement_ab.py --provider deepseek --cases 2 --arms repair_context_minimal --transcript-mode archive --output tests\manual\results\0.4.20\deepseek\coding_completion_core\repair_context_minimal_after_verification_observation\result.json
+# [fresh_failing_test_after_edit repair_context_minimal] stop=done independent_ok=True repairs=0
+
+python -B -m pytest
+# 3075 passed, 15 skipped in 290.04s (0:04:50)
+```
+
 ## 0.4.19 Release - A/B Evidence Polish and Passive Worker Health (2026-08-28)
 
 This release keeps production prompts and default task behavior unchanged. It
