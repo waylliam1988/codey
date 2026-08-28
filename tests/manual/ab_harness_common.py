@@ -62,6 +62,14 @@ PROVIDER_FAILURE_CLASSES = (
 )
 
 
+def row_has_terminal_failure(row: Mapping[str, Any]) -> bool:
+    """Return true when a persisted result row cannot be release evidence."""
+
+    if row.get("error"):
+        return True
+    return str(row.get("stop_reason") or "").strip().lower() == "error"
+
+
 @dataclass(frozen=True)
 class ArmRunLayout:
     """Stable file layout for one provider/suite/arm result output."""
@@ -597,7 +605,7 @@ class ResultRowStore:
     def existing_keys(self, *, rerun_failed: bool = False) -> set[tuple[str, str, int]]:
         keys: set[tuple[str, str, int]] = set()
         for row in self.rows:
-            if rerun_failed and row.get("error"):
+            if rerun_failed and row_has_terminal_failure(row):
                 continue
             _provider, case, arm, repeat = _row_key(row, provider_id=self.provider_id)
             keys.add((case, arm, repeat))
@@ -642,7 +650,7 @@ class ResultRowStore:
         self.payload["ok"] = (
             bool(self.ok(self.rows, bool(complete)))
             if self.ok is not None
-            else not any(row.get("error") for row in self.rows)
+            else not any(row_has_terminal_failure(row) for row in self.rows)
         )
         self.payload["complete"] = bool(complete)
         self.payload["updated_at"] = timestamp()
@@ -1004,6 +1012,7 @@ __all__ = [
     "new_payload",
     "normalize_payload_metadata",
     "open_journal_for_output",
+    "row_has_terminal_failure",
     "transcript_path_for_row",
     "timestamp",
     "upsert_case_row",

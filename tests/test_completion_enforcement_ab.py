@@ -283,3 +283,69 @@ def test_rerun_failed_replaces_old_error_row(
     assert len(matching) == 1
     assert "error" not in matching[0]
     assert untouched_error in report["rows"]
+
+
+def test_live_terminal_error_row_fails_report_and_journal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "completion_enforcement_ab-deepseek.json"
+
+    class FakeProvider:
+        def close(self) -> None:
+            pass
+
+    class FakeRunner:
+        def run(self, _request: object) -> None:
+            pass
+
+    def live_project(root: Path, _spec: dict[str, object]) -> Path:
+        project = root / "project"
+        project.mkdir()
+        return project
+
+    def finish_row(**kwargs: object) -> dict[str, object]:
+        return {
+            "case": kwargs["case_name"],
+            "arm": kwargs["arm"],
+            "stop_reason": "error",
+            "false_completion": False,
+            "blocked_honestly": False,
+            "unnecessary_repair": False,
+            "repair_rounds": 0,
+            "repair_success": False,
+            "regression_after_repair": False,
+            "independent_ok": False,
+            "repair_context_chars": 0,
+            "writer_phases": 1,
+            "tool_calls": 0,
+            "turns": 0,
+            "elapsed_s": 0.01,
+        }
+
+    monkeypatch.setattr("codey.providers.registry.connect_provider", lambda *_a, **_k: FakeProvider())
+    monkeypatch.setattr(harness, "_live_project", live_project)
+    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: FakeRunner())
+    monkeypatch.setattr(harness, "_finish_row", finish_row)
+
+    report = harness.run_live(
+        "deepseek",
+        9222,
+        ("premature_done_no_test",),
+        ("control_done",),
+        3,
+        output=output,
+        transcript_mode="digest-only",
+    )
+
+    assert report["ok"] is False
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved["ok"] is False
+    assert saved["rows"][0]["stop_reason"] == "error"
+
+    events_path = harness.journal_directory_for_output(output) / "events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    case_complete = [event for event in events if event["event_type"] == "case_complete"][-1]
+    assert case_complete["facts"]["ok"] is False
+    run_complete = [event for event in events if event["event_type"] == "run_complete"][-1]
+    assert run_complete["facts"]["status"] == "failed"

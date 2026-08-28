@@ -318,6 +318,33 @@ def test_result_row_store_replaces_failed_row_for_fixed_output(tmp_path: Path) -
     assert payload["rows"] == [{"case": "case-a", "arm": "arm-a", "repeat": 1, "ok": True}]
 
 
+def test_result_row_store_treats_terminal_error_as_failed(tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
+    store = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+        summarize=common.summarize_arm_rows,
+    )
+    store.upsert({"case": "case-a", "arm": "arm-a", "repeat": 1, "stop_reason": "error"})
+
+    failed = json.loads(output.read_text(encoding="utf-8"))
+    assert failed["ok"] is False
+    assert common.row_has_terminal_failure(failed["rows"][0])
+
+    resumed = common.ResultRowStore.open(
+        output,
+        probe="probe",
+        provider_id="deepseek",
+        cases=("case-a",),
+        arms=("arm-a",),
+        summarize=common.summarize_arm_rows,
+    )
+    assert resumed.pending_keys(cases=("case-a",), arms=("arm-a",), rerun_failed=True) == [("case-a", "arm-a", 1)]
+
+
 def test_result_row_store_pending_does_not_destroy_old_evidence(tmp_path: Path) -> None:
     output = tmp_path / "result.json"
     output.write_text(

@@ -58,6 +58,7 @@ from tests.manual.ab_harness_common import (
     classify_provider_failure,
     journal_directory_for_output,
     open_journal_for_output,
+    row_has_terminal_failure,
     timestamp,
     write_arm_manifest,
 )
@@ -368,7 +369,7 @@ def _finish_row(
     repair_rounds = max(len(repair_rows), len(texts))
     if writer_phases is None:
         writer_phases = repair_rounds + 1
-    return {
+    row = {
         "case": case_name,
         "arm": arm,
         "stop_reason": event.get("stop_reason"),
@@ -395,6 +396,15 @@ def _finish_row(
         "turns": turns,
         "elapsed_s": round(elapsed_s, 2),
     }
+    if row_has_terminal_failure(row):
+        row["error"] = str(
+            event.get("error")
+            or event.get("error_code")
+            or event.get("message")
+            or event.get("detail")
+            or "TaskRunner terminal event reported stop_reason=error"
+        ).strip()
+    return row
 
 
 # --------------------------------------------------------------- self-test ---
@@ -757,7 +767,7 @@ def run_live(
                     arm=arm,
                     row={
                         "ok": bool(
-                            not row.get("error")
+                            not row_has_terminal_failure(row)
                             and not row.get("false_completion")
                             and not row.get("unnecessary_repair")
                             and not row.get("regression_after_repair")
@@ -791,7 +801,7 @@ def run_live(
         if journal is not None:
             journal.record_run_complete(
                 rows=len(store.rows),
-                status="failed" if any(row.get("error") for row in store.rows) else "done",
+                status="failed" if any(row_has_terminal_failure(row) for row in store.rows) else "done",
             )
         run_finished = True
     finally:

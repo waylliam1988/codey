@@ -161,7 +161,7 @@ _FACT_ALLOWLIST_BY_EVENT: dict[str, frozenset[str]] = {
     "adapter_failure": _PROVIDER_OBSERVATION_FACTS,
     "provider_mismatch": frozenset({"output", "expected_provider", "found_provider"}),
     "case_complete": frozenset({"ok", "stop_reason", "turns", "score"}),
-    "run_complete": frozenset({"rows"}),
+    "run_complete": frozenset({"rows", "status"}),
     "note": frozenset({"output", "cases", "arms", "rerun_failed", "existing_rows"}),
 }
 
@@ -897,7 +897,7 @@ class ABJournalWriter:
         event = self._append_event(
             event_type="run_complete",
             stage="run_complete",
-            facts={"rows": rows},
+            facts={"rows": rows, "status": status},
         )
         manifest = self._read_manifest()
         manifest["status"] = status
