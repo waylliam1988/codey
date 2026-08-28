@@ -54,6 +54,7 @@ from codey.completion.verification_policy import (
 
 CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
 LIMITATION_DOCS_ONLY_CHANGE = "docs_only_change"
+LIMITATION_VERIFICATION_FORBIDDEN_BY_USER = "verification_forbidden_by_user"
 LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED = "verification_not_locally_observed"
 LIMITATION_INHERITED_VERIFICATION = "inherited_verification_not_fresh"
 
@@ -441,6 +442,7 @@ def coding_completion_checks(
     files: tuple[str, ...],
     selected_check_present: bool,
     provenance: VerificationProvenance,
+    verification_forbidden: bool = False,
 ) -> tuple[CompletionCheck, ...]:
     """Project local coding facts into completion checks.
 
@@ -457,6 +459,13 @@ def coding_completion_checks(
             CODING_CHECK_RELEVANT_VERIFICATION,
             CHECK_NOT_APPLICABLE,
             LIMITATION_DOCS_ONLY_CHANGE,
+        )
+        return (row,) if row else ()
+    if verification_forbidden:
+        row = completion_check(
+            CODING_CHECK_RELEVANT_VERIFICATION,
+            CHECK_NOT_APPLICABLE,
+            LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,
         )
         return (row,) if row else ()
     if not selected_check_present:
@@ -493,11 +502,14 @@ def coding_completion_limitations(
     *,
     files: tuple[str, ...],
     provenance: VerificationProvenance,
+    verification_forbidden: bool = False,
 ) -> tuple[str, ...]:
     """Limitation refs a satisfied-but-not-clean proof must carry."""
 
     if files and all(is_document_path(str(item)) for item in files):
         return (LIMITATION_DOCS_ONLY_CHANGE,)
+    if verification_forbidden:
+        return (LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,)
     if provenance.stance == STANCE_INHERITED_PASS:
         return (LIMITATION_INHERITED_VERIFICATION,)
     return ()
@@ -512,6 +524,7 @@ def build_coding_completion_proof(
     selected_check_present: bool,
     provenance: VerificationProvenance,
     analysis_run_refs: tuple[str, ...] = (),
+    verification_forbidden: bool = False,
 ) -> CompletionProof | None:
     """Project one coding run into its completion proof (or None)."""
 
@@ -524,6 +537,7 @@ def build_coding_completion_proof(
         limitations = coding_completion_limitations(
             files=files,
             provenance=provenance,
+            verification_forbidden=verification_forbidden,
         )
     run_ref = safe_run_ref(run_id)
     contract = build_completion_contract(
@@ -533,6 +547,7 @@ def build_coding_completion_proof(
             files=files,
             selected_check_present=selected_check_present,
             provenance=provenance,
+            verification_forbidden=verification_forbidden,
         ),
         limitation_refs=limitations,
         analysis_run_refs=analysis_run_refs,
@@ -628,6 +643,7 @@ __all__ = [
     "FAILURE_VERIFICATION_UNAVAILABLE",
     "LIMITATION_DOCS_ONLY_CHANGE",
     "LIMITATION_INHERITED_VERIFICATION",
+    "LIMITATION_VERIFICATION_FORBIDDEN_BY_USER",
     "LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED",
     "PROVENANCE_SOURCES",
     "PROVENANCE_STANCES",

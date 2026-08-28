@@ -20,6 +20,7 @@ from codey.completion.verification import (
     ENVIRONMENT_FAILURE_SIGNATURES,
     LIMITATION_DOCS_ONLY_CHANGE,
     LIMITATION_INHERITED_VERIFICATION,
+    LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,
     LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
     SOURCE_CHECKPOINT,
     SOURCE_LOCAL_RUN,
@@ -397,6 +398,34 @@ class ProofTests(unittest.TestCase):
         self.assertEqual(proof.status, COMPLETION_COMPLETE_WITH_LIMITATIONS)
         self.assertIn(LIMITATION_DOCS_ONLY_CHANGE, proof.limitation_refs)
         self.assertEqual(proof.checks[0].status, CHECK_NOT_APPLICABLE)
+
+    def test_user_forbidden_verification_stays_complete_with_limitations(self) -> None:
+        provenance = verification_provenance(
+            local_state=VERIFICATION_UNOBSERVED,
+            checkpoint_green=False,
+        )
+        proof = build_coding_completion_proof(
+            run_id="run-no-checks",
+            stop_reason="done",
+            task_changed=True,
+            files=("src/mod.py",),
+            selected_check_present=True,
+            provenance=provenance,
+            verification_forbidden=True,
+        )
+        self.assertIsNotNone(proof)
+        assert proof is not None
+        self.assertEqual(proof.status, COMPLETION_COMPLETE_WITH_LIMITATIONS)
+        self.assertFalse(proof.satisfied)
+        self.assertEqual(
+            proof.limitation_refs,
+            (LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,),
+        )
+        self.assertEqual(proof.checks[0].status, CHECK_NOT_APPLICABLE)
+        self.assertEqual(
+            proof.checks[0].reason_code,
+            LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,
+        )
 
     def test_no_matching_candidate_blocks_done(self) -> None:
         provenance = verification_provenance(

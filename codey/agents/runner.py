@@ -287,7 +287,7 @@ def _verification_match_is_negated(task: str, start: int) -> bool:
     return bool(VERIFICATION_NEGATION_PREFIX_RE.search(prefix))
 
 
-def _task_requests_verification(task: str) -> bool:
+def task_requests_verification(task: str) -> bool:
     text = str(task or "")
     return any(
         not _verification_match_is_negated(text, match.start())
@@ -295,9 +295,9 @@ def _task_requests_verification(task: str) -> bool:
     )
 
 
-def _task_forbids_verification(task: str) -> bool:
+def task_forbids_verification(task: str) -> bool:
     text = str(task or "")
-    return bool(VERIFICATION_FORBID_RE.search(text)) and not _task_requests_verification(text)
+    return bool(VERIFICATION_FORBID_RE.search(text)) and not task_requests_verification(text)
 
 
 def _verification_reminder(task: str) -> str:
@@ -750,8 +750,8 @@ def run(
     verification_paths = set(verification_changed_files)
     read_file_paths: set[str] = set()
     known_file_paths: set[str] = set()
-    verification_required = _task_requests_verification(user_task)
-    verification_forbidden = _task_forbids_verification(user_task)
+    verification_required = task_requests_verification(user_task)
+    verification_forbidden = task_forbids_verification(user_task)
     edit_epoch = 0
     successful_verifications = [
         (item.command, item.cwd, edit_epoch) for item in verification_successful_checks

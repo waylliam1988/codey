@@ -334,6 +334,45 @@ def test_unobserved_verification_blocks_without_any_repair() -> None:
         assert manifest["completion_repair_context"] == []
 
 
+def test_forbidden_verification_allows_limited_done_in_block_mode() -> None:
+    writer = ScriptedWriter(([_edit_event()], RunResult("changed", "done", 2)))
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        runner = _runner(state, writer)
+
+        with mock.patch.object(task_runner_module, "COMPLETION_ENFORCEMENT_MODE", "block"):
+            with mock.patch.object(state, "get_provider", return_value=_Provider()):
+                runner.run(TaskRequest(
+                    "s-enforce",
+                    str(project),
+                    "In src/mod.py change VALUE from 1 to 2. Do not run any commands; report done once edited.",
+                    6,
+                    False,
+                    "deepseek",
+                    intent="project",
+                ))
+
+        event = dict(state.last_terminal_event)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "done"
+        assert "[Completion blocked:" not in str(event["summary"])
+        assert event["receipt"]["checks_passed"] is False
+
+        manifest = _trace_payload(state)
+        proof = manifest["completion_proofs"][0]
+        assert proof["status"] == "complete_with_limitations"
+        assert proof["limitation_refs"] == ["verification_forbidden_by_user"]
+        assert proof["checks"] == [{
+            "check_id": "relevant_verification",
+            "status": "not_applicable",
+            "reason_code": "verification_forbidden_by_user",
+        }]
+        assert manifest["completion_repair_context"] == []
+
+
 def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
     # No candidate covers the change at all: even a claimed green must not
     # produce a verified receipt or a done result.

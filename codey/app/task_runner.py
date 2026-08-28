@@ -12,7 +12,7 @@ from codey.runtime import cancellation
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.policies.action import ActionSubject, evaluate_action
 from codey.policies.capability_registry import CapabilityRegistry
-from codey.agents.runner import RunResult
+from codey.agents.runner import RunResult, task_forbids_verification
 from codey.agents.tools import AgentToolFns
 from codey.workspace.change_brief import (
     ChangeBrief,
@@ -3171,6 +3171,7 @@ class TaskRunner:
             else None
         )
         checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
+        verification_forbidden = task_forbids_verification(request.task)
 
         def build_enforcement_decision() -> tuple[Any, VerificationProvenance, tuple[str, ...], str]:
             local_state = coding_verification_state(
@@ -3202,6 +3203,7 @@ class TaskRunner:
                 selected_check_present=selected_check is not None,
                 provenance=provenance,
                 analysis_run_refs=analysis_refs,
+                verification_forbidden=verification_forbidden,
             )
             failure_class = ""
             if proof is not None and not proof.satisfied:

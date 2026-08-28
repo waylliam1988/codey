@@ -2435,22 +2435,22 @@ class RunLoopTests(unittest.TestCase):
 
     def test_negated_setup_command_does_not_hide_explicit_verification_request(self) -> None:
         self.assertFalse(
-            agent._task_requests_verification(
+            agent.task_requests_verification(
                 "Do not run any commands; report done once edited."
             )
         )
         self.assertTrue(
-            agent._task_forbids_verification(
+            agent.task_forbids_verification(
                 "Do not run any commands; report done once edited."
             )
         )
         self.assertTrue(
-            agent._task_requests_verification(
+            agent.task_requests_verification(
                 "Do not run npm install; run python -m py_compile app.py after editing."
             )
         )
         self.assertFalse(
-            agent._task_forbids_verification(
+            agent.task_forbids_verification(
                 "Do not run npm install; run python -m py_compile app.py after editing."
             )
         )
