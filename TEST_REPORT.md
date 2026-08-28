@@ -2,8 +2,8 @@
 
 ## 0.4.22 Interim - Qwen Coding/Completion Core A/B Stabilization (2026-08-28)
 
-This records the Qwen coding/completion core pass and the first Qwen Research
-core smoke. Ghost has not been run in this Qwen pass yet.
+This records the Qwen coding/completion core pass plus the first Qwen Research
+and Ghost core smoke.
 
 Scope:
 
@@ -107,6 +107,27 @@ Research evidence notes:
   provider/browser cleanup noise, not Research proof failures.
 - No new production Research bug was identified from this smoke. The weak rows
   are quality/turn-budget/provider-behavior observations.
+
+Qwen Ghost core smoke:
+
+| Harness | Case/arm | Result | Interpretation |
+| --- | --- | --- | --- |
+| `ghost_research_continuity_ab.py` | `old-claim-must-be-rechecked/baseline` | `ok=true`, `exact=true`, `admitted=false`, `internal_leak=false`, `stop=max_turns` | Baseline routed to Research without continuity admission; no internal Ghost naming leaked. |
+| `ghost_research_continuity_ab.py` | `old-claim-must-be-rechecked/continuity` | `ok=true`, `admitted=true`, `context_carried=true`, `stale_ref_count=3`, `prior_claim_flagged=true`, `internal_leak=false`, `stop=max_turns` | Continuity was admitted as bounded stale/recheck context, not as fresh evidence. |
+| `ghost_continuity_ab.py` | `chat_current_request_overrides_continuity` | `ok=true`; baseline and continuity both replied `4` | Current user request overrode local continuity; no focus/open-question leakage. |
+| `ghost_work_queue_production_ab.py` | `no-queue-continue-chat` | `ok=true`; baseline and queue arms both observed `chat`, `research_calls=0` | No queue means "continue" stays chat and does not trigger Research. |
+| `ghost_work_queue_production_ab.py` | `research-item` | `ok=true`; queue arm observed `research`, `queue_consumed=true`, `research_calls=1` | A queued research item is consumed only through the queue arm. |
+| `ghost_work_queue_production_ab.py` | `explicit-request-does-not-consume` | `ok=true`; queue arm observed `chat`, `queue_consumed=false`, queue status remains `queued` | An explicit new user request does not consume the old research queue item. |
+
+Ghost evidence notes:
+
+- `ghost_research_continuity_ab.py` saved archived transcript refs and valid
+  journal hash chains for the selected baseline and continuity rows.
+- Qwen emitted Playwright `TargetClosedError` cleanup noise after the continuity
+  row had already been written; this is classified as provider/browser teardown
+  noise.
+- No evidence shows Ghost memory becoming citation/evidence, automatic Research
+  triggering from plain chat, or continuity overriding the current user request.
 
 Focused validation performed during these fixes:
 
