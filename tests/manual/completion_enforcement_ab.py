@@ -402,6 +402,7 @@ def _finish_row(
             or event.get("error_code")
             or event.get("message")
             or event.get("detail")
+            or event.get("summary")
             or "TaskRunner terminal event reported stop_reason=error"
         ).strip()
     return row

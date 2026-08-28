@@ -349,3 +349,28 @@ def test_live_terminal_error_row_fails_report_and_journal(
     assert case_complete["facts"]["ok"] is False
     run_complete = [event for event in events if event["event_type"] == "run_complete"][-1]
     assert run_complete["facts"]["status"] == "failed"
+
+
+def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
+    class FakeState:
+        last_terminal_event = {
+            "stop_reason": "error",
+            "summary": "ERROR: provider setup failed",
+        }
+        run_traces = None
+
+    row = harness._finish_row(
+        case_name="premature_done_no_test",
+        arm="control_done",
+        state=FakeState(),  # type: ignore[arg-type]
+        session_suffix="unit",
+        project=tmp_path,
+        observed={},
+        writer_phases=None,
+        tool_calls=0,
+        turns=0,
+        elapsed_s=0.01,
+        independent_ok=False,
+    )
+
+    assert row["error"] == "ERROR: provider setup failed"
