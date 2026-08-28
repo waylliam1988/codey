@@ -333,11 +333,14 @@ def timestamp() -> str:
 
 
 def _row_key(row: Mapping[str, Any], *, provider_id: str = "") -> tuple[str, str, str, int]:
+    repeat = row.get("repeat")
+    if repeat in (None, ""):
+        repeat = row.get("sample")
     return (
         str(provider_id or row.get("provider") or "").strip().lower(),
         str(row.get("case") or "").strip(),
         str(row.get("arm") or "").strip(),
-        max(1, int(row.get("repeat") or 1)),
+        max(1, int(repeat or 1)),
     )
 
 

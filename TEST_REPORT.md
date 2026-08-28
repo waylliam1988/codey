@@ -51,6 +51,22 @@ Research DeepSeek live smoke:
 | `source_connector_done` | baseline score `9`, `done_attempts=2`, `quality_retries=1`; batch score `9`, `done_attempts=3`, `quality_retries=2` | Batch/checklist did not reduce retry and should remain experimental. |
 | `search_coverage` | both arms safe; coverage arm explicitly named skipped non-UTF-8 file | Coverage arm produced clearer incomplete-scan language. |
 
+Follow-up archive rerun:
+
+```powershell
+python -B tests\manual\source_connector_ab.py --provider deepseek --case arxiv --arms connector --output tests\manual\results\0.4.21\deepseek\research\source_connector\connector_archive\result.json --max-turns 8 --send-timeout 180 --new-chat-timeout 90 --transcript-mode archive
+# [deepseek arxiv connector] ok=True score=9 stop=done
+```
+
+The rerun completed with archived prompt/reply transcripts and a valid journal
+hash chain (`22` events, completed case `arxiv/connector`). It opened two arXiv
+sources, used connector controller actions (`open_result`, `source_search`,
+`open_hit`), saved evidence, and finished after one quality retry. The stricter
+proof review still reported partial coverage / claim-link gaps, so this remains
+a live smoke showing connector viability, not a claim that the connector arm is
+superior. The raw transcript directory is intentionally under
+`tests/manual/results/`, which is ignored by git.
+
 Ghost DeepSeek live smoke:
 
 | Probe | Result | Interpretation |

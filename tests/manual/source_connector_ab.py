@@ -5,8 +5,9 @@ baseline arm uses the browser search provider directly; the connector arm wraps
 it with ConnectorAwareSearchProvider. Progress is written atomically after each
 case/arm row so missing samples can be resumed without rerunning completed
 provider traffic. An optional durable observation journal (`<stem>.trace/`)
-records each prompt/reply pair as hash-chained JSONL events with digest-only
-transcripts by default, so repeated done attempts can be replayed later.
+records each prompt/reply pair as hash-chained JSONL events. It stores
+digest-only transcript refs by default; use `--transcript-mode archive` when a
+live smoke needs raw prompt/reply replay.
 """
 
 from __future__ import annotations
@@ -37,8 +38,12 @@ from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     ABJournalReader,
     ABJournalWriter,
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    TranscriptReplayCache,
     journal_directory_for,
 )
+from tests.manual.ab_harness_common import row_has_terminal_failure, upsert_case_row
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -116,10 +121,7 @@ class OutputProviderMismatch(ValueError):
         self.path = path
         self.expected = expected
         self.found = found
-        super().__init__(
-            f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}"
-        )
-
+        super().__init__(f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}")
 
 
 class TracingProvider:
@@ -237,13 +239,15 @@ def run_case(
                 if event.kind == "info":
                     infos.append(str(event.message or "")[:240])
                 if event.kind == "tool" and event.call is not None:
-                    tool_calls.append({
-                        "turn": event.turn,
-                        "name": event.call.name,
-                        "args": _safe_args(event.call.args),
-                        "ok": bool(event.outcome.ok) if event.outcome is not None else False,
-                        "status": event.outcome.presentation_status() if event.outcome is not None else "",
-                    })
+                    tool_calls.append(
+                        {
+                            "turn": event.turn,
+                            "name": event.call.name,
+                            "args": _safe_args(event.call.args),
+                            "ok": bool(event.outcome.ok) if event.outcome is not None else False,
+                            "status": event.outcome.presentation_status() if event.outcome is not None else "",
+                        }
+                    )
             if runner.result is None:
                 raise RuntimeError("research finished without result")
             result = runner.result
@@ -274,8 +278,7 @@ def run_case(
                 "summary_preview": _clip(result.summary, 1200),
                 "model_actions": model_actions[:40],
                 "used_controller_open_action": any(
-                    item.get("tool") in {"open_result", "reopen_source", "open_hit"}
-                    for item in model_actions
+                    item.get("tool") in {"open_result", "reopen_source", "open_hit"} for item in model_actions
                 ),
                 "used_legacy_open_url_id_action": any(
                     item.get("tool") == "open_url"
@@ -336,11 +339,13 @@ def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:
         args = obj.get("args")
         if not isinstance(args, dict):
             args = {}
-        actions.append({
-            "turn": int(turn or 0),
-            "tool": _clip(tool, 80),
-            "args": _safe_args(args),
-        })
+        actions.append(
+            {
+                "turn": int(turn or 0),
+                "tool": _clip(tool, 80),
+                "args": _safe_args(args),
+            }
+        )
     if not actions and str(reply or "").strip():
         actions.append({"turn": int(turn or 0), "tool": "<no_json>", "args": {}})
     return actions
@@ -386,9 +391,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "baseline_score": baseline.get("score"),
             "connector_score": connector.get("score"),
             "delta": (
-                int(connector.get("score") or 0) - int(baseline.get("score") or 0)
-                if baseline and connector
-                else None
+                int(connector.get("score") or 0) - int(baseline.get("score") or 0) if baseline and connector else None
             ),
             "connector_opened_target_host": bool(connector.get("opened_target_host")),
             "connector_proof_ok": bool(connector.get("proof_ok")),
@@ -430,7 +433,7 @@ def run_provider(
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""))
         for row in payload["rows"]
-        if row.get("ok") or not rerun_failed
+        if not (rerun_failed and row_has_terminal_failure(row))
     }
     pending = _pending_case_keys(cases=cases, arms=arms, existing=existing)
     if trace is not None:
@@ -459,7 +462,6 @@ def run_provider(
             flush=True,
         )
         return payload
-    _write_payload(output, payload)
     provider_controls.begin_task_context(f"source-connector-ab:{provider_id}")
     provider = None
     try:
@@ -487,7 +489,7 @@ def run_provider(
                     run_id=run_id,
                     trace=trace,
                 )
-                payload["rows"].append(row)
+                upsert_case_row(payload["rows"], row, provider_id=provider_id)
                 payload["summary"] = summarize(payload["rows"])
                 payload["updated_at"] = _timestamp()
                 _write_payload(output, payload)
@@ -512,7 +514,9 @@ def run_provider(
                 pass
 
 
-def _load_or_new_payload(output: Path, *, provider_id: str, cases: tuple[Case, ...], arms: tuple[str, ...]) -> dict[str, Any]:
+def _load_or_new_payload(
+    output: Path, *, provider_id: str, cases: tuple[Case, ...], arms: tuple[str, ...]
+) -> dict[str, Any]:
     if output.exists():
         try:
             payload = json.loads(output.read_text(encoding="utf-8"))
@@ -549,12 +553,7 @@ def _pending_case_keys(
     arms: tuple[str, ...],
     existing: set[tuple[str, str]],
 ) -> list[tuple[str, str]]:
-    return [
-        (case.name, arm)
-        for case in cases
-        for arm in arms
-        if (case.name, arm) not in existing
-    ]
+    return [(case.name, arm) for case in cases for arm in arms if (case.name, arm) not in existing]
 
 
 def _detach_search_provider(provider: object) -> None:
@@ -616,6 +615,13 @@ def _trace_output_path(output: Path) -> Path:
     return journal_directory_for(output)
 
 
+def _journal_transcript_mode(value: str) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if text in {TRANSCRIPT_MODE_DIGEST_ONLY, TRANSCRIPT_MODE_ARCHIVE, "off"}:
+        return text
+    raise ValueError(f"unknown transcript mode: {value}")
+
+
 def _clip(value: object, limit: int) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if len(text) <= limit:
@@ -653,15 +659,20 @@ def _self_test() -> None:
     assert summary["by_case"]["pubmed"]["delta"] == 5
     assert _opened_target_host(["https://pubmed.ncbi.nlm.nih.gov/123/"], ("pubmed.ncbi.nlm.nih.gov",))
     assert _expected_terms_present("Retrieval augmented generation", ("retrieval", "generation"))
-    assert _trace_output_path(Path("tests/manual/results/source_connector_ab-deepseek.json")).name == "source_connector_ab-deepseek.trace"
-    assert _pending_case_keys(cases=(CASES["pubmed"],), arms=("baseline",), existing=set()) == [
-        ("pubmed", "baseline")
-    ]
-    assert _pending_case_keys(
-        cases=(CASES["pubmed"],),
-        arms=("baseline",),
-        existing={("pubmed", "baseline")},
-    ) == []
+    assert (
+        _trace_output_path(Path("tests/manual/results/source_connector_ab-deepseek.json")).name
+        == "source_connector_ab-deepseek.trace"
+    )
+    assert _pending_case_keys(cases=(CASES["pubmed"],), arms=("baseline",), existing=set()) == [("pubmed", "baseline")]
+    assert (
+        _pending_case_keys(
+            cases=(CASES["pubmed"],),
+            arms=("baseline",),
+            existing={("pubmed", "baseline")},
+        )
+        == []
+    )
+
     class FakeSearch:
         def __init__(self) -> None:
             self.closed = False
@@ -689,6 +700,7 @@ def _self_test() -> None:
             experiment_id="source_connector_ab",
             run_id="run-self",
             provider="deepseek",
+            transcript_cache=TranscriptReplayCache(trace_dir, mode=TRANSCRIPT_MODE_ARCHIVE),
         )
         # Exercise the exact event sequence run_case/TracingProvider emit so
         # signature drift in the harness call sites cannot come back silently.
@@ -734,6 +746,13 @@ def _self_test() -> None:
         assert send_error["facts"]["provider_failure_stage"] == "wait_reply"
         manifest = json.loads((trace_dir / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["experiment_id"] == "source_connector_ab"
+        transcript_files = sorted((trace_dir / "transcripts").glob("*.json"))
+        assert transcript_files
+        transcript = json.loads(transcript_files[0].read_text(encoding="utf-8"))
+        assert transcript["kind"] == "ab_transcript"
+        assert _journal_transcript_mode("digest-only") == TRANSCRIPT_MODE_DIGEST_ONLY
+        assert _journal_transcript_mode("archive") == TRANSCRIPT_MODE_ARCHIVE
+        assert _journal_transcript_mode("off") == "off"
         output = Path(td) / "payload.json"
         output.write_text(
             json.dumps({"probe": "source_connector_ab", "provider": "qwen", "rows": []}),
@@ -755,13 +774,24 @@ def main() -> int:
     parser.add_argument("--arms", default="baseline,connector")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--trace-output", type=Path, default=None, help="journal directory; default is <output-stem>.trace/ next to the result file")
+    parser.add_argument(
+        "--trace-output",
+        type=Path,
+        default=None,
+        help="journal directory; default is <output-stem>.trace/ next to the result file",
+    )
     parser.add_argument("--max-turns", type=int, default=24)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
     parser.add_argument("--open-if-missing", action="store_true")
     parser.add_argument("--rerun-failed", action="store_true")
     parser.add_argument("--no-live-trace", action="store_true", help="disable the durable JSONL observation journal")
+    parser.add_argument(
+        "--transcript-mode",
+        choices=("digest-only", "archive", "off"),
+        default="digest-only",
+        help="prompt/reply retention for the journal; archive stores raw replay files under the trace directory",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -782,11 +812,14 @@ def main() -> int:
         # journal identity the all-mode run created.
         run_id = output.stem
         trace: ABJournalWriter | None = None
-        if not args.no_live_trace:
+        transcript_mode = _journal_transcript_mode(args.transcript_mode)
+        if not args.no_live_trace and transcript_mode != "off":
             if args.trace_output is not None:
                 trace_output = args.trace_output
                 if args.provider == "all":
-                    trace_output = args.trace_output.with_name(f"{args.trace_output.stem}-{provider_id}{args.trace_output.suffix}")
+                    trace_output = args.trace_output.with_name(
+                        f"{args.trace_output.stem}-{provider_id}{args.trace_output.suffix}"
+                    )
             else:
                 trace_output = _trace_output_path(output)
             try:
@@ -795,6 +828,7 @@ def main() -> int:
                     experiment_id="source_connector_ab",
                     run_id=run_id,
                     provider=provider_id,
+                    transcript_cache=TranscriptReplayCache(trace_output, mode=transcript_mode),
                 )
             except ABJournalIdentityMismatch as exc:
                 print(str(exc), file=sys.stderr)

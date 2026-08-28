@@ -44,6 +44,7 @@ from codey.research.runner import ResearchRunner
 from codey.providers.registry import connect_provider, provider_ids
 
 from tests.manual import source_connector_ab as base
+from tests.manual.ab_harness_common import row_has_terminal_failure, upsert_case_row
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -317,7 +318,7 @@ def run_case(
     sample: int,
     max_turns: int,
     run_id: str,
-    trace: base.LiveTrace | None,
+    trace: LiveTrace | None,
 ) -> dict[str, Any]:
     started = time.time()
     tool_calls: list[dict[str, Any]] = []
@@ -488,7 +489,7 @@ def run_provider(
     new_chat_timeout: float,
     open_if_missing: bool,
     rerun_failed: bool,
-    trace: base.LiveTrace | None,
+    trace: LiveTrace | None,
     run_id: str,
 ) -> dict[str, Any]:
     try:
@@ -510,7 +511,7 @@ def run_provider(
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""), int(row.get("sample") or 1))
         for row in payload["rows"]
-        if row.get("ok") or not rerun_failed
+        if not (rerun_failed and row_has_terminal_failure(row))
     }
     pending = _pending_case_sample_keys(cases=cases, arms=arms, samples=samples, existing=existing)
     if trace is not None:
@@ -546,7 +547,6 @@ def run_provider(
             flush=True,
         )
         return payload
-    _write_payload(output, payload)
     provider_controls.begin_task_context(f"source-connector-done-ab:{provider_id}")
     provider = None
     try:
@@ -576,7 +576,7 @@ def run_provider(
                         run_id=run_id,
                         trace=trace,
                     )
-                    payload["rows"].append(row)
+                    upsert_case_row(payload["rows"], row, provider_id=provider_id)
                     payload["summary"] = summarize(payload["rows"])
                     payload["updated_at"] = _timestamp()
                     _write_payload(output, payload)

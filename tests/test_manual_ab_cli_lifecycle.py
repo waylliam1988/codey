@@ -31,6 +31,7 @@ def test_ab_harness_main_closes_trace_writer_on_output_mismatch(
             experiment_id: str,
             run_id: str,
             provider: str,
+            **_kwargs: object,
         ) -> None:
             self.directory = Path(directory)
             self.closed = False

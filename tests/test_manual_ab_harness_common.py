@@ -318,6 +318,25 @@ def test_result_row_store_replaces_failed_row_for_fixed_output(tmp_path: Path) -
     assert payload["rows"] == [{"case": "case-a", "arm": "arm-a", "repeat": 1, "ok": True}]
 
 
+def test_upsert_case_row_uses_sample_when_repeat_is_absent() -> None:
+    rows = [
+        {"provider": "deepseek", "case": "case-a", "arm": "batch", "sample": 1, "ok": True},
+        {"provider": "deepseek", "case": "case-a", "arm": "batch", "sample": 2, "error": "old"},
+    ]
+
+    common.upsert_case_row(
+        rows,
+        {"provider": "deepseek", "case": "case-a", "arm": "batch", "sample": 2, "ok": True},
+        provider_id="deepseek",
+    )
+
+    assert len(rows) == 2
+    assert rows[0]["sample"] == 1
+    assert rows[1]["sample"] == 2
+    assert rows[1]["ok"] is True
+    assert "error" not in rows[1]
+
+
 def test_result_row_store_treats_terminal_error_as_failed(tmp_path: Path) -> None:
     output = tmp_path / "result.json"
     store = common.ResultRowStore.open(
