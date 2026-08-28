@@ -419,10 +419,10 @@ def _attach_terminal_failure_classes(row: dict[str, Any], tracing_provider: Trac
     )
     row["provider_failure_class"] = provider_failure
     if provider_failure not in ("none", "unknown"):
-        row["provider_error_class"] = AB_FAILURE_PROVIDER
+        row["provider_error_class"] = provider_failure
         row["codey_failure_class"] = AB_FAILURE_NONE
     else:
-        row["provider_error_class"] = AB_FAILURE_NONE
+        row["provider_error_class"] = provider_failure if provider_failure == "unknown" else AB_FAILURE_NONE
         row["codey_failure_class"] = AB_FAILURE_CODEY
 
 
@@ -624,7 +624,7 @@ def _live_error_row(
         "arm": arm,
         "error": f"{type(exc).__name__}: {exc}",
         "stop_reason": "error",
-        "provider_error_class": (failure_class if failure_class == AB_FAILURE_PROVIDER else AB_FAILURE_NONE),
+        "provider_error_class": provider_failure if failure_class == AB_FAILURE_PROVIDER else AB_FAILURE_NONE,
         "codey_failure_class": (failure_class if failure_class == AB_FAILURE_CODEY else AB_FAILURE_NONE),
         "provider_failure_class": provider_failure,
         "false_completion": False,

@@ -394,7 +394,7 @@ def test_terminal_provider_no_reply_is_classified() -> None:
     harness._attach_terminal_failure_classes(row, FakeTracing())  # type: ignore[arg-type]
 
     assert row["provider_failure_class"] == common.PROVIDER_FAILURE_NO_REPLY
-    assert row["provider_error_class"] == common.AB_FAILURE_PROVIDER
+    assert row["provider_error_class"] == common.PROVIDER_FAILURE_NO_REPLY
     assert row["codey_failure_class"] == common.AB_FAILURE_NONE
 
 

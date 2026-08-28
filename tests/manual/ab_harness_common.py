@@ -440,7 +440,8 @@ def summarize_arm_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             item["errors"] += 1
         if row.get("ok") or row.get("success") or row.get("exact"):
             item["ok"] += 1
-        if str(row.get("provider_failure_class") or "") not in ("", AB_FAILURE_NONE):
+        provider_failure = row.get("provider_failure_class") or row.get("provider_error_class")
+        if str(provider_failure or "") not in ("", AB_FAILURE_NONE):
             item["provider_failures"] += 1
         if str(row.get("codey_failure_class") or "") not in ("", AB_FAILURE_NONE):
             item["codey_failures"] += 1
