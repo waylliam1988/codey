@@ -176,10 +176,13 @@ def run_cases(
     *,
     provider_id: str,
     cases: tuple[ContinuityCase, ...] = DEFAULT_CASES,
+    arms: tuple[str, ...] = ARMS,
     provider_factory: Callable[[str], Any] | None = None,
     output: Path | None = None,
     live: bool = False,
     max_turns: int = 8,
+    send_timeout: float | None = None,
+    new_chat_timeout: float | None = None,
     journal: ABJournalWriter | None = None,
     rerun_failed: bool = False,
 ) -> dict[str, Any]:
@@ -190,7 +193,7 @@ def run_cases(
             probe="ghost_research_continuity_ab",
             provider_id=provider_id,
             cases=cases,
-            arms=ARMS,
+            arms=arms,
             summarize=lambda rows: _payload(provider_id, rows, complete=True)["summary"],
             ok=lambda rows, complete: bool(_payload(provider_id, rows, complete=complete)["ok"]),
         )
@@ -203,18 +206,18 @@ def run_cases(
             (case_name, arm)
             for case_name, arm, _repeat in store.pending_keys(
                 cases=cases,
-                arms=ARMS,
+                arms=arms,
                 rerun_failed=rerun_failed,
             )
         ]
         if store is not None
-        else [(case.name, arm) for case in cases for arm in ARMS]
+        else [(case.name, arm) for case in cases for arm in arms]
     )
     pending_set = set(pending)
     if store is not None:
         store.write(complete=False)
     for case in cases:
-        for arm in ARMS:
+        for arm in arms:
             if (case.name, arm) not in pending_set:
                 continue
             row = _run_case(
@@ -224,6 +227,8 @@ def run_cases(
                 provider_factory=provider_factory,
                 live=live,
                 max_turns=max_turns,
+                send_timeout=send_timeout,
+                new_chat_timeout=new_chat_timeout,
                 journal=journal,
                 layout=layout,
             )
@@ -261,6 +266,8 @@ def _run_case(
     provider_id: str = "fake",
     live: bool = False,
     max_turns: int = 8,
+    send_timeout: float | None = None,
+    new_chat_timeout: float | None = None,
     journal: ABJournalWriter | None = None,
     layout: ArmRunLayout | None = None,
 ) -> dict[str, Any]:
@@ -358,6 +365,8 @@ def _run_case(
                 journal=journal,
                 case=case.name,
                 arm=arm,
+                timeout=send_timeout,
+                new_chat_timeout=new_chat_timeout,
             )
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(state, "get_provider", return_value=tracing_provider))
@@ -768,6 +777,7 @@ def _open_journal(
     output: Path,
     provider_id: str,
     transcript_mode: str,
+    arms: tuple[str, ...],
     max_turns: int,
     case_names: list[str],
 ) -> ABJournalWriter | None:
@@ -778,7 +788,7 @@ def _open_journal(
         provider_id=provider_id,
         transcript_mode=transcript_mode,
         case_names=case_names,
-        arms=ARMS,
+        arms=arms,
         max_turns=max_turns,
     )
 
@@ -812,6 +822,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", choices=("fake", *LIVE_PROVIDERS), default="fake")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--max-turns", type=int, default=8)
+    parser.add_argument("--send-timeout", type=float, default=90.0)
+    parser.add_argument("--new-chat-timeout", type=float, default=30.0)
+    parser.add_argument("--arm", choices=ARMS, action="append")
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument(
@@ -836,6 +849,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cases = _selected_cases(args.case)
+    selected_arms = tuple(args.arm or ARMS)
     if args.provider == "fake":
         # Offline stubs produce no transcript-worthy traffic: journaling
         # stays off regardless of --transcript-mode.
@@ -843,6 +857,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = run_cases(
             provider_id="fake",
             cases=cases,
+            arms=selected_arms,
             output=output,
             rerun_failed=bool(args.rerun_failed),
         )
@@ -853,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
             output=output,
             provider_id=str(args.provider),
             transcript_mode="off" if args.provider == "fake" else str(args.transcript_mode),
+            arms=selected_arms,
             max_turns=max(4, int(args.max_turns)),
             case_names=[case.name for case in cases],
         )
@@ -860,9 +876,12 @@ def main(argv: list[str] | None = None) -> int:
             payload = run_cases(
                 provider_id=str(args.provider),
                 cases=cases,
+                arms=selected_arms,
                 provider_factory=lambda _label: connect_fresh_provider_tab(args.provider, port=args.port),
                 live=True,
                 max_turns=max(4, int(args.max_turns)),
+                send_timeout=float(args.send_timeout),
+                new_chat_timeout=float(args.new_chat_timeout),
                 journal=journal,
                 output=output,
                 rerun_failed=bool(args.rerun_failed),
@@ -876,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         build_arm_manifest(
             suite="ghost_research_continuity_ab",
             provider=str(args.provider),
-            arms=ARMS,
+            arms=selected_arms,
             cases=[case.name for case in cases],
             max_turns=max(4, int(args.max_turns)),
             journal_dir=(

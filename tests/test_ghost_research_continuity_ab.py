@@ -89,6 +89,7 @@ def test_open_journal_off_mode_returns_none_without_side_effects() -> None:
             output=output,
             provider_id="deepseek",
             transcript_mode="off",
+            arms=("continuity",),
             max_turns=8,
             case_names=["case-a"],
         )
@@ -115,6 +116,58 @@ def test_failure_classification_separates_provider_and_planner_causes() -> None:
         ab.classify_outcome(sends=4, replies=4, send_error_text="", stop_reason="no_progress")
         == "planner_quality:no_progress"
     )
+
+
+def test_run_cases_can_execute_one_arm_without_mixed_provider_traffic() -> None:
+    payload = ab.run_cases(
+        provider_id="fake",
+        cases=(ab.DEFAULT_CASES[1],),
+        arms=("continuity",),
+        provider_factory=None,
+    )
+
+    assert payload["ok"], json.dumps(payload, ensure_ascii=False, indent=2)
+    assert [row["arm"] for row in payload["rows"]] == ["continuity"]
+    assert payload["summary"]["continuity"]["total"] == 1
+    assert payload["summary"]["baseline"]["total"] == 0
+
+
+def test_live_timeouts_are_passed_to_tracing_provider() -> None:
+    class TimeoutCheckingProvider:
+        name = "fake-timeout"
+        location = "fixture://timeout"
+
+        def new_chat(self, timeout=None) -> None:
+            pass
+
+        def send(self, text: str, timeout=None) -> str:
+            return "timeout ok"
+
+        def close(self) -> None:
+            pass
+
+    provider = TimeoutCheckingProvider()
+    captured: dict[str, float | None] = {}
+    original = ab.TracingProvider
+
+    def tracing_provider_factory(*args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        captured["new_chat_timeout"] = kwargs.get("new_chat_timeout")
+        return original(*args, **kwargs)
+
+    with mock.patch.object(ab, "TracingProvider", side_effect=tracing_provider_factory):
+        row = ab._run_case(
+            ab.DEFAULT_CASES[0],
+            arm="baseline",
+            provider_id="deepseek",
+            provider_factory=lambda _session_id: provider,
+            live=True,
+            send_timeout=7.0,
+            new_chat_timeout=3.0,
+        )
+
+    assert row["exact"], row
+    assert captured == {"timeout": 7.0, "new_chat_timeout": 3.0}
 
 
 def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
