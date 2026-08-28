@@ -295,6 +295,11 @@ def run_self_test() -> None:
     print("self-test passed")
 
 
+def write_report_output(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Live A/B for read-before-edit guard.")
     parser.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
@@ -315,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     text = json.dumps(report, ensure_ascii=False, indent=2)
     print(text)
     if args.out:
-        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        write_report_output(Path(args.out), text)
     return 0
 
 
