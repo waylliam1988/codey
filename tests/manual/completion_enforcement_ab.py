@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -293,6 +294,78 @@ def _independent_check(project: Path) -> bool:
     return completed.returncode == 0
 
 
+def _expected_live_test_body(spec: dict[str, Any]) -> str:
+    test_body = (
+        "def test_value():\n"
+        "    import importlib, sys\n"
+        "    sys.path.insert(0, 'src')\n"
+        "    mod = importlib.import_module('mod')\n"
+        "    assert mod.VALUE == 2\n"
+    )
+    if spec.get("dependency_missing"):
+        test_body = "import redis  # noqa: F401\n\n" + test_body
+    return test_body
+
+
+def _src_value_is_2(project: Path) -> bool:
+    try:
+        text = (project / "src" / "mod.py").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(re.search(r"(?m)^\s*VALUE\s*=\s*2\s*(?:#.*)?$", text))
+
+
+def _readme_changed(project: Path) -> bool:
+    try:
+        text = (project / "README.md").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(text.strip()) and text.strip() != "# old layout"
+
+
+def _live_case_assessment(project: Path, case_name: str) -> dict[str, Any]:
+    spec = LIVE_CASES.get(case_name)
+    if not spec:
+        passed = _independent_check(project)
+        return {
+            "independent_ok": passed,
+            "independent_check_passed": passed,
+            "source_ok": None,
+            "fixture_scope_ok": None,
+            "scope_error": "",
+        }
+    if spec.get("docs_only"):
+        readme_ok = _readme_changed(project)
+        return {
+            "independent_ok": readme_ok,
+            "independent_check_passed": None,
+            "source_ok": readme_ok,
+            "fixture_scope_ok": True,
+            "scope_error": "",
+        }
+
+    expected_test_body = _expected_live_test_body(spec)
+    try:
+        test_body = (project / "tests" / "test_mod.py").read_text(encoding="utf-8")
+    except OSError:
+        test_body = ""
+    source_ok = _src_value_is_2(project)
+    fixture_scope_ok = test_body == expected_test_body
+    independent_passed = _independent_check(project)
+    expected_ok = bool(spec.get("expected_ok", True))
+    scope_error = "" if fixture_scope_ok else "modified_test_fixture"
+    independent_ok = bool(
+        expected_ok and source_ok and fixture_scope_ok and independent_passed
+    )
+    return {
+        "independent_ok": independent_ok,
+        "independent_check_passed": independent_passed,
+        "source_ok": source_ok,
+        "fixture_scope_ok": fixture_scope_ok,
+        "scope_error": scope_error,
+    }
+
+
 def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any] | None = None):
     """TaskRunner with either a scripted writer or the real one."""
 
@@ -365,8 +438,10 @@ def _finish_row(
     repair_rows = [row for row in manifest.get("completion_repair_context", []) if isinstance(row, dict)]
     done = event.get("stop_reason") == "done"
     blocked = event.get("stop_reason") == "blocked"
+    live_assessment: dict[str, Any] = {}
     if independent_ok is None:
-        independent_ok = _independent_check(project)
+        live_assessment = _live_case_assessment(project, case_name)
+        independent_ok = bool(live_assessment["independent_ok"])
     repair_rounds = max(len(repair_rows), len(texts))
     if writer_phases is None:
         writer_phases = repair_rounds + 1
@@ -397,6 +472,13 @@ def _finish_row(
         "turns": turns,
         "elapsed_s": round(elapsed_s, 2),
     }
+    if live_assessment:
+        row.update({
+            "independent_check_passed": live_assessment["independent_check_passed"],
+            "source_ok": live_assessment["source_ok"],
+            "fixture_scope_ok": live_assessment["fixture_scope_ok"],
+            "scope_error": live_assessment["scope_error"],
+        })
     if row_has_terminal_failure(row):
         row["error"] = str(
             event.get("error")
@@ -573,18 +655,7 @@ def _live_project(root: Path, spec: dict[str, Any]) -> Path:
     project = _pytest_project(root, docs_only=bool(spec["docs_only"]))
     if not spec["docs_only"]:
         (project / "tests").mkdir(exist_ok=True)
-        test_body = (
-            "def test_value():\n"
-            "    import importlib, sys\n"
-            "    sys.path.insert(0, 'src')\n"
-            "    mod = importlib.import_module('mod')\n"
-            "    assert mod.VALUE == 2\n"
-        )
-        if spec.get("dependency_missing"):
-            # The env-failure case is the only one that needs an import the
-            # environment cannot satisfy; injecting it everywhere turned
-            # every repairable-failure case into an environment failure.
-            test_body = "import redis  # noqa: F401\n\n" + test_body
+        test_body = _expected_live_test_body(spec)
         (project / "tests" / "test_mod.py").write_text(test_body, encoding="utf-8")
     else:
         (project / "README.md").write_text("# old layout\n", encoding="utf-8")

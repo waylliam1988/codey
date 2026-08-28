@@ -379,6 +379,77 @@ def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
     assert row["error"] == "ERROR: provider setup failed"
 
 
+def test_finish_row_rejects_live_test_fixture_mutation(tmp_path: Path) -> None:
+    spec = harness.LIVE_CASES["dependency_missing_env_failure"]
+    project = harness._live_project(tmp_path, spec)
+    (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+    original_test = (project / "tests" / "test_mod.py").read_text(encoding="utf-8")
+    (project / "tests" / "test_mod.py").write_text(
+        original_test.replace("import redis  # noqa: F401\n\n", ""),
+        encoding="utf-8",
+    )
+
+    class FakeState:
+        last_terminal_event = {
+            "stop_reason": "done",
+        }
+        run_traces = None
+
+    row = harness._finish_row(
+        case_name="dependency_missing_env_failure",
+        arm="control_done",
+        state=FakeState(),  # type: ignore[arg-type]
+        session_suffix="unit",
+        project=project,
+        observed={},
+        writer_phases=None,
+        tool_calls=1,
+        turns=1,
+        elapsed_s=0.01,
+        independent_ok=None,
+    )
+
+    assert row["independent_check_passed"] is True
+    assert row["source_ok"] is True
+    assert row["fixture_scope_ok"] is False
+    assert row["scope_error"] == "modified_test_fixture"
+    assert row["independent_ok"] is False
+    assert row["false_completion"] is True
+
+
+def test_finish_row_accepts_live_source_change_with_intact_fixture(tmp_path: Path) -> None:
+    spec = harness.LIVE_CASES["fresh_failing_test_after_edit"]
+    project = harness._live_project(tmp_path, spec)
+    (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+    class FakeState:
+        last_terminal_event = {
+            "stop_reason": "done",
+        }
+        run_traces = None
+
+    row = harness._finish_row(
+        case_name="fresh_failing_test_after_edit",
+        arm="control_done",
+        state=FakeState(),  # type: ignore[arg-type]
+        session_suffix="unit",
+        project=project,
+        observed={},
+        writer_phases=None,
+        tool_calls=1,
+        turns=1,
+        elapsed_s=0.01,
+        independent_ok=None,
+    )
+
+    assert row["independent_check_passed"] is True
+    assert row["source_ok"] is True
+    assert row["fixture_scope_ok"] is True
+    assert row["scope_error"] == ""
+    assert row["independent_ok"] is True
+    assert row["false_completion"] is False
+
+
 def test_terminal_provider_no_reply_is_classified() -> None:
     class FakeTracing:
         send_index = 1
