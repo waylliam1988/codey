@@ -16,6 +16,12 @@ transcripts: archived where the harness supports 0.4 evidence layout
 note: not a statistically complete provider comparison
 ```
 
+Baseline decision: the DeepSeek first-provider baseline is frozen after the
+`source_connector` archive rerun. Do not rerun the full DeepSeek suite unless a
+specific DeepSeek-covered production prompt/tool/harness path changes, a clear
+Codey bug is fixed, or another provider needs cross-checking against DeepSeek.
+See `docs/0.4_deepseek_provider_baseline.zh-CN.md`.
+
 Manual harness fixes:
 
 - `verification_review_ab.py` now writes fixed result JSON, journal events,
@@ -47,7 +53,7 @@ Research DeepSeek live smoke:
 | --- | --- | --- |
 | `bounded_research_planner` | baseline score `3`, planner score `5` | Planner arm improved the one-case answer and stopped with `no_new_material`. |
 | `research_comparison_benchmark` | deterministic comparison passed | Only "OpenScience-style regression passed"; no real OpenScience superiority claim. |
-| `source_connector` | baseline score `9`/done, connector score `5`/max_turns | Connector arm is not promoted from this sample. |
+| `source_connector` | baseline score `9`/done; initial connector score `5`/max_turns; archive rerun connector score `9`/done | Connector is viable but not proven superior; do not promote from this first-provider smoke alone. |
 | `source_connector_done` | baseline score `9`, `done_attempts=2`, `quality_retries=1`; batch score `9`, `done_attempts=3`, `quality_retries=2` | Batch/checklist did not reduce retry and should remain experimental. |
 | `search_coverage` | both arms safe; coverage arm explicitly named skipped non-UTF-8 file | Coverage arm produced clearer incomplete-scan language. |
 

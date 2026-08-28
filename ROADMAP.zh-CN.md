@@ -2799,7 +2799,7 @@ TaskRunner 大拆
 ```text
 0.4.19：A/B evidence polish + 非模型可见安全/命名卫生收口（已交付）
 0.4.20：Coding / Completion A/B bugfix，第一轮 DeepSeek core 已交付；后续只修 transcript/journal 证明的真实问题
-0.4.21：Research / Ghost A/B bugfix，第一轮 DeepSeek smoke 已交付；只修 evidence 污染、stale、citation、stall 归因问题
+0.4.21：Research / Ghost A/B bugfix，第一轮 DeepSeek provider baseline 已冻结；只修 evidence 污染、stale、citation、stall 归因问题
 0.4.22：0.4 final stabilization report，决定是否进入 0.5
 ```
 
@@ -2862,8 +2862,10 @@ verification candidate 选错
 ```
 
 0.4.21 只跑并修 Research / Ghost。第一轮 DeepSeek smoke 已经覆盖下列脚本；
-其中 `source_connector` connector arm 和 `source_connector_done` batch/checklist arm
-给出负信号，暂不默认推广，需先复盘 transcript / trace 再决定是否修改 prompt 或 harness：
+其中 `source_connector` connector arm 已用 `--transcript-mode archive` 补跑并证明
+connector 可走通，但不证明优于 baseline；`source_connector_done` batch/checklist arm
+没有净收益，暂不默认推广。DeepSeek 第一 provider baseline 已冻结，详见
+`docs/0.4_deepseek_provider_baseline.zh-CN.md`，后续不再全量重跑 DeepSeek：
 
 ```text
 bounded_research_planner_ab.py
@@ -2909,7 +2911,7 @@ journal 是否完整
 进入 0.5 的门槛：
 
 ```text
-DeepSeek 全套核心通过
+DeepSeek 第一 provider baseline 已冻结，且没有未归因 Codey bug
 至少第二个 provider 通过 coding + research 核心
 Qwen native-search stall 有明确分类
 Ghost 不污染 evidence
