@@ -374,3 +374,12 @@ def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
     )
 
     assert row["error"] == "ERROR: provider setup failed"
+
+
+def test_build_runner_live_path_uses_real_callables(tmp_path: Path) -> None:
+    state = harness.server.State(tmp_path / "state")
+
+    runner = harness._build_runner(state)
+
+    assert runner.agent_run is harness.default_agent_run
+    assert runner.collect_changes is harness.default_collect_changes

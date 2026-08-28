@@ -40,11 +40,12 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.app import server
-from codey.agents.runner import RunResult
+from codey.agents.runner import RunResult, run as default_agent_run
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.app.task_runner import TaskRequest, TaskRunner
 from codey.toolchain.runtime import ToolOutcome
+from codey.workspace.changes import collect_changes as default_collect_changes
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
@@ -296,8 +297,8 @@ def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any
     """TaskRunner with either a scripted writer or the real one."""
 
     if scripted is None:
-        collect = None
-        agent_run = None
+        collect = default_collect_changes
+        agent_run = default_agent_run
     else:
         index = {"n": -1}
         observed_collector = observed if observed is not None else {}
