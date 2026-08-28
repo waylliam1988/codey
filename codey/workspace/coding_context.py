@@ -15,6 +15,7 @@ class CodingContext:
     changed_files: tuple[str, ...] = ()
     selected_verification: VerificationCandidate | None = None
     verification_fresh: bool = False
+    verification_forbidden: bool = False
 
 
 def render_coding_context(context: CodingContext) -> str:
@@ -34,13 +35,16 @@ def render_coding_context(context: CodingContext) -> str:
             f"{_format_paths(eligible_files)}"
         )
     if changed_files:
-        label = (
-            "Changed files covered by verification"
-            if context.verification_fresh
-            else "Changed files needing verification"
-        )
+        if context.verification_fresh:
+            label = "Changed files covered by verification"
+        elif context.verification_forbidden:
+            label = "Changed files not locally verified by request"
+        else:
+            label = "Changed files needing verification"
         lines.append(f"- {label}: {_format_paths(changed_files)}")
-    if candidate is not None:
+    if context.verification_forbidden and changed_files:
+        lines.append("- Verification status: not run because the task forbids local checks.")
+    elif candidate is not None:
         if context.verification_fresh:
             lines.append(
                 "- Verification covering current changes: "

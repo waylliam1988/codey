@@ -105,6 +105,34 @@ VERIFICATION_REQUEST_RE = re.compile(
     r")\b|跑测试|运行测试|测试通过|验证|检查",
     re.IGNORECASE,
 )
+VERIFICATION_NEGATION_PREFIX_RE = re.compile(
+    r"(?:"
+    r"\b(?:do\s+not|don't|dont|never)\s+(?:(?:run|execute|perform|do)\s+)?(?:any\s+|the\s+)?"
+    r"|\b(?:without|skip|avoid)\s+(?:running\s+|run\s+|testing\s+|checking\s+)?"
+    r"|\bno\s+need\s+(?:to\s+|for\s+)?"
+    r"|\bneed(?:n't| not)\s+(?:to\s+)?"
+    r"|(?:不要|不用|无需|不需要|别|不必)(?:运行|跑|执行|做|进行)?(?:任何)?"
+    r")$",
+    re.IGNORECASE,
+)
+VERIFICATION_NEGATION_CANCEL_RE = re.compile(
+    r"\b(?:do\s+not|don't|dont|never)\s+(?:skip|avoid)\s+(?:[\w'-]+\s+){0,5}$",
+    re.IGNORECASE,
+)
+VERIFICATION_FORBID_RE = re.compile(
+    r"\b(?:do\s+not|don't|dont|never)\s+"
+    r"(?:(?:run|execute|perform|do)\s+)?(?:any\s+|the\s+)?"
+    r"(?:commands?|checks?|tests?|testing|unittest|pytest|verification|verify|build|lint|typecheck)\b"
+    r"|\b(?:without|skip|avoid)\s+"
+    r"(?:running\s+|run\s+|testing\s+|checking\s+)?"
+    r"(?:commands?|checks?|tests?|testing|unittest|pytest|verification|verify|build|lint|typecheck)\b"
+    r"|\bno\s+need\s+(?:to\s+|for\s+)?"
+    r"(?:run|test|verify|check|build|lint|typecheck|commands?|checks?|tests?)\b"
+    r"|\bneed(?:n't| not)\s+(?:to\s+)?"
+    r"(?:run|test|verify|check|build|lint|typecheck)\b"
+    r"|(?:不要|不用|无需|不需要|别|不必)(?:运行|跑|执行|做|进行)?(?:任何)?(?:命令|测试|检查|验证)",
+    re.IGNORECASE,
+)
 DEFAULT_CODEC = JsonToolCodec()
 
 
@@ -252,8 +280,24 @@ def _read_before_edit_outcome(
     return None
 
 
+def _verification_match_is_negated(task: str, start: int) -> bool:
+    prefix = re.split(r"[\n.;!?。！？；]", task[:start])[-1]
+    if VERIFICATION_NEGATION_CANCEL_RE.search(prefix):
+        return False
+    return bool(VERIFICATION_NEGATION_PREFIX_RE.search(prefix))
+
+
 def _task_requests_verification(task: str) -> bool:
-    return bool(VERIFICATION_REQUEST_RE.search(task or ""))
+    text = str(task or "")
+    return any(
+        not _verification_match_is_negated(text, match.start())
+        for match in VERIFICATION_REQUEST_RE.finditer(text)
+    )
+
+
+def _task_forbids_verification(task: str) -> bool:
+    text = str(task or "")
+    return bool(VERIFICATION_FORBID_RE.search(text)) and not _task_requests_verification(text)
 
 
 def _verification_reminder(task: str) -> str:
@@ -707,6 +751,7 @@ def run(
     read_file_paths: set[str] = set()
     known_file_paths: set[str] = set()
     verification_required = _task_requests_verification(user_task)
+    verification_forbidden = _task_forbids_verification(user_task)
     edit_epoch = 0
     successful_verifications = [
         (item.command, item.cwd, edit_epoch) for item in verification_successful_checks
@@ -1170,6 +1215,7 @@ def run(
                 changed_files=tuple(sorted(verification_paths)),
                 selected_verification=candidate,
                 verification_fresh=verification_is_fresh(candidate),
+                verification_forbidden=verification_forbidden,
             )
         )
 
@@ -1551,6 +1597,7 @@ def run(
                     checks_passed = trusted_green
                 if (
                     not verification_required
+                    and not verification_forbidden
                     and candidate is not None
                     and not trusted_green
                     and default_verification_reminded_epoch != edit_epoch

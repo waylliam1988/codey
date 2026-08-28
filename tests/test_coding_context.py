@@ -45,6 +45,23 @@ def test_render_coding_context_marks_fresh_verification() -> None:
     assert "not yet passed" not in prompt
 
 
+def test_render_coding_context_suppresses_suggested_check_when_verification_forbidden() -> None:
+    prompt = render_coding_context(
+        CodingContext(
+            changed_files=("src/app.py",),
+            selected_verification=VerificationCandidate("npm test", "frontend"),
+            verification_fresh=False,
+            verification_forbidden=True,
+        )
+    )
+
+    assert "- Changed files not locally verified by request: src/app.py" in prompt
+    assert "- Changed files needing verification" not in prompt
+    assert "- Suggested verification for current changes:" not in prompt
+    assert '{"tool":"run"' not in prompt
+    assert "task forbids local checks" in prompt
+
+
 def test_render_coding_context_sanitizes_and_truncates_paths() -> None:
     paths = tuple(f"src\\file_{index}.py\nnoise" for index in range(10))
 

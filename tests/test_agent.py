@@ -2385,6 +2385,76 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(any("verification" in render_run_event(event).lower() for event in events))
         self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))
 
+    def test_done_after_edit_respects_explicit_no_run_request(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}'
+        done = '{"tool":"done","args":{"summary":"updated without running commands"}}'
+        provider = FakeProvider(read, edit, done)
+        events = []
+        candidate = agent.VerificationCandidate("python -m pytest", ".")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "test_app.py").write_text("import app\n\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "In app.py change VALUE from 1 to 2. Do not run any commands; report done once edited.",
+                on_event=events.append,
+                fresh_chat=False,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "updated without running commands")
+        self.assertTrue(result.changed)
+        self.assertFalse(result.checks_ran)
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(len(provider.sent), 3)
+        self.assertFalse(
+            any("The user asked for verification" in prompt for prompt in provider.sent)
+        )
+        self.assertFalse(
+            any("trusted local check is available" in prompt for prompt in provider.sent)
+        )
+        self.assertFalse(
+            any("Changed files needing verification" in prompt for prompt in provider.sent)
+        )
+        self.assertFalse(
+            any("Suggested verification for current changes" in prompt for prompt in provider.sent)
+        )
+        self.assertFalse(
+            any(
+                event.kind == "tool"
+                and event.call is not None
+                and event.call.name == "run"
+                for event in events
+            )
+        )
+
+    def test_negated_setup_command_does_not_hide_explicit_verification_request(self) -> None:
+        self.assertFalse(
+            agent._task_requests_verification(
+                "Do not run any commands; report done once edited."
+            )
+        )
+        self.assertTrue(
+            agent._task_forbids_verification(
+                "Do not run any commands; report done once edited."
+            )
+        )
+        self.assertTrue(
+            agent._task_requests_verification(
+                "Do not run npm install; run python -m py_compile app.py after editing."
+            )
+        )
+        self.assertFalse(
+            agent._task_forbids_verification(
+                "Do not run npm install; run python -m py_compile app.py after editing."
+            )
+        )
+
     def test_requested_verification_requires_run_after_latest_edit(self) -> None:
         run_before_edit = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
         read = '{"tool":"read_file","args":{"path":"app.py"}}'
