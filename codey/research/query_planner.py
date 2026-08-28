@@ -1,8 +1,9 @@
-"""Deterministic Research query planner dry-run.
+"""Deterministic Research follow-up query planner.
 
 Planner v1 consumes proof-review gaps plus connector metadata and returns a
-bounded plan. It does not execute searches, fetch sources, patch prompts, or
-change Research tool results.
+bounded plan. The planner itself does not execute searches, fetch sources, or
+patch prompts; ResearchPipeline may use its bounded output as follow-up behavior
+input.
 """
 
 from __future__ import annotations

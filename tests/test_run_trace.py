@@ -514,7 +514,7 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("SECRET_REASON", serialized)
             self.assertNotIn("SECRET_CLIENT_NAME", serialized)
 
-    def test_research_plan_trace_is_bounded_dry_run_metadata(self) -> None:
+    def test_research_plan_trace_is_bounded_plan_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
             recorder = store.open(

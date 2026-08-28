@@ -50,7 +50,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "6251947ab8d1b26678c82d2ed35b23f33502ae199f876bde999aa182f3cfd0d9"
+    "dc25b25e2afafe21525e97e23c9f77303813a1c7bddf1f7c7ed0e3fd773705c9"
 )
 
 
@@ -188,12 +188,12 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.ui_surface, ())
         self.assertEqual(spec.durable_state, ())
 
-    def test_research_query_planner_is_trace_only_dry_run(self) -> None:
+    def test_research_query_planner_is_bounded_behavior_input_trace(self) -> None:
         registry = builtin_capability_registry()
 
         spec = registry.get("research_query_planner")
 
-        self.assertEqual(spec.provides, ("research_plan_dry_run",))
+        self.assertEqual(spec.provides, ("bounded_research_followup_plan",))
         self.assertEqual(
             spec.consumes,
             ("research_proof_quality", "research_source_connectors", "run_trace"),
@@ -204,6 +204,9 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())
         self.assertEqual(spec.trace_sections, ("research_plans",))
+        self.assertEqual(spec.projection_audience, ("behavior_input", "trace_only"))
+        self.assertEqual(spec.canonical_inputs, ("research_proof_quality",))
+        self.assertEqual(spec.release_gate, "targeted_tests")
 
     def test_domain_evidence_profiles_is_pure_data_boundary(self) -> None:
         registry = builtin_capability_registry()

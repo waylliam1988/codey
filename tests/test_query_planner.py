@@ -126,7 +126,7 @@ def test_local_table_and_json_questions_prefer_local_connectors() -> None:
     ]
 
 
-def test_planner_dry_run_payload_and_trace_do_not_store_raw_secret_prompt_url_or_path() -> None:
+def test_planner_payload_and_trace_do_not_store_raw_secret_prompt_url_or_path() -> None:
     plan = build_research_plan(
         _review(
             followup_questions=[

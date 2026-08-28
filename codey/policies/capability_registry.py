@@ -500,15 +500,15 @@ def builtin_capability_registry() -> CapabilityRegistry:
         ),
         CapabilitySpec(
             id="research_query_planner",
-            provides=("research_plan_dry_run",),
+            provides=("bounded_research_followup_plan",),
             consumes=("research_proof_quality", "research_source_connectors", "run_trace"),
             durable_state=("run_trace",),
             trace_sections=("research_plans",),
             owner_module="codey.research.query_planner",
-            projection_audience=("trace_only",),
+            projection_audience=("behavior_input", "trace_only"),
             canonical_inputs=("research_proof_quality",),
             fail_mode="fail_open",
-            release_gate="unit_tests",
+            release_gate="targeted_tests",
         ),
         CapabilitySpec(
             id="research_brief_projection",

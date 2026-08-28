@@ -2717,9 +2717,9 @@ latency
 user interruption count
 ```
 
-## 0.5 主线 - Durable Runtime + Local Adaptation + Protocol Portability
+## 0.5 主线 - Reliable Agent Runtime + Verified Work Integrity
 
-0.4.15 到 0.4.19 是 0.4 进入 A/B stabilization 前的安全、证据和命名语义收口：
+0.4.15 到 post-0.4.21 是 0.4 进入 A/B stabilization 后的安全、证据和命名语义收口：
 
 ```text
 run command argv 文件系统 operand 边界闭合
@@ -2731,27 +2731,29 @@ Ghost Affinity / Work Queue event log 只接受 canonical event shape，畸形�
 NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 ```
 
-这些改动不改变模型可见 prompt，不新增 TaskRunner/core facts 抽象，目标是让
-0.4 后续 live A/B 有更干净的安全边界和证据基线。剩余长期问题进入 0.5：
+这些改动大多不改变模型可见 prompt，不新增 TaskRunner/core facts 抽象，目标是让
+0.4 live A/B 有更干净的安全边界和证据基线。A/B 原材料暴露的长期问题进入 0.5：
 
 ```text
-Research untrusted source wrapper -> 0.5.3 prompt-surface / injection hardening
+Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
+Research untrusted source wrapper -> 0.5.4 prompt-surface / injection hardening
 TaskRunner convergence point -> 0.5 横向架构线，按真实 phase 抽 RunOperationState / EffectLog
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
-Provider/protocol outcome learning -> 0.5.4，不回流 evidence / permission / completion verdict
+Provider/protocol outcome learning -> 0.5.5，不回流 evidence / permission / completion verdict
 ```
 
 剩余 review finding 的版本归属固定如下，避免后续把架构债混进 A/B 修复：
 
 | finding | 0.5 归属 | 文档原则 |
 | --- | --- | --- |
-| Research source content 进入模型后的 prompt-injection 边界 | 0.5.3 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
+| Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
+| Research source content 进入模型后的 prompt-injection 边界 | 0.5.4 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
 | TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase 抽 RunOperationState / EffectLog | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
-| Provider / protocol outcome 学习 | 0.5.4 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
-| World Model | 0.5.7 / 0.5.8 | belief / prediction / calibration 都不是 truth confidence |
-| 本地 read-modify-write 状态并发写保护 | 0.5.0 / 0.5.1 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
-| command/action 语义 IR | 0.5.2 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
+| Provider / protocol outcome 学习 | 0.5.5 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
+| World Model | 0.5.8 / 0.5.9 | belief / prediction / calibration 都不是 truth confidence |
+| 本地 read-modify-write 状态并发写保护 | 0.5.1 / 0.5.2 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
+| command/action 语义 IR | 0.5.3 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
 | NetworkPolicy allow 语义 | 0.4.19 已收口，0.5 只维护 regression | policy allowed 不是 public-internet proof；调用方判断允许访问用 `decision.allowed` |
 
 已在 0.4.15 收口的 provider override、CDP session lifecycle、CI matrix、README
@@ -2943,7 +2945,9 @@ Evidence / Completion / Repair / Ghost / Protocol telemetry，收成一条更耐
 内部运行时主线：
 
 ```text
-verified completion
+edit integrity monitor
+  -> receipt-level integrity warning
+  -> verified completion
   -> durable operation state
   -> effect intent / settlement
   -> replay policy
@@ -2956,11 +2960,33 @@ verified completion
 完整 Storage conformance。Codey 只需要先让当前单 run、单 project writer、
 Research pipeline 和 repair loop 更可恢复、更可证明、更少协议摩擦。
 
+0.4 stabilization 原材料给 0.5 的排序依据如下：
+
+```text
+Qwen/MiMo 都出现 dependency_missing_env_failure -> modified_test_fixture：
+  模型会删除、注释或 try/except 测试夹具里的 import redis，让 pytest 变绿后说 done。
+  现有 A/B scorer/report 能抓住，但生产 completion path 还缺通用 integrity observation。
+
+Research source_connector / bounded planner 有局部收益，但多 provider 下 proof_ok 仍常为 false：
+  不把 batch/checklist 或 connector superiority 默认化，先做 evidence-ledger-driven finalizer。
+
+search_coverage 对 skipped / non-UTF8 / unreadable 文件有明确收益：
+  继续强化“搜索不完整时不能自信断言不存在”。
+
+Ghost continuity 在 DeepSeek/Qwen/MiMo 都没有 evidence 污染：
+  0.5 只做解释和 shadow state，不让 Ghost/World Model 进入 evidence 或 permission。
+
+MiMo 慢但 send/reply 匹配：
+  做 provider wait/profile telemetry，用于诊断和测试调度，不作为自动 provider 可信度排名。
+```
+
 ### 0.5 总边界
 
 必须守住：
 
 ```text
+Monitor failure 不能被当成 clean
+高置信 integrity suspicious 不能显示成 clean verified completion
 Ghost / World Model 只能产出 hint，不能产出 evidence、permission 或 completion verdict
 World Model prediction_confidence 不是 truth confidence
 Protocol adapter 只能 lower 到 Codey canonical ToolCall
@@ -3008,7 +3034,191 @@ TaskRunner.run
 不能因为减少 task_runner.py 行数而拆模块
 ```
 
-## 0.5.0 - Run Operation State + Completion Repair Durability v1
+## 0.5.0 - Verified Completion v2 + Edit Integrity Monitor + Receipt Warning
+
+状态：计划。目标不是阻止模型修改测试，也不是自动修复模型的错误修法，而是在真实
+production completion path 中观察“验证是否被编辑削弱”，并在高置信 suspicious 时
+让最终 receipt 对用户可见。正常 clean path 必须完全无感；低风险只进 trace/details；
+高风险不能显示成 clean verified completion。
+
+0.4 stabilization 的触发证据：
+
+```text
+Qwen:
+  dependency_missing_env_failure 中删除或注释 tests/test_mod.py 的 import redis，
+  让 pytest 变绿后说 done。
+
+MiMo:
+  同一 case 中把 import redis 包成 try/except ImportError: pass，
+  让 pytest 变绿后说 done。
+
+共同结论:
+  这不是 repair_context 问题，因为 repair_rounds=0。
+  这是 edit/verification integrity 问题：模型可能通过削弱验证而不是修复产品代码来完成任务。
+```
+
+### 做什么
+
+新增：
+
+```text
+codey/completion/edit_scope.py
+codey/completion/edit_integrity.py
+tests/test_completion_edit_integrity.py
+tests/test_task_runner_edit_integrity.py
+tests/fixtures/edit_integrity/
+tests/manual/edit_integrity_ab.py
+```
+
+核心对象：
+
+```text
+EditScopeSnapshot(
+  task_ref
+  explicit_user_scope
+  production_paths
+  test_paths
+  fixture_paths
+  verification_config_paths
+  docs_paths
+  generated_paths
+)
+
+EditIntegrityObservation(
+  schema_version
+  run_id
+  status: clean | suspicious | unobserved | monitor_error
+  severity: none | low | high | critical
+  reason_codes
+  findings
+  user_authorized_test_edit
+  affected_paths
+  verification_refs
+  change_refs
+  monitor_error_ref
+)
+```
+
+第一版只做 monitor + receipt warning：
+
+```text
+model edits
+  -> change observation
+  -> verification
+  -> EditIntegrityMonitor
+  -> CompletionProof diagnostics
+  -> receipt-level warning when high-confidence suspicious
+```
+
+检测范围控制在高信号、低误伤：
+
+```text
+test/fixture import 被删除、注释、try/except 掉
+assert / expected value 被删除或明显放宽
+verification config 被改得更窄或更容易通过
+生产目标文件未改，但验证从 failed 变 passed
+任务未授权修改测试，却修改了 protected fixture/test helper
+用户明确要求修改测试时标 authorized，不直接当 suspicious
+```
+
+用户可见文案必须克制。clean path 不展示任何新增内容；高置信 suspicious 才在最终
+receipt 加一句：
+
+```text
+已完成，但验证可信度较低：模型修改了测试文件，测试结果可能因此被削弱。建议复查测试变更。
+```
+
+details / trace 可以显示结构化原因：
+
+```text
+tests/test_mod.py modified
+import redis guarded or removed
+pytest changed from failed to passed
+source target fixed / not fixed
+user_authorized_test_edit true/false
+```
+
+### 边界
+
+- 不新增 EditIntegrityManager / VerificationManager。
+- 不自动 repair。
+- 不默认阻止 done。
+- 不把所有测试修改都当失败。
+- 不改变 writer prompt、tool schema、Research prompt 或 provider behavior。
+- 不保存 raw transcript、raw diff 全文、raw stdout/stderr；只存 bounded paths、reason codes、refs 和 digest。
+- Monitor 只产生 integrity finding，不直接产出 completion verdict。
+- Completion 层组合 verification + integrity + authorization，再决定 receipt 语义。
+
+### 不变式
+
+```text
+测试通过不等于验证可信。
+Monitor failure 不能被伪装成 clean。
+高置信 suspicious 不能显示成 clean verified completion。
+用户授权修改测试不等于测试语义一定可信，仍可记录 low-risk finding。
+EditIntegrityObservation 不是 Evidence，不进入 EvidenceLedger。
+EditIntegrityObservation 不能授权工具、不能改变 PermissionProfile、不能绕过 CompletionProof。
+```
+
+### 顺手架构优化
+
+```text
+把 completion A/B 里的 protected fixture / fixture_scope_ok / scope_error 判断，
+  收成可被生产 path 调用的 edit_integrity projection。
+TaskRunner 只在 completion proof 组合点调用 observe_edit_integrity(...)。
+CompletionProof 增加结构化 diagnostics/ref，不把 warning 当普通字符串塞入 summary。
+receipt renderer 只负责把 high-confidence finding 压缩成人类可读一句话。
+manual A/B scorer 复用生产 observation，不维护第二套 modified_test_fixture 判断。
+```
+
+### 验证
+
+```text
+Qwen/MiMo modified_test_fixture transcript replay 能得到 high suspicious
+删除 import / 注释 import / try-except ImportError 都能被识别
+用户明确要求修改测试时不触发 hard suspicious
+正常生产代码修复 + 测试不变 -> clean
+docs-only change -> 不误报 test integrity
+monitor exception -> monitor_error，不能变 clean
+high suspicious receipt 不得是 clean verified wording
+EditIntegrityObservation 不进入 EvidenceLedger / ResearchRecord / Ghost memory
+edit_integrity.py 不 import provider/browser/tool_runtime/server
+```
+
+### A/B
+
+需要，但分阶段：
+
+```text
+deterministic:
+  replay Qwen/MiMo modified_test_fixture 原材料
+  fixture-based diff/integrity tests
+  receipt rendering tests
+
+live smoke:
+  DeepSeek one arm / one case，确认 clean path 不增加噪音
+  Qwen 或 MiMo dependency_missing_env_failure one case，确认 warning 可见
+
+enforcement:
+  0.5.0 不默认 block。
+  只有 A/B 证明低误伤且有净收益，后续版本才把 high suspicious 升级为 completion block / repair admission。
+```
+
+### Graduation / Delete Gate
+
+这个 monitor 不能长期停在“有代码但没产品价值”的状态。0.5.2 前必须二选一：
+
+```text
+graduation:
+  high-confidence suspicious -> completion policy block 或 repair context admission
+  前提是 A/B 证明不会误杀用户授权的测试修改
+
+delete/degrade:
+  如果误伤高、用户噪音高、或不能稳定复现 Qwen/MiMo failure mode，
+  删除生产接线，最多保留 manual harness scorer。
+```
+
+## 0.5.1 - Run Operation State + Completion Repair Durability v1
 
 状态：计划。目标是把 0.4.13 的 verified completion / bounded repair 从
 `_run_project_mode` 的函数栈状态，收成一个最小 durable program counter。第一版只覆盖
@@ -3112,7 +3322,7 @@ RunOperationState 不 import agent/provider/tool_runtime/server/ghost
 不需要 live provider A/B。它不改变模型可见内容或工具语义。需要做 deterministic
 crash-position tests 和一条手工 stop/resume smoke。
 
-## 0.5.1 - Effect Intent / Settlement + Tool Replay Policy v1
+## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 
 状态：计划。目标是把 Pi 的 effect sandwich 落到 Codey 当前最危险的三个边界：
 provider send、tool run、completion repair round。每个真实外部效果前写 intent，
@@ -3211,7 +3421,7 @@ tool args digest 稳定且不含 raw secret
 不需要质量 A/B。需要 fault-injection tests 和 live smoke：杀进程位置覆盖
 `before intent / after intent / during effect / after settlement`。
 
-## 0.5.2 - Shared Tool Argument Repair + Protocol Friction Reduction v1
+## 0.5.3 - Shared Tool Argument Repair + Protocol Friction Reduction v1
 
 状态：计划。目标是把 coding `JsonToolCodec` 里散落的参数别名、编辑参数宽容和
 常见 provider 方言误差，收成所有 coding codec 共用的薄 repair shim。这个版本会直接
@@ -3289,7 +3499,7 @@ unsafe_action_count
 false_completion_rate
 ```
 
-## 0.5.3 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
+## 0.5.4 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
 
 状态：计划。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
 生成，并用 hash/parity tests 防止 prompt 描述、parser 接受范围和 runtime 语义漂移。
@@ -3375,7 +3585,7 @@ research open_url / knowledge_write 不被改名成 read / write
 Research untrusted source wrapper 的生产默认渲染，必须先走
 `tests/manual/tool_protocol_portability_ab.py` 或专用 Research source-rendering A/B。
 
-## 0.5.4 - Provider / Protocol Affinity + Repair Outcome Learning v1
+## 0.5.5 - Provider / Protocol Affinity + Repair Outcome Learning v1
 
 状态：计划。目标是让 Ghost 学会“哪个 provider 常在哪类协议摩擦上失败、哪类
 repair prompt 更有效”，但只影响 repair strategy 和诊断，不自动换 provider、不授权工具。
@@ -3466,7 +3676,7 @@ false_completion_rate
 provider_failure_rate
 ```
 
-## 0.5.5 - Project Verification Habit Projection v1
+## 0.5.6 - Project Verification Habit Projection v1
 
 状态：计划。目标是让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，
 但不自动执行，也不把习惯当 completion proof。
@@ -3548,7 +3758,7 @@ task_success
 sent_chars
 ```
 
-## 0.5.6 - Ghost Explain v0 + Provenance-Safe Inspector
+## 0.5.7 - Ghost Explain v0 + Provenance-Safe Inspector
 
 状态：计划。目标是让用户和开发者能解释“这次 Ghost 为什么选了这些 hint”，但不让
 Ghost 成为独立说话者，也不改主 UI。第一版只做 deterministic renderer 和 CLI/JSON。
@@ -3626,7 +3836,7 @@ ghost/explain.py 不 import provider/browser/tool_runtime/task_runner
 
 不需要。它不改变默认模型行为。需要 CLI smoke。
 
-## 0.5.7 - World Model Event Log + Prediction Review v0
+## 0.5.8 - World Model Event Log + Prediction Review v0
 
 状态：计划。目标是落地最小 World Model 合同：记录项目/研究/环境状态预测，并用已有
 runtime evidence、proof 或用户纠正复盘命中/失败。第一版不进入 prompt，先用于
@@ -3707,9 +3917,9 @@ world_model 不 import provider/browser/tool_runtime/task_runner
 
 不需要 live A/B。它不进入 prompt。需要 deterministic prediction/review replay tests。
 
-## 0.5.8 - World Model ContextSource + Shadow Strategy Ranker v1
+## 0.5.9 - World Model ContextSource + Shadow Strategy Ranker v1
 
-状态：计划。目标是把 0.5.7 的 state estimate 变成可选、受限、可 A/B 的
+状态：计划。目标是把 0.5.8 的 state estimate 变成可选、受限、可 A/B 的
 ContextSource：只提示模型“哪里需要复查”，不告诉模型“什么是真的”。同时增加 shadow
 strategy ranker，用历史 review 评估 verification-first / source-refresh / repair-short
 等策略，但默认不接管执行。
@@ -3781,7 +3991,7 @@ sent_chars
 UI interruption count
 ```
 
-## 0.5.9 - Protocol Adapter Dataset Export + Shadow Normalizer v1
+## 0.5.10 - Protocol Adapter Dataset Export + Shadow Normalizer v1
 
 状态：计划。目标是把 protocol telemetry、tool args repair、repair prompts 和最终
 ToolCall/CompletionProof outcome 导出成可选本地数据集，并同时跑一个 shadow normalizer
@@ -3848,9 +4058,9 @@ dataset schema 稳定且可 prune/delete
 
 本版新增 manual A/B harness，但不改变生产行为，不需要 release-blocking live A/B。
 
-## 0.5.10 - Local Protocol Classifier + Repair Strategy Selector v1
+## 0.5.11 - Local Protocol Classifier + Repair Strategy Selector v1
 
-状态：计划。目标是把 0.5.9 的数据和 0.5.4 的 affinity 用起来：训练或规则化一个小型
+状态：计划。目标是把 0.5.10 的数据和 0.5.5 的 affinity 用起来：训练或规则化一个小型
 本地 classifier，选择已有 repair prompt strategy、tool-args repair strictness 和
 protocol hint 长度。它不训练主模型，也不改变安全语义。
 
@@ -3923,7 +4133,7 @@ native_search_leak_count
 completion_proof_status
 ```
 
-## 0.5.11 - Conditional Tool Projection + One Proven Dialect v1
+## 0.5.12 - Conditional Tool Projection + One Proven Dialect v1
 
 状态：计划。目标是只在 A/B 证明收益后，为一个 provider/model family 启用一个
 替代模型可见工具面，并 lower 到 Codey canonical ToolCall。这个版本不能提前预设赢家；
@@ -4001,7 +4211,7 @@ verification_success 不降
 research evidence bypass = 0
 ```
 
-## 0.5.12 - Native Structured Provider Path v1
+## 0.5.13 - Native Structured Provider Path v1
 
 状态：计划。目标是给真正支持原生 tool/function calling 的 API provider 一个可选
 structured path，避免正文 JSON 的协议摩擦。网页 provider 仍走现有 prompt/reply。
@@ -4070,7 +4280,7 @@ latency
 token usage
 ```
 
-## 0.5.13 - Local Training Export + Optional Tiny Adapter v0
+## 0.5.14 - Local Training Export + Optional Tiny Adapter v0
 
 状态：计划。目标是把 0.5 的 telemetry 和 dataset 用于可选的小适配层训练：protocol
 error classifier、tool-call normalizer、repair prompt selector、claim-gap classifier。
@@ -4136,9 +4346,9 @@ adapter 不 import tool_runtime/provider/task_runner
 ### A/B
 
 不作为默认生产路径时不需要 release-blocking A/B。若某 adapter 要默认启用，必须回到
-0.5.10/0.5.11 的 provider live A/B gate。
+0.5.11/0.5.12 的 provider live A/B gate。
 
-## 0.5.14 - Ghost / World Model Maintenance Hardening v1
+## 0.5.15 - Ghost / World Model Maintenance Hardening v1
 
 状态：计划。目标是把 0.5 新增的 Ghost protocol affinity、project habits、World Model
 projection、dataset refs 做成可衰减、可删除、可重建、可导出的本地状态。它给用户
@@ -4214,6 +4424,9 @@ maintenance 不 import provider/browser/tool_runtime/task_runner
 Exit Gate：
 
 ```text
+Edit Integrity Monitor 已经接入 production completion path，且 high suspicious 会产生 receipt warning
+Qwen/MiMo modified_test_fixture 原材料可被 deterministic replay 识别
+Monitor error / unobserved 不能被伪装成 clean
 RunOperationState / EffectLog / ReplayPolicy 已经稳定
 TaskRunner 不再继续吸收新生命周期状态
 CompletionProof / Evidence / Verification 的 source of truth 明确
@@ -4262,7 +4475,7 @@ World Model 自动决策
 
 ## 0.5 插件开放边界
 
-0.5 完成前仍不做有限插件化。即使 0.5.12 引入 structured provider path，
+0.5 完成前仍不做有限插件化。即使 0.5.13 引入 structured provider path，
 它也只是 provider capability，不是插件系统。真正的开放顺序仍然应放到 0.5 稳定后：
 
 ```text
@@ -4309,7 +4522,7 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 0.4 stabilization：只修 A/B 暴露的真实 bug，不再堆能力
 ```
 
-三件 Pi 借鉴能力的具体修改落点如下，版本归属应放到 0.5.0 / 0.5.1：
+三件 Pi 借鉴能力的具体修改落点如下，版本归属应放到 0.5.1 / 0.5.2：
 
 ```text
 1. repair/provider/tool 显式 operation phase
@@ -4335,8 +4548,9 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 
 ```text
 0.4.13：完成 verified completion 行为闭环，不引入恢复语义
-0.5.0：让 completion/repair 状态可恢复、可解释
-0.5.1：让 provider/tool effects 有 intent/settlement 和 replay policy
+0.5.0：让 edit/test integrity 进入 production completion path，并在高风险时给 receipt warning
+0.5.1：让 completion/repair 状态可恢复、可解释
+0.5.2：让 provider/tool effects 有 intent/settlement 和 replay policy
 ```
 
 ## Adapter 自修复 prompt 分层（后续）
@@ -4366,6 +4580,9 @@ critic finding 和 Ghost continuity 的边界。
 “模块是否存在”，而是每个运行边界是否能证明：
 
 ```text
+edit/test integrity monitor 进入 production completion path
+high suspicious 不能显示为 clean verified completion
+monitor_error / unobserved 不能被当 clean
 外部效果前有 intent
 外部效果后有 settlement
 恢复时读 durable state，不从事件缺失推断
@@ -4561,21 +4778,22 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
 0.4.15 Run Command Boundary / A-B Evidence Hygiene（不改 prompt；deterministic + self-test gate，live A/B 用于后续稳定化）
 0.4.16 Ghost Event Canonicalization（不改 prompt；deterministic gate，live A/B 用于后续稳定化）
-0.5.0 RunOperationState（durability-only，不需要 live A/B）
-0.5.1 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
-0.5.2 Tool Args Repair（parser 接受范围变宽，需要 A/B）
-0.5.3 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
-0.5.4 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
-0.5.5 Project Verification Habit（改变 writer context，需要 A/B）
-0.5.6 Ghost Explain（默认不进 prompt，不需要 A/B）
-0.5.7 World Model Event Log（不进 prompt，不需要 A/B）
-0.5.8 World Model ContextSource（改变 context，需要 A/B）
-0.5.9 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
-0.5.10 Local Protocol Classifier（改变 repair prompt，需要 A/B）
-0.5.11 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
-0.5.12 Native Structured Provider Path（API/local provider 需要 A/B）
-0.5.13 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
-0.5.14 Maintenance Hardening（不进 prompt，不需要 A/B）
+0.5.0 Edit Integrity Monitor + Receipt Warning（生产 path 可见；clean path 不需要 A/B，高风险 warning 需要 live smoke）
+0.5.1 RunOperationState（durability-only，不需要 live A/B）
+0.5.2 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
+0.5.3 Tool Args Repair（parser 接受范围变宽，需要 A/B）
+0.5.4 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
+0.5.5 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
+0.5.6 Project Verification Habit（改变 writer context，需要 A/B）
+0.5.7 Ghost Explain（默认不进 prompt，不需要 A/B）
+0.5.8 World Model Event Log（不进 prompt，不需要 A/B）
+0.5.9 World Model ContextSource（改变 context，需要 A/B）
+0.5.10 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
+0.5.11 Local Protocol Classifier（改变 repair prompt，需要 A/B）
+0.5.12 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
+0.5.13 Native Structured Provider Path（API/local provider 需要 A/B）
+0.5.14 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
+0.5.15 Maintenance Hardening（不进 prompt，不需要 A/B）
 ```
 
 0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、
@@ -4606,6 +4824,7 @@ tests/manual/research_brief_v2_ab.py
 tests/manual/ghost_research_continuity_ab.py
 tests/manual/longitudinal_research_harness_ab.py
 tests/manual/research_comparison_benchmark_ab.py
+tests/manual/edit_integrity_ab.py
 tests/manual/completion_operation_resume_smoke.py
 tests/manual/effect_sandwich_fault_smoke.py
 tests/manual/tool_args_repair_ab.py

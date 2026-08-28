@@ -17,8 +17,9 @@ class GhostSignalExtractor:
     """Run the Ghost signal JSON contract against a ChatProvider.
 
     The extractor is fail-open: provider or parsing failures produce no signals.
-    It is intended for manual/shadow use in 0.3.x, not for blocking user-facing
-    chat, coding, or Research turns.
+    It is used by post-turn Ghost learning when learning is enabled. The
+    extracted signals are advisory memory candidates; they never block
+    user-facing chat, coding, or Research turns.
     """
 
     def __init__(self, codec: GhostSignalCodec | None = None) -> None:
