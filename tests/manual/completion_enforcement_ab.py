@@ -409,6 +409,31 @@ def _finish_row(
     return row
 
 
+def _attach_terminal_failure_classes(row: dict[str, Any], tracing_provider: TracingProvider) -> None:
+    if not row_has_terminal_failure(row):
+        return
+    provider_failure = classify_provider_failure(
+        sends=tracing_provider.send_index,
+        replies=tracing_provider.reply_count,
+        error=row.get("error") or "",
+    )
+    row["provider_failure_class"] = provider_failure
+    if provider_failure not in ("none", "unknown"):
+        row["provider_error_class"] = AB_FAILURE_PROVIDER
+        row["codey_failure_class"] = AB_FAILURE_NONE
+    else:
+        row["provider_error_class"] = AB_FAILURE_NONE
+        row["codey_failure_class"] = AB_FAILURE_CODEY
+
+
+def _aggregate_failure_class(rows: list[dict[str, Any]], key: str) -> str:
+    for row in rows:
+        value = str(row.get(key) or AB_FAILURE_NONE)
+        if value != AB_FAILURE_NONE:
+            return value
+    return AB_FAILURE_NONE
+
+
 # --------------------------------------------------------------- self-test ---
 
 
@@ -761,6 +786,7 @@ def run_live(
                     tracing_provider=tracing_provider,
                     elapsed_s=time.monotonic() - started,
                 )
+            _attach_terminal_failure_classes(row, tracing_provider)
             bind_row_evidence_refs(row, layout=layout, tracing_provider=tracing_provider)
             row["provider"] = provider_id
             if journal is not None:
@@ -798,6 +824,8 @@ def run_live(
                 started_at=str(report.get("started_at") or timestamp()),
                 finished_at=str(report.get("finished_at") or timestamp()),
                 stop_reason="complete" if report["ok"] else "rows_failed",
+                provider_error_class=_aggregate_failure_class(store.rows, "provider_error_class"),
+                codey_failure_class=_aggregate_failure_class(store.rows, "codey_failure_class"),
             ),
         )
         if journal is not None:

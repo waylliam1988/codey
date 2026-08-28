@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.manual import completion_enforcement_ab as harness
+from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import open_journal_for_output
 
 
@@ -342,6 +343,8 @@ def test_live_terminal_error_row_fails_report_and_journal(
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["ok"] is False
     assert saved["rows"][0]["stop_reason"] == "error"
+    assert saved["rows"][0]["codey_failure_class"] == common.AB_FAILURE_CODEY
+    assert saved["rows"][0]["provider_error_class"] == common.AB_FAILURE_NONE
 
     events_path = harness.journal_directory_for_output(output) / "events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
@@ -374,6 +377,25 @@ def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
     )
 
     assert row["error"] == "ERROR: provider setup failed"
+
+
+def test_terminal_provider_no_reply_is_classified() -> None:
+    class FakeTracing:
+        send_index = 1
+        reply_count = 0
+
+    row = {
+        "case": "dependency_missing_env_failure",
+        "arm": "control_done",
+        "stop_reason": "error",
+        "error": "ERROR: DeepSeek Web new_chat failed (transient)",
+    }
+
+    harness._attach_terminal_failure_classes(row, FakeTracing())  # type: ignore[arg-type]
+
+    assert row["provider_failure_class"] == common.PROVIDER_FAILURE_NO_REPLY
+    assert row["provider_error_class"] == common.AB_FAILURE_PROVIDER
+    assert row["codey_failure_class"] == common.AB_FAILURE_NONE
 
 
 def test_build_runner_live_path_uses_real_callables(tmp_path: Path) -> None:
