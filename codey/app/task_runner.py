@@ -3359,16 +3359,18 @@ class TaskRunner:
             return decided, integrity
 
         def commit_operation_proof(proof: object) -> None:
-            # Refs/status only; the proof body stays in the run trace.
+            # Refs/status only; the proof body stays in the run trace. The
+            # facts pass through uncoerced: the strict helper validates them
+            # and refuses anything it cannot record honestly.
             if proof is None:
                 return
             self._commit_run_operation(
                 work,
                 lambda state: mark_completion_proof_recorded(
                     state,
-                    proof_ref=str(getattr(proof, "proof_id", "") or ""),
-                    proof_status=str(getattr(proof, "status", "") or ""),
-                    proof_satisfied=bool(getattr(proof, "satisfied", False)),
+                    proof_ref=getattr(proof, "proof_id", ""),
+                    proof_status=getattr(proof, "status", ""),
+                    proof_satisfied=getattr(proof, "satisfied", None),
                 ),
             )
 

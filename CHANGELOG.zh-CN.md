@@ -25,14 +25,15 @@
   - reader fail closed 且不做任何规范化：坏 schema、错 session/run id、非法
     phase、未知 key——顶层或 terminal 快照内部（"扩展"字段、raw prompt、
     diff）、错误 JSON 类型（bool-as-int、数字字符串）、缺失字段、带空白的
-    文本字段、空 provider id、raw 或畸形 ref、不可能的 phase 状态（产生这
-    些事实的 phase 之前带 repair 或 proof 事实、terminal 带着任何 source
-    phase 都提交不出来的事实组合——残缺的 proof triple、没有 admission 的
-    repair round、没有已记录 proof 的 context——、带残缺 repair 记录的
-    re-proof、没有 unsatisfied failed/blocked proof 支撑的 blocked
-    verdict、proof ref 或 status 超出 recorded-proof 合同、rounds 超预算）、
-    超长文件一律 load 为 `None`。只认 schema v1——不做迁移、不做类型强转、
-    不猜旧格式。
+    文本字段、空 provider id、显式 null 的 proof 标志、raw 或畸形 ref、
+    不可能的 phase 状态（产生这些事实的 phase 之前带 repair、proof 或
+    settled writer 事实——新寄存器不带任何事实，running 的 writer 尚未
+    settled——、terminal 带着任何 source phase 都提交不出来的事实组合——
+    残缺的 proof triple、没有 admission 的 repair round、没有已记录 proof
+    的 context——、带残缺 repair 记录的 re-proof、没有 unsatisfied
+    failed/blocked proof 支撑的 blocked verdict、proof ref 或 status 超出
+    recorded-proof 合同、rounds 超预算）、超长文件一律 load 为 `None`。
+    只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
   - blocked verdict 绑定到它的 proof：`mark_completion_blocked()` 要求完整
     的 proof triple 且 status 为 `failed`/`blocked`、`satisfied=False`，
     terminal 快照必须与寄存器携带同一 verdict，verdict 的写入方
@@ -57,8 +58,10 @@
     只产生一个寄存器。
 - TaskRunner 在真实生命周期边界提交 phase，completion/repair 状态不再只活在
   `_run_project_mode()` 的函数栈里。崩溃、用户停止或 provider 故障后，最后
-  一个 committed phase 能说明 run 实际停在哪里。运行时接线 fail open：一次
-  提交失败只禁用该 run 的跟踪，绝不改变 coding run 本身的行为。
+  一个 committed phase 能说明 run 实际停在哪里。proof 的事实原样透传、
+  零强转——strict helper 负责校验并拒绝任何无法如实记录的东西。运行时接线
+  fail open：一次提交失败只禁用该 run 的跟踪，绝不改变 coding run 本身的
+  行为。
 - Run Details 增加一行安静的 `Progress`，只在用户点开 Details、operation
   state 未到 terminal 且 ledger 没有 `run_finished`（旧快照不污染已完成
   run）时出现：`Writing was interrupted`、`Completion check was

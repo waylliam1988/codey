@@ -1101,6 +1101,66 @@ class StrictReaderTests(unittest.TestCase):
         payload["provider_id"] = ""
         self.assertIsNone(RunOperationState.from_payload(payload))
 
+    def test_writer_facts_are_phase_reachable(self) -> None:
+        # A fresh register carries nothing and a running writer has not
+        # settled: facts only the later phases commit cannot ride along.
+        for phase, mutate_kwargs in (
+            (PHASE_ACCEPTED, {"turns_used": 3}),
+            (PHASE_ACCEPTED, {"stop_reason": "done"}),
+            (PHASE_ACCEPTED, {"writer_attempt": 2}),
+            (PHASE_WRITER_RUNNING, {"turns_used": 3}),
+            (PHASE_WRITER_RUNNING, {"stop_reason": "done"}),
+        ):
+            with self.subTest(phase=phase, **mutate_kwargs):
+                payload = _fresh_state(phase).to_payload()
+                payload.update(mutate_kwargs)
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        # writer_settled and later keep their honest zero/empty forms: a
+        # settled run that used no turns is still table-reachable, and the
+        # facts ride along into the repair arm unchanged.
+        settled = mark_writer_settled(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            provider_id="deepseek",
+            turns_used=0,
+            stop_reason="",
+        )
+        self.assertEqual(RunOperationState.from_payload(settled.to_payload()), settled)
+
+        repair_running = mark_repair_running(
+            mark_repair_context_admitted(
+                mark_completion_proof_recorded(
+                    settled,
+                    proof_ref=PROOF_REF_FAIL,
+                    proof_status="failed",
+                    proof_satisfied=False,
+                ),
+                context_ref=CONTEXT_REF,
+            ),
+            provider_id="deepseek",
+        )
+        self.assertEqual(
+            RunOperationState.from_payload(repair_running.to_payload()), repair_running
+        )
+
+    def test_explicit_null_satisfied_fails_closed(self) -> None:
+        # The writer omits the key when there is no proof; an explicit null
+        # is not schema v1, before or after the proof boundary.
+        for phase in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED):
+            with self.subTest(phase=phase):
+                payload = _fresh_state(phase).to_payload()
+                payload["completion_proof_satisfied"] = None
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        payload = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        ).to_payload()
+        payload["completion_proof_satisfied"] = None
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
     def test_unknown_top_level_keys_fail_closed(self) -> None:
         # A payload with "extension" fields -- a raw prompt, a diff, any
         # future key -- is not schema v1 and must not load.

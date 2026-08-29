@@ -11,11 +11,12 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from codey.app import server
+from codey.app import server, task_runner as task_runner_module
 from codey.agents.runner import RunResult
 from codey.completion.decision import (
     BLOCKED_MAX_REPAIR_ROUNDS,
@@ -235,6 +236,36 @@ class CleanRunTerminalTests(unittest.TestCase):
                 len(str(event.get("summary") or "")),
             )
             self.assertIs(operation.completion_proof_satisfied, True)
+
+
+class NonBoolSatisfiedWiringTests(unittest.TestCase):
+    def test_fake_proof_with_int_satisfied_never_commits_the_proof_phase(self) -> None:
+        # TaskRunner passes the proof's facts through uncoerced: the strict
+        # helper validates them, so a proof carrying satisfied=1 (an int)
+        # fails its commit instead of being forced into a bool, and the
+        # counter stays at the last honest phase.
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.State(Path(td) / "state")
+            real_build = task_runner_module.build_completion_decision
+
+            def build_with_int_satisfied(**kwargs):
+                decision = real_build(**kwargs)
+                if decision.proof is not None:
+                    decision = replace(decision, proof=replace(decision.proof, satisfied=1))
+                return decision
+
+            with mock.patch.object(
+                task_runner_module, "build_completion_decision", build_with_int_satisfied
+            ):
+                event = _run(_runner(state, writer), state, project, writer)
+
+            operation = _operation(state, str(event["run_id"]))
+            self.assertEqual(operation.phase, PHASE_WRITER_SETTLED)
+            self.assertIsNone(operation.completion_proof_satisfied)
 
 
 class RepairRoundPhaseTests(unittest.TestCase):

@@ -120,45 +120,60 @@ Round 5 (verdict support + remaining reachability, same day):
     still round-trip.
 17. provider_id is non-empty on the reader side too, matching the writer's
     start() standard.
+
+Round 6 (writer-fact reachability + uncoerced wiring, same day):
+18. Writer facts are phase-reachable too: writer_attempt/turns_used/
+    stop_reason are parsed before the invariants, and accepted must be
+    exactly the fresh register start() wrote (writer_attempt == 1,
+    turns_used == 0, stop_reason == "") while writer_running cannot carry
+    settled writer facts. writer_settled and later keep their honest
+    zero/empty forms, and the facts ride into the repair arm unchanged.
+19. Missing and explicit null are different payloads: the reader looks up
+    completion_proof_satisfied by key presence, so an explicit null fails
+    closed on both sides of the proof boundary instead of round-tripping
+    as "absent".
+20. TaskRunner passes the proof's facts through uncoerced: the bool(...)/
+    str(...) coercions are gone from commit_operation_proof(), and a fake
+    proof carrying satisfied=1 (an int) fails its commit end to end, with
+    the counter staying at the last honest phase.
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after all five review
+Full local pytest (Windows, Python 3.12, 2026-08-30, after all six review
 rounds):
 
 ```text
 python -B -m pytest
-3289 passed, 3 skipped, 1241 subtests passed in 327.43s (0:05:27)
+3292 passed, 3 skipped, 1249 subtests passed in 297.19s (0:04:57)
 ```
 
-Focused gates before the full run (Round 5 candidate, 2026-08-29):
+Focused gates before the full run (Round 6 candidate, 2026-08-30):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 75 passed, 220 subtests (round-trips,
-                                                                       strict fail-closed reader + phase-state
-                                                                       closure (proof-fact / sha256-context
-                                                                       invariants, terminal fact reachability,
-                                                                       padded-text rejection, re-proof repair
-                                                                       record, blocked-verdict support), closed
-                                                                       terminal key set, recorded-proof contract
-                                                                       on both sides, strict writer helpers (no
-                                                                       clipping, no coercion), commit canonical
-                                                                       gate + identity lock, terminal
-                                                                       immutability, locked/atomic start+commit,
-                                                                       concurrent starts, canonical identity at
-                                                                       and beyond the boundary, project ref
-                                                                       format, payload hygiene, import boundary)
-tests/test_task_runner_operation_state.py +
-test_run_details / test_headless_runner                             -> 28 passed, 6 subtests (terminal/ledger/event
+tests/test_run_operation.py                                         -> 77 passed, 228 subtests (round-trips,
+                                                                       strict fail-closed reader + full phase-
+                                                                       state closure (proof/repair/writer facts,
+                                                                       verdict support, padded-text rejection),
+                                                                       closed terminal key set, recorded-proof
+                                                                       contract on both sides, strict writer
+                                                                       helpers (no clipping, no coercion),
+                                                                       commit canonical gate + identity lock,
+                                                                       terminal immutability, locked/atomic
+                                                                       start+commit, concurrent starts, canonical
+                                                                       identity at and beyond the boundary,
+                                                                       project ref format, payload hygiene,
+                                                                       import boundary)
+tests/test_task_runner_operation_state.py                           -> 13 passed, 6 subtests (terminal/ledger/event
                                                                        consistency, repair phase sequence observed
                                                                        mid-run, provider-failure + stop honesty,
                                                                        six crash-position recovery rows, raw-path
-                                                                       hygiene)
-test_server / test_architecture / test_capabilities /
-test_event_matrix / test_task_runner_completion_enforcement /
-test_task_runner_edit_integrity                                     -> 305 passed, 453 subtests passed
+                                                                       hygiene, uncoerced proof wiring)
+test_run_details / test_headless_runner / test_server /
+test_architecture / test_capabilities / test_event_matrix /
+test_task_runner_completion_enforcement / test_task_runner_edit_integrity
+                                                                    -> 321 passed, 453 subtests passed
 tests/manual/completion_operation_resume_smoke.py --self-test       -> ok: real process kill in the writer
                                                                        phase, fresh store reads writer_running,
                                                                        Details shows "Writing was interrupted",

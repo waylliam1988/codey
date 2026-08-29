@@ -436,9 +436,15 @@ class RunOperationState:
             phase = _text_field(payload, "phase", limit=40)
             if phase not in PHASES:
                 raise _SchemaError(f"unknown phase {phase}")
-            satisfied = payload.get("completion_proof_satisfied")
-            if satisfied is not None and not isinstance(satisfied, bool):
-                raise _SchemaError("completion_proof_satisfied must be a bool")
+            if "completion_proof_satisfied" in payload:
+                # Missing and explicit null are different payloads: the
+                # writer omits the key when there is no proof, so a null is
+                # never schema v1.
+                satisfied = payload["completion_proof_satisfied"]
+                if not isinstance(satisfied, bool):
+                    raise _SchemaError("completion_proof_satisfied must be a bool")
+            else:
+                satisfied = None
             project_ref = _text_field(
                 payload, "project_ref", limit=MAX_PROJECT_REF_CHARS, allow_empty=True
             )
@@ -453,6 +459,13 @@ class RunOperationState:
             )
             if repair_context_ref and not _SHA256_REF_RE.match(repair_context_ref):
                 raise _SchemaError("repair_context_ref must be a sha256:<64 hex> digest ref")
+            writer_attempt = _int_field(payload, "writer_attempt")
+            if writer_attempt < 1:
+                raise _SchemaError("writer_attempt must be at least 1")
+            turns_used = _int_field(payload, "turns_used")
+            stop_reason = _text_field(
+                payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+            )
             proof_ref = _text_field(
                 payload, "completion_proof_ref", limit=MAX_REF_CHARS, allow_empty=True
             )
@@ -510,6 +523,14 @@ class RunOperationState:
                 proof_ref, proof_status, satisfied
             ):
                 raise _SchemaError("blocked_reason requires an unsatisfied failed/blocked proof")
+            # Writer facts are also only what the table could have produced:
+            # a fresh register carries nothing, and a running writer has not
+            # settled yet. writer_settled and every later phase keep their
+            # honest zero/empty forms.
+            if phase == PHASE_ACCEPTED and (writer_attempt != 1 or turns_used or stop_reason):
+                raise _SchemaError(f"{phase} must be the fresh register start() wrote")
+            if phase == PHASE_WRITER_RUNNING and (turns_used or stop_reason):
+                raise _SchemaError(f"{phase} cannot carry settled writer facts")
             terminal = None
             if phase == PHASE_TERMINAL:
                 terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
@@ -519,9 +540,6 @@ class RunOperationState:
                     raise _SchemaError("terminal snapshot must carry the state's blocked reason")
             elif "terminal" in payload:
                 raise _SchemaError("non-terminal phase must not carry a terminal payload")
-            writer_attempt = _int_field(payload, "writer_attempt")
-            if writer_attempt < 1:
-                raise _SchemaError("writer_attempt must be at least 1")
             return cls(
                 session_id=session_id,
                 run_id=run_id,
@@ -533,10 +551,8 @@ class RunOperationState:
                 started_at=_text_field(payload, "started_at", limit=40),
                 updated_at=_text_field(payload, "updated_at", limit=40),
                 writer_attempt=writer_attempt,
-                turns_used=_int_field(payload, "turns_used"),
-                stop_reason=_text_field(
-                    payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
-                ),
+                turns_used=turns_used,
+                stop_reason=stop_reason,
                 completion_proof_ref=proof_ref,
                 completion_proof_status=proof_status,
                 completion_proof_satisfied=satisfied,

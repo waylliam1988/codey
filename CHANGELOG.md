@@ -29,13 +29,15 @@ This file records Codey's release history. The newest release appears first.
     session/run ids, unknown phase, unknown keys -- top-level or inside the
     terminal snapshot (an "extension" field, a raw prompt, a diff) -- wrong
     JSON types (bool-as-int, numeric strings), missing fields, padded text
-    fields, an empty provider id, raw or malformed refs, impossible phase
-    states (repair or proof facts before the phases that produce them,
-    terminal fact combinations no source phase could have committed -- a
-    partial proof triple, repair rounds without the admitted context, a
-    context without its recorded proof --, a re-proof with a partial repair
-    record, a blocked verdict without its unsatisfied failed/blocked proof,
-    proof refs or statuses outside the recorded-proof contract, rounds over
+    fields, an empty provider id, an explicit-null proof flag, raw or
+    malformed refs, impossible phase states (repair, proof, or settled
+    writer facts before the phases that produce them -- a fresh register
+    carries nothing and a running writer has not settled --, terminal fact
+    combinations no source phase could have committed -- a partial proof
+    triple, repair rounds without the admitted context, a context without
+    its recorded proof --, a re-proof with a partial repair record, a
+    blocked verdict without its unsatisfied failed/blocked proof, proof
+    refs or statuses outside the recorded-proof contract, rounds over
     budget), or an oversize file load as `None`. Schema v1 only -- no
     migration, no coercion, no legacy guessing.
   - The blocked verdict is bound to its proof: `mark_completion_blocked()`
@@ -70,8 +72,10 @@ This file records Codey's release history. The newest release appears first.
 - TaskRunner now commits at the real lifecycle boundaries instead of keeping
   completion/repair state only on `_run_project_mode()`'s function stack.
   After a crash, stop, or provider failure, the last committed phase says
-  where the run actually was. Runtime wiring is fail-open: a failed commit
-  disables tracking for that run and never changes the coding run's behavior.
+  where the run actually was. The proof's facts pass through uncoerced --
+  the strict helper validates them and refuses anything it cannot record
+  honestly. Runtime wiring is fail-open: a failed commit disables tracking
+  for that run and never changes the coding run's behavior.
 - Run Details gained one quiet `Progress` row, shown only when the user opens
   Details for a run whose operation state never reached terminal and whose
   ledger has no `run_finished` row (stale snapshots never pollute finished
