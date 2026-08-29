@@ -26,18 +26,29 @@ This file records Codey's release history. The newest release appears first.
     reason. No raw prompt, reply, stdout/stderr, diff, source body, or
     repair prompt text exists anywhere in the payload.
   - The reader fails closed: bad schema, wrong session/run ids, unknown
-    phase, unknown top-level keys (an "extension" field, a raw prompt, a
-    diff), wrong JSON types (bool-as-int, numeric strings), missing fields,
-    impossible phase states (repair facts before admission, rounds over
-    budget, proof phases without proof facts), raw or malformed project
-    refs, or an oversize file load as `None`. Schema v1 only -- no
-    migration, no coercion, no legacy guessing.
-  - `start()` validates identity and never clobbers: a non-canonical
-    session/run id (empty, padded, over 200 chars, non-string) is refused
-    without writing anything -- a register can never end up reachable only
-    under a trimmed id -- and the exists check plus the write share the
-    commit file lock, so a corrupted leftover register is never silently
-    overwritten and concurrent starts yield exactly one register.
+    phase, unknown keys -- top-level or inside the terminal snapshot (an
+    "extension" field, a raw prompt, a diff) -- wrong JSON types
+    (bool-as-int, numeric strings), missing fields, impossible phase states
+    (repair or proof facts before the phases that produce them, post-proof
+    phases without their complete recorded proof facts, repair contexts that
+    are not `sha256:<hex>` digest refs, rounds over budget), raw or
+    malformed project refs, or an oversize file load as `None`. Schema v1
+    only -- no migration, no coercion, no legacy guessing.
+  - The writer is held to the reader's bar: the transition helpers validate
+    every fact exactly as the reader will -- nothing is clipped or coerced,
+    and a non-canonical fact (an empty or malformed repair-context digest, a
+    numeric-string turn count, a bool-as-int, an over-length reason) raises
+    `RunOperationTransitionError` instead of being clipped into a register
+    the next `load()` would reject -- and `commit()` re-derives the canonical
+    schema from the candidate state before it may touch the disk, refusing a
+    commit that would move the register's identity.
+  - `start()` validates every argument and never clobbers: a non-canonical
+    session/run id (empty, padded, over 200 chars, non-string), provider id,
+    or budget is refused without writing anything -- a register can never
+    end up reachable only under a trimmed id -- and the exists check plus
+    the write share the commit file lock, so a corrupted leftover register
+    is never silently overwritten and concurrent starts yield exactly one
+    register.
 - TaskRunner now commits at the real lifecycle boundaries instead of keeping
   completion/repair state only on `_run_project_mode()`'s function stack.
   After a crash, stop, or provider failure, the last committed phase says
@@ -62,11 +73,13 @@ This file records Codey's release history. The newest release appears first.
   bucket. No manager classes, no provider/tool replay, no prompt changes.
 - Verification: six deterministic crash-position tests (writing, check,
   finishing, and repair positions recover with an honest progress line),
-  phase round-trips, strict fail-closed readers, terminal immutability,
-  locked concurrent start/commit, ledger/terminal consistency, payload
-  hygiene, and `tests/manual/completion_operation_resume_smoke.py --self-test`
-  -- a real process kill mid-writer recovered by a fresh store. No live
-  provider A/B -- this version changes nothing model-visible.
+  phase round-trips, strict fail-closed readers (proof-fact and
+  sha256-context phase invariants, closed terminal key set), strict writers
+  held to the reader's bar with the commit canonical gate, terminal
+  immutability, locked concurrent start/commit, ledger/terminal consistency,
+  payload hygiene, and `tests/manual/completion_operation_resume_smoke.py
+  --self-test` -- a real process kill mid-writer recovered by a fresh store.
+  No live provider A/B -- this version changes nothing model-visible.
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 

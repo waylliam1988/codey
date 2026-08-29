@@ -7,6 +7,7 @@ import json
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -40,6 +41,7 @@ from codey.run_operation import (
 
 SESSION = "session-op"
 RUN = "run-op-1"
+CONTEXT_REF = "sha256:" + "a" * 64
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -131,7 +133,7 @@ def _repair_path(store: RunOperationStore) -> RunOperationState:
 
     state = _failed_proof(store)
     for transition in (
-        lambda state: mark_repair_context_admitted(state, context_ref="sha256:" + "a" * 64),
+        lambda state: mark_repair_context_admitted(state, context_ref=CONTEXT_REF),
         lambda state: mark_repair_running(state, provider_id="deepseek"),
         lambda state: mark_repair_settled(state, provider_id="deepseek", stop_reason="done", turns_used=6),
         lambda state: mark_completion_proof_recorded(
@@ -426,6 +428,39 @@ class StartIdentityTests(unittest.TestCase):
                     self.assertFalse(store.path_for(SESSION, RUN).exists())
 
 
+class StartArgumentTests(unittest.TestCase):
+    """start() validates every argument, never clips or coerces one."""
+
+    def test_non_canonical_arguments_are_refused_without_writing(self) -> None:
+        for kwargs in (
+            {"provider_id": ""},
+            {"provider_id": " deepseek "},
+            {"provider_id": 7},
+            {"provider_id": "x" * 81},
+            {"turn_budget": "8"},
+            {"turn_budget": True},
+            {"turn_budget": -1},
+            {"turn_budget": None},
+            {"max_repair_rounds": "1"},
+        ):
+            with self.subTest(**kwargs):
+                with tempfile.TemporaryDirectory() as td:
+                    store = _store(Path(td))
+                    params = {
+                        "session_id": SESSION,
+                        "run_id": RUN,
+                        "project": "",
+                        "provider_id": "deepseek",
+                        "turn_budget": 8,
+                        "max_repair_rounds": 1,
+                    }
+                    params.update(kwargs)
+                    started = store.start(**params)
+
+                    self.assertIsNone(started)
+                    self.assertFalse(store.path_for(SESSION, RUN).exists())
+
+
 class ProjectRefTests(unittest.TestCase):
     def test_start_derives_a_stable_ref_never_a_raw_path(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -537,6 +572,24 @@ class StrictReaderTests(unittest.TestCase):
             with self.subTest(field=key):
                 self.assertIsNone(RunOperationState.from_payload(payload))
 
+    def test_terminal_snapshot_unknown_keys_fail_closed(self) -> None:
+        # The terminal snapshot is part of the closed schema: an extension
+        # field inside it -- a raw prompt, a diff, anything -- fails the
+        # whole payload closed, exactly like an unknown top-level key.
+        state = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="done",
+            summary_chars=3,
+            turns=2,
+            max_turns=8,
+            provider="deepseek",
+        )
+        for key in ("raw_prompt", "diff", "summary", "summary_text"):
+            payload = json.loads(json.dumps(state.to_payload()))
+            payload["terminal"][key] = "SHOULD_NEVER_BE_ACCEPTED"
+            with self.subTest(key=key):
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
     def test_raw_or_malformed_project_ref_fails_closed(self) -> None:
         for ref in (
             "E:/secret/project",
@@ -569,7 +622,7 @@ class StrictReaderTests(unittest.TestCase):
 
     def test_pre_repair_phases_cannot_carry_repair_facts(self) -> None:
         for phase in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED):
-            for mutate_kwargs in ({"repair_rounds": 1}, {"repair_context_ref": "sha256:" + "a" * 64}):
+            for mutate_kwargs in ({"repair_rounds": 1}, {"repair_context_ref": CONTEXT_REF}):
                 with self.subTest(phase=phase, **mutate_kwargs):
                     payload = _fresh_state(phase).to_payload()
                     payload.update(mutate_kwargs)
@@ -588,6 +641,106 @@ class StrictReaderTests(unittest.TestCase):
                     payload.pop("completion_proof_satisfied", None)
                 self.assertIsNone(RunOperationState.from_payload(payload))
 
+    def test_pre_repair_phases_cannot_carry_proof_facts(self) -> None:
+        # The proof is recorded after writer_settled; no earlier phase may
+        # carry any part of it -- not even a stray satisfied flag alone.
+        for phase in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED):
+            for mutate_kwargs in (
+                {"completion_proof_ref": "completion_proof:x"},
+                {"completion_proof_status": "complete"},
+                {"completion_proof_satisfied": True},
+                {"completion_proof_satisfied": False},
+            ):
+                with self.subTest(phase=phase, **mutate_kwargs):
+                    payload = _fresh_state(phase).to_payload()
+                    payload.update(mutate_kwargs)
+                    self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_post_proof_phases_require_the_complete_proof_facts(self) -> None:
+        # The recorded proof is the only road into the repair arm, so every
+        # post-proof phase -- not just completion_proof_recorded itself --
+        # must still carry that proof's complete facts.
+        contexts = {
+            PHASE_COMPLETION_PROOF_RECORDED: {},
+            PHASE_REPAIR_CONTEXT_ADMITTED: {"repair_context_ref": CONTEXT_REF},
+            PHASE_REPAIR_RUNNING: {"repair_context_ref": CONTEXT_REF, "repair_rounds": 1},
+            PHASE_REPAIR_SETTLED: {"repair_context_ref": CONTEXT_REF, "repair_rounds": 1},
+        }
+        for phase, context in contexts.items():
+            state = _fresh_state(
+                phase,
+                completion_proof_ref="completion_proof:p1",
+                completion_proof_status="failed",
+                completion_proof_satisfied=False,
+                **context,
+            )
+            for dropped in (
+                "completion_proof_ref",
+                "completion_proof_status",
+                "completion_proof_satisfied",
+            ):
+                with self.subTest(phase=phase, missing=dropped):
+                    payload = state.to_payload()
+                    payload.pop(dropped)
+                    self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_malformed_repair_context_ref_fails_closed(self) -> None:
+        # The context is named by its sha256 digest; anything else -- a bare
+        # "ctx", a wrong hash form, a padded or extended ref -- is not a
+        # committed admission.
+        for ref in (
+            "ctx",
+            "sha256:abc",
+            "sha256:" + "g" * 64,
+            "SHA256:" + "a" * 64,
+            "sha256:" + "a" * 63,
+            "sha256:" + "a" * 65,
+            "md5:" + "a" * 32,
+            "sha256:" + "a" * 64 + "/etc",
+        ):
+            with self.subTest(ref=ref):
+                payload = _fresh_state(
+                    PHASE_REPAIR_CONTEXT_ADMITTED, repair_context_ref=CONTEXT_REF
+                ).to_payload()
+                payload["repair_context_ref"] = ref
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        # A terminal reached through the repair arm carries the ref too, and
+        # the same format rule holds there.
+        settled = mark_repair_settled(
+            mark_repair_running(
+                mark_repair_context_admitted(
+                    mark_completion_proof_recorded(
+                        mark_writer_settled(
+                            mark_writer_running(
+                                _fresh_state(PHASE_ACCEPTED), provider_id="deepseek"
+                            ),
+                            provider_id="deepseek",
+                            turns_used=2,
+                            stop_reason="done",
+                        ),
+                        proof_ref="completion_proof:p1",
+                        proof_status="failed",
+                        proof_satisfied=False,
+                    ),
+                    context_ref=CONTEXT_REF,
+                ),
+                provider_id="deepseek",
+            ),
+            provider_id="deepseek",
+            stop_reason="done",
+        )
+        payload = mark_terminal(
+            settled,
+            stop_reason="stopped",
+            summary_chars=0,
+            turns=0,
+            max_turns=8,
+            provider="deepseek",
+        ).to_payload()
+        payload["repair_context_ref"] = "ctx"
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
     def test_unknown_top_level_keys_fail_closed(self) -> None:
         # A payload with "extension" fields -- a raw prompt, a diff, any
         # future key -- is not schema v1 and must not load.
@@ -596,6 +749,243 @@ class StrictReaderTests(unittest.TestCase):
                 payload = self._canonical()
                 payload[extra] = "SHOULD_NEVER_BE_ACCEPTED"
                 self.assertIsNone(RunOperationState.from_payload(payload))
+
+
+class StrictWriterTests(unittest.TestCase):
+    """The writer is held to the reader's bar: canonical facts or refused.
+
+    Nothing is clipped or coerced -- a fact the reader could not load back
+    raises ``RunOperationTransitionError`` at the transition itself, and
+    ``commit()`` re-derives the canonical schema before anything touches
+    the disk.
+    """
+
+    def test_writer_helpers_refuse_non_canonical_facts(self) -> None:
+        accepted = _fresh_state(PHASE_ACCEPTED)
+        running = mark_writer_running(accepted, provider_id="deepseek")
+        settled = mark_writer_settled(
+            running, provider_id="deepseek", turns_used=2, stop_reason="done"
+        )
+        proof = mark_completion_proof_recorded(
+            settled,
+            proof_ref="completion_proof:p1",
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        repair_running = mark_repair_running(
+            mark_repair_context_admitted(proof, context_ref=CONTEXT_REF),
+            provider_id="deepseek",
+        )
+
+        cases = [
+            (mark_writer_running, accepted, {"provider_id": ""}),
+            (mark_writer_running, accepted, {"provider_id": " deepseek "}),
+            (mark_writer_running, accepted, {"provider_id": 7}),
+            (mark_writer_running, accepted, {"provider_id": "x" * 81}),
+            (mark_writer_running, accepted, {"provider_id": "deepseek", "writer_attempt": 0}),
+            (mark_writer_running, accepted, {"provider_id": "deepseek", "writer_attempt": True}),
+            (mark_writer_running, accepted, {"provider_id": "deepseek", "writer_attempt": "2"}),
+            (
+                mark_writer_settled,
+                running,
+                {"provider_id": "deepseek", "turns_used": "3", "stop_reason": "done"},
+            ),
+            (
+                mark_writer_settled,
+                running,
+                {"provider_id": "deepseek", "turns_used": True, "stop_reason": "done"},
+            ),
+            (
+                mark_writer_settled,
+                running,
+                {"provider_id": "deepseek", "turns_used": -1, "stop_reason": "done"},
+            ),
+            (
+                mark_writer_settled,
+                running,
+                {"provider_id": "deepseek", "turns_used": 1.5, "stop_reason": "done"},
+            ),
+            (
+                mark_writer_settled,
+                running,
+                {"provider_id": "deepseek", "turns_used": 3, "stop_reason": None},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "", "proof_status": "failed", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "p1", "proof_status": "", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "p1", "proof_status": "failed", "proof_satisfied": None},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "p1", "proof_status": "failed", "proof_satisfied": "yes"},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "p" * 121, "proof_status": "failed", "proof_satisfied": False},
+            ),
+            (mark_repair_context_admitted, proof, {"context_ref": ""}),
+            (mark_repair_context_admitted, proof, {"context_ref": "ctx"}),
+            (mark_repair_context_admitted, proof, {"context_ref": "sha256:" + "g" * 64}),
+            (mark_repair_context_admitted, proof, {"context_ref": "sha256:" + "a" * 65}),
+            (
+                mark_repair_settled,
+                repair_running,
+                {"provider_id": "deepseek", "stop_reason": "done", "turns_used": "6"},
+            ),
+            (
+                mark_terminal,
+                running,
+                {
+                    "stop_reason": "done",
+                    "summary_chars": "3",
+                    "turns": 2,
+                    "max_turns": 8,
+                    "provider": "deepseek",
+                },
+            ),
+            (
+                mark_terminal,
+                running,
+                {
+                    "stop_reason": "done",
+                    "summary_chars": 3,
+                    "turns": True,
+                    "max_turns": 8,
+                    "provider": "deepseek",
+                },
+            ),
+            (
+                mark_terminal,
+                running,
+                {
+                    "stop_reason": "done",
+                    "summary_chars": 3,
+                    "turns": 2,
+                    "max_turns": -1,
+                    "provider": "deepseek",
+                },
+            ),
+            (mark_completion_blocked, proof, {"reason": ""}),
+        ]
+        for fn, state, kwargs in cases:
+            with self.subTest(transition=fn.__name__, **kwargs):
+                with self.assertRaises(RunOperationTransitionError):
+                    fn(state, **kwargs)
+
+    def test_over_length_facts_are_refused_never_clipped(self) -> None:
+        accepted = _fresh_state(PHASE_ACCEPTED)
+        with self.assertRaises(RunOperationTransitionError):
+            mark_writer_running(accepted, provider_id="x" * 500)
+
+        settled = mark_writer_settled(
+            mark_writer_running(accepted, provider_id="deepseek"),
+            provider_id="deepseek",
+            turns_used=1,
+            stop_reason="done",
+        )
+        with self.assertRaises(RunOperationTransitionError):
+            mark_completion_proof_recorded(
+                settled,
+                proof_ref="p" * 500,
+                proof_status="failed",
+                proof_satisfied=False,
+            )
+
+        proof = mark_completion_proof_recorded(
+            settled,
+            proof_ref="completion_proof:p1",
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        with self.assertRaises(RunOperationTransitionError):
+            mark_completion_blocked(proof, reason="r" * 500)
+
+    def test_every_strict_transition_still_round_trips(self) -> None:
+        # Strictness must not bend the happy path: every helper's output is
+        # exactly what the reader loads back, no clipping, no rewriting.
+        settled = mark_writer_settled(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            provider_id="deepseek",
+            turns_used=4,
+            stop_reason="done",
+        )
+        proof = mark_completion_proof_recorded(
+            settled,
+            proof_ref="completion_proof:abc123",
+            proof_status="complete",
+            proof_satisfied=True,
+        )
+        terminal = mark_terminal(
+            proof,
+            stop_reason="done",
+            summary_chars=42,
+            turns=4,
+            max_turns=8,
+            provider="deepseek",
+        )
+        for state in (settled, proof, terminal):
+            with self.subTest(phase=state.phase):
+                self.assertEqual(RunOperationState.from_payload(state.to_payload()), state)
+
+    def test_commit_refuses_to_write_a_state_the_reader_would_reject(self) -> None:
+        # Even a transition that bypasses the helpers cannot poison the
+        # register: commit re-derives the canonical schema first, and the
+        # file keeps its last valid state.
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            started = _start(store)
+            path = store.path_for(SESSION, RUN)
+            before = path.read_text(encoding="utf-8")
+
+            with self.assertRaises(RunOperationTransitionError):
+                store.commit(
+                    SESSION,
+                    RUN,
+                    lambda state: replace(state, provider_id="x" * 500),
+                )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+            self.assertEqual(store.load(SESSION, RUN), started)
+
+    def test_commit_refuses_a_transition_that_moves_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            started = _start(store)
+
+            with self.assertRaises(RunOperationTransitionError):
+                store.commit(
+                    SESSION,
+                    RUN,
+                    lambda state: replace(state, run_id="run-op-2"),
+                )
+
+            self.assertEqual(store.load(SESSION, RUN), started)
+
+    def test_commit_propagates_transition_refusals_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            started = _start(store)
+
+            with self.assertRaises(RunOperationTransitionError):
+                store.commit(
+                    SESSION,
+                    RUN,
+                    lambda state: mark_repair_running(state, provider_id="deepseek"),
+                )
+
+            self.assertEqual(store.load(SESSION, RUN), started)
 
 
 class TransitionTableTests(unittest.TestCase):
@@ -748,28 +1138,6 @@ class TerminalImmutabilityTests(unittest.TestCase):
 
 
 class PayloadHygieneTests(unittest.TestCase):
-    def test_free_text_fields_are_clipped(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = _store(Path(td))
-            running = mark_writer_running(_start(store), provider_id="x" * 500)
-            self.assertEqual(running.to_payload()["provider_id"], "x" * 80)
-
-            recorded = mark_completion_proof_recorded(
-                mark_writer_settled(
-                    running,
-                    provider_id="deepseek",
-                    turns_used=1,
-                    stop_reason="done",
-                ),
-                proof_ref="p" * 500,
-                proof_status="failed",
-                proof_satisfied=False,
-            )
-            self.assertEqual(recorded.to_payload()["completion_proof_ref"], "p" * 120)
-
-            blocked = mark_completion_blocked(recorded, reason="r" * 500)
-            self.assertEqual(blocked.to_payload()["blocked_reason"], "r" * 80)
-
     def test_payload_vocabulary_cannot_hold_raw_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = _store(Path(td))

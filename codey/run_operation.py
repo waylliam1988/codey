@@ -18,22 +18,28 @@ Boundaries:
 - refs/status/counts/reasons only. No raw prompt, raw reply, raw
   stdout/stderr, raw diff, source body, repair prompt text, provider error
   text, or raw project path exists anywhere in the payload; the project is
-  named by a stable ``project:<key>`` ref and every free-text field is
-  clipped on write.
+  named by a stable ``project:<key>`` ref and the repair context by its
+  ``sha256:<hex>`` digest.
 - the transition table is closed. ``repair_running`` cannot be reached without
   a committed ``repair_context_admitted``; ``repair_rounds`` cannot exceed the
   budget handed in at ``start()``; terminal is immutable except for the
   exact-same-payload idempotent re-commit.
 - the reader fails closed. Bad schema, wrong ids, unknown phase, unknown
-  keys, wrong JSON types (bool-as-int, numeric strings), missing fields,
-  raw or malformed project refs, impossible phase states (repair facts
-  before admission, rounds over budget, proof phases without proof facts),
-  or an oversize file load as ``None``; there is no migration, no coercion,
+  keys (top-level or inside the terminal snapshot), wrong JSON types
+  (bool-as-int, numeric strings), missing fields, raw or malformed refs,
+  impossible phase states (repair or proof facts before the phases that
+  produce them, post-proof phases without their recorded proof facts,
+  repair contexts that are not sha256 refs, rounds over budget), or an
+  oversize file load as ``None``; there is no migration, no coercion,
   and no legacy guess -- cold start, canonical schema v1 only.
-- the writer is exclusive and validates identity. ``start()`` never clips
-  or clobbers: a non-canonical session/run id is refused without writing,
-  and an existing file -- valid or not -- refuses a second start under the
-  same file lock that ``commit()`` uses.
+- the writer is held to the reader's bar. The transition helpers validate
+  every fact exactly as the reader will -- nothing is clipped or coerced, a
+  non-canonical fact raises ``RunOperationTransitionError`` -- and
+  ``commit()`` re-derives the canonical schema from the candidate before it
+  may touch the disk, refusing a register whose identity would move.
+  ``start()`` never clips or clobbers: a non-canonical argument is refused
+  without writing, and an existing file -- valid or not -- refuses a second
+  start under the same file lock that ``commit()`` uses.
 - this module is a storage leaf: stdlib plus ``codey.storage`` and nothing
   else. It never imports agents, providers, tools, server, or ghost.
 """
@@ -112,9 +118,11 @@ INTERRUPTED_COMPLETION_CHECK = "Completion check was interrupted"
 INTERRUPTED_FINISHING = "Finishing was interrupted"
 INTERRUPTED_REPAIR = "Stopped during repair"
 
-# Phase invariants the reader enforces on top of the type checks: a register
-# may only claim repair facts once the repair arm admitted a context, and a
-# recorded proof must carry its proof facts.
+# Phase invariants the reader enforces on top of the type checks: the
+# register may only claim what the closed transition table could have
+# produced at this phase. Pre-repair phases carry no repair or proof facts;
+# every phase the table can only reach through a committed completion proof
+# carries that proof's complete facts.
 _PRE_REPAIR_PHASES = frozenset(
     {PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED}
 )
@@ -122,6 +130,7 @@ _REPAIR_PHASES = frozenset(
     {PHASE_REPAIR_CONTEXT_ADMITTED, PHASE_REPAIR_RUNNING, PHASE_REPAIR_SETTLED}
 )
 _REPAIR_EXECUTING_PHASES = frozenset({PHASE_REPAIR_RUNNING, PHASE_REPAIR_SETTLED})
+_POST_PROOF_PHASES = frozenset({PHASE_COMPLETION_PROOF_RECORDED}) | _REPAIR_PHASES
 
 # The key set is closed: a payload carrying anything else -- an "extension"
 # field, a raw prompt, a diff -- is not schema v1 and fails closed.
@@ -150,7 +159,21 @@ _KNOWN_PAYLOAD_KEYS = frozenset(
         "terminal",
     }
 )
+# The terminal snapshot's key set is closed too: an extra field inside
+# ``terminal`` is an extension, not schema v1, and fails the whole payload.
+_KNOWN_TERMINAL_KEYS = frozenset(
+    {
+        "stop_reason",
+        "summary_chars",
+        "turns",
+        "max_turns",
+        "provider",
+        "blocked_reason",
+        "finished_at",
+    }
+)
 _PROJECT_REF_RE = re.compile(r"^project:[0-9a-f]{24}$")
+_SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class RunOperationTransitionError(Exception):
@@ -165,15 +188,36 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _clip(value: object, limit: int) -> str:
-    return str(value or "").strip()[:limit]
+def _strict_text(value: object, *, field: str, limit: int, allow_empty: bool = False) -> str:
+    """The writer's mirror of the reader: canonical fact or refused write.
+
+    Facts are validated, never clipped or coerced -- anything the reader
+    could not load back must fail the transition here, not become a
+    register the next ``load()`` rejects.
+    """
+
+    if not isinstance(value, str):
+        raise RunOperationTransitionError(f"{field} must be a string")
+    text = value.strip()
+    if text != value:
+        raise RunOperationTransitionError(f"{field} must be canonical (unpadded)")
+    if not text and not allow_empty:
+        raise RunOperationTransitionError(f"{field} must not be empty")
+    if len(text) > limit:
+        raise RunOperationTransitionError(f"{field} exceeds {limit} chars")
+    return text
 
 
-def _nonnegative_int(value: object) -> int:
-    try:
-        return max(0, int(value))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0
+def _strict_count(value: object, *, field: str, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise RunOperationTransitionError(f"{field} must be an int of at least {minimum}")
+    return value
+
+
+def _strict_flag(value: object, *, field: str) -> bool:
+    if not isinstance(value, bool):
+        raise RunOperationTransitionError(f"{field} must be a bool")
+    return value
 
 
 def _canonical_id(value: object) -> str:
@@ -232,6 +276,12 @@ def _project_ref(project: object) -> str:
     return f"project:{project_key(text)}"
 
 
+def _proof_facts_present(proof_ref: str, proof_status: str, satisfied: object) -> bool:
+    """Whether the payload carries the complete recorded-proof triple."""
+
+    return bool(proof_ref) and bool(proof_status) and satisfied is not None
+
+
 @dataclass(frozen=True)
 class RunOperationTerminal:
     """Bounded terminal snapshot; mirrors ``RunLedger.finish`` fields."""
@@ -260,6 +310,8 @@ class RunOperationTerminal:
         if not isinstance(payload, dict):
             return None
         try:
+            if set(payload) - _KNOWN_TERMINAL_KEYS:
+                raise _SchemaError("terminal payload carries unknown keys")
             return cls(
                 stop_reason=_text_field(payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True),
                 summary_chars=_int_field(payload, "summary_chars"),
@@ -363,6 +415,8 @@ class RunOperationState:
             repair_context_ref = _text_field(
                 payload, "repair_context_ref", limit=MAX_REF_CHARS, allow_empty=True
             )
+            if repair_context_ref and not _SHA256_REF_RE.match(repair_context_ref):
+                raise _SchemaError("repair_context_ref must be a sha256:<64 hex> digest ref")
             proof_ref = _text_field(
                 payload, "completion_proof_ref", limit=MAX_REF_CHARS, allow_empty=True
             )
@@ -375,10 +429,13 @@ class RunOperationState:
                 raise _SchemaError(f"{phase} requires a committed repair context ref")
             if phase in _REPAIR_EXECUTING_PHASES and repair_rounds < 1:
                 raise _SchemaError(f"{phase} requires a committed repair round")
-            if phase in _PRE_REPAIR_PHASES and (repair_rounds or repair_context_ref):
-                raise _SchemaError(f"{phase} cannot carry repair facts")
-            if phase == PHASE_COMPLETION_PROOF_RECORDED and (
-                not proof_ref or not proof_status or satisfied is None
+            if phase in _PRE_REPAIR_PHASES:
+                if repair_rounds or repair_context_ref:
+                    raise _SchemaError(f"{phase} cannot carry repair facts")
+                if proof_ref or proof_status or satisfied is not None:
+                    raise _SchemaError(f"{phase} cannot carry completion proof facts")
+            elif phase in _POST_PROOF_PHASES and not _proof_facts_present(
+                proof_ref, proof_status, satisfied
             ):
                 raise _SchemaError(f"{phase} requires the recorded proof facts")
             terminal = None
@@ -456,8 +513,8 @@ def mark_writer_running(
     return _transition(
         state,
         PHASE_WRITER_RUNNING,
-        provider_id=_clip(provider_id, MAX_TEXT_CHARS),
-        writer_attempt=max(1, _nonnegative_int(writer_attempt) or 1),
+        provider_id=_strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS),
+        writer_attempt=_strict_count(writer_attempt, field="writer_attempt", minimum=1),
     )
 
 
@@ -471,9 +528,11 @@ def mark_writer_settled(
     return _transition(
         state,
         PHASE_WRITER_SETTLED,
-        provider_id=_clip(provider_id, MAX_TEXT_CHARS),
-        turns_used=_nonnegative_int(turns_used),
-        stop_reason=_clip(stop_reason, MAX_TEXT_CHARS),
+        provider_id=_strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS),
+        turns_used=_strict_count(turns_used, field="turns_used"),
+        stop_reason=_strict_text(
+            stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+        ),
     )
 
 
@@ -482,14 +541,18 @@ def mark_completion_proof_recorded(
     *,
     proof_ref: str,
     proof_status: str,
-    proof_satisfied: bool | None,
+    proof_satisfied: bool,
 ) -> RunOperationState:
     return _transition(
         state,
         PHASE_COMPLETION_PROOF_RECORDED,
-        completion_proof_ref=_clip(proof_ref, MAX_REF_CHARS),
-        completion_proof_status=_clip(proof_status, MAX_TEXT_CHARS),
-        completion_proof_satisfied=proof_satisfied,
+        completion_proof_ref=_strict_text(proof_ref, field="proof_ref", limit=MAX_REF_CHARS),
+        completion_proof_status=_strict_text(
+            proof_status, field="proof_status", limit=MAX_TEXT_CHARS
+        ),
+        completion_proof_satisfied=_strict_flag(
+            proof_satisfied, field="proof_satisfied"
+        ),
     )
 
 
@@ -498,11 +561,10 @@ def mark_repair_context_admitted(
     *,
     context_ref: str,
 ) -> RunOperationState:
-    return _transition(
-        state,
-        PHASE_REPAIR_CONTEXT_ADMITTED,
-        repair_context_ref=_clip(context_ref, MAX_REF_CHARS),
-    )
+    digest = _strict_text(context_ref, field="context_ref", limit=MAX_REF_CHARS)
+    if not _SHA256_REF_RE.match(digest):
+        raise RunOperationTransitionError("context_ref must be a sha256:<64 hex> digest ref")
+    return _transition(state, PHASE_REPAIR_CONTEXT_ADMITTED, repair_context_ref=digest)
 
 
 def mark_repair_running(state: RunOperationState, *, provider_id: str) -> RunOperationState:
@@ -511,7 +573,7 @@ def mark_repair_running(state: RunOperationState, *, provider_id: str) -> RunOpe
     return _transition(
         state,
         PHASE_REPAIR_RUNNING,
-        provider_id=_clip(provider_id, MAX_TEXT_CHARS),
+        provider_id=_strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS),
         repair_rounds=state.repair_rounds + 1,
     )
 
@@ -527,10 +589,16 @@ def mark_repair_settled(
     return _transition(
         state,
         PHASE_REPAIR_SETTLED,
-        provider_id=_clip(provider_id, MAX_TEXT_CHARS),
-        stop_reason=_clip(stop_reason, MAX_TEXT_CHARS),
-        blocked_reason=_clip(blocked_reason, MAX_TEXT_CHARS),
-        turns_used=(state.turns_used if turns_used is None else _nonnegative_int(turns_used)),
+        provider_id=_strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS),
+        stop_reason=_strict_text(
+            stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+        ),
+        blocked_reason=_strict_text(
+            blocked_reason, field="blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+        ),
+        turns_used=(
+            state.turns_used if turns_used is None else _strict_count(turns_used, field="turns_used")
+        ),
     )
 
 
@@ -549,7 +617,11 @@ def mark_completion_blocked(
         raise RunOperationTransitionError(
             f"completion verdict requires phase {PHASE_COMPLETION_PROOF_RECORDED}, not {state.phase}"
         )
-    return replace(state, blocked_reason=_clip(reason, MAX_TEXT_CHARS), updated_at=_now())
+    return replace(
+        state,
+        blocked_reason=_strict_text(reason, field="reason", limit=MAX_TEXT_CHARS),
+        updated_at=_now(),
+    )
 
 
 def mark_terminal(
@@ -563,13 +635,18 @@ def mark_terminal(
     blocked_reason: str | None = None,
 ) -> RunOperationState:
     terminal = RunOperationTerminal(
-        stop_reason=_clip(stop_reason, MAX_TEXT_CHARS),
-        summary_chars=_nonnegative_int(summary_chars),
-        turns=_nonnegative_int(turns),
-        max_turns=_nonnegative_int(max_turns),
-        provider=_clip(provider, MAX_TEXT_CHARS),
-        blocked_reason=_clip(
-            state.blocked_reason if blocked_reason is None else blocked_reason, MAX_TEXT_CHARS
+        stop_reason=_strict_text(
+            stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+        ),
+        summary_chars=_strict_count(summary_chars, field="summary_chars"),
+        turns=_strict_count(turns, field="turns"),
+        max_turns=_strict_count(max_turns, field="max_turns"),
+        provider=_strict_text(provider, field="provider", limit=MAX_TEXT_CHARS, allow_empty=True),
+        blocked_reason=_strict_text(
+            state.blocked_reason if blocked_reason is None else blocked_reason,
+            field="blocked_reason",
+            limit=MAX_TEXT_CHARS,
+            allow_empty=True,
         ),
         finished_at=_now(),
     )
@@ -617,16 +694,26 @@ class RunOperationStore:
     ) -> RunOperationState | None:
         """Open the run's register; refuse to clobber anything on disk.
 
-        Identity is validated, never clipped: a register written under a
-        trimmed id could never be found again by commits keyed on the
-        original id. The exists check and the write share the commit file
-        lock, so two concurrent starts produce exactly one register, and a
-        corrupted leftover file is never silently overwritten.
+        Every argument is validated, never clipped or coerced: a
+        non-canonical session/run id, provider id, or budget is refused
+        without writing -- a register written under a trimmed id could never
+        be found again by commits keyed on the original id. The exists check
+        and the write share the commit file lock, so two concurrent starts
+        produce exactly one register, and a corrupted leftover file is never
+        silently overwritten.
         """
 
         canonical_session = _canonical_id(session_id)
         canonical_run = _canonical_id(run_id)
         if not canonical_session or not canonical_run:
+            return None
+        try:
+            provider = _strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS)
+            turn_budget = _strict_count(turn_budget, field="turn_budget")
+            max_repair_rounds = _strict_count(max_repair_rounds, field="max_repair_rounds")
+        except RunOperationTransitionError:
+            # start()'s refusal contract is None, like identity: nothing was
+            # written, so there is no half-open register to recover from.
             return None
         path = self.path_for(canonical_session, canonical_run)
         with with_file_lock(path):
@@ -637,9 +724,9 @@ class RunOperationStore:
                 session_id=canonical_session,
                 run_id=canonical_run,
                 project_ref=_project_ref(project),
-                provider_id=_clip(provider_id, MAX_TEXT_CHARS),
-                turn_budget=_nonnegative_int(turn_budget),
-                max_repair_rounds=_nonnegative_int(max_repair_rounds),
+                provider_id=provider,
+                turn_budget=turn_budget,
+                max_repair_rounds=max_repair_rounds,
                 phase=PHASE_ACCEPTED,
                 started_at=now,
                 updated_at=now,
@@ -675,6 +762,21 @@ class RunOperationStore:
             next_state = transition(current)
             if next_state == current:
                 return current
+            # The writer is held to the reader's bar: the candidate is
+            # re-derived through the canonical schema before it may touch
+            # the disk, and the register's identity may not move. A
+            # transition that smuggles in a fact the reader would reject
+            # fails the commit instead of poisoning the register.
+            canonical = RunOperationState.from_payload(next_state.to_payload())
+            if (
+                canonical is None
+                or canonical != next_state
+                or canonical.session_id != current.session_id
+                or canonical.run_id != current.run_id
+            ):
+                raise RunOperationTransitionError(
+                    "commit refused: the next state is not canonical schema v1 for this register"
+                )
             write_json_atomic(
                 path,
                 next_state.to_payload(),

@@ -22,16 +22,24 @@
     绝对路径）、turn 计数、provider id 和有界的 blocked reason。
     payload 里不存在 raw prompt、reply、stdout/stderr、diff、source body 或
     repair prompt 文本。
-  - reader fail closed：坏 schema、错 session/run id、非法 phase、未知顶层
-    key（"扩展"字段、raw prompt、diff）、错误 JSON 类型（bool-as-int、数字
-    字符串）、缺失字段、不可能的 phase 状态（admission 之前带 repair 事实、
-    rounds 超预算、proof 相位缺 proof 事实）、raw 或畸形 project ref、超长
-    文件一律 load 为 `None`。只认 schema v1——不做迁移、不做类型强转、不猜
-    旧格式。
-  - `start()` 校验 identity 且绝不 clobber：非 canonical 的 session/run id
-    （空、带空白、超 200 字符、非字符串）直接拒绝且不写任何文件——寄存器
-    不可能变成只能用裁剪后的 id 找回；exists 检查与写入共用 commit 的文件
-    锁，损坏的旧寄存器不会被静默覆盖，并发 start 只产生一个寄存器。
+  - reader fail closed：坏 schema、错 session/run id、非法 phase、未知
+    key——顶层或 terminal 快照内部（"扩展"字段、raw prompt、diff）、错误
+    JSON 类型（bool-as-int、数字字符串）、缺失字段、不可能的 phase 状态
+    （产生这些事实的 phase 之前带 repair 或 proof 事实、post-proof 相位缺
+    完整的已记录 proof 事实、不是 `sha256:<hex>` digest 的 repair
+    context、rounds 超预算）、raw 或畸形 project ref、超长文件一律 load
+    为 `None`。只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
+  - writer 被要求达到 reader 的标准：transition helper 用和 reader 完全
+    相同的规则校验每个事实——不裁剪、不强转，非 canonical 的事实（空或
+    畸形的 repair-context digest、数字字符串的 turn 计数、bool-as-int、
+    超长 reason）直接抛 `RunOperationTransitionError`，绝不裁剪进一个下次
+    `load()` 会拒绝的寄存器；`commit()` 在落盘前用 canonical schema 重新
+    推导候选状态，并拒绝会移动寄存器 identity 的提交。
+  - `start()` 校验所有参数且绝不 clobber：非 canonical 的 session/run id
+    （空、带空白、超 200 字符、非字符串）、provider id 或 budget 直接拒绝
+    且不写任何文件——寄存器不可能变成只能用裁剪后的 id 找回；exists 检查
+    与写入共用 commit 的文件锁，损坏的旧寄存器不会被静默覆盖，并发 start
+    只产生一个寄存器。
 - TaskRunner 在真实生命周期边界提交 phase，completion/repair 状态不再只活在
   `_run_project_mode()` 的函数栈里。崩溃、用户停止或 provider 故障后，最后
   一个 committed phase 能说明 run 实际停在哪里。运行时接线 fail open：一次
@@ -52,7 +60,9 @@
   不加 Manager 类，不做 provider/tool replay，不改任何 prompt。
 - 验证：六个 deterministic crash-position 测试（writing / check / finishing /
   repair 各中断位置恢复后均给出诚实 progress）、phase round-trip、严格
-  fail-closed reader、terminal 不可变、加锁的并发 start/commit、
+  fail-closed reader（proof-fact 与 sha256-context 的 phase invariant、
+  terminal 封闭 key set）、达到 reader 标准的严格 writer 加 commit
+  canonical 门、terminal 不可变、加锁的并发 start/commit、
   ledger/terminal 一致性、payload 卫生，以及
   `tests/manual/completion_operation_resume_smoke.py --self-test`——真实
   kill 进程后由全新 store 读回最后 committed phase。不需要 live provider

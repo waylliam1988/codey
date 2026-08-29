@@ -60,43 +60,61 @@ Round 2:
 7. The kill/resume smoke now waits for PHASE_WRITER_RUNNING itself and
    fails if the register never gets there -- accepted no longer counts as
    reaching the writer, matching the TEST_REPORT wording.
+
+Round 3 (schema/transition contract closure, same day):
+8. The reader now accepts only states the closed transition table could have
+   produced: pre-repair phases cannot carry any completion-proof fact (ref,
+   status, or a stray satisfied flag), every post-proof phase
+   (completion_proof_recorded and all repair phases) must carry the complete
+   recorded proof triple, and repair_context_ref must be a sha256:<64 hex>
+   digest ref ("ctx", wrong hash forms, padded or extended refs no longer
+   load).
+9. The writer is held to the reader's bar: the transition helpers validate
+   every fact -- nothing is clipped or coerced (turn_budget=True,
+   turns_used="3", an empty or malformed context digest, over-length reasons
+   all raise RunOperationTransitionError) -- start() validates every
+   argument, and commit() re-derives the canonical schema from the candidate
+   state before it may touch the disk, refusing a commit that would move the
+   register's identity or write a state the next load() would reject.
+10. The terminal snapshot's key set is closed: an extension field inside
+    terminal (raw_prompt, diff, summary) fails the whole payload closed,
+    exactly like an unknown top-level key.
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after the review rounds):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all three review
+rounds):
 
 ```text
 python -B -m pytest
-3262 passed, 3 skipped in 299.90s (0:04:59)
+3272 passed, 3 skipped, 1180 subtests passed in 302.84s (0:05:02)
 ```
 
-(A first full run in this round had one unrelated real-browser E2E flake
-under full-suite load; it passed on rerun and the clean run above is the
-recorded gate.)
-
-Focused gates before the full run (same candidate, 2026-08-29):
+Focused gates before the full run (Round 3 candidate, 2026-08-29):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 48 passed, 85 subtests (round-trips,
-                                                                       strict fail-closed reader + phase
-                                                                       invariants + closed key set, terminal
-                                                                       immutability, locked/atomic start+commit,
-                                                                       concurrent starts, canonical identity at
-                                                                       and beyond the boundary, project ref
-                                                                       format, payload hygiene, import boundary)
-tests/test_task_runner_operation_state.py                           -> 12 passed, 6 subtests (terminal/ledger/event
+tests/test_run_operation.py                                         -> 58 passed, 159 subtests (round-trips,
+                                                                       strict fail-closed reader + phase-state
+                                                                       closure (proof-fact / sha256-context
+                                                                       invariants), closed terminal key set,
+                                                                       strict writer helpers (no clipping, no
+                                                                       coercion), commit canonical gate +
+                                                                       identity lock, terminal immutability,
+                                                                       locked/atomic start+commit, concurrent
+                                                                       starts, canonical identity at and beyond
+                                                                       the boundary, project ref format, payload
+                                                                       hygiene, import boundary)
+tests/test_task_runner_operation_state.py +
+test_run_details / test_headless_runner                             -> 28 passed, 6 subtests (terminal/ledger/event
                                                                        consistency, repair phase sequence observed
                                                                        mid-run, provider-failure + stop honesty,
                                                                        six crash-position recovery rows, raw-path
                                                                        hygiene)
-test_run_details / test_server / test_headless_runner /
-test_architecture / test_capabilities / test_event_matrix /
-test_task_runner_completion_enforcement / test_task_runner_edit_integrity
-                                                                    -> 321 passed, 453 subtests passed
-adjacent groups (task_runner_*, run_ledger*, work_checkpoint*,
-completion_*, ghost continuity ab, ui_architecture)                 -> 190 passed, 8 subtests passed
+test_server / test_architecture / test_capabilities /
+test_event_matrix / test_task_runner_completion_enforcement /
+test_task_runner_edit_integrity                                     -> 305 passed, 453 subtests passed
 tests/manual/completion_operation_resume_smoke.py --self-test       -> ok: real process kill in the writer
                                                                        phase, fresh store reads writer_running,
                                                                        Details shows "Writing was interrupted",
