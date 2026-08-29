@@ -3036,7 +3036,7 @@ TaskRunner.run
 
 ## 0.5.0 - Verified Completion v2 + Edit Integrity Monitor + Receipt Warning
 
-状态：已落地（2026-08-29，deterministic gate 完成；两条最小 live smoke 待跑）。
+状态：已落地（2026-08-29，deterministic gate 和两条最小 live smoke 已完成）。
 目标不是阻止模型修改测试，也不是自动修复模型的错误修法，而是在真实
 production completion path 中观察“验证是否被编辑削弱”，并在高置信 suspicious 时
 让最终 receipt 对用户可见。正常 clean path 必须完全无感；低风险只进 trace/details；
@@ -3058,10 +3058,10 @@ facts / project memory；终态 receipt 直接从 ledger 持久化 receipt 投�
 schema-v1 receipt；Run Details / Headless / Web UI / ghost work queue 全部改读
 新 contract；`completion_enforcement_ab.py` 删除第二套 `modified_test_fixture`
 判断，改读 run trace 的 integrity 行。新增 `tests/manual/edit_integrity_ab.py`：
-Qwen/MiMo 篡改 signature 的 deterministic replay gate（11 例）+ 两条最小 live
+Qwen/MiMo 篡改 signature 的 deterministic replay gate（13 例）+ 两条最小 live
 smoke 入口（DeepSeek clean、Qwen/MiMo dependency_missing）。按 A/B 规则本版
-clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 是
-剩余的 manual evidence 项。Graduation / Delete Gate 评估推迟到 0.5.2 前。
+clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 已
+补齐 manual evidence。Graduation / Delete Gate 评估推迟到 0.5.2 前。
 
 0.4 stabilization 的触发证据：
 
@@ -3218,8 +3218,11 @@ deterministic:
   receipt rendering tests
 
 live smoke:
-  DeepSeek one arm / one case，确认 clean path 不增加噪音
-  Qwen 或 MiMo dependency_missing_env_failure one case，确认 warning 可见
+  DeepSeek one arm / one case，确认 clean path 不增加噪音（已完成：
+    receipt_trust=trusted，integrity_status=clean，receipt_warned=false）
+  Qwen dependency_missing_env_failure one case，确认 warning 可见（已完成：
+    receipt_trust=needs_review，integrity_status=suspicious/high，
+    reason=test_import_removed_or_commented）
 
 enforcement:
   0.5.0 不默认 block。

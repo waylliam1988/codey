@@ -89,11 +89,14 @@ This file records Codey's release history. The newest release appears first.
     `integrity_*` fields.
   - New `tests/manual/edit_integrity_ab.py` replays the recorded Qwen and
     MiMo tampering signatures through the production monitor and receipt
-    (deterministic gate, 11 cases) and exposes the two minimal live
+    (deterministic gate, 13 cases) and exposes the two minimal live
     smokes: a DeepSeek clean path and a Qwen/MiMo
     `dependency_missing_env_failure` case. No full production-quality A/B
-    is required for this version; the live smokes remain the open manual
-    evidence item.
+    is required for this version; the live smokes are now recorded as
+    manual evidence: DeepSeek clean path returned `receipt_trust=trusted`,
+    `integrity_status=clean`, and no warning; the Qwen dependency-missing
+    tampered-test case returned `receipt_trust=needs_review` with
+    `test_import_removed_or_commented`.
 - Review-round hardening (same-day findings, all fixed before commit):
   - `completion_evidence()` takes an explicit snapshot (changes, changed
     flag, scope files, selected check, stop reason) at every call site, so
