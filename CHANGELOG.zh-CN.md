@@ -6,6 +6,84 @@
 
 ## Unreleased
 
+- 把 0.5.0 的 edit-integrity monitor 接入生产 completion path，收掉 0.4
+  stabilization A/B 暴露的缺口：Qwen 和 MiMo 会篡改测试夹具（删除、注释或
+  `try`-`except` 包住 `import redis`）让 pytest 变绿，而生产 completion path
+  对此毫无察觉。
+  - `codey/completion/edit_scope.py` 拥有一份封闭的 edit-path 词表
+    （production / test / fixture / verification config / docs /
+    generated-vendor）、保守的任务级测试修改授权扫描，以及共享的
+    `is_document_path` 定义（从 `verification_policy` 移入；它是 stdlib-only
+    leaf，由架构测试锁住）。
+  - `codey/completion/edit_integrity.py` 读取一次 run 的 changed paths 和
+    change collection 已生成的 unified diff，输出有界、refs-only 的 finding，
+    reason code 封闭：删除/注释的测试 import、`except ImportError` 保护、
+    新增 skip、净删除的 assertion、变窄的 verification config，以及"验证变绿
+    但没有任何生产文件变更"。用户任务明确要求修改测试时，finding 降级为 low
+    severity，不当作篡改。raw diff 文本不离开该模块；任何内部失败一律
+    fail-closed 为 `monitor_error`，绝不变成 clean。
+  - Monitor 不是 evidence，不阻止 done，不自动 repair，也不新增 Manager；
+    clean path 完全无感。
+- 新增 `codey/completion/decision.py`，TaskRunner 抽薄：内联的
+  enforcement-decision 闭包变成纯投影 `build_completion_decision(...)`，
+  agent loop、repair 轮、receipt 和 trace 都读同一个 `CompletionDecision`
+  （proof、provenance、analysis-run refs、failure class、local state）。
+  重复的 changed-path 提取收敛为 `edit_scope.changed_paths_from_changes()`。
+- `CompletionProof` 新增结构化 `diagnostic_refs`，指向限定该 proof 的
+  edit-integrity observation；它参与 contract id 的内容寻址，并与
+  review-finding refs 分开，不混用词表。
+- Task receipt 重写为 schema v1
+  （`TaskReceipt(display, work, verification, integrity)`）。
+  - Trust 是合同不是分数：`trusted`（checks 通过且未观察到高风险 finding）、
+    `needs_review`（checks 通过但存在高置信 integrity finding）、`limited`
+    （checks 未通过，或 monitor 失败导致绿色不可背书）。
+  - 文案克制：`2 files changed · checks passed`、
+    `2 files changed · checks need review`、
+    `2 files changed · verification limited`；更长的解释放在
+    `display.detail`，只给 Run Details 用。
+  - 旧的顶层 `text` / `changed_count` / `checks_passed` /
+    `restore_available` 字段全部移除。`RunResult.checks_passed` 不动：它仍是
+    agent loop 的执行事实，不是 receipt contract。
+- TaskRunner 接线：
+  - 每个 completion 决策点（首轮和 repair 后）都观察 edit integrity；有
+    finding 时 proof 以 diagnostic refs 重算一次，proof 与 observation 都写
+    run trace。
+  - 只有 receipt trust 为 `trusted` 的 run 才写 project facts 和 project
+    memory，高置信 suspicious 的"绿色"无法再进入未来的验证习惯。
+  - 终态事件的 receipt 直接从 ledger 持久化记录的 receipt 投影；旧的
+    `receipt_from_projection_if_compatible()` 阴影校验被删除而不是改造。
+- Trace / ledger / details：
+  - `RunTraceManifest` 新增有界 `completion_edit_integrity` section 和
+    `record_edit_integrity()`；completion-proof 行携带 `diagnostic_refs`；
+    `edit_integrity` / `edit_integrity_finding` 进入共享 runtime-ref kind
+    注册表。
+  - `changes_collected` 存储校验后的 schema-v1 receipt；投影把它放在
+    `ChangesSummary.receipt` 上，`build_task_receipt_from_projection()`
+    返回与落盘完全一致的 receipt。
+  - Run Details 的 Verification 行从 receipt contract 读取：
+    `needs_review` 显示 `Test changes may have weakened checks`（warning），
+    monitor 失败显示 `Verification limited by monitor error`，其余保持旧文案。
+- Headless JSONL receipt 与 Web UI 只消费 schema-v1 的 section；共享的
+  `receiptSummary()` / `receiptChangedCount()` helper 位于 `render.js`，
+  research receipt 改发 `display.summary` 而不是 `text`；ghost work queue
+  改读 `receipt.work.changed_count`。
+- Manual A/B 收敛：
+  - `completion_enforcement_ab.py` 不再维护第二套 `modified_test_fixture`
+    判断：fixture scope 改读该 run 自己 trace 里的 integrity 行，row 新增
+    `receipt_trust` / `integrity_*` 字段。
+  - 新增 `tests/manual/edit_integrity_ab.py`：把记录在案的 Qwen/MiMo 篡改
+    signature 通过生产 monitor 和 receipt 回放（deterministic gate，11 例），
+    并暴露两条最小 live smoke：DeepSeek clean path 与 Qwen/MiMo
+    `dependency_missing_env_failure`。本版不需要完整生产质量 A/B；两条
+    live smoke 仍是待补的 manual evidence 项。
+- 新增测试：`test_completion_edit_scope.py`、
+  `test_completion_edit_integrity.py`、
+  `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`
+  路径形状 fixtures；receipt、ledger projection、ledger、details、server、
+  UI、checkpoint-flow、enforcement 测试迁移到 schema-v1 contract。架构测试
+  锁定 `edit_scope` 为 stdlib-only leaf，并保证 `edit_integrity` /
+  `decision` 不依赖 provider/browser/tool-runtime/server。
+
 ## 0.4.21 - Research and Ghost A/B Stabilization
 
 - 将 `verification_review_ab.py` 迁移到 release-grade A/B 证据脊柱。

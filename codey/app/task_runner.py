@@ -25,6 +25,12 @@ from codey.agents.consensus import (
 from codey.completion.contract import (
     completion_proof_trace_payload,
 )
+from codey.completion.decision import CompletionDecision, build_completion_decision
+from codey.completion.edit_integrity import (
+    EditIntegrityObservation,
+    observe_edit_integrity,
+)
+from codey.completion.edit_scope import changed_paths_from_changes
 from codey.completion.repair_context import (
     project_repair_context,
     repair_candidate,
@@ -32,14 +38,7 @@ from codey.completion.repair_context import (
 from codey.completion.verification import (
     STANCE_FRESH_PASS,
     STANCE_INHERITED_PASS,
-    VerificationProvenance,
-    build_coding_completion_proof,
-    classify_verification_failure,
-    coding_verification_state,
     decisive_failure_fact,
-    matching_analysis_run_refs,
-    relevant_verification_pairs,
-    verification_provenance,
 )
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
@@ -103,11 +102,11 @@ from codey.runtime.prompt_envelope import (
     PromptEnvelopeSection,
     record_provider_send_prompt,
 )
-from codey.runs.receipt import build_task_receipt
+from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
 from codey.runs.ledger import RunLedgerStore, RunLedgerWriter
 from codey.runs.ledger_projection import (
+    build_task_receipt_from_projection,
     load_run_projection,
-    receipt_from_projection_if_compatible,
 )
 from codey.runs.trace import (
     MAX_ANALYSIS_RUNS,
@@ -462,6 +461,17 @@ def _record_completion_proof_trace(
     sink.call("flush")
 
 
+def _record_edit_integrity_trace(
+    trace: Any | None,
+    observation: EditIntegrityObservation | None,
+) -> None:
+    if observation is None:
+        return
+    sink = FailOpenPromptTrace(trace)
+    sink.call("record_edit_integrity", observation.to_payload())
+    sink.call("flush")
+
+
 def _blocked_result(result: RunResult, reason: str) -> RunResult:
     """Turn a claimed-done result into an honest blocked stop."""
     note = _COMPLETION_BLOCKED_NOTE.get(
@@ -556,15 +566,6 @@ def _safe_verification_map(
         )
     except Exception:
         return ""
-
-
-def _changed_file_paths(changes: object) -> tuple[str, ...]:
-    if not isinstance(changes, dict):
-        return ()
-    files = changes.get("files")
-    if not isinstance(files, list):
-        return ()
-    return tuple(str(item.get("path") or "") for item in files if isinstance(item, dict) and item.get("path"))
 
 
 def _resolve_task_kind(request: TaskRequest) -> str:
@@ -1267,13 +1268,14 @@ class TaskRunner:
         session_id: str,
         run_id: str,
     ) -> dict:
+        # The terminal event's receipt must be the receipt the ledger
+        # durably recorded, not a parallel in-memory copy. Runs without a
+        # recorded change collection (research, review, chat) keep the
+        # receipt they carry.
         if not isinstance(event.get("receipt"), dict) or self.run_ledgers is None:
             return event
         projection = load_run_projection(self.run_ledgers, session_id, run_id)
-        receipt = receipt_from_projection_if_compatible(
-            projection,
-            event.get("receipt"),
-        )
+        receipt = build_task_receipt_from_projection(projection)
         if receipt is None:
             return event
         updated = dict(event)
@@ -2119,10 +2121,12 @@ class TaskRunner:
             ),
         )
         receipt = {
-            "text": result.receipt,
-            "created": result.notes_created,
-            "updated": result.notes_updated,
-            "synthesis_id": result.synthesis_id,
+            "display": {"summary": result.receipt},
+            "work": {
+                "created": result.notes_created,
+                "updated": result.notes_updated,
+                "synthesis_id": result.synthesis_id,
+            },
         }
         return _ModeOutcome({
             "type": "task_done",
@@ -2166,7 +2170,7 @@ class TaskRunner:
                 "max_turns": int(getattr(research_result, "max_turns_used", 0) or request.max_turns),
                 "provider": frame.provider_id,
                 "mode": "research",
-                "receipt": {"text": research_result.receipt},
+                "receipt": {"display": {"summary": research_result.receipt}},
                 "research": _research_payload(research_result, pipeline_result=pipeline_result),
             }, research_result=research_result, research_pipeline_result=pipeline_result)
         frame.fresh_chat = True
@@ -2523,7 +2527,7 @@ class TaskRunner:
             goal=request.task,
             project=frame.project_text,
             provider_id=frame.provider_id,
-            changed_files=_changed_file_paths(changes),
+            changed_files=changed_paths_from_changes(changes),
             checks_passed=False,
             summary=summary,
             blocker="",
@@ -3107,7 +3111,7 @@ class TaskRunner:
                     current_project_map,
                     selected_verification_candidate_lines(
                         verification_candidates,
-                        _changed_file_paths(changes),
+                        changed_paths_from_changes(changes),
                     ),
                 )
             ),
@@ -3173,59 +3177,52 @@ class TaskRunner:
         checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
         verification_forbidden = task_forbids_verification(request.task)
 
-        def build_enforcement_decision() -> tuple[Any, VerificationProvenance, tuple[str, ...], str]:
-            local_state = coding_verification_state(
-                selected_check,
-                work.evidence,
-                files,
-                root=project,
-            )
-            provenance = verification_provenance(
-                local_state=local_state,
-                checkpoint_green=checkpoint_green,
-            )
-            analysis_refs = matching_analysis_run_refs(
-                work.analysis_run_payloads,
-                relevant_verification_pairs(
-                    local_state,
-                    selected_check,
-                    work.evidence,
-                    files,
-                    root=project,
-                ),
-                project=project,
-            )
-            proof = build_coding_completion_proof(
+        # The decision closure reads the live local variables, so the
+        # repair round recomputes it from the post-repair facts exactly as
+        # the initial decision was computed from the pre-repair ones.
+        changes_diff = (
+            str(task_changes.get("diff") or "")
+            if isinstance(task_changes, dict)
+            else ""
+        )
+
+        def completion_decision(**extra: object) -> CompletionDecision:
+            return build_completion_decision(
                 run_id=frame.run_id,
                 stop_reason=result.stop_reason,
                 task_changed=task_changed,
                 files=files,
-                selected_check_present=selected_check is not None,
-                provenance=provenance,
-                analysis_run_refs=analysis_refs,
+                selected_check=selected_check,
+                evidence=work.evidence,
+                analysis_run_payloads=work.analysis_run_payloads,
+                project=project,
+                checkpoint_green=checkpoint_green,
                 verification_forbidden=verification_forbidden,
+                **extra,
             )
-            failure_class = ""
-            if proof is not None and not proof.satisfied:
-                decisive = decisive_failure_fact(
-                    selected_check,
-                    work.evidence,
-                    files,
-                    root=project,
-                )
-                failure_class = classify_verification_failure(
-                    proof_status=proof.status,
-                    selected_check_present=selected_check is not None,
-                    decisive_error_code=str(getattr(decisive, "error_code", "") or ""),
-                    decisive_exit_code=getattr(decisive, "exit_code", None),
-                    decisive_result_summary=str(
-                        getattr(decisive, "result_summary", "") or ""
-                    ),
-                )
-            return proof, provenance, analysis_refs, failure_class
 
-        proof, provenance, analysis_refs, failure_class = build_enforcement_decision()
+        def completion_evidence() -> tuple[CompletionDecision, EditIntegrityObservation]:
+            # Integrity is observed against the decision's verification
+            # stance; when it finds anything, the proof is recomputed once
+            # so its diagnostic_refs name that observation.
+            decided = completion_decision()
+            integrity = observe_edit_integrity(
+                task=request.task,
+                changes=task_changes,
+                diff=changes_diff,
+                files=files,
+                decision=decided,
+                selected_check=selected_check,
+                run_id=frame.run_id,
+            )
+            if integrity.diagnostic_refs:
+                decided = completion_decision(diagnostic_refs=integrity.diagnostic_refs)
+            return decided, integrity
+
+        decision, integrity = completion_evidence()
+        proof = decision.proof
         _record_completion_proof_trace(frame.trace, proof)
+        _record_edit_integrity_trace(frame.trace, integrity)
 
         blocked_reason = ""
         repaired_once = False
@@ -3238,7 +3235,7 @@ class TaskRunner:
             and remaining_turns > 0
             and repair_candidate(
                 proof.status,
-                failure_class,
+                decision.failure_class,
                 max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
             )
         ):
@@ -3250,7 +3247,7 @@ class TaskRunner:
             else:
                 projection = project_repair_context(
                     proof=proof.to_payload(),
-                    failure_class=failure_class,
+                    failure_class=decision.failure_class,
                     decisive_checks=(
                         decisive_failure_fact(
                             selected_check,
@@ -3260,7 +3257,7 @@ class TaskRunner:
                         ),
                     ),
                     changed_files=files,
-                    analysis_run_refs=analysis_refs,
+                    analysis_run_refs=decision.analysis_run_refs,
                 )
                 if not projection.admitted:
                     blocked_reason = "repair_context_unavailable"
@@ -3321,10 +3318,10 @@ class TaskRunner:
                                 changed=result.changed or repair_result.changed,
                                 checks_ran=result.checks_ran or repair_result.checks_ran,
                             )
-                            proof, provenance, _analysis_refs, failure_class = (
-                                build_enforcement_decision()
-                            )
+                            decision, integrity = completion_evidence()
+                            proof = decision.proof
                             _record_completion_proof_trace(frame.trace, proof)
+                            _record_edit_integrity_trace(frame.trace, integrity)
                         else:
                             result = replace(repair_result, turns=turns)
                             if repair_result.stop_reason != "approval":
@@ -3370,7 +3367,10 @@ class TaskRunner:
                 "unobserved"
                 if proof.status == "blocked"
                 else "environment_failure"
-                if failure_class in ("environment_failure", "verification_unavailable")
+                if decision.failure_class in (
+                    "environment_failure",
+                    "verification_unavailable",
+                )
                 else "turn_budget_exhausted"
                 if request.max_turns - result.turns <= 0
                 else "max_repair_rounds"
@@ -3391,7 +3391,7 @@ class TaskRunner:
                 result = _blocked_result(result, blocked_reason)
             elif result.stop_reason == "done":
                 if proof is not None:
-                    verified = provenance.stance in (
+                    verified = decision.provenance.stance in (
                         STANCE_FRESH_PASS,
                         STANCE_INHERITED_PASS,
                     )
@@ -3403,6 +3403,8 @@ class TaskRunner:
 
         receipt = build_task_receipt(
             task_changes,
+            decision=decision,
+            integrity=integrity,
             checks_passed=result.checks_passed,
         )
         hooks.append_ledger(
@@ -3417,6 +3419,7 @@ class TaskRunner:
             and result.stop_reason == "done"
             and task_changed
             and result.checks_passed
+            and receipt.verification.trust == VERIFICATION_TRUST_TRUSTED
             and work.evidence.has_successful_checks
             and files
         )
@@ -3435,7 +3438,7 @@ class TaskRunner:
                         task=fact_task,
                         files=files,
                         checks=work.evidence.successful_checks,
-                        receipt=receipt.text,
+                        receipt=receipt.display.summary,
                     )
                 )
             except (OSError, ValueError):
@@ -3446,7 +3449,7 @@ class TaskRunner:
                 session_id=request.session_id,
                 task=request.task,
                 files=files,
-                receipt=receipt.text,
+                receipt=receipt.display.summary,
                 checks=work.evidence.successful_checks,
             )
         if self.work_checkpoints is not None and work.work_checkpoint is not None:

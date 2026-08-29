@@ -11,8 +11,8 @@ from codey.runs.ledger_projection import (
     build_task_receipt_from_projection,
     load_run_projection,
     project_run_ledger,
-    receipt_from_projection_if_compatible,
 )
+from codey.runs.receipt import build_task_receipt
 
 
 def _record(seq: int, event_type: str, **fields: object) -> RunLedgerRecord:
@@ -27,8 +27,15 @@ def _record(seq: int, event_type: str, **fields: object) -> RunLedgerRecord:
     })
 
 
+def _receipt_payload(changed_count: int = 2) -> dict:
+    return build_task_receipt(
+        {"mode": "snapshot", "changed_count": changed_count},
+        checks_passed=True,
+    ).to_dict()
+
+
 class RunLedgerProjectionTests(unittest.TestCase):
-    def test_projects_core_run_facts_without_reading_nested_receipt(self) -> None:
+    def test_projects_core_run_facts_and_round_trips_schema_v1_receipt(self) -> None:
         records = [
             _record(
                 10,
@@ -42,11 +49,7 @@ class RunLedgerProjectionTests(unittest.TestCase):
                 ],
                 files_truncated=False,
                 checks_passed=True,
-                receipt={
-                    "changed_count": 99,
-                    "checks_passed": False,
-                    "restore_available": False,
-                },
+                receipt=_receipt_payload(changed_count=2),
             ),
             _record(1, "run_started", project="E:/project", mode="project", provider="deepseek", task_chars=8),
             _record(2, "provider_selected", provider="deepseek"),
@@ -84,9 +87,32 @@ class RunLedgerProjectionTests(unittest.TestCase):
         self.assertEqual(len(projection.final_changes.files), 2)
         self.assertIsNotNone(receipt)
         self.assertEqual(
-            receipt.text,
-            "2 files changed \u00b7 checks passed \u00b7 restore available",
+            receipt.display.summary,
+            "2 files changed \u00b7 checks passed",
         )
+        self.assertTrue(receipt.work.restore_available)
+        self.assertTrue(receipt.verification.checks_passed)
+
+    def test_malformed_stored_receipt_projects_to_none(self) -> None:
+        # A legacy-shaped or junk receipt row must fail closed: the
+        # projection never rebuilds a half-valid receipt from it.
+        records = [
+            _record(1, "run_started", provider="deepseek"),
+            _record(
+                2,
+                "changes_collected",
+                mode="snapshot",
+                changed_count=2,
+                checks_passed=True,
+                receipt={"changed_count": 99, "checks_passed": False},
+            ),
+        ]
+
+        projection = project_run_ledger(records)
+
+        self.assertIsNotNone(projection.final_changes)
+        self.assertIsNone(projection.final_changes.receipt)
+        self.assertIsNone(build_task_receipt_from_projection(projection))
 
     def test_last_changes_win_and_verified_commands_are_deduplicated(self) -> None:
         records = [
@@ -95,7 +121,14 @@ class RunLedgerProjectionTests(unittest.TestCase):
             _record(3, "command_verified", command="pytest", cwd=".", turn=2, tool_id="2:0"),
             _record(4, "file_changed", path="app.py"),
             _record(5, "file_changed", path="app.py"),
-            _record(6, "changes_collected", mode="snapshot", changed_count=2, checks_passed=True),
+            _record(
+                6,
+                "changes_collected",
+                mode="snapshot",
+                changed_count=2,
+                checks_passed=True,
+                receipt=_receipt_payload(),
+            ),
             _record(7, "changes_collected", mode="none", changed_count=0, checks_passed=False),
             _record(8, "run_finished", provider="deepseek", stop_reason="done"),
         ]
@@ -107,6 +140,8 @@ class RunLedgerProjectionTests(unittest.TestCase):
         self.assertIsNotNone(projection.final_changes)
         self.assertEqual(projection.final_changes.changed_count, 0)
         self.assertFalse(projection.final_changes.checks_passed)
+        # The last collection wins, including its receipt.
+        self.assertIsNone(projection.final_changes.receipt)
 
     def test_ignores_unknown_future_and_malformed_records(self) -> None:
         records = [
@@ -123,25 +158,7 @@ class RunLedgerProjectionTests(unittest.TestCase):
         self.assertEqual(projection.provider_initial, "deepseek")
         self.assertEqual(projection.stop_reason, "done")
 
-    def test_truncated_ledger_is_never_compatible_for_receipt_shadowing(self) -> None:
-        records = [
-            _record(1, "run_started", provider="deepseek"),
-            _record(2, "changes_collected", mode="snapshot", changed_count=1, checks_passed=True),
-            _record(3, "ledger_truncated", max_bytes=10),
-            _record(4, "run_finished", provider="deepseek", stop_reason="done"),
-        ]
-        projection = project_run_ledger(records)
-
-        receipt = receipt_from_projection_if_compatible(
-            projection,
-            {"changed_count": 1, "checks_passed": True, "restore_available": True},
-        )
-
-        self.assertFalse(projection.complete)
-        self.assertTrue(projection.ledger_truncated)
-        self.assertIsNone(receipt)
-
-    def test_receipt_shadowing_requires_complete_matching_projection(self) -> None:
+    def test_receipt_projection_is_none_without_change_collection(self) -> None:
         projection = RunLedgerProjection(
             final_changes=ChangesSummary(
                 ok=True,
@@ -155,18 +172,8 @@ class RunLedgerProjectionTests(unittest.TestCase):
             has_run_finished=True,
         )
 
-        compatible = receipt_from_projection_if_compatible(
-            projection,
-            {"changed_count": 1, "checks_passed": True, "restore_available": True},
-        )
-        mismatch = receipt_from_projection_if_compatible(
-            projection,
-            {"changed_count": 2, "checks_passed": True, "restore_available": True},
-        )
-
-        self.assertIsNotNone(compatible)
-        self.assertEqual(compatible.changed_count, 1)
-        self.assertIsNone(mismatch)
+        self.assertIsNone(build_task_receipt_from_projection(projection))
+        self.assertIsNone(build_task_receipt_from_projection(None))
 
     def test_load_run_projection_returns_none_for_empty_or_unreadable_ledgers(self) -> None:
         class BadStore:

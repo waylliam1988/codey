@@ -272,8 +272,23 @@ function appendOrFoldTool(chat, m) {
   chat.appendChild(standaloneToolEl(m));
 }
 
+// Receipt helpers: Codey 0.5 receipts are structured
+// (display / work / verification / integrity), never flat text.
+function receiptSummary(receipt) {
+  return receipt && receipt.display && receipt.display.summary
+    ? String(receipt.display.summary)
+    : '';
+}
+
+function receiptChangedCount(receipt, changes) {
+  const fromReceipt = receipt && receipt.work ? Number(receipt.work.changed_count || 0) : 0;
+  return fromReceipt > 0 ? fromReceipt : Number((changes && changes.changed_count) || 0);
+}
+
 window.CodeyRender = {
   escapeHtml,
+  receiptSummary,
+  receiptChangedCount,
   copyText,
   addMessageCopyButton,
   applyBold,

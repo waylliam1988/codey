@@ -15,6 +15,7 @@ from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
+from codey.completion.edit_scope import is_document_path
 from codey.workspace.config import path_matches_ignored_prefix
 from codey.toolchain.runtime import _is_allowed_run_command
 
@@ -23,6 +24,10 @@ MAX_SCAN_DIRS = 160
 MAX_SCAN_ENTRIES = 2_000
 MAX_MANIFEST_BYTES = 256 * 1024
 DOC_SUFFIXES = frozenset({".md", ".rst", ".txt"})
+# ``is_document_path`` now lives in the shared edit-scope leaf so the
+# completion proof and the edit-integrity monitor share one definition of
+# a prose path; the local alias below is kept for the doc-suffix constant.
+_DOC_SUFFIXES = DOC_SUFFIXES
 EXCLUDED_DIRS = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "node_modules",
     "__pycache__", "dist", "build", ".next", "target",
@@ -474,16 +479,6 @@ def discover_verification_candidates(
         if prior is None or _effective_source_priority(item) > _effective_source_priority(prior):
             unique[key] = item
     return tuple(unique.values())
-
-
-def is_document_path(path: str) -> bool:
-    item = PurePosixPath(str(path).replace("\\", "/"))
-    name = item.name.upper()
-    return (
-        item.suffix.lower() in DOC_SUFFIXES
-        or name == "LICENSE"
-        or name.startswith("CHANGELOG")
-    )
 
 
 def _covers(cwd: str, path: str) -> bool:

@@ -329,8 +329,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("type: 'asst', text: summary", HTML)
         self.assertIn("const changed = !!data.changed", HTML)
         self.assertIn("changed && changedCount > 0", HTML)
-        self.assertIn("data.receipt && data.receipt.text", HTML)
-        self.assertIn("text: data.receipt.text", HTML)
+        # Receipts are structured (0.5 schema): the UI reads them through
+        # the shared render.js helpers, never flat text fields.
+        self.assertIn("receiptSummary(data.receipt)", HTML)
+        self.assertIn("text: receiptSummary(data.receipt)", HTML)
+        self.assertIn("const receiptSummary = window.CodeyRender.receiptSummary;", HTML)
+        self.assertIn("const receiptChangedCount = window.CodeyRender.receiptChangedCount;", HTML)
         self.assertIn("label: 'View diff'", HTML)
         self.assertIn("onclick: () => openChangesDrawer(m.project)", HTML)
         self.assertIn("let shownReceipt = false", HTML)

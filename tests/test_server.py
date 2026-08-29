@@ -3373,7 +3373,7 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["provider"], "qwen")
-        self.assertEqual(task_done["receipt"]["text"], "No files changed · checks passed")
+        self.assertEqual(task_done["receipt"]["display"]["summary"], "No files changed · checks passed")
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
@@ -4838,7 +4838,7 @@ class SessionThreadingTests(unittest.TestCase):
         while not events.empty():
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertEqual(task_done["receipt"]["text"], "2 files changed · checks passed · restore available")
+        self.assertEqual(task_done["receipt"]["display"]["summary"], "2 files changed · checks passed")
         self.assertTrue(task_done["changed"])
         self.assertEqual(task_done["changes"]["changed_count"], 2)
         self.assertEqual(len(task_done["changes"]["files"]), 3)
@@ -4929,7 +4929,7 @@ class SessionThreadingTests(unittest.TestCase):
             state.knowledge_store.close()
 
         self.assertEqual(done["stop_reason"], "done")
-        self.assertEqual(done["receipt"]["text"], "1 file changed · checks passed · restore available")
+        self.assertEqual(done["receipt"]["display"]["summary"], "1 file changed · checks passed")
         self.assertEqual(len(impl_rows), 1)
         self.assertEqual(len(verification_rows), 1)
         self.assertIsNotNone(impl)
@@ -5005,7 +5005,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertTrue(task_done["changed"])
         self.assertEqual(task_done["changes"]["changed_count"], 1)
         self.assertEqual(task_done["changes"]["files"], final_changes["files"])
-        self.assertEqual(task_done["receipt"]["changed_count"], 1)
+        self.assertEqual(task_done["receipt"]["work"]["changed_count"], 1)
 
     def test_run_task_uses_second_model_for_approved_review(self) -> None:
         state = server.State()
@@ -5299,10 +5299,10 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "review claim was invalid")
-        self.assertTrue(task_done["receipt"]["checks_passed"])
+        self.assertTrue(task_done["receipt"]["verification"]["checks_passed"])
         self.assertEqual(
-            task_done["receipt"]["text"],
-            "1 file changed · checks passed · restore available",
+            task_done["receipt"]["display"]["summary"],
+            "1 file changed · checks passed",
         )
 
     def test_review_followup_failed_check_does_not_inherit_prior_checks_passed(self) -> None:
@@ -5353,7 +5353,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["stop_reason"], "blocked")
         self.assertTrue(task_done["summary"].startswith("tests failed"))
         self.assertIn("[Completion blocked:", task_done["summary"])
-        self.assertFalse(task_done["receipt"]["checks_passed"])
+        self.assertFalse(task_done["receipt"]["verification"]["checks_passed"])
 
     def test_review_followup_no_progress_does_not_inherit_prior_checks_passed(self) -> None:
         state = server.State()
@@ -5399,11 +5399,12 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["stop_reason"], "no_progress")
-        self.assertFalse(task_done["receipt"]["checks_passed"])
+        self.assertFalse(task_done["receipt"]["verification"]["checks_passed"])
         self.assertEqual(
-            task_done["receipt"]["text"],
-            "1 file changed · restore available",
+            task_done["receipt"]["display"]["summary"],
+            "1 file changed",
         )
+        self.assertTrue(task_done["receipt"]["work"]["restore_available"])
 
     def test_run_task_falls_back_to_one_model_when_review_unavailable(self) -> None:
         state = server.State()
@@ -5574,7 +5575,7 @@ class SessionThreadingTests(unittest.TestCase):
             "Start with one guided rhythm.\n\nAdd customization later.",
         )
         self.assertFalse(task_done["changed"])
-        self.assertEqual(task_done["receipt"]["changed_count"], 0)
+        self.assertEqual(task_done["receipt"]["work"]["changed_count"], 0)
         self.assertNotIn("changes", task_done)
 
     def test_project_read_only_task_can_use_hidden_consensus_answer(self) -> None:

@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from codey.runs.receipt import TaskReceipt, build_task_receipt
+from codey.runs.receipt import TaskReceipt, task_receipt_from_payload
 from codey.runs.ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore, read_ledger
 
 
@@ -26,6 +26,10 @@ class ChangesSummary:
     files: tuple[ChangeFileSummary, ...]
     files_truncated: bool
     checks_passed: bool
+    # The schema-v1 receipt as it was durably recorded with this change
+    # collection. Old ledgers have no valid receipt row here and project
+    # to None; readers show their own facts instead of guessing.
+    receipt: TaskReceipt | None = None
 
 
 @dataclass(frozen=True)
@@ -260,36 +264,13 @@ def load_run_projection(
 
 
 def build_task_receipt_from_projection(
-    projection: RunLedgerProjection,
-) -> TaskReceipt | None:
-    changes = projection.final_changes
-    if changes is None:
-        return None
-    return build_task_receipt(
-        {
-            "changed_count": changes.changed_count,
-            "mode": changes.mode,
-        },
-        checks_passed=changes.checks_passed,
-    )
-
-
-def receipt_from_projection_if_compatible(
     projection: RunLedgerProjection | None,
-    legacy_receipt: object,
 ) -> TaskReceipt | None:
-    if projection is None or not projection.complete or projection.ledger_truncated:
+    """The durably recorded receipt of one run, or None when never recorded."""
+
+    if projection is None or projection.final_changes is None:
         return None
-    projected = build_task_receipt_from_projection(projection)
-    if projected is None or not isinstance(legacy_receipt, dict):
-        return None
-    if (
-        projected.changed_count == _int(legacy_receipt.get("changed_count"))
-        and projected.restore_available == _bool(legacy_receipt.get("restore_available"))
-        and projected.checks_passed == _bool(legacy_receipt.get("checks_passed"))
-    ):
-        return projected
-    return None
+    return projection.final_changes.receipt
 
 
 def _sorted_payloads(records: Iterable[RunLedgerRecord]) -> list[dict[str, object]]:
@@ -327,6 +308,7 @@ def _changes_summary(payload: dict[str, object]) -> ChangesSummary:
         files=tuple(files),
         files_truncated=_bool(payload.get("files_truncated")),
         checks_passed=_bool(payload.get("checks_passed")),
+        receipt=task_receipt_from_payload(payload.get("receipt")),
     )
 
 

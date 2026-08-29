@@ -19,7 +19,6 @@ from codey.runs.ledger import (
 from codey.runs.ledger_projection import (
     build_task_receipt_from_projection,
     load_run_projection,
-    receipt_from_projection_if_compatible,
 )
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
@@ -296,11 +295,6 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
             }
-            projected_receipt_calls = []
-
-            def spy_projected_receipt(projection, legacy_receipt):
-                projected_receipt_calls.append((projection, legacy_receipt))
-                return receipt_from_projection_if_compatible(projection, legacy_receipt)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -309,10 +303,6 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
                 mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
-                mock.patch(
-                    "codey.app.task_runner.receipt_from_projection_if_compatible",
-                    side_effect=spy_projected_receipt,
-                ),
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
 
@@ -335,14 +325,18 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
             changes_row = next(item for item in rows if item["type"] == "changes_collected")
             self.assertEqual(changes_row["changed_count"], 1)
             self.assertEqual(changes_row["checks_passed"], True)
-            self.assertEqual(changes_row["receipt"]["restore_available"], True)
+            self.assertEqual(changes_row["receipt"]["work"]["restore_available"], True)
+            self.assertEqual(changes_row["receipt"]["schema_version"], 1)
             projection = load_run_projection(state.run_ledgers, "session-ledger", run_id)
             self.assertIsNotNone(projection)
             projected_receipt = build_task_receipt_from_projection(projection)
             self.assertIsNotNone(projected_receipt)
+            # The terminal receipt is the durably projected one.
             self.assertEqual(state.last_terminal_event["receipt"], projected_receipt.to_dict())
-            self.assertEqual(len(projected_receipt_calls), 1)
-            self.assertTrue(projected_receipt_calls[0][0].complete)
+            self.assertEqual(
+                state.last_terminal_event["receipt"]["display"]["summary"],
+                "1 file changed · checks passed",
+            )
 
     def test_ledger_append_failure_does_not_break_task(self) -> None:
         class FailingLedger:

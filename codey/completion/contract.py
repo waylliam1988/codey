@@ -116,6 +116,10 @@ class CompletionContract:
     analysis_run_refs: tuple[str, ...] = ()
     artifact_refs: tuple[str, ...] = ()
     external_refs: tuple[str, ...] = ()
+    # Structured diagnostics that qualify this proof (edit-integrity
+    # observations), kept apart from finding_refs: a diagnostic is not a
+    # review finding and must never mix into that vocabulary.
+    diagnostic_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,7 @@ class CompletionProof:
     analysis_run_refs: tuple[str, ...]
     artifact_refs: tuple[str, ...]
     external_refs: tuple[str, ...]
+    diagnostic_refs: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         return completion_proof_payload(self)
@@ -175,6 +180,7 @@ def build_completion_contract(
     analysis_run_refs: Iterable[object] = (),
     artifact_refs: Iterable[object] = (),
     external_refs: Iterable[object] = (),
+    diagnostic_refs: Iterable[object] = (),
 ) -> CompletionContract | None:
     """Build a validated contract; unusable input yields None (fail closed)."""
 
@@ -198,12 +204,13 @@ def build_completion_contract(
     analysis = bounded_refs(analysis_run_refs, limit=MAX_COMPLETION_REFS)
     artifacts = bounded_refs(artifact_refs, limit=MAX_COMPLETION_REFS)
     external = bounded_refs(external_refs, limit=MAX_COMPLETION_REFS)
+    diagnostics = bounded_refs(diagnostic_refs, limit=MAX_COMPLETION_REFS)
     return CompletionContract(
         # The id covers every payload field: two contracts with different
-        # finding/analysis/artifact/external refs must never share a
-        # contract_id, because proofs derive their id from it and RunTrace
-        # dedupes by proof id. Content-addressing is only honest if it is
-        # total.
+        # finding/analysis/artifact/external/diagnostic refs must never
+        # share a contract_id, because proofs derive their id from it and
+        # RunTrace dedupes by proof id. Content-addressing is only honest
+        # if it is total.
         contract_id=stable_ref(
             COMPLETION_CONTRACT_PREFIX,
             dom,
@@ -215,6 +222,7 @@ def build_completion_contract(
             analysis,
             artifacts,
             external,
+            diagnostics,
         ),
         domain=dom,
         subject_ref=subject,
@@ -225,6 +233,7 @@ def build_completion_contract(
         analysis_run_refs=analysis,
         artifact_refs=artifacts,
         external_refs=external,
+        diagnostic_refs=diagnostics,
     )
 
 
@@ -273,6 +282,7 @@ def project_completion_proof(contract: CompletionContract | None) -> CompletionP
         analysis_run_refs=contract.analysis_run_refs,
         artifact_refs=contract.artifact_refs,
         external_refs=contract.external_refs,
+        diagnostic_refs=contract.diagnostic_refs,
     )
 
 
@@ -306,6 +316,7 @@ def completion_proof_payload(proof: CompletionProof | None) -> dict[str, object]
         ("analysis_run_refs", proof.analysis_run_refs),
         ("artifact_refs", proof.artifact_refs),
         ("external_refs", proof.external_refs),
+        ("diagnostic_refs", proof.diagnostic_refs),
     ):
         bounded = bounded_refs(refs, limit=MAX_COMPLETION_REFS)
         if bounded:
@@ -361,6 +372,7 @@ def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
             analysis_run_refs=tuple(str(item) for item in payload.get("analysis_run_refs", ()) or ()),
             artifact_refs=tuple(str(item) for item in payload.get("artifact_refs", ()) or ()),
             external_refs=tuple(str(item) for item in payload.get("external_refs", ()) or ()),
+            diagnostic_refs=tuple(str(item) for item in payload.get("diagnostic_refs", ()) or ()),
         )
     except (TypeError, ValueError):
         return None

@@ -173,7 +173,9 @@ def test_fresh_pass_allows_done_with_verified_receipt() -> None:
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "done"
         receipt = event["receipt"]
-        assert receipt["checks_passed"] is True
+        assert receipt["verification"]["checks_passed"] is True
+        assert receipt["verification"]["trust"] == "trusted"
+        assert receipt["display"]["summary"] == "1 file changed · checks passed"
 
         manifest = _trace_payload(state)
         proofs = manifest["completion_proofs"]
@@ -206,7 +208,7 @@ def test_fresh_fail_runs_one_repair_round_then_completes() -> None:
 
         assert event["stop_reason"] == "done"
         assert event["summary"] == "fixed now"
-        assert event["receipt"]["checks_passed"] is True
+        assert event["receipt"]["verification"]["checks_passed"] is True
 
         manifest = _trace_payload(state)
         statuses = [row["status"] for row in manifest["completion_proofs"]]
@@ -271,7 +273,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
 
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "done"
-        assert event["receipt"]["checks_passed"] is True
+        assert event["receipt"]["verification"]["checks_passed"] is True
         statuses = [row["status"] for row in _trace_payload(state)["completion_proofs"]]
         assert statuses == ["failed", "complete"]
 
@@ -289,7 +291,7 @@ def test_still_failing_after_repair_round_blocks_honestly() -> None:
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "blocked"
         assert "[Completion blocked:" in event["summary"]
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
 
         manifest = _trace_payload(state)
         # Content-addressed proofs dedupe: identical failed facts before and
@@ -309,7 +311,7 @@ def test_still_failing_after_repair_round_blocks_honestly() -> None:
             if record.payload.get("type") == "changes_collected"
         ]
         assert len(ledger_events) == 1
-        assert ledger_events[0]["receipt"]["checks_passed"] is False
+        assert ledger_events[0]["receipt"]["verification"]["checks_passed"] is False
 
 
 def test_unobserved_verification_blocks_without_any_repair() -> None:
@@ -327,7 +329,7 @@ def test_unobserved_verification_blocks_without_any_repair() -> None:
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "blocked"
         assert "[Completion blocked:" in event["summary"]
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
 
         manifest = _trace_payload(state)
         assert manifest["completion_proofs"][0]["status"] == "blocked"
@@ -359,7 +361,7 @@ def test_forbidden_verification_allows_limited_done_in_block_mode() -> None:
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "done"
         assert "[Completion blocked:" not in str(event["summary"])
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
 
         manifest = _trace_payload(state)
         proof = manifest["completion_proofs"][0]
@@ -408,7 +410,7 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
 
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "blocked"
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
 
 
 def test_environment_failure_blocks_without_repair() -> None:
@@ -472,7 +474,7 @@ def test_exhausted_turn_budget_never_runs_an_extra_repair_turn() -> None:
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "blocked"
         assert "no turn budget remains" in str(event["summary"])
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
 
 
 def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> None:
@@ -509,7 +511,7 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "blocked"
         assert "[Completion blocked:" in str(event["summary"])
-        assert event["receipt"]["checks_passed"] is False
+        assert event["receipt"]["verification"]["checks_passed"] is False
         manifest = _trace_payload(state)
         assert manifest["completion_proofs"][0]["status"] == "blocked"
 
@@ -647,7 +649,7 @@ def test_off_mode_reproduces_0_4_12_control_semantics() -> None:
         assert "[Completion blocked:" not in str(event["summary"])
         # Legacy control semantics: the claim survives when no candidate
         # exists to override it -- this is exactly what enforcement removes.
-        assert event["receipt"]["checks_passed"] is True
+        assert event["receipt"]["verification"]["checks_passed"] is True
         # The shadow proof is still recorded for measurement.
         manifest = _trace_payload(state)
         assert manifest["completion_proofs"][0]["status"] == "blocked"

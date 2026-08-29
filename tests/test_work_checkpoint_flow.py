@@ -135,7 +135,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             )
             done = state.last_terminal_event
             self.assertTrue(done["changed"])
-            self.assertTrue(done["receipt"]["checks_passed"])
+            self.assertTrue(done["receipt"]["verification"]["checks_passed"])
             self.assertIsNone(state.work_checkpoints.load("session-1"))
 
     def test_provider_failure_hands_writer_to_sibling_from_checkpoint(self) -> None:
@@ -386,7 +386,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 captured["work_checkpoint"],
             )
             self.assertFalse(
-                state.last_terminal_event["receipt"]["checks_passed"]
+                state.last_terminal_event["receipt"]["verification"]["checks_passed"]
             )
 
     def test_stop_wins_over_provider_takeover(self) -> None:
@@ -745,7 +745,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             ):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
 
-            self.assertFalse(state.last_terminal_event["receipt"]["checks_passed"])
+            self.assertFalse(state.last_terminal_event["receipt"]["verification"]["checks_passed"])
 
     def test_receipt_rejects_green_command_other_than_selected_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -797,7 +797,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            self.assertFalse(state.last_terminal_event["receipt"]["checks_passed"])
+            self.assertFalse(state.last_terminal_event["receipt"]["verification"]["checks_passed"])
 
     def test_candidate_loader_refreshes_manifest_from_current_disk(self) -> None:
         with tempfile.TemporaryDirectory() as td:

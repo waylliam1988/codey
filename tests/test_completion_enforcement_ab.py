@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import difflib
 import json
 from pathlib import Path
 
 import pytest
 
+from codey.completion.edit_integrity import observe_edit_integrity
+from codey.runs.trace import RunTraceStore
 from tests.manual import completion_enforcement_ab as harness
 from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import open_journal_for_output
@@ -453,16 +456,44 @@ def test_finish_row_rejects_live_test_fixture_mutation(tmp_path: Path) -> None:
     project = harness._live_project(tmp_path, spec)
     (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
     original_test = (project / "tests" / "test_mod.py").read_text(encoding="utf-8")
-    (project / "tests" / "test_mod.py").write_text(
-        original_test.replace("import redis  # noqa: F401\n\n", ""),
-        encoding="utf-8",
+    tampered_test = original_test.replace("import redis  # noqa: F401\n\n", "")
+    (project / "tests" / "test_mod.py").write_text(tampered_test, encoding="utf-8")
+
+    # 0.5.0: fixture scope is the run's own production edit-integrity
+    # observation. The unit test records it through the real RunTraceStore
+    # the way a live run does, then _finish_row reads it back.
+    store = RunTraceStore(tmp_path / "state")
+    run_id = "run-tamper"
+    trace = store.open(
+        run_id=run_id,
+        session_id="s-ab-unit",
+        project=str(project),
+        mode_initial="agent",
+        provider_initial="deepseek",
     )
+    diff = "".join(difflib.unified_diff(
+        original_test.splitlines(keepends=True),
+        tampered_test.splitlines(keepends=True),
+        fromfile="a/tests/test_mod.py",
+        tofile="b/tests/test_mod.py",
+    ))
+    observation = observe_edit_integrity(
+        task=str(spec["task"]),
+        changes={"changed_count": 1, "files": [{"path": "tests/test_mod.py"}], "diff": diff},
+        diff=diff,
+        files=("tests/test_mod.py",),
+        decision=None,
+        run_id=run_id,
+    )
+    trace.record_edit_integrity(observation)
+    trace.flush()
 
     class FakeState:
         last_terminal_event = {
             "stop_reason": "done",
+            "run_id": run_id,
         }
-        run_traces = None
+        run_traces = store
 
     row = harness._finish_row(
         case_name="dependency_missing_env_failure",
@@ -480,6 +511,9 @@ def test_finish_row_rejects_live_test_fixture_mutation(tmp_path: Path) -> None:
 
     assert row["independent_check_passed"] is True
     assert row["source_ok"] is True
+    assert row["integrity_status"] == "suspicious"
+    assert row["integrity_severity"] == "high"
+    assert "test_import_removed_or_commented" in row["integrity_reason_codes"]
     assert row["fixture_scope_ok"] is False
     assert row["scope_error"] == "modified_test_fixture"
     assert row["independent_ok"] is False

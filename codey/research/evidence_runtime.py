@@ -50,6 +50,8 @@ _GENERATED_REF_KINDS = frozenset({
     "artifact_version",
     "review_finding",
     "planner_gap",
+    "edit_integrity",
+    "edit_integrity_finding",
 })
 # Runtime-scoped ids keep their bounded token shape instead of being hashed.
 _BOUNDED_REF_KINDS = frozenset({"run"})

@@ -376,13 +376,63 @@ def _copy_if_present(
 
 
 def _bounded_receipt(receipt: dict) -> dict[str, object]:
+    """Bounded schema-v1 receipt projection for the JSONL stream."""
+
     payload: dict[str, object] = {}
-    for key in ("text", "mode"):
-        if receipt.get(key):
-            payload[key] = clip_event_text(receipt.get(key) or "")
-    for key in ("changed_count", "restore_available"):
-        if key in receipt:
-            payload[key] = receipt[key] if isinstance(receipt[key], bool) else _int_or_zero(receipt[key])
+    schema = receipt.get("schema_version")
+    if isinstance(schema, int):
+        payload["schema_version"] = schema
+    display = receipt.get("display")
+    if isinstance(display, dict):
+        section: dict[str, object] = {}
+        summary = clip_event_text(display.get("summary") or "")
+        if summary:
+            section["summary"] = summary
+        detail = clip_event_text(display.get("detail") or "")
+        if detail:
+            section["detail"] = detail
+        if section:
+            payload["display"] = section
+    work = receipt.get("work")
+    if isinstance(work, dict):
+        section = {}
+        if "changed_count" in work:
+            section["changed_count"] = _int_or_zero(work.get("changed_count"))
+        mode = clip_event_text(work.get("mode") or "", 40)
+        if mode:
+            section["mode"] = mode
+        if "restore_available" in work:
+            section["restore_available"] = bool(work.get("restore_available"))
+        if section:
+            payload["work"] = section
+    verification = receipt.get("verification")
+    if isinstance(verification, dict):
+        section = {}
+        trust = clip_event_text(verification.get("trust") or "", 20)
+        if trust:
+            section["trust"] = trust
+        if "checks_passed" in verification:
+            section["checks_passed"] = bool(verification.get("checks_passed"))
+        if section:
+            payload["verification"] = section
+    integrity = receipt.get("integrity")
+    if isinstance(integrity, dict):
+        section = {}
+        status = clip_event_text(integrity.get("status") or "", 20)
+        if status:
+            section["status"] = status
+        severity = clip_event_text(integrity.get("severity") or "", 20)
+        if severity:
+            section["severity"] = severity
+        reason_codes = [
+            clip_event_text(code, 80)
+            for code in (integrity.get("reason_codes") or [])
+        ]
+        bounded_codes = [code for code in reason_codes if code]
+        if bounded_codes:
+            section["reason_codes"] = bounded_codes
+        if section:
+            payload["integrity"] = section
     return payload
 
 

@@ -25,6 +25,10 @@ from codey.completion.contract import (
     COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
     MAX_COMPLETION_CHECKS as _MAX_COMPLETION_CHECKS,
 )
+from codey.completion.edit_integrity import (
+    EDIT_INTEGRITY_SEVERITIES as _EDIT_INTEGRITY_SEVERITIES,
+    EDIT_INTEGRITY_STATUSES as _EDIT_INTEGRITY_STATUSES,
+)
 from codey.workspace.context_epoch import admission_from_rendered_source, valid_context_epoch_ref
 from codey.runtime.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
@@ -72,6 +76,7 @@ MAX_PLANNER_GAPS = 16
 MAX_GAP_FINDING_REFS = 4
 MAX_COMPLETION_PROOFS = 8
 MAX_COMPLETION_CHECK_ROWS = _MAX_COMPLETION_CHECKS
+MAX_EDIT_INTEGRITY_ROWS = 8
 MAX_SOURCE_TRUST_ROWS = 32
 MAX_SOURCE_TRUST_CLASSES = 3
 MAX_BRIEF_PROJECTIONS = 8
@@ -253,6 +258,7 @@ class RunTraceManifest:
     research_review_findings: list[dict[str, object]] = field(default_factory=list)
     research_planner_gaps: list[dict[str, object]] = field(default_factory=list)
     completion_proofs: list[dict[str, object]] = field(default_factory=list)
+    completion_edit_integrity: list[dict[str, object]] = field(default_factory=list)
     research_source_trust: list[dict[str, object]] = field(default_factory=list)
     research_brief_projections: list[dict[str, object]] = field(default_factory=list)
     research_topic_continuity: list[dict[str, object]] = field(default_factory=list)
@@ -313,6 +319,9 @@ class RunTraceManifest:
             "research_review_findings": self.research_review_findings[:MAX_REVIEW_FINDINGS],
             "research_planner_gaps": self.research_planner_gaps[:MAX_PLANNER_GAPS],
             "completion_proofs": self.completion_proofs[:MAX_COMPLETION_PROOFS],
+            "completion_edit_integrity": (
+                self.completion_edit_integrity[:MAX_EDIT_INTEGRITY_ROWS]
+            ),
             "research_source_trust": self.research_source_trust[:MAX_SOURCE_TRUST_ROWS],
             "research_brief_projections": (
                 self.research_brief_projections[:MAX_BRIEF_PROJECTIONS]
@@ -405,6 +414,7 @@ class RunTraceRecorder:
         self._review_finding_keys: set[str] = set()
         self._planner_gap_keys: set[str] = set()
         self._completion_proof_keys: set[str] = set()
+        self._edit_integrity_keys: set[str] = set()
         self._source_trust_keys: set[str] = set()
         self._brief_projection_keys: set[str] = set()
         self._topic_continuity_keys: set[str] = set()
@@ -1579,12 +1589,106 @@ class RunTraceRecorder:
             )
             if ref
         ][:MAX_CAPSULE_ARTIFACT_REFS]
+        payload["diagnostic_refs"] = [
+            ref
+            for ref in (
+                _normalize_runtime_ref(value, kind="edit_integrity")
+                for value in _trace_list_items(raw.get("diagnostic_refs"))
+            )
+            if ref
+        ][:MAX_GAP_FINDING_REFS]
         payload.update(ref_groups)
         self._completion_proof_keys.add(proof_id)
         self.manifest.completion_proofs.append(payload)
         if len(self.manifest.completion_proofs) > MAX_COMPLETION_PROOFS:
             del self.manifest.completion_proofs[:-MAX_COMPLETION_PROOFS]
             self.manifest.warnings.append("completion_proofs_truncated")
+        self.checkpoint()
+
+    def record_edit_integrity(self, observation: Any) -> None:
+        """Record one bounded edit-integrity observation (refs and codes).
+
+        Accepts an EditIntegrityObservation, its payload, or a mapping.
+        Malformed input is dropped, and a missing or invalid
+        observation_ref means the row is not recordable: the trace never
+        carries an integrity row that cannot be named.
+        """
+
+        raw = (
+            observation.to_payload()
+            if callable(getattr(observation, "to_payload", None))
+            else observation
+        )
+        if not isinstance(raw, Mapping):
+            return
+        observation_ref = _generated_ref(
+            raw.get("observation_ref"), "edit_integrity"
+        )
+        status = _safe_trace_code(raw.get("status"), 20)
+        severity = _safe_trace_code(raw.get("severity"), 20)
+        if (
+            not observation_ref
+            or status not in _EDIT_INTEGRITY_STATUSES
+            or severity not in _EDIT_INTEGRITY_SEVERITIES
+        ):
+            return
+        if observation_ref in self._edit_integrity_keys:
+            return
+        payload: dict[str, object] = {
+            "observation_ref": observation_ref,
+            "status": status,
+            "severity": severity,
+        }
+        run_ref = _safe_trace_code(raw.get("run_id"), 120)
+        if run_ref:
+            payload["run_id"] = run_ref
+        reason_codes = [
+            code
+            for code in (
+                _safe_trace_code(value, 80)
+                for value in _trace_list_items(raw.get("reason_codes"))
+            )
+            if code
+        ][:MAX_WARNINGS]
+        if reason_codes:
+            payload["reason_codes"] = reason_codes
+        if raw.get("user_authorized_test_edit") is True:
+            payload["user_authorized_test_edit"] = True
+        paths = []
+        for value in _trace_list_items(raw.get("affected_paths")):
+            path = _clip(value, 240)
+            # Project-relative changed paths are bounded audit facts, not
+            # secret material; only the redaction screen may drop one.
+            if path and not looks_prompt_visible_secret(path):
+                paths.append(path)
+        paths = paths[:MAX_GAP_FINDING_REFS]
+        if paths:
+            payload["affected_paths"] = paths
+        verification_refs = [
+            ref
+            for ref in (
+                _normalize_runtime_ref(value)
+                for value in _trace_list_items(raw.get("verification_refs"))
+            )
+            if ref
+        ][:MAX_GAP_FINDING_REFS]
+        if verification_refs:
+            payload["verification_refs"] = verification_refs
+        change_refs = [
+            _safe_trace_code(value, 80)
+            for value in _trace_list_items(raw.get("change_refs"))
+        ]
+        change_refs = [ref for ref in change_refs if ref][:MAX_GAP_FINDING_REFS]
+        if change_refs:
+            payload["change_refs"] = change_refs
+        monitor_error_ref = _safe_trace_code(raw.get("monitor_error_ref"), 80)
+        if monitor_error_ref:
+            payload["monitor_error_ref"] = monitor_error_ref
+        self._edit_integrity_keys.add(observation_ref)
+        self.manifest.completion_edit_integrity.append(payload)
+        if len(self.manifest.completion_edit_integrity) > MAX_EDIT_INTEGRITY_ROWS:
+            del self.manifest.completion_edit_integrity[:-MAX_EDIT_INTEGRITY_ROWS]
+            self.manifest.warnings.append("completion_edit_integrity_truncated")
         self.checkpoint()
 
     # --- Protocol telemetry -------------------------------------------

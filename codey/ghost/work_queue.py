@@ -2414,7 +2414,8 @@ def _proof_run_ref(run_id: str) -> str:
 
 
 def _receipt_proves_project_work(receipt: Mapping[str, object]) -> bool:
-    return _int(receipt.get("changed_count")) > 0
+    work = receipt.get("work")
+    return isinstance(work, Mapping) and _int(work.get("changed_count")) > 0
 
 
 def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -> bool:

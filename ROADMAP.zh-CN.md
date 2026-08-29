@@ -3036,10 +3036,32 @@ TaskRunner.run
 
 ## 0.5.0 - Verified Completion v2 + Edit Integrity Monitor + Receipt Warning
 
-状态：计划。目标不是阻止模型修改测试，也不是自动修复模型的错误修法，而是在真实
+状态：已落地（2026-08-29，deterministic gate 完成；两条最小 live smoke 待跑）。
+目标不是阻止模型修改测试，也不是自动修复模型的错误修法，而是在真实
 production completion path 中观察“验证是否被编辑削弱”，并在高置信 suspicious 时
 让最终 receipt 对用户可见。正常 clean path 必须完全无感；低风险只进 trace/details；
 高风险不能显示成 clean verified completion。
+
+落地要点：`codey/completion/edit_scope.py`（封闭 edit-path 词表 + 共享
+`is_document_path` + 保守的测试修改授权扫描）、`codey/completion/edit_integrity.py`
+（deterministic monitor，封闭 reason code，fail-closed `monitor_error`）、
+`codey/completion/decision.py`（TaskRunner 内联 enforcement decision 抽成纯投影
+`build_completion_decision`）。receipt 重写为 schema v1
+（`display/work/verification/integrity`，trust ∈ trusted / needs_review / limited），
+旧顶层 `text/changed_count/checks_passed/restore_available` 删除，
+`RunResult.checks_passed` 语义不动。`CompletionProof` 新增结构化
+`diagnostic_refs`（不复用 finding_refs）。TaskRunner 在每个 completion 决策点
+（首轮 + repair 后）观察 integrity；只有 `trust == trusted` 的 run 写 project
+facts / project memory；终态 receipt 直接从 ledger 持久化 receipt 投影，
+`receipt_from_projection_if_compatible()` 删除。Trace 新增有界
+`completion_edit_integrity` section；ledger 的 `changes_collected` 存校验后的
+schema-v1 receipt；Run Details / Headless / Web UI / ghost work queue 全部改读
+新 contract；`completion_enforcement_ab.py` 删除第二套 `modified_test_fixture`
+判断，改读 run trace 的 integrity 行。新增 `tests/manual/edit_integrity_ab.py`：
+Qwen/MiMo 篡改 signature 的 deterministic replay gate（11 例）+ 两条最小 live
+smoke 入口（DeepSeek clean、Qwen/MiMo dependency_missing）。按 A/B 规则本版
+clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 是
+剩余的 manual evidence 项。Graduation / Delete Gate 评估推迟到 0.5.2 前。
 
 0.4 stabilization 的触发证据：
 

@@ -44,11 +44,11 @@ from codey.completion.contract import (
     project_completion_proof,
     safe_run_ref,
 )
+from codey.completion.edit_scope import is_document_path
 from codey.runtime.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.completion.verification_policy import (
     check_covers_selected_candidate,
-    is_document_path,
 )
 
 
@@ -525,6 +525,7 @@ def build_coding_completion_proof(
     provenance: VerificationProvenance,
     analysis_run_refs: tuple[str, ...] = (),
     verification_forbidden: bool = False,
+    diagnostic_refs: tuple[str, ...] = (),
 ) -> CompletionProof | None:
     """Project one coding run into its completion proof (or None)."""
 
@@ -551,6 +552,7 @@ def build_coding_completion_proof(
         ),
         limitation_refs=limitations,
         analysis_run_refs=analysis_run_refs,
+        diagnostic_refs=diagnostic_refs,
         external_refs=(
             f"ledger:{run_ref}",
             f"receipt:{run_ref}",

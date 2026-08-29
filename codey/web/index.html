@@ -218,8 +218,10 @@ function pathName(path) {
   return trimmed.split(/[\\\/]/).pop() || trimmed || 'project';
 }
 function pathKey(path) { return (path || '').replace(/[\\\/]+$/, '').toLowerCase(); }
-// escapeHtml lives in /assets/render.js (window.CodeyRender).
+// escapeHtml and the receipt schema helpers live in /assets/render.js.
 const escapeHtml = window.CodeyRender.escapeHtml;
+const receiptSummary = window.CodeyRender.receiptSummary;
+const receiptChangedCount = window.CodeyRender.receiptChangedCount;
 
 function normalizeStoredResearchRun(run) {
   run = run && typeof run === 'object' ? run : {};
@@ -1354,10 +1356,10 @@ function handleServerEvent(data) {
     } else if (reason === 'done') {
       if (data.mode === 'research') {
         if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
-        if (data.receipt && data.receipt.text) {
+        if (receiptSummary(data.receipt)) {
           addToSession(sid, {
             type: 'research_done',
-            text: data.receipt.text,
+            text: receiptSummary(data.receipt),
             runId,
             sessionId: sid,
             eventKey: receiptKey,
@@ -1371,11 +1373,11 @@ function handleServerEvent(data) {
       }
       const changes = data.changes || {};
       const changed = !!data.changed;
-      const changedCount = Number((data.receipt && data.receipt.changed_count) || changes.changed_count || 0);
-      if (changed && changedCount > 0 && data.receipt && data.receipt.text) {
+      const changedCount = receiptChangedCount(data.receipt, changes);
+      if (changed && changedCount > 0 && receiptSummary(data.receipt)) {
         addToSession(sid, {
           type: 'done',
-          text: data.receipt.text,
+          text: receiptSummary(data.receipt),
           project: changes.project || project,
           changed: true,
           runId,
@@ -1472,7 +1474,7 @@ function normalizeResearchRunArtifact(runId, research, receipt) {
     evidenceItems: Array.isArray(research.evidence_items) ? research.evidence_items : [],
     counterpoints: Array.isArray(research.counterpoints) ? research.counterpoints.map(String) : [],
     qualityWarnings: Array.isArray(research.quality_warnings) ? research.quality_warnings.map(String) : [],
-    receipt: receipt && receipt.text ? String(receipt.text) : '',
+    receipt: receiptSummary(receipt),
     restoreable: true,
     createdAt: Date.now(),
   };

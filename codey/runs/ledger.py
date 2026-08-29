@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from codey.runtime.events import RunEvent
+from codey.runs.receipt import task_receipt_from_payload
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
 from codey.providers.diagnostics import ProviderFailure
 
@@ -211,6 +212,7 @@ class RunLedgerWriter:
             })
             if len(files) >= MAX_CHANGE_FILES:
                 break
+        validated_receipt = task_receipt_from_payload(receipt)
         self.append(
             "changes_collected",
             ok=bool(changes.get("ok", True)),
@@ -219,7 +221,11 @@ class RunLedgerWriter:
             files=files,
             files_truncated=len(source_files) > MAX_CHANGE_FILES,
             checks_passed=bool(checks_passed) if checks_passed is not None else None,
-            receipt=receipt if isinstance(receipt, dict) else None,
+            # The receipt enters the durable stream only in full schema-v1
+            # shape: the projection layer rebuilds the user-visible receipt
+            # from this row, so a legacy or malformed payload must never
+            # land here.
+            receipt=validated_receipt.to_dict() if validated_receipt is not None else None,
         )
 
     def finish(self, **fields: object) -> None:

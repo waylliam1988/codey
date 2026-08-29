@@ -293,6 +293,49 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
+    def test_edit_scope_is_stdlib_leaf(self) -> None:
+        # The edit-scope vocabulary has no runtime dependencies at all:
+        # every consumer (proof, monitor, harness) shares one path
+        # classification that cannot drag execution into a projection.
+        path = ROOT / "codey" / "completion" / "edit_scope.py"
+        imports = imported_modules(path)
+        internal = sorted(name for name in imports if name == "codey" or name.startswith("codey."))
+        self.assertEqual(internal, [])
+
+    def test_edit_integrity_is_projection_leaf(self) -> None:
+        path = ROOT / "codey" / "completion" / "edit_integrity.py"
+        imports = imported_modules(path)
+        forbidden = {
+            "codey.automation.browser",
+            "codey.providers",
+            "codey.toolchain",
+            "codey.toolchain.runtime",
+            "codey.app.server",
+            "codey.app.task_runner",
+            "codey.ghost",
+            "codey.research",
+        }
+        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+        allowed_internal = {"codey.completion.edit_scope", "codey.utils.refs"}
+        internal = {
+            name
+            for name in imports
+            if name == "codey" or name.startswith("codey.")
+        }
+        self.assertTrue(internal.issubset(allowed_internal), sorted(internal - allowed_internal))
+
+    def test_completion_decision_is_pure_projection(self) -> None:
+        path = ROOT / "codey" / "completion" / "decision.py"
+        imports = imported_modules(path)
+        forbidden = {
+            "codey.automation.browser",
+            "codey.providers",
+            "codey.toolchain",
+            "codey.app.server",
+            "codey.app.task_runner",
+        }
+        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
     def test_research_object_model_is_projection_not_runtime(self) -> None:
         path = ROOT / "codey" / "research" / "object_model.py"
         imports = imported_modules(path)

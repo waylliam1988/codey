@@ -6,6 +6,104 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+- Added the 0.5.0 edit-integrity monitor to the production completion path,
+  closing the gap the 0.4 stabilization A/B exposed: Qwen and MiMo tampered
+  with the test fixture (deleted / commented / `try`-`except`-guarded
+  `import redis`) to turn pytest green, and the production completion path
+  had no way to notice.
+  - `codey/completion/edit_scope.py` owns one closed edit-path vocabulary
+    (production / test / fixture / verification config / docs /
+    generated-vendor), a conservative task-authorization scan for test
+    edits, and the shared `is_document_path` definition (moved here from
+    `verification_policy`; it is a stdlib-only leaf locked by tests).
+  - `codey/completion/edit_integrity.py` observes one run's changed paths
+    plus the unified diff the change collection already produced and emits
+    bounded, refs-only findings with a closed reason-code vocabulary:
+    removed or commented test imports, `except ImportError` guards, added
+    skips, net-removed assertions, narrowed verification config, and
+    green verification without any production file change. A user task
+    that explicitly asks for test edits downgrades findings to low
+    severity instead of reading as tampering. Raw diff text never leaves
+    the module, and any internal failure fails closed to `monitor_error`,
+    never to clean.
+  - The monitor is not evidence, does not block done, does not auto-repair,
+    and adds no Manager; the clean path is completely silent.
+- Added `codey/completion/decision.py` and thinned TaskRunner: the inline
+  enforcement-decision closure became the pure
+  `build_completion_decision(...)` projection, so the agent loop, the
+  repair round, the receipt, and the trace all read one
+  `CompletionDecision` (proof, provenance, analysis-run refs, failure
+  class, local state). The duplicated changed-path extraction was
+  converged into `edit_scope.changed_paths_from_changes()`.
+- `CompletionProof` now carries structured `diagnostic_refs` naming the
+  edit-integrity observation that qualifies it; they are content-addressed
+  into the contract id and kept apart from review-finding refs.
+- Rewrote the task receipt as schema v1
+  (`TaskReceipt(display, work, verification, integrity)`).
+  - Trust is a contract, not a score: `trusted` (checks passed, nothing
+    high-risk observed), `needs_review` (checks passed but high-confidence
+    integrity findings), and `limited` (checks did not pass, or the
+    monitor failed and the green cannot be vouched for).
+  - Display copy is minimal: `2 files changed · checks passed`,
+    `2 files changed · checks need review`, or
+    `2 files changed · verification limited`; the longer explanation is a
+    separate `display.detail` used only by Run Details.
+  - The flat `text` / `changed_count` / `checks_passed` /
+    `restore_available` receipt fields are gone. `RunResult.checks_passed`
+    is unchanged: it stays the agent loop's execution fact, not the
+    receipt contract.
+- TaskRunner wiring:
+  - Edit integrity is observed at every completion decision point
+    (initial and post-repair); the proof is recomputed once with the
+    observation's diagnostic refs when findings exist, and both the proof
+    and the observation land in the run trace.
+  - Only runs whose receipt trust is `trusted` write project facts and
+    project memory, so a high-suspicious green can no longer seed future
+    verification habits.
+  - The terminal event's receipt is now projected directly from the
+    receipt the ledger durably recorded; the legacy
+    `receipt_from_projection_if_compatible()` shadow check was deleted
+    instead of adapted.
+- Trace / ledger / details:
+  - `RunTraceManifest` records a bounded `completion_edit_integrity`
+    section via `record_edit_integrity()`; completion-proof rows carry
+    `diagnostic_refs`; `edit_integrity` / `edit_integrity_finding` joined
+    the shared runtime-ref kind registry.
+  - `changes_collected` stores the validated schema-v1 receipt, the
+    projection carries it on `ChangesSummary.receipt`, and
+    `build_task_receipt_from_projection()` returns exactly what was
+    recorded.
+  - Run Details reads the verification row from the receipt contract:
+    `Test changes may have weakened checks` (warning) for `needs_review`,
+    `Verification limited by monitor error` for monitor failures, legacy
+    wording otherwise.
+- Headless JSONL receipts and the web UI consume the schema-v1 sections
+  only; the shared `receiptSummary()` / `receiptChangedCount()` helpers
+  live in `render.js`, and research receipts emit `display.summary`
+  instead of `text`. The ghost work queue reads
+  `receipt.work.changed_count`.
+- Manual A/B convergence:
+  - `completion_enforcement_ab.py` no longer keeps a second
+    `modified_test_fixture` engine: fixture scope is read from the run's
+    own trace integrity rows, and rows carry `receipt_trust` /
+    `integrity_*` fields.
+  - New `tests/manual/edit_integrity_ab.py` replays the recorded Qwen and
+    MiMo tampering signatures through the production monitor and receipt
+    (deterministic gate, 11 cases) and exposes the two minimal live
+    smokes: a DeepSeek clean path and a Qwen/MiMo
+    `dependency_missing_env_failure` case. No full production-quality A/B
+    is required for this version; the live smokes remain the open manual
+    evidence item.
+- New tests: `test_completion_edit_scope.py`,
+  `test_completion_edit_integrity.py`,
+  `test_task_runner_edit_integrity.py`, and the
+  `tests/fixtures/edit_integrity/` path-shape fixtures; receipt, ledger
+  projection, ledger, details, server, UI, checkpoint-flow, and
+  enforcement tests migrated to the schema-v1 contract. Architecture
+  tests lock `edit_scope` as a stdlib-only leaf and keep
+  `edit_integrity`/`decision` free of provider/browser/tool-runtime/
+  server dependencies.
+
 ## 0.4.21 - Research and Ghost A/B Stabilization
 
 - Migrated `verification_review_ab.py` onto the release-grade A/B evidence

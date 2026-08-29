@@ -13,6 +13,11 @@ from typing import Any
 
 from codey.storage.local_store import read_json
 from codey.runs.ledger_projection import RunLedgerProjection, load_run_projection
+from codey.runs.receipt import (
+    VERIFICATION_TRUST_LIMITED,
+    VERIFICATION_TRUST_NEEDS_REVIEW,
+    VERIFICATION_TRUST_TRUSTED,
+)
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, TRACE_KIND
 
 
@@ -138,10 +143,9 @@ def _summary_rows(
     if fallback:
         rows.append(RunDetailsRow("Model fallback", fallback))
 
-    verification = _verification_summary(projection)
+    verification, verification_tone = _verification_summary(projection, trace)
     if verification:
-        tone = "warning" if "not recorded" in verification or "failed" in verification else "neutral"
-        rows.append(RunDetailsRow("Verification", verification, tone))
+        rows.append(RunDetailsRow("Verification", verification, verification_tone))
 
     return rows
 
@@ -273,19 +277,58 @@ def _fallback_summary(
     return "None"
 
 
-def _verification_summary(projection: RunLedgerProjection | None) -> str:
-    if projection is None:
-        return ""
-    if projection.final_changes is not None:
+def _verification_summary(
+    projection: RunLedgerProjection | None,
+    trace: Mapping[str, object],
+) -> tuple[str, str]:
+    """The Verification row: receipt contract first, legacy facts after.
+
+    A schema-v1 receipt is the trusted source for what the green check is
+    worth: ``needs_review`` means high-confidence integrity findings, and
+    ``limited`` with a passing run means the monitor failed and the green
+    cannot be vouched for. Runs without a receipt projection keep the
+    legacy wording.
+    """
+
+    receipt = (
+        projection.final_changes.receipt
+        if projection is not None and projection.final_changes is not None
+        else None
+    )
+    if receipt is not None:
+        if receipt.verification.trust == VERIFICATION_TRUST_NEEDS_REVIEW:
+            return "Test changes may have weakened checks", "warning"
+        if (
+            receipt.verification.trust == VERIFICATION_TRUST_LIMITED
+            and receipt.verification.checks_passed
+        ):
+            return "Verification limited by monitor error", "warning"
+        if receipt.verification.trust == VERIFICATION_TRUST_TRUSTED:
+            return "Checks passed", "neutral"
+    if _trace_integrity_suspicious(trace):
+        return "Test changes may have weakened checks", "warning"
+    if projection is not None and projection.final_changes is not None:
         if projection.final_changes.checks_passed:
-            return "Checks passed"
+            return "Checks passed", "neutral"
         if projection.final_changes.changed_count:
-            return "Checks not recorded"
-    if projection.verified_commands:
-        return f"Ran {_plural(len(projection.verified_commands), 'check')}"
-    if projection.stop_reason and projection.stop_reason != "done":
-        return _stop_reason_text(projection.stop_reason)
-    return ""
+            return "Checks not recorded", "warning"
+    if projection is not None and projection.verified_commands:
+        return f"Ran {_plural(len(projection.verified_commands), 'check')}", "neutral"
+    if projection is not None and projection.stop_reason and projection.stop_reason != "done":
+        return _stop_reason_text(projection.stop_reason), "neutral"
+    return "", "neutral"
+
+
+def _trace_integrity_suspicious(trace: Mapping[str, object]) -> bool:
+    rows = [
+        item
+        for item in _list(trace.get("completion_edit_integrity"))
+        if isinstance(item, Mapping)
+    ]
+    return any(
+        _str(row.get("status")) == "suspicious" and _str(row.get("severity")) == "high"
+        for row in rows
+    )
 
 
 def _stop_reason_text(value: str) -> str:
