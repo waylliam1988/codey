@@ -42,6 +42,9 @@ from codey.run_operation import (
 SESSION = "session-op"
 RUN = "run-op-1"
 CONTEXT_REF = "sha256:" + "a" * 64
+PROOF_REF_OK = "completion_proof:" + "a" * 16
+PROOF_REF_FAIL = "completion_proof:" + "b" * 16
+PROOF_REF_FAIL_2 = "completion_proof:" + "c" * 16
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,7 +91,7 @@ def _failed_proof(store: RunOperationStore) -> RunOperationState:
         RUN,
         lambda state: mark_completion_proof_recorded(
             state,
-            proof_ref="completion_proof:fail1",
+            proof_ref=PROOF_REF_FAIL,
             proof_status="failed",
             proof_satisfied=False,
         ),
@@ -106,7 +109,7 @@ def _clean_path(store: RunOperationStore) -> RunOperationState:
         RUN,
         lambda state: mark_completion_proof_recorded(
             state,
-            proof_ref="completion_proof:abc123",
+            proof_ref=PROOF_REF_OK,
             proof_status="complete",
             proof_satisfied=True,
         ),
@@ -138,7 +141,7 @@ def _repair_path(store: RunOperationStore) -> RunOperationState:
         lambda state: mark_repair_settled(state, provider_id="deepseek", stop_reason="done", turns_used=6),
         lambda state: mark_completion_proof_recorded(
             state,
-            proof_ref="completion_proof:ok2",
+            proof_ref=PROOF_REF_OK,
             proof_status="complete",
             proof_satisfied=True,
         ),
@@ -249,6 +252,22 @@ class FailClosedReaderTests(unittest.TestCase):
 
             self.assertIsNone(store.load(SESSION, RUN))
             self.assertIsNone(store.commit(SESSION, RUN, mark_writer_running))
+
+    def test_padded_identity_on_disk_fails_closed(self) -> None:
+        # A trimmed id could never be found again by commits keyed on the
+        # original; a padded one must not load as the trimmed original
+        # either -- the reader canonicalizes nothing.
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            _start(store)
+            path = store.path_for(SESSION, RUN)
+            good = json.loads(path.read_text(encoding="utf-8"))
+            for key, value in (("session_id", " " + SESSION + " "), ("run_id", " " + RUN)):
+                payload = dict(good)
+                payload[key] = value
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                with self.subTest(field=key):
+                    self.assertIsNone(store.load(SESSION, RUN))
 
     def test_oversize_state_fails_closed_and_never_writes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -669,7 +688,7 @@ class StrictReaderTests(unittest.TestCase):
         for phase, context in contexts.items():
             state = _fresh_state(
                 phase,
-                completion_proof_ref="completion_proof:p1",
+                completion_proof_ref=PROOF_REF_FAIL,
                 completion_proof_status="failed",
                 completion_proof_satisfied=False,
                 **context,
@@ -719,7 +738,7 @@ class StrictReaderTests(unittest.TestCase):
                             turns_used=2,
                             stop_reason="done",
                         ),
-                        proof_ref="completion_proof:p1",
+                        proof_ref=PROOF_REF_FAIL,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),
@@ -740,6 +759,233 @@ class StrictReaderTests(unittest.TestCase):
         ).to_payload()
         payload["repair_context_ref"] = "ctx"
         self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_padded_top_level_text_fields_fail_closed(self) -> None:
+        # The reader canonicalizes nothing: a padded text field is not
+        # schema v1, so a register can never load as a trimmed version of
+        # what is on disk.
+        for key, value in (
+            ("session_id", " " + SESSION + " "),
+            ("run_id", RUN + " "),
+            ("phase", " " + PHASE_ACCEPTED),
+            ("provider_id", " deepseek "),
+            ("started_at", " 2026-01-01T00:00:00Z"),
+            ("blocked_reason", " unobserved "),
+            ("project_ref", " project:" + "a" * 24),
+        ):
+            with self.subTest(field=key):
+                payload = _fresh_state(PHASE_ACCEPTED).to_payload()
+                payload[key] = value
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_padded_proof_and_context_fields_fail_closed(self) -> None:
+        recorded = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        for key, value in (
+            ("completion_proof_ref", " " + PROOF_REF_FAIL),
+            ("completion_proof_status", " failed "),
+        ):
+            with self.subTest(field=key):
+                payload = recorded.to_payload()
+                payload[key] = value
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        admitted = mark_repair_context_admitted(recorded, context_ref=CONTEXT_REF)
+        payload = admitted.to_payload()
+        payload["repair_context_ref"] = " " + CONTEXT_REF
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_padded_terminal_text_fields_fail_closed(self) -> None:
+        state = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="done",
+            summary_chars=3,
+            turns=2,
+            max_turns=8,
+            provider="deepseek",
+        )
+        for key in ("stop_reason", "provider", "blocked_reason"):
+            payload = json.loads(json.dumps(state.to_payload()))
+            payload["terminal"][key] = " " + str(payload["terminal"][key]) + " "
+            with self.subTest(field=key):
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_terminal_partial_proof_facts_fail_closed(self) -> None:
+        # Terminal keeps its source phase's facts; a partially claimed proof
+        # is a state no source phase could have committed.
+        base = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="stopped",
+            summary_chars=0,
+            turns=0,
+            max_turns=8,
+            provider="deepseek",
+        ).to_payload()
+        for mutate_kwargs in (
+            {"completion_proof_ref": PROOF_REF_OK},
+            {"completion_proof_status": "failed"},
+            {"completion_proof_satisfied": True},
+            {"completion_proof_satisfied": False},
+        ):
+            with self.subTest(**mutate_kwargs):
+                payload = dict(base)
+                payload.update(mutate_kwargs)
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_terminal_repair_facts_require_the_recorded_proof(self) -> None:
+        base = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="stopped",
+            summary_chars=0,
+            turns=0,
+            max_turns=8,
+            provider="deepseek",
+        ).to_payload()
+        for mutate_kwargs in (
+            {"repair_rounds": 1},  # a round without the admitted context
+            {"repair_context_ref": CONTEXT_REF},  # a context without its proof
+            {
+                "repair_rounds": 1,
+                "repair_context_ref": CONTEXT_REF,
+                "completion_proof_status": "failed",  # still no proof triple
+            },
+        ):
+            with self.subTest(**mutate_kwargs):
+                payload = dict(base)
+                payload.update(mutate_kwargs)
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_reachable_terminal_fact_combinations_round_trip(self) -> None:
+        # Every fact combination the table can produce on the way into
+        # terminal must keep loading: no facts (stopped mid-writing), the
+        # recorded proof, and the repair arm's context/round facts.
+        failed_proof = mark_completion_proof_recorded(
+            mark_writer_settled(
+                mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+                provider_id="deepseek",
+                turns_used=2,
+                stop_reason="done",
+            ),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        admitted = mark_repair_context_admitted(failed_proof, context_ref=CONTEXT_REF)
+        running = mark_repair_running(admitted, provider_id="deepseek")
+        settled = mark_repair_settled(running, provider_id="deepseek", stop_reason="done")
+        terminals = [
+            mark_terminal(
+                mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+                stop_reason="stopped",
+                summary_chars=0,
+                turns=0,
+                max_turns=8,
+                provider="deepseek",
+            ),
+            mark_terminal(
+                mark_completion_proof_recorded(
+                    _fresh_state(PHASE_WRITER_SETTLED),
+                    proof_ref=PROOF_REF_OK,
+                    proof_status="complete",
+                    proof_satisfied=True,
+                ),
+                stop_reason="done",
+                summary_chars=4,
+                turns=2,
+                max_turns=8,
+                provider="deepseek",
+            ),
+        ]
+        for source in (admitted, running, settled):
+            terminals.append(
+                mark_terminal(
+                    source,
+                    stop_reason="stopped",
+                    summary_chars=0,
+                    turns=0,
+                    max_turns=8,
+                    provider="deepseek",
+                )
+            )
+        for state in terminals:
+            with self.subTest(phase=state.phase, rounds=state.repair_rounds):
+                self.assertEqual(RunOperationState.from_payload(state.to_payload()), state)
+
+    def test_unrecorded_proof_refs_fail_closed(self) -> None:
+        # The proof is named by its completion_proof:<16 hex> id, like the
+        # run trace's own proof vocabulary -- never by a raw path or a
+        # free-form ref.
+        recorded = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        for ref in (
+            "E:/secret/project",
+            "/tmp/proof",
+            "proof:0123456789abcdef",
+            "completion_proof:xyz",
+            "completion_proof:" + "a" * 15,
+            "completion_proof:" + "a" * 17,
+            "completion_proof:" + "g" * 16,
+        ):
+            with self.subTest(ref=ref):
+                payload = recorded.to_payload()
+                payload["completion_proof_ref"] = ref
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_unrecorded_proof_statuses_fail_closed(self) -> None:
+        recorded = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        for status in ("nonsense", "pending", "running", "Complete", ""):
+            with self.subTest(status=status):
+                payload = recorded.to_payload()
+                payload["completion_proof_status"] = status
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_proof_satisfied_must_match_the_recorded_status(self) -> None:
+        # The proof builder derives satisfied from the status; the register
+        # may not claim a verdict the status contradicts.
+        recorded = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        payload = recorded.to_payload()
+        payload["completion_proof_satisfied"] = True
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
+        complete = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_OK,
+            proof_status="complete",
+            proof_satisfied=True,
+        )
+        payload = complete.to_payload()
+        payload["completion_proof_satisfied"] = False
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_complete_with_limitations_is_honestly_unsatisfied(self) -> None:
+        # A limited pass records satisfied=False -- the same derivation the
+        # proof builder uses -- and still round-trips.
+        limited = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref=PROOF_REF_OK,
+            proof_status="complete_with_limitations",
+            proof_satisfied=False,
+        )
+        self.assertFalse(limited.completion_proof_satisfied)
+        self.assertEqual(RunOperationState.from_payload(limited.to_payload()), limited)
 
     def test_unknown_top_level_keys_fail_closed(self) -> None:
         # A payload with "extension" fields -- a raw prompt, a diff, any
@@ -768,7 +1014,7 @@ class StrictWriterTests(unittest.TestCase):
         )
         proof = mark_completion_proof_recorded(
             settled,
-            proof_ref="completion_proof:p1",
+            proof_ref=PROOF_REF_FAIL,
             proof_status="failed",
             proof_satisfied=False,
         )
@@ -818,22 +1064,83 @@ class StrictWriterTests(unittest.TestCase):
             (
                 mark_completion_proof_recorded,
                 settled,
-                {"proof_ref": "p1", "proof_status": "", "proof_satisfied": False},
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "", "proof_satisfied": False},
             ),
             (
                 mark_completion_proof_recorded,
                 settled,
-                {"proof_ref": "p1", "proof_status": "failed", "proof_satisfied": None},
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "failed", "proof_satisfied": None},
             ),
             (
                 mark_completion_proof_recorded,
                 settled,
-                {"proof_ref": "p1", "proof_status": "failed", "proof_satisfied": "yes"},
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "failed", "proof_satisfied": "yes"},
             ),
             (
                 mark_completion_proof_recorded,
                 settled,
-                {"proof_ref": "p" * 121, "proof_status": "failed", "proof_satisfied": False},
+                {"proof_ref": "E:/secret/project", "proof_status": "failed", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {
+                    "proof_ref": "proof:0123456789abcdef",
+                    "proof_status": "failed",
+                    "proof_satisfied": False,
+                },
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {
+                    "proof_ref": "completion_proof:" + "g" * 16,
+                    "proof_status": "failed",
+                    "proof_satisfied": False,
+                },
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {
+                    "proof_ref": "completion_proof:" + "a" * 15,
+                    "proof_status": "failed",
+                    "proof_satisfied": False,
+                },
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "nonsense", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "pending", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": PROOF_REF_FAIL, "proof_status": "failed", "proof_satisfied": True},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": PROOF_REF_OK, "proof_status": "complete", "proof_satisfied": False},
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {
+                    "proof_ref": PROOF_REF_OK,
+                    "proof_status": "complete_with_limitations",
+                    "proof_satisfied": True,
+                },
+            ),
+            (
+                mark_completion_proof_recorded,
+                settled,
+                {"proof_ref": "completion_proof:" + "a" * 121, "proof_status": "failed", "proof_satisfied": False},
             ),
             (mark_repair_context_admitted, proof, {"context_ref": ""}),
             (mark_repair_context_admitted, proof, {"context_ref": "ctx"}),
@@ -898,14 +1205,14 @@ class StrictWriterTests(unittest.TestCase):
         with self.assertRaises(RunOperationTransitionError):
             mark_completion_proof_recorded(
                 settled,
-                proof_ref="p" * 500,
+                proof_ref="completion_proof:" + "a" * 500,
                 proof_status="failed",
                 proof_satisfied=False,
             )
 
         proof = mark_completion_proof_recorded(
             settled,
-            proof_ref="completion_proof:p1",
+            proof_ref=PROOF_REF_FAIL,
             proof_status="failed",
             proof_satisfied=False,
         )
@@ -923,7 +1230,7 @@ class StrictWriterTests(unittest.TestCase):
         )
         proof = mark_completion_proof_recorded(
             settled,
-            proof_ref="completion_proof:abc123",
+            proof_ref=PROOF_REF_OK,
             proof_status="complete",
             proof_satisfied=True,
         )
@@ -1012,7 +1319,7 @@ class TransitionTableTests(unittest.TestCase):
                         turns_used=4,
                         stop_reason="done",
                     ),
-                    proof_ref="p1",
+                    proof_ref=PROOF_REF_FAIL,
                     proof_status="failed",
                     proof_satisfied=False,
                 ),
@@ -1022,7 +1329,7 @@ class TransitionTableTests(unittest.TestCase):
             state = mark_repair_settled(state, provider_id="deepseek", stop_reason="done")
             state = mark_completion_proof_recorded(
                 state,
-                proof_ref="p2",
+                proof_ref=PROOF_REF_FAIL_2,
                 proof_status="failed",
                 proof_satisfied=False,
             )
@@ -1111,7 +1418,7 @@ class TerminalImmutabilityTests(unittest.TestCase):
                         turns_used=4,
                         stop_reason="done",
                     ),
-                    proof_ref="p1",
+                    proof_ref=PROOF_REF_FAIL,
                     proof_status="failed",
                     proof_satisfied=False,
                 ),
@@ -1268,7 +1575,7 @@ class RecoveryTextTests(unittest.TestCase):
     def test_satisfied_proof_reads_as_finishing_not_checking(self) -> None:
         satisfied = mark_completion_proof_recorded(
             _fresh_state(PHASE_WRITER_SETTLED),
-            proof_ref="p1",
+            proof_ref=PROOF_REF_FAIL,
             proof_status="complete",
             proof_satisfied=True,
         )

@@ -22,13 +22,21 @@
     绝对路径）、turn 计数、provider id 和有界的 blocked reason。
     payload 里不存在 raw prompt、reply、stdout/stderr、diff、source body 或
     repair prompt 文本。
-  - reader fail closed：坏 schema、错 session/run id、非法 phase、未知
-    key——顶层或 terminal 快照内部（"扩展"字段、raw prompt、diff）、错误
-    JSON 类型（bool-as-int、数字字符串）、缺失字段、不可能的 phase 状态
-    （产生这些事实的 phase 之前带 repair 或 proof 事实、post-proof 相位缺
-    完整的已记录 proof 事实、不是 `sha256:<hex>` digest 的 repair
-    context、rounds 超预算）、raw 或畸形 project ref、超长文件一律 load
-    为 `None`。只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
+  - reader fail closed 且不做任何规范化：坏 schema、错 session/run id、非法
+    phase、未知 key——顶层或 terminal 快照内部（"扩展"字段、raw prompt、
+    diff）、错误 JSON 类型（bool-as-int、数字字符串）、缺失字段、带空白的
+    文本字段、raw 或畸形 ref、不可能的 phase 状态（产生这些事实的 phase
+    之前带 repair 或 proof 事实、terminal 带着任何 source phase 都提交不
+    出来的事实组合——残缺的 proof triple、没有 admission 的 repair round、
+    没有已记录 proof 的 context——、proof ref 或 status 超出 recorded-proof
+    合同、rounds 超预算）、超长文件一律 load 为 `None`。只认 schema
+    v1——不做迁移、不做类型强转、不猜旧格式。
+  - 已记录 proof 有自己的封闭合同，与 completion trace 的 proof 词表对齐：
+    ref 必须是 `completion_proof:<16 hex>`，status 只能是 `complete` /
+    `complete_with_limitations` / `failed` / `blocked`（绝不 pending/
+    running），且 `satisfied == (status == "complete")`——这正是 proof
+    builder 自身保证的推导，带保留的完成如实记为不满足。writer helper 与
+    reader payload 两侧都执行这份合同。
   - writer 被要求达到 reader 的标准：transition helper 用和 reader 完全
     相同的规则校验每个事实——不裁剪、不强转，非 canonical 的事实（空或
     畸形的 repair-context digest、数字字符串的 turn 计数、bool-as-int、
@@ -61,7 +69,8 @@
 - 验证：六个 deterministic crash-position 测试（writing / check / finishing /
   repair 各中断位置恢复后均给出诚实 progress）、phase round-trip、严格
   fail-closed reader（proof-fact 与 sha256-context 的 phase invariant、
-  terminal 封闭 key set）、达到 reader 标准的严格 writer 加 commit
+  terminal 事实可达性、padded 文本拒绝、terminal 封闭 key set）、两侧
+  执行的 recorded-proof 合同、达到 reader 标准的严格 writer 加 commit
   canonical 门、terminal 不可变、加锁的并发 start/commit、
   ledger/terminal 一致性、payload 卫生，以及
   `tests/manual/completion_operation_resume_smoke.py --self-test`——真实

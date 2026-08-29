@@ -79,28 +79,51 @@ Round 3 (schema/transition contract closure, same day):
 10. The terminal snapshot's key set is closed: an extension field inside
     terminal (raw_prompt, diff, summary) fails the whole payload closed,
     exactly like an unknown top-level key.
+
+Round 4 (canonical-text + terminal-facts + proof contract, same day):
+11. The reader canonicalizes nothing: _text_field() now rejects padded
+    values, so a disk payload with " deepseek ", a padded session/run id, a
+    padded context/proof ref, or a padded terminal field loads as None
+    instead of silently loading as the trimmed state.
+12. Terminal is held to the same reachability rule as every other phase:
+    via three fact helpers (proof claimed / proof complete / repair
+    claimed) a terminal register may only carry the fact combination its
+    source phase committed -- partial proof triples, repair rounds without
+    the admitted context, and a context without its recorded proof all
+    fail closed; every reachable combination (no facts, proof only,
+    context+rounds+proof) still round-trips.
+13. The recorded proof has its own closed contract, mirroring the
+    completion trace's proof vocabulary (verified against
+    codey/completion/contract.py): the ref must be completion_proof:<16
+    hex>, the status one of complete / complete_with_limitations / failed /
+    blocked (never pending/running), and satisfied == (status ==
+    "complete") -- the exact derivation the proof builder uses
+    (complete_with_limitations is honestly unsatisfied). Writer helper and
+    reader payload both enforce it.
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after all three review
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all four review
 rounds):
 
 ```text
 python -B -m pytest
-3272 passed, 3 skipped, 1180 subtests passed in 302.84s (0:05:02)
+3283 passed, 3 skipped, 1227 subtests passed in 336.74s (0:05:36)
 ```
 
-Focused gates before the full run (Round 3 candidate, 2026-08-29):
+Focused gates before the full run (Round 4 candidate, 2026-08-29):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 58 passed, 159 subtests (round-trips,
+tests/test_run_operation.py                                         -> 69 passed, 206 subtests (round-trips,
                                                                        strict fail-closed reader + phase-state
                                                                        closure (proof-fact / sha256-context
-                                                                       invariants), closed terminal key set,
-                                                                       strict writer helpers (no clipping, no
-                                                                       coercion), commit canonical gate +
+                                                                       invariants, terminal fact reachability,
+                                                                       padded-text rejection), closed terminal
+                                                                       key set, recorded-proof contract on both
+                                                                       sides, strict writer helpers (no clipping,
+                                                                       no coercion), commit canonical gate +
                                                                        identity lock, terminal immutability,
                                                                        locked/atomic start+commit, concurrent
                                                                        starts, canonical identity at and beyond

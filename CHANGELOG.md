@@ -25,23 +25,33 @@ This file records Codey's release history. The newest release appears first.
     absolute project path), turn counts, provider id, and a bounded blocked
     reason. No raw prompt, reply, stdout/stderr, diff, source body, or
     repair prompt text exists anywhere in the payload.
-  - The reader fails closed: bad schema, wrong session/run ids, unknown
-    phase, unknown keys -- top-level or inside the terminal snapshot (an
-    "extension" field, a raw prompt, a diff) -- wrong JSON types
-    (bool-as-int, numeric strings), missing fields, impossible phase states
-    (repair or proof facts before the phases that produce them, post-proof
-    phases without their complete recorded proof facts, repair contexts that
-    are not `sha256:<hex>` digest refs, rounds over budget), raw or
-    malformed project refs, or an oversize file load as `None`. Schema v1
+  - The reader fails closed and canonicalizes nothing: bad schema, wrong
+    session/run ids, unknown phase, unknown keys -- top-level or inside the
+    terminal snapshot (an "extension" field, a raw prompt, a diff) -- wrong
+    JSON types (bool-as-int, numeric strings), missing fields, padded text
+    fields, raw or malformed refs, impossible phase states (repair or proof
+    facts before the phases that produce them, terminal fact combinations
+    no source phase could have committed -- a partial proof triple, repair
+    rounds without the admitted context, a context without its recorded
+    proof --, proof refs or statuses outside the recorded-proof contract,
+    rounds over budget), or an oversize file load as `None`. Schema v1
     only -- no migration, no coercion, no legacy guessing.
+  - The recorded proof has its own closed contract, mirroring the
+    completion trace's proof vocabulary: the ref must be
+    `completion_proof:<16 hex>`, the status one of `complete` /
+    `complete_with_limitations` / `failed` / `blocked` (never
+    pending/running), and `satisfied == (status == "complete")` -- the
+    exact derivation the proof builder itself guarantees, so a limited
+    pass is honestly unsatisfied. The writer helper and the reader payload
+    both enforce it.
   - The writer is held to the reader's bar: the transition helpers validate
     every fact exactly as the reader will -- nothing is clipped or coerced,
-    and a non-canonical fact (an empty or malformed repair-context digest, a
-    numeric-string turn count, a bool-as-int, an over-length reason) raises
-    `RunOperationTransitionError` instead of being clipped into a register
-    the next `load()` would reject -- and `commit()` re-derives the canonical
-    schema from the candidate state before it may touch the disk, refusing a
-    commit that would move the register's identity.
+    and a non-canonical fact (an empty or malformed repair-context digest,
+    a numeric-string turn count, a bool-as-int, an over-length reason)
+    raises `RunOperationTransitionError` instead of being clipped into a
+    register the next `load()` would reject -- and `commit()` re-derives
+    the canonical schema from the candidate state before it may touch the
+    disk, refusing a commit that would move the register's identity.
   - `start()` validates every argument and never clobbers: a non-canonical
     session/run id (empty, padded, over 200 chars, non-string), provider id,
     or budget is refused without writing anything -- a register can never
@@ -74,12 +84,14 @@ This file records Codey's release history. The newest release appears first.
 - Verification: six deterministic crash-position tests (writing, check,
   finishing, and repair positions recover with an honest progress line),
   phase round-trips, strict fail-closed readers (proof-fact and
-  sha256-context phase invariants, closed terminal key set), strict writers
-  held to the reader's bar with the commit canonical gate, terminal
-  immutability, locked concurrent start/commit, ledger/terminal consistency,
-  payload hygiene, and `tests/manual/completion_operation_resume_smoke.py
-  --self-test` -- a real process kill mid-writer recovered by a fresh store.
-  No live provider A/B -- this version changes nothing model-visible.
+  sha256-context phase invariants, terminal fact reachability, padded-text
+  rejection, closed terminal key set), the recorded-proof contract on both
+  sides, strict writers held to the reader's bar with the commit canonical
+  gate, terminal immutability, locked concurrent start/commit,
+  ledger/terminal consistency, payload hygiene, and
+  `tests/manual/completion_operation_resume_smoke.py --self-test` -- a real
+  process kill mid-writer recovered by a fresh store. No live provider A/B
+  -- this version changes nothing model-visible.
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 

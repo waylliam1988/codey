@@ -373,7 +373,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
                     lambda s: mark_completion_proof_recorded(
                         s,
-                        proof_ref="completion_proof:fail1",
+                        proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),
@@ -387,7 +387,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
                     lambda s: mark_completion_proof_recorded(
                         s,
-                        proof_ref="completion_proof:fail1",
+                        proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),
@@ -406,7 +406,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
                     lambda s: mark_completion_proof_recorded(
                         s,
-                        proof_ref="completion_proof:ok1",
+                        proof_ref="completion_proof:" + "a" * 16,
                         proof_status="complete",
                         proof_satisfied=True,
                     ),
@@ -422,7 +422,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
                     lambda s: mark_completion_proof_recorded(
                         s,
-                        proof_ref="completion_proof:fail1",
+                        proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),

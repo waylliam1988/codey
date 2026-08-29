@@ -18,18 +18,20 @@ Boundaries:
 - refs/status/counts/reasons only. No raw prompt, raw reply, raw
   stdout/stderr, raw diff, source body, repair prompt text, provider error
   text, or raw project path exists anywhere in the payload; the project is
-  named by a stable ``project:<key>`` ref and the repair context by its
-  ``sha256:<hex>`` digest.
+  named by a stable ``project:<key>`` ref, the repair context by its
+  ``sha256:<hex>`` digest, and the proof by its ``completion_proof:<hex>``
+  id with one of the recorded proof statuses.
 - the transition table is closed. ``repair_running`` cannot be reached without
   a committed ``repair_context_admitted``; ``repair_rounds`` cannot exceed the
   budget handed in at ``start()``; terminal is immutable except for the
   exact-same-payload idempotent re-commit.
-- the reader fails closed. Bad schema, wrong ids, unknown phase, unknown
-  keys (top-level or inside the terminal snapshot), wrong JSON types
-  (bool-as-int, numeric strings), missing fields, raw or malformed refs,
-  impossible phase states (repair or proof facts before the phases that
-  produce them, post-proof phases without their recorded proof facts,
-  repair contexts that are not sha256 refs, rounds over budget), or an
+- the reader fails closed and canonicalizes nothing. Bad schema, wrong ids,
+  unknown phase, unknown keys (top-level or inside the terminal snapshot),
+  wrong JSON types (bool-as-int, numeric strings), missing fields, padded
+  text fields, raw or malformed refs, impossible phase states (repair or
+  proof facts before the phases that produce them, post-proof phases and
+  terminal without the facts their source phase committed, proof refs or
+  statuses outside the recorded-proof contract, rounds over budget), or an
   oversize file load as ``None``; there is no migration, no coercion,
   and no legacy guess -- cold start, canonical schema v1 only.
 - the writer is held to the reader's bar. The transition helpers validate
@@ -174,6 +176,14 @@ _KNOWN_TERMINAL_KEYS = frozenset(
 )
 _PROJECT_REF_RE = re.compile(r"^project:[0-9a-f]{24}$")
 _SHA256_REF_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+# The recorded proof's own closed contract, mirroring the completion trace's
+# proof vocabulary: a stable ``completion_proof:<16 hex>`` id, one of the
+# final proof statuses (never pending/running), and a satisfied flag derived
+# from the status -- the invariant the proof builder itself guarantees.
+_COMPLETION_PROOF_REF_RE = re.compile(r"^completion_proof:[0-9a-f]{16}$")
+_RECORDED_PROOF_STATUSES = frozenset(
+    {"complete", "complete_with_limitations", "failed", "blocked"}
+)
 
 
 class RunOperationTransitionError(Exception):
@@ -214,12 +224,6 @@ def _strict_count(value: object, *, field: str, minimum: int = 0) -> int:
     return value
 
 
-def _strict_flag(value: object, *, field: str) -> bool:
-    if not isinstance(value, bool):
-        raise RunOperationTransitionError(f"{field} must be a bool")
-    return value
-
-
 def _canonical_id(value: object) -> str:
     """The one canonical identity form, or "" when the id is not canonical.
 
@@ -252,6 +256,9 @@ def _text_field(
     if not isinstance(value, str):
         raise _SchemaError(f"{key} must be a string")
     text = value.strip()
+    if text != value:
+        # The reader canonicalizes nothing: a padded field is not schema v1.
+        raise _SchemaError(f"{key} must be canonical (unpadded)")
     if not text and not allow_empty:
         raise _SchemaError(f"{key} must not be empty")
     if len(text) > limit:
@@ -276,10 +283,22 @@ def _project_ref(project: object) -> str:
     return f"project:{project_key(text)}"
 
 
-def _proof_facts_present(proof_ref: str, proof_status: str, satisfied: object) -> bool:
+def _proof_facts_claimed(proof_ref: str, proof_status: str, satisfied: object) -> bool:
+    """Whether any part of the recorded proof is claimed."""
+
+    return bool(proof_ref) or bool(proof_status) or satisfied is not None
+
+
+def _proof_facts_complete(proof_ref: str, proof_status: str, satisfied: object) -> bool:
     """Whether the payload carries the complete recorded-proof triple."""
 
     return bool(proof_ref) and bool(proof_status) and satisfied is not None
+
+
+def _repair_facts_claimed(repair_rounds: int, repair_context_ref: str) -> bool:
+    """Whether any part of the repair arm is claimed."""
+
+    return repair_rounds > 0 or bool(repair_context_ref)
 
 
 @dataclass(frozen=True)
@@ -423,6 +442,10 @@ class RunOperationState:
             proof_status = _text_field(
                 payload, "completion_proof_status", limit=MAX_TEXT_CHARS, allow_empty=True
             )
+            if proof_ref and not _COMPLETION_PROOF_REF_RE.match(proof_ref):
+                raise _SchemaError("completion_proof_ref must be a completion_proof:<16 hex> ref")
+            if proof_status and proof_status not in _RECORDED_PROOF_STATUSES:
+                raise _SchemaError("completion_proof_status is not a recorded status")
             # Phase invariants: the register may only claim what the closed
             # transition table could have produced at this phase.
             if phase in _REPAIR_PHASES and not repair_context_ref:
@@ -430,14 +453,28 @@ class RunOperationState:
             if phase in _REPAIR_EXECUTING_PHASES and repair_rounds < 1:
                 raise _SchemaError(f"{phase} requires a committed repair round")
             if phase in _PRE_REPAIR_PHASES:
-                if repair_rounds or repair_context_ref:
+                if _repair_facts_claimed(repair_rounds, repair_context_ref):
                     raise _SchemaError(f"{phase} cannot carry repair facts")
-                if proof_ref or proof_status or satisfied is not None:
+                if _proof_facts_claimed(proof_ref, proof_status, satisfied):
                     raise _SchemaError(f"{phase} cannot carry completion proof facts")
-            elif phase in _POST_PROOF_PHASES and not _proof_facts_present(
-                proof_ref, proof_status, satisfied
-            ):
-                raise _SchemaError(f"{phase} requires the recorded proof facts")
+            elif phase in _POST_PROOF_PHASES:
+                if not _proof_facts_complete(proof_ref, proof_status, satisfied):
+                    raise _SchemaError(f"{phase} requires the recorded proof facts")
+                if satisfied != (proof_status == "complete"):
+                    raise _SchemaError(f"{phase} proof satisfied must match the recorded status")
+            elif phase == PHASE_TERMINAL:
+                # Terminal keeps whatever facts its source phase committed;
+                # the combination must still be one the table could have
+                # produced on the way in.
+                proof_complete = _proof_facts_complete(proof_ref, proof_status, satisfied)
+                if _proof_facts_claimed(proof_ref, proof_status, satisfied) and not proof_complete:
+                    raise _SchemaError("terminal carries incomplete proof facts")
+                if _repair_facts_claimed(repair_rounds, repair_context_ref) and not proof_complete:
+                    raise _SchemaError("terminal carries repair facts without the recorded proof")
+                if repair_rounds > 0 and not repair_context_ref:
+                    raise _SchemaError("terminal carries repair rounds without the context ref")
+                if proof_complete and satisfied != (proof_status == "complete"):
+                    raise _SchemaError("terminal proof satisfied must match the recorded status")
             terminal = None
             if phase == PHASE_TERMINAL:
                 terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
@@ -543,16 +580,20 @@ def mark_completion_proof_recorded(
     proof_status: str,
     proof_satisfied: bool,
 ) -> RunOperationState:
+    ref = _strict_text(proof_ref, field="proof_ref", limit=MAX_REF_CHARS)
+    status = _strict_text(proof_status, field="proof_status", limit=MAX_TEXT_CHARS)
+    if not _COMPLETION_PROOF_REF_RE.match(ref):
+        raise RunOperationTransitionError("proof_ref must be a completion_proof:<16 hex> ref")
+    if status not in _RECORDED_PROOF_STATUSES:
+        raise RunOperationTransitionError("proof_status is not a recorded status")
+    if proof_satisfied != (status == "complete"):
+        raise RunOperationTransitionError("proof_satisfied must match the recorded status")
     return _transition(
         state,
         PHASE_COMPLETION_PROOF_RECORDED,
-        completion_proof_ref=_strict_text(proof_ref, field="proof_ref", limit=MAX_REF_CHARS),
-        completion_proof_status=_strict_text(
-            proof_status, field="proof_status", limit=MAX_TEXT_CHARS
-        ),
-        completion_proof_satisfied=_strict_flag(
-            proof_satisfied, field="proof_satisfied"
-        ),
+        completion_proof_ref=ref,
+        completion_proof_status=status,
+        completion_proof_satisfied=proof_satisfied,
     )
 
 
