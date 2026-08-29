@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.5.1 - Run Operation State + Completion Repair Durability v1
+## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
 - Added `codey/run_operation.py`: a minimal durable program counter for one
   coding run's completion/repair lifecycle, borrowed from pi's core principle
@@ -21,12 +21,17 @@ This file records Codey's release history. The newest release appears first.
     terminal commit keeps one bounded snapshot that mirrors
     `RunLedger.finish()` fields (summary is a char count, not text).
   - Refs/status/counts/reasons only: proof id/status/satisfied, the
-    repair-context digest, turn counts, provider id, and a bounded blocked
+    repair-context digest, a stable `project:<key>` ref (never the raw
+    absolute project path), turn counts, provider id, and a bounded blocked
     reason. No raw prompt, reply, stdout/stderr, diff, source body, or
     repair prompt text exists anywhere in the payload.
   - The reader fails closed: bad schema, wrong session/run ids, unknown
-    phase, or an oversize file load as `None`. Schema v1 only -- no
-    migration, no legacy guessing.
+    phase, wrong JSON types (bool-as-int, numeric strings), missing fields,
+    or an oversize file load as `None`. Schema v1 only -- no migration, no
+    coercion, no legacy guessing.
+  - `start()` never clobbers: the exists check and the write share the
+    commit file lock, so a corrupted leftover register is never silently
+    overwritten and concurrent starts yield exactly one register.
 - TaskRunner now commits at the real lifecycle boundaries instead of keeping
   completion/repair state only on `_run_project_mode()`'s function stack.
   After a crash, stop, or provider failure, the last committed phase says
@@ -35,8 +40,11 @@ This file records Codey's release history. The newest release appears first.
 - Run Details gained one quiet `Progress` row, shown only when the user opens
   Details for a run whose operation state never reached terminal and whose
   ledger has no `run_finished` row (stale snapshots never pollute finished
-  runs): `Writing was interrupted`, `Completion check was interrupted`, or
-  `Stopped during repair`. No chips, banners, or internal vocabulary.
+  runs): `Writing was interrupted`, `Completion check was interrupted`,
+  `Finishing was interrupted`, or `Stopped during repair` -- the copy names
+  what was actually interrupted, including that a settled repair is over and
+  a satisfied proof was already finishing. No chips, banners, or internal
+  vocabulary.
 - Thinned TaskRunner along the way: the stringly
   `completion_repair_admission` dict became a typed
   `RepairContextProjection | None`, and the blocked-reason ternary chain moved
@@ -46,10 +54,12 @@ This file records Codey's release history. The newest release appears first.
   fail-open, unit-test gate) and the `run_operation.state` row in the event
   matrix. `State.forget_conversation()` now deletes the session's operation
   bucket. No manager classes, no provider/tool replay, no prompt changes.
-- Verification: deterministic crash-position tests (writer_settled /
-  completion_proof_recorded / repair_running recover with an honest
-  progress line), phase round-trips, fail-closed readers, terminal
-  immutability, ledger/terminal consistency, and payload hygiene. No live
+- Verification: six deterministic crash-position tests (writing, check,
+  finishing, and repair positions recover with an honest progress line),
+  phase round-trips, strict fail-closed readers, terminal immutability,
+  locked concurrent start/commit, ledger/terminal consistency, payload
+  hygiene, and `tests/manual/completion_operation_resume_smoke.py --self-test`
+  -- a real process kill mid-writer recovered by a fresh store. No live
   provider A/B -- this version changes nothing model-visible.
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor

@@ -52,7 +52,7 @@ def _start(store: RunOperationStore) -> RunOperationState:
     started = store.start(
         session_id=SESSION,
         run_id=RUN,
-        project_ref="/tmp/project",
+        project="/tmp/project",
         provider_id="deepseek",
         turn_budget=8,
         max_repair_rounds=1,
@@ -277,7 +277,7 @@ class FailClosedReaderTests(unittest.TestCase):
             second = store.start(
                 session_id=SESSION,
                 run_id=RUN,
-                project_ref="/tmp/other",
+                project="/tmp/other",
                 provider_id="qwen",
                 turn_budget=3,
                 max_repair_rounds=1,
@@ -287,6 +287,180 @@ class FailClosedReaderTests(unittest.TestCase):
             reloaded = store.load(SESSION, RUN)
             assert reloaded is not None
             self.assertEqual(reloaded, first)
+
+    def test_start_refuses_to_clobber_an_invalid_existing_file(self) -> None:
+        # A corrupted leftover register is evidence, not garbage: start()
+        # must never overwrite it, even though load() would fail closed.
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            path = store.path_for(SESSION, RUN)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('{"schema_version": 999}', encoding="utf-8")
+
+            started = store.start(
+                session_id=SESSION,
+                run_id=RUN,
+                project="",
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            )
+
+            self.assertIsNone(started)
+            self.assertEqual(
+                path.read_text(encoding="utf-8"), '{"schema_version": 999}'
+            )
+
+
+class StartLockTests(unittest.TestCase):
+    def test_concurrent_starts_produce_exactly_one_register(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            results: list[RunOperationState | None] = []
+            errors: list[Exception] = []
+            barrier = threading.Barrier(4)
+
+            def starter() -> None:
+                try:
+                    barrier.wait()
+                    results.append(
+                        store.start(
+                            session_id=SESSION,
+                            run_id=RUN,
+                            project="",
+                            provider_id="deepseek",
+                            turn_budget=8,
+                            max_repair_rounds=1,
+                        )
+                    )
+                except Exception as exc:  # pragma: no cover - failure capture
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=starter) for _ in range(4)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(errors, [])
+            winners = [state for state in results if state is not None]
+            self.assertEqual(len(winners), 1)
+            reloaded = store.load(SESSION, RUN)
+            self.assertIsNotNone(reloaded)
+            assert reloaded is not None
+            self.assertEqual(reloaded.phase, PHASE_ACCEPTED)
+
+
+class ProjectRefTests(unittest.TestCase):
+    def test_start_derives_a_stable_ref_never_a_raw_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = _store(Path(td))
+            started = store.start(
+                session_id=SESSION,
+                run_id=RUN,
+                project=str(project),
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            )
+            assert started is not None
+
+            from codey.storage.local_store import project_key
+
+            self.assertEqual(
+                started.project_ref, f"project:{project_key(str(project))}"
+            )
+            self.assertNotIn(str(project), json.dumps(started.to_payload()))
+
+    def test_empty_project_yields_an_empty_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            started = _store(Path(td)).start(
+                session_id=SESSION,
+                run_id=RUN,
+                project="",
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            )
+            assert started is not None
+            self.assertEqual(started.project_ref, "")
+
+
+class StrictReaderTests(unittest.TestCase):
+    """Anything not canonical schema v1 fails closed -- no coercion."""
+
+    def _canonical(self) -> dict:
+        return _fresh_state(PHASE_ACCEPTED).to_payload()
+
+    def _rejects(self, mutate) -> None:
+        payload = self._canonical()
+        mutate(payload)
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_bool_never_passes_as_int(self) -> None:
+        for key in ("turn_budget", "writer_attempt", "turns_used", "repair_rounds"):
+            with self.subTest(field=key):
+                self._rejects(lambda payload, key=key: payload.__setitem__(key, True))
+
+    def test_numeric_strings_never_pass_as_int(self) -> None:
+        for key in ("turn_budget", "turns_used", "repair_rounds"):
+            with self.subTest(field=key):
+                self._rejects(lambda payload, key=key: payload.__setitem__(key, "3"))
+
+    def test_negative_ints_fail_closed(self) -> None:
+        self._rejects(lambda payload: payload.__setitem__("turns_used", -1))
+
+    def test_required_fields_must_exist(self) -> None:
+        for key in (
+            "project_ref",
+            "provider_id",
+            "started_at",
+            "updated_at",
+            "session_id",
+            "run_id",
+            "phase",
+            "writer_attempt",
+        ):
+            with self.subTest(field=key):
+                self._rejects(lambda payload, key=key: payload.pop(key))
+
+    def test_empty_identity_fields_fail_closed(self) -> None:
+        for key in ("session_id", "run_id", "started_at", "updated_at"):
+            with self.subTest(field=key):
+                self._rejects(lambda payload, key=key: payload.__setitem__(key, ""))
+
+    def test_satisfied_must_be_a_bool_when_present(self) -> None:
+        self._rejects(
+            lambda payload: payload.__setitem__("completion_proof_satisfied", "yes")
+        )
+
+    def test_over_length_field_fails_closed(self) -> None:
+        self._rejects(lambda payload: payload.__setitem__("blocked_reason", "x" * 200))
+
+    def test_terminal_snapshot_is_strict_too(self) -> None:
+        state = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="done",
+            summary_chars=3,
+            turns=2,
+            max_turns=8,
+            provider="deepseek",
+        )
+        canonical = state.to_payload()
+        self.assertEqual(RunOperationState.from_payload(canonical), state)
+
+        for key, value in (
+            ("summary_chars", "abc"),
+            ("turns", True),
+            ("finished_at", ""),
+            ("stop_reason", None),
+        ):
+            payload = json.loads(json.dumps(canonical))
+            payload["terminal"][key] = value
+            with self.subTest(field=key):
+                self.assertIsNone(RunOperationState.from_payload(payload))
 
 
 class TransitionTableTests(unittest.TestCase):
@@ -554,6 +728,23 @@ class PayloadHygieneTests(unittest.TestCase):
             self.assertEqual(reloaded.phase, PHASE_TERMINAL)
 
 
+def _fresh_state(phase: str, **overrides: object) -> RunOperationState:
+    """A pure in-memory state; the mark_* functions need no store."""
+
+    return RunOperationState(
+        session_id=SESSION,
+        run_id=RUN,
+        project_ref="",
+        provider_id="deepseek",
+        turn_budget=8,
+        max_repair_rounds=1,
+        phase=phase,
+        started_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z",
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
 class RecoveryTextTests(unittest.TestCase):
     def test_progress_text_covers_every_non_terminal_phase(self) -> None:
         texts = {
@@ -563,38 +754,30 @@ class RecoveryTextTests(unittest.TestCase):
             PHASE_COMPLETION_PROOF_RECORDED: "Completion check was interrupted",
             PHASE_REPAIR_CONTEXT_ADMITTED: "Stopped during repair",
             PHASE_REPAIR_RUNNING: "Stopped during repair",
-            PHASE_REPAIR_SETTLED: "Stopped during repair",
+            # A settled repair is no longer running one; what was
+            # interrupted is the post-repair completion check.
+            PHASE_REPAIR_SETTLED: "Completion check was interrupted",
         }
         for phase, expected in texts.items():
-            state = RunOperationState(
-                session_id=SESSION,
-                run_id=RUN,
-                project_ref="",
-                provider_id="deepseek",
-                turn_budget=8,
-                max_repair_rounds=1,
-                phase=phase,
-                started_at="",
-                updated_at="",
-            )
             with self.subTest(phase=phase):
-                self.assertEqual(operation_progress_text(state), expected)
+                self.assertEqual(operation_progress_text(_fresh_state(phase)), expected)
 
+    def test_satisfied_proof_reads_as_finishing_not_checking(self) -> None:
+        satisfied = mark_completion_proof_recorded(
+            _fresh_state(PHASE_WRITER_SETTLED),
+            proof_ref="p1",
+            proof_status="complete",
+            proof_satisfied=True,
+        )
+        self.assertEqual(operation_progress_text(satisfied), "Finishing was interrupted")
+        self.assertEqual(
+            operation_progress_text(_fresh_state(PHASE_COMPLETION_PROOF_RECORDED)),
+            "Completion check was interrupted",
+        )
+
+    def test_terminal_and_missing_state_stay_quiet(self) -> None:
         terminal = mark_terminal(
-            mark_writer_running(
-                RunOperationState(
-                    session_id=SESSION,
-                    run_id=RUN,
-                    project_ref="",
-                    provider_id="deepseek",
-                    turn_budget=8,
-                    max_repair_rounds=1,
-                    phase=PHASE_ACCEPTED,
-                    started_at="",
-                    updated_at="",
-                ),
-                provider_id="deepseek",
-            ),
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
             stop_reason="stopped",
             summary_chars=0,
             turns=0,
@@ -613,7 +796,7 @@ class StoreLifecycleTests(unittest.TestCase):
             other = store.start(
                 session_id="session-other",
                 run_id=RUN,
-                project_ref="",
+                project="",
                 provider_id="deepseek",
                 turn_budget=8,
                 max_repair_rounds=1,

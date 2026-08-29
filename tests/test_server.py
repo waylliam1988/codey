@@ -2444,7 +2444,7 @@ class RunSnapshotTests(unittest.TestCase):
             started = state.run_operations.start(
                 session_id="session-forget",
                 run_id="run-forget",
-                project_ref="",
+                project="",
                 provider_id="deepseek",
                 turn_budget=6,
                 max_repair_rounds=1,

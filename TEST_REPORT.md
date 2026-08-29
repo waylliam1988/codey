@@ -21,35 +21,60 @@ production: codey/run_operation.py (new);
             capability_registry + event matrix
 harness:    tests/test_run_operation.py (new),
             tests/test_task_runner_operation_state.py (new),
+            tests/manual/completion_operation_resume_smoke.py (new),
             test_run_details / test_server / test_headless_runner /
             test_architecture / test_capabilities additions
 mode:       deterministic gate + full local pytest; no live A/B (nothing model-visible changed)
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
+Review hardening round (same day, before the final full run):
+
+```text
+1. project_ref now derives a stable project:<project_key> ref inside
+   RunOperationStore.start(); the raw absolute project path never enters the
+   payload (test asserts the format and the absence of the path).
+2. start() shares the commit file lock and refuses to clobber an existing
+   register -- valid or corrupted; concurrent starts yield exactly one
+   register.
+3. The reader is strictly fail-closed: bool-as-int, numeric strings, missing
+   required fields, empty identity/timestamp fields, negative ints, and
+   over-length fields all load as None. No coercion anywhere.
+4. Interrupted-progress copy is honest per position: a settled repair reads
+   "Completion check was interrupted" (the post-repair check was cut), a
+   satisfied proof reads "Finishing was interrupted"; only an admitted or
+   running repair reads "Stopped during repair".
+Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
+__version__ stays 0.5.0 until the release commit renames the heading.
+```
+
+Full local pytest (Windows, Python 3.12, 2026-08-29, after the review round):
 
 ```text
 python -B -m pytest
-3239 passed, 3 skipped in 302.74s (0:05:02)
+3254 passed, 3 skipped in 329.25s (0:05:29)
 ```
 
 Focused gates before the full run (same candidate, 2026-08-29):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 26 passed (round-trips, fail-closed reader,
-                                                                       terminal immutability, locked atomic writes,
+tests/test_run_operation.py                                         -> 40 passed, 52 subtests (round-trips,
+                                                                       strict fail-closed reader, terminal
+                                                                       immutability, locked/atomic start+commit,
+                                                                       concurrent starts, project ref format,
                                                                        payload hygiene, import boundary)
-tests/test_task_runner_operation_state.py                           -> 11 passed (terminal/ledger/event consistency,
+tests/test_task_runner_operation_state.py                           -> 13 passed (terminal/ledger/event consistency,
                                                                        repair phase sequence observed mid-run,
-                                                                       provider-failure + stop honesty,
-                                                                       crash-position recovery rows)
+                                                                       provider-failure + stop honesty, six
+                                                                       crash-position recovery rows, raw-path
+                                                                       hygiene)
 test_run_details / test_server / test_headless_runner /
 test_architecture / test_capabilities / test_event_matrix /
 test_task_runner_completion_enforcement / test_task_runner_edit_integrity
-                                                                    -> 358 passed, 486 subtests passed
-adjacent groups (task_runner_*, run_ledger*, work_checkpoint*,
-completion_*, ghost continuity ab, ui_architecture)                 -> 256 passed, 66 subtests passed
+                                                                    -> 464 passed, 511 subtests passed
+tests/manual/completion_operation_resume_smoke.py --self-test       -> ok: real process kill mid-writer, fresh
+                                                                       store reads writer_running, Details shows
+                                                                       "Writing was interrupted", no raw path
 ```
 
 A/B judgment:
@@ -57,8 +82,9 @@ A/B judgment:
 ```text
 no live provider A/B: prompt, tool schema, provider routing, repair admission
 conditions and model-visible content are unchanged. Deterministic crash-position
-tests replace the quality gate this version; a manual stop/resume smoke on a real
-coding run is recommended before release review but is not a quality A/B.
+tests plus the offline kill/resume smoke replace the quality gate this version;
+a manual stop/resume smoke on a real coding run is still recommended before
+release review but is not a quality A/B.
 ```
 
 ## 0.5.0 Edit Integrity Monitor + Receipt Warning (2026-08-29)

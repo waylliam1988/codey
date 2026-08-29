@@ -320,7 +320,7 @@ class RunDetailsTests(unittest.TestCase):
             started = store.start(
                 session_id="session-progress",
                 run_id="run-progress",
-                project_ref="",
+                project="",
                 provider_id="deepseek",
                 turn_budget=6,
                 max_repair_rounds=1,

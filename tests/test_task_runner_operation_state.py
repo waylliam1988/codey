@@ -26,6 +26,7 @@ from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.run_operation import (
     PHASE_COMPLETION_PROOF_RECORDED,
     PHASE_REPAIR_RUNNING,
+    PHASE_REPAIR_SETTLED,
     PHASE_TERMINAL,
     PHASE_WRITER_RUNNING,
     PHASE_WRITER_SETTLED,
@@ -33,6 +34,7 @@ from codey.run_operation import (
     mark_completion_proof_recorded,
     mark_repair_context_admitted,
     mark_repair_running,
+    mark_repair_settled,
     mark_terminal,
     mark_writer_running,
     mark_writer_settled,
@@ -391,6 +393,41 @@ class CrashPositionTests(unittest.TestCase):
                     ),
                     lambda s: mark_repair_context_admitted(s, context_ref="sha256:" + "a" * 64),
                     lambda s: mark_repair_running(s, provider_id="deepseek"),
+                    lambda s: mark_repair_settled(s, provider_id="deepseek", stop_reason="done", turns_used=6),
+                ],
+                PHASE_REPAIR_SETTLED,
+                # The repair is over; what was interrupted is the
+                # post-repair completion check.
+                "Completion check was interrupted",
+            ),
+            (
+                [
+                    lambda s: mark_writer_running(s, provider_id="deepseek"),
+                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
+                    lambda s: mark_completion_proof_recorded(
+                        s,
+                        proof_ref="completion_proof:ok1",
+                        proof_status="complete",
+                        proof_satisfied=True,
+                    ),
+                ],
+                PHASE_COMPLETION_PROOF_RECORDED,
+                # A satisfied proof means the run was finishing, not
+                # still waiting on a check.
+                "Finishing was interrupted",
+            ),
+            (
+                [
+                    lambda s: mark_writer_running(s, provider_id="deepseek"),
+                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
+                    lambda s: mark_completion_proof_recorded(
+                        s,
+                        proof_ref="completion_proof:fail1",
+                        proof_status="failed",
+                        proof_satisfied=False,
+                    ),
+                    lambda s: mark_repair_context_admitted(s, context_ref="sha256:" + "a" * 64),
+                    lambda s: mark_repair_running(s, provider_id="deepseek"),
                 ],
                 PHASE_REPAIR_RUNNING,
                 "Stopped during repair",
@@ -404,7 +441,7 @@ class CrashPositionTests(unittest.TestCase):
                     started = store.start(
                         session_id=SESSION,
                         run_id="run-crash",
-                        project_ref=str(Path(td) / "project"),
+                        project=str(Path(td) / "project"),
                         provider_id="deepseek",
                         turn_budget=6,
                         max_repair_rounds=1,
@@ -445,7 +482,7 @@ class CrashPositionTests(unittest.TestCase):
             started = store.start(
                 session_id=SESSION,
                 run_id="run-stale",
-                project_ref="",
+                project="",
                 provider_id="deepseek",
                 turn_budget=6,
                 max_repair_rounds=1,
@@ -486,7 +523,7 @@ class CrashPositionTests(unittest.TestCase):
             started = store.start(
                 session_id=SESSION,
                 run_id="run-done",
-                project_ref="",
+                project="",
                 provider_id="deepseek",
                 turn_budget=6,
                 max_repair_rounds=1,
@@ -577,6 +614,26 @@ class PayloadHygieneTests(unittest.TestCase):
                 self.assertNotIn(fragment, raw)
             payload = json.loads(raw)
             self.assertNotIn("prompt", json.dumps(payload))
+
+    def test_operation_payload_never_contains_the_raw_project_path(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.State(Path(td) / "state")
+            event = _run(_runner(state, writer), state, project, writer)
+
+            assert state.run_operations is not None
+            path = state.run_operations.path_for(SESSION, str(event["run_id"]))
+            raw = path.read_text(encoding="utf-8")
+
+            # The roadmap requires a ref, never the raw absolute path; the
+            # resolved temp project path must not appear in any form.
+            self.assertNotIn(str(project), raw)
+            self.assertNotIn(str(project).replace("\\", "/"), raw)
+            payload = json.loads(raw)
+            self.assertRegex(payload["project_ref"], r"^project:[0-9a-f]{24}$")
 
 
 class BlockedReasonProjectionTests(unittest.TestCase):

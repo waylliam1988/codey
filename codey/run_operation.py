@@ -16,15 +16,21 @@ bounded terminal snapshot (roadmap 0.5.1); it never becomes a history.
 Boundaries:
 
 - refs/status/counts/reasons only. No raw prompt, raw reply, raw
-  stdout/stderr, raw diff, source body, repair prompt text, or provider error
-  text exists anywhere in the payload, and every free-text field is clipped.
+  stdout/stderr, raw diff, source body, repair prompt text, provider error
+  text, or raw project path exists anywhere in the payload; the project is
+  named by a stable ``project:<key>`` ref and every free-text field is
+  clipped on write.
 - the transition table is closed. ``repair_running`` cannot be reached without
   a committed ``repair_context_admitted``; ``repair_rounds`` cannot exceed the
   budget handed in at ``start()``; terminal is immutable except for the
   exact-same-payload idempotent re-commit.
-- the reader fails closed. Bad schema, wrong ids, unknown phase, or an
-  oversize file load as ``None``; there is no migration and no legacy guess --
-  cold start, schema v1 only.
+- the reader fails closed. Bad schema, wrong ids, unknown phase, wrong JSON
+  types (bool-as-int, numeric strings), missing fields, or an oversize file
+  load as ``None``; there is no migration, no coercion, and no legacy guess
+  -- cold start, canonical schema v1 only.
+- the writer is exclusive. ``start()`` never clobbers: an existing file --
+  valid or not -- refuses a second start under the same file lock that
+  ``commit()`` uses.
 - this module is a storage leaf: stdlib plus ``codey.storage`` and nothing
   else. It never imports agents, providers, tools, server, or ghost.
 """
@@ -40,6 +46,7 @@ from typing import Callable
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    project_key,
     read_json,
     session_key,
     write_json_atomic,
@@ -95,14 +102,20 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 MAX_TEXT_CHARS = 80
 MAX_REF_CHARS = 120
 MAX_PROJECT_REF_CHARS = 240
+MAX_ID_CHARS = 200
 
 INTERRUPTED_WRITING = "Writing was interrupted"
 INTERRUPTED_COMPLETION_CHECK = "Completion check was interrupted"
+INTERRUPTED_FINISHING = "Finishing was interrupted"
 INTERRUPTED_REPAIR = "Stopped during repair"
 
 
 class RunOperationTransitionError(Exception):
     """A phase transition violated the closed transition table."""
+
+
+class _SchemaError(ValueError):
+    """The payload is not canonical schema v1; the reader fails closed."""
 
 
 def _now() -> str:
@@ -118,6 +131,41 @@ def _nonnegative_int(value: object) -> int:
         return max(0, int(value))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0
+
+
+def _text_field(
+    payload: dict,
+    key: str,
+    *,
+    limit: int,
+    allow_empty: bool = False,
+) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise _SchemaError(f"{key} must be a string")
+    text = value.strip()
+    if not text and not allow_empty:
+        raise _SchemaError(f"{key} must not be empty")
+    if len(text) > limit:
+        raise _SchemaError(f"{key} exceeds {limit} chars")
+    return text
+
+
+def _int_field(payload: dict, key: str) -> int:
+    value = payload.get(key)
+    # bool is an int subclass; True must never pass as 1.
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise _SchemaError(f"{key} must be a non-negative int")
+    return value
+
+
+def _project_ref(project: object) -> str:
+    """Name the project by a stable ref, never by its raw absolute path."""
+
+    text = str(project or "").strip()
+    if not text:
+        return ""
+    return f"project:{project_key(text)}"
 
 
 @dataclass(frozen=True)
@@ -147,15 +195,20 @@ class RunOperationTerminal:
     def from_payload(cls, payload: object) -> "RunOperationTerminal | None":
         if not isinstance(payload, dict):
             return None
-        return cls(
-            stop_reason=_clip(payload.get("stop_reason"), MAX_TEXT_CHARS),
-            summary_chars=_nonnegative_int(payload.get("summary_chars")),
-            turns=_nonnegative_int(payload.get("turns")),
-            max_turns=_nonnegative_int(payload.get("max_turns")),
-            provider=_clip(payload.get("provider"), MAX_TEXT_CHARS),
-            blocked_reason=_clip(payload.get("blocked_reason"), MAX_TEXT_CHARS),
-            finished_at=_clip(payload.get("finished_at"), 40),
-        )
+        try:
+            return cls(
+                stop_reason=_text_field(payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True),
+                summary_chars=_int_field(payload, "summary_chars"),
+                turns=_int_field(payload, "turns"),
+                max_turns=_int_field(payload, "max_turns"),
+                provider=_text_field(payload, "provider", limit=MAX_TEXT_CHARS, allow_empty=True),
+                blocked_reason=_text_field(
+                    payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+                ),
+                finished_at=_text_field(payload, "finished_at", limit=40),
+            )
+        except _SchemaError:
+            return None
 
     def identity(self) -> "RunOperationTerminal":
         """The terminal minus its timestamp, for the idempotent re-commit."""
@@ -217,60 +270,87 @@ class RunOperationState:
 
     @classmethod
     def from_payload(cls, payload: object) -> "RunOperationState | None":
-        """Fail closed: anything unexpected loads as ``None``."""
+        """Fail closed: anything not canonical schema v1 loads as ``None``."""
 
         if not isinstance(payload, dict):
             return None
         if payload.get("schema_version") != SCHEMA_VERSION or payload.get("kind") != KIND:
             return None
-        session_id = _clip(payload.get("session_id"), 200)
-        run_id = _clip(payload.get("run_id"), 200)
-        phase = _clip(payload.get("phase"), 40)
-        if not session_id or not run_id or phase not in PHASES:
+        try:
+            session_id = _text_field(payload, "session_id", limit=MAX_ID_CHARS)
+            run_id = _text_field(payload, "run_id", limit=MAX_ID_CHARS)
+            phase = _text_field(payload, "phase", limit=40)
+            if phase not in PHASES:
+                raise _SchemaError(f"unknown phase {phase}")
+            satisfied = payload.get("completion_proof_satisfied")
+            if satisfied is not None and not isinstance(satisfied, bool):
+                raise _SchemaError("completion_proof_satisfied must be a bool")
+            terminal = None
+            if phase == PHASE_TERMINAL:
+                terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
+                if terminal is None:
+                    raise _SchemaError("terminal phase requires a valid terminal payload")
+            elif "terminal" in payload:
+                raise _SchemaError("non-terminal phase must not carry a terminal payload")
+            writer_attempt = _int_field(payload, "writer_attempt")
+            if writer_attempt < 1:
+                raise _SchemaError("writer_attempt must be at least 1")
+            return cls(
+                session_id=session_id,
+                run_id=run_id,
+                project_ref=_text_field(
+                    payload, "project_ref", limit=MAX_PROJECT_REF_CHARS, allow_empty=True
+                ),
+                provider_id=_text_field(
+                    payload, "provider_id", limit=MAX_TEXT_CHARS, allow_empty=True
+                ),
+                turn_budget=_int_field(payload, "turn_budget"),
+                max_repair_rounds=_int_field(payload, "max_repair_rounds"),
+                phase=phase,
+                started_at=_text_field(payload, "started_at", limit=40),
+                updated_at=_text_field(payload, "updated_at", limit=40),
+                writer_attempt=writer_attempt,
+                turns_used=_int_field(payload, "turns_used"),
+                stop_reason=_text_field(
+                    payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+                ),
+                completion_proof_ref=_text_field(
+                    payload, "completion_proof_ref", limit=MAX_REF_CHARS, allow_empty=True
+                ),
+                completion_proof_status=_text_field(
+                    payload, "completion_proof_status", limit=MAX_TEXT_CHARS, allow_empty=True
+                ),
+                completion_proof_satisfied=satisfied,
+                repair_rounds=_int_field(payload, "repair_rounds"),
+                repair_context_ref=_text_field(
+                    payload, "repair_context_ref", limit=MAX_REF_CHARS, allow_empty=True
+                ),
+                blocked_reason=_text_field(
+                    payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+                ),
+                terminal=terminal,
+            )
+        except _SchemaError:
             return None
-        satisfied = payload.get("completion_proof_satisfied")
-        if satisfied is not None and not isinstance(satisfied, bool):
-            return None
-        terminal = None
-        if phase == PHASE_TERMINAL:
-            terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
-            if terminal is None:
-                return None
-        elif "terminal" in payload:
-            return None
-        return cls(
-            session_id=session_id,
-            run_id=run_id,
-            project_ref=_clip(payload.get("project_ref"), MAX_PROJECT_REF_CHARS),
-            provider_id=_clip(payload.get("provider_id"), MAX_TEXT_CHARS),
-            turn_budget=_nonnegative_int(payload.get("turn_budget")),
-            max_repair_rounds=_nonnegative_int(payload.get("max_repair_rounds")),
-            phase=phase,
-            started_at=_clip(payload.get("started_at"), 40),
-            updated_at=_clip(payload.get("updated_at"), 40),
-            writer_attempt=max(1, _nonnegative_int(payload.get("writer_attempt")) or 1),
-            turns_used=_nonnegative_int(payload.get("turns_used")),
-            stop_reason=_clip(payload.get("stop_reason"), MAX_TEXT_CHARS),
-            completion_proof_ref=_clip(payload.get("completion_proof_ref"), MAX_REF_CHARS),
-            completion_proof_status=_clip(payload.get("completion_proof_status"), MAX_TEXT_CHARS),
-            completion_proof_satisfied=satisfied,
-            repair_rounds=_nonnegative_int(payload.get("repair_rounds")),
-            repair_context_ref=_clip(payload.get("repair_context_ref"), MAX_REF_CHARS),
-            blocked_reason=_clip(payload.get("blocked_reason"), MAX_TEXT_CHARS),
-            terminal=terminal,
-        )
 
 
 def operation_progress_text(state: RunOperationState | None) -> str:
-    """The quiet Details line for a run that never reached terminal."""
+    """The quiet Details line for a run that never reached terminal.
+
+    The wording names what was actually interrupted: a settled repair is no
+    longer running one, and a satisfied proof means the run was finishing,
+    not still being checked.
+    """
 
     if state is None or state.phase == PHASE_TERMINAL:
         return ""
     if state.phase in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING):
         return INTERRUPTED_WRITING
-    if state.phase in (PHASE_WRITER_SETTLED, PHASE_COMPLETION_PROOF_RECORDED):
-        return INTERRUPTED_COMPLETION_CHECK
-    return INTERRUPTED_REPAIR
+    if state.phase in (PHASE_REPAIR_CONTEXT_ADMITTED, PHASE_REPAIR_RUNNING):
+        return INTERRUPTED_REPAIR
+    if state.phase == PHASE_COMPLETION_PROOF_RECORDED and state.completion_proof_satisfied:
+        return INTERRUPTED_FINISHING
+    return INTERRUPTED_COMPLETION_CHECK
 
 
 def _transition(state: RunOperationState, next_phase: str, **updates: object) -> RunOperationState:
@@ -400,7 +480,9 @@ def mark_terminal(
         turns=_nonnegative_int(turns),
         max_turns=_nonnegative_int(max_turns),
         provider=_clip(provider, MAX_TEXT_CHARS),
-        blocked_reason=_clip(state.blocked_reason if blocked_reason is None else blocked_reason, MAX_TEXT_CHARS),
+        blocked_reason=_clip(
+            state.blocked_reason if blocked_reason is None else blocked_reason, MAX_TEXT_CHARS
+        ),
         finished_at=_now(),
     )
     if state.phase == PHASE_TERMINAL:
@@ -440,33 +522,38 @@ class RunOperationStore:
         *,
         session_id: str,
         run_id: str,
-        project_ref: str,
+        project: object = "",
         provider_id: str,
         turn_budget: int,
         max_repair_rounds: int,
     ) -> RunOperationState | None:
-        if self.load(session_id, run_id) is not None:
-            return None
-        now = _now()
-        state = RunOperationState(
-            session_id=str(session_id or ""),
-            run_id=str(run_id or ""),
-            project_ref=_clip(project_ref, MAX_PROJECT_REF_CHARS),
-            provider_id=_clip(provider_id, MAX_TEXT_CHARS),
-            turn_budget=_nonnegative_int(turn_budget),
-            max_repair_rounds=_nonnegative_int(max_repair_rounds),
-            phase=PHASE_ACCEPTED,
-            started_at=now,
-            updated_at=now,
-        )
-        try:
-            write_json_atomic(
-                self.path_for(session_id, run_id),
-                state.to_payload(),
-                max_bytes=MAX_OPERATION_BYTES,
+        """Open the run's register; refuse to clobber anything on disk.
+
+        The exists check and the write share the commit file lock, so two
+        concurrent starts produce exactly one register, and a corrupted
+        leftover file is never silently overwritten.
+        """
+
+        path = self.path_for(session_id, run_id)
+        with with_file_lock(path):
+            if path.exists():
+                return None
+            now = _now()
+            state = RunOperationState(
+                session_id=_clip(session_id, MAX_ID_CHARS),
+                run_id=_clip(run_id, MAX_ID_CHARS),
+                project_ref=_project_ref(project),
+                provider_id=_clip(provider_id, MAX_TEXT_CHARS),
+                turn_budget=_nonnegative_int(turn_budget),
+                max_repair_rounds=_nonnegative_int(max_repair_rounds),
+                phase=PHASE_ACCEPTED,
+                started_at=now,
+                updated_at=now,
             )
-        except (OSError, ValueError):
-            return None
+            try:
+                write_json_atomic(path, state.to_payload(), max_bytes=MAX_OPERATION_BYTES)
+            except (OSError, ValueError):
+                return None
         return state
 
     def load(self, session_id: str, run_id: str) -> RunOperationState | None:
@@ -474,7 +561,9 @@ class RunOperationStore:
         if payload is None:
             return None
         state = RunOperationState.from_payload(payload)
-        if state is None or state.session_id != str(session_id or "") or state.run_id != str(run_id or ""):
+        if state is None or state.session_id != str(session_id or "") or state.run_id != str(
+            run_id or ""
+        ):
             return None
         return state
 
@@ -510,6 +599,7 @@ class RunOperationStore:
 
 __all__ = [
     "INTERRUPTED_COMPLETION_CHECK",
+    "INTERRUPTED_FINISHING",
     "INTERRUPTED_REPAIR",
     "INTERRUPTED_WRITING",
     "KIND",

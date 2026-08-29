@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## 0.5.1 - Run Operation State + Completion Repair Durability v1
+## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
 - 新增 `codey/run_operation.py`：一次 coding run 的 completion/repair 生命
   周期最小 durable program counter，借鉴 pi 的核心原则——operation state 是
@@ -18,11 +18,15 @@
     `repair_running` 必须先有已提交的 admission。terminal 保留一份与
     `RunLedger.finish()` 字段对齐的有界快照（summary 只存字符数，不存文本）。
   - 只存 refs/status/counts/reasons：proof id/status/satisfied、
-    repair-context digest、turn 计数、provider id 和有界的 blocked reason。
+    repair-context digest、稳定的 `project:<key>` ref（绝不保存 raw
+    绝对路径）、turn 计数、provider id 和有界的 blocked reason。
     payload 里不存在 raw prompt、reply、stdout/stderr、diff、source body 或
     repair prompt 文本。
-  - reader fail closed：坏 schema、错 session/run id、非法 phase、超长文件
-    一律 load 为 `None`。只认 schema v1——不做迁移，不猜旧格式。
+  - reader fail closed：坏 schema、错 session/run id、非法 phase、错误 JSON
+    类型（bool-as-int、数字字符串）、缺失字段、超长文件一律 load 为
+    `None`。只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
+  - `start()` 绝不 clobber：exists 检查与写入共用 commit 的文件锁，损坏的
+    旧寄存器不会被静默覆盖，并发 start 只产生一个寄存器。
 - TaskRunner 在真实生命周期边界提交 phase，completion/repair 状态不再只活在
   `_run_project_mode()` 的函数栈里。崩溃、用户停止或 provider 故障后，最后
   一个 committed phase 能说明 run 实际停在哪里。运行时接线 fail open：一次
@@ -30,8 +34,9 @@
 - Run Details 增加一行安静的 `Progress`，只在用户点开 Details、operation
   state 未到 terminal 且 ledger 没有 `run_finished`（旧快照不污染已完成
   run）时出现：`Writing was interrupted`、`Completion check was
-  interrupted` 或 `Stopped during repair`。不加 chip、banner，不出现内部
-  词汇。
+  interrupted`、`Finishing was interrupted` 或 `Stopped during repair`——
+  文案如实描述被中断的是哪一步：repair 已结束就说 check 被中断，proof 已
+  满足就说收尾被中断。不加 chip、banner，不出现内部词汇。
 - 顺手抽薄 TaskRunner：stringly 的 `completion_repair_admission` dict 换成
   类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
   `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
@@ -40,11 +45,13 @@
   open、unit-test gate）和 event matrix 的 `run_operation.state` 行。
   `State.forget_conversation()` 现在会删除该 session 的 operation bucket。
   不加 Manager 类，不做 provider/tool replay，不改任何 prompt。
-- 验证：deterministic crash-position 测试（writer_settled /
-  completion_proof_recorded / repair_running 恢复后给出诚实 progress）、
-  phase round-trip、fail-closed reader、terminal 不可变、ledger/terminal
-  一致性、payload 卫生。不需要 live provider A/B——本版不改任何模型可见
-  内容。
+- 验证：六个 deterministic crash-position 测试（writing / check / finishing /
+  repair 各中断位置恢复后均给出诚实 progress）、phase round-trip、严格
+  fail-closed reader、terminal 不可变、加锁的并发 start/commit、
+  ledger/terminal 一致性、payload 卫生，以及
+  `tests/manual/completion_operation_resume_smoke.py --self-test`——真实
+  kill 进程后由全新 store 读回最后 committed phase。不需要 live provider
+  A/B——本版不改任何模型可见内容。
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 
