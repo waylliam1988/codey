@@ -14,8 +14,8 @@ Trust is a contract, not a score:
                       mean the green may have been earned by weakening
                       verification
 - ``limited``      -- the run cannot claim trusted verification: the checks
-                      did not pass, the monitor failed, or no integrity
-                      observation was supplied at all
+                      did not pass, the monitor failed or was incomplete, or
+                      no integrity observation was supplied at all
 
 The receipt is the durable audit contract, so it carries the refs it is
 derived from (proof ids, the integrity observation ref and affected
@@ -39,7 +39,7 @@ from codey.completion.edit_integrity import (
     EditIntegrityObservation,
 )
 from codey.policies.redaction import looks_prompt_visible_secret
-from codey.utils.refs import clip, identifier, nonnegative_int
+from codey.utils.refs import clip, identifier
 
 
 RECEIPT_SCHEMA_VERSION = 1
@@ -186,7 +186,7 @@ def build_task_receipt(
     """
 
     changes = changes if isinstance(changes, dict) else {}
-    changed_count = nonnegative_int(changes.get("changed_count"))
+    changed_count = _nonnegative_int(changes.get("changed_count"))
     mode = clip(changes.get("mode"), MAX_MODE_CHARS)
     restore_available = mode == "snapshot" and changed_count > 0
 
@@ -205,9 +205,16 @@ def build_task_receipt(
     )[:MAX_PROOF_REFS]
 
     if integrity is not None:
+        status = identifier(integrity.status, 20) or STATUS_UNOBSERVED
+        severity = identifier(integrity.severity, 20) or SEVERITY_NONE
+        if status not in EDIT_INTEGRITY_STATUSES:
+            status = STATUS_MONITOR_ERROR
+            severity = SEVERITY_NONE
+        elif severity not in EDIT_INTEGRITY_SEVERITIES:
+            severity = SEVERITY_NONE
         integrity_section = ReceiptIntegrity(
-            status=identifier(integrity.status, 20) or STATUS_UNOBSERVED,
-            severity=identifier(integrity.severity, 20) or SEVERITY_NONE,
+            status=status,
+            severity=severity,
             reason_codes=tuple(
                 code
                 for code in (
@@ -321,7 +328,7 @@ def _display_text(
     if trust == VERIFICATION_TRUST_NEEDS_REVIEW:
         detail = "Test changes may have weakened verification"
     elif trust == VERIFICATION_TRUST_LIMITED and checks_passed:
-        detail = "Verification monitoring failed"
+        detail = "Verification monitoring incomplete"
     return clip(summary, MAX_SUMMARY_CHARS), clip(detail, MAX_DETAIL_CHARS)
 
 
@@ -345,6 +352,30 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     integrity = payload.get("integrity")
     if not all(isinstance(section, dict) for section in (display, work, verification, integrity)):
         return None
+    if not isinstance(display.get("summary"), str) or not isinstance(display.get("detail"), str):
+        return None
+    if not isinstance(work.get("mode"), str) or not isinstance(work.get("restore_available"), bool):
+        return None
+    if not isinstance(verification.get("trust"), str) or not isinstance(verification.get("checks_passed"), bool):
+        return None
+    for key in ("state", "stance", "source"):
+        if key in verification and not isinstance(verification.get(key), str):
+            return None
+    if not isinstance(integrity.get("status"), str) or not isinstance(integrity.get("severity"), str):
+        return None
+    if not _optional_string_sequence(verification, "proof_refs"):
+        return None
+    if not _optional_string_sequence(integrity, "reason_codes"):
+        return None
+    if not _optional_string_sequence(integrity, "affected_paths"):
+        return None
+    if not _optional_string_sequence(integrity, "refs"):
+        return None
+    if "authorized_test_edit" in integrity and not isinstance(integrity.get("authorized_test_edit"), bool):
+        return None
+    changed_count = _strict_nonnegative_int(work.get("changed_count"))
+    if changed_count is None:
+        return None
     summary = clip(display.get("summary"), MAX_SUMMARY_CHARS)
     trust = identifier(verification.get("trust"), 20)
     status = identifier(integrity.get("status"), 20)
@@ -354,7 +385,6 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     if status not in EDIT_INTEGRITY_STATUSES or severity not in EDIT_INTEGRITY_SEVERITIES:
         return None
     checks_passed = verification.get("checks_passed") is True
-    changed_count = nonnegative_int(work.get("changed_count"))
     # Contract recomputation: trust and user-facing wording must be
     # exactly what the builder would produce from these facts.
     expected_trust = _verification_trust_from_status(
@@ -424,6 +454,31 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
             )[:MAX_INTEGRITY_REFS],
         ),
     )
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    strict = _strict_nonnegative_int(value)
+    if strict is not None:
+        return strict
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _strict_nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _optional_string_sequence(payload: dict[str, object], key: str) -> bool:
+    if key not in payload:
+        return True
+    value = payload.get(key)
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 __all__ = [

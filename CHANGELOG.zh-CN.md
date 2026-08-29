@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased
+## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 
 - 把 0.5.0 的 edit-integrity monitor 接入生产 completion path，收掉 0.4
   stabilization A/B 暴露的缺口：Qwen 和 MiMo 会篡改测试夹具（删除、注释或
@@ -36,7 +36,7 @@
   （`TaskReceipt(display, work, verification, integrity)`）。
   - Trust 是合同不是分数：`trusted`（checks 通过且未观察到高风险 finding）、
     `needs_review`（checks 通过但存在高置信 integrity finding）、`limited`
-    （checks 未通过，或 monitor 失败导致绿色不可背书）。
+    （checks 未通过，或 monitoring 失败 / 未完整观测导致绿色不可背书）。
   - 文案克制：`2 files changed · checks passed`、
     `2 files changed · checks need review`、
     `2 files changed · verification limited`；更长的解释放在
@@ -62,7 +62,7 @@
     返回与落盘完全一致的 receipt。
   - Run Details 的 Verification 行从 receipt contract 读取：
     `needs_review` 显示 `Test changes may have weakened checks`（warning），
-    monitor 失败显示 `Verification limited by monitor error`，其余保持旧文案。
+    monitoring 不完整显示 `Verification monitoring incomplete`，其余保持旧文案。
 - Headless JSONL receipt 与 Web UI 只消费 schema-v1 的 section；共享的
   `receiptSummary()` / `receiptChangedCount()` helper 位于 `render.js`，
   research receipt 改发 `display.summary` 而不是 `text`；ghost work queue
@@ -114,6 +114,14 @@
     builder/reader 共用的 primitive helper 计算，integrity
     status/severity 必须在封闭枚举内——与自身事实不一致的落盘 payload
     直接拒收，不再原样放行。
+- Release-candidate 加固：
+  - schema-v1 receipt reader 现在拒绝非规范 JSON 类型（`true` 伪装成 `1`、
+    numeric bool、非字符串 ref list）；builder 也不再把布尔型
+    `changed_count` 当成 1。
+  - terminal event 只要 run ledger 的 durable projection 已经有 receipt，
+    就会从 ledger 补入或覆盖 receipt，包括 final changes 已落盘后的 late
+    stopped/error 退出。没有最终 `changes_collected` receipt 的 run 继续保留
+    原 mode-specific receipt 或不带 receipt。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

@@ -18,6 +18,8 @@ from unittest import mock
 
 from codey.app import server
 from codey.agents.runner import RunResult
+from codey.completion.edit_integrity import observe_edit_integrity
+from codey.runs.receipt import build_task_receipt
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.app import task_runner as task_runner_module
@@ -394,6 +396,65 @@ class MonitorFailureTests(unittest.TestCase):
             )
             facts = state.project_facts.load(str(project))
             self.assertEqual(facts.successful_changes, ())
+
+
+class TerminalReceiptProjectionTests(unittest.TestCase):
+    def test_terminal_event_adds_durable_receipt_even_when_in_memory_event_lacks_one(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            state = server.State(Path(td) / "state")
+            assert state.run_ledgers is not None
+            writer = state.run_ledgers.open(
+                run_id="run-terminal",
+                session_id="s-integrity",
+                project=str(project),
+                task="Change src/mod.py VALUE from 1 to 2 and verify",
+                provider="deepseek",
+                mode="agent",
+            )
+            observation = observe_edit_integrity(
+                task="Change src/mod.py VALUE from 1 to 2 and verify",
+                changes=_changes("src/mod.py"),
+                diff=_CLEAN_DIFF,
+                files=("src/mod.py",),
+                decision=None,
+                run_id="run-terminal",
+            )
+            receipt = build_task_receipt(
+                {"mode": "git", "changed_count": 1},
+                integrity=observation,
+                checks_passed=True,
+            )
+            writer.append_changes_collected(
+                _changes("src/mod.py"),
+                checks_passed=True,
+                receipt=receipt.to_dict(),
+            )
+            raw_event = {
+                "type": "task_done",
+                "run_id": "run-terminal",
+                "session_id": "s-integrity",
+                "summary": "ERROR: late failure",
+                "stop_reason": "error",
+                "turns": 0,
+                "max_turns": 1,
+                "provider": "deepseek",
+                "mode": "agent",
+            }
+
+            projected = _runner(
+                state,
+                ScriptedWriter(),
+                files=(),
+            )._event_with_projected_receipt(
+                raw_event,
+                session_id="s-integrity",
+                run_id="run-terminal",
+            )
+
+            self.assertEqual(projected["receipt"], receipt.to_dict())
+            self.assertNotIn("receipt", raw_event)
 
 
 if __name__ == "__main__":

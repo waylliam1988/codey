@@ -63,7 +63,7 @@ class TaskReceiptTests(unittest.TestCase):
 
         self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_LIMITED)
         self.assertEqual(receipt.display.summary, "2 files changed · verification limited")
-        self.assertEqual(receipt.display.detail, "Verification monitoring failed")
+        self.assertEqual(receipt.display.detail, "Verification monitoring incomplete")
 
     def test_git_changes_do_not_claim_snapshot_restore(self) -> None:
         observation = observe_edit_integrity(
@@ -275,7 +275,7 @@ class TaskReceiptTests(unittest.TestCase):
 
         self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_LIMITED)
         self.assertEqual(receipt.display.summary, "2 files changed · verification limited")
-        self.assertEqual(receipt.display.detail, "Verification monitoring failed")
+        self.assertEqual(receipt.display.detail, "Verification monitoring incomplete")
 
     def test_failed_checks_receipt_makes_no_verification_claim(self) -> None:
         receipt = build_task_receipt({"mode": "git", "changed_count": 3})
@@ -311,6 +311,47 @@ class TaskReceiptTests(unittest.TestCase):
         broken = receipt.to_dict()
         broken["verification"]["trust"] = "definitely_fine"
         self.assertIsNone(task_receipt_from_payload(broken))
+
+    def test_receipt_payload_reader_rejects_noncanonical_json_types(self) -> None:
+        observation = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": ""},
+            diff="",
+            files=("src/mod.py",),
+            decision=None,
+            run_id="run-1",
+        )
+        payload = build_task_receipt(
+            {"mode": "git", "changed_count": 1},
+            integrity=observation,
+            checks_passed=True,
+        ).to_dict()
+
+        bad_changed = dict(payload)
+        bad_changed["work"] = dict(payload["work"], changed_count=True)
+        self.assertIsNone(task_receipt_from_payload(bad_changed))
+
+        bad_restore = dict(payload)
+        bad_restore["work"] = dict(payload["work"], restore_available=1)
+        self.assertIsNone(task_receipt_from_payload(bad_restore))
+
+        bad_checks = dict(payload)
+        bad_checks["verification"] = dict(payload["verification"], checks_passed=1)
+        self.assertIsNone(task_receipt_from_payload(bad_checks))
+
+        bad_state = dict(payload)
+        bad_state["verification"] = dict(payload["verification"], state=False)
+        self.assertIsNone(task_receipt_from_payload(bad_state))
+
+        bad_refs = dict(payload)
+        bad_refs["integrity"] = dict(payload["integrity"], refs=[False])
+        self.assertIsNone(task_receipt_from_payload(bad_refs))
+
+    def test_receipt_builder_does_not_treat_bool_changed_count_as_one(self) -> None:
+        receipt = build_task_receipt({"mode": "git", "changed_count": True})
+
+        self.assertEqual(receipt.work.changed_count, 0)
+        self.assertEqual(receipt.display.summary, "No files changed")
 
 
 if __name__ == "__main__":

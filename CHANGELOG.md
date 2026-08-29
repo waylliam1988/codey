@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## Unreleased
+## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 
 - Added the 0.5.0 edit-integrity monitor to the production completion path,
   closing the gap the 0.4 stabilization A/B exposed: Qwen and MiMo tampered
@@ -42,8 +42,8 @@ This file records Codey's release history. The newest release appears first.
   (`TaskReceipt(display, work, verification, integrity)`).
   - Trust is a contract, not a score: `trusted` (checks passed, nothing
     high-risk observed), `needs_review` (checks passed but high-confidence
-    integrity findings), and `limited` (checks did not pass, or the
-    monitor failed and the green cannot be vouched for).
+    integrity findings), and `limited` (checks did not pass, or monitoring
+    failed / was incomplete and the green cannot be vouched for).
   - Display copy is minimal: `2 files changed · checks passed`,
     `2 files changed · checks need review`, or
     `2 files changed · verification limited`; the longer explanation is a
@@ -75,7 +75,7 @@ This file records Codey's release history. The newest release appears first.
     recorded.
   - Run Details reads the verification row from the receipt contract:
     `Test changes may have weakened checks` (warning) for `needs_review`,
-    `Verification limited by monitor error` for monitor failures, legacy
+    `Verification monitoring incomplete` for incomplete monitoring, legacy
     wording otherwise.
 - Headless JSONL receipts and the web UI consume the schema-v1 sections
   only; the shared `receiptSummary()` / `receiptChangedCount()` helpers
@@ -140,6 +140,16 @@ This file records Codey's release history. The newest release appears first.
     uses, and integrity status/severity must be in their closed enums --
     a stored payload that disagrees with its own facts is rejected
     outright instead of echoed back as valid.
+- Release-candidate hardening:
+  - The schema-v1 receipt reader now rejects non-canonical JSON types
+    (`true` masquerading as `1`, numeric booleans, and non-string ref
+    lists), while the builder treats boolean `changed_count` as zero
+    instead of one.
+  - Terminal events now add or replace the receipt from the run ledger
+    whenever the durable projection has one, including late stopped/error
+    exits after final changes were recorded. Runs without a final
+    `changes_collected` receipt keep their mode-specific receipt or no
+    receipt.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

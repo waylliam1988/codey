@@ -24,15 +24,15 @@ mode:       deterministic gate + full local pytest; no production-quality A/B fo
 Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
 
 ```text
-python -m pytest tests -q --ignore=tests/manual
-3177 passed, 3 skipped, 995 subtests passed in ~5m
+python -B -m pytest tests -q --ignore=tests/manual
+3168 passed, 15 skipped, 995 subtests passed in 291.29s
 ```
 
-Post-review focused rerun (same commit, 2026-08-29):
+Post-review focused rerun (same release candidate, 2026-08-29):
 
 ```text
-pytest tests/test_completion_edit_integrity.py tests/test_completion_edit_scope.py tests/test_receipt.py tests/test_run_details.py tests/test_run_ledger_projection.py tests/test_task_runner_edit_integrity.py tests/test_completion_enforcement_ab.py
-76 passed in 6.84s
+python -B -m pytest tests\test_completion_edit_integrity.py tests\test_completion_edit_scope.py tests\test_receipt.py tests\test_run_details.py tests\test_run_ledger_projection.py tests\test_task_runner_edit_integrity.py tests\test_completion_enforcement_ab.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+88 passed in 6.62s
 ```
 
 Manual harness gates:
@@ -84,6 +84,23 @@ Third review round (2026-08-29):
 | The persisted-receipt reader accepted payloads whose trust contradicted their own facts (e.g. changed=2 + green + unobserved + trusted). | Trust computation moved into `_verification_trust_from_status()` over primitives, shared by builder and reader; the reader also recomputes the canonical display wording and validates the integrity status/severity enums, rejecting any disagreement. | `test_receipt_payload_rejects_inconsistent_trust_and_display`, `test_malformed_schema_v1_receipt_never_shows_checks_passed` |
 | Focused-rerun and gate-case counts in docs had drifted (76 vs current batch, 13 vs 14 gate cases). | Focused reruns now labeled per review round with fresh numbers; deterministic-gate count updated to 14 everywhere. | n/a (docs) |
 | Live smoke evidence was recorded at the round-1 commit. | Report marks the live evidence as inherited (round-2/3 changes touch only deterministic layers); no re-run required. | n/a (docs) |
+
+Release-candidate review (2026-08-29):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| Schema-v1 receipt reader still inherited Python's loose bool/int behavior through bounded helper conversion. | Persisted receipts now require canonical JSON field types: integer `changed_count` that is not bool, boolean flags that are actually bool, and optional ref/code fields that are string lists. Builder-side bool `changed_count` is normalized to zero, not one. | `test_receipt_payload_reader_rejects_noncanonical_json_types`, `test_receipt_builder_does_not_treat_bool_changed_count_as_one` |
+| `_event_with_projected_receipt()` existed, but only events that already carried an in-memory receipt could be replaced from the ledger. | The helper now adds or replaces the terminal receipt whenever the run ledger projection has a durable schema-v1 receipt; stopped/error terminal exits after `changes_collected` also pass through it. | `test_terminal_event_adds_durable_receipt_even_when_in_memory_event_lacks_one` |
+
+Final release-candidate focused rerun (Windows, Python 3.12, 2026-08-29):
+
+```text
+python -B -m pytest tests\test_completion_edit_integrity.py tests\test_completion_edit_scope.py tests\test_receipt.py tests\test_run_details.py tests\test_run_ledger_projection.py tests\test_task_runner_edit_integrity.py tests\test_completion_enforcement_ab.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs
+88 passed in 6.62s
+
+python -m ruff check .
+All checks passed.
+```
 
 Second review round (2026-08-29):
 

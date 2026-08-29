@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.21-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.21`
+版本：`0.5.0`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -790,7 +790,7 @@ codey/
   agents/                   与 provider 无关的 agent 循环、consensus、handoff、工具和 Writer failover
   app/                      本地 HTTP/SSE server、TaskRunner 编排、CLI 和 headless runner
   automation/               browser/CDP helper、Playwright worker 和有边界的网页剪贴板事务
-  completion/               CompletionProof、verification map/policy 和有边界的 repair context 投影
+  completion/               CompletionProof、verification policy、edit scope/integrity、receipt decision 和有边界的 repair context 投影
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、graph/FTS 索引、restore、concept 和 Research Brief
   policies/                 action/capability/permission/prompt/network safety、命令分词、run-command 语义和 shell 风险

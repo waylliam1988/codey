@@ -302,7 +302,7 @@ def _verification_summary(
             receipt.verification.trust == VERIFICATION_TRUST_LIMITED
             and receipt.verification.checks_passed
         ):
-            return "Verification limited by monitor error", "warning"
+            return "Verification monitoring incomplete", "warning"
         if receipt.verification.trust == VERIFICATION_TRUST_TRUSTED:
             return "Checks passed", "neutral"
     if projection is not None and projection.final_changes is not None:

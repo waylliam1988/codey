@@ -1269,10 +1269,10 @@ class TaskRunner:
         run_id: str,
     ) -> dict:
         # The terminal event's receipt must be the receipt the ledger
-        # durably recorded, not a parallel in-memory copy. Runs without a
-        # recorded change collection (research, review, chat) keep the
-        # receipt they carry.
-        if not isinstance(event.get("receipt"), dict) or self.run_ledgers is None:
+        # durably recorded, not a parallel in-memory copy. If a run never
+        # recorded final changes (research, review, chat, early errors),
+        # keep whatever the mode already carried.
+        if self.run_ledgers is None:
             return event
         projection = load_run_projection(self.run_ledgers, session_id, run_id)
         receipt = build_task_receipt_from_projection(projection)
@@ -2002,6 +2002,11 @@ class TaskRunner:
                 "provider_failure": None,
             }
             append_ledger(lambda ledger: ledger.finish(**stopped_event))
+            stopped_event = self._event_with_projected_receipt(
+                stopped_event,
+                session_id=session_id,
+                run_id=run_id,
+            )
             finish_trace(stopped_event)
             state.finish_run(run_id, stopped_event)
             self._maybe_release_ghost_work_item(
@@ -2052,6 +2057,11 @@ class TaskRunner:
                 "provider_failure": failure.to_dict() if failure else None,
             }
             append_ledger(lambda ledger: ledger.finish(**error_event))
+            error_event = self._event_with_projected_receipt(
+                error_event,
+                session_id=session_id,
+                run_id=run_id,
+            )
             finish_trace(error_event)
             state.finish_run(run_id, error_event)
             self._maybe_complete_ghost_work_item(

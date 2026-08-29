@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.21-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.21`
+Version: `0.5.0`
 
 [Version history](CHANGELOG.md)
 
@@ -938,7 +938,7 @@ codey/
   agents/                   provider-independent agent loop, consensus, handoff, tools, and writer failover
   app/                      local HTTP/SSE server, TaskRunner orchestration, CLI, and headless runner
   automation/               browser/CDP helpers, Playwright worker, and bounded web-clipboard transactions
-  completion/               CompletionProof, verification maps/policy, and bounded repair-context projection
+  completion/               CompletionProof, verification policy, edit scope/integrity, receipt decisions, and bounded repair-context projection
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, graph/FTS index, restore, concepts, and Research Briefs
   policies/                 action/capability/permission/prompt/network safety, command tokenizer, run-command semantics, and shell risk
