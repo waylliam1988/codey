@@ -125,7 +125,51 @@ def build_completion_decision(
     )
 
 
+BLOCKED_UNOBSERVED = "unobserved"
+BLOCKED_ENVIRONMENT_FAILURE = "environment_failure"
+BLOCKED_TURN_BUDGET_EXHAUSTED = "turn_budget_exhausted"
+BLOCKED_MAX_REPAIR_ROUNDS = "max_repair_rounds"
+BLOCKED_REPAIR_NOT_ADMITTED = "repair_not_admitted"
+
+_ENVIRONMENT_FAILURE_CLASSES = frozenset((
+    "environment_failure",
+    "verification_unavailable",
+))
+
+
+def completion_blocked_reason(
+    *,
+    proof_status: str,
+    failure_class: str,
+    remaining_turns: int,
+    repair_rounds: int,
+) -> str:
+    """Name honestly why a done claim backed by a failed/blocked proof blocks.
+
+    Pure vocabulary projection of the 0.4.13 decision; the TaskRunner calls
+    this instead of inlining the chain. ``repair_rounds`` counts rounds that
+    actually ran, so ``max_repair_rounds`` is never claimed when no round was
+    admitted.
+    """
+
+    if str(proof_status or "") == "blocked":
+        return BLOCKED_UNOBSERVED
+    if str(failure_class or "") in _ENVIRONMENT_FAILURE_CLASSES:
+        return BLOCKED_ENVIRONMENT_FAILURE
+    if int(remaining_turns) <= 0:
+        return BLOCKED_TURN_BUDGET_EXHAUSTED
+    if int(repair_rounds) > 0:
+        return BLOCKED_MAX_REPAIR_ROUNDS
+    return BLOCKED_REPAIR_NOT_ADMITTED
+
+
 __all__ = [
+    "BLOCKED_ENVIRONMENT_FAILURE",
+    "BLOCKED_MAX_REPAIR_ROUNDS",
+    "BLOCKED_REPAIR_NOT_ADMITTED",
+    "BLOCKED_TURN_BUDGET_EXHAUSTED",
+    "BLOCKED_UNOBSERVED",
     "CompletionDecision",
     "build_completion_decision",
+    "completion_blocked_reason",
 ]

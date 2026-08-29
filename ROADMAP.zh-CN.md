@@ -3250,7 +3250,8 @@ delete/degrade:
 
 ## 0.5.1 - Run Operation State + Completion Repair Durability v1
 
-状态：计划。目标是把 0.4.13 的 verified completion / bounded repair 从
+状态：已落地（2026-08-29，deterministic gate + 全量 pytest 完成，无需 live
+A/B）。目标是把 0.4.13 的 verified completion / bounded repair 从
 `_run_project_mode` 的函数栈状态，收成一个最小 durable program counter。第一版只覆盖
 coding writer 收尾、CompletionProof、repair admission 和 terminal outcome，不碰
 Research lanes、hooks 或多并发。

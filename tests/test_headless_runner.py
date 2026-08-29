@@ -88,6 +88,41 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(rows[-1]["mode"], "agent")
         self.assertEqual(rows[-1]["ledger_path"], result.ledger_path)
 
+    def test_project_task_commits_run_operation_terminal(self) -> None:
+        rows: list[dict[str, object]] = []
+
+        def fake_agent(*_args, **kwargs):
+            del kwargs
+            return RunResult("finished", "done", 1, checks_passed=True, checks_ran=True)
+
+        with tempfile.TemporaryDirectory() as td:
+            state_home = Path(td, "state")
+            result = run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="check tests",
+                    provider_id="qwen",
+                    max_turns=3,
+                    session_id="session-op",
+                    state_home=state_home,
+                ),
+                emit_jsonl=rows.append,
+                agent_run=fake_agent,
+                collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+            from codey.run_operation import RunOperationStore
+
+            operation = RunOperationStore(state_home).load("session-op", result.run_id)
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIsNotNone(operation)
+        assert operation is not None
+        self.assertEqual(operation.phase, "terminal")
+        assert operation.terminal is not None
+        self.assertEqual(operation.terminal.stop_reason, "done")
+        self.assertEqual(operation.terminal.provider, "qwen")
+
     def test_custom_run_id_is_pre_reserved_instead_of_noop(self) -> None:
         rows: list[dict[str, object]] = []
         calls = 0

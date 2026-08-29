@@ -101,6 +101,7 @@ from codey.workspace.task_context import safe_verification_candidates
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
+from codey.run_operation import RunOperationStore
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.workspace.setup_context import safe_setup_context
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -692,6 +693,7 @@ class State:
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
+        self.run_operations = RunOperationStore(state_home) if state_home else None
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.capabilities = builtin_capability_registry()
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
@@ -1322,6 +1324,12 @@ class State:
                 traces.delete_session(session_id)
             except Exception:
                 pass
+        operations = getattr(self, "run_operations", None)
+        if operations is not None:
+            try:
+                operations.delete_session(session_id)
+            except Exception:
+                pass
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
@@ -1565,6 +1573,7 @@ def _run_task(
         work_checkpoints=STATE.work_checkpoints,
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
+        run_operations=STATE.run_operations,
         evidence_ledgers=STATE.evidence_ledgers,
         capabilities=STATE.capabilities,
         managed_outputs=STATE.managed_outputs,
@@ -1776,6 +1785,7 @@ def _run_details_response(query: dict[str, list[str]]) -> tuple[int, dict]:
     summary = load_run_details(
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
+        run_operations=STATE.run_operations,
         session_id=session_id,
         run_id=run_id,
     )

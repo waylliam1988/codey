@@ -305,6 +305,79 @@ class RunDetailsTests(unittest.TestCase):
         self.assertEqual(rows["Safety"]["value"], "asked for approval 1 time")
         self.assertNotIn("provider", json.dumps(payload))
 
+    def test_operation_state_adds_one_quiet_progress_row_when_interrupted(self) -> None:
+        from codey.run_operation import (
+            RunOperationStore,
+            mark_terminal,
+            mark_writer_running,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            ledger_store = RunLedgerStore(state)
+            trace_store = RunTraceStore(state)
+            store = RunOperationStore(state)
+            started = store.start(
+                session_id="session-progress",
+                run_id="run-progress",
+                project_ref="",
+                provider_id="deepseek",
+                turn_budget=6,
+                max_repair_rounds=1,
+            )
+            self.assertIsNotNone(started)
+            store.commit(
+                "session-progress",
+                "run-progress",
+                lambda s: mark_writer_running(s, provider_id="deepseek"),
+            )
+            ledger_store.open(
+                run_id="run-progress",
+                session_id="session-progress",
+                project="",
+                task="",
+                provider="deepseek",
+                mode="project",
+            )
+
+            rows = {
+                row["label"]: row
+                for row in load_run_details(
+                    run_ledgers=ledger_store,
+                    run_traces=trace_store,
+                    run_operations=store,
+                    session_id="session-progress",
+                    run_id="run-progress",
+                ).to_jsonable()["rows"]
+            }
+            self.assertEqual(rows["Progress"]["value"], "Writing was interrupted")
+            self.assertEqual(rows["Progress"]["tone"], "warning")
+
+            # Terminal: the run finished normally, so no Progress row.
+            store.commit(
+                "session-progress",
+                "run-progress",
+                lambda s: mark_terminal(
+                    s,
+                    stop_reason="done",
+                    summary_chars=3,
+                    turns=2,
+                    max_turns=6,
+                    provider="deepseek",
+                ),
+            )
+            rows = {
+                row["label"]: row
+                for row in load_run_details(
+                    run_ledgers=ledger_store,
+                    run_traces=trace_store,
+                    run_operations=store,
+                    session_id="session-progress",
+                    run_id="run-progress",
+                ).to_jsonable()["rows"]
+            }
+            self.assertNotIn("Progress", rows)
+
     def test_trace_read_is_bounded_and_schema_checked(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)

@@ -4,6 +4,48 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.5.1 - Run Operation State + Completion Repair Durability v1
+
+- 新增 `codey/run_operation.py`：一次 coding run 的 completion/repair 生命
+  周期最小 durable program counter，借鉴 pi 的核心原则——operation state 是
+  每次转移都整体覆写的"当前总状态"，不是事件历史，更不能从事件缺失反推。
+  - 每个 run 一个寄存器：
+    `state/run_operations/<session_key>/<run_id>.json`，用
+    `with_file_lock()` + `write_json_atomic()` 写入，64 KB 上限。phase 链：
+    `accepted -> writer_running -> writer_settled -> completion_proof_recorded
+    -> (repair_context_admitted -> repair_running -> repair_settled)* ->
+    terminal`；任何非 terminal phase 都可以直接进 terminal；
+    `repair_running` 必须先有已提交的 admission。terminal 保留一份与
+    `RunLedger.finish()` 字段对齐的有界快照（summary 只存字符数，不存文本）。
+  - 只存 refs/status/counts/reasons：proof id/status/satisfied、
+    repair-context digest、turn 计数、provider id 和有界的 blocked reason。
+    payload 里不存在 raw prompt、reply、stdout/stderr、diff、source body 或
+    repair prompt 文本。
+  - reader fail closed：坏 schema、错 session/run id、非法 phase、超长文件
+    一律 load 为 `None`。只认 schema v1——不做迁移，不猜旧格式。
+- TaskRunner 在真实生命周期边界提交 phase，completion/repair 状态不再只活在
+  `_run_project_mode()` 的函数栈里。崩溃、用户停止或 provider 故障后，最后
+  一个 committed phase 能说明 run 实际停在哪里。运行时接线 fail open：一次
+  提交失败只禁用该 run 的跟踪，绝不改变 coding run 本身的行为。
+- Run Details 增加一行安静的 `Progress`，只在用户点开 Details、operation
+  state 未到 terminal 且 ledger 没有 `run_finished`（旧快照不污染已完成
+  run）时出现：`Writing was interrupted`、`Completion check was
+  interrupted` 或 `Stopped during repair`。不加 chip、banner，不出现内部
+  词汇。
+- 顺手抽薄 TaskRunner：stringly 的 `completion_repair_admission` dict 换成
+  类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
+  `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
+  封闭词表由测试锁住。
+- 注册 `run_operation` capability（durable state `run_operations`、fail
+  open、unit-test gate）和 event matrix 的 `run_operation.state` 行。
+  `State.forget_conversation()` 现在会删除该 session 的 operation bucket。
+  不加 Manager 类，不做 provider/tool replay，不改任何 prompt。
+- 验证：deterministic crash-position 测试（writer_settled /
+  completion_proof_recorded / repair_running 恢复后给出诚实 progress）、
+  phase round-trip、fail-closed reader、terminal 不可变、ledger/terminal
+  一致性、payload 卫生。不需要 live provider A/B——本版不改任何模型可见
+  内容。
+
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 
 - 把 0.5.0 的 edit-integrity monitor 接入生产 completion path，收掉 0.4

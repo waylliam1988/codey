@@ -46,11 +46,12 @@ EXPECTED_BUILTIN_IDS = (
     "review_runner",
     "run_details",
     "run_ledger",
+    "run_operation",
     "run_trace",
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "dc25b25e2afafe21525e97e23c9f77303813a1c7bddf1f7c7ed0e3fd773705c9"
+    "1e35a1f14047dc0625e7e3bd6e7a6cc9c3fc19566cd8b22e4e70cbd600b4e5dc"
 )
 
 
@@ -101,12 +102,25 @@ class CapabilityRegistryTests(unittest.TestCase):
         spec = registry.get("run_details")
 
         self.assertEqual(spec.provides, ("run_details_projection",))
-        self.assertEqual(spec.consumes, ("run_ledger", "run_trace"))
+        self.assertEqual(spec.consumes, ("run_ledger", "run_operation", "run_trace"))
         self.assertEqual(spec.ui_surface, ("chat_stream",))
         self.assertEqual(spec.owner_module, "codey.runs.details")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.durable_state, ())
+
+    def test_run_operation_is_refs_only_durable_counter(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("run_operation")
+
+        self.assertEqual(spec.provides, ("run_operation_state",))
+        self.assertEqual(spec.durable_state, ("run_operations",))
+        self.assertEqual(spec.owner_module, "codey.run_operation")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.fail_mode, "fail_open")
+        self.assertEqual(spec.release_gate, "unit_tests")
 
     def test_research_object_model_is_trace_only_projection(self) -> None:
         registry = builtin_capability_registry()

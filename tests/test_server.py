@@ -2434,6 +2434,30 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
             self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
+    def test_state_owns_run_operation_store_and_forget_deletes_it(self) -> None:
+        from codey.run_operation import RunOperationStore
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            self.assertIsInstance(state.run_operations, RunOperationStore)
+            assert state.run_operations is not None
+            started = state.run_operations.start(
+                session_id="session-forget",
+                run_id="run-forget",
+                project_ref="",
+                provider_id="deepseek",
+                turn_budget=6,
+                max_repair_rounds=1,
+            )
+            self.assertIsNotNone(started)
+
+            state.forget_conversation("session-forget")
+
+            self.assertIsNone(state.run_operations.load("session-forget", "run-forget"))
+
+    def test_state_without_state_home_has_no_run_operation_store(self) -> None:
+        self.assertIsNone(server.State().run_operations)
+
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()
         first = {

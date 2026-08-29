@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.storage.local_store import read_json
+from codey.run_operation import (
+    PHASE_TERMINAL,
+    RunOperationState,
+    operation_progress_text,
+)
 from codey.runs.ledger_projection import RunLedgerProjection, load_run_projection
 from codey.runs.receipt import (
     VERIFICATION_TRUST_LIMITED,
@@ -80,6 +85,7 @@ def load_run_details(
     run_traces: Any,
     session_id: str,
     run_id: str,
+    run_operations: Any = None,
 ) -> RunDetailsSummary:
     """Build a short UI-ready explanation for one run."""
 
@@ -93,7 +99,8 @@ def load_run_details(
     if projection is None and trace is None:
         return unavailable_summary()
 
-    rows = _summary_rows(projection, trace or {})
+    operation = _load_operation_state(run_operations, session_id, run_id)
+    rows = _summary_rows(projection, trace or {}, operation)
     warnings = _summary_warnings(projection, trace or {})
     return RunDetailsSummary(
         available=bool(rows),
@@ -112,6 +119,7 @@ def unavailable_summary() -> RunDetailsSummary:
 def _summary_rows(
     projection: RunLedgerProjection | None,
     trace: Mapping[str, object],
+    operation: RunOperationState | None = None,
 ) -> list[RunDetailsRow]:
     rows: list[RunDetailsRow] = []
     work = _work_label(_projection_mode(projection) or _str(trace.get("mode_final")))
@@ -125,6 +133,10 @@ def _summary_rows(
     )
     if model:
         rows.append(RunDetailsRow("Model", model))
+
+    progress = _operation_progress_row(projection, operation)
+    if progress:
+        rows.append(RunDetailsRow("Progress", progress, "warning"))
 
     context = _context_summary(projection, trace)
     if context:
@@ -148,6 +160,35 @@ def _summary_rows(
         rows.append(RunDetailsRow("Verification", verification, verification_tone))
 
     return rows
+
+
+def _load_operation_state(
+    run_operations: Any,
+    session_id: str,
+    run_id: str,
+) -> RunOperationState | None:
+    """Read one run's operation state; anything unreadable stays silent."""
+
+    if run_operations is None:
+        return None
+    try:
+        operation = run_operations.load(session_id, run_id)
+    except Exception:
+        return None
+    if operation is None or operation.phase == PHASE_TERMINAL:
+        return None
+    return operation
+
+
+def _operation_progress_row(
+    projection: RunLedgerProjection | None,
+    operation: RunOperationState | None,
+) -> str:
+    # A non-terminal snapshot next to a finished ledger is stale: the run
+    # completed, so the interrupted-position line would be a lie.
+    if operation is None or (projection is not None and projection.has_run_finished):
+        return ""
+    return operation_progress_text(operation)
 
 
 def _summary_warnings(

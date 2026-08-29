@@ -9,6 +9,58 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Run Operation State + Completion Repair Durability v1 (2026-08-29)
+
+Scope:
+
+```text
+production: codey/run_operation.py (new);
+            completion/decision.py (completion_blocked_reason);
+            TaskRunner lifecycle commits + typed repair projection;
+            server / headless wiring; runs/details Progress row;
+            capability_registry + event matrix
+harness:    tests/test_run_operation.py (new),
+            tests/test_task_runner_operation_state.py (new),
+            test_run_details / test_server / test_headless_runner /
+            test_architecture / test_capabilities additions
+mode:       deterministic gate + full local pytest; no live A/B (nothing model-visible changed)
+```
+
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
+
+```text
+python -B -m pytest
+3239 passed, 3 skipped in 302.74s (0:05:02)
+```
+
+Focused gates before the full run (same candidate, 2026-08-29):
+
+```text
+ruff check .                                                        -> All checks passed
+tests/test_run_operation.py                                         -> 26 passed (round-trips, fail-closed reader,
+                                                                       terminal immutability, locked atomic writes,
+                                                                       payload hygiene, import boundary)
+tests/test_task_runner_operation_state.py                           -> 11 passed (terminal/ledger/event consistency,
+                                                                       repair phase sequence observed mid-run,
+                                                                       provider-failure + stop honesty,
+                                                                       crash-position recovery rows)
+test_run_details / test_server / test_headless_runner /
+test_architecture / test_capabilities / test_event_matrix /
+test_task_runner_completion_enforcement / test_task_runner_edit_integrity
+                                                                    -> 358 passed, 486 subtests passed
+adjacent groups (task_runner_*, run_ledger*, work_checkpoint*,
+completion_*, ghost continuity ab, ui_architecture)                 -> 256 passed, 66 subtests passed
+```
+
+A/B judgment:
+
+```text
+no live provider A/B: prompt, tool schema, provider routing, repair admission
+conditions and model-visible content are unchanged. Deterministic crash-position
+tests replace the quality gate this version; a manual stop/resume smoke on a real
+coding run is recommended before release review but is not a quality A/B.
+```
+
 ## 0.5.0 Edit Integrity Monitor + Receipt Warning (2026-08-29)
 
 Scope:

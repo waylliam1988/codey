@@ -25,13 +25,18 @@ from codey.agents.consensus import (
 from codey.completion.contract import (
     completion_proof_trace_payload,
 )
-from codey.completion.decision import CompletionDecision, build_completion_decision
+from codey.completion.decision import (
+    CompletionDecision,
+    build_completion_decision,
+    completion_blocked_reason,
+)
 from codey.completion.edit_integrity import (
     EditIntegrityObservation,
     observe_edit_integrity,
 )
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.completion.repair_context import (
+    RepairContextProjection,
     project_repair_context,
     repair_candidate,
 )
@@ -146,6 +151,19 @@ from codey.runs.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
 )
+from codey.run_operation import (
+    PHASE_COMPLETION_PROOF_RECORDED,
+    RunOperationState,
+    RunOperationStore,
+    mark_completion_blocked,
+    mark_completion_proof_recorded,
+    mark_repair_context_admitted,
+    mark_repair_running,
+    mark_repair_settled,
+    mark_terminal,
+    mark_writer_running,
+    mark_writer_settled,
+)
 from codey.agents.writer_failover import (
     CheckpointView,
     WriterAttempt,
@@ -201,6 +219,7 @@ class _RunWork:
     claimed_work_item: GhostWorkItem | None = None
     analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
     artifact_payloads: list[dict[str, object]] = field(default_factory=list)
+    operation: RunOperationState | None = None
 
 
 @dataclass(frozen=True)
@@ -698,6 +717,7 @@ class TaskRunner:
         work_checkpoints: WorkCheckpointStore | None = None,
         run_ledgers: RunLedgerStore | None = None,
         run_traces: RunTraceStore | None = None,
+        run_operations: RunOperationStore | None = None,
         evidence_ledgers: EvidenceLedgerStore | None = None,
         capabilities: CapabilityRegistry | None = None,
         managed_outputs: ManagedOutputStore | None = None,
@@ -722,6 +742,7 @@ class TaskRunner:
         self.work_checkpoints = work_checkpoints
         self.run_ledgers = run_ledgers
         self.run_traces = run_traces
+        self.run_operations = run_operations
         self.evidence_ledgers = evidence_ledgers
         self.capabilities = capabilities
         self.managed_outputs = managed_outputs
@@ -733,6 +754,59 @@ class TaskRunner:
         self.ghost_learning_provider_factory = ghost_learning_provider_factory
         self.ghost_learning_modes = tuple(str(item or "").strip() for item in ghost_learning_modes)
         self.ghost_router_provider_factory = ghost_router_provider_factory
+
+    def _start_run_operation(
+        self,
+        work: _RunWork,
+        *,
+        session_id: str,
+        run_id: str,
+        project_ref: str,
+        provider_id: str,
+        turn_budget: int,
+        max_repair_rounds: int,
+    ) -> None:
+        if self.run_operations is None:
+            return
+        try:
+            work.operation = self.run_operations.start(
+                session_id=session_id,
+                run_id=run_id,
+                project_ref=project_ref,
+                provider_id=provider_id,
+                turn_budget=turn_budget,
+                max_repair_rounds=max_repair_rounds,
+            )
+        except Exception:
+            work.operation = None
+
+    def _commit_run_operation(self, work: _RunWork, transition: Callable) -> None:
+        # Explanatory persistence is fail-open: one failed commit disables
+        # this run's tracking instead of perturbing the coding run.
+        if work.operation is None or self.run_operations is None:
+            return
+        try:
+            work.operation = self.run_operations.commit(
+                work.operation.session_id,
+                work.operation.run_id,
+                transition,
+            )
+        except Exception:
+            work.operation = None
+
+    def _finish_run_operation(self, work: _RunWork, event: dict) -> None:
+        # Same bounded fields RunLedger.finish persists; the terminal
+        # snapshot and the ledger's run_finished row must agree.
+        if work.operation is None:
+            return
+        self._commit_run_operation(work, lambda state: mark_terminal(
+            state,
+            stop_reason=str(event.get("stop_reason") or ""),
+            summary_chars=len(str(event.get("summary") or "")),
+            turns=event.get("turns") or 0,
+            max_turns=event.get("max_turns") or 0,
+            provider=str(event.get("provider") or ""),
+        ))
 
     def _managed_tool_fns(
         self,
@@ -1653,6 +1727,7 @@ class TaskRunner:
                     session_id=session_id,
                     run_id=run_id,
                 )
+                self._finish_run_operation(work, event)
                 finish_trace(event)
                 state.finish_run(run_id, event)
                 self._maybe_complete_ghost_work_item(
@@ -1960,6 +2035,7 @@ class TaskRunner:
                 session_id=session_id,
                 run_id=run_id,
             )
+            self._finish_run_operation(work, event)
             finish_trace(event)
             state.finish_run(run_id, event)
             self._maybe_complete_ghost_work_item(
@@ -2007,6 +2083,7 @@ class TaskRunner:
                 session_id=session_id,
                 run_id=run_id,
             )
+            self._finish_run_operation(work, stopped_event)
             finish_trace(stopped_event)
             state.finish_run(run_id, stopped_event)
             self._maybe_release_ghost_work_item(
@@ -2062,6 +2139,7 @@ class TaskRunner:
                 session_id=session_id,
                 run_id=run_id,
             )
+            self._finish_run_operation(work, error_event)
             finish_trace(error_event)
             state.finish_run(run_id, error_event)
             self._maybe_complete_ghost_work_item(
@@ -2714,10 +2792,19 @@ class TaskRunner:
         )
         tried_writers = set(frame.preflight_tried)
         # One-shot holder for the repair phase: run_one_writer_attempt passes
-        # it into agent.run(), whose ContextSource machinery renders it and
-        # binds the admission row to the outbound send epoch. It is empty
-        # for every normal writer attempt.
-        completion_repair_admission: dict[str, object] = {}
+        # the admitted projection into agent.run(), whose ContextSource
+        # machinery renders it and binds the admission row to the outbound
+        # send epoch. It is empty for every normal writer attempt.
+        repair_projection: RepairContextProjection | None = None
+        self._start_run_operation(
+            work,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            project_ref=project,
+            provider_id=frame.provider_id,
+            turn_budget=request.max_turns,
+            max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
+        )
 
         def refresh_checkpoint_view() -> CheckpointView:
             nonlocal checkpoint_prompt
@@ -2784,12 +2871,14 @@ class TaskRunner:
                 ),
                 ghost_directive="",
                 ghost_continuity="",
-                completion_repair_context=str(
-                    completion_repair_admission.get("text", "")
+                completion_repair_context=(
+                    repair_projection.prompt_text
+                    if repair_projection is not None
+                    else ""
                 ),
                 completion_repair_context_payload=(
-                    completion_repair_admission.get("payload")
-                    if isinstance(completion_repair_admission.get("payload"), dict)
+                    repair_projection.to_payload()
+                    if repair_projection is not None
                     else None
                 ),
                 permission_profile="coding_writer",
@@ -2902,6 +2991,11 @@ class TaskRunner:
             stopped=state.stop_flag.is_set,
         )
 
+        self._commit_run_operation(
+            work,
+            lambda state: mark_writer_running(state, provider_id=frame.provider_id),
+        )
+
         try:
             result = failover.run(
                 task=agent_task,
@@ -2918,6 +3012,15 @@ class TaskRunner:
             frame.provider = failover.provider
             frame.provider_id = failover.provider_id
             frame.preflight_switches = failover.switches
+        self._commit_run_operation(
+            work,
+            lambda state: mark_writer_settled(
+                state,
+                provider_id=frame.provider_id,
+                turns_used=result.turns,
+                stop_reason=result.stop_reason,
+            ),
+        )
         # Narrow checkpoint-resume green inheritance: the workspace did not
         # change and nothing new ran, so prior green checks still cover it.
         # The receipt stays green, but the completion proof now records this
@@ -3255,6 +3358,20 @@ class TaskRunner:
                 )
             return decided, integrity
 
+        def commit_operation_proof(proof: object) -> None:
+            # Refs/status only; the proof body stays in the run trace.
+            if proof is None:
+                return
+            self._commit_run_operation(
+                work,
+                lambda state: mark_completion_proof_recorded(
+                    state,
+                    proof_ref=str(getattr(proof, "proof_id", "") or ""),
+                    proof_status=str(getattr(proof, "status", "") or ""),
+                    proof_satisfied=bool(getattr(proof, "satisfied", False)),
+                ),
+            )
+
         decision, integrity = completion_evidence(
             changes=task_changes,
             changed=task_changed,
@@ -3265,6 +3382,7 @@ class TaskRunner:
         proof = decision.proof
         _record_completion_proof_trace(frame.trace, proof)
         _record_edit_integrity_trace(frame.trace, integrity)
+        commit_operation_proof(proof)
 
         blocked_reason = ""
         repaired_once = False
@@ -3304,11 +3422,24 @@ class TaskRunner:
                 if not projection.admitted:
                     blocked_reason = "repair_context_unavailable"
                 else:
-                    completion_repair_admission["text"] = projection.prompt_text
-                    completion_repair_admission["payload"] = projection.to_payload()
+                    repair_projection = projection
+                    self._commit_run_operation(
+                        work,
+                        lambda state: mark_repair_context_admitted(
+                            state,
+                            context_ref=str(projection.to_payload().get("digest") or ""),
+                        ),
+                    )
                     hooks.on_event(RunEvent.status(
                         "[runner] completion proof did not pass; running one bounded repair round."
                     ))
+                    self._commit_run_operation(
+                        work,
+                        lambda state: mark_repair_running(
+                            state,
+                            provider_id=frame.provider_id,
+                        ),
+                    )
                     try:
                         repair_result = failover.run(
                             task=COMPLETION_REPAIR_FOLLOWUP,
@@ -3321,8 +3452,27 @@ class TaskRunner:
                         raise
                     except ProviderActionError:
                         blocked_reason = "provider_failure"
+                        self._commit_run_operation(
+                            work,
+                            lambda state: mark_repair_settled(
+                                state,
+                                provider_id=frame.provider_id,
+                                stop_reason="",
+                                blocked_reason="provider_failure",
+                            ),
+                        )
+                    else:
+                        self._commit_run_operation(
+                            work,
+                            lambda state: mark_repair_settled(
+                                state,
+                                provider_id=frame.provider_id,
+                                stop_reason=repair_result.stop_reason,
+                                turns_used=result.turns + repair_result.turns,
+                            ),
+                        )
                     finally:
-                        completion_repair_admission.clear()
+                        repair_projection = None
                     repaired_once = not blocked_reason
                     if repaired_once:
                         # The repair is bounded by the shared remaining turn
@@ -3370,6 +3520,7 @@ class TaskRunner:
                             proof = decision.proof
                             _record_completion_proof_trace(frame.trace, proof)
                             _record_edit_integrity_trace(frame.trace, integrity)
+                            commit_operation_proof(proof)
                         else:
                             result = replace(repair_result, turns=turns)
                             if repair_result.stop_reason != "approval":
@@ -3407,23 +3558,26 @@ class TaskRunner:
             # A done claim backed by a failed or unverifiable proof must
             # never pass as done. complete_with_limitations (docs-only,
             # inherited green) stays an allowed -- but honest -- done. The
-            # last branch names the budget honestly: max_repair_rounds
-            # means a repair round actually ran; when no round was admitted
-            # (the block arm, or a failure class outside the repair
-            # candidate rule) the reason says so.
-            blocked_reason = (
-                "unobserved"
-                if proof.status == "blocked"
-                else "environment_failure"
-                if decision.failure_class in (
-                    "environment_failure",
-                    "verification_unavailable",
-                )
-                else "turn_budget_exhausted"
-                if request.max_turns - result.turns <= 0
-                else "max_repair_rounds"
-                if repaired_once
-                else "repair_not_admitted"
+            # repair_rounds fact comes from this run's operation state
+            # position: a round actually ran only when the repair arm
+            # settled without a provider failure.
+            blocked_reason = completion_blocked_reason(
+                proof_status=proof.status,
+                failure_class=decision.failure_class,
+                remaining_turns=request.max_turns - result.turns,
+                repair_rounds=1 if repaired_once else 0,
+            )
+        if (
+            blocked_reason
+            and work.operation is not None
+            and work.operation.phase == PHASE_COMPLETION_PROOF_RECORDED
+        ):
+            # The verdict lands on the durable counter at the decision
+            # point; provider-failure and stop verdicts are already
+            # carried by their own settled phases.
+            self._commit_run_operation(
+                work,
+                lambda state: mark_completion_blocked(state, reason=blocked_reason),
             )
 
         if COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF:

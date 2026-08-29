@@ -992,6 +992,33 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def _trace_call", task_runner_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
+    def test_run_operation_is_a_storage_leaf(self) -> None:
+        # The durable run-operation counter (0.5.1) is persistence only:
+        # stdlib plus the storage primitives, never agents, providers,
+        # tools, server, ghost, or completion semantics.
+        path = ROOT / "codey" / "run_operation.py"
+        imports = imported_modules(path)
+
+        internal = sorted(
+            name for name in imports if name == "codey" or name.startswith("codey.")
+        )
+        self.assertEqual(
+            internal,
+            ["codey.storage.file_lock", "codey.storage.local_store"],
+        )
+        forbidden = {
+            "codey.agents",
+            "codey.app",
+            "codey.completion",
+            "codey.ghost",
+            "codey.policies",
+            "codey.providers",
+            "codey.research",
+            "codey.runs",
+            "codey.toolchain",
+        }
+        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
     def test_completion_repair_context_is_pure_projection_leaf(self) -> None:
         # The repair context (0.4.13) consumes an already-evaluated proof
         # payload; it must never import the completion contract (one
