@@ -32,6 +32,7 @@ from codey.completion.edit_integrity import (
     SEVERITY_HIGH,
     STATUS_MONITOR_ERROR,
     STATUS_SUSPICIOUS,
+    STATUS_UNOBSERVED,
     EditIntegrityObservation,
 )
 from codey.policies.redaction import looks_prompt_visible_secret
@@ -183,7 +184,7 @@ def build_task_receipt(
     mode = clip(changes.get("mode"), MAX_MODE_CHARS)
     restore_available = mode == "snapshot" and changed_count > 0
 
-    trust = _verification_trust(checks_passed, integrity)
+    trust = _verification_trust(checks_passed, integrity, changed_count)
     summary, detail = _display_text(trust, changed_count, checks_passed)
 
     proof = getattr(decision, "proof", None)
@@ -258,6 +259,7 @@ def build_task_receipt(
 def _verification_trust(
     checks_passed: bool,
     integrity: EditIntegrityObservation | None,
+    changed_count: int,
 ) -> str:
     if not checks_passed:
         return VERIFICATION_TRUST_LIMITED
@@ -267,6 +269,11 @@ def _verification_trust(
     if integrity.status == STATUS_MONITOR_ERROR:
         # The monitor could not observe: the green can stay a run fact,
         # but the receipt cannot vouch for it.
+        return VERIFICATION_TRUST_LIMITED
+    if changed_count > 0 and integrity.status == STATUS_UNOBSERVED:
+        # Files changed and checks passed, yet nothing was observed: the
+        # same unwatched-green hole, reached through the observation's own
+        # verdict instead of a missing argument.
         return VERIFICATION_TRUST_LIMITED
     if (
         integrity.status == STATUS_SUSPICIOUS

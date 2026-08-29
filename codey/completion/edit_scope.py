@@ -83,16 +83,27 @@ _GENERATED_SUFFIXES = frozenset({".pyc", ".pyo", ".min.css", ".min.js", ".min.mj
 # Files whose edit can make verification easier to pass without touching
 # product code. ``conftest.py`` is deliberately a fixture (a protected test
 # helper), not config: its edits are judged by the fixture rules.
+# ``package.json`` is deliberately NOT config: it is mixed production
+# manifest, so it stays production and its test script is judged by a
+# content-level rule in the monitor instead of by classification.
 _VERIFICATION_CONFIG_BASENAMES = frozenset(
     {
         ".coveragerc",
         ".ruff.toml",
+        "jest.config.cjs",
+        "jest.config.js",
+        "jest.config.json",
+        "jest.config.mjs",
+        "jest.config.ts",
         "mypy.ini",
         "pyproject.toml",
         "pytest.ini",
         "ruff.toml",
         "setup.cfg",
         "tox.ini",
+        "vitest.config.js",
+        "vitest.config.mts",
+        "vitest.config.ts",
     }
 )
 

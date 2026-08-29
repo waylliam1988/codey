@@ -143,7 +143,7 @@ def _summary_rows(
     if fallback:
         rows.append(RunDetailsRow("Model fallback", fallback))
 
-    verification, verification_tone = _verification_summary(projection, trace)
+    verification, verification_tone = _verification_summary(projection)
     if verification:
         rows.append(RunDetailsRow("Verification", verification, verification_tone))
 
@@ -279,17 +279,15 @@ def _fallback_summary(
 
 def _verification_summary(
     projection: RunLedgerProjection | None,
-    trace: Mapping[str, object],
 ) -> tuple[str, str]:
-    """The Verification row, from the receipt contract only.
+    """The Verification row, projected from the receipt contract alone.
 
-    A schema-v1 receipt is the single source for what the green check is
-    worth: ``needs_review`` means high-confidence integrity findings, and
-    ``limited`` with a passing run means the monitor failed and the green
-    cannot be vouched for. Runs whose ledger carries no valid receipt --
-    older ledgers included -- get the honest "not recorded" wording; a
-    green claim is never reconstructed from the legacy checks_passed
-    fact.
+    The schema-v1 receipt is the single source for what the green check
+    is worth: ``needs_review`` means high-confidence integrity findings,
+    and ``limited`` with a passing run means the verification could not
+    be vouched for. Runs whose ledger carries no valid receipt -- older
+    ledgers included -- get the honest "not recorded" wording; a green
+    claim is never reconstructed from legacy facts or from the trace.
     """
 
     receipt = (
@@ -307,8 +305,6 @@ def _verification_summary(
             return "Verification limited by monitor error", "warning"
         if receipt.verification.trust == VERIFICATION_TRUST_TRUSTED:
             return "Checks passed", "neutral"
-    if _trace_integrity_suspicious(trace):
-        return "Test changes may have weakened checks", "warning"
     if projection is not None and projection.final_changes is not None:
         if projection.final_changes.changed_count:
             return "Checks not recorded", "warning"
@@ -317,18 +313,6 @@ def _verification_summary(
     if projection is not None and projection.stop_reason and projection.stop_reason != "done":
         return _stop_reason_text(projection.stop_reason), "neutral"
     return "", "neutral"
-
-
-def _trace_integrity_suspicious(trace: Mapping[str, object]) -> bool:
-    rows = [
-        item
-        for item in _list(trace.get("completion_edit_integrity"))
-        if isinstance(item, Mapping)
-    ]
-    return any(
-        _str(row.get("status")) == "suspicious" and _str(row.get("severity")) == "high"
-        for row in rows
-    )
 
 
 def _stop_reason_text(value: str) -> str:

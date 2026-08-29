@@ -159,6 +159,52 @@ class TaskReceiptTests(unittest.TestCase):
             receipt.verification.proof_refs[1].startswith("completion_contract:"),
         )
 
+    def test_changed_files_with_unobserved_integrity_are_limited(self) -> None:
+        # Files changed, checks green, but the observation says nothing
+        # was observed: the same unwatched-green hole, so the receipt is
+        # limited even though an observation object was supplied.
+        integrity = EditIntegrityObservation(
+            schema_version=1,
+            run_id="run-1",
+            status="unobserved",
+            severity="none",
+            reason_codes=(),
+            findings=(),
+            user_authorized_test_edit=False,
+            affected_paths=(),
+            verification_refs=(),
+            change_refs=(),
+            observation_ref="edit_integrity:0123456789abcdef",
+        )
+        receipt = build_task_receipt(
+            {"mode": "git", "changed_count": 2},
+            integrity=integrity,
+            checks_passed=True,
+        )
+
+        self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_LIMITED)
+        self.assertEqual(receipt.display.summary, "2 files changed · verification limited")
+
+    def test_no_change_run_with_green_stays_trusted(self) -> None:
+        # Nothing changed: there is no workspace fact the green could
+        # misrepresent, so an explicit clean observation keeps trust.
+        integrity = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 0, "files": [], "diff": ""},
+            diff="",
+            files=(),
+            decision=None,
+            run_id="run-1",
+        )
+        receipt = build_task_receipt(
+            {"mode": "git", "changed_count": 0},
+            integrity=integrity,
+            checks_passed=True,
+        )
+
+        self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_TRUSTED)
+        self.assertEqual(receipt.display.summary, "No files changed · checks passed")
+
     def test_monitor_error_receipt_is_limited(self) -> None:
         integrity = EditIntegrityObservation(
             schema_version=1,

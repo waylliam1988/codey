@@ -123,6 +123,17 @@ This file records Codey's release history. The newest release appears first.
     longer reconstructs a green claim from the legacy `checks_passed`
     fact (no receipt -> "Checks not recorded").
   - README / DESIGN receipt copy synced to the schema-v1 wording.
+- Second review round:
+  - Node verification surfaces covered without crude classification:
+    `jest.config.*` / `vitest.config.*` are verification config;
+    `package.json` stays production and is judged by a content-level rule
+    (npm `test` script gutted of its runner, or narrowing flags added to
+    it).
+  - Run Details reads the Verification row from the receipt contract
+    only; the trace-based integrity fallback was deleted.
+  - Trust contract: green checks over changed files with an `unobserved`
+    integrity observation are `limited`; only a no-change run keeps
+    `trusted`.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

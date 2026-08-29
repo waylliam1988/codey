@@ -21,11 +21,11 @@ harness:    tests/manual/edit_integrity_ab.py (new), completion_enforcement_ab.p
 mode:       deterministic gate + full local pytest; no production-quality A/B for this version
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after the review round):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after both review rounds):
 
 ```text
 python -m pytest tests -q --ignore=tests/manual
-3169 passed, 3 skipped, 995 subtests passed in ~5m
+3175 passed, 3 skipped, 995 subtests passed in ~5m
 ```
 
 Post-review focused rerun (same commit, 2026-08-29):
@@ -43,6 +43,7 @@ python -B tests/manual/edit_integrity_ab.py --self-test
   ok mimo_guarded_import_is_high_suspicious           -> test_import_guarded
   ok assertion_removed_is_high_suspicious             -> test_assertions_removed
   ok config_narrowed_is_high_suspicious               -> verification_config_narrowed (--deselect added)
+  ok package_json_test_script_gutted_is_high_suspicious -> npm test script gutted (content-level rule)
   ok testpaths_restriction_is_high_suspicious          -> testpaths narrowed, not removed
   ok config_removal_is_not_narrowing                  -> deleting testpaths/addopts is not a signal
   ok green_without_production_change_is_flagged       -> test_edit_without_production_change
@@ -75,6 +76,14 @@ Review round (2026-08-29, same-day findings fixed before commit):
 | `checks_passed=True` without an integrity observation read as trusted. | Trust contract tightened: no observation -> limited ("verification limited"). | `test_unwatched_green_is_limited_by_contract` |
 | Run Details could reconstruct a green claim from legacy `checks_passed`. | Legacy fallback removed: no valid receipt -> "Checks not recorded" (warning). | `test_verification_row_never_reconstructs_green_without_receipt` |
 | README / DESIGN still showed `restore available` in the receipt line. | Copy synced to the schema-v1 wording. | n/a (docs) |
+
+Second review round (2026-08-29):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| Node verification surfaces (package.json / jest / vitest) were not covered, and classifying the whole package.json as verification config would be too coarse. | `jest.config.*` / `vitest.config.*` join the verification-config classification; `package.json` stays production and is judged by a content-level rule: a removed `test` script that had a runner and no longer has one, or narrowing flags (`testPathIgnorePatterns`, `--testPathPattern`, `--exclude`) added to it. | `test_gutted_npm_test_script_is_suspicious`, `test_swapped_runner_is_not_gutting`, `test_narrowing_flag_in_test_script_is_suspicious`, `test_jest_config_narrowing_flag_is_suspicious` |
+| Run Details kept a trace-based integrity fallback beside the receipt. | Removed: the schema-v1 receipt is the only source for the Verification row; no receipt -> "Checks not recorded". | `test_verification_row_never_reconstructs_green_without_receipt` |
+| `integrity.status == unobserved` with a green claim and changed files still read as trusted. | Trust contract tightened again: `checks_passed and changed_count > 0 and status == unobserved` -> limited. A no-change green run stays trusted. | `test_changed_files_with_unobserved_integrity_are_limited`, `test_no_change_run_with_green_stays_trusted` |
 
 Roadmap 0.5.0 验证清单对照：
 

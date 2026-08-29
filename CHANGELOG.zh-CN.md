@@ -100,6 +100,15 @@
     receipt 一律 `limited`，绝不 `trusted`；Run Details 不再从旧
     `checks_passed` 事实反推绿色（无 receipt → "Checks not recorded"）。
   - README / DESIGN 的 receipt 文案同步为 schema-v1 措辞。
+- 第二轮评审：
+  - 覆盖 Node 侧验证入口且不做粗暴归类：`jest.config.*` /
+    `vitest.config.*` 归为 verification config；`package.json` 保持
+    production，由内容级规则判断（npm `test` script 的 runner 被掏空，
+    或对其新增收窄 flag）。
+  - Run Details 的 Verification 行只读 receipt contract；基于 trace 的
+    integrity 兜底已删除。
+  - Trust 合同：有文件变更、checks 绿但 observation 为 `unobserved` →
+    `limited`；只有零变更的 run 保持 `trusted`。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

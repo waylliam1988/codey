@@ -143,6 +143,12 @@ CONFIG_REMOVED_DIFF = _diff(
 CLEAN_FIX_DIFF = _diff("VALUE = 1\n", "VALUE = 2\n", path="src/mod.py")
 DOCS_DIFF = _diff("# old layout\n", "# new layout\n", path="README.md")
 
+PACKAGE_GUTTED_DIFF = _diff(
+    '"scripts": {\n  "test": "vitest run"\n}\n',
+    '"scripts": {\n  "test": "echo no tests"\n}\n',
+    path="package.json",
+)
+
 AUTHORIZED_TASK = (
     "Update the tests to expect the new value, then change src/mod.py "
     "VALUE from 1 to 2."
@@ -290,6 +296,16 @@ def deterministic_cases() -> list[dict[str, Any]]:
             "check": lambda: _expect(
                 _receipt_for(CONFIG_REMOVED_DIFF, paths=("pyproject.toml",), green=False),
                 reason_does_not_contain="verification_config_narrowed",
+            ),
+        },
+        {
+            "name": "package_json_test_script_gutted_is_high_suspicious",
+            "check": lambda: _expect(
+                _receipt_for(PACKAGE_GUTTED_DIFF, paths=("package.json",)),
+                status=STATUS_SUSPICIOUS,
+                severity=SEVERITY_HIGH,
+                trust=TRUST_REVIEW,
+                reason_code="verification_config_narrowed",
             ),
         },
         {

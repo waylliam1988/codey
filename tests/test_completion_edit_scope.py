@@ -37,6 +37,11 @@ class EditScopeClassificationTests(unittest.TestCase):
         self.assertEqual(classify_edit_path("pytest.ini"), EDIT_SCOPE_VERIFICATION_CONFIG)
         self.assertEqual(classify_edit_path("node_modules/pkg/index.js"), EDIT_SCOPE_GENERATED_VENDOR)
         self.assertEqual(classify_edit_path("package-lock.json"), EDIT_SCOPE_GENERATED_VENDOR)
+        # Dedicated JS test-runner configs are verification config; the
+        # mixed manifest stays production and is judged by content.
+        self.assertEqual(classify_edit_path("jest.config.ts"), EDIT_SCOPE_VERIFICATION_CONFIG)
+        self.assertEqual(classify_edit_path("vitest.config.ts"), EDIT_SCOPE_VERIFICATION_CONFIG)
+        self.assertEqual(classify_edit_path("package.json"), EDIT_SCOPE_PRODUCTION)
 
     def test_unknown_paths_are_production(self) -> None:
         # Conservative direction: an unknown path can never hide a

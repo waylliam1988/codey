@@ -104,9 +104,22 @@ _ASSERT_LINE_RE = re.compile(
 _RAISES_TARGET_RE = re.compile(r"pytest\.raises\s*\(\s*([A-Za-z_][\w.]*)")
 _BENIGN_WIDE_TARGETS = frozenset({"Exception", "BaseException"})
 _NARROWED_FLAGS = ("--deselect", "--ignore")
+# Node-side narrowing signals, matched as plain substrings so both the
+# CLI flag and the jest/vitest config key forms count. These keys exist
+# only to skip tests, so an addition is always a narrowing.
+_NARROWED_JS_FLAGS = ("testPathIgnorePatterns", "--testPathPattern", "--exclude")
 _NARROWED_K_RE = re.compile(r"""-k\s+"?not\b""")
 _TESTPATHS_KEY_RE = re.compile(r"^\s*testpaths\b")
 _TESTPATHS_VALUE_RE = re.compile(r"""["']([^"']+)["']""")
+# package.json is judged by content, not classification: only the "test"
+# script's health matters, and only when a runner actually went away.
+_PACKAGE_JSON_BASENAME = "package.json"
+_TEST_SCRIPT_KEY_RE = re.compile(r'"test"\s*:')
+_JS_TEST_RUNNER_RE = re.compile(
+    r"\bjest\b|\bvitest\b|\bmocha\b|node\s+--test|\bplaywright\b|"
+    r"\bcypress\b|\bkarma\b|\bnyc\b",
+    re.IGNORECASE,
+)
 
 _DIFF_GIT_HEADER_RE = re.compile(r"^diff --git a/(.+?) b/(.+?)$")
 
@@ -326,7 +339,15 @@ def _content_findings(
             findings.extend(_test_section_findings(path, lines, authorized))
         elif scope == EDIT_SCOPE_VERIFICATION_CONFIG:
             findings.extend(_config_section_findings(path, lines, authorized))
+        elif _basename(path) == _PACKAGE_JSON_BASENAME:
+            # package.json stays production in the scope vocabulary; only
+            # its "test" script health is a verification-integrity fact.
+            findings.extend(_package_json_section_findings(path, lines, authorized))
     return findings
+
+
+def _basename(path: str) -> str:
+    return path.replace("\\", "/").rsplit("/", 1)[-1].lower()
 
 
 def _finding(
@@ -399,6 +420,41 @@ def _test_section_findings(
             path,
             summary,
         ))
+    if authorized:
+        findings = [_downgrade(finding) for finding in findings]
+    return findings
+
+
+def _package_json_section_findings(
+    path: str,
+    lines: Sequence[str],
+    authorized: bool,
+) -> list[EditIntegrityFinding]:
+    findings: list[EditIntegrityFinding] = []
+    removed = [line[1:] for line in lines if line.startswith("-")]
+    added = [line[1:] for line in lines if line.startswith("+")]
+    removed_test = [line for line in removed if _TEST_SCRIPT_KEY_RE.search(line)]
+    added_test = [line for line in added if _TEST_SCRIPT_KEY_RE.search(line)]
+    if removed_test:
+        removed_runner = any(_JS_TEST_RUNNER_RE.search(line) for line in removed_test)
+        kept_runner = any(_JS_TEST_RUNNER_RE.search(line) for line in added_test)
+        if removed_runner and not kept_runner:
+            # The npm test entry existed with a real runner and now points
+            # at nothing that runs tests.
+            findings.append(_finding(
+                REASON_VERIFICATION_CONFIG_NARROWED,
+                SEVERITY_HIGH,
+                path,
+                "npm test script removed or gutted",
+            ))
+        for flag in _NARROWED_JS_FLAGS:
+            if any(flag in line for line in added_test):
+                findings.append(_finding(
+                    REASON_VERIFICATION_CONFIG_NARROWED,
+                    SEVERITY_HIGH,
+                    path,
+                    f"npm test script narrowed: {flag} added",
+                ))
     if authorized:
         findings = [_downgrade(finding) for finding in findings]
     return findings
@@ -614,12 +670,18 @@ def _widened_raises(removed: Sequence[str], added: Sequence[str]) -> list[str]:
 def _narrowed_added_flags(added: Sequence[str]) -> list[str]:
     flags: list[str] = []
     for line in added:
-        for flag in _NARROWED_FLAGS:
+        for flag in (*_NARROWED_FLAGS, *_NARROWED_JS_FLAGS):
             if flag in line and flag not in flags:
                 flags.append(flag)
         if _NARROWED_K_RE.search(line) and "-k not" not in flags:
             flags.append("-k not")
-    return flags
+    # "--testPathIgnorePatterns" contains "--testPathPattern"; keep only
+    # the most specific flag that matched.
+    return [
+        flag
+        for flag in flags
+        if not any(other != flag and flag in other for other in flags)
+    ]
 
 
 def _restricted_testpaths(removed: Sequence[str], added: Sequence[str]) -> list[str]:

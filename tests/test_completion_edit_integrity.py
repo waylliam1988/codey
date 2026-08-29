@@ -309,6 +309,59 @@ class ScanSaturationTests(unittest.TestCase):
         self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
 
 
+class NodeVerificationConfigTests(unittest.TestCase):
+    def test_gutted_npm_test_script_is_suspicious(self) -> None:
+        gutted = _diff(
+            '"scripts": {\n  "test": "vitest run"\n}\n',
+            '"scripts": {\n  "test": "echo no tests"\n}\n',
+            path="package.json",
+        )
+        legit_dependency = _diff(
+            '"dependencies": {\n}\n',
+            '"dependencies": {\n  "left-pad": "1.0.0"\n}\n',
+            path="package.json",
+        )
+
+        gutted_obs = _observe(diff=gutted, paths=("package.json",))
+        legit_obs = _observe(diff=legit_dependency, paths=("package.json",))
+
+        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, gutted_obs.reason_codes)
+        self.assertEqual(gutted_obs.severity, SEVERITY_HIGH)
+        self.assertEqual(legit_obs.status, STATUS_CLEAN)
+
+    def test_swapped_runner_is_not_gutting(self) -> None:
+        swapped = _diff(
+            '"scripts": {\n  "test": "jest"\n}\n',
+            '"scripts": {\n  "test": "vitest run"\n}\n',
+            path="package.json",
+        )
+        observation = _observe(diff=swapped, paths=("package.json",))
+
+        self.assertNotIn(REASON_VERIFICATION_CONFIG_NARROWED, observation.reason_codes)
+
+    def test_narrowing_flag_in_test_script_is_suspicious(self) -> None:
+        diff = _diff(
+            '"scripts": {\n  "test": "jest"\n}\n',
+            '"scripts": {\n  "test": "jest --testPathIgnorePatterns=src/"\n}\n',
+            path="package.json",
+        )
+        observation = _observe(diff=diff, paths=("package.json",))
+
+        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, observation.reason_codes)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+
+    def test_jest_config_narrowing_flag_is_suspicious(self) -> None:
+        diff = _diff(
+            "export default {\n};\n",
+            "export default {\n  testPathIgnorePatterns: ['src/'],\n};\n",
+            path="jest.config.ts",
+        )
+        observation = _observe(diff=diff, paths=("jest.config.ts",))
+
+        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, observation.reason_codes)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+
+
 class MonitorContractTests(unittest.TestCase):
     def test_no_changed_paths_is_unobserved(self) -> None:
         observation = _observe(diff="", paths=())
