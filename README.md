@@ -163,7 +163,7 @@ This is not about replacing professional tools. It is about making the first ste
   repair-context turn, while missing verification and environment failures
   stop honestly instead of pretending the code passed
 - Show red/green diffs
-- Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed · restore available`
+- Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed` (or `checks need review` when the 0.5 edit-integrity monitor flags the run)
 - Write a bounded local run trace for each task, recording mode, provider,
   Router result, prompt digests, tool contract hashes, and fallback facts
   without storing raw prompts, chat transcripts, source code, webpages, or raw
@@ -747,7 +747,7 @@ the saved key when you click `Connect`.
 When a task finishes, Codey summarizes the local facts in one quiet line:
 
 ```text
-DONE · 2 files changed · checks passed · restore available        View diff
+DONE · 2 files changed · checks passed        View diff
 ```
 
 `View diff` opens the right-side changes drawer for the detailed red/green diff.

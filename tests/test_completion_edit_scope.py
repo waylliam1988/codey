@@ -112,20 +112,25 @@ class TaskAuthorizationTests(unittest.TestCase):
         for task in (
             "Update the tests to expect the new value",
             "modify tests/test_mod.py to cover the new behavior",
-            "fix the failing test",
             "rewrite the test for the new output",
             "修改测试，期望值改为 2",
-            "把测试改成新的返回值",
         ):
             with self.subTest(task=task):
                 self.assertTrue(task_authorizes_test_edit(task))
 
     def test_untouched_test_wording_stays_unauthorized(self) -> None:
         # Conservative: ambiguous phrasing fails closed to "not
-        # authorized", which can only make the monitor louder.
+        # authorized", which can only make the monitor louder. "Fix the
+        # failing test" is the important negative: it usually means "fix
+        # the product code so tests pass", and accepting it would quietly
+        # downgrade real tampering.
         for task in (
             "Change src/mod.py VALUE from 1 to 2 and run the verification",
             "make the tests pass",
+            "fix the failing test",
+            "fixing tests after the change",
+            "把测试改成新的返回值",
+            "改一下测试",
             "fix the import error in src/mod.py",
             "",
             None,

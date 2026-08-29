@@ -139,7 +139,7 @@ Codey 想解决的是一个很朴素的问题：
   产品失败可以进入一次有界 repair-context 回合，而没验证或环境失败会诚实停下，
   不冒充代码已通过
 - 显示红绿 diff
-- 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed · restore available`
+- 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed`（0.5 edit-integrity monitor 命中时显示 `checks need review`）
 - 每次任务写一份有界本地 run trace，记录模式、provider、Router 结果、prompt
   digest、工具契约 hash 和 fallback 事实；不保存 raw prompt、聊天全文、源码、
   网页正文或 provider 原始错误
@@ -612,7 +612,7 @@ counterpoints、来源质量和搜索覆盖的 synthesis。之后再选择项目
 任务结束后，Codey 会用一行很轻的收据总结本地事实：
 
 ```text
-DONE · 2 files changed · checks passed · restore available        View diff
+DONE · 2 files changed · checks passed        View diff
 ```
 
 点击 `View diff`，右侧栏会打开具体的红绿 diff。

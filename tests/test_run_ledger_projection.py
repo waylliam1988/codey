@@ -12,6 +12,7 @@ from codey.runs.ledger_projection import (
     load_run_projection,
     project_run_ledger,
 )
+from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.receipt import build_task_receipt
 
 
@@ -28,8 +29,17 @@ def _record(seq: int, event_type: str, **fields: object) -> RunLedgerRecord:
 
 
 def _receipt_payload(changed_count: int = 2) -> dict:
+    observation = observe_edit_integrity(
+        task="Change src/mod.py VALUE from 1 to 2.",
+        changes={"changed_count": changed_count, "files": [{"path": "src/mod.py"}], "diff": ""},
+        diff="",
+        files=("src/mod.py",),
+        decision=None,
+        run_id="run-1",
+    )
     return build_task_receipt(
         {"mode": "snapshot", "changed_count": changed_count},
+        integrity=observation,
         checks_passed=True,
     ).to_dict()
 

@@ -76,6 +76,27 @@
     并暴露两条最小 live smoke：DeepSeek clean path 与 Qwen/MiMo
     `dependency_missing_env_failure`。本版不需要完整生产质量 A/B；两条
     live smoke 仍是待补的 manual evidence 项。
+- 评审轮加固（当日 findings，全部在提交前修复）：
+  - `completion_evidence()` 在每个调用点显式传入快照（changes、changed、
+    scope files、selected check、stop reason），integrity 观察永远读
+    repair 之后的 diff，不再用 repair 前缓存的 diff。
+  - "fix the failing test" 不再授权测试修改（它通常指修生产代码）；中文
+    授权词只保留明确的 修改/更新/调整测试。
+  - diff 扫描改为 per-section 饱和：超大的生产 diff 不会掩盖其后被篡改的
+    测试文件。
+  - import finding 与未加保护的重新添加对消（合法移动不再误报）；
+    `with pytest.raises(...)` 的删除计入断言删除；具体异常放宽为
+    `Exception` 是新的高信号 finding（`test_expected_exception_widened`）。
+  - verification config finding 只在可证明收窄的新增（`--ignore`、
+    `--deselect`、`-k "not ..."`）和严格收缩的 testpaths 替换时触发；
+    删除 testpaths/addopts 不是收窄信号。
+  - receipt schema v1 补全审计闭环：`verification.state`、
+    `verification.proof_refs`、`integrity.affected_paths`、
+    `integrity.refs` 随 receipt 走（有界，不含 raw diff）。
+  - Trust 合同收紧：声称 checks 通过但没有 integrity observation 的
+    receipt 一律 `limited`，绝不 `trusted`；Run Details 不再从旧
+    `checks_passed` 事实反推绿色（无 receipt → "Checks not recorded"）。
+  - README / DESIGN 的 receipt 文案同步为 schema-v1 措辞。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

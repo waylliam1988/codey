@@ -413,6 +413,16 @@ def _bounded_receipt(receipt: dict) -> dict[str, object]:
             section["trust"] = trust
         if "checks_passed" in verification:
             section["checks_passed"] = bool(verification.get("checks_passed"))
+        state = clip_event_text(verification.get("state") or "", 40)
+        if state:
+            section["state"] = state
+        proof_refs = [
+            clip_event_text(ref, 120)
+            for ref in (verification.get("proof_refs") or [])
+        ]
+        bounded_refs = [ref for ref in proof_refs if ref][:2]
+        if bounded_refs:
+            section["proof_refs"] = bounded_refs
         if section:
             payload["verification"] = section
     integrity = receipt.get("integrity")
@@ -431,6 +441,20 @@ def _bounded_receipt(receipt: dict) -> dict[str, object]:
         bounded_codes = [code for code in reason_codes if code]
         if bounded_codes:
             section["reason_codes"] = bounded_codes
+        paths = [
+            clip_event_text(path, 240)
+            for path in (integrity.get("affected_paths") or [])
+        ]
+        bounded_paths = [path for path in paths if path][:4]
+        if bounded_paths:
+            section["affected_paths"] = bounded_paths
+        refs = [
+            clip_event_text(ref, 80)
+            for ref in (integrity.get("refs") or [])
+        ]
+        bounded_integrity_refs = [ref for ref in refs if ref][:4]
+        if bounded_integrity_refs:
+            section["refs"] = bounded_integrity_refs
         if section:
             payload["integrity"] = section
     return payload

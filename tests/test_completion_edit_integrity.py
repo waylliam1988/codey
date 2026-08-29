@@ -6,6 +6,7 @@ import unittest
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_REASON_CODES,
     REASON_TEST_ASSERTIONS_REMOVED,
+    REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
     REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE,
     REASON_TEST_IMPORT_GUARDED,
     REASON_TEST_IMPORT_REMOVED,
@@ -23,7 +24,16 @@ from codey.completion.edit_integrity import (
     observe_edit_integrity,
 )
 from codey.research.evidence_runtime import is_valid_runtime_ref
-from tests.test_receipt import IMPORT_REMOVAL_DIFF
+
+
+_IMPORT_REMOVAL_OLD = "import redis  # noqa: F401\n\ndef test_value():\n"
+_IMPORT_REMOVAL_NEW = "def test_value():\n"
+IMPORT_REMOVAL_DIFF = "".join(difflib.unified_diff(
+    _IMPORT_REMOVAL_OLD.splitlines(keepends=True),
+    _IMPORT_REMOVAL_NEW.splitlines(keepends=True),
+    fromfile="a/tests/test_mod.py",
+    tofile="b/tests/test_mod.py",
+))
 
 
 def _diff(old: str, new: str, path: str = "tests/test_mod.py") -> str:
@@ -116,24 +126,62 @@ class AssertionAndSkipTests(unittest.TestCase):
 
 
 class ConfigIntegrityTests(unittest.TestCase):
-    def test_narrowed_verification_config_is_suspicious(self) -> None:
-        removed_addopts = _diff(
-            "[tool.pytest.ini_options]\naddopts = \"-q\"\n",
-            "[tool.pytest.ini_options]\n",
-            path="pyproject.toml",
-        )
+    def test_added_narrowing_flags_are_suspicious(self) -> None:
         added_deselect = _diff(
             "[tool.pytest.ini_options]\n",
             "[tool.pytest.ini_options]\naddopts = \"--deselect tests/test_mod.py\"\n",
             path="pyproject.toml",
         )
+        added_ignore = _diff(
+            "[tool.pytest.ini_options]\n",
+            "[tool.pytest.ini_options]\naddopts = \"--ignore tests/test_mod.py\"\n",
+            path="pyproject.toml",
+        )
+        added_k_not = _diff(
+            "[tool.pytest.ini_options]\n",
+            "[tool.pytest.ini_options]\naddopts = '-k not slow'\n",
+            path="pyproject.toml",
+        )
 
-        removed_obs = _observe(diff=removed_addopts, paths=("pyproject.toml",))
-        added_obs = _observe(diff=added_deselect, paths=("pyproject.toml",))
+        for diff in (added_deselect, added_ignore, added_k_not):
+            with self.subTest(line=diff.splitlines()[-1]):
+                observation = _observe(diff=diff, paths=("pyproject.toml",))
+                self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, observation.reason_codes)
+                self.assertEqual(observation.severity, SEVERITY_HIGH)
 
-        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, removed_obs.reason_codes)
-        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, added_obs.reason_codes)
-        self.assertEqual(removed_obs.severity, SEVERITY_HIGH)
+    def test_restricted_testpaths_is_suspicious_but_widening_is_not(self) -> None:
+        narrowed = _diff(
+            '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+            '[tool.pytest.ini_options]\ntestpaths = ["tests/unit"]\n',
+            path="pyproject.toml",
+        )
+        widened = _diff(
+            '[tool.pytest.ini_options]\ntestpaths = ["tests/unit"]\n',
+            '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+            path="pyproject.toml",
+        )
+
+        narrowed_obs = _observe(diff=narrowed, paths=("pyproject.toml",))
+        widened_obs = _observe(diff=widened, paths=("pyproject.toml",))
+
+        self.assertIn(REASON_VERIFICATION_CONFIG_NARROWED, narrowed_obs.reason_codes)
+        self.assertEqual(narrowed_obs.severity, SEVERITY_HIGH)
+        # Widening runs MORE tests, never fewer: not a narrowing signal.
+        # (The low unauthorized-edit scope finding may still fire on a
+        # protected-path-only change; it is a different code.)
+        self.assertNotIn(REASON_VERIFICATION_CONFIG_NARROWED, widened_obs.reason_codes)
+
+    def test_removing_verification_config_is_not_narrowing(self) -> None:
+        removed = _diff(
+            '[tool.pytest.ini_options]\ntestpaths = ["tests"]\naddopts = "-q"\n',
+            "[tool.pytest.ini_options]\n",
+            path="pyproject.toml",
+        )
+
+        observation = _observe(diff=removed, paths=("pyproject.toml",))
+
+        self.assertNotIn(REASON_VERIFICATION_CONFIG_NARROWED, observation.reason_codes)
+        self.assertEqual(observation.severity, SEVERITY_LOW)
 
 
 class ScopeIntegrityTests(unittest.TestCase):
@@ -177,6 +225,88 @@ class ScopeIntegrityTests(unittest.TestCase):
         self.assertTrue(observation.user_authorized_test_edit)
         for finding in observation.findings:
             self.assertEqual(finding.severity, SEVERITY_LOW)
+
+
+class ImportNettingTests(unittest.TestCase):
+    def test_moved_import_is_not_a_removal(self) -> None:
+        # A legitimate reordering: the import leaves the top of the file
+        # and re-appears unguarded elsewhere in the same section.
+        diff = _diff(
+            "import redis\n\ndef test_value():\n    assert True\n",
+            "\ndef test_value():\n    import redis\n    assert True\n",
+        )
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertNotIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
+        self.assertNotIn(REASON_TEST_IMPORT_GUARDED, observation.reason_codes)
+
+    def test_readdition_inside_import_guard_does_not_cancel_removal(self) -> None:
+        diff = _diff(
+            "import redis\n\ndef test_value():\n    assert True\n",
+            "try:\n    import redis\nexcept ImportError:\n    pass\n\ndef test_value():\n    assert True\n",
+        )
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
+        self.assertIn(REASON_TEST_IMPORT_GUARDED, observation.reason_codes)
+
+
+class AssertionWeakeningTests(unittest.TestCase):
+    def test_with_pytest_raises_removal_is_counted(self) -> None:
+        diff = _diff(
+            "def test_value():\n    with pytest.raises(ValueError):\n        mod.load()\n",
+            "def test_value():\n    mod.load()\n",
+        )
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+        self.assertIn(REASON_TEST_ASSERTIONS_REMOVED, observation.reason_codes)
+
+    def test_specific_exception_widened_to_exception_is_suspicious(self) -> None:
+        diff = _diff(
+            "def test_value():\n    with pytest.raises(ValueError):\n        mod.load()\n",
+            "def test_value():\n    with pytest.raises(Exception):\n        mod.load()\n",
+        )
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertEqual(observation.status, STATUS_SUSPICIOUS)
+        self.assertIn(REASON_TEST_EXPECTED_EXCEPTION_WIDENED, observation.reason_codes)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+
+    def test_specific_exception_swap_is_not_widening(self) -> None:
+        diff = _diff(
+            "def test_value():\n    with pytest.raises(ValueError):\n        mod.load()\n",
+            "def test_value():\n    with pytest.raises(KeyError):\n        mod.load()\n",
+        )
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertNotIn(REASON_TEST_EXPECTED_EXCEPTION_WIDENED, observation.reason_codes)
+
+
+class ScanSaturationTests(unittest.TestCase):
+    def test_huge_production_diff_does_not_hide_test_section(self) -> None:
+        # A production file saturates its section cap; the tampered test
+        # file after it must still be observed.
+        filler = "".join("-line %d\n+line %dx\n" % (i, i) for i in range(2400))
+        big_first = (
+            "diff --git a/src/big.py b/src/big.py\n"
+            "--- a/src/big.py\n"
+            "+++ b/src/big.py\n"
+            "@@ -1,2400 +1,2400 @@\n"
+            + filler
+            + _diff(
+                "import redis\n\ndef test_value():\n    assert True\n",
+                "def test_value():\n    assert True\n",
+            )
+        )
+        observation = _observe(
+            diff=big_first,
+            paths=("src/big.py", "tests/test_mod.py"),
+        )
+
+        self.assertEqual(observation.status, STATUS_SUSPICIOUS)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+        self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
 
 
 class MonitorContractTests(unittest.TestCase):
@@ -250,14 +380,24 @@ class MonitorContractTests(unittest.TestCase):
         self.assertIsInstance(observation, EditIntegrityObservation)
 
 
+class _SatisfiedProof:
+    """Proof-shaped stub: the receipt reads status and content ids."""
+
+    status = "complete"
+    proof_id = "completion_proof:" + "a" * 16
+    contract_id = "completion_contract:" + "b" * 16
+
+
 class _GreenDecision:
-    """The decision shape the monitor consumes with a clean fresh pass."""
+    """The decision shape the monitor and receipt consume: a clean fresh
+    pass backed by a satisfied proof."""
 
     def __init__(self) -> None:
         from codey.completion.verification import SOURCE_LOCAL_RUN, STANCE_FRESH_PASS, VerificationProvenance
 
         self.provenance = VerificationProvenance(STANCE_FRESH_PASS, SOURCE_LOCAL_RUN)
         self.analysis_run_refs = ()
+        self.proof = _SatisfiedProof()
 
 
 if __name__ == "__main__":

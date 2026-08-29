@@ -21,11 +21,11 @@ harness:    tests/manual/edit_integrity_ab.py (new), completion_enforcement_ab.p
 mode:       deterministic gate + full local pytest; no production-quality A/B for this version
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after the review round):
 
 ```text
 python -m pytest tests -q --ignore=tests/manual
-3156 passed, 3 skipped, 990 subtests passed in ~5m
+3169 passed, 3 skipped, 995 subtests passed in ~5m
 ```
 
 Manual harness gates:
@@ -35,7 +35,9 @@ python -B tests/manual/edit_integrity_ab.py --self-test
   ok qwen_delete_import_is_high_suspicious            -> receipt "checks need review"
   ok mimo_guarded_import_is_high_suspicious           -> test_import_guarded
   ok assertion_removed_is_high_suspicious             -> test_assertions_removed
-  ok config_narrowed_is_high_suspicious               -> verification_config_narrowed
+  ok config_narrowed_is_high_suspicious               -> verification_config_narrowed (--deselect added)
+  ok testpaths_restriction_is_high_suspicious          -> testpaths narrowed, not removed
+  ok config_removal_is_not_narrowing                  -> deleting testpaths/addopts is not a signal
   ok green_without_production_change_is_flagged       -> test_edit_without_production_change
   ok authorized_test_edit_stays_low_and_trusted       -> low severity, receipt stays trusted
   ok clean_source_fix_is_trusted                      -> "checks passed"
@@ -47,6 +49,20 @@ python -B tests/manual/completion_enforcement_ab.py --self-test
   20 rows across 5 cases x 4 arms; expected stop_reason / false_completion /
   repair_rounds matrix unchanged; self-test passed.
 ```
+
+Review round (2026-08-29, same-day findings fixed before commit):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| Stale diff after repair: the integrity observation read the diff captured before the repair round. | `completion_evidence()` now takes the explicit snapshot (changes / changed / scope files / selected check / stop reason); the diff is derived from that snapshot inside the call, never cached. | `test_tamper_introduced_during_repair_yields_needs_review`, `test_tamper_removed_during_repair_recovers_clean` |
+| "fix the failing test" authorized test edits, masking real tampering. | Authorization regex drops fix/fixing; Chinese list keeps only 修改/更新/调整测试. | `test_untouched_test_wording_stays_unauthorized` |
+| One huge diff section stopped the scan; later test edits were invisible. | Per-section saturation: a saturated section drops its own remaining lines and scanning continues. | `test_huge_production_diff_does_not_hide_test_section` |
+| Import moves flagged as removals; `with pytest.raises(...)` removals missed; exception widening undetected. | Removed imports net against unguarded re-added imports; assert regex accepts `with pytest.raises(`; new `test_expected_exception_widened` reason for specific -> Exception. | `test_moved_import_is_not_a_removal`, `test_readdition_inside_import_guard_does_not_cancel_removal`, `test_with_pytest_raises_removal_is_counted`, `test_specific_exception_widened_to_exception_is_suspicious`, `test_specific_exception_swap_is_not_widening` |
+| Deleting testpaths/addopts was treated as narrowing, but removal usually widens. | Config findings fire only on provably narrowing additions (`--ignore`, `--deselect`, `-k not`) and testpaths replacements strictly inside the replaced roots. | `test_added_narrowing_flags_are_suspicious`, `test_restricted_testpaths_is_suspicious_but_widening_is_not`, `test_removing_verification_config_is_not_narrowing` |
+| Receipt schema thinner than the audit contract. | `verification.state` / `verification.proof_refs` / `integrity.affected_paths` / `integrity.refs` added to schema v1 and round-tripped through ledger projection and headless. | `test_receipt_carries_proof_state_and_refs_from_decision`, projection round-trip tests |
+| `checks_passed=True` without an integrity observation read as trusted. | Trust contract tightened: no observation -> limited ("verification limited"). | `test_unwatched_green_is_limited_by_contract` |
+| Run Details could reconstruct a green claim from legacy `checks_passed`. | Legacy fallback removed: no valid receipt -> "Checks not recorded" (warning). | `test_verification_row_never_reconstructs_green_without_receipt` |
+| README / DESIGN still showed `restore available` in the receipt line. | Copy synced to the schema-v1 wording. | n/a (docs) |
 
 Roadmap 0.5.0 验证清单对照：
 

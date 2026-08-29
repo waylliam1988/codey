@@ -62,6 +62,7 @@ REASON_TEST_IMPORT_REMOVED = "test_import_removed_or_commented"
 REASON_TEST_IMPORT_GUARDED = "test_import_guarded"
 REASON_TEST_SKIP_ADDED = "test_skip_added"
 REASON_TEST_ASSERTIONS_REMOVED = "test_assertions_removed"
+REASON_TEST_EXPECTED_EXCEPTION_WIDENED = "test_expected_exception_widened"
 REASON_VERIFICATION_CONFIG_NARROWED = "verification_config_narrowed"
 REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE = "test_edit_without_production_change"
 REASON_UNAUTHORIZED_TEST_EDIT = "unauthorized_test_edit"
@@ -72,6 +73,7 @@ EDIT_INTEGRITY_REASON_CODES = frozenset(
         REASON_TEST_IMPORT_GUARDED,
         REASON_TEST_SKIP_ADDED,
         REASON_TEST_ASSERTIONS_REMOVED,
+        REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
         REASON_VERIFICATION_CONFIG_NARROWED,
         REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE,
         REASON_UNAUTHORIZED_TEST_EDIT,
@@ -97,12 +99,14 @@ _SKIP_ADDED_RE = re.compile(
 )
 _ASSERT_LINE_RE = re.compile(
     r"^\s*(?:assert\b|self\.assert(?:True|Equal|In|Is|IsNot|IsNone|IsNotNone|"
-    r"Raises|AlmostEqual|Greater|Less)\b|pytest\.raises\s*\()"
+    r"Raises|AlmostEqual|Greater|Less)\b|(?:with\s+)?pytest\.raises\s*\()"
 )
-_NARROWED_KEY_RE = re.compile(
-    r"^\s*(?:addopts|testpaths)\b|\[tool\.pytest\b|\[pytest\]", re.IGNORECASE
-)
+_RAISES_TARGET_RE = re.compile(r"pytest\.raises\s*\(\s*([A-Za-z_][\w.]*)")
+_BENIGN_WIDE_TARGETS = frozenset({"Exception", "BaseException"})
 _NARROWED_FLAGS = ("--deselect", "--ignore")
+_NARROWED_K_RE = re.compile(r"""-k\s+"?not\b""")
+_TESTPATHS_KEY_RE = re.compile(r"^\s*testpaths\b")
+_TESTPATHS_VALUE_RE = re.compile(r"""["']([^"']+)["']""")
 
 _DIFF_GIT_HEADER_RE = re.compile(r"^diff --git a/(.+?) b/(.+?)$")
 
@@ -349,14 +353,23 @@ def _test_section_findings(
     removed = [line[1:] for line in lines if line.startswith("-")]
     added = [line[1:] for line in lines if line.startswith("+")]
 
-    for module in _removed_import_modules(removed):
+    # Import netting: an import that is re-added unguarded elsewhere in the
+    # same section is a move, not a removal. A re-addition inside a
+    # try/except ImportError window does NOT cancel the finding -- that is
+    # exactly the guarded-import tamper, reported on its own.
+    removed_modules = _removed_import_modules(removed)
+    added_modules = _added_import_modules(added)
+    guarded_modules = set(_guarded_import_modules(added))
+    for module in removed_modules:
+        if module in added_modules and module not in guarded_modules:
+            continue
         findings.append(_finding(
             REASON_TEST_IMPORT_REMOVED,
             SEVERITY_HIGH,
             path,
             f"import {module} removed or commented",
         ))
-    for module in _guarded_import_modules(added):
+    for module in sorted(guarded_modules):
         findings.append(_finding(
             REASON_TEST_IMPORT_GUARDED,
             SEVERITY_HIGH,
@@ -379,6 +392,13 @@ def _test_section_findings(
             path,
             f"{removed_asserts - added_asserts} assertion(s) removed",
         ))
+    for summary in _widened_raises(removed, added):
+        findings.append(_finding(
+            REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
+            SEVERITY_HIGH,
+            path,
+            summary,
+        ))
     if authorized:
         findings = [_downgrade(finding) for finding in findings]
     return findings
@@ -392,19 +412,22 @@ def _config_section_findings(
     findings: list[EditIntegrityFinding] = []
     removed = [line[1:] for line in lines if line.startswith("-")]
     added = [line[1:] for line in lines if line.startswith("+")]
-    for key in _narrowed_removed_keys(removed):
-        findings.append(_finding(
-            REASON_VERIFICATION_CONFIG_NARROWED,
-            SEVERITY_HIGH,
-            path,
-            f"verification config narrowed: {key} removed",
-        ))
+    # Removal alone is never "narrowed": deleting testpaths runs MORE
+    # tests, not fewer. Findings fire only on additions and replacements
+    # that provably shrink what verification covers.
     for flag in _narrowed_added_flags(added):
         findings.append(_finding(
             REASON_VERIFICATION_CONFIG_NARROWED,
             SEVERITY_HIGH,
             path,
             f"verification config narrowed: {flag} added",
+        ))
+    for target in _restricted_testpaths(removed, added):
+        findings.append(_finding(
+            REASON_VERIFICATION_CONFIG_NARROWED,
+            SEVERITY_HIGH,
+            path,
+            f"verification config narrowed: testpaths restricted to {target}",
         ))
     if authorized:
         findings = [_downgrade(finding) for finding in findings]
@@ -502,6 +525,21 @@ def _removed_import_modules(removed: Sequence[str]) -> list[str]:
     return modules
 
 
+def _added_import_modules(added: Sequence[str]) -> set[str]:
+    modules: set[str] = set()
+    for line in added:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        match = _IMPORTED_MODULE_RE.match(stripped)
+        if match is None:
+            continue
+        module = identifier(match.group(1) or match.group(2) or "", 80)
+        if module:
+            modules.add(module)
+    return modules
+
+
 def _guarded_import_modules(added: Sequence[str]) -> list[str]:
     modules: list[str] = []
     window: list[str] = []
@@ -540,16 +578,37 @@ def _added_skips(added: Sequence[str]) -> list[str]:
     return skips
 
 
-def _narrowed_removed_keys(removed: Sequence[str]) -> list[str]:
-    keys: list[str] = []
-    for line in removed:
-        stripped = line.strip()
-        if _NARROWED_KEY_RE.search(stripped) is None:
-            continue
-        key = "pytest section" if stripped.startswith("[") else "addopts/testpaths"
-        if key not in keys:
-            keys.append(key)
-    return keys
+def _widened_raises(removed: Sequence[str], added: Sequence[str]) -> list[str]:
+    """Summaries for specific expected exceptions widened to Exception.
+
+    ``with pytest.raises(ValueError):`` becoming
+    ``with pytest.raises(Exception):`` keeps an assertion-shaped line
+    while accepting any failure; that is a weakened test, not a rewritten
+    one.
+    """
+
+    removed_targets = {
+        target
+        for line in removed
+        for target in _RAISES_TARGET_RE.findall(line)
+    }
+    specific = {
+        target
+        for target in removed_targets
+        if target.split(".")[-1] not in _BENIGN_WIDE_TARGETS
+    }
+    if not specific:
+        return []
+    added_wide = any(
+        target.split(".")[-1] in _BENIGN_WIDE_TARGETS
+        for line in added
+        for target in _RAISES_TARGET_RE.findall(line)
+    )
+    if not added_wide:
+        return []
+    return [
+        f"pytest.raises({sorted(specific)[0]}) widened to Exception",
+    ]
 
 
 def _narrowed_added_flags(added: Sequence[str]) -> list[str]:
@@ -558,7 +617,42 @@ def _narrowed_added_flags(added: Sequence[str]) -> list[str]:
         for flag in _NARROWED_FLAGS:
             if flag in line and flag not in flags:
                 flags.append(flag)
+        if _NARROWED_K_RE.search(line) and "-k not" not in flags:
+            flags.append("-k not")
     return flags
+
+
+def _restricted_testpaths(removed: Sequence[str], added: Sequence[str]) -> list[str]:
+    """Testpath replacements that provably shrink the covered tree.
+
+    Every new path must live strictly inside one of the replaced paths;
+    widening (fewer, broader roots) and incomparable rewrites stay silent
+    because the direction cannot be proven.
+    """
+
+    old_values = [
+        value
+        for line in removed
+        if _TESTPATHS_KEY_RE.match(line.strip())
+        for value in _TESTPATHS_VALUE_RE.findall(line)
+    ]
+    new_values = [
+        value
+        for line in added
+        if _TESTPATHS_KEY_RE.match(line.strip())
+        for value in _TESTPATHS_VALUE_RE.findall(line)
+    ]
+    if not old_values or not new_values:
+        return []
+    narrowed: list[str] = []
+    for new_value in new_values:
+        normalized = new_value.strip("/")
+        if any(
+            normalized != old.strip("/") and normalized.startswith(old.strip("/") + "/")
+            for old in old_values
+        ) and new_value not in narrowed:
+            narrowed.append(new_value)
+    return narrowed
 
 
 def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
@@ -566,14 +660,17 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
 
     Content lines keep their ``+``/``-`` prefix so analyzers can tell
     additions from removals; headers, hunk markers, and ``No newline``
-    markers never reach them. The raw diff lives and dies inside this
-    module.
+    markers never reach them. A section that hits the line cap saturates
+    -- its remaining lines are dropped, but scanning continues so a huge
+    production diff can never hide the test file edited after it. The raw
+    diff lives and dies inside this module.
     """
 
     sections: list[tuple[str, list[str]]] = []
     current_path = ""
     current: list[str] = []
     in_hunk = False
+    saturated = False
 
     def flush() -> None:
         nonlocal current
@@ -588,6 +685,7 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
             flush()
             current_path = header.group(2)
             in_hunk = False
+            saturated = False
             continue
         if line.startswith("@@"):
             in_hunk = True
@@ -599,9 +697,11 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
         if line.startswith(("+++", "---")) or line.startswith("\\"):
             continue
         if line.startswith(("+", "-")):
+            if saturated:
+                continue
             current.append(line)
             if len(current) >= MAX_SECTION_LINES:
-                break
+                saturated = True
     flush()
     return sections
 
@@ -616,6 +716,7 @@ __all__ = [
     "REASON_MONITOR_ERROR",
     "REASON_TEST_ASSERTIONS_REMOVED",
     "REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE",
+    "REASON_TEST_EXPECTED_EXCEPTION_WIDENED",
     "REASON_TEST_IMPORT_GUARDED",
     "REASON_TEST_IMPORT_REMOVED",
     "REASON_TEST_SKIP_ADDED",

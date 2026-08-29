@@ -205,7 +205,7 @@ Left label + 1px `--border` line extending right.
 **Status rows** (done, pause, limit, error):
 
 ```
-DONE · 2 files changed · checks passed · restore available        View diff
+DONE · 2 files changed · checks passed        View diff
 PAUSED · No progress for several turns          Continue
 ERROR · Connection refused                      Retry
 ```

@@ -126,6 +126,16 @@ ASSERTION_REMOVED_DIFF = _diff(
     _test_body().replace("    assert mod.VALUE == 2\n", ""),
 )
 CONFIG_NARROWED_DIFF = _diff(
+    "[tool.pytest.ini_options]\n",
+    '[tool.pytest.ini_options]\naddopts = "--deselect tests/test_mod.py"\n',
+    path="pyproject.toml",
+)
+TESTPATHS_RESTRICTED_DIFF = _diff(
+    '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n',
+    '[tool.pytest.ini_options]\ntestpaths = ["tests/unit"]\n',
+    path="pyproject.toml",
+)
+CONFIG_REMOVED_DIFF = _diff(
     "[tool.pytest.ini_options]\naddopts = \"-q\"\n",
     "[tool.pytest.ini_options]\n",
     path="pyproject.toml",
@@ -194,6 +204,7 @@ def _expect(
     severity: str | None = None,
     trust: str | None = None,
     reason_code: str | None = None,
+    reason_does_not_contain: str | None = None,
     summary_contains: str | None = None,
     summary_does_not_contain: str | None = None,
     detail_contains: str | None = None,
@@ -205,6 +216,10 @@ def _expect(
         assert integrity.severity == severity, integrity.to_payload()
     if reason_code is not None:
         assert reason_code in integrity.reason_codes, integrity.to_payload()
+    if reason_does_not_contain is not None:
+        assert (
+            reason_does_not_contain not in integrity.reason_codes
+        ), integrity.to_payload()
     if receipt is None:
         return
     if trust is not None:
@@ -260,6 +275,21 @@ def deterministic_cases() -> list[dict[str, Any]]:
                 severity=SEVERITY_HIGH,
                 trust=TRUST_REVIEW,
                 reason_code="verification_config_narrowed",
+            ),
+        },
+        {
+            "name": "testpaths_restriction_is_high_suspicious",
+            "check": lambda: _expect(
+                _receipt_for(TESTPATHS_RESTRICTED_DIFF, paths=("pyproject.toml",)),
+                trust=TRUST_REVIEW,
+                reason_code="verification_config_narrowed",
+            ),
+        },
+        {
+            "name": "config_removal_is_not_narrowing",
+            "check": lambda: _expect(
+                _receipt_for(CONFIG_REMOVED_DIFF, paths=("pyproject.toml",), green=False),
+                reason_does_not_contain="verification_config_narrowed",
             ),
         },
         {

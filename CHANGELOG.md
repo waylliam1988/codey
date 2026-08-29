@@ -94,6 +94,32 @@ This file records Codey's release history. The newest release appears first.
     `dependency_missing_env_failure` case. No full production-quality A/B
     is required for this version; the live smokes remain the open manual
     evidence item.
+- Review-round hardening (same-day findings, all fixed before commit):
+  - `completion_evidence()` takes an explicit snapshot (changes, changed
+    flag, scope files, selected check, stop reason) at every call site, so
+    the integrity observation always reads the post-repair diff instead of
+    one cached before the repair round.
+  - "Fix the failing test" no longer authorizes test edits (it usually
+    means fixing product code); the Chinese authorization list keeps only
+    explicit 修改/更新/调整测试 phrasings.
+  - Diff scanning saturates per section: a huge production diff can no
+    longer hide a tampered test file edited after it.
+  - Import findings net against unguarded re-added imports (a legitimate
+    move is not a removal); `with pytest.raises(...)` removals count as
+    assertions; a specific expected exception widened to `Exception` is a
+    new high-signal finding (`test_expected_exception_widened`).
+  - Verification-config findings fire only on provably narrowing additions
+    (`--ignore`, `--deselect`, `-k "not ..."`) and testpaths replacements
+    strictly inside the replaced roots; deleting testpaths/addopts is not
+    a narrowing signal.
+  - Receipt schema v1 closes its audit loop: `verification.state`,
+    `verification.proof_refs`, `integrity.affected_paths`, and
+    `integrity.refs` travel with the receipt (bounded, no raw diff).
+  - Trust contract tightened: a receipt claiming passing checks without an
+    integrity observation is `limited`, never `trusted`; Run Details no
+    longer reconstructs a green claim from the legacy `checks_passed`
+    fact (no receipt -> "Checks not recorded").
+  - README / DESIGN receipt copy synced to the schema-v1 wording.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

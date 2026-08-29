@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import difflib
 import unittest
 
 from codey.completion.edit_integrity import (
@@ -19,16 +18,7 @@ from codey.runs.receipt import (
     build_task_receipt,
     task_receipt_from_payload,
 )
-
-
-_IMPORT_REMOVAL_OLD = "import redis  # noqa: F401\n\ndef test_value():\n"
-_IMPORT_REMOVAL_NEW = "def test_value():\n"
-IMPORT_REMOVAL_DIFF = "".join(difflib.unified_diff(
-    _IMPORT_REMOVAL_OLD.splitlines(keepends=True),
-    _IMPORT_REMOVAL_NEW.splitlines(keepends=True),
-    fromfile="a/tests/test_mod.py",
-    tofile="b/tests/test_mod.py",
-))
+from tests.test_completion_edit_integrity import IMPORT_REMOVAL_DIFF, _GreenDecision
 
 
 class TaskReceiptTests(unittest.TestCase):
@@ -42,8 +32,17 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertEqual(receipt.schema_version, RECEIPT_SCHEMA_VERSION)
 
     def test_trusted_pass_receipt_names_checks_only(self) -> None:
+        observation = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": ""},
+            diff="",
+            files=("src/mod.py",),
+            decision=None,
+            run_id="run-1",
+        )
         receipt = build_task_receipt(
             {"mode": "snapshot", "changed_count": 2},
+            integrity=observation,
             checks_passed=True,
         )
 
@@ -54,9 +53,30 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_TRUSTED)
         self.assertEqual(receipt.to_dict()["schema_version"], RECEIPT_SCHEMA_VERSION)
 
+    def test_unwatched_green_is_limited_by_contract(self) -> None:
+        # A receipt claiming passing checks without any integrity
+        # observation cannot be trusted: nobody watched for tampering.
+        receipt = build_task_receipt(
+            {"mode": "git", "changed_count": 2},
+            checks_passed=True,
+        )
+
+        self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_LIMITED)
+        self.assertEqual(receipt.display.summary, "2 files changed · verification limited")
+        self.assertEqual(receipt.display.detail, "Verification monitoring failed")
+
     def test_git_changes_do_not_claim_snapshot_restore(self) -> None:
+        observation = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": ""},
+            diff="",
+            files=("src/mod.py",),
+            decision=None,
+            run_id="run-1",
+        )
         receipt = build_task_receipt(
             {"mode": "git", "changed_count": 1},
+            integrity=observation,
             checks_passed=True,
         )
 
@@ -86,6 +106,10 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertEqual(receipt.integrity.status, STATUS_SUSPICIOUS)
         self.assertEqual(receipt.integrity.severity, SEVERITY_HIGH)
         self.assertIn("test_import_removed_or_commented", receipt.integrity.reason_codes)
+        # The audit loop closes inside the receipt: paths and refs travel
+        # with it, Details and headless never have to guess from the trace.
+        self.assertEqual(receipt.integrity.affected_paths, ("tests/test_mod.py",))
+        self.assertEqual(receipt.integrity.refs[0], integrity.observation_ref)
         self.assertFalse(receipt.integrity.authorized_test_edit)
 
     def test_authorized_low_suspicious_receipt_stays_trusted(self) -> None:
@@ -107,6 +131,33 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertTrue(integrity.user_authorized_test_edit)
         self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_TRUSTED)
         self.assertEqual(receipt.display.summary, "1 file changed · checks passed")
+
+    def test_receipt_carries_proof_state_and_refs_from_decision(self) -> None:
+        observation = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": ""},
+            diff="",
+            files=("src/mod.py",),
+            decision=None,
+            run_id="run-1",
+        )
+        receipt = build_task_receipt(
+            {"mode": "git", "changed_count": 1},
+            decision=_GreenDecision(),
+            integrity=observation,
+            checks_passed=True,
+        )
+
+        self.assertEqual(receipt.verification.state, "complete")
+        self.assertEqual(receipt.verification.stance, "fresh_pass")
+        self.assertEqual(receipt.verification.source, "local_run")
+        self.assertEqual(len(receipt.verification.proof_refs), 2)
+        self.assertTrue(
+            receipt.verification.proof_refs[0].startswith("completion_proof:"),
+        )
+        self.assertTrue(
+            receipt.verification.proof_refs[1].startswith("completion_contract:"),
+        )
 
     def test_monitor_error_receipt_is_limited(self) -> None:
         integrity = EditIntegrityObservation(
@@ -141,8 +192,18 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertFalse(receipt.verification.checks_passed)
 
     def test_receipt_payload_round_trip_and_fail_closed(self) -> None:
+        integrity = observe_edit_integrity(
+            task="fix src/mod.py",
+            changes={"changed_count": 1, "files": [{"path": "tests/test_mod.py"}], "diff": IMPORT_REMOVAL_DIFF},
+            diff=IMPORT_REMOVAL_DIFF,
+            files=("tests/test_mod.py",),
+            decision=_GreenDecision(),
+            run_id="run-1",
+        )
         receipt = build_task_receipt(
             {"mode": "snapshot", "changed_count": 2},
+            decision=_GreenDecision(),
+            integrity=integrity,
             checks_passed=True,
         )
         restored = task_receipt_from_payload(receipt.to_dict())

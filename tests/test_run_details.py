@@ -5,9 +5,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
+from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
+
+
+def _clean_receipt(changed_count: int = 1) -> dict:
+    observation = observe_edit_integrity(
+        task="Change src/mod.py VALUE from 1 to 2.",
+        changes={"changed_count": changed_count, "files": [{"path": "src/mod.py"}], "diff": ""},
+        diff="",
+        files=("src/mod.py",),
+        decision=None,
+        run_id="run-1",
+    )
+    return build_task_receipt(
+        {"mode": "snapshot", "changed_count": changed_count},
+        integrity=observation,
+        checks_passed=True,
+    ).to_dict()
 
 
 class RunDetailsTests(unittest.TestCase):
@@ -31,7 +49,7 @@ class RunDetailsTests(unittest.TestCase):
             writer.append_changes_collected(
                 {"ok": True, "mode": "snapshot", "changed_count": 1, "files": []},
                 checks_passed=True,
-                receipt={"text": "1 file changed · checks passed", "changed_count": 1},
+                receipt=_clean_receipt(),
             )
             writer.finish(
                 summary="SECRET_SUMMARY_SHOULD_NOT_APPEAR",
@@ -100,6 +118,46 @@ class RunDetailsTests(unittest.TestCase):
             "Provider",
         ):
             self.assertNotIn(secret, serialized)
+
+    def test_verification_row_never_reconstructs_green_without_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            ledger_store = RunLedgerStore(state)
+            writer = ledger_store.open(
+                run_id="run-legacy",
+                session_id="session-legacy",
+                project=state / "project",
+                task="task",
+                provider="deepseek",
+                mode="project",
+            )
+            writer.append_changes_collected(
+                {"ok": True, "mode": "snapshot", "changed_count": 2, "files": []},
+                checks_passed=True,
+                # A legacy-shaped receipt fails closed: no claim may be
+                # derived from the stored checks_passed fact either.
+                receipt={"text": "2 files changed · checks passed", "changed_count": 2},
+            )
+            writer.finish(
+                summary="done",
+                stop_reason="done",
+                turns=1,
+                max_turns=8,
+                provider="deepseek",
+            )
+
+            rows = {
+                row["label"]: row
+                for row in load_run_details(
+                    run_ledgers=ledger_store,
+                    run_traces=RunTraceStore(state),
+                    session_id="session-legacy",
+                    run_id="run-legacy",
+                ).to_jsonable()["rows"]
+            }
+
+        self.assertEqual(rows["Verification"]["value"], "Checks not recorded")
+        self.assertEqual(rows["Verification"]["tone"], "warning")
 
     def test_load_run_details_reports_quiet_unavailable_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -113,6 +113,28 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunner
     )
 
 
+def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskRunner:
+    """Runner whose successive change collections come from ``collected``."""
+
+    return TaskRunner(
+        state,
+        agent_run=writer,
+        collect_changes=mock.Mock(side_effect=lambda *_a, **_k: (
+            collected.pop(0) if collected else dict(collected[-1])
+        )),
+        run_review=mock.Mock(return_value=None),
+        capture_provider_failure=server.capture_provider_failure,
+        project_facts=state.project_facts,
+        work_checkpoints=state.work_checkpoints,
+        run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
+        managed_outputs=state.managed_outputs,
+        knowledge_store=state.knowledge_store,
+        is_git_repository=lambda _project: True,
+    )
+
+
 def _run(runner: TaskRunner, state, project: Path, task: str) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner.run(TaskRequest(
@@ -239,6 +261,83 @@ class CleanRunTests(unittest.TestCase):
 
 def proofs_last_diagnostic(manifest: dict) -> list:
     return manifest["completion_proofs"][-1].get("diagnostic_refs", [])
+
+
+class RepairRoundTests(unittest.TestCase):
+    """The integrity observation must ride the same snapshot as the final
+    decision: a diff captured before the repair round is stale evidence."""
+
+    def test_tamper_introduced_during_repair_yields_needs_review(self) -> None:
+        writer = ScriptedWriter(
+            ([_edit("src/mod.py"), _run_event(False)], RunResult("done?", "done", 3)),
+            ([_edit("tests/test_mod.py"), _run_event(True)], RunResult("fixed", "done", 2)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = Path(td) / "project"
+            (project / "src").mkdir(parents=True)
+            (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            state = server.State(Path(td) / "state")
+            event = _run(
+                _runner_with_changes(
+                    state,
+                    writer,
+                    [_changes("src/mod.py"), _changes("tests/test_mod.py")],
+                ),
+                state,
+                project,
+                "Change src/mod.py VALUE from 1 to 2 and verify",
+            )
+
+            self.assertEqual(event["stop_reason"], "done")
+            receipt = event["receipt"]
+            # The tampered diff arrived WITH the repair round; the final
+            # receipt must read it, not the pre-repair clean diff.
+            self.assertEqual(receipt["verification"]["trust"], "needs_review")
+            self.assertEqual(
+                receipt["display"]["summary"],
+                "1 file changed · checks need review",
+            )
+            manifest = _trace_payload(state)
+            rows = manifest["completion_edit_integrity"]
+            self.assertEqual(rows[-1]["status"], "suspicious")
+            self.assertEqual(rows[-1]["severity"], "high")
+            self.assertEqual(
+                manifest["completion_proofs"][-1]["diagnostic_refs"],
+                [rows[-1]["observation_ref"]],
+            )
+
+    def test_tamper_removed_during_repair_recovers_clean(self) -> None:
+        writer = ScriptedWriter(
+            ([_edit("tests/test_mod.py"), _run_event(False)], RunResult("done?", "done", 3)),
+            ([_edit("src/mod.py"), _run_event(True)], RunResult("fixed", "done", 2)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = Path(td) / "project"
+            (project / "src").mkdir(parents=True)
+            (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            state = server.State(Path(td) / "state")
+            event = _run(
+                _runner_with_changes(
+                    state,
+                    writer,
+                    [_changes("tests/test_mod.py"), _changes("src/mod.py")],
+                ),
+                state,
+                project,
+                "Change src/mod.py VALUE from 1 to 2 and verify",
+            )
+
+            self.assertEqual(event["stop_reason"], "done")
+            receipt = event["receipt"]
+            # The final collection shows the fixture restored and the
+            # production file fixed: the earlier suspicion is gone.
+            self.assertEqual(receipt["verification"]["trust"], "trusted")
+            self.assertEqual(
+                receipt["display"]["summary"],
+                "1 file changed · checks passed",
+            )
+            manifest = _trace_payload(state)
+            self.assertEqual(manifest["completion_edit_integrity"][-1]["status"], "clean")
 
 
 class MonitorFailureTests(unittest.TestCase):

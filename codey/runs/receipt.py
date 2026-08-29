@@ -8,13 +8,19 @@ diffs, raw output, or model text.
 
 Trust is a contract, not a score:
 
-- ``trusted``      -- checks passed and integrity observed nothing high-risk
+- ``trusted``      -- checks passed and a present integrity observation
+                      found nothing high-risk
 - ``needs_review`` -- checks passed, but high-confidence integrity findings
                       mean the green may have been earned by weakening
                       verification
 - ``limited``      -- the run cannot claim trusted verification: the checks
-                      did not pass, or the integrity monitor failed and the
-                      green cannot be vouched for
+                      did not pass, the monitor failed, or no integrity
+                      observation was supplied at all
+
+The receipt is the durable audit contract, so it carries the refs it is
+derived from (proof ids, the integrity observation ref and affected
+paths) instead of forcing readers back into the trace to reconstruct
+them.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from codey.completion.edit_integrity import (
     STATUS_SUSPICIOUS,
     EditIntegrityObservation,
 )
+from codey.policies.redaction import looks_prompt_visible_secret
 from codey.utils.refs import clip, identifier, nonnegative_int
 
 
@@ -47,6 +54,9 @@ RECEIPT_TRUSTS = frozenset(
 MAX_SUMMARY_CHARS = 200
 MAX_DETAIL_CHARS = 200
 MAX_MODE_CHARS = 40
+MAX_PROOF_REFS = 2
+MAX_INTEGRITY_REFS = 4
+MAX_AFFECTED_PATHS = 4
 
 
 @dataclass(frozen=True)
@@ -70,15 +80,18 @@ class ReceiptWork:
 class ReceiptVerification:
     """The receipt's stance on the run's verification claim.
 
-    ``trust`` is the contract-level verdict; ``stance``/``source`` mirror
-    the completion decision's provenance when one was supplied, so Details
-    can show where a green fact actually came from.
+    ``trust`` is the contract-level verdict. ``state`` mirrors the
+    underlying proof status, ``stance``/``source`` mirror the decision's
+    provenance, and ``proof_refs`` name the proof and contract, so
+    Details and headless consumers never have to guess from the trace.
     """
 
     trust: str
     checks_passed: bool = False
+    state: str = ""
     stance: str = ""
     source: str = ""
+    proof_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,6 +102,8 @@ class ReceiptIntegrity:
     severity: str = "none"
     reason_codes: tuple[str, ...] = ()
     authorized_test_edit: bool = False
+    affected_paths: tuple[str, ...] = ()
+    refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -120,13 +135,23 @@ class TaskReceipt:
                 "severity": self.integrity.severity,
             },
         }
+        verification = payload["verification"]
+        if self.verification.state:
+            verification["state"] = self.verification.state
         if self.verification.stance:
-            payload["verification"]["stance"] = self.verification.stance
-            payload["verification"]["source"] = self.verification.source
+            verification["stance"] = self.verification.stance
+            verification["source"] = self.verification.source
+        if self.verification.proof_refs:
+            verification["proof_refs"] = list(self.verification.proof_refs)
+        integrity = payload["integrity"]
         if self.integrity.reason_codes:
-            payload["integrity"]["reason_codes"] = list(self.integrity.reason_codes)
+            integrity["reason_codes"] = list(self.integrity.reason_codes)
         if self.integrity.authorized_test_edit:
-            payload["integrity"]["authorized_test_edit"] = True
+            integrity["authorized_test_edit"] = True
+        if self.integrity.affected_paths:
+            integrity["affected_paths"] = list(self.integrity.affected_paths)
+        if self.integrity.refs:
+            integrity["refs"] = list(self.integrity.refs)
         return payload
 
 
@@ -145,10 +170,12 @@ def build_task_receipt(
 ) -> TaskReceipt:
     """Build the schema-v1 receipt from collected changes and projections.
 
-    ``decision`` (a CompletionDecision) contributes the verification
-    provenance shown in Details; ``integrity`` (an EditIntegrityObservation)
-    contributes the trust downgrade for high-confidence findings and for
-    monitor errors.
+    ``decision`` (a CompletionDecision) contributes the proof state, the
+    provenance shown in Details, and the proof refs; ``integrity`` (an
+    EditIntegrityObservation) contributes the trust downgrade for
+    high-confidence findings and for monitor errors. A receipt that
+    claims passing checks without any integrity observation is
+    ``limited`` by contract: nobody can vouch for a green nobody watched.
     """
 
     changes = changes if isinstance(changes, dict) else {}
@@ -157,10 +184,22 @@ def build_task_receipt(
     restore_available = mode == "snapshot" and changed_count > 0
 
     trust = _verification_trust(checks_passed, integrity)
-    summary, detail = _display_text(trust, changed_count, checks_passed, integrity)
+    summary, detail = _display_text(trust, changed_count, checks_passed)
 
-    stance = str(getattr(getattr(decision, "provenance", None), "stance", "") or "")
-    source = str(getattr(getattr(decision, "provenance", None), "source", "") or "")
+    proof = getattr(decision, "proof", None)
+    provenance = getattr(decision, "provenance", None)
+    state = identifier(getattr(proof, "status", ""), 40)
+    stance = identifier(getattr(provenance, "stance", ""), 40)
+    source = identifier(getattr(provenance, "source", ""), 40)
+    proof_refs = tuple(
+        ref
+        for ref in (
+            identifier(getattr(proof, "proof_id", ""), 120),
+            identifier(getattr(proof, "contract_id", ""), 120),
+        )
+        if ref
+    )[:MAX_PROOF_REFS]
+
     if integrity is not None:
         integrity_section = ReceiptIntegrity(
             status=identifier(integrity.status, 20) or "unobserved",
@@ -173,6 +212,25 @@ def build_task_receipt(
                 if code
             )[:8],
             authorized_test_edit=bool(integrity.user_authorized_test_edit),
+            affected_paths=tuple(
+                path
+                for path in (
+                    clip(item, 240)
+                    for item in integrity.affected_paths
+                )
+                if path and not looks_prompt_visible_secret(path)
+            )[:MAX_AFFECTED_PATHS],
+            refs=tuple(
+                ref
+                for ref in (
+                    identifier(integrity.observation_ref, 80),
+                    *(
+                        identifier(item, 80)
+                        for item in (finding.finding_ref for finding in integrity.findings)
+                    ),
+                )
+                if ref
+            )[:MAX_INTEGRITY_REFS],
         )
     else:
         integrity_section = ReceiptIntegrity()
@@ -188,8 +246,10 @@ def build_task_receipt(
         verification=ReceiptVerification(
             trust=trust,
             checks_passed=bool(checks_passed),
+            state=state,
             stance=stance,
             source=source,
+            proof_refs=proof_refs,
         ),
         integrity=integrity_section,
     )
@@ -202,7 +262,8 @@ def _verification_trust(
     if not checks_passed:
         return VERIFICATION_TRUST_LIMITED
     if integrity is None:
-        return VERIFICATION_TRUST_TRUSTED
+        # No observation, no vouch: an unwatched green is never trusted.
+        return VERIFICATION_TRUST_LIMITED
     if integrity.status == STATUS_MONITOR_ERROR:
         # The monitor could not observe: the green can stay a run fact,
         # but the receipt cannot vouch for it.
@@ -219,7 +280,6 @@ def _display_text(
     trust: str,
     changed_count: int,
     checks_passed: bool,
-    integrity: EditIntegrityObservation | None,
 ) -> tuple[str, str]:
     parts = [_file_count_text(changed_count)]
     if trust == VERIFICATION_TRUST_TRUSTED and checks_passed:
@@ -283,19 +343,47 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
         verification=ReceiptVerification(
             trust=trust,
             checks_passed=verification.get("checks_passed") is True,
+            state=identifier(verification.get("state"), 40),
             stance=identifier(verification.get("stance"), 40),
             source=identifier(verification.get("source"), 40),
+            proof_refs=tuple(
+                ref
+                for ref in (
+                    identifier(item, 120)
+                    for item in verification.get("proof_refs", ()) or ()
+                )
+                if ref
+            )[:MAX_PROOF_REFS],
         ),
         integrity=ReceiptIntegrity(
             status=status,
             severity=severity,
             reason_codes=reason_codes,
             authorized_test_edit=integrity.get("authorized_test_edit") is True,
+            affected_paths=tuple(
+                path
+                for path in (
+                    clip(item, 240)
+                    for item in integrity.get("affected_paths", ()) or ()
+                )
+                if path and not looks_prompt_visible_secret(path)
+            )[:MAX_AFFECTED_PATHS],
+            refs=tuple(
+                ref
+                for ref in (
+                    identifier(item, 80)
+                    for item in integrity.get("refs", ()) or ()
+                )
+                if ref
+            )[:MAX_INTEGRITY_REFS],
         ),
     )
 
 
 __all__ = [
+    "MAX_AFFECTED_PATHS",
+    "MAX_INTEGRITY_REFS",
+    "MAX_PROOF_REFS",
     "MAX_SUMMARY_CHARS",
     "RECEIPT_SCHEMA_VERSION",
     "RECEIPT_TRUSTS",

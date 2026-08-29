@@ -3177,49 +3177,81 @@ class TaskRunner:
         checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
         verification_forbidden = task_forbids_verification(request.task)
 
-        # The decision closure reads the live local variables, so the
-        # repair round recomputes it from the post-repair facts exactly as
-        # the initial decision was computed from the pre-repair ones.
-        changes_diff = (
-            str(task_changes.get("diff") or "")
-            if isinstance(task_changes, dict)
-            else ""
-        )
-
-        def completion_decision(**extra: object) -> CompletionDecision:
+        # The decision inputs are passed explicitly at every call site: the
+        # repair round re-collects changes and re-selects the candidate, and
+        # the integrity observation must read the exact same snapshot of
+        # changes/files/check as the decision it qualifies -- never a diff
+        # captured before the repair.
+        def completion_decision(
+            *,
+            stop: str,
+            changed: bool,
+            scope_files: tuple[str, ...],
+            check: object,
+            diagnostic_refs: tuple[str, ...] = (),
+        ) -> CompletionDecision:
             return build_completion_decision(
                 run_id=frame.run_id,
-                stop_reason=result.stop_reason,
-                task_changed=task_changed,
-                files=files,
-                selected_check=selected_check,
+                stop_reason=stop,
+                task_changed=changed,
+                files=scope_files,
+                selected_check=check,
                 evidence=work.evidence,
                 analysis_run_payloads=work.analysis_run_payloads,
                 project=project,
                 checkpoint_green=checkpoint_green,
                 verification_forbidden=verification_forbidden,
-                **extra,
+                diagnostic_refs=diagnostic_refs,
             )
 
-        def completion_evidence() -> tuple[CompletionDecision, EditIntegrityObservation]:
+        def completion_evidence(
+            *,
+            changes: object,
+            changed: bool,
+            scope_files: tuple[str, ...],
+            check: object,
+            stop: str,
+        ) -> tuple[CompletionDecision, EditIntegrityObservation]:
             # Integrity is observed against the decision's verification
-            # stance; when it finds anything, the proof is recomputed once
-            # so its diagnostic_refs name that observation.
-            decided = completion_decision()
+            # stance over the SAME snapshot; when it finds anything, the
+            # proof is recomputed once so its diagnostic_refs name that
+            # observation.
+            decided = completion_decision(
+                stop=stop,
+                changed=changed,
+                scope_files=scope_files,
+                check=check,
+            )
             integrity = observe_edit_integrity(
                 task=request.task,
-                changes=task_changes,
-                diff=changes_diff,
-                files=files,
+                changes=changes,
+                diff=(
+                    str(changes.get("diff") or "")
+                    if isinstance(changes, dict)
+                    else ""
+                ),
+                files=scope_files,
                 decision=decided,
-                selected_check=selected_check,
+                selected_check=check,
                 run_id=frame.run_id,
             )
             if integrity.diagnostic_refs:
-                decided = completion_decision(diagnostic_refs=integrity.diagnostic_refs)
+                decided = completion_decision(
+                    stop=stop,
+                    changed=changed,
+                    scope_files=scope_files,
+                    check=check,
+                    diagnostic_refs=integrity.diagnostic_refs,
+                )
             return decided, integrity
 
-        decision, integrity = completion_evidence()
+        decision, integrity = completion_evidence(
+            changes=task_changes,
+            changed=task_changed,
+            scope_files=files,
+            check=selected_check,
+            stop=result.stop_reason,
+        )
         proof = decision.proof
         _record_completion_proof_trace(frame.trace, proof)
         _record_edit_integrity_trace(frame.trace, integrity)
@@ -3318,7 +3350,13 @@ class TaskRunner:
                                 changed=result.changed or repair_result.changed,
                                 checks_ran=result.checks_ran or repair_result.checks_ran,
                             )
-                            decision, integrity = completion_evidence()
+                            decision, integrity = completion_evidence(
+                                changes=task_changes,
+                                changed=task_changed,
+                                scope_files=files,
+                                check=selected_check,
+                                stop=result.stop_reason,
+                            )
                             proof = decision.proof
                             _record_completion_proof_trace(frame.trace, proof)
                             _record_edit_integrity_trace(frame.trace, integrity)

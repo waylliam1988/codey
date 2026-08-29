@@ -281,13 +281,15 @@ def _verification_summary(
     projection: RunLedgerProjection | None,
     trace: Mapping[str, object],
 ) -> tuple[str, str]:
-    """The Verification row: receipt contract first, legacy facts after.
+    """The Verification row, from the receipt contract only.
 
-    A schema-v1 receipt is the trusted source for what the green check is
+    A schema-v1 receipt is the single source for what the green check is
     worth: ``needs_review`` means high-confidence integrity findings, and
     ``limited`` with a passing run means the monitor failed and the green
-    cannot be vouched for. Runs without a receipt projection keep the
-    legacy wording.
+    cannot be vouched for. Runs whose ledger carries no valid receipt --
+    older ledgers included -- get the honest "not recorded" wording; a
+    green claim is never reconstructed from the legacy checks_passed
+    fact.
     """
 
     receipt = (
@@ -308,8 +310,6 @@ def _verification_summary(
     if _trace_integrity_suspicious(trace):
         return "Test changes may have weakened checks", "warning"
     if projection is not None and projection.final_changes is not None:
-        if projection.final_changes.checks_passed:
-            return "Checks passed", "neutral"
         if projection.final_changes.changed_count:
             return "Checks not recorded", "warning"
     if projection is not None and projection.verified_commands:
