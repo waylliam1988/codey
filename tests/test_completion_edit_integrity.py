@@ -5,6 +5,7 @@ import unittest
 
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_REASON_CODES,
+    MAX_SECTION_LINES,
     REASON_DIFF_UNAVAILABLE,
     REASON_TEST_ASSERTIONS_REMOVED,
     REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
@@ -52,10 +53,22 @@ TEST_VALUE_CHANGE_DIFF = _diff(
 )
 
 
-def _observe(*, task: str = "Change src/mod.py VALUE from 1 to 2.", diff: str, paths, **kwargs):
+def _observe(
+    *,
+    task: str = "Change src/mod.py VALUE from 1 to 2.",
+    diff: str,
+    paths,
+    truncated: bool = False,
+    **kwargs,
+):
     return observe_edit_integrity(
         task=task,
-        changes={"changed_count": len(paths), "files": [{"path": p} for p in paths], "diff": diff},
+        changes={
+            "changed_count": len(paths),
+            "files": [{"path": p} for p in paths],
+            "diff": diff,
+            "truncated": truncated,
+        },
         diff=diff,
         files=paths,
         **kwargs,
@@ -325,6 +338,219 @@ class ScanSaturationTests(unittest.TestCase):
         self.assertEqual(observation.status, STATUS_SUSPICIOUS)
         self.assertEqual(observation.severity, SEVERITY_HIGH)
         self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
+
+    def test_saturated_test_section_is_unobserved_when_no_visible_finding(self) -> None:
+        filler = "".join("-assert True\n+assert True\n" for _ in range(MAX_SECTION_LINES // 2))
+        diff = (
+            "diff --git a/tests/test_mod.py b/tests/test_mod.py\n"
+            "--- a/tests/test_mod.py\n"
+            "+++ b/tests/test_mod.py\n"
+            "@@ -1,1001 +1,1000 @@\n"
+            + filler
+            + "-import redis\n"
+        )
+
+        observation = _observe(
+            task="Update the tests to expect the new value",
+            diff=diff,
+            paths=("tests/test_mod.py",),
+        )
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertEqual(observation.severity, SEVERITY_NONE)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+        self.assertEqual(observation.affected_paths, ("tests/test_mod.py",))
+
+    def test_saturated_diff_without_changed_paths_is_unobserved(self) -> None:
+        filler = "".join("-assert True\n+assert True\n" for _ in range(MAX_SECTION_LINES // 2))
+        diff = (
+            "diff --git a/tests/test_mod.py b/tests/test_mod.py\n"
+            "--- a/tests/test_mod.py\n"
+            "+++ b/tests/test_mod.py\n"
+            "@@ -1,1001 +1,1000 @@\n"
+            + filler
+            + "-import redis\n"
+        )
+
+        observation = observe_edit_integrity(
+            task="Update the tests to expect the new value",
+            changes={"changed_count": 1, "files": [], "diff": diff},
+            diff=diff,
+            files=(),
+        )
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+        self.assertEqual(observation.affected_paths, ("tests/test_mod.py",))
+
+    def test_visible_finding_stays_suspicious_when_section_saturates(self) -> None:
+        filler = "".join("-assert True\n+assert True\n" for _ in range(MAX_SECTION_LINES // 2))
+        diff = (
+            "diff --git a/tests/test_mod.py b/tests/test_mod.py\n"
+            "--- a/tests/test_mod.py\n"
+            "+++ b/tests/test_mod.py\n"
+            "@@ -1,1001 +1,1000 @@\n"
+            "-import redis\n"
+            + filler
+            + "-tail hidden\n"
+        )
+
+        observation = _observe(diff=diff, paths=("tests/test_mod.py",))
+
+        self.assertEqual(observation.status, STATUS_SUSPICIOUS)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+        self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+
+    def test_many_diff_sections_do_not_hide_late_test_section(self) -> None:
+        prefix = "".join(
+            _diff(f"VALUE = {index}\n", f"VALUE = {index + 1}\n", path=f"src/mod_{index}.py")
+            for index in range(16)
+        )
+        observation = _observe(
+            diff=prefix + _diff(_IMPORT_REMOVAL_OLD, _IMPORT_REMOVAL_NEW),
+            paths=tuple([*(f"src/mod_{index}.py" for index in range(16)), "tests/test_mod.py"]),
+        )
+
+        self.assertEqual(observation.status, STATUS_SUSPICIOUS)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+        self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
+
+
+class DiffPathIdentityTests(unittest.TestCase):
+    def test_global_diff_truncation_is_unobserved(self) -> None:
+        diff = _diff("VALUE = 1\n", "VALUE = 2\n", path="src/mod.py")
+        observation = _observe(diff=diff, paths=("src/mod.py",), truncated=True)
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertEqual(observation.severity, SEVERITY_NONE)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+        self.assertEqual(observation.affected_paths, ("src/mod.py",))
+
+    def test_rename_display_path_matches_new_diff_path(self) -> None:
+        diff = (
+            "diff --git a/tests/test_old.py b/tests/test_new.py\n"
+            "similarity index 80%\n"
+            "rename from tests/test_old.py\n"
+            "rename to tests/test_new.py\n"
+            "--- a/tests/test_old.py\n"
+            "+++ b/tests/test_new.py\n"
+            "@@ -1 +1 @@\n"
+            "-assert True\n"
+            "+assert True\n"
+        )
+
+        observation = observe_edit_integrity(
+            task="Update the tests to expect the new value",
+            changes={
+                "changed_count": 1,
+                "files": [{"path": "tests/test_old.py -> tests/test_new.py", "status": "R"}],
+                "diff": diff,
+            },
+            diff=diff,
+            files=(),
+        )
+
+        self.assertEqual(observation.status, STATUS_CLEAN)
+        self.assertNotIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+
+    def test_copy_display_path_matches_new_diff_path(self) -> None:
+        diff = (
+            "diff --git a/tests/test_base.py b/tests/test_copy.py\n"
+            "copy from tests/test_base.py\n"
+            "copy to tests/test_copy.py\n"
+            "--- a/tests/test_base.py\n"
+            "+++ b/tests/test_copy.py\n"
+            "@@ -1 +1 @@\n"
+            "-assert True\n"
+            "+assert True\n"
+        )
+
+        observation = observe_edit_integrity(
+            task="Update the tests to expect the new value",
+            changes={
+                "changed_count": 1,
+                "files": [{"path": "tests/test_base.py -> tests/test_copy.py", "status": "C"}],
+                "diff": diff,
+            },
+            diff=diff,
+            files=(),
+        )
+
+        self.assertEqual(observation.status, STATUS_CLEAN)
+        self.assertNotIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+
+    def test_new_deleted_binary_space_and_unicode_paths_keep_expected_status(self) -> None:
+        cases = (
+            (
+                "new_file",
+                "tests/test_new.py",
+                "diff --git a/tests/test_new.py b/tests/test_new.py\n"
+                "new file mode 100644\n"
+                "--- /dev/null\n"
+                "+++ b/tests/test_new.py\n"
+                "@@ -0,0 +1 @@\n"
+                "+assert True\n",
+                STATUS_CLEAN,
+                (),
+            ),
+            (
+                "deleted_file",
+                "tests/test_old.py",
+                "diff --git a/tests/test_old.py b/tests/test_old.py\n"
+                "deleted file mode 100644\n"
+                "--- a/tests/test_old.py\n"
+                "+++ /dev/null\n"
+                "@@ -1 +0,0 @@\n"
+                "-assert True\n",
+                STATUS_SUSPICIOUS,
+                (REASON_TEST_ASSERTIONS_REMOVED,),
+            ),
+            (
+                "binary_file",
+                "tests/data.bin",
+                "diff --git a/tests/data.bin b/tests/data.bin\n"
+                "index 1111111..2222222 100644\n"
+                "Binary files a/tests/data.bin and b/tests/data.bin differ\n",
+                STATUS_UNOBSERVED,
+                (REASON_DIFF_UNAVAILABLE,),
+            ),
+            (
+                "path_with_spaces",
+                "src/file with space.py",
+                "diff --git a/src/file with space.py b/src/file with space.py\n"
+                "--- a/src/file with space.py\n"
+                "+++ b/src/file with space.py\n"
+                "@@ -1 +1 @@\n"
+                "-VALUE = 1\n"
+                "+VALUE = 2\n",
+                STATUS_CLEAN,
+                (),
+            ),
+            (
+                "unicode_path",
+                "src/module_\u503c.py",
+                "diff --git a/src/module_\u503c.py b/src/module_\u503c.py\n"
+                "--- a/src/module_\u503c.py\n"
+                "+++ b/src/module_\u503c.py\n"
+                "@@ -1 +1 @@\n"
+                "-VALUE = 1\n"
+                "+VALUE = 2\n",
+                STATUS_CLEAN,
+                (),
+            ),
+        )
+
+        for name, path, diff, status, reason_codes in cases:
+            with self.subTest(name=name):
+                observation = _observe(
+                    task="Update the tests to expect the new value",
+                    diff=diff,
+                    paths=(path,),
+                )
+                self.assertEqual(observation.status, status)
+                for reason_code in reason_codes:
+                    self.assertIn(reason_code, observation.reason_codes)
 
 
 class NodeVerificationConfigTests(unittest.TestCase):

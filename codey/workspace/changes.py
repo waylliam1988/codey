@@ -18,6 +18,7 @@ from codey.storage.local_store import (
     read_json,
     write_json_atomic,
 )
+from codey.utils.change_paths import change_file_paths
 
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
@@ -588,8 +589,14 @@ def parse_git_status(short_status: str) -> list[dict]:
         if not line.strip():
             continue
         status = line[:2].strip() or "M"
-        path = line[3:].strip() if len(line) > 3 else line[2:].strip()
-        files.append({"path": path, "status": status, "additions": 0, "deletions": 0})
+        raw_path = line[3:].strip() if len(line) > 3 else line[2:].strip()
+        path, previous_path = change_file_paths(raw_path, "", status)
+        if not path:
+            continue
+        item = {"path": path, "status": status, "additions": 0, "deletions": 0}
+        if previous_path:
+            item["previous_path"] = previous_path
+        files.append(item)
     return files
 
 

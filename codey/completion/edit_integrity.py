@@ -147,6 +147,15 @@ class EditIntegrityFinding:
 
 
 @dataclass(frozen=True)
+class _DiffSection:
+    """One bounded parsed file section from a unified diff."""
+
+    path: str
+    lines: tuple[str, ...]
+    saturated: bool = False
+
+
+@dataclass(frozen=True)
 class EditIntegrityObservation:
     """The projected edit-integrity state of one coding run.
 
@@ -283,15 +292,32 @@ def _observe(
 
     sections = _diff_file_sections(diff_text)
     diff_observed = bool(sections)
-    section_paths = {_normalize_diff_path(path) for path, _lines in sections}
+    section_paths = {_normalize_diff_path(section.path) for section in sections}
+    saturated_section_paths = {
+        _normalize_diff_path(section.path)
+        for section in sections
+        if section.saturated
+    }
+    saturated_diff_paths = tuple(
+        dict.fromkeys(section.path for section in sections if section.saturated)
+    )
     missing_diff_paths = tuple(
         path
         for path in paths
         if _normalize_diff_path(path) not in section_paths
     )
-    diff_unavailable = bool(paths) and (
-        not diff_observed or bool(missing_diff_paths)
+    saturated_paths = tuple(
+        path
+        for path in paths
+        if _normalize_diff_path(path) in saturated_section_paths
+    ) or saturated_diff_paths
+    truncated_paths = paths or tuple(
+        dict.fromkeys(section.path for section in sections)
     )
+    diff_truncated = _changes_diff_truncated(changes)
+    diff_unavailable = (
+        bool(paths) and (not diff_observed or bool(missing_diff_paths))
+    ) or bool(saturated_diff_paths) or diff_truncated
 
     findings: list[EditIntegrityFinding] = []
     if diff_observed:
@@ -318,7 +344,14 @@ def _observe(
     )[:MAX_AFFECTED_PATHS]
     if diff_unavailable:
         affected = tuple(
-            dict.fromkeys((*affected, *missing_diff_paths))
+            dict.fromkeys(
+                (
+                    *affected,
+                    *missing_diff_paths,
+                    *saturated_paths,
+                    *(truncated_paths if diff_truncated else ()),
+                )
+            )
         )[:MAX_AFFECTED_PATHS]
     verification_refs = tuple(
         getattr(decision, "analysis_run_refs", ()) or ()
@@ -350,11 +383,13 @@ def _observe(
 
 
 def _content_findings(
-    sections: Sequence[tuple[str, list[str]]],
+    sections: Sequence[_DiffSection],
     authorized: bool,
 ) -> list[EditIntegrityFinding]:
     findings: list[EditIntegrityFinding] = []
-    for path, lines in sections[:MAX_AFFECTED_PATHS]:
+    for section in sections:
+        path = section.path
+        lines = section.lines
         scope = classify_edit_path(path)
         if scope == EDIT_SCOPE_GENERATED_VENDOR:
             continue
@@ -522,7 +557,7 @@ def _scope_findings(
 ) -> list[EditIntegrityFinding]:
     scopes = {
         path: classify_edit_path(path)
-        for path in paths[:MAX_AFFECTED_PATHS]
+        for path in paths
     }
     protected_paths = tuple(
         path
@@ -594,6 +629,10 @@ def _normalize_diff_path(path: object) -> str:
     while text.startswith("./"):
         text = text[2:]
     return text
+
+
+def _changes_diff_truncated(changes: object) -> bool:
+    return isinstance(changes, dict) and bool(changes.get("truncated"))
 
 
 def _removed_import_modules(removed: Sequence[str]) -> list[str]:
@@ -747,7 +786,7 @@ def _restricted_testpaths(removed: Sequence[str], added: Sequence[str]) -> list[
     return narrowed
 
 
-def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
+def _diff_file_sections(diff: object) -> list[_DiffSection]:
     """Split one unified diff into (path, hunk content lines) sections.
 
     Content lines keep their ``+``/``-`` prefix so analyzers can tell
@@ -758,7 +797,7 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
     diff lives and dies inside this module.
     """
 
-    sections: list[tuple[str, list[str]]] = []
+    sections: list[_DiffSection] = []
     current_path = ""
     current: list[str] = []
     in_hunk = False
@@ -767,7 +806,11 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
     def flush() -> None:
         nonlocal current
         if current_path and current:
-            sections.append((current_path, current[:MAX_SECTION_LINES]))
+            sections.append(_DiffSection(
+                current_path,
+                tuple(current[:MAX_SECTION_LINES]),
+                saturated=saturated,
+            ))
         current = []
 
     for raw in str(diff or "").splitlines():
@@ -789,11 +832,10 @@ def _diff_file_sections(diff: object) -> list[tuple[str, list[str]]]:
         if line.startswith(("+++", "---")) or line.startswith("\\"):
             continue
         if line.startswith(("+", "-")):
-            if saturated:
-                continue
-            current.append(line)
             if len(current) >= MAX_SECTION_LINES:
                 saturated = True
+                continue
+            current.append(line)
     flush()
     return sections
 

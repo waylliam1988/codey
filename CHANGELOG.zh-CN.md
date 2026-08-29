@@ -72,7 +72,7 @@
     判断：fixture scope 改读该 run 自己 trace 里的 integrity 行，row 新增
     `receipt_trust` / `integrity_*` 字段。
   - 新增 `tests/manual/edit_integrity_ab.py`：把记录在案的 Qwen/MiMo 篡改
-    signature 通过生产 monitor 和 receipt 回放（deterministic gate，17 例），
+    signature 通过生产 monitor 和 receipt 回放（deterministic gate，20 例），
     并暴露两条最小 live smoke：DeepSeek clean path 与 Qwen/MiMo
     `dependency_missing_env_failure`。本版不需要完整生产质量 A/B；两条
     live smoke 已补齐 manual evidence：DeepSeek clean path 为
@@ -130,6 +130,19 @@
   - 测试修改授权先检查明确否定：`not/no tests`、`without changing tests`、
     `tests ... unchanged`，以及中文“不要/别/不改测试”等语义会压过宽泛的
     edit/test 授权匹配；明确要求“不改测试”时篡改测试仍保持 high suspicious。
+- Bounded-observation hotfix：
+  - diff section 现在携带私有 saturation 标记。monitor 对某个 changed section
+    达到 `MAX_SECTION_LINES` 上限时，observation 不能再是 `clean`：已经看见的
+    finding 保持 `suspicious`，否则降为 `unobserved` 并携带
+    `diff_unavailable`。
+  - monitor 现在把 `changes.truncated` 当作不完整观察；全局 diff 被采集层截断时，
+    有文件变更的绿色 receipt 会降级为 `verification limited`。
+  - content scan 现在遍历所有已解析 diff section，只对输出的 finding 和
+    affected paths 保持有界，避免第 13 个或更晚的测试 section 被前面的文件掩盖。
+  - Git rename/copy 展示路径会按新路径作为 changed-path identity，并保留
+    `previous_path`。`collect_git_changes()` 与 completion edit-scope helper
+    现在使用同一 canonical shape，减少普通 rename 被误降为
+    `verification limited` 的噪音。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

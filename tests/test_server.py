@@ -235,7 +235,8 @@ class GitChangesTests(unittest.TestCase):
         self.assertEqual(files[1]["status"], "??")
         self.assertEqual(files[1]["path"], "new.txt")
         self.assertEqual(files[2]["status"], "R")
-        self.assertEqual(files[2]["path"], "old.py -> new.py")
+        self.assertEqual(files[2]["path"], "new.py")
+        self.assertEqual(files[2]["previous_path"], "old.py")
 
     def test_displayable_change_path_filters_generated_caches(self) -> None:
         self.assertFalse(changes.is_displayable_change_path("__pycache__/"))
@@ -282,6 +283,41 @@ class GitChangesTests(unittest.TestCase):
             self.assertEqual(data["files"][0]["additions"], 2)
             self.assertIn("+++ b/note.txt", data["diff"])
             self.assertIn("+hello", data["diff"])
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not installed")
+    def test_collect_git_changes_normalizes_rename_display_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+            (root / "old.py").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Codey Test",
+                    "-c",
+                    "user.email=codey-test@example.local",
+                    "commit",
+                    "-m",
+                    "initial",
+                ],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            (root / "old.py").rename(root / "new.py")
+            subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True, text=True)
+
+            data = changes.collect_git_changes(root)
+
+            self.assertTrue(data["ok"], data)
+            self.assertEqual(data["changed_count"], 1)
+            self.assertEqual(data["files"][0]["path"], "new.py")
+            self.assertEqual(data["files"][0].get("previous_path"), "old.py")
+            self.assertTrue(data["files"][0]["status"].startswith("R"))
+            self.assertIn("diff --git a/old.py b/new.py", data["diff"])
 
     @unittest.skipIf(shutil.which("git") is None, "git is not installed")
     def test_collect_git_changes_filters_generated_cache_directories(self) -> None:

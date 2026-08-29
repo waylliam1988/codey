@@ -89,7 +89,7 @@ This file records Codey's release history. The newest release appears first.
     `integrity_*` fields.
   - New `tests/manual/edit_integrity_ab.py` replays the recorded Qwen and
     MiMo tampering signatures through the production monitor and receipt
-    (deterministic gate, 17 cases) and exposes the two minimal live
+    (deterministic gate, 20 cases) and exposes the two minimal live
     smokes: a DeepSeek clean path and a Qwen/MiMo
     `dependency_missing_env_failure` case. No full production-quality A/B
     is required for this version; the live smokes are now recorded as
@@ -161,6 +161,22 @@ This file records Codey's release history. The newest release appears first.
     edit/test authorization phrases: `not/no tests`, `without changing
     tests`, `tests ... unchanged`, and the equivalent Chinese denial
     phrases keep test tampering high suspicious.
+- Bounded-observation hotfix:
+  - Diff sections now carry a private saturation flag. If the monitor hits
+    `MAX_SECTION_LINES` for a changed section, the observation cannot be
+    `clean`: visible findings remain `suspicious`, otherwise the run
+    becomes `unobserved` with `diff_unavailable`.
+  - The monitor now treats `changes.truncated` as incomplete observation,
+    so a globally truncated collected diff downgrades a green changed run
+    to `verification limited`.
+  - Content scanning now covers every parsed diff section while keeping
+    emitted findings and affected paths bounded, so a later test section
+    cannot be hidden behind many earlier file sections.
+  - Git rename/copy display paths are normalized to the new path for
+    changed-path identity, with `previous_path` preserved. `collect_git_changes()`
+    and the completion edit-scope helper now agree on the same canonical
+    shape, reducing false `verification limited` receipts for ordinary
+    renames.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

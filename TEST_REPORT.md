@@ -21,11 +21,11 @@ harness:    tests/manual/edit_integrity_ab.py (new), completion_enforcement_ab.p
 mode:       deterministic gate + full local pytest; no production-quality A/B for this version
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds and hotfixes):
 
 ```text
-python -B -m pytest tests -q --ignore=tests/manual
-3173 passed, 15 skipped, 1005 subtests passed in 296.89s (0:04:56)
+python -B -m pytest
+3184 passed, 15 skipped in 290.83s (0:04:50)
 ```
 
 Post-review focused rerun (same release candidate, 2026-08-29):
@@ -49,6 +49,9 @@ python -B tests/manual/edit_integrity_ab.py --self-test
   ok green_without_production_change_is_flagged       -> test_edit_without_production_change
   ok changed_paths_without_diff_are_unobserved_limited -> diff unavailable, receipt "verification limited"
   ok partial_diff_is_unobserved_limited                -> missing changed path in diff, receipt "verification limited"
+  ok truncated_diff_is_unobserved_limited              -> changes.truncated, receipt "verification limited"
+  ok saturated_test_section_is_unobserved_limited      -> section cap, receipt "verification limited"
+  ok rename_display_path_matches_diff_identity         -> git rename path identity, no diff_unavailable
   ok authorized_test_edit_stays_low_and_trusted       -> low severity, receipt stays trusted
   ok explicit_test_edit_denial_keeps_tampering_high    -> "not tests" denial stays unauthorized
   ok clean_source_fix_is_trusted                      -> "checks passed"
@@ -124,12 +127,38 @@ ruff check codey tests
 All checks passed.
 ```
 
+0.5.0 bounded-observation hotfix checks (Windows, Python 3.12, 2026-08-29):
+
+```text
+python -m ruff check .
+All checks passed.
+
+python -B tests/manual/edit_integrity_ab.py --self-test
+20 cases passed
+
+python -B -m pytest tests\test_architecture.py::ArchitectureBoundaryTests::test_edit_scope_is_stdlib_leaf tests\test_completion_edit_integrity.py tests\test_completion_edit_scope.py tests\test_change_set.py tests\test_server.py::GitChangesTests
+70 passed in 2.46s
+
+python -B -m pytest
+3184 passed, 15 skipped in 290.83s (0:04:50)
+```
+
 0.5.0 hotfix review (2026-08-29):
 
 | Finding | Fix | Deterministic coverage |
 | --- | --- | --- |
 | Changed paths with no parseable diff were treated as clean because path presence made the observation analyzable. | Clean now requires observed diff coverage for every changed path. No diff or a partial diff over changed paths yields `unobserved` with `diff_unavailable`; a green receipt over changed files becomes `verification limited` and does not write project facts. | `test_changed_paths_without_parseable_diff_are_unobserved`, `test_changed_path_missing_from_diff_is_unobserved`, `test_changed_paths_without_diff_are_limited_and_do_not_write_facts`, `changed_paths_without_diff_are_unobserved_limited`, `partial_diff_is_unobserved_limited` |
 | Explicit denials such as "Change implementation, not tests" were still authorized by the broad edit/test regex. | Denial phrases are checked before authorization, including `not/no tests`, `without changing tests`, and `tests ... unchanged` forms. Denial keeps tampering high suspicious. | `test_untouched_test_wording_stays_unauthorized`, `test_explicit_test_edit_denial_keeps_tampering_high`, `explicit_test_edit_denial_keeps_tampering_high` |
+
+Bounded-observation hotfix review (2026-08-29):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| A suspicious test/config change after `MAX_SECTION_LINES` inside the same diff section could be silently dropped, letting an incomplete observation report `clean`. | Parsed diff sections now carry a private `saturated` flag. Any saturated changed section adds `diff_unavailable`; no visible finding becomes `unobserved`, while visible findings stay `suspicious`. | `test_saturated_test_section_is_unobserved_when_no_visible_finding`, `test_saturated_diff_without_changed_paths_is_unobserved`, `test_visible_finding_stays_suspicious_when_section_saturates`, `saturated_test_section_is_unobserved_limited` |
+| The monitor ignored `changes.truncated`, so a globally truncated collected diff could still read as clean. | `observe_edit_integrity()` treats a truncated changes payload as incomplete observation and downgrades green receipts to `verification limited`. | `test_global_diff_truncation_is_unobserved`, `truncated_diff_is_unobserved_limited` |
+| Content scanning was capped to the first 12 diff sections, so a later test section could be missed even though path coverage looked complete. | The monitor now scans every parsed section; only emitted findings and affected-path payloads remain bounded. | `test_many_diff_sections_do_not_hide_late_test_section` |
+| Git rename/copy display paths (`old -> new`) could fail diff identity matching and create noisy false `verification limited` receipts. | Changed-path extraction normalizes rename/copy rows to the new path and preserves `previous_path`; `collect_git_changes()` now emits the same canonical path shape. | `test_changed_paths_normalize_rename_and_copy_display_paths`, `test_rename_display_path_matches_new_diff_path`, `test_copy_display_path_matches_new_diff_path`, `test_collect_git_changes_normalizes_rename_display_path`, `rename_display_path_matches_diff_identity` |
+| Path identity behavior around new/deleted/binary/space/unicode paths was not locked. | Added deterministic monitor coverage for the existing contract: text diffs with hunks can be clean/suspicious; binary/no-hunk diffs remain `unobserved`. | `test_new_deleted_binary_space_and_unicode_paths_keep_expected_status` |
 
 Second review round (2026-08-29):
 
@@ -208,7 +237,7 @@ Both recorded live smokes ran at commit f007bbc (review round 1). The
 later review rounds and hotfix touched only deterministic layers (monitor
 rules, receipt reader contract, details projection, docs) and no provider
 driver path, so the live evidence is inherited: the changed behavior is
-covered by the deterministic gate (17 cases) and the full pytest run
+covered by the deterministic gate (20 cases) and the full pytest run
 above.
 ```
 

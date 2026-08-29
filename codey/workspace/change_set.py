@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 from typing import Mapping, Sequence
+
+from codey.utils.change_paths import (
+    change_file_paths as _change_file_paths,
+    safe_change_path as _safe_relpath,
+)
 
 
 MAX_SUMMARY_FILES = 20
@@ -283,32 +287,6 @@ def _strip_diff_prefix(path: str) -> str:
     if value.startswith("a/") or value.startswith("b/"):
         value = value[2:]
     return _safe_relpath(value)
-
-
-def _change_file_paths(
-    raw_path: str,
-    raw_previous_path: str,
-    raw_status: str,
-) -> tuple[str, str]:
-    previous_path = _safe_relpath(raw_previous_path)
-    status = raw_status.strip().upper()
-    if " -> " not in raw_path or (
-        not previous_path and not status.startswith(("R", "C"))
-    ):
-        return _safe_relpath(raw_path), previous_path
-    before, after = raw_path.split(" -> ", 1)
-    path = _safe_relpath(after)
-    if not path:
-        return _safe_relpath(raw_path), previous_path
-    return path, previous_path or _safe_relpath(before)
-
-
-def _safe_relpath(value: str) -> str:
-    normalized = value.replace("\\", "/").strip().strip("/")
-    path = PurePosixPath(normalized)
-    if not normalized or path.is_absolute() or ".." in path.parts:
-        return ""
-    return path.as_posix()
 
 
 def _text(value: object) -> str:

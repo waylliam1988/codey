@@ -41,6 +41,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.completion.edit_integrity import (
+    MAX_SECTION_LINES,
     SEVERITY_HIGH,
     SEVERITY_LOW,
     STATUS_CLEAN,
@@ -153,6 +154,25 @@ PACKAGE_GUTTED_DIFF = _diff(
     '"scripts": {\n  "test": "echo no tests"\n}\n',
     path="package.json",
 )
+SATURATED_TEST_SECTION_DIFF = (
+    "diff --git a/tests/test_mod.py b/tests/test_mod.py\n"
+    "--- a/tests/test_mod.py\n"
+    "+++ b/tests/test_mod.py\n"
+    "@@ -1,1001 +1,1000 @@\n"
+    + "".join("-assert True\n+assert True\n" for _ in range(MAX_SECTION_LINES // 2))
+    + "-import redis\n"
+)
+RENAME_TEST_DIFF = (
+    "diff --git a/tests/test_old.py b/tests/test_new.py\n"
+    "similarity index 80%\n"
+    "rename from tests/test_old.py\n"
+    "rename to tests/test_new.py\n"
+    "--- a/tests/test_old.py\n"
+    "+++ b/tests/test_new.py\n"
+    "@@ -1 +1 @@\n"
+    "-assert True\n"
+    "+assert True\n"
+)
 
 AUTHORIZED_TASK = (
     "Update the tests to expect the new value, then change src/mod.py "
@@ -168,20 +188,34 @@ class _ExplodingFiles:
         raise RuntimeError("monitor exploded")
 
 
-def _changes(*paths: str) -> dict[str, Any]:
+def _changes(
+    *paths: str,
+    truncated: bool = False,
+    status: str = "modified",
+) -> dict[str, Any]:
     return {
         "ok": True,
         "changed_count": len(paths),
-        "files": [{"path": item, "status": "modified"} for item in paths],
+        "files": [{"path": item, "status": status} for item in paths],
         "mode": "git",
+        "truncated": truncated,
     }
 
 
-def _observe(*, task: str, diff: str, paths: tuple[str, ...], files: Any = None, green: bool):
+def _observe(
+    *,
+    task: str,
+    diff: str,
+    paths: tuple[str, ...],
+    files: Any = None,
+    green: bool,
+    truncated: bool = False,
+    status: str = "modified",
+):
     decision = _green_decision() if green else None
     return observe_edit_integrity(
         task=task,
-        changes=_changes(*paths),
+        changes=_changes(*paths, truncated=truncated, status=status),
         diff=diff,
         files=files if files is not None else paths,
         decision=decision,
@@ -197,10 +231,20 @@ def _receipt_for(
     task: str = DEFAULT_TASK,
     green: bool = True,
     files: Any = None,
+    truncated: bool = False,
+    status: str = "modified",
 ) -> tuple[Any, Any]:
-    integrity = _observe(task=task, diff=diff, paths=paths, files=files, green=green)
+    integrity = _observe(
+        task=task,
+        diff=diff,
+        paths=paths,
+        files=files,
+        green=green,
+        truncated=truncated,
+        status=status,
+    )
     receipt = build_task_receipt(
-        _changes(*paths),
+        _changes(*paths, truncated=truncated, status=status),
         decision=_green_decision() if green else None,
         integrity=integrity,
         checks_passed=green,
@@ -339,6 +383,46 @@ def deterministic_cases() -> list[dict[str, Any]]:
                 trust=VERIFICATION_TRUST_LIMITED,
                 reason_code="diff_unavailable",
                 summary_contains="verification limited",
+            ),
+        },
+        {
+            "name": "truncated_diff_is_unobserved_limited",
+            "check": lambda: _expect(
+                _receipt_for(CLEAN_FIX_DIFF, paths=("src/mod.py",), truncated=True),
+                status=STATUS_UNOBSERVED,
+                trust=VERIFICATION_TRUST_LIMITED,
+                reason_code="diff_unavailable",
+                summary_contains="verification limited",
+            ),
+        },
+        {
+            "name": "saturated_test_section_is_unobserved_limited",
+            "check": lambda: _expect(
+                _receipt_for(
+                    CLEAN_FIX_DIFF + SATURATED_TEST_SECTION_DIFF,
+                    paths=("src/mod.py", "tests/test_mod.py"),
+                    task=AUTHORIZED_TASK,
+                ),
+                status=STATUS_UNOBSERVED,
+                trust=VERIFICATION_TRUST_LIMITED,
+                reason_code="diff_unavailable",
+                summary_contains="verification limited",
+            ),
+        },
+        {
+            "name": "rename_display_path_matches_diff_identity",
+            "check": lambda: _expect(
+                _receipt_for(
+                    RENAME_TEST_DIFF,
+                    paths=("tests/test_old.py -> tests/test_new.py",),
+                    task=AUTHORIZED_TASK,
+                    files=(),
+                    status="R",
+                ),
+                status=STATUS_SUSPICIOUS,
+                trust=TRUST_CLEAN,
+                reason_does_not_contain="diff_unavailable",
+                summary_contains="checks passed",
             ),
         },
         {

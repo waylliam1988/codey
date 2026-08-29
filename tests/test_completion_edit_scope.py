@@ -107,6 +107,33 @@ class ChangedPathTests(unittest.TestCase):
         self.assertEqual(len(paths), 3)
         self.assertLessEqual(len(paths[-1]), 240)
 
+    def test_changed_paths_normalize_rename_and_copy_display_paths(self) -> None:
+        changes = {
+            "files": [
+                {"path": "old.py -> new.py", "status": "R"},
+                {"path": "tests/base.py -> tests/copied.py", "status": "C"},
+                {"path": "notes/foo -> bar.md", "status": "M"},
+            ],
+        }
+
+        self.assertEqual(
+            changed_paths_from_changes(changes),
+            ("new.py", "tests/copied.py", "notes/foo -> bar.md"),
+        )
+
+    def test_changed_paths_use_explicit_previous_path_for_rename(self) -> None:
+        changes = {
+            "files": [
+                {
+                    "path": "pkg/new_name.py",
+                    "previous_path": "pkg/old_name.py",
+                    "status": "R",
+                },
+            ],
+        }
+
+        self.assertEqual(changed_paths_from_changes(changes), ("pkg/new_name.py",))
+
     def test_changed_paths_reject_non_dict_input(self) -> None:
         self.assertEqual(changed_paths_from_changes(None), ())
         self.assertEqual(changed_paths_from_changes("files"), ())
