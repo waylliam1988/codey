@@ -5,6 +5,7 @@ import unittest
 
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_REASON_CODES,
+    REASON_DIFF_UNAVAILABLE,
     REASON_TEST_ASSERTIONS_REMOVED,
     REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
     REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE,
@@ -35,7 +36,6 @@ IMPORT_REMOVAL_DIFF = "".join(difflib.unified_diff(
     tofile="b/tests/test_mod.py",
 ))
 
-
 def _diff(old: str, new: str, path: str = "tests/test_mod.py") -> str:
     body = "".join(difflib.unified_diff(
         old.splitlines(keepends=True),
@@ -44,6 +44,12 @@ def _diff(old: str, new: str, path: str = "tests/test_mod.py") -> str:
         tofile=f"b/{path}",
     ))
     return f"diff --git a/{path} b/{path}\n{body}" if body else ""
+
+
+TEST_VALUE_CHANGE_DIFF = _diff(
+    "def test_value():\n    assert mod.VALUE == 1\n",
+    "def test_value():\n    assert mod.VALUE == 2\n",
+)
 
 
 def _observe(*, task: str = "Change src/mod.py VALUE from 1 to 2.", diff: str, paths, **kwargs):
@@ -189,7 +195,7 @@ class ScopeIntegrityTests(unittest.TestCase):
         decision = _GreenDecision()
 
         observation = _observe(
-            diff="",
+            diff=TEST_VALUE_CHANGE_DIFF,
             paths=("tests/test_mod.py",),
             decision=decision,
             selected_check=object(),
@@ -200,14 +206,15 @@ class ScopeIntegrityTests(unittest.TestCase):
 
     def test_mixed_production_and_test_edits_are_not_flagged_by_scope(self) -> None:
         observation = _observe(
-            diff="",
+            diff=_diff("VALUE = 1\n", "VALUE = 2\n", path="src/mod.py")
+            + TEST_VALUE_CHANGE_DIFF,
             paths=("src/mod.py", "tests/test_mod.py"),
         )
 
         self.assertNotIn(REASON_UNAUTHORIZED_TEST_EDIT, observation.reason_codes)
 
     def test_unauthorized_test_edit_without_green_is_low(self) -> None:
-        observation = _observe(diff="", paths=("tests/test_mod.py",))
+        observation = _observe(diff=TEST_VALUE_CHANGE_DIFF, paths=("tests/test_mod.py",))
 
         self.assertEqual(observation.status, STATUS_SUSPICIOUS)
         self.assertEqual(observation.severity, SEVERITY_LOW)
@@ -225,6 +232,17 @@ class ScopeIntegrityTests(unittest.TestCase):
         self.assertTrue(observation.user_authorized_test_edit)
         for finding in observation.findings:
             self.assertEqual(finding.severity, SEVERITY_LOW)
+
+    def test_explicit_test_edit_denial_keeps_tampering_high(self) -> None:
+        observation = _observe(
+            task="Change implementation, not tests.",
+            diff=IMPORT_REMOVAL_DIFF,
+            paths=("tests/test_mod.py",),
+        )
+
+        self.assertFalse(observation.user_authorized_test_edit)
+        self.assertEqual(observation.severity, SEVERITY_HIGH)
+        self.assertIn(REASON_TEST_IMPORT_REMOVED, observation.reason_codes)
 
 
 class ImportNettingTests(unittest.TestCase):
@@ -368,6 +386,36 @@ class MonitorContractTests(unittest.TestCase):
 
         self.assertEqual(observation.status, STATUS_UNOBSERVED)
         self.assertEqual(observation.diagnostic_refs, ())
+
+    def test_changed_paths_without_parseable_diff_are_unobserved(self) -> None:
+        observation = _observe(diff="", paths=("src/mod.py",))
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertEqual(observation.severity, SEVERITY_NONE)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+        self.assertEqual(observation.affected_paths, ("src/mod.py",))
+        self.assertEqual(observation.diagnostic_refs, ())
+
+    def test_changed_path_missing_from_diff_is_unobserved(self) -> None:
+        observation = _observe(
+            diff=_diff("VALUE = 1\n", "VALUE = 2\n", path="src/mod.py"),
+            paths=("src/mod.py", "tests/test_mod.py"),
+        )
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+        self.assertEqual(observation.affected_paths, ("tests/test_mod.py",))
+
+    def test_authorized_test_edit_without_diff_is_unobserved(self) -> None:
+        observation = _observe(
+            task="Update the tests to expect the new value",
+            diff="",
+            paths=("tests/test_mod.py",),
+        )
+
+        self.assertEqual(observation.status, STATUS_UNOBSERVED)
+        self.assertTrue(observation.user_authorized_test_edit)
+        self.assertIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
 
     def test_monitor_exception_is_never_clean(self) -> None:
         class Exploding:

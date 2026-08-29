@@ -40,6 +40,18 @@ from codey.completion.verification_policy import VerificationCandidate
 VALID_SHA256 = "a" * 64
 
 
+def _clean_diff(path: str, *, old: str = "old", new: str = "new") -> str:
+    removed = "".join(f"-{line}\n" for line in old.splitlines()) or "-\n"
+    added = "".join(f"+{line}\n" for line in new.splitlines()) or "+\n"
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        "@@ -1 +1 @@\n"
+        f"{removed}{added}"
+    )
+
+
 def _observable_edit_and_pass_events(*, path: str = "app.py"):
     """Tool events a real writer emits for one edit followed by a green check."""
     return (
@@ -632,7 +644,11 @@ class ProviderStatusTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "src/api.ts", "status": "M"}],
-            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+            "diff": _clean_diff(
+                "src/api.ts",
+                old="export function old() {}",
+                new="export function renamed() {}",
+            ),
         }
 
         with (
@@ -671,7 +687,11 @@ class ProviderStatusTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "src/api.ts", "status": "M"}],
-            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+            "diff": _clean_diff(
+                "src/api.ts",
+                old="export function old() {}",
+                new="export function renamed() {}",
+            ),
         }
         impact = "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
 
@@ -705,7 +725,11 @@ class ProviderStatusTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "src/api.ts", "status": "M"}],
-            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+            "diff": _clean_diff(
+                "src/api.ts",
+                old="export function old() {}",
+                new="export function renamed() {}",
+            ),
         }
 
         with (
@@ -741,7 +765,7 @@ class ProviderStatusTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M"}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -790,7 +814,7 @@ class ProviderStatusTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M"}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -4813,7 +4837,12 @@ class SessionThreadingTests(unittest.TestCase):
                 {"path": "README.md", "status": "M", "additions": 1, "deletions": 0},
                 {"path": "extra.py", "status": "A", "additions": 1, "deletions": 0},
             ],
-            "diff": "+new",
+            "diff": (
+                _clean_diff("app.py")
+                + _clean_diff("test_app.py")
+                + _clean_diff("README.md")
+                + _clean_diff("extra.py")
+            ),
         }
 
         with (
@@ -4850,7 +4879,7 @@ class SessionThreadingTests(unittest.TestCase):
             "mode": "snapshot",
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with tempfile.TemporaryDirectory() as td:
@@ -4967,7 +4996,7 @@ class SessionThreadingTests(unittest.TestCase):
             "mode": "snapshot",
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M"}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5021,7 +5050,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5077,7 +5106,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5131,7 +5160,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5204,7 +5233,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M"}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
         repaired_changes = {
             "ok": True,
@@ -5213,7 +5242,7 @@ class SessionThreadingTests(unittest.TestCase):
                 {"path": "app.py", "status": "M"},
                 {"path": "tests/test_app.py", "status": "A"},
             ],
-            "diff": "diff --git a/tests/test_app.py b/tests/test_app.py\n+test\n",
+            "diff": _clean_diff("app.py") + _clean_diff("tests/test_app.py"),
         }
 
         with (
@@ -5273,7 +5302,7 @@ class SessionThreadingTests(unittest.TestCase):
             "mode": "snapshot",
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5324,7 +5353,7 @@ class SessionThreadingTests(unittest.TestCase):
             "mode": "snapshot",
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5374,7 +5403,7 @@ class SessionThreadingTests(unittest.TestCase):
             "mode": "snapshot",
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5416,7 +5445,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5466,7 +5495,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5515,7 +5544,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
-            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+            "diff": _clean_diff("app.py"),
         }
 
         with (
@@ -5739,7 +5768,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 0}],
-            "diff": "diff --git a/app.py b/app.py\n+new\n",
+            "diff": _clean_diff("app.py", old="print('existing')", new="new"),
         }
 
         def write_and_finish(*args, **kwargs):
@@ -5802,7 +5831,11 @@ class SessionThreadingTests(unittest.TestCase):
                     "deletions": 0,
                 }
             ],
-            "diff": ("diff --git a/backend/src/app.ts b/backend/src/app.ts\n+export const value = 2;\n"),
+            "diff": _clean_diff(
+                "backend/src/app.ts",
+                old="export const value = 1;",
+                new="export const value = 2;",
+            ),
         }
 
         with (
@@ -5902,7 +5935,7 @@ class SessionThreadingTests(unittest.TestCase):
             "ok": True,
             "changed_count": 1,
             "files": [{"path": "app.py", "status": "A", "additions": 10, "deletions": 0}],
-            "diff": "diff --git a/app.py b/app.py\n+print('ok')\n",
+            "diff": _clean_diff("app.py", old="", new="print('ok')"),
         }
 
         with (

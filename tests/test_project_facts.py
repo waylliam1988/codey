@@ -304,7 +304,14 @@ class ProjectFactsTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "backend/app.js", "status": "M"}],
-                "diff": "diff --git a/backend/app.js b/backend/app.js\n+after\n",
+                "diff": (
+                    "diff --git a/backend/app.js b/backend/app.js\n"
+                    "--- a/backend/app.js\n"
+                    "+++ b/backend/app.js\n"
+                    "@@ -1 +1 @@\n"
+                    "-before\n"
+                    "+after\n"
+                ),
             }
 
             with (

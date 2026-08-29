@@ -25,7 +25,7 @@ Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
 
 ```text
 python -B -m pytest tests -q --ignore=tests/manual
-3168 passed, 15 skipped, 995 subtests passed in 291.29s
+3173 passed, 15 skipped, 1005 subtests passed in 296.89s (0:04:56)
 ```
 
 Post-review focused rerun (same release candidate, 2026-08-29):
@@ -47,7 +47,10 @@ python -B tests/manual/edit_integrity_ab.py --self-test
   ok testpaths_restriction_is_high_suspicious          -> testpaths narrowed, not removed
   ok config_removal_is_not_narrowing                  -> deleting testpaths/addopts is not a signal
   ok green_without_production_change_is_flagged       -> test_edit_without_production_change
+  ok changed_paths_without_diff_are_unobserved_limited -> diff unavailable, receipt "verification limited"
+  ok partial_diff_is_unobserved_limited                -> missing changed path in diff, receipt "verification limited"
   ok authorized_test_edit_stays_low_and_trusted       -> low severity, receipt stays trusted
+  ok explicit_test_edit_denial_keeps_tampering_high    -> "not tests" denial stays unauthorized
   ok clean_source_fix_is_trusted                      -> "checks passed"
   ok docs_only_change_is_not_flagged                  -> no verification claim
   ok unauthorized_test_edit_without_green_is_low      -> trace-only
@@ -101,6 +104,32 @@ python -B -m pytest tests\test_completion_edit_integrity.py tests\test_completio
 python -m ruff check .
 All checks passed.
 ```
+
+0.5.0 hotfix pre-full checks (Windows, Python 3.12, 2026-08-29):
+
+```text
+python -B tests/manual/edit_integrity_ab.py --self-test
+17 cases passed
+
+pytest tests/test_completion_edit_scope.py tests/test_completion_edit_integrity.py
+42 passed in 0.50s
+
+pytest tests/test_completion_edit_scope.py tests/test_completion_edit_integrity.py tests/test_receipt.py tests/test_run_details.py tests/test_task_runner_edit_integrity.py
+72 passed in 2.76s
+
+pytest tests/test_project_facts.py tests/test_run_ledger.py tests/test_run_ledger_projection.py tests/test_server.py tests/test_task_runner_completion_enforcement.py tests/test_work_checkpoint_flow.py tests/test_completion_enforcement_ab.py
+254 passed, 1 skipped in 52.95s
+
+ruff check codey tests
+All checks passed.
+```
+
+0.5.0 hotfix review (2026-08-29):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| Changed paths with no parseable diff were treated as clean because path presence made the observation analyzable. | Clean now requires observed diff coverage for every changed path. No diff or a partial diff over changed paths yields `unobserved` with `diff_unavailable`; a green receipt over changed files becomes `verification limited` and does not write project facts. | `test_changed_paths_without_parseable_diff_are_unobserved`, `test_changed_path_missing_from_diff_is_unobserved`, `test_changed_paths_without_diff_are_limited_and_do_not_write_facts`, `changed_paths_without_diff_are_unobserved_limited`, `partial_diff_is_unobserved_limited` |
+| Explicit denials such as "Change implementation, not tests" were still authorized by the broad edit/test regex. | Denial phrases are checked before authorization, including `not/no tests`, `without changing tests`, and `tests ... unchanged` forms. Denial keeps tampering high suspicious. | `test_untouched_test_wording_stays_unauthorized`, `test_explicit_test_edit_denial_keeps_tampering_high`, `explicit_test_edit_denial_keeps_tampering_high` |
 
 Second review round (2026-08-29):
 
@@ -176,10 +205,11 @@ Live smoke evidence scope:
 
 ```text
 Both recorded live smokes ran at commit f007bbc (review round 1). The
-second review round touched only deterministic layers (monitor rules,
-receipt reader contract, details projection, docs) and no provider path,
-so the live evidence is inherited: round-2 behavior is covered by the
-deterministic gate (14 cases) and the full pytest run above.
+later review rounds and hotfix touched only deterministic layers (monitor
+rules, receipt reader contract, details projection, docs) and no provider
+driver path, so the live evidence is inherited: the changed behavior is
+covered by the deterministic gate (17 cases) and the full pytest run
+above.
 ```
 
 ## Post-0.4.21 MiMo Full Provider A/B Cross-check (2026-08-29)

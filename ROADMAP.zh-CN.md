@@ -3058,7 +3058,7 @@ facts / project memory；终态 receipt 直接从 ledger 持久化 receipt 投�
 schema-v1 receipt；Run Details / Headless / Web UI / ghost work queue 全部改读
 新 contract；`completion_enforcement_ab.py` 删除第二套 `modified_test_fixture`
 判断，改读 run trace 的 integrity 行。新增 `tests/manual/edit_integrity_ab.py`：
-Qwen/MiMo 篡改 signature 的 deterministic replay gate（14 例）+ 两条最小 live
+Qwen/MiMo 篡改 signature 的 deterministic replay gate（17 例）+ 两条最小 live
 smoke 入口（DeepSeek clean、Qwen/MiMo dependency_missing）。按 A/B 规则本版
 clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 已
 补齐 manual evidence。Graduation / Delete Gate 评估推迟到 0.5.2 前。
@@ -3138,9 +3138,11 @@ model edits
 test/fixture import 被删除、注释、try/except 掉
 assert / expected value 被删除或明显放宽
 verification config 被改得更窄或更容易通过
+changed paths 已知但 diff 缺失或只覆盖部分文件 -> unobserved / verification limited
 生产目标文件未改，但验证从 failed 变 passed
 任务未授权修改测试，却修改了 protected fixture/test helper
 用户明确要求修改测试时标 authorized，不直接当 suspicious
+用户明确要求不改测试时，否定优先，不能被 edit/test 词误判为 authorized
 ```
 
 用户可见文案必须克制。clean path 不展示任何新增内容；高置信 suspicious 才在最终
@@ -3176,6 +3178,7 @@ user_authorized_test_edit true/false
 ```text
 测试通过不等于验证可信。
 Monitor failure 不能被伪装成 clean。
+changed paths 没有完整可解析 diff 时不能被伪装成 clean。
 高置信 suspicious 不能显示成 clean verified completion。
 用户授权修改测试不等于测试语义一定可信，仍可记录 low-risk finding。
 EditIntegrityObservation 不是 Evidence，不进入 EvidenceLedger。
@@ -3202,6 +3205,8 @@ Qwen/MiMo modified_test_fixture transcript replay 能得到 high suspicious
 正常生产代码修复 + 测试不变 -> clean
 docs-only change -> 不误报 test integrity
 monitor exception -> monitor_error，不能变 clean
+changed paths without parseable/complete diff -> unobserved，receipt limited
+明确 "do not modify tests" / "not tests" / "不改测试" 不会授权测试修改
 high suspicious receipt 不得是 clean verified wording
 EditIntegrityObservation 不进入 EvidenceLedger / ResearchRecord / Ghost memory
 edit_integrity.py 不 import provider/browser/tool_runtime/server

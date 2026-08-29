@@ -89,7 +89,7 @@ This file records Codey's release history. The newest release appears first.
     `integrity_*` fields.
   - New `tests/manual/edit_integrity_ab.py` replays the recorded Qwen and
     MiMo tampering signatures through the production monitor and receipt
-    (deterministic gate, 14 cases) and exposes the two minimal live
+    (deterministic gate, 17 cases) and exposes the two minimal live
     smokes: a DeepSeek clean path and a Qwen/MiMo
     `dependency_missing_env_failure` case. No full production-quality A/B
     is required for this version; the live smokes are now recorded as
@@ -150,6 +150,17 @@ This file records Codey's release history. The newest release appears first.
     exits after final changes were recorded. Runs without a final
     `changes_collected` receipt keep their mode-specific receipt or no
     receipt.
+- 0.5.0 hotfix:
+  - Edit Integrity Monitor now treats `clean` as observed diff coverage
+    over every changed path. Known changed files with no parseable diff,
+    or with only partial diff coverage, produce `unobserved` with
+    `diff_unavailable`; a green receipt over changed files is downgraded
+    to `verification limited` and cannot write project facts or project
+    memory.
+  - Test-edit authorization now checks explicit denials before broad
+    edit/test authorization phrases: `not/no tests`, `without changing
+    tests`, `tests ... unchanged`, and the equivalent Chinese denial
+    phrases keep test tampering high suspicious.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

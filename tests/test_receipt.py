@@ -21,6 +21,16 @@ from codey.runs.receipt import (
 from tests.test_completion_edit_integrity import IMPORT_REMOVAL_DIFF, _GreenDecision
 
 
+CLEAN_SOURCE_DIFF = (
+    "diff --git a/src/mod.py b/src/mod.py\n"
+    "--- a/src/mod.py\n"
+    "+++ b/src/mod.py\n"
+    "@@ -1 +1 @@\n"
+    "-VALUE = 1\n"
+    "+VALUE = 2\n"
+)
+
+
 class TaskReceiptTests(unittest.TestCase):
     def test_no_changes_receipt_is_short(self) -> None:
         receipt = build_task_receipt({"mode": "snapshot", "changed_count": 0})
@@ -34,8 +44,8 @@ class TaskReceiptTests(unittest.TestCase):
     def test_trusted_pass_receipt_names_checks_only(self) -> None:
         observation = observe_edit_integrity(
             task="Change src/mod.py VALUE from 1 to 2.",
-            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": ""},
-            diff="",
+            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": CLEAN_SOURCE_DIFF},
+            diff=CLEAN_SOURCE_DIFF,
             files=("src/mod.py",),
             decision=None,
             run_id="run-1",
@@ -68,8 +78,8 @@ class TaskReceiptTests(unittest.TestCase):
     def test_git_changes_do_not_claim_snapshot_restore(self) -> None:
         observation = observe_edit_integrity(
             task="Change src/mod.py VALUE from 1 to 2.",
-            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": ""},
-            diff="",
+            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": CLEAN_SOURCE_DIFF},
+            diff=CLEAN_SOURCE_DIFF,
             files=("src/mod.py",),
             decision=None,
             run_id="run-1",
@@ -211,8 +221,8 @@ class TaskReceiptTests(unittest.TestCase):
         # whose trust or copy disagrees with them is not a receipt.
         integrity = observe_edit_integrity(
             task="Change src/mod.py VALUE from 1 to 2.",
-            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": ""},
-            diff="",
+            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": CLEAN_SOURCE_DIFF},
+            diff=CLEAN_SOURCE_DIFF,
             files=("src/mod.py",),
             decision=None,
             run_id="run-1",
@@ -315,8 +325,8 @@ class TaskReceiptTests(unittest.TestCase):
     def test_receipt_payload_reader_rejects_noncanonical_json_types(self) -> None:
         observation = observe_edit_integrity(
             task="Change src/mod.py VALUE from 1 to 2.",
-            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": ""},
-            diff="",
+            changes={"changed_count": 1, "files": [{"path": "src/mod.py"}], "diff": CLEAN_SOURCE_DIFF},
+            diff=CLEAN_SOURCE_DIFF,
             files=("src/mod.py",),
             decision=None,
             run_id="run-1",

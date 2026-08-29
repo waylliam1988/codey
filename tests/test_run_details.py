@@ -12,11 +12,25 @@ from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
 
 
+CLEAN_SOURCE_DIFF = (
+    "diff --git a/src/mod.py b/src/mod.py\n"
+    "--- a/src/mod.py\n"
+    "+++ b/src/mod.py\n"
+    "@@ -1 +1 @@\n"
+    "-VALUE = 1\n"
+    "+VALUE = 2\n"
+)
+
+
 def _clean_receipt(changed_count: int = 1) -> dict:
     observation = observe_edit_integrity(
         task="Change src/mod.py VALUE from 1 to 2.",
-        changes={"changed_count": changed_count, "files": [{"path": "src/mod.py"}], "diff": ""},
-        diff="",
+        changes={
+            "changed_count": changed_count,
+            "files": [{"path": "src/mod.py"}],
+            "diff": CLEAN_SOURCE_DIFF,
+        },
+        diff=CLEAN_SOURCE_DIFF,
         files=("src/mod.py",),
         decision=None,
         run_id="run-1",

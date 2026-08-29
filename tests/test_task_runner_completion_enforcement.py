@@ -45,11 +45,20 @@ class _Provider:
 
 
 def _changes(*files: str) -> dict:
+    diff = "".join(
+        f"diff --git a/{item} b/{item}\n"
+        f"--- a/{item}\n"
+        f"+++ b/{item}\n"
+        "@@ -1 +1 @@\n"
+        "-before\n"
+        "+after\n"
+        for item in files
+    )
     return {
         "ok": True,
         "changed_count": len(files),
         "files": [{"path": item, "status": "modified"} for item in files],
-        "diff": "",
+        "diff": diff,
         "mode": "git",
     }
 

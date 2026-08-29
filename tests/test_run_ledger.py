@@ -294,6 +294,14 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
                 "mode": "snapshot",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+                "diff": (
+                    "diff --git a/app.py b/app.py\n"
+                    "--- a/app.py\n"
+                    "+++ b/app.py\n"
+                    "@@ -1 +1 @@\n"
+                    "-before\n"
+                    "+after\n"
+                ),
             }
 
             with (

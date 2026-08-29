@@ -66,6 +66,7 @@ REASON_TEST_EXPECTED_EXCEPTION_WIDENED = "test_expected_exception_widened"
 REASON_VERIFICATION_CONFIG_NARROWED = "verification_config_narrowed"
 REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE = "test_edit_without_production_change"
 REASON_UNAUTHORIZED_TEST_EDIT = "unauthorized_test_edit"
+REASON_DIFF_UNAVAILABLE = "diff_unavailable"
 REASON_MONITOR_ERROR = "monitor_error"
 EDIT_INTEGRITY_REASON_CODES = frozenset(
     {
@@ -77,6 +78,7 @@ EDIT_INTEGRITY_REASON_CODES = frozenset(
         REASON_VERIFICATION_CONFIG_NARROWED,
         REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE,
         REASON_UNAUTHORIZED_TEST_EDIT,
+        REASON_DIFF_UNAVAILABLE,
         REASON_MONITOR_ERROR,
     }
 )
@@ -149,7 +151,8 @@ class EditIntegrityObservation:
     """The projected edit-integrity state of one coding run.
 
     ``status`` is the honest monitor outcome -- a monitor that could not
-    observe (no changed paths) or failed outright is never ``clean``.
+    observe (no changed paths, or changed paths without a parseable diff)
+    or failed outright is never ``clean``.
     ``diagnostic_refs`` are the refs a completion proof carries so the
     proof names the observation that qualifies it.
     """
@@ -278,11 +281,22 @@ def _observe(
         else ()
     )
 
-    findings: list[EditIntegrityFinding] = []
     sections = _diff_file_sections(diff_text)
-    analyzable = bool(paths) or bool(sections)
-    if analyzable:
+    diff_observed = bool(sections)
+    section_paths = {_normalize_diff_path(path) for path, _lines in sections}
+    missing_diff_paths = tuple(
+        path
+        for path in paths
+        if _normalize_diff_path(path) not in section_paths
+    )
+    diff_unavailable = bool(paths) and (
+        not diff_observed or bool(missing_diff_paths)
+    )
+
+    findings: list[EditIntegrityFinding] = []
+    if diff_observed:
         findings.extend(_content_findings(sections, authorized))
+    if paths and diff_observed:
         findings.extend(_scope_findings(
             paths,
             authorized=authorized,
@@ -290,13 +304,22 @@ def _observe(
             selected_check=selected_check,
         ))
     findings = findings[:MAX_FINDINGS]
-    status = STATUS_UNOBSERVED
-    if analyzable:
-        status = STATUS_SUSPICIOUS if findings else STATUS_CLEAN
+    if findings:
+        status = STATUS_SUSPICIOUS
+    elif diff_observed and not diff_unavailable:
+        status = STATUS_CLEAN
+    else:
+        status = STATUS_UNOBSERVED
     reason_codes = tuple(dict.fromkeys(finding.reason_code for finding in findings))
+    if diff_unavailable:
+        reason_codes = (*reason_codes, REASON_DIFF_UNAVAILABLE)
     affected = tuple(
         dict.fromkeys(path for finding in findings for path in finding.paths)
     )[:MAX_AFFECTED_PATHS]
+    if diff_unavailable:
+        affected = tuple(
+            dict.fromkeys((*affected, *missing_diff_paths))
+        )[:MAX_AFFECTED_PATHS]
     verification_refs = tuple(
         getattr(decision, "analysis_run_refs", ()) or ()
     ) if decision is not None else ()
@@ -566,6 +589,13 @@ def _downgrade(finding: EditIntegrityFinding) -> EditIntegrityFinding:
     )
 
 
+def _normalize_diff_path(path: object) -> str:
+    text = str(path or "").replace("\\", "/").strip()
+    while text.startswith("./"):
+        text = text[2:]
+    return text
+
+
 def _removed_import_modules(removed: Sequence[str]) -> list[str]:
     modules: list[str] = []
     for line in removed:
@@ -776,6 +806,7 @@ __all__ = [
     "EditIntegrityFinding",
     "EditIntegrityObservation",
     "REASON_MONITOR_ERROR",
+    "REASON_DIFF_UNAVAILABLE",
     "REASON_TEST_ASSERTIONS_REMOVED",
     "REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE",
     "REASON_TEST_EXPECTED_EXCEPTION_WIDENED",

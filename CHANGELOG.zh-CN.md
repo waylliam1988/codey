@@ -72,7 +72,7 @@
     判断：fixture scope 改读该 run 自己 trace 里的 integrity 行，row 新增
     `receipt_trust` / `integrity_*` 字段。
   - 新增 `tests/manual/edit_integrity_ab.py`：把记录在案的 Qwen/MiMo 篡改
-    signature 通过生产 monitor 和 receipt 回放（deterministic gate，14 例），
+    signature 通过生产 monitor 和 receipt 回放（deterministic gate，17 例），
     并暴露两条最小 live smoke：DeepSeek clean path 与 Qwen/MiMo
     `dependency_missing_env_failure`。本版不需要完整生产质量 A/B；两条
     live smoke 已补齐 manual evidence：DeepSeek clean path 为
@@ -122,6 +122,14 @@
     就会从 ledger 补入或覆盖 receipt，包括 final changes 已落盘后的 late
     stopped/error 退出。没有最终 `changes_collected` receipt 的 run 继续保留
     原 mode-specific receipt 或不带 receipt。
+- 0.5.0 hotfix：
+  - Edit Integrity Monitor 的 `clean` 现在要求 changed paths 都有可解析 diff
+    覆盖。已知文件发生变化但 diff 缺失或只覆盖部分文件时，observation 变为
+    `unobserved` 并携带 `diff_unavailable`，绿色 receipt 降级为
+    `verification limited`，且不会写 project facts / project memory。
+  - 测试修改授权先检查明确否定：`not/no tests`、`without changing tests`、
+    `tests ... unchanged`，以及中文“不要/别/不改测试”等语义会压过宽泛的
+    edit/test 授权匹配；明确要求“不改测试”时篡改测试仍保持 high suspicious。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

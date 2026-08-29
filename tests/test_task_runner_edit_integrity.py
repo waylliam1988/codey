@@ -261,6 +261,43 @@ class CleanRunTests(unittest.TestCase):
             self.assertIn("checks passed", facts.successful_changes[0].receipt)
 
 
+class MissingDiffRunTests(unittest.TestCase):
+    def test_changed_paths_without_diff_are_limited_and_do_not_write_facts(self) -> None:
+        writer = ScriptedWriter((
+            [_edit("src/mod.py"), _run_event(True)],
+            RunResult("implemented", "done", 2),
+        ))
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = Path(td) / "project"
+            (project / "src").mkdir(parents=True)
+            (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+            state = server.State(Path(td) / "state")
+            missing_diff = _changes("src/mod.py")
+            missing_diff["diff"] = ""
+            event = _run(
+                _runner_with_changes(
+                    state,
+                    writer,
+                    [dict(missing_diff), dict(missing_diff)],
+                ),
+                state,
+                project,
+                "Change src/mod.py VALUE from 1 to 2 and verify",
+            )
+
+            self.assertEqual(event["stop_reason"], "done")
+            receipt = event["receipt"]
+            self.assertEqual(receipt["verification"]["trust"], "limited")
+            self.assertEqual(
+                receipt["display"]["summary"],
+                "1 file changed · verification limited",
+            )
+            self.assertEqual(receipt["integrity"]["status"], "unobserved")
+            self.assertIn("diff_unavailable", receipt["integrity"]["reason_codes"])
+            facts = state.project_facts.load(str(project))
+            self.assertEqual(facts.successful_changes, ())
+
+
 def proofs_last_diagnostic(manifest: dict) -> list:
     return manifest["completion_proofs"][-1].get("diagnostic_refs", [])
 

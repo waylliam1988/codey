@@ -16,6 +16,16 @@ from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.receipt import build_task_receipt
 
 
+CLEAN_SOURCE_DIFF = (
+    "diff --git a/src/mod.py b/src/mod.py\n"
+    "--- a/src/mod.py\n"
+    "+++ b/src/mod.py\n"
+    "@@ -1 +1 @@\n"
+    "-VALUE = 1\n"
+    "+VALUE = 2\n"
+)
+
+
 def _record(seq: int, event_type: str, **fields: object) -> RunLedgerRecord:
     return RunLedgerRecord({
         "schema_version": SCHEMA_VERSION,
@@ -31,8 +41,12 @@ def _record(seq: int, event_type: str, **fields: object) -> RunLedgerRecord:
 def _receipt_payload(changed_count: int = 2) -> dict:
     observation = observe_edit_integrity(
         task="Change src/mod.py VALUE from 1 to 2.",
-        changes={"changed_count": changed_count, "files": [{"path": "src/mod.py"}], "diff": ""},
-        diff="",
+        changes={
+            "changed_count": changed_count,
+            "files": [{"path": "src/mod.py"}],
+            "diff": CLEAN_SOURCE_DIFF,
+        },
+        diff=CLEAN_SOURCE_DIFF,
         files=("src/mod.py",),
         decision=None,
         run_id="run-1",

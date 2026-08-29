@@ -15,6 +15,18 @@ from codey.toolchain.runtime import ToolOutcome
 _POST_TASK_SIDEEFFECT_PATCHES: list[mock.Mock] = []
 
 
+def _clean_diff(path: str, *, old: str = "before", new: str = "after") -> str:
+    removed = "".join(f"-{line}\n" for line in old.splitlines()) or "-\n"
+    added = "".join(f"+{line}\n" for line in new.splitlines()) or "+\n"
+    return (
+        f"diff --git a/{path} b/{path}\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+        "@@ -1 +1 @@\n"
+        f"{removed}{added}"
+    )
+
+
 def setUpModule() -> None:
     """Disable post-task audit/consensus/advisor side effects for this file.
 
@@ -86,7 +98,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n",
+                "diff": _clean_diff("app.py"),
             }
             with (
                 mock.patch.object(server, "STATE", state),
@@ -558,7 +570,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n+after\n",
+                "diff": _clean_diff("app.py"),
             }
             with (
                 mock.patch.object(server, "STATE", state),
@@ -619,7 +631,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "src/auth.py", "status": "M"}],
-                "diff": "diff --git a/src/auth.py b/src/auth.py\n+def login():\n+    return True\n",
+                "diff": _clean_diff(
+                    "src/auth.py",
+                    old="def login():\n    return False",
+                    new="def login():\n    return True",
+                ),
             }
             review = mock.Mock(return_value=None)
             with (
@@ -662,7 +678,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n+after\n",
+                "diff": _clean_diff("app.py"),
             }
             review = mock.Mock(return_value=None)
 
@@ -698,7 +714,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n+after\n",
+                "diff": _clean_diff("app.py"),
             }
 
             def interrupted(*args, **kwargs):
@@ -762,7 +778,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "mode": "git",
                 "changed_count": 1,
                 "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n+VALUE = 2\n",
+                "diff": _clean_diff("app.py", old="VALUE = 1", new="VALUE = 2"),
             }
 
             def completed(*args, **kwargs):
