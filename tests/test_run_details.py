@@ -159,6 +159,65 @@ class RunDetailsTests(unittest.TestCase):
         self.assertEqual(rows["Verification"]["value"], "Checks not recorded")
         self.assertEqual(rows["Verification"]["tone"], "warning")
 
+    def test_malformed_schema_v1_receipt_never_shows_checks_passed(self) -> None:
+        # A schema-v1 payload whose trust contradicts its own facts fails
+        # the reader contract: Details must not greet it with a green row.
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            ledger_store = RunLedgerStore(state)
+            writer = ledger_store.open(
+                run_id="run-malformed",
+                session_id="session-malformed",
+                project=state / "project",
+                task="task",
+                provider="deepseek",
+                mode="project",
+            )
+            # Raw append: the malformed receipt reaches the reader exactly
+            # the way a tampered ledger would.
+            writer.append(
+                "changes_collected",
+                ok=True,
+                mode="git",
+                changed_count=2,
+                files=[],
+                checks_passed=True,
+                receipt={
+                    "schema_version": 1,
+                    "display": {
+                        "summary": "2 files changed · checks passed",
+                        "detail": "",
+                    },
+                    "work": {
+                        "changed_count": 2,
+                        "mode": "git",
+                        "restore_available": False,
+                    },
+                    "verification": {"trust": "trusted", "checks_passed": True},
+                    "integrity": {"status": "unobserved", "severity": "none"},
+                },
+            )
+            writer.finish(
+                summary="done",
+                stop_reason="done",
+                turns=1,
+                max_turns=8,
+                provider="deepseek",
+            )
+
+            rows = {
+                row["label"]: row
+                for row in load_run_details(
+                    run_ledgers=ledger_store,
+                    run_traces=RunTraceStore(state),
+                    session_id="session-malformed",
+                    run_id="run-malformed",
+                ).to_jsonable()["rows"]
+            }
+
+        self.assertEqual(rows["Verification"]["value"], "Checks not recorded")
+        self.assertEqual(rows["Verification"]["tone"], "warning")
+
     def test_load_run_details_reports_quiet_unavailable_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             summary = load_run_details(

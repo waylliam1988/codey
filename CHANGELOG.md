@@ -89,7 +89,7 @@ This file records Codey's release history. The newest release appears first.
     `integrity_*` fields.
   - New `tests/manual/edit_integrity_ab.py` replays the recorded Qwen and
     MiMo tampering signatures through the production monitor and receipt
-    (deterministic gate, 13 cases) and exposes the two minimal live
+    (deterministic gate, 14 cases) and exposes the two minimal live
     smokes: a DeepSeek clean path and a Qwen/MiMo
     `dependency_missing_env_failure` case. No full production-quality A/B
     is required for this version; the live smokes are now recorded as
@@ -134,6 +134,12 @@ This file records Codey's release history. The newest release appears first.
   - Trust contract: green checks over changed files with an `unobserved`
     integrity observation are `limited`; only a no-change run keeps
     `trusted`.
+- Third review round:
+  - The persisted-receipt reader now recomputes the contract: trust and
+    display wording come from the same primitive helpers the builder
+    uses, and integrity status/severity must be in their closed enums --
+    a stored payload that disagrees with its own facts is rejected
+    outright instead of echoed back as valid.
 - New tests: `test_completion_edit_scope.py`,
   `test_completion_edit_integrity.py`,
   `test_task_runner_edit_integrity.py`, and the

@@ -205,6 +205,53 @@ class TaskReceiptTests(unittest.TestCase):
         self.assertEqual(receipt.verification.trust, VERIFICATION_TRUST_TRUSTED)
         self.assertEqual(receipt.display.summary, "No files changed · checks passed")
 
+    def test_receipt_payload_rejects_inconsistent_trust_and_display(self) -> None:
+        # The reader re-runs the trust contract and the display wording
+        # over the payload's own facts: a hand-built or tampered payload
+        # whose trust or copy disagrees with them is not a receipt.
+        integrity = observe_edit_integrity(
+            task="Change src/mod.py VALUE from 1 to 2.",
+            changes={"changed_count": 2, "files": [{"path": "src/mod.py"}], "diff": ""},
+            diff="",
+            files=("src/mod.py",),
+            decision=None,
+            run_id="run-1",
+        )
+        receipt = build_task_receipt(
+            {"mode": "git", "changed_count": 2},
+            integrity=integrity,
+            checks_passed=True,
+        )
+        payload = receipt.to_dict()
+        self.assertIsNotNone(task_receipt_from_payload(payload))
+
+        # changed files + green + unobserved observation cannot be trusted.
+        flipped = dict(payload)
+        flipped["integrity"] = dict(payload["integrity"], status="unobserved")
+        self.assertIsNone(task_receipt_from_payload(flipped))
+
+        # A trust value the facts do not support is rejected.
+        limited = build_task_receipt({"mode": "git", "changed_count": 2})
+        limited_payload = limited.to_dict()
+        limited_payload["verification"] = dict(
+            limited_payload["verification"],
+            trust=VERIFICATION_TRUST_TRUSTED,
+        )
+        self.assertIsNone(task_receipt_from_payload(limited_payload))
+
+        # Display copy must be the canonical wording for these facts.
+        wording = dict(payload)
+        wording["display"] = dict(payload["display"], summary="2 files changed · all good")
+        self.assertIsNone(task_receipt_from_payload(wording))
+        detailed = dict(payload)
+        detailed["display"] = dict(payload["display"], detail="made-up audit note")
+        self.assertIsNone(task_receipt_from_payload(detailed))
+
+        # Integrity status/severity live in closed enums.
+        enum = dict(payload)
+        enum["integrity"] = dict(payload["integrity"], status="definitely_fine")
+        self.assertIsNone(task_receipt_from_payload(enum))
+
     def test_monitor_error_receipt_is_limited(self) -> None:
         integrity = EditIntegrityObservation(
             schema_version=1,

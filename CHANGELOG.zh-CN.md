@@ -72,7 +72,7 @@
     判断：fixture scope 改读该 run 自己 trace 里的 integrity 行，row 新增
     `receipt_trust` / `integrity_*` 字段。
   - 新增 `tests/manual/edit_integrity_ab.py`：把记录在案的 Qwen/MiMo 篡改
-    signature 通过生产 monitor 和 receipt 回放（deterministic gate，13 例），
+    signature 通过生产 monitor 和 receipt 回放（deterministic gate，14 例），
     并暴露两条最小 live smoke：DeepSeek clean path 与 Qwen/MiMo
     `dependency_missing_env_failure`。本版不需要完整生产质量 A/B；两条
     live smoke 已补齐 manual evidence：DeepSeek clean path 为
@@ -109,6 +109,11 @@
     integrity 兜底已删除。
   - Trust 合同：有文件变更、checks 绿但 observation 为 `unobserved` →
     `limited`；只有零变更的 run 保持 `trusted`。
+- 第三轮评审：
+  - 持久化 receipt 的 reader 现在复算合同：trust 与 display 文案改由
+    builder/reader 共用的 primitive helper 计算，integrity
+    status/severity 必须在封闭枚举内——与自身事实不一致的落盘 payload
+    直接拒收，不再原样放行。
 - 新增测试：`test_completion_edit_scope.py`、
   `test_completion_edit_integrity.py`、
   `test_task_runner_edit_integrity.py` 和 `tests/fixtures/edit_integrity/`

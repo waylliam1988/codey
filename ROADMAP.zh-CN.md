@@ -3058,7 +3058,7 @@ facts / project memory；终态 receipt 直接从 ledger 持久化 receipt 投�
 schema-v1 receipt；Run Details / Headless / Web UI / ghost work queue 全部改读
 新 contract；`completion_enforcement_ab.py` 删除第二套 `modified_test_fixture`
 判断，改读 run trace 的 integrity 行。新增 `tests/manual/edit_integrity_ab.py`：
-Qwen/MiMo 篡改 signature 的 deterministic replay gate（13 例）+ 两条最小 live
+Qwen/MiMo 篡改 signature 的 deterministic replay gate（14 例）+ 两条最小 live
 smoke 入口（DeepSeek clean、Qwen/MiMo dependency_missing）。按 A/B 规则本版
 clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 已
 补齐 manual evidence。Graduation / Delete Gate 评估推迟到 0.5.2 前。

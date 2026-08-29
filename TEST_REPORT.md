@@ -21,11 +21,11 @@ harness:    tests/manual/edit_integrity_ab.py (new), completion_enforcement_ab.p
 mode:       deterministic gate + full local pytest; no production-quality A/B for this version
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after both review rounds):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all review rounds):
 
 ```text
 python -m pytest tests -q --ignore=tests/manual
-3175 passed, 3 skipped, 995 subtests passed in ~5m
+3177 passed, 3 skipped, 995 subtests passed in ~5m
 ```
 
 Post-review focused rerun (same commit, 2026-08-29):
@@ -76,6 +76,14 @@ Review round (2026-08-29, same-day findings fixed before commit):
 | `checks_passed=True` without an integrity observation read as trusted. | Trust contract tightened: no observation -> limited ("verification limited"). | `test_unwatched_green_is_limited_by_contract` |
 | Run Details could reconstruct a green claim from legacy `checks_passed`. | Legacy fallback removed: no valid receipt -> "Checks not recorded" (warning). | `test_verification_row_never_reconstructs_green_without_receipt` |
 | README / DESIGN still showed `restore available` in the receipt line. | Copy synced to the schema-v1 wording. | n/a (docs) |
+
+Third review round (2026-08-29):
+
+| Finding | Fix | Deterministic coverage |
+| --- | --- | --- |
+| The persisted-receipt reader accepted payloads whose trust contradicted their own facts (e.g. changed=2 + green + unobserved + trusted). | Trust computation moved into `_verification_trust_from_status()` over primitives, shared by builder and reader; the reader also recomputes the canonical display wording and validates the integrity status/severity enums, rejecting any disagreement. | `test_receipt_payload_rejects_inconsistent_trust_and_display`, `test_malformed_schema_v1_receipt_never_shows_checks_passed` |
+| Focused-rerun and gate-case counts in docs had drifted (76 vs current batch, 13 vs 14 gate cases). | Focused reruns now labeled per review round with fresh numbers; deterministic-gate count updated to 14 everywhere. | n/a (docs) |
+| Live smoke evidence was recorded at the round-1 commit. | Report marks the live evidence as inherited (round-2/3 changes touch only deterministic layers); no re-run required. | n/a (docs) |
 
 Second review round (2026-08-29):
 
@@ -145,6 +153,16 @@ note:
   tampered solution as false completion. That is the desired outcome for this
   smoke: the production receipt no longer presents the green check as trusted
   and shows "checks need review".
+```
+
+Live smoke evidence scope:
+
+```text
+Both recorded live smokes ran at commit f007bbc (review round 1). The
+second review round touched only deterministic layers (monitor rules,
+receipt reader contract, details projection, docs) and no provider path,
+so the live evidence is inherited: round-2 behavior is covered by the
+deterministic gate (14 cases) and the full pytest run above.
 ```
 
 ## Post-0.4.21 MiMo Full Provider A/B Cross-check (2026-08-29)

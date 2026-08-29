@@ -28,8 +28,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from codey.completion.edit_integrity import (
+    EDIT_INTEGRITY_SEVERITIES,
+    EDIT_INTEGRITY_STATUSES,
     SEVERITY_CRITICAL,
     SEVERITY_HIGH,
+    SEVERITY_NONE,
     STATUS_MONITOR_ERROR,
     STATUS_SUSPICIOUS,
     STATUS_UNOBSERVED,
@@ -175,17 +178,17 @@ def build_task_receipt(
     provenance shown in Details, and the proof refs; ``integrity`` (an
     EditIntegrityObservation) contributes the trust downgrade for
     high-confidence findings and for monitor errors. A receipt that
-    claims passing checks without any integrity observation is
-    ``limited`` by contract: nobody can vouch for a green nobody watched.
+    claims passing checks without a vouching observation is ``limited``
+    by contract: nobody can vouch for a green nobody watched. The trust
+    and display wording are computed by the same primitive helpers the
+    persisted-payload reader uses to re-validate, so a receipt can never
+    disagree with its own contract.
     """
 
     changes = changes if isinstance(changes, dict) else {}
     changed_count = nonnegative_int(changes.get("changed_count"))
     mode = clip(changes.get("mode"), MAX_MODE_CHARS)
     restore_available = mode == "snapshot" and changed_count > 0
-
-    trust = _verification_trust(checks_passed, integrity, changed_count)
-    summary, detail = _display_text(trust, changed_count, checks_passed)
 
     proof = getattr(decision, "proof", None)
     provenance = getattr(decision, "provenance", None)
@@ -203,8 +206,8 @@ def build_task_receipt(
 
     if integrity is not None:
         integrity_section = ReceiptIntegrity(
-            status=identifier(integrity.status, 20) or "unobserved",
-            severity=identifier(integrity.severity, 20) or "none",
+            status=identifier(integrity.status, 20) or STATUS_UNOBSERVED,
+            severity=identifier(integrity.severity, 20) or SEVERITY_NONE,
             reason_codes=tuple(
                 code
                 for code in (
@@ -234,7 +237,17 @@ def build_task_receipt(
             )[:MAX_INTEGRITY_REFS],
         )
     else:
+        # No observation object: the receipt still states the honest
+        # unobserved verdict, and the shared trust helper downgrades it.
         integrity_section = ReceiptIntegrity()
+
+    trust = _verification_trust_from_status(
+        checks_passed=bool(checks_passed),
+        integrity_status=integrity_section.status,
+        integrity_severity=integrity_section.severity,
+        changed_count=changed_count,
+    )
+    summary, detail = _display_text(trust, changed_count, checks_passed)
 
     return TaskReceipt(
         schema_version=RECEIPT_SCHEMA_VERSION,
@@ -256,28 +269,35 @@ def build_task_receipt(
     )
 
 
-def _verification_trust(
+def _verification_trust_from_status(
+    *,
     checks_passed: bool,
-    integrity: EditIntegrityObservation | None,
+    integrity_status: str,
+    integrity_severity: str,
     changed_count: int,
 ) -> str:
+    """The trust contract over primitive facts only.
+
+    Both the builder and the persisted-payload reader run this exact
+    function, so a stored receipt whose trust disagrees with its own
+    facts is unrepresentable. A missing observation object collapses
+    into ``STATUS_UNOBSERVED`` upstream.
+    """
+
     if not checks_passed:
         return VERIFICATION_TRUST_LIMITED
-    if integrity is None:
-        # No observation, no vouch: an unwatched green is never trusted.
-        return VERIFICATION_TRUST_LIMITED
-    if integrity.status == STATUS_MONITOR_ERROR:
+    if integrity_status == STATUS_MONITOR_ERROR:
         # The monitor could not observe: the green can stay a run fact,
         # but the receipt cannot vouch for it.
         return VERIFICATION_TRUST_LIMITED
-    if changed_count > 0 and integrity.status == STATUS_UNOBSERVED:
+    if changed_count > 0 and integrity_status == STATUS_UNOBSERVED:
         # Files changed and checks passed, yet nothing was observed: the
-        # same unwatched-green hole, reached through the observation's own
-        # verdict instead of a missing argument.
+        # same unwatched-green hole, reached through the observation's
+        # own verdict instead of a missing argument.
         return VERIFICATION_TRUST_LIMITED
     if (
-        integrity.status == STATUS_SUSPICIOUS
-        and integrity.severity in (SEVERITY_HIGH, SEVERITY_CRITICAL)
+        integrity_status == STATUS_SUSPICIOUS
+        and integrity_severity in (SEVERITY_HIGH, SEVERITY_CRITICAL)
     ):
         return VERIFICATION_TRUST_NEEDS_REVIEW
     return VERIFICATION_TRUST_TRUSTED
@@ -308,9 +328,11 @@ def _display_text(
 def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
     """Validate a persisted receipt payload; unusable input yields None.
 
-    Fail-closed on purpose: readers (ledger projections, headless
-    emitters) either get a well-formed schema-v1 receipt or nothing, never
-    a half-valid one.
+    Fail-closed twice over: the schema shape must be well-formed, and the
+    contract must recompute. The reader runs the same trust helper and
+    display-wording helper the builder used, so a stored receipt whose
+    trust or copy disagrees with its own facts (a tampered or hand-built
+    payload) is rejected outright instead of being echoed back as valid.
     """
 
     if not isinstance(payload, dict):
@@ -325,10 +347,27 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
         return None
     summary = clip(display.get("summary"), MAX_SUMMARY_CHARS)
     trust = identifier(verification.get("trust"), 20)
+    status = identifier(integrity.get("status"), 20)
+    severity = identifier(integrity.get("severity"), 20)
     if not summary or trust not in RECEIPT_TRUSTS:
         return None
-    status = identifier(integrity.get("status"), 20) or "unobserved"
-    severity = identifier(integrity.get("severity"), 20) or "none"
+    if status not in EDIT_INTEGRITY_STATUSES or severity not in EDIT_INTEGRITY_SEVERITIES:
+        return None
+    checks_passed = verification.get("checks_passed") is True
+    changed_count = nonnegative_int(work.get("changed_count"))
+    # Contract recomputation: trust and user-facing wording must be
+    # exactly what the builder would produce from these facts.
+    expected_trust = _verification_trust_from_status(
+        checks_passed=checks_passed,
+        integrity_status=status,
+        integrity_severity=severity,
+        changed_count=changed_count,
+    )
+    if trust != expected_trust:
+        return None
+    expected_summary, expected_detail = _display_text(trust, changed_count, checks_passed)
+    if summary != expected_summary or clip(display.get("detail"), MAX_DETAIL_CHARS) != expected_detail:
+        return None
     reason_codes = tuple(
         code
         for code in (
@@ -343,13 +382,13 @@ def task_receipt_from_payload(payload: object) -> TaskReceipt | None:
             detail=clip(display.get("detail"), MAX_DETAIL_CHARS),
         ),
         work=ReceiptWork(
-            changed_count=nonnegative_int(work.get("changed_count")),
+            changed_count=changed_count,
             mode=clip(work.get("mode"), MAX_MODE_CHARS),
             restore_available=work.get("restore_available") is True,
         ),
         verification=ReceiptVerification(
             trust=trust,
-            checks_passed=verification.get("checks_passed") is True,
+            checks_passed=checks_passed,
             state=identifier(verification.get("state"), 40),
             stance=identifier(verification.get("stance"), 40),
             source=identifier(verification.get("source"), 40),
