@@ -27,9 +27,10 @@ harness:    tests/test_run_operation.py (new),
 mode:       deterministic gate + full local pytest; no live A/B (nothing model-visible changed)
 ```
 
-Review hardening round (same day, before the final full run):
+Review hardening rounds (same day, before the final full run):
 
 ```text
+Round 1:
 1. project_ref now derives a stable project:<project_key> ref inside
    RunOperationStore.start(); the raw absolute project path never enters the
    payload (test asserts the format and the absence of the path).
@@ -43,38 +44,63 @@ Review hardening round (same day, before the final full run):
    "Completion check was interrupted" (the post-repair check was cut), a
    satisfied proof reads "Finishing was interrupted"; only an admitted or
    running repair reads "Stopped during repair".
+
+Round 2:
+5. Identity is validated, never clipped: start() refuses a non-canonical
+   session/run id (empty, padded, over MAX_ID_CHARS, non-string) without
+   writing anything, so a register can never end up findable only under a
+   trimmed id. Boundary length (exactly 200 chars) starts, commits, loads.
+6. The reader enforces phase invariants on top of types: repair phases
+   require the committed context ref, executing/settled repair requires a
+   committed round, pre-repair phases cannot carry repair facts, rounds can
+   never exceed the budget, a recorded proof requires its ref/status/
+   satisfied facts, project_ref must be empty or project:<24 hex>, and any
+   unknown top-level key (an "extension" field, a raw prompt, a diff)
+   fails the payload closed.
+7. The kill/resume smoke now waits for PHASE_WRITER_RUNNING itself and
+   fails if the register never gets there -- accepted no longer counts as
+   reaching the writer, matching the TEST_REPORT wording.
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after the review round):
+Full local pytest (Windows, Python 3.12, 2026-08-29, after the review rounds):
 
 ```text
 python -B -m pytest
-3254 passed, 3 skipped in 329.25s (0:05:29)
+3262 passed, 3 skipped in 299.90s (0:04:59)
 ```
+
+(A first full run in this round had one unrelated real-browser E2E flake
+under full-suite load; it passed on rerun and the clean run above is the
+recorded gate.)
 
 Focused gates before the full run (same candidate, 2026-08-29):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 40 passed, 52 subtests (round-trips,
-                                                                       strict fail-closed reader, terminal
+tests/test_run_operation.py                                         -> 48 passed, 85 subtests (round-trips,
+                                                                       strict fail-closed reader + phase
+                                                                       invariants + closed key set, terminal
                                                                        immutability, locked/atomic start+commit,
-                                                                       concurrent starts, project ref format,
-                                                                       payload hygiene, import boundary)
-tests/test_task_runner_operation_state.py                           -> 13 passed (terminal/ledger/event consistency,
-                                                                       repair phase sequence observed mid-run,
-                                                                       provider-failure + stop honesty, six
-                                                                       crash-position recovery rows, raw-path
+                                                                       concurrent starts, canonical identity at
+                                                                       and beyond the boundary, project ref
+                                                                       format, payload hygiene, import boundary)
+tests/test_task_runner_operation_state.py                           -> 12 passed, 6 subtests (terminal/ledger/event
+                                                                       consistency, repair phase sequence observed
+                                                                       mid-run, provider-failure + stop honesty,
+                                                                       six crash-position recovery rows, raw-path
                                                                        hygiene)
 test_run_details / test_server / test_headless_runner /
 test_architecture / test_capabilities / test_event_matrix /
 test_task_runner_completion_enforcement / test_task_runner_edit_integrity
-                                                                    -> 464 passed, 511 subtests passed
-tests/manual/completion_operation_resume_smoke.py --self-test       -> ok: real process kill mid-writer, fresh
-                                                                       store reads writer_running, Details shows
-                                                                       "Writing was interrupted", no raw path
+                                                                    -> 321 passed, 453 subtests passed
+adjacent groups (task_runner_*, run_ledger*, work_checkpoint*,
+completion_*, ghost continuity ab, ui_architecture)                 -> 190 passed, 8 subtests passed
+tests/manual/completion_operation_resume_smoke.py --self-test       -> ok: real process kill in the writer
+                                                                       phase, fresh store reads writer_running,
+                                                                       Details shows "Writing was interrupted",
+                                                                       no raw path
 ```
 
 A/B judgment:

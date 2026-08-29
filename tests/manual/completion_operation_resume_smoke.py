@@ -6,10 +6,11 @@ headless spine (``run_headless``), hard-kills the process mid-run the way a
 crash would, and then reads the last committed phase with a fresh store --
 recovery must switch on the register, never on missing events.
 
-    --self-test   deterministic and offline: a scripted writer sleeps inside
-                  the writer phase while the parent kills the process, then
-                  checks the recovered register and the honest Run Details
-                  progress line. This is the release gate.
+    --self-test   deterministic and offline: the parent waits until the run's
+                  register reaches the writer_running phase, hard-kills the
+                  process the way a crash would, then checks the recovered
+                  register and the honest Run Details progress line. This is
+                  the release gate.
     --child       internal: run one headless task against the given state
                   home. Used by --self-test; not meant to be invoked by hand.
 
@@ -31,7 +32,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.run_operation import (
-    PHASE_ACCEPTED,
     PHASE_WRITER_RUNNING,
     RunOperationStore,
 )
@@ -130,14 +130,18 @@ def _self_test() -> int:
             deadline = time.monotonic() + KILL_TIMEOUT_SECONDS
             while time.monotonic() < deadline:
                 register = store.load(SESSION, RUN)
-                if register is not None:
+                # Wait for the writer phase itself: killing at accepted
+                # would make the smoke pass without ever entering the
+                # writer. (accepted is covered by the deterministic
+                # crash-position unit tests instead.)
+                if register is not None and register.phase == PHASE_WRITER_RUNNING:
                     break
                 if child.poll() is not None:
-                    print("FAIL: child exited before opening the register")
+                    print("FAIL: child exited before entering the writer phase")
                     return 1
                 time.sleep(0.05)
             else:
-                print("FAIL: register never appeared")
+                print("FAIL: register never reached the writer phase")
                 child.kill()
                 return 1
 
@@ -153,7 +157,7 @@ def _self_test() -> int:
         if recovered is None:
             print("FAIL: register did not survive the crash")
             return 1
-        if recovered.phase not in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING):
+        if recovered.phase != PHASE_WRITER_RUNNING:
             print(f"FAIL: unexpected phase after crash: {recovered.phase}")
             return 1
 

@@ -188,7 +188,7 @@ class RoundTripTests(unittest.TestCase):
         state = RunOperationState(
             session_id=SESSION,
             run_id=RUN,
-            project_ref="/tmp/project",
+            project_ref="project:" + "a" * 24,
             provider_id="deepseek",
             turn_budget=8,
             max_repair_rounds=1,
@@ -351,6 +351,81 @@ class StartLockTests(unittest.TestCase):
             self.assertEqual(reloaded.phase, PHASE_ACCEPTED)
 
 
+class StartIdentityTests(unittest.TestCase):
+    """Identity is validated, never clipped: no trimmed-register limbo."""
+
+    def test_over_long_identity_is_refused_without_creating_a_file(self) -> None:
+        long_id = "x" * (200 + 1)
+        for kwargs in (
+            {"session_id": long_id},
+            {"run_id": long_id},
+        ):
+            with self.subTest(field=next(iter(kwargs))):
+                with tempfile.TemporaryDirectory() as td:
+                    store = _store(Path(td))
+                    params = {
+                        "session_id": SESSION,
+                        "run_id": RUN,
+                        "project": "",
+                        "provider_id": "deepseek",
+                        "turn_budget": 8,
+                        "max_repair_rounds": 1,
+                    }
+                    params.update(kwargs)
+                    started = store.start(**params)
+
+                    self.assertIsNone(started)
+                    self.assertFalse(store.path_for(SESSION, RUN).exists())
+                    # The refusal is keyed on the offending id itself: no
+                    # register exists under any path to find later.
+                    if "session_id" in kwargs:
+                        self.assertFalse(store.path_for(long_id, RUN).exists())
+                    else:
+                        self.assertFalse(store.path_for(SESSION, long_id).exists())
+
+    def test_identity_at_the_length_boundary_starts_commits_and_loads(self) -> None:
+        boundary_session = "s" * 200
+        boundary_run = "r" * 200
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            started = store.start(
+                session_id=boundary_session,
+                run_id=boundary_run,
+                project="",
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            )
+            self.assertIsNotNone(started)
+
+            committed = store.commit(
+                boundary_session,
+                boundary_run,
+                lambda state: mark_writer_running(state, provider_id="deepseek"),
+            )
+            self.assertIsNotNone(committed)
+            reloaded = store.load(boundary_session, boundary_run)
+            assert reloaded is not None
+            self.assertEqual(reloaded.phase, PHASE_WRITER_RUNNING)
+
+    def test_non_canonical_identity_is_refused(self) -> None:
+        for value in ("", "   ", " padded ", None, 123):
+            with self.subTest(identity=repr(value)):
+                with tempfile.TemporaryDirectory() as td:
+                    store = _store(Path(td))
+                    started = store.start(
+                        session_id=value,
+                        run_id=RUN,
+                        project="",
+                        provider_id="deepseek",
+                        turn_budget=8,
+                        max_repair_rounds=1,
+                    )
+
+                    self.assertIsNone(started)
+                    self.assertFalse(store.path_for(SESSION, RUN).exists())
+
+
 class ProjectRefTests(unittest.TestCase):
     def test_start_derives_a_stable_ref_never_a_raw_path(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -460,6 +535,66 @@ class StrictReaderTests(unittest.TestCase):
             payload = json.loads(json.dumps(canonical))
             payload["terminal"][key] = value
             with self.subTest(field=key):
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_raw_or_malformed_project_ref_fails_closed(self) -> None:
+        for ref in (
+            "E:/secret/project",
+            "E:\\secret\\project",
+            "/tmp/project",
+            "project:",
+            "project:" + "g" * 24,
+            "project:" + "a" * 25,
+            "project:" + "a" * 24 + "/etc",
+        ):
+            with self.subTest(ref=ref):
+                self._rejects(lambda payload, ref=ref: payload.__setitem__("project_ref", ref))
+
+    def test_impossible_repair_states_fail_closed(self) -> None:
+        # repair_context_admitted / running / settled require the committed
+        # context ref; running / settled require at least one committed
+        # round; no phase may claim more rounds than the budget allows.
+        cases = [
+            (PHASE_REPAIR_CONTEXT_ADMITTED, {"repair_context_ref": ""}),
+            (PHASE_REPAIR_RUNNING, {"repair_context_ref": ""}),
+            (PHASE_REPAIR_RUNNING, {"repair_rounds": 0}),
+            (PHASE_REPAIR_SETTLED, {"repair_rounds": 0}),
+            (PHASE_REPAIR_RUNNING, {"repair_rounds": 2}),  # budget is 1
+        ]
+        for phase, mutate_kwargs in cases:
+            with self.subTest(phase=phase, **mutate_kwargs):
+                payload = _fresh_state(phase).to_payload()
+                payload.update(mutate_kwargs)
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_pre_repair_phases_cannot_carry_repair_facts(self) -> None:
+        for phase in (PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED):
+            for mutate_kwargs in ({"repair_rounds": 1}, {"repair_context_ref": "sha256:" + "a" * 64}):
+                with self.subTest(phase=phase, **mutate_kwargs):
+                    payload = _fresh_state(phase).to_payload()
+                    payload.update(mutate_kwargs)
+                    self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_proof_phase_requires_the_recorded_proof_facts(self) -> None:
+        for mutate_kwargs in (
+            {"completion_proof_ref": ""},
+            {"completion_proof_status": ""},
+            {"completion_proof_satisfied": None},
+        ):
+            with self.subTest(**mutate_kwargs):
+                payload = _fresh_state(PHASE_COMPLETION_PROOF_RECORDED).to_payload()
+                payload.update(mutate_kwargs)
+                if mutate_kwargs.get("completion_proof_satisfied") is None:
+                    payload.pop("completion_proof_satisfied", None)
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_unknown_top_level_keys_fail_closed(self) -> None:
+        # A payload with "extension" fields -- a raw prompt, a diff, any
+        # future key -- is not schema v1 and must not load.
+        for extra in ("raw_prompt", "diff", "task", "notes", "schema_version_v2"):
+            with self.subTest(key=extra):
+                payload = self._canonical()
+                payload[extra] = "SHOULD_NEVER_BE_ACCEPTED"
                 self.assertIsNone(RunOperationState.from_payload(payload))
 
 

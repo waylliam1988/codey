@@ -26,10 +26,16 @@ This file records Codey's release history. The newest release appears first.
     reason. No raw prompt, reply, stdout/stderr, diff, source body, or
     repair prompt text exists anywhere in the payload.
   - The reader fails closed: bad schema, wrong session/run ids, unknown
-    phase, wrong JSON types (bool-as-int, numeric strings), missing fields,
-    or an oversize file load as `None`. Schema v1 only -- no migration, no
-    coercion, no legacy guessing.
-  - `start()` never clobbers: the exists check and the write share the
+    phase, unknown top-level keys (an "extension" field, a raw prompt, a
+    diff), wrong JSON types (bool-as-int, numeric strings), missing fields,
+    impossible phase states (repair facts before admission, rounds over
+    budget, proof phases without proof facts), raw or malformed project
+    refs, or an oversize file load as `None`. Schema v1 only -- no
+    migration, no coercion, no legacy guessing.
+  - `start()` validates identity and never clobbers: a non-canonical
+    session/run id (empty, padded, over 200 chars, non-string) is refused
+    without writing anything -- a register can never end up reachable only
+    under a trimmed id -- and the exists check plus the write share the
     commit file lock, so a corrupted leftover register is never silently
     overwritten and concurrent starts yield exactly one register.
 - TaskRunner now commits at the real lifecycle boundaries instead of keeping

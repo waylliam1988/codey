@@ -24,13 +24,16 @@ Boundaries:
   a committed ``repair_context_admitted``; ``repair_rounds`` cannot exceed the
   budget handed in at ``start()``; terminal is immutable except for the
   exact-same-payload idempotent re-commit.
-- the reader fails closed. Bad schema, wrong ids, unknown phase, wrong JSON
-  types (bool-as-int, numeric strings), missing fields, or an oversize file
-  load as ``None``; there is no migration, no coercion, and no legacy guess
-  -- cold start, canonical schema v1 only.
-- the writer is exclusive. ``start()`` never clobbers: an existing file --
-  valid or not -- refuses a second start under the same file lock that
-  ``commit()`` uses.
+- the reader fails closed. Bad schema, wrong ids, unknown phase, unknown
+  keys, wrong JSON types (bool-as-int, numeric strings), missing fields,
+  raw or malformed project refs, impossible phase states (repair facts
+  before admission, rounds over budget, proof phases without proof facts),
+  or an oversize file load as ``None``; there is no migration, no coercion,
+  and no legacy guess -- cold start, canonical schema v1 only.
+- the writer is exclusive and validates identity. ``start()`` never clips
+  or clobbers: a non-canonical session/run id is refused without writing,
+  and an existing file -- valid or not -- refuses a second start under the
+  same file lock that ``commit()`` uses.
 - this module is a storage leaf: stdlib plus ``codey.storage`` and nothing
   else. It never imports agents, providers, tools, server, or ghost.
 """
@@ -109,6 +112,46 @@ INTERRUPTED_COMPLETION_CHECK = "Completion check was interrupted"
 INTERRUPTED_FINISHING = "Finishing was interrupted"
 INTERRUPTED_REPAIR = "Stopped during repair"
 
+# Phase invariants the reader enforces on top of the type checks: a register
+# may only claim repair facts once the repair arm admitted a context, and a
+# recorded proof must carry its proof facts.
+_PRE_REPAIR_PHASES = frozenset(
+    {PHASE_ACCEPTED, PHASE_WRITER_RUNNING, PHASE_WRITER_SETTLED}
+)
+_REPAIR_PHASES = frozenset(
+    {PHASE_REPAIR_CONTEXT_ADMITTED, PHASE_REPAIR_RUNNING, PHASE_REPAIR_SETTLED}
+)
+_REPAIR_EXECUTING_PHASES = frozenset({PHASE_REPAIR_RUNNING, PHASE_REPAIR_SETTLED})
+
+# The key set is closed: a payload carrying anything else -- an "extension"
+# field, a raw prompt, a diff -- is not schema v1 and fails closed.
+_KNOWN_PAYLOAD_KEYS = frozenset(
+    {
+        "schema_version",
+        "kind",
+        "session_id",
+        "run_id",
+        "project_ref",
+        "provider_id",
+        "turn_budget",
+        "max_repair_rounds",
+        "phase",
+        "writer_attempt",
+        "turns_used",
+        "stop_reason",
+        "completion_proof_ref",
+        "completion_proof_status",
+        "completion_proof_satisfied",
+        "repair_rounds",
+        "repair_context_ref",
+        "blocked_reason",
+        "started_at",
+        "updated_at",
+        "terminal",
+    }
+)
+_PROJECT_REF_RE = re.compile(r"^project:[0-9a-f]{24}$")
+
 
 class RunOperationTransitionError(Exception):
     """A phase transition violated the closed transition table."""
@@ -131,6 +174,27 @@ def _nonnegative_int(value: object) -> int:
         return max(0, int(value))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 0
+
+
+def _canonical_id(value: object) -> str:
+    """The one canonical identity form, or "" when the id is not canonical.
+
+    Identity is never clipped: a register written under a trimmed id could
+    never be found again by commits keyed on the original id. Callers hand
+    in a non-empty string, at most ``MAX_ID_CHARS`` chars, equal to its own
+    strip -- anything else fails closed at the boundary.
+    """
+
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or len(text) > MAX_ID_CHARS or text != value:
+        return ""
+    return text
+
+
+def _valid_project_ref(ref: str) -> bool:
+    return not ref or _PROJECT_REF_RE.match(ref) is not None
 
 
 def _text_field(
@@ -277,6 +341,8 @@ class RunOperationState:
         if payload.get("schema_version") != SCHEMA_VERSION or payload.get("kind") != KIND:
             return None
         try:
+            if set(payload) - _KNOWN_PAYLOAD_KEYS:
+                raise _SchemaError("payload carries unknown keys")
             session_id = _text_field(payload, "session_id", limit=MAX_ID_CHARS)
             run_id = _text_field(payload, "run_id", limit=MAX_ID_CHARS)
             phase = _text_field(payload, "phase", limit=40)
@@ -285,6 +351,36 @@ class RunOperationState:
             satisfied = payload.get("completion_proof_satisfied")
             if satisfied is not None and not isinstance(satisfied, bool):
                 raise _SchemaError("completion_proof_satisfied must be a bool")
+            project_ref = _text_field(
+                payload, "project_ref", limit=MAX_PROJECT_REF_CHARS, allow_empty=True
+            )
+            if not _valid_project_ref(project_ref):
+                raise _SchemaError("project_ref must be empty or a project:<key> ref")
+            max_repair_rounds = _int_field(payload, "max_repair_rounds")
+            repair_rounds = _int_field(payload, "repair_rounds")
+            if repair_rounds > max_repair_rounds:
+                raise _SchemaError("repair_rounds exceeds the repair budget")
+            repair_context_ref = _text_field(
+                payload, "repair_context_ref", limit=MAX_REF_CHARS, allow_empty=True
+            )
+            proof_ref = _text_field(
+                payload, "completion_proof_ref", limit=MAX_REF_CHARS, allow_empty=True
+            )
+            proof_status = _text_field(
+                payload, "completion_proof_status", limit=MAX_TEXT_CHARS, allow_empty=True
+            )
+            # Phase invariants: the register may only claim what the closed
+            # transition table could have produced at this phase.
+            if phase in _REPAIR_PHASES and not repair_context_ref:
+                raise _SchemaError(f"{phase} requires a committed repair context ref")
+            if phase in _REPAIR_EXECUTING_PHASES and repair_rounds < 1:
+                raise _SchemaError(f"{phase} requires a committed repair round")
+            if phase in _PRE_REPAIR_PHASES and (repair_rounds or repair_context_ref):
+                raise _SchemaError(f"{phase} cannot carry repair facts")
+            if phase == PHASE_COMPLETION_PROOF_RECORDED and (
+                not proof_ref or not proof_status or satisfied is None
+            ):
+                raise _SchemaError(f"{phase} requires the recorded proof facts")
             terminal = None
             if phase == PHASE_TERMINAL:
                 terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
@@ -298,14 +394,12 @@ class RunOperationState:
             return cls(
                 session_id=session_id,
                 run_id=run_id,
-                project_ref=_text_field(
-                    payload, "project_ref", limit=MAX_PROJECT_REF_CHARS, allow_empty=True
-                ),
+                project_ref=project_ref,
                 provider_id=_text_field(
                     payload, "provider_id", limit=MAX_TEXT_CHARS, allow_empty=True
                 ),
                 turn_budget=_int_field(payload, "turn_budget"),
-                max_repair_rounds=_int_field(payload, "max_repair_rounds"),
+                max_repair_rounds=max_repair_rounds,
                 phase=phase,
                 started_at=_text_field(payload, "started_at", limit=40),
                 updated_at=_text_field(payload, "updated_at", limit=40),
@@ -314,17 +408,11 @@ class RunOperationState:
                 stop_reason=_text_field(
                     payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
                 ),
-                completion_proof_ref=_text_field(
-                    payload, "completion_proof_ref", limit=MAX_REF_CHARS, allow_empty=True
-                ),
-                completion_proof_status=_text_field(
-                    payload, "completion_proof_status", limit=MAX_TEXT_CHARS, allow_empty=True
-                ),
+                completion_proof_ref=proof_ref,
+                completion_proof_status=proof_status,
                 completion_proof_satisfied=satisfied,
-                repair_rounds=_int_field(payload, "repair_rounds"),
-                repair_context_ref=_text_field(
-                    payload, "repair_context_ref", limit=MAX_REF_CHARS, allow_empty=True
-                ),
+                repair_rounds=repair_rounds,
+                repair_context_ref=repair_context_ref,
                 blocked_reason=_text_field(
                     payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
                 ),
@@ -529,19 +617,25 @@ class RunOperationStore:
     ) -> RunOperationState | None:
         """Open the run's register; refuse to clobber anything on disk.
 
-        The exists check and the write share the commit file lock, so two
-        concurrent starts produce exactly one register, and a corrupted
-        leftover file is never silently overwritten.
+        Identity is validated, never clipped: a register written under a
+        trimmed id could never be found again by commits keyed on the
+        original id. The exists check and the write share the commit file
+        lock, so two concurrent starts produce exactly one register, and a
+        corrupted leftover file is never silently overwritten.
         """
 
-        path = self.path_for(session_id, run_id)
+        canonical_session = _canonical_id(session_id)
+        canonical_run = _canonical_id(run_id)
+        if not canonical_session or not canonical_run:
+            return None
+        path = self.path_for(canonical_session, canonical_run)
         with with_file_lock(path):
             if path.exists():
                 return None
             now = _now()
             state = RunOperationState(
-                session_id=_clip(session_id, MAX_ID_CHARS),
-                run_id=_clip(run_id, MAX_ID_CHARS),
+                session_id=canonical_session,
+                run_id=canonical_run,
                 project_ref=_project_ref(project),
                 provider_id=_clip(provider_id, MAX_TEXT_CHARS),
                 turn_budget=_nonnegative_int(turn_budget),
