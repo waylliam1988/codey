@@ -30,10 +30,12 @@ Boundaries:
   wrong JSON types (bool-as-int, numeric strings), missing fields, padded
   text fields, raw or malformed refs, impossible phase states (repair or
   proof facts before the phases that produce them, post-proof phases and
-  terminal without the facts their source phase committed, proof refs or
-  statuses outside the recorded-proof contract, rounds over budget), or an
-  oversize file load as ``None``; there is no migration, no coercion,
-  and no legacy guess -- cold start, canonical schema v1 only.
+  terminal without the facts their source phase committed, a re-proof with
+  a partial repair record, a blocked verdict without its unsatisfied
+  failed/blocked proof, proof refs or statuses outside the recorded-proof
+  contract, rounds over budget), or an oversize file load as ``None``;
+  there is no migration, no coercion, and no legacy guess -- cold start,
+  canonical schema v1 only.
 - the writer is held to the reader's bar. The transition helpers validate
   every fact exactly as the reader will -- nothing is clipped or coerced, a
   non-canonical fact raises ``RunOperationTransitionError`` -- and
@@ -184,6 +186,7 @@ _COMPLETION_PROOF_REF_RE = re.compile(r"^completion_proof:[0-9a-f]{16}$")
 _RECORDED_PROOF_STATUSES = frozenset(
     {"complete", "complete_with_limitations", "failed", "blocked"}
 )
+_BLOCKABLE_PROOF_STATUSES = frozenset({"failed", "blocked"})
 
 
 class RunOperationTransitionError(Exception):
@@ -299,6 +302,20 @@ def _repair_facts_claimed(repair_rounds: int, repair_context_ref: str) -> bool:
     """Whether any part of the repair arm is claimed."""
 
     return repair_rounds > 0 or bool(repair_context_ref)
+
+
+def _blocked_verdict_supported(proof_ref: str, proof_status: str, satisfied: object) -> bool:
+    """Whether an unsatisfied failed/blocked proof backs a blocked verdict.
+
+    A run blocked by the completion decision carries the verdict on the
+    proof that failed it -- never on a complete, limited, or unproven run.
+    """
+
+    return (
+        _proof_facts_complete(proof_ref, proof_status, satisfied)
+        and proof_status in _BLOCKABLE_PROOF_STATUSES
+        and satisfied is False
+    )
 
 
 @dataclass(frozen=True)
@@ -462,6 +479,15 @@ class RunOperationState:
                     raise _SchemaError(f"{phase} requires the recorded proof facts")
                 if satisfied != (proof_status == "complete"):
                     raise _SchemaError(f"{phase} proof satisfied must match the recorded status")
+                if phase == PHASE_COMPLETION_PROOF_RECORDED and _repair_facts_claimed(
+                    repair_rounds, repair_context_ref
+                ):
+                    # The table produces only two kinds of recorded proof:
+                    # the first one, with no repair facts, and the
+                    # post-repair re-proof, carrying the context and at
+                    # least one committed round.
+                    if not repair_context_ref or repair_rounds < 1:
+                        raise _SchemaError(f"{phase} carries a partial repair record")
             elif phase == PHASE_TERMINAL:
                 # Terminal keeps whatever facts its source phase committed;
                 # the combination must still be one the table could have
@@ -475,11 +501,22 @@ class RunOperationState:
                     raise _SchemaError("terminal carries repair rounds without the context ref")
                 if proof_complete and satisfied != (proof_status == "complete"):
                     raise _SchemaError("terminal proof satisfied must match the recorded status")
+            # A blocked verdict sits only on the proof that failed the run:
+            # never on a complete, limited, or unproven state.
+            blocked_reason = _text_field(
+                payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+            )
+            if blocked_reason and not _blocked_verdict_supported(
+                proof_ref, proof_status, satisfied
+            ):
+                raise _SchemaError("blocked_reason requires an unsatisfied failed/blocked proof")
             terminal = None
             if phase == PHASE_TERMINAL:
                 terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
                 if terminal is None:
                     raise _SchemaError("terminal phase requires a valid terminal payload")
+                if blocked_reason != terminal.blocked_reason:
+                    raise _SchemaError("terminal snapshot must carry the state's blocked reason")
             elif "terminal" in payload:
                 raise _SchemaError("non-terminal phase must not carry a terminal payload")
             writer_attempt = _int_field(payload, "writer_attempt")
@@ -489,9 +526,7 @@ class RunOperationState:
                 session_id=session_id,
                 run_id=run_id,
                 project_ref=project_ref,
-                provider_id=_text_field(
-                    payload, "provider_id", limit=MAX_TEXT_CHARS, allow_empty=True
-                ),
+                provider_id=_text_field(payload, "provider_id", limit=MAX_TEXT_CHARS),
                 turn_budget=_int_field(payload, "turn_budget"),
                 max_repair_rounds=max_repair_rounds,
                 phase=phase,
@@ -507,9 +542,7 @@ class RunOperationState:
                 completion_proof_satisfied=satisfied,
                 repair_rounds=repair_rounds,
                 repair_context_ref=repair_context_ref,
-                blocked_reason=_text_field(
-                    payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
-                ),
+                blocked_reason=blocked_reason,
                 terminal=terminal,
             )
         except _SchemaError:
@@ -582,6 +615,9 @@ def mark_completion_proof_recorded(
 ) -> RunOperationState:
     ref = _strict_text(proof_ref, field="proof_ref", limit=MAX_REF_CHARS)
     status = _strict_text(proof_status, field="proof_status", limit=MAX_TEXT_CHARS)
+    if not isinstance(proof_satisfied, bool):
+        # 1 == True and 0 == False in Python; the flag is a bool or refused.
+        raise RunOperationTransitionError("proof_satisfied must be a bool")
     if not _COMPLETION_PROOF_REF_RE.match(ref):
         raise RunOperationTransitionError("proof_ref must be a completion_proof:<16 hex> ref")
     if status not in _RECORDED_PROOF_STATUSES:
@@ -627,6 +663,15 @@ def mark_repair_settled(
     blocked_reason: str = "",
     turns_used: int | None = None,
 ) -> RunOperationState:
+    verdict = _strict_text(
+        blocked_reason, field="blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
+    )
+    if verdict and not _blocked_verdict_supported(
+        state.completion_proof_ref, state.completion_proof_status, state.completion_proof_satisfied
+    ):
+        raise RunOperationTransitionError(
+            "a blocked verdict requires an unsatisfied failed/blocked proof"
+        )
     return _transition(
         state,
         PHASE_REPAIR_SETTLED,
@@ -634,9 +679,7 @@ def mark_repair_settled(
         stop_reason=_strict_text(
             stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
         ),
-        blocked_reason=_strict_text(
-            blocked_reason, field="blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
-        ),
+        blocked_reason=verdict,
         turns_used=(
             state.turns_used if turns_used is None else _strict_count(turns_used, field="turns_used")
         ),
@@ -651,12 +694,19 @@ def mark_completion_blocked(
     """Record the enforcement decision on the already-recorded proof.
 
     The decision point runs after ``completion_proof_recorded``; it updates
-    the verdict field without inventing a ninth phase.
+    the verdict field without inventing a ninth phase, and only a proof
+    that failed the run can carry the verdict.
     """
 
     if state.phase != PHASE_COMPLETION_PROOF_RECORDED:
         raise RunOperationTransitionError(
             f"completion verdict requires phase {PHASE_COMPLETION_PROOF_RECORDED}, not {state.phase}"
+        )
+    if not _blocked_verdict_supported(
+        state.completion_proof_ref, state.completion_proof_status, state.completion_proof_satisfied
+    ):
+        raise RunOperationTransitionError(
+            "a blocked verdict requires an unsatisfied failed/blocked proof"
         )
     return replace(
         state,
@@ -675,6 +725,18 @@ def mark_terminal(
     provider: str,
     blocked_reason: str | None = None,
 ) -> RunOperationState:
+    verdict = _strict_text(
+        state.blocked_reason if blocked_reason is None else blocked_reason,
+        field="blocked_reason",
+        limit=MAX_TEXT_CHARS,
+        allow_empty=True,
+    )
+    if verdict and not _blocked_verdict_supported(
+        state.completion_proof_ref, state.completion_proof_status, state.completion_proof_satisfied
+    ):
+        raise RunOperationTransitionError(
+            "a blocked verdict requires an unsatisfied failed/blocked proof"
+        )
     terminal = RunOperationTerminal(
         stop_reason=_strict_text(
             stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
@@ -683,12 +745,7 @@ def mark_terminal(
         turns=_strict_count(turns, field="turns"),
         max_turns=_strict_count(max_turns, field="max_turns"),
         provider=_strict_text(provider, field="provider", limit=MAX_TEXT_CHARS, allow_empty=True),
-        blocked_reason=_strict_text(
-            state.blocked_reason if blocked_reason is None else blocked_reason,
-            field="blocked_reason",
-            limit=MAX_TEXT_CHARS,
-            allow_empty=True,
-        ),
+        blocked_reason=verdict,
         finished_at=_now(),
     )
     if state.phase == PHASE_TERMINAL:

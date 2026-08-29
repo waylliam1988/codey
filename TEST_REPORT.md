@@ -100,35 +100,56 @@ Round 4 (canonical-text + terminal-facts + proof contract, same day):
     "complete") -- the exact derivation the proof builder uses
     (complete_with_limitations is honestly unsatisfied). Writer helper and
     reader payload both enforce it.
+
+Round 5 (verdict support + remaining reachability, same day):
+14. A blocked verdict can only sit on the proof that failed the run:
+    mark_completion_blocked() requires the complete proof triple with
+    status failed/blocked and satisfied=False, and the reader rejects
+    blocked_reason on complete / complete_with_limitations / no-proof
+    states. Terminal must carry the same verdict top-level and inside the
+    snapshot, and mark_terminal()/mark_repair_settled() refuse unbacked
+    verdicts too, so the writer can never produce a state the reader
+    would reject.
+15. proof_satisfied is bool-or-refused: 1 and 0 no longer slip through the
+    status-consistency check via Python's 1 == True.
+16. completion_proof_recorded reachability is now complete: a post-repair
+    re-proof must carry the context AND at least one committed round, so
+    both partial repair records (rounds without a context, a context
+    without rounds) fail closed, while the reachable re-proof and the
+    repair_context_admitted -> terminal stop position (context + rounds=0)
+    still round-trip.
+17. provider_id is non-empty on the reader side too, matching the writer's
+    start() standard.
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-29, after all four review
+Full local pytest (Windows, Python 3.12, 2026-08-29, after all five review
 rounds):
 
 ```text
 python -B -m pytest
-3283 passed, 3 skipped, 1227 subtests passed in 336.74s (0:05:36)
+3289 passed, 3 skipped, 1241 subtests passed in 327.43s (0:05:27)
 ```
 
-Focused gates before the full run (Round 4 candidate, 2026-08-29):
+Focused gates before the full run (Round 5 candidate, 2026-08-29):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 69 passed, 206 subtests (round-trips,
+tests/test_run_operation.py                                         -> 75 passed, 220 subtests (round-trips,
                                                                        strict fail-closed reader + phase-state
                                                                        closure (proof-fact / sha256-context
                                                                        invariants, terminal fact reachability,
-                                                                       padded-text rejection), closed terminal
-                                                                       key set, recorded-proof contract on both
-                                                                       sides, strict writer helpers (no clipping,
-                                                                       no coercion), commit canonical gate +
-                                                                       identity lock, terminal immutability,
-                                                                       locked/atomic start+commit, concurrent
-                                                                       starts, canonical identity at and beyond
-                                                                       the boundary, project ref format, payload
-                                                                       hygiene, import boundary)
+                                                                       padded-text rejection, re-proof repair
+                                                                       record, blocked-verdict support), closed
+                                                                       terminal key set, recorded-proof contract
+                                                                       on both sides, strict writer helpers (no
+                                                                       clipping, no coercion), commit canonical
+                                                                       gate + identity lock, terminal
+                                                                       immutability, locked/atomic start+commit,
+                                                                       concurrent starts, canonical identity at
+                                                                       and beyond the boundary, project ref
+                                                                       format, payload hygiene, import boundary)
 tests/test_task_runner_operation_state.py +
 test_run_details / test_headless_runner                             -> 28 passed, 6 subtests (terminal/ledger/event
                                                                        consistency, repair phase sequence observed

@@ -29,13 +29,21 @@ This file records Codey's release history. The newest release appears first.
     session/run ids, unknown phase, unknown keys -- top-level or inside the
     terminal snapshot (an "extension" field, a raw prompt, a diff) -- wrong
     JSON types (bool-as-int, numeric strings), missing fields, padded text
-    fields, raw or malformed refs, impossible phase states (repair or proof
-    facts before the phases that produce them, terminal fact combinations
-    no source phase could have committed -- a partial proof triple, repair
-    rounds without the admitted context, a context without its recorded
-    proof --, proof refs or statuses outside the recorded-proof contract,
-    rounds over budget), or an oversize file load as `None`. Schema v1
-    only -- no migration, no coercion, no legacy guessing.
+    fields, an empty provider id, raw or malformed refs, impossible phase
+    states (repair or proof facts before the phases that produce them,
+    terminal fact combinations no source phase could have committed -- a
+    partial proof triple, repair rounds without the admitted context, a
+    context without its recorded proof --, a re-proof with a partial repair
+    record, a blocked verdict without its unsatisfied failed/blocked proof,
+    proof refs or statuses outside the recorded-proof contract, rounds over
+    budget), or an oversize file load as `None`. Schema v1 only -- no
+    migration, no coercion, no legacy guessing.
+  - The blocked verdict is bound to its proof: `mark_completion_blocked()`
+    requires the complete proof triple with status `failed`/`blocked` and
+    `satisfied=False`, the terminal snapshot must carry the same verdict as
+    the register, and the verdict carriers (`mark_terminal()`,
+    `mark_repair_settled()`) refuse an unbacked verdict -- a complete,
+    limited, or unproven run can never read as "blocked".
   - The recorded proof has its own closed contract, mirroring the
     completion trace's proof vocabulary: the ref must be
     `completion_proof:<16 hex>`, the status one of `complete` /
@@ -85,13 +93,14 @@ This file records Codey's release history. The newest release appears first.
   finishing, and repair positions recover with an honest progress line),
   phase round-trips, strict fail-closed readers (proof-fact and
   sha256-context phase invariants, terminal fact reachability, padded-text
-  rejection, closed terminal key set), the recorded-proof contract on both
-  sides, strict writers held to the reader's bar with the commit canonical
-  gate, terminal immutability, locked concurrent start/commit,
-  ledger/terminal consistency, payload hygiene, and
-  `tests/manual/completion_operation_resume_smoke.py --self-test` -- a real
-  process kill mid-writer recovered by a fresh store. No live provider A/B
-  -- this version changes nothing model-visible.
+  rejection, closed terminal key set, blocked-verdict support), the
+  recorded-proof contract on both sides, strict writers held to the
+  reader's bar with the commit canonical gate, terminal immutability,
+  locked concurrent start/commit, ledger/terminal consistency, payload
+  hygiene, and `tests/manual/completion_operation_resume_smoke.py
+  --self-test` -- a real process kill mid-writer recovered by a fresh
+  store. No live provider A/B -- this version changes nothing
+  model-visible.
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 
