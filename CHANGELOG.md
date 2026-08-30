@@ -40,12 +40,15 @@ This file records Codey's release history. The newest release appears first.
     refs or statuses outside the recorded-proof contract, rounds over
     budget), or an oversize file load as `None`. Schema v1 only -- no
     migration, no coercion, no legacy guessing.
-  - The blocked verdict is bound to its proof: `mark_completion_blocked()`
-    requires the complete proof triple with status `failed`/`blocked` and
-    `satisfied=False`, the terminal snapshot must carry the same verdict as
-    the register, and the verdict carriers (`mark_terminal()`,
-    `mark_repair_settled()`) refuse an unbacked verdict -- a complete,
-    limited, or unproven run can never read as "blocked".
+  - The blocked verdict is final and bound to its proof:
+    `mark_completion_blocked()` requires the complete proof triple with
+    status `failed`/`blocked` and `satisfied=False`, a verdict-carrying
+    register may only be followed by terminal (a blocked proof cannot
+    admit a repair, a provider-failure settle cannot re-proof), the
+    terminal snapshot must carry the same verdict as the register, and the
+    verdict carriers (`mark_terminal()`, `mark_repair_settled()`) refuse
+    an unbacked verdict -- a complete, limited, or unproven run can never
+    read as "blocked".
   - The recorded proof has its own closed contract, mirroring the
     completion trace's proof vocabulary: the ref must be
     `completion_proof:<16 hex>`, the status one of `complete` /
@@ -97,7 +100,8 @@ This file records Codey's release history. The newest release appears first.
   finishing, and repair positions recover with an honest progress line),
   phase round-trips, strict fail-closed readers (proof-fact and
   sha256-context phase invariants, terminal fact reachability, padded-text
-  rejection, closed terminal key set, blocked-verdict support), the
+  rejection, closed terminal key set, blocked-verdict support and
+  finality), the
   recorded-proof contract on both sides, strict writers held to the
   reader's bar with the commit canonical gate, terminal immutability,
   locked concurrent start/commit, ledger/terminal consistency, payload

@@ -34,10 +34,12 @@
     failed/blocked proof 支撑的 blocked verdict、proof ref 或 status 超出
     recorded-proof 合同、rounds 超预算）、超长文件一律 load 为 `None`。
     只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
-  - blocked verdict 绑定到它的 proof：`mark_completion_blocked()` 要求完整
-    的 proof triple 且 status 为 `failed`/`blocked`、`satisfied=False`，
-    terminal 快照必须与寄存器携带同一 verdict，verdict 的写入方
-    （`mark_terminal()`、`mark_repair_settled()`）也拒绝无支撑的
+  - blocked verdict 是终局裁决且绑定到它的 proof：`mark_completion_blocked()`
+    要求完整的 proof triple 且 status 为 `failed`/`blocked`、
+    `satisfied=False`，带 verdict 的寄存器之后只能走向 terminal（被 block
+    的 proof 不能再 admit repair，provider-failure 的 settled repair 不能
+    re-proof），terminal 快照必须与寄存器携带同一 verdict，verdict 的写入
+    方（`mark_terminal()`、`mark_repair_settled()`）也拒绝无支撑的
     verdict——complete、带保留或未证明的 run 绝不会被读成 "blocked"。
   - 已记录 proof 有自己的封闭合同，与 completion trace 的 proof 词表对齐：
     ref 必须是 `completion_proof:<16 hex>`，status 只能是 `complete` /
@@ -80,7 +82,7 @@
   repair 各中断位置恢复后均给出诚实 progress）、phase round-trip、严格
   fail-closed reader（proof-fact 与 sha256-context 的 phase invariant、
   terminal 事实可达性、padded 文本拒绝、terminal 封闭 key set、
-  blocked-verdict 支持规则）、两侧执行的 recorded-proof 合同、达到 reader
+  blocked-verdict 支持与终局规则）、两侧执行的 recorded-proof 合同、达到 reader
   标准的严格 writer 加 commit canonical 门、terminal 不可变、加锁的并发
   start/commit、ledger/terminal 一致性、payload 卫生，以及
   `tests/manual/completion_operation_resume_smoke.py --self-test`——真实

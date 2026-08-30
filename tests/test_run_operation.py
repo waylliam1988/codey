@@ -1026,6 +1026,50 @@ class StrictReaderTests(unittest.TestCase):
         )
         self.assertEqual(RunOperationState.from_payload(backed.to_payload()), backed)
 
+    def test_active_repair_phases_cannot_carry_a_blocked_verdict(self) -> None:
+        # Only the recorded-proof phase, the settled repair, and terminal
+        # may hold the verdict: an admitted or running repair is still in
+        # motion and never carries one.
+        for phase, overrides in (
+            (PHASE_REPAIR_CONTEXT_ADMITTED, {"repair_context_ref": CONTEXT_REF}),
+            (
+                PHASE_REPAIR_RUNNING,
+                {"repair_context_ref": CONTEXT_REF, "repair_rounds": 1},
+            ),
+        ):
+            with self.subTest(phase=phase):
+                payload = _fresh_state(
+                    phase,
+                    completion_proof_ref=PROOF_REF_FAIL,
+                    completion_proof_status="failed",
+                    completion_proof_satisfied=False,
+                    **overrides,
+                ).to_payload()
+                payload["blocked_reason"] = "provider_failure"
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        # The carrier phases keep round-tripping with their verdicts.
+        failed_settled = mark_repair_settled(
+            mark_repair_running(
+                mark_repair_context_admitted(
+                    mark_completion_proof_recorded(
+                        _fresh_state(PHASE_WRITER_SETTLED),
+                        proof_ref=PROOF_REF_FAIL,
+                        proof_status="failed",
+                        proof_satisfied=False,
+                    ),
+                    context_ref=CONTEXT_REF,
+                ),
+                provider_id="deepseek",
+            ),
+            provider_id="deepseek",
+            stop_reason="",
+            blocked_reason="provider_failure",
+        )
+        self.assertEqual(
+            RunOperationState.from_payload(failed_settled.to_payload()), failed_settled
+        )
+
     def test_terminal_blocked_reason_must_match_the_snapshot(self) -> None:
         terminal = mark_terminal(
             mark_completion_blocked(
@@ -1638,6 +1682,76 @@ class TransitionTableTests(unittest.TestCase):
                 stop_reason="done",
                 blocked_reason="provider_failure",
             )
+
+    def test_blocked_verdict_is_final_until_terminal(self) -> None:
+        # Once the verdict is on the counter, the run may only end: the
+        # blocked proof cannot admit a repair, and the provider-failure
+        # settle cannot re-proof -- not even into a failed proof that would
+        # keep the stale verdict looking fresh.
+        settled = mark_writer_settled(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            provider_id="deepseek",
+            turns_used=2,
+            stop_reason="done",
+        )
+        blocked_proof = mark_completion_blocked(
+            mark_completion_proof_recorded(
+                settled,
+                proof_ref=PROOF_REF_FAIL,
+                proof_status="failed",
+                proof_satisfied=False,
+            ),
+            reason="unobserved",
+        )
+        with self.assertRaises(RunOperationTransitionError):
+            mark_repair_context_admitted(blocked_proof, context_ref=CONTEXT_REF)
+        ended = mark_terminal(
+            blocked_proof,
+            stop_reason="blocked",
+            summary_chars=1,
+            turns=1,
+            max_turns=8,
+            provider="deepseek",
+        )
+        self.assertEqual(RunOperationState.from_payload(ended.to_payload()), ended)
+
+        failed_settled = mark_repair_settled(
+            mark_repair_running(
+                mark_repair_context_admitted(
+                    mark_completion_proof_recorded(
+                        settled,
+                        proof_ref=PROOF_REF_FAIL,
+                        proof_status="failed",
+                        proof_satisfied=False,
+                    ),
+                    context_ref=CONTEXT_REF,
+                ),
+                provider_id="deepseek",
+            ),
+            provider_id="deepseek",
+            stop_reason="",
+            blocked_reason="provider_failure",
+        )
+        for status, satisfied in (("complete", True), ("failed", False)):
+            with self.subTest(reproof_status=status):
+                with self.assertRaises(RunOperationTransitionError):
+                    mark_completion_proof_recorded(
+                        failed_settled,
+                        proof_ref=PROOF_REF_OK,
+                        proof_status=status,
+                        proof_satisfied=satisfied,
+                    )
+        verdict_terminal = mark_terminal(
+            failed_settled,
+            stop_reason="stopped",
+            summary_chars=0,
+            turns=0,
+            max_turns=8,
+            provider="deepseek",
+        )
+        self.assertEqual(
+            RunOperationState.from_payload(verdict_terminal.to_payload()), verdict_terminal
+        )
 
 
 class TerminalImmutabilityTests(unittest.TestCase):

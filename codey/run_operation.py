@@ -31,11 +31,11 @@ Boundaries:
   text fields, raw or malformed refs, impossible phase states (repair or
   proof facts before the phases that produce them, post-proof phases and
   terminal without the facts their source phase committed, a re-proof with
-  a partial repair record, a blocked verdict without its unsatisfied
-  failed/blocked proof, proof refs or statuses outside the recorded-proof
-  contract, rounds over budget), or an oversize file load as ``None``;
-  there is no migration, no coercion, and no legacy guess -- cold start,
-  canonical schema v1 only.
+  a partial repair record, a blocked verdict outside the phases that may
+  carry one or without its unsatisfied failed/blocked proof, proof refs or
+  statuses outside the recorded-proof contract, rounds over budget), or an
+  oversize file load as ``None``; there is no migration, no coercion,
+  and no legacy guess -- cold start, canonical schema v1 only.
 - the writer is held to the reader's bar. The transition helpers validate
   every fact exactly as the reader will -- nothing is clipped or coerced, a
   non-canonical fact raises ``RunOperationTransitionError`` -- and
@@ -135,6 +135,11 @@ _REPAIR_PHASES = frozenset(
 )
 _REPAIR_EXECUTING_PHASES = frozenset({PHASE_REPAIR_RUNNING, PHASE_REPAIR_SETTLED})
 _POST_PROOF_PHASES = frozenset({PHASE_COMPLETION_PROOF_RECORDED}) | _REPAIR_PHASES
+# A blocked verdict is final: only the phase that records the decision, the
+# settled repair that failed on its own, and terminal may carry one.
+_VERDICT_PHASES = frozenset(
+    {PHASE_COMPLETION_PROOF_RECORDED, PHASE_REPAIR_SETTLED, PHASE_TERMINAL}
+)
 
 # The key set is closed: a payload carrying anything else -- an "extension"
 # field, a raw prompt, a diff -- is not schema v1 and fails closed.
@@ -514,11 +519,14 @@ class RunOperationState:
                     raise _SchemaError("terminal carries repair rounds without the context ref")
                 if proof_complete and satisfied != (proof_status == "complete"):
                     raise _SchemaError("terminal proof satisfied must match the recorded status")
-            # A blocked verdict sits only on the proof that failed the run:
-            # never on a complete, limited, or unproven state.
+            # A blocked verdict is final: it may only sit on the phase that
+            # records the decision, the settled repair that failed on its
+            # own, and terminal -- never on an active repair phase.
             blocked_reason = _text_field(
                 payload, "blocked_reason", limit=MAX_TEXT_CHARS, allow_empty=True
             )
+            if blocked_reason and phase not in _VERDICT_PHASES:
+                raise _SchemaError(f"{phase} cannot carry a blocked verdict")
             if blocked_reason and not _blocked_verdict_supported(
                 proof_ref, proof_status, satisfied
             ):
@@ -587,6 +595,9 @@ def operation_progress_text(state: RunOperationState | None) -> str:
 def _transition(state: RunOperationState, next_phase: str, **updates: object) -> RunOperationState:
     if next_phase not in _ALLOWED_TRANSITIONS.get(state.phase, frozenset()):
         raise RunOperationTransitionError(f"illegal transition {state.phase} -> {next_phase}")
+    if state.blocked_reason and next_phase != PHASE_TERMINAL:
+        # The verdict is final: a blocked register may only end the run.
+        raise RunOperationTransitionError("a blocked verdict may only be followed by terminal")
     return replace(state, phase=next_phase, updated_at=_now(), **updates)  # type: ignore[arg-type]
 
 
