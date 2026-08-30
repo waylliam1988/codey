@@ -11,14 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 import hashlib
-import json
-import os
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
@@ -363,6 +362,18 @@ class GhostWorkQueueStore:
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
         self._events_blocked_reason = ""
+
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=WORK_QUEUE_SCHEMA_VERSION,
+            max_bytes=MAX_WORK_EVENTS_BYTES,
+            max_warnings=MAX_WORK_WARNINGS,
+            source_name="work_events.jsonl",
+            allowed_event_kinds=_WORK_EVENT_TYPES,
+            bad_row_policy="block",
+            event_validator=lambda event: _valid_work_event(event),
+        )
 
     def sync_from_sources(
         self,
@@ -1131,54 +1142,15 @@ class GhostWorkQueueStore:
     def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         self._events_blocked_reason = ""
-        try:
-            if not self.events_path.is_file():
-                self.last_warnings = ()
-                return []
-            if self.events_path.stat().st_size > MAX_WORK_EVENTS_BYTES:
-                self.last_warnings = ("work_events_too_large",)
-                self._events_read_blocked = True
-                self._events_blocked_reason = "events_read_blocked"
-                return []
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("work_events_unreadable",)
+        read = self._event_log().read_locked()
+        if read.blocked:
             self._events_read_blocked = True
-            self._events_blocked_reason = "events_read_blocked"
-            return []
-        rows: list[dict[str, object]] = []
-        warnings: list[str] = []
-        for index, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                warnings.append(f"work_events.jsonl:{index}:bad_json")
-                self._events_read_blocked = True
-                continue
-            if not isinstance(payload, dict):
-                warnings.append(f"work_events.jsonl:{index}:not_object")
-                self._events_read_blocked = True
-                continue
-            if payload.get("schema_version") != WORK_QUEUE_SCHEMA_VERSION:
-                warnings.append(f"work_events.jsonl:{index}:unsupported_schema")
-                self._events_read_blocked = True
-                continue
-            if str(payload.get("type") or "") not in _WORK_EVENT_TYPES:
-                warnings.append(f"work_events.jsonl:{index}:unsupported_event")
-                self._events_read_blocked = True
-                continue
-            if not _valid_work_event(payload):
-                warnings.append(f"work_events.jsonl:{index}:invalid_event")
-                self._events_read_blocked = True
-                continue
-            rows.append(payload)
-        if self._events_read_blocked:
-            self.last_warnings = _bounded_warnings(warnings)
+            self.last_warnings = _event_read_warnings(read.warnings)
             self._events_blocked_reason = "events_read_blocked"
             return []
 
+        rows = list(read.rows)
+        warnings = list(_event_read_warnings(read.warnings))
         by_id: dict[str, GhostWorkItem] = {}
         for index, event in enumerate(rows, start=1):
             event_type = str(event.get("type") or "")
@@ -1264,23 +1236,7 @@ class GhostWorkQueueStore:
             self.last_warnings = _bounded_warnings((*self.last_warnings, "work_projection_write_failed"))
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        rows = [event for event in events if isinstance(event, dict)]
-        data = "".join(_json_line(event) for event in rows).encode("utf-8")
-        if len(data) > MAX_WORK_EVENTS_BYTES:
-            raise ValueError("ghost work events are too large")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic_locked(events)
 
     def _compact_if_needed_locked(self, items: Iterable[GhostWorkItem]) -> None:
         stats = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
@@ -2568,10 +2524,6 @@ def _future_ts(now: str, seconds: int) -> str:
     )
 
 
-def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
-
-
 def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
     out: list[str] = []
     for warning in warnings:
@@ -2583,6 +2535,18 @@ def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
         if len(out) >= MAX_WORK_WARNINGS:
             break
     return tuple(out)
+
+
+def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "work_events.jsonl:too_large":
+            mapped.append("work_events_too_large")
+        elif warning == "work_events.jsonl:unreadable":
+            mapped.append("work_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return _bounded_warnings(mapped)
 
 
 def _valid_work_item_payload(payload: object) -> bool:

@@ -100,6 +100,8 @@ def build_completion_decision(
         analysis_run_refs=analysis_refs,
         verification_forbidden=verification_forbidden,
         diagnostic_refs=diagnostic_refs,
+        workspace_revision=getattr(evidence, "workspace_revision", 0),
+        project=project,
     )
     failure_class = ""
     if proof is not None and not proof.satisfied:

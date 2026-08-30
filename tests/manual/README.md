@@ -752,7 +752,7 @@ typed protocol repairs. It sends deliberately invalid coding replies
 (`write_file`, mixed edit modes, bad read offsets, direct prose answers,
 native-tool denial, and nested tool JSON inside `done.summary`) and compares
 the legacy generic repair prompt with Codey's production typed repair prompt
-(`agent._protocol_repair_prompt`). It
+(`codey.agents.protocol.protocol_repair_prompt`). It
 scores whether the next reply is accepted by the production coding codec,
 matches the expected action, and is a strict single JSON object. It does not
 execute local tools or edit project files.

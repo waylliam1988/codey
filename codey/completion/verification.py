@@ -50,6 +50,7 @@ from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.completion.verification_policy import (
     check_covers_selected_candidate,
 )
+from codey.workspace.revision import workspace_revision_ref
 
 
 CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
@@ -305,7 +306,7 @@ def coding_verification_state(
             files,
             root=root,
         )
-        for item in evidence.failed_checks_after_edit
+        for item in _current_failed_checks(evidence)
     ):
         return VERIFICATION_FRESH_FAIL
     if any(
@@ -316,10 +317,31 @@ def coding_verification_state(
             files,
             root=root,
         )
-        for item in evidence.successful_checks
+        for item in _current_successful_checks(evidence)
     ):
         return VERIFICATION_FRESH_PASS
     return VERIFICATION_UNOBSERVED
+
+
+def _current_successful_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
+    current = getattr(evidence, "workspace_revision", 0)
+    return tuple(
+        item
+        for item in getattr(evidence, "successful_checks", ())
+        if getattr(item, "workspace_revision", 0) == current
+    )
+
+
+def _current_failed_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
+    current = getattr(evidence, "workspace_revision", 0)
+    rows = getattr(evidence, "failed_checks", None)
+    if rows is not None:
+        return tuple(rows)
+    return tuple(
+        item
+        for item in getattr(evidence, "failed_checks_after_edit", ())
+        if getattr(item, "workspace_revision", 0) == current
+    )
 
 
 def verification_provenance(
@@ -363,9 +385,9 @@ def relevant_verification_pairs(
     if selected_check is None:
         return ()
     if verification_state == VERIFICATION_FRESH_FAIL:
-        items = evidence.failed_checks_after_edit
+        items = _current_failed_checks(evidence)
     elif verification_state == VERIFICATION_FRESH_PASS:
-        items = evidence.successful_checks
+        items = _current_successful_checks(evidence)
     else:
         return ()
     pairs: list[tuple[str, str]] = []
@@ -526,6 +548,8 @@ def build_coding_completion_proof(
     analysis_run_refs: tuple[str, ...] = (),
     verification_forbidden: bool = False,
     diagnostic_refs: tuple[str, ...] = (),
+    workspace_revision: int = 0,
+    project: str | Path | None = None,
 ) -> CompletionProof | None:
     """Project one coding run into its completion proof (or None)."""
 
@@ -541,6 +565,18 @@ def build_coding_completion_proof(
             verification_forbidden=verification_forbidden,
         )
     run_ref = safe_run_ref(run_id)
+    revision_ref = workspace_revision_ref(project or "", workspace_revision)
+    external_refs: tuple[str, ...]
+    if run_ref:
+        external_refs = (
+            f"ledger:{run_ref}",
+            f"receipt:{run_ref}",
+            f"diff:{run_ref}",
+        )
+    else:
+        external_refs = ()
+    if revision_ref:
+        external_refs = (*external_refs, revision_ref)
     contract = build_completion_contract(
         domain=DOMAIN_CODING,
         subject_ref=f"run:{run_ref}" if run_ref else DOMAIN_CODING,
@@ -553,11 +589,7 @@ def build_coding_completion_proof(
         limitation_refs=limitations,
         analysis_run_refs=analysis_run_refs,
         diagnostic_refs=diagnostic_refs,
-        external_refs=(
-            f"ledger:{run_ref}",
-            f"receipt:{run_ref}",
-            f"diff:{run_ref}",
-        ) if run_ref else (),
+        external_refs=external_refs,
     )
     return project_completion_proof(contract)
 
@@ -613,7 +645,7 @@ def decisive_failure_fact(
 
     if selected_check is None:
         return None
-    for item in evidence.failed_checks_after_edit:
+    for item in _current_failed_checks(evidence):
         if check_covers_selected_candidate(
             selected_check,
             item.command,

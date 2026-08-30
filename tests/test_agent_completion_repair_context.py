@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     project_repair_context,
@@ -99,6 +100,10 @@ def _repair_context() -> tuple[str, dict[str, object]]:
 _DONE = '{"tool":"done","args":{"summary":"fixed"}}'
 
 
+def run_agent(provider, root, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=root, task=task, **kwargs))
+
+
 class ContinuationAdmissionTests(unittest.TestCase):
     def run_agent(self, trace, provider, root, context, **overrides):
         kwargs = dict(
@@ -113,7 +118,7 @@ class ContinuationAdmissionTests(unittest.TestCase):
         kwargs["completion_repair_context"] = text
         kwargs["completion_repair_context_payload"] = payload
         kwargs.update(overrides)
-        return agent.run(provider, root, "Fix the failing test", **kwargs)
+        return run_agent(provider, root, "Fix the failing test", **kwargs)
 
     def test_repair_context_rides_the_first_outbound_prompt(self) -> None:
         trace = _CapturingTrace()
@@ -209,7 +214,7 @@ class ContinuationAdmissionTests(unittest.TestCase):
             root = Path(td).resolve()
             plain_context = ConversationContext(hard_limit=100_000)
             plain_context.begin_window("deepseek", "project", str(root))
-            agent.run(
+            run_agent(
                 plain_provider,
                 root,
                 "Fix the failing test",
@@ -221,7 +226,7 @@ class ContinuationAdmissionTests(unittest.TestCase):
             empty_trace = _CapturingTrace()
             empty_context = ConversationContext(hard_limit=100_000)
             empty_context.begin_window("deepseek", "project", str(root))
-            agent.run(
+            run_agent(
                 empty_provider,
                 root,
                 "Fix the failing test",
@@ -247,7 +252,7 @@ class FreshIntroAdmissionTests(unittest.TestCase):
         text, payload = _repair_context()
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Fix the failing test",
@@ -290,7 +295,7 @@ class RolloverDiscardTests(unittest.TestCase):
         kwargs["completion_repair_context"] = text
         kwargs["completion_repair_context_payload"] = payload
         kwargs.update(overrides)
-        return agent.run(provider, root, "Fix the failing test", **kwargs)
+        return run_agent(provider, root, "Fix the failing test", **kwargs)
 
     def test_rollover_discards_stale_rows_and_readmits_on_the_real_intro(self) -> None:
         # A prepared repair-context section binds to nothing until its prompt

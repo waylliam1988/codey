@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
@@ -48,7 +49,7 @@ def tearDownModule() -> None:
 
 
 class WorkCheckpointFlowTests(unittest.TestCase):
-    def _state(self, path: Path) -> server.State:
+    def _state(self, path: Path) -> server.AppContext:
         """Checkpoint-flow State without background side effects.
 
         These tests exercise checkpoint/failover/recovery, not Ghost sleep
@@ -57,7 +58,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
         the flow tests disable them at the source.
         """
 
-        state = server.State(path)
+        state = server.AppContext(path)
         state.kick_ghost_sleep = mock.Mock(return_value=False)
         state.wait_for_ghost_sleep = mock.Mock(return_value=True)
         state.kick_self_repair = mock.Mock(return_value=False)
@@ -78,15 +79,15 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             state = self._state(root / "state")
             provider = self._provider()
 
-            def interrupted(*args, **kwargs):
-                target = Path(args[1]) / "app.py"
+            def interrupted(request: AgentRequest):
+                target = request.project / "app.py"
                 target.write_text("after\n", encoding="utf-8")
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("edit", {"path": "app.py"}),
                     ToolOutcome("edited", True, changed=True),
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     2,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),
                     ToolOutcome("ok", True, exit_code=0),
@@ -117,8 +118,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             captured = {}
 
-            def resumed(*args, **kwargs):
-                captured.update(kwargs)
+            def resumed(request: AgentRequest):
+                captured["request"] = request
                 return RunResult("finished", "done", 1, False, False, False)
 
             with (
@@ -134,18 +135,19 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             ):
                 server._run_task("session-1", str(project), "Continue safely", 8, True, "deepseek")
 
-            self.assertIn("Local execution checkpoint", captured["work_checkpoint"])
-            self.assertIn("app.py", captured["work_checkpoint"])
-            self.assertEqual(captured["verification_changed_files"], ("app.py",))
+            resumed_request = captured["request"]
+            self.assertIn("Local execution checkpoint", resumed_request.work_checkpoint)
+            self.assertIn("app.py", resumed_request.work_checkpoint)
+            self.assertEqual(resumed_request.verification_changed_files, ("app.py",))
             self.assertEqual(
-                captured["verification_successful_checks"][0].command,
+                resumed_request.verification_successful_checks[0].command,
                 "python -m unittest",
             )
             self.assertEqual(
-                captured["verification_candidates"][0].command,
+                resumed_request.verification_candidates[0].command,
                 "python -m unittest",
             )
-            done = state.last_terminal_event
+            done = state.run_registry.last_terminal_event()
             self.assertTrue(done["changed"])
             self.assertTrue(done["receipt"]["verification"]["checks_passed"])
             self.assertIsNone(state.work_checkpoints.load("session-1"))
@@ -163,11 +165,12 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             second.name = "StepFun"
             captured = {}
 
-            def writer(*args, **kwargs):
-                if args[0] is first:
-                    kwargs["change_tracker"].capture_before("app.py")
+            def writer(request: AgentRequest):
+                if request.provider is first:
+                    assert request.change_tracker is not None
+                    request.change_tracker.capture_before("app.py")
                     (project / "app.py").write_text("after\n", encoding="utf-8")
-                    kwargs["on_event"](RunEvent.tool_finished(
+                    request.on_event(RunEvent.tool_finished(
                         2,
                         ToolCall("edit", {"path": "app.py"}),
                         ToolOutcome("edited", True, changed=True),
@@ -181,8 +184,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                         "now",
                         "response_missing",
                     ))
-                captured.update(kwargs)
-                kwargs["on_event"](RunEvent.tool_finished(
+                captured["request"] = request
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("read_file", {"path": "app.py"}),
                     ToolOutcome("after", True),
@@ -214,16 +217,17 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             self.assertEqual(get_provider.call_args_list[1].args, ("stepfun",))
             self.assertEqual(agent_run.call_count, 2)
-            self.assertTrue(captured["fresh_chat"])
-            self.assertTrue(captured["strict_fresh_chat"])
-            self.assertIn("Local execution checkpoint", captured["work_checkpoint"])
-            self.assertIn("app.py", captured["work_checkpoint"])
-            self.assertEqual(captured["verification_changed_files"], ("app.py",))
-            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
-            self.assertEqual(state.active_run, None)
-            self.assertEqual(agent_run.call_args_list[1].kwargs["max_turns"], 6)
+            resumed_request = captured["request"]
+            self.assertTrue(resumed_request.fresh_chat)
+            self.assertTrue(resumed_request.strict_fresh_chat)
+            self.assertIn("Local execution checkpoint", resumed_request.work_checkpoint)
+            self.assertIn("app.py", resumed_request.work_checkpoint)
+            self.assertEqual(resumed_request.verification_changed_files, ("app.py",))
+            self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
+            self.assertEqual(state.run_registry.current(), None)
+            self.assertEqual(agent_run.call_args_list[1].args[0].max_turns, 6)
             run_review.assert_called_once()
-            done = state.last_terminal_event
+            done = state.run_registry.last_terminal_event()
             self.assertTrue(done["changed"])
             self.assertEqual(done["changes"]["files"][0]["path"], "app.py")
 
@@ -268,9 +272,10 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 [call.args[0] for call in get_provider.call_args_list],
                 ["deepseek", "stepfun"],
             )
-            self.assertEqual(agent_run.call_args.kwargs["provider_id"], "stepfun")
-            self.assertTrue(agent_run.call_args.kwargs["strict_fresh_chat"])
-            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+            request = agent_run.call_args.args[0]
+            self.assertEqual(request.provider_id, "stepfun")
+            self.assertTrue(request.strict_fresh_chat)
+            self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_first_rescue_failure_continues_to_second_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -323,8 +328,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ["deepseek", "stepfun", "qwen"],
             )
             self.assertEqual(agent_run.call_count, 3)
-            self.assertEqual(state.last_terminal_event["provider"], "qwen")
-            self.assertEqual(agent_run.call_args.kwargs["max_turns"], 6)
+            self.assertEqual(state.run_registry.last_terminal_event()["provider"], "qwen")
+            self.assertEqual(agent_run.call_args.args[0].max_turns, 6)
 
     def test_takeover_drops_green_check_when_recorded_file_hash_changed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -339,15 +344,15 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             providers = [self._provider(), self._provider()]
             captured = {}
 
-            def writer(*args, **kwargs):
-                if args[0] is providers[0]:
+            def writer(request: AgentRequest):
+                if request.provider is providers[0]:
                     target.write_text("after\n", encoding="utf-8")
-                    kwargs["on_event"](RunEvent.tool_finished(
+                    request.on_event(RunEvent.tool_finished(
                         1,
                         ToolCall("edit", {"path": "app.py"}),
                         ToolOutcome("edited", True, changed=True),
                     ))
-                    kwargs["on_event"](RunEvent.tool_finished(
+                    request.on_event(RunEvent.tool_finished(
                         2,
                         ToolCall(
                             "run",
@@ -365,7 +370,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                         "now",
                         "response_missing",
                     ))
-                captured.update(kwargs)
+                captured["request"] = request
                 return RunResult("done", "done", 1)
 
             with (
@@ -392,13 +397,14 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            self.assertEqual(captured["verification_successful_checks"], ())
+            resumed_request = captured["request"]
+            self.assertEqual(resumed_request.verification_successful_checks, ())
             self.assertIn(
                 "Successful checks after the latest recorded change: (none)",
-                captured["work_checkpoint"],
+                resumed_request.work_checkpoint,
             )
             self.assertFalse(
-                state.last_terminal_event["receipt"]["verification"]["checks_passed"]
+                state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"]
             )
 
     def test_stop_wins_over_provider_takeover(self) -> None:
@@ -412,7 +418,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             provider = self._provider()
 
             def stopped(*_args, **_kwargs):
-                state.stop_flag.set()
+                state.run_registry.stop_flag.set()
                 raise ProviderActionError(ProviderFailure(
                     "DeepSeek",
                     "send",
@@ -442,7 +448,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 )
 
             get_provider.assert_called_once_with("deepseek")
-            self.assertEqual(state.last_terminal_event["stop_reason"], "stopped")
+            self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "stopped")
 
     def test_writer_takeover_stops_after_two_switches(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -485,10 +491,10 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             self.assertEqual(agent_run.call_count, 3)
             self.assertEqual(get_provider.call_count, 3)
-            self.assertEqual(state.last_terminal_event["stop_reason"], "error")
-            self.assertEqual(state.last_terminal_event["provider"], "qwen")
+            self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "error")
+            self.assertEqual(state.run_registry.last_terminal_event()["provider"], "qwen")
             self.assertEqual(
-                state.last_terminal_event["provider_failure"]["kind"],
+                state.run_registry.last_terminal_event()["provider_failure"]["kind"],
                 "response_missing",
             )
 
@@ -509,8 +515,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             provider = self._provider()
             captured = {}
 
-            def completed(*args, **kwargs):
-                captured.update(kwargs)
+            def completed(request: AgentRequest):
+                captured["request"] = request
                 return RunResult("new answer", "done", 1, False, False, False)
 
             with (
@@ -525,7 +531,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             ):
                 server._run_task("session-1", str(project), "New task", 8, False, "deepseek")
 
-            self.assertEqual(captured["work_checkpoint"], "")
+            self.assertEqual(captured["request"].work_checkpoint, "")
             self.assertIsNone(state.work_checkpoints.load("session-1"))
 
     def test_successful_change_keeps_checkpoint_if_project_facts_write_fails(self) -> None:
@@ -550,15 +556,15 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             state.project_facts = facts
             provider = self._provider()
 
-            def completed(*args, **kwargs):
-                target = Path(args[1]) / "app.py"
+            def completed(request: AgentRequest):
+                target = request.project / "app.py"
                 target.write_text("after\n", encoding="utf-8")
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("edit", {"path": "app.py"}),
                     ToolOutcome("edited", True, changed=True),
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     2,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),
                     ToolOutcome("ok", True, exit_code=0),
@@ -603,8 +609,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             state = self._state(root / "state")
             provider = self._provider()
 
-            def completed(*args, **kwargs):
-                on_event = kwargs["on_event"]
+            def completed(request: AgentRequest):
+                on_event = request.on_event
                 on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("run", {"path": ".", "command": "python -m pytest tests/old.py"}),
@@ -717,8 +723,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "diff": _clean_diff("app.py"),
             }
 
-            def interrupted(*args, **kwargs):
-                on_event = kwargs["on_event"]
+            def interrupted(request: AgentRequest):
+                on_event = request.on_event
                 (project / "app.py").write_text("after\n", encoding="utf-8")
                 on_event(RunEvent.tool_finished(
                     1,
@@ -761,7 +767,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             ):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
 
-            self.assertFalse(state.last_terminal_event["receipt"]["verification"]["checks_passed"])
+            self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
 
     def test_receipt_rejects_green_command_other_than_selected_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -781,13 +787,13 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "diff": _clean_diff("app.py", old="VALUE = 1", new="VALUE = 2"),
             }
 
-            def completed(*args, **kwargs):
-                kwargs["on_event"](RunEvent.tool_finished(
+            def completed(request: AgentRequest):
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("edit", {"path": "app.py"}),
                     ToolOutcome("edited", True, changed=True),
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     2,
                     ToolCall(
                         "run",
@@ -813,7 +819,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            self.assertFalse(state.last_terminal_event["receipt"]["verification"]["checks_passed"])
+            self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
 
     def test_candidate_loader_refreshes_manifest_from_current_disk(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -825,13 +831,14 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             state = self._state(root / "state")
             provider = self._provider()
 
-            def completed(*args, **kwargs):
+            def completed(request: AgentRequest):
                 self.assertEqual(
-                    kwargs["verification_candidates"][0].command,
+                    request.verification_candidates[0].command,
                     "python -m pytest",
                 )
                 manifest.unlink()
-                self.assertEqual(kwargs["verification_candidate_loader"](), ())
+                assert request.verification_candidate_loader is not None
+                self.assertEqual(request.verification_candidate_loader(), ())
                 return RunResult("done", "done", 1)
 
             with (
@@ -866,18 +873,19 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             state.project_facts.record_success(project, ".", "npm test")
             provider = self._provider()
 
-            def completed(*args, **kwargs):
+            def completed(request: AgentRequest):
                 self.assertTrue(
                     any(
                         item.command == "npm test"
-                        for item in kwargs["verification_candidates"]
+                        for item in request.verification_candidates
                     )
                 )
                 manifest.write_text('{"scripts":{}}', encoding="utf-8")
+                assert request.verification_candidate_loader is not None
                 self.assertFalse(
                     any(
                         item.command == "npm test"
-                        for item in kwargs["verification_candidate_loader"]()
+                        for item in request.verification_candidate_loader()
                     )
                 )
                 return RunResult("done", "done", 1)

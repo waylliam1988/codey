@@ -160,6 +160,34 @@ class RuntimeOperationStoreTests(unittest.TestCase):
             1,
         )
 
+    def test_commit_uses_cached_entries_after_start(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            store = RuntimeOperationStore(log)
+            state = store.start(
+                session_id="s1",
+                run_id="run-1",
+                project=".",
+                provider_id="deepseek",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            assert state is not None
+
+            def fail_disk_replay(*_args, **_kwargs):
+                raise AssertionError("commit should use cached runtime entries")
+
+            log._read_unlocked = fail_disk_replay  # type: ignore[method-assign]
+            committed = store.commit(
+                "s1",
+                "run-1",
+                lambda item: mark_writer_running(item, provider_id="deepseek"),
+            )
+
+        assert committed is not None
+        self.assertEqual(committed.phase, PHASE_WRITER_RUNNING)
+
     def test_terminal_commit_settles_runtime_operation_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))

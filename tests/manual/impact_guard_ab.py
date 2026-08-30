@@ -23,6 +23,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
@@ -35,6 +36,10 @@ from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("current", "impact_guard")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 DEFAULT_PROVIDERS = ("deepseek", "qwen")
 ALL_WEB_PROVIDERS = ("deepseek", "stepfun", "qwen", "glm")
 SOURCE_SUFFIXES = {
@@ -596,7 +601,7 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         root = Path(td)
         _write_project(root, case.files)
         probe = _ImpactGuardProbe(arm=arm)
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

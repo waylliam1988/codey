@@ -16,11 +16,17 @@ This file records Codey's release history. The newest release appears first.
     non-business run lifecycle and `TaskRunDeps`, `mode_dispatch.py` chooses the
     operation function, and review/planning/Ghost post-turn work live in their
     own operation modules.
+  - Split `AgentRunner` without changing its protocol behavior: JSON protocol
+    repair helpers live in `codey.agents.protocol`, prompt/context assembly
+    lives in `codey.agents.context`, callers pass a single `AgentRequest`, and
+    loop progress/verification/stagnation state is explicit instead of spread
+    across a broad local-variable surface.
   - Split app runtime state out of the HTTP server shell: run lifecycle,
     approval queues, provider sessions/health/order, conversation cache/store,
     knowledge rebuild single-flight, and Ghost sleep single-flight now live in
-    dedicated app modules. `server.State` keeps product-facing methods but no
-    old/new runtime switch.
+    dedicated app modules. The server now exposes an `AppContext` with
+    product-facing coordination methods instead of `server.State` forwarding
+    properties or old/new runtime switches.
   - Moved operation frame/work/hooks/outcome values into `codey.operations` and
     moved the plain chat operation plus prompt/local-context tracing helpers
     out of the task runner. Chat prompt assembly, consensus handoff, provider
@@ -68,6 +74,11 @@ This file records Codey's release history. The newest release appears first.
     brick a long-lived session. Compaction keeps the replay-equivalent spine:
     `operation_started`, the latest `run_phase` effect, and the terminal
     `operation_settled` row when present.
+  - Runtime session-log validation now keeps a process-local entries +
+    projection cache. `append_many()` still fails closed through the reducer,
+    but hot phase commits load their current state from cached entries when the
+    file size has not changed; external writers, compaction, and deletion
+    invalidate or rebuild the cache.
   - Run Details now reads runtime operation state before ledger/trace checks, so
     an interrupted run can still show its quiet `Progress` row even if the
     ledger or trace was never written or has been cleaned up. Terminal runtime
@@ -75,19 +86,26 @@ This file records Codey's release history. The newest release appears first.
     Progress row.
   - RunRegistry builds `/api/state` snapshots without invoking approval
     callbacks under its internal lock.
-  - `State()` without an explicit state home now gets an ephemeral
-    runtime-session log and operation store, so tests and transient callers use
-    the same runtime path without writing to the user's durable state home.
+  - `AppContext()` without an explicit state home now gets an ephemeral
+    runtime-session log, operation store, and workspace revision store, so tests
+    and transient callers use the same runtime path without writing to the
+    user's durable state home.
+  - Workspace revision tracking now binds verification freshness to the project
+    filesystem state. This is intentionally separate from
+    `workspace/context_epoch.py`: context epochs identify prompt-source
+    provenance, while workspace revisions identify the file state a
+    verification observation can support.
   - Research and hybrid terminal events now keep the original task turn budget
     in the runtime terminal snapshot, even when the research engine used fewer
     turns internally.
   - Split SSE subscriber queues, replay IDs, overflow markers, and replay-window
     checks into `codey.app.event_bus`; `State` only injects active run identity
     before emitting.
-  - Added a shared Ghost JSONL event-log primitive and migrated the signal,
-    router, and sleep stores onto it. Corrupt or oversized reads remain
-    observable, and router/sleep keep their existing fail-closed mutation
-    behavior.
+  - Added a shared Ghost JSONL event-log primitive and migrated signal, router,
+    sleep, inbox, continuity, work queue, affinity, and Hebbian stores onto it.
+    Corrupt or oversized reads remain observable, and strict transition stores
+    keep their fail-closed mutation behavior through policy-specific bad-row
+    handling.
   - Added a shared browser-provider stable-completion loop and migrated
     DeepSeek and StepFun onto it. Both drivers now use
     `ProviderSendContext.record_response()` instead of mutating `ctx.last`,

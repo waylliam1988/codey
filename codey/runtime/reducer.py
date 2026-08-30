@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from codey.runtime.outcome import OperationOutcomeStatus
@@ -38,49 +39,99 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
     lanes: dict[str, LaneProjection] = {}
     operations: dict[str, OperationProjection] = {}
     for entry in entries:
-        lane = lanes.setdefault(entry.lane, LaneProjection(entry.lane))
-        operation = operations.get(entry.operation_id)
-
-        if entry.kind == "operation_started":
-            if operation is not None:
-                raise RuntimeLogCorruption("operation started twice")
-            if lane.open_operation_id:
-                raise RuntimeLogCorruption("lane already has an open operation")
-            operation_kind = _required_payload_text(entry, "operation_kind")
-            lane.open_operation_id = entry.operation_id
-            operations[entry.operation_id] = OperationProjection(
-                operation_id=entry.operation_id,
-                lane=entry.lane,
-                kind=operation_kind,
-            )
-            continue
-
-        if operation is None:
-            raise RuntimeLogCorruption("operation record without start")
-        if operation.status != "open":
-            raise RuntimeLogCorruption("operation record after settlement")
-
-        if entry.kind == "operation_effect":
-            effect_kind = _required_payload_text(entry, "effect_kind")
-            if effect_kind not in _KNOWN_EFFECT_KINDS:
-                raise RuntimeLogCorruption("unknown operation effect")
-            effect_ref = _required_payload_text(entry, "ref")
-            operation.effect_refs.append(effect_ref)
-            continue
-
-        if entry.kind == "operation_settled":
-            outcome = _required_payload_text(entry, "outcome")
-            if outcome not in _OUTCOMES:
-                raise RuntimeLogCorruption("unknown operation outcome")
-            operation.status = "settled"
-            operation.outcome = outcome
-            lane.open_operation_id = ""
-            lane.settled_operation_ids.append(entry.operation_id)
-            continue
-
-        raise RuntimeLogCorruption("unknown runtime log entry kind")
+        _apply_entry_to(lanes, operations, entry)
 
     return RuntimeProjection(lanes=lanes, operations=operations)
+
+
+def apply_entry(
+    projection: RuntimeProjection,
+    entry: RuntimeLogEntry,
+) -> RuntimeProjection:
+    return apply_entries(projection, (entry,))
+
+
+def apply_entries(
+    projection: RuntimeProjection,
+    entries: Iterable[RuntimeLogEntry],
+) -> RuntimeProjection:
+    lanes, operations = _clone_projection_parts(projection)
+    for entry in entries:
+        _apply_entry_to(lanes, operations, entry)
+    return RuntimeProjection(lanes=lanes, operations=operations)
+
+
+def _clone_projection_parts(
+    projection: RuntimeProjection,
+) -> tuple[dict[str, LaneProjection], dict[str, OperationProjection]]:
+    lanes = {
+        name: LaneProjection(
+            name=lane.name,
+            open_operation_id=lane.open_operation_id,
+            settled_operation_ids=list(lane.settled_operation_ids),
+        )
+        for name, lane in projection.lanes.items()
+    }
+    operations = {
+        operation_id: OperationProjection(
+            operation_id=operation.operation_id,
+            lane=operation.lane,
+            kind=operation.kind,
+            status=operation.status,
+            outcome=operation.outcome,
+            effect_refs=list(operation.effect_refs),
+        )
+        for operation_id, operation in projection.operations.items()
+    }
+    return lanes, operations
+
+
+def _apply_entry_to(
+    lanes: dict[str, LaneProjection],
+    operations: dict[str, OperationProjection],
+    entry: RuntimeLogEntry,
+) -> None:
+    lane = lanes.setdefault(entry.lane, LaneProjection(entry.lane))
+    operation = operations.get(entry.operation_id)
+
+    if entry.kind == "operation_started":
+        if operation is not None:
+            raise RuntimeLogCorruption("operation started twice")
+        if lane.open_operation_id:
+            raise RuntimeLogCorruption("lane already has an open operation")
+        operation_kind = _required_payload_text(entry, "operation_kind")
+        lane.open_operation_id = entry.operation_id
+        operations[entry.operation_id] = OperationProjection(
+            operation_id=entry.operation_id,
+            lane=entry.lane,
+            kind=operation_kind,
+        )
+        return
+
+    if operation is None:
+        raise RuntimeLogCorruption("operation record without start")
+    if operation.status != "open":
+        raise RuntimeLogCorruption("operation record after settlement")
+
+    if entry.kind == "operation_effect":
+        effect_kind = _required_payload_text(entry, "effect_kind")
+        if effect_kind not in _KNOWN_EFFECT_KINDS:
+            raise RuntimeLogCorruption("unknown operation effect")
+        effect_ref = _required_payload_text(entry, "ref")
+        operation.effect_refs.append(effect_ref)
+        return
+
+    if entry.kind == "operation_settled":
+        outcome = _required_payload_text(entry, "outcome")
+        if outcome not in _OUTCOMES:
+            raise RuntimeLogCorruption("unknown operation outcome")
+        operation.status = "settled"
+        operation.outcome = outcome
+        lane.open_operation_id = ""
+        lane.settled_operation_ids.append(entry.operation_id)
+        return
+
+    raise RuntimeLogCorruption("unknown runtime log entry kind")
 
 
 def _required_payload_text(entry: RuntimeLogEntry, field: str) -> str:

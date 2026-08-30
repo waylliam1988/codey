@@ -177,7 +177,17 @@ def run_ghost_post_turn(
     research_result: Any = None,
     project_text: str = "",
 ) -> None:
-    complete_or_block_work_item(deps, frame, event, item, research_result=research_result)
+    session_id = str(event.get("session_id") or getattr(getattr(frame, "request", None), "session_id", "") or "")
+    run_id = str(event.get("run_id") or getattr(frame, "run_id", "") or "")
+    run_projection = _run_projection(deps, session_id, run_id)
+    complete_or_block_work_item(
+        deps,
+        frame,
+        event,
+        item,
+        research_result=research_result,
+        run_projection=run_projection,
+    )
     if frame is None:
         sync_affinity_terminal_event(
             deps,
@@ -185,12 +195,13 @@ def run_ghost_post_turn(
             request=None,
             run_id=str(event.get("run_id") or ""),
             project_text=project_text,
+            run_projection=run_projection,
         )
         return
     maybe_run_learning(deps, frame, event)
-    maybe_sync_continuity(deps, frame, event)
-    maybe_sync_work_queue(deps, frame, event)
-    maybe_kick_sleep(deps, frame, event)
+    maybe_sync_continuity(deps, frame, event, run_projection=run_projection)
+    maybe_sync_work_queue(deps, frame, event, run_projection=run_projection)
+    maybe_kick_sleep(deps, frame, event, run_projection=run_projection)
 
 
 def maybe_run_learning(
@@ -234,6 +245,8 @@ def maybe_sync_continuity(
     deps: GhostTaskPolicyDeps,
     frame: RunFrame,
     event: dict[str, object],
+    *,
+    run_projection: Any = None,
 ) -> None:
     store = getattr(deps.state, "ghost_continuity", None)
     if store is None:
@@ -257,10 +270,9 @@ def maybe_sync_continuity(
             pass
         return
     try:
-        projection = _run_projection(deps, frame.request.session_id, frame.run_id)
         result = store.sync_from_sources(
             hebbian_store=getattr(deps.state, "ghost_hebbian", None),
-            run_projection=projection,
+            run_projection=run_projection,
             knowledge_store=deps.knowledge_store,
             user_focus_excerpt=frame.request.task,
             session_id=frame.request.session_id,
@@ -277,6 +289,8 @@ def maybe_kick_sleep(
     deps: GhostTaskPolicyDeps,
     frame: RunFrame,
     event: dict[str, object],
+    *,
+    run_projection: Any = None,
 ) -> None:
     if str(event.get("stop_reason") or "") != "done":
         return
@@ -289,7 +303,7 @@ def maybe_kick_sleep(
             run_id=frame.run_id,
             session_id=frame.request.session_id,
             project=frame.project_text,
-            run_projection=_run_projection(deps, frame.request.session_id, frame.run_id),
+            run_projection=run_projection,
         )
     except Exception:
         return
@@ -299,6 +313,8 @@ def maybe_sync_work_queue(
     deps: GhostTaskPolicyDeps,
     frame: RunFrame,
     event: dict[str, object],
+    *,
+    run_projection: Any = None,
 ) -> None:
     store = getattr(deps.state, "ghost_work_queue", None)
     affinity_store = ghost_affinity_store(deps.state)
@@ -307,7 +323,6 @@ def maybe_sync_work_queue(
     if not _ghost_learning_enabled(deps.state):
         return
     try:
-        projection = _run_projection(deps, frame.request.session_id, frame.run_id)
         research_interest_candidates = build_research_interest_candidates(
             deps.knowledge_store,
             session_id=frame.request.session_id,
@@ -327,7 +342,7 @@ def maybe_sync_work_queue(
             store.sync_from_sources(
                 continuity_store=getattr(deps.state, "ghost_continuity", None),
                 work_checkpoint_store=deps.work_checkpoints,
-                run_projection=projection,
+                run_projection=run_projection,
                 terminal_event=event,
                 research_interest_candidates=research_interest_candidates,
                 session_id=frame.request.session_id,
@@ -340,7 +355,7 @@ def maybe_sync_work_queue(
                 work_queue_store=store,
                 research_interest_candidates=research_interest_candidates,
                 router_store=getattr(deps.state, "ghost_router", None),
-                run_projection=projection,
+                run_projection=run_projection,
                 terminal_event=event,
                 session_id=frame.request.session_id,
                 project=frame.project_text,
@@ -356,6 +371,7 @@ def sync_affinity_terminal_event(
     request: Any | None,
     run_id: str,
     project_text: str,
+    run_projection: Any = None,
 ) -> None:
     affinity_store = ghost_affinity_store(deps.state)
     if affinity_store is None:
@@ -366,7 +382,7 @@ def sync_affinity_terminal_event(
             hebbian_store=getattr(deps.state, "ghost_hebbian", None),
             work_queue_store=getattr(deps.state, "ghost_work_queue", None),
             router_store=getattr(deps.state, "ghost_router", None),
-            run_projection=_run_projection(deps, session_id, run_id),
+            run_projection=run_projection,
             terminal_event=event,
             session_id=session_id,
             project=project_text,
@@ -382,6 +398,7 @@ def complete_or_block_work_item(
     item: GhostWorkItem | None,
     *,
     research_result: Any = None,
+    run_projection: Any = None,
 ) -> None:
     if item is None:
         return
@@ -398,7 +415,6 @@ def complete_or_block_work_item(
                     blocked_reason=str(event.get("stop_reason") or "run_not_done"),
                 )
             return
-        projection = _run_projection(deps, frame.request.session_id, frame.run_id)
         if str(event.get("stop_reason") or "") == "done":
             if str(getattr(item, "kind", "") or "") in RESEARCH_QUEUE_KINDS:
                 decision = ResearchCompletionGate(deps.evidence_ledgers).evaluate(
@@ -435,7 +451,7 @@ def complete_or_block_work_item(
                     proof_refs=proof_refs_from_task_event(
                         item,
                         event,
-                        run_projection=projection,
+                        run_projection=run_projection,
                     ),
                 )
         else:

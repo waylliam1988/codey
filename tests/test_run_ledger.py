@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
@@ -242,7 +243,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
 
     def test_state_without_state_home_does_not_enable_run_ledger_store(self) -> None:
         with mock.patch.object(server, "RunLedgerStore") as store_class:
-            state = server.State()
+            state = server.AppContext()
 
         self.assertIsNone(state.run_ledgers)
         self.assertIsNone(state.managed_outputs)
@@ -259,29 +260,29 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             (project / "pyproject.toml").write_text(
                 "[tool.pytest.ini_options]\n", encoding="utf-8"
             )
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             provider = self._provider()
 
-            def fake_agent(*args, **kwargs):
+            def fake_agent(request: AgentRequest):
                 (project / "app.py").write_text("after\n", encoding="utf-8")
-                kwargs["on_event"](RunEvent.turn_started(
+                request.on_event(RunEvent.turn_started(
                     1,
                     "SECRET_MODEL_REPLY_SHOULD_NOT_BE_SAVED",
                     note="(tool)",
                 ))
-                kwargs["on_event"](RunEvent.tool_started(
+                request.on_event(RunEvent.tool_started(
                     1,
                     ToolCall("edit", {"path": "app.py"}),
                     "Editing app.py",
                     index=0,
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("edit", {"path": "app.py"}),
                     ToolOutcome("edited app.py", True, changed=True),
                     index=0,
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     2,
                     ToolCall("run", {"path": ".", "command": "python -m pytest -q"}),
                     ToolOutcome("ok", True, exit_code=0),
@@ -314,7 +315,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
 
-            run_id = state.last_terminal_event["run_id"]
+            run_id = state.run_registry.last_terminal_event()["run_id"]
             path = state.run_ledgers.path_for("session-ledger", run_id)
             rows = [item.payload for item in read_ledger(path)]
             types = [item["type"] for item in rows]
@@ -340,9 +341,9 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             projected_receipt = build_task_receipt_from_projection(projection)
             self.assertIsNotNone(projected_receipt)
             # The terminal receipt is the durably projected one.
-            self.assertEqual(state.last_terminal_event["receipt"], projected_receipt.to_dict())
+            self.assertEqual(state.run_registry.last_terminal_event()["receipt"], projected_receipt.to_dict())
             self.assertEqual(
-                state.last_terminal_event["receipt"]["display"]["summary"],
+                state.run_registry.last_terminal_event()["receipt"]["display"]["summary"],
                 "1 file changed · checks passed",
             )
 
@@ -366,12 +367,12 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             state.run_ledgers = FailingStore()
             provider = self._provider()
 
-            def fake_agent(*args, **kwargs):
-                kwargs["on_event"](RunEvent.tool_finished(
+            def fake_agent(request: AgentRequest):
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("read", {"path": "app.py"}),
                     ToolOutcome("before", True),
@@ -387,7 +388,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             ):
                 server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
 
-            self.assertEqual(state.last_terminal_event["stop_reason"], "done")
+            self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")
 
     def test_terminal_error_records_provider_failure_in_run_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -395,7 +396,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             state.provider_failover_order = lambda: ("deepseek",)
             provider = self._provider()
 
@@ -414,13 +415,13 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            run_id = state.last_terminal_event["run_id"]
+            run_id = state.run_registry.last_terminal_event()["run_id"]
             path = state.run_ledgers.path_for("session-error-ledger", run_id)
             rows = [item.payload for item in read_ledger(path)]
             types = [item["type"] for item in rows]
             failure = next(item for item in rows if item["type"] == "provider_failure")
 
-            self.assertEqual(state.last_terminal_event["stop_reason"], "error")
+            self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "error")
             self.assertIn("provider_failure", types)
             self.assertLess(types.index("provider_failure"), types.index("run_finished"))
             self.assertEqual(failure["provider"], "deepseek")

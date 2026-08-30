@@ -15,10 +15,15 @@
     submission 接到 `TaskRuntime`，`task_run.py` 拥有非业务 run 生命周期和
     `TaskRunDeps`，`mode_dispatch.py` 选择 operation function，review /
     planning / Ghost post-turn 进入各自 operation 模块。
+  - `AgentRunner` 也按真实边界拆开，但不改变协议行为：JSON protocol repair
+    helper 进入 `codey.agents.protocol`，prompt/context 组装进入
+    `codey.agents.context`，调用方传单个 `AgentRequest`，loop progress /
+    verification / stagnation 状态成为显式对象，不再散在一大片 locals 里。
   - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
     provider session/health/order、conversation cache/store、knowledge rebuild
     single-flight、Ghost sleep single-flight 现在都有独立 app 模块。
-    `server.State` 保留产品调用方法，但没有 old/new runtime 开关。
+    server 现在暴露 `AppContext` 作为产品级协调面，不再保留 `server.State`
+    转发属性或 old/new runtime 开关。
   - operation frame/work/hooks/outcome 值对象移入 `codey.operations`，plain
     chat operation 和 prompt/local-context trace helper 也从 task runner
     迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
@@ -61,21 +66,31 @@
     长生命周期 session 被写满后永久 brick。Compaction 保留 replay 等价骨架：
     `operation_started`、最新 `run_phase` effect，以及存在时的 terminal
     `operation_settled`。
+  - Runtime session-log 校验现在维护进程内 entries + projection 缓存。
+    `append_many()` 仍然通过 reducer fail closed，但文件大小未变化时，热路径
+    phase commit 直接从缓存 entries 读取当前状态；外部写入、compaction 和删除会
+    触发缓存重建或失效。
   - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
     存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
     `Progress` 行。terminal runtime state 也能在没有 ledger/trace 时提供最小
     Work/Model 解释，但不会显示过期的 Progress。
   - RunRegistry 构建 `/api/state` snapshot 时不再在内部锁里调用 approval
     callback。
-  - 无参 `State()` 现在也有 ephemeral runtime-session log 和 operation store，
-    测试/临时调用走同一 runtime path，但不会写入用户真实 durable state home。
+  - 无参 `AppContext()` 现在也有 ephemeral runtime-session log、operation store
+    和 workspace revision store，测试/临时调用走同一 runtime path，但不会写入
+    用户真实 durable state home。
+  - 新增 workspace revision 跟踪，把 verification freshness 绑定到项目文件状态。
+    它刻意不同于 `workspace/context_epoch.py`：context epoch 标识 prompt source
+    provenance，workspace revision 标识某条 verification observation 针对的文件
+    状态。
   - Research 和 hybrid terminal event 现在把原始任务 turn budget 写入
     runtime terminal snapshot，即使 research engine 内部只用了更少轮数。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
     `codey.app.event_bus`；`State` 只负责在 emit 前注入 active run identity。
-  - 新增共享 Ghost JSONL event-log primitive，并把 signal、router、sleep
-    store 迁到它上面。腐坏或超限读取仍可观测，router/sleep 保留已有的
-    fail-closed mutation 语义。
+  - 新增共享 Ghost JSONL event-log primitive，并把 signal、router、sleep、
+    inbox、continuity、work queue、affinity、Hebbian store 都迁到它上面。
+    腐坏或超限读取仍可观测，严格 transition store 通过各自 bad-row policy
+    保持 fail-closed mutation 语义。
   - 新增共享 browser-provider stable-completion loop，并迁移 DeepSeek 与
     StepFun。两个 driver 都改用 `ProviderSendContext.record_response()`，
     不再手写 `ctx.last`，stable-response 计数集中到一处。

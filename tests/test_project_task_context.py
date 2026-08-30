@@ -87,7 +87,13 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
             store = WorkCheckpointStore(Path(td, "state"))
             checkpoint = store.start(run_id="old", session_id="s", project=root, task="fix app")
             checkpoint = store.record_edit(checkpoint, "app.py")
-            store.record_run(checkpoint, command="python -m pytest", cwd=".", ok=True)
+            store.record_run(
+                checkpoint,
+                command="python -m pytest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+            )
 
             context = ProjectTaskContextBuilder(work_checkpoints=store).build(
                 project=root,
@@ -145,7 +151,13 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
             store = WorkCheckpointStore(Path(td, "state"))
             checkpoint = store.start(run_id="old", session_id="s", project=root, task="fix")
             checkpoint = store.record_edit(checkpoint, "app.py")
-            store.record_run(checkpoint, command="python -m pytest", cwd=".", ok=True)
+            store.record_run(
+                checkpoint,
+                command="python -m pytest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+            )
             path.write_text("VALUE = 2\n", encoding="utf-8")
 
             context = ProjectTaskContextBuilder(work_checkpoints=store).build(

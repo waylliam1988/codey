@@ -76,10 +76,12 @@ class _StubEvidence:
         successful=(),
         failed=(),
         observed_tool_events: int = 0,
+        workspace_revision: int = 1,
     ) -> None:
         self.successful_checks = list(successful)
         self.failed_checks_after_edit = list(failed)
         self.observed_tool_events = observed_tool_events
+        self.workspace_revision = workspace_revision
 
 
 class TriStateTests(unittest.TestCase):
@@ -129,6 +131,45 @@ class TriStateTests(unittest.TestCase):
                 root=_ROOT,
             ),
             VERIFICATION_FRESH_FAIL,
+        )
+
+    def test_stale_workspace_revision_green_cannot_back_current_proof(self) -> None:
+        selected = _selected()
+        files = ("src/mod.py",)
+        evidence = _StubEvidence(
+            successful=[_check("pytest -q", workspace_revision=1)],
+            workspace_revision=2,
+            observed_tool_events=1,
+        )
+
+        local_state = coding_verification_state(
+            selected,
+            evidence,
+            files,
+            root=_ROOT,
+        )
+        provenance = verification_provenance(
+            local_state=local_state,
+            checkpoint_green=False,
+        )
+        proof = build_coding_completion_proof(
+            run_id="run-stale-green",
+            stop_reason="done",
+            task_changed=True,
+            files=files,
+            selected_check_present=True,
+            provenance=provenance,
+            workspace_revision=evidence.workspace_revision,
+            project=_ROOT,
+        )
+
+        self.assertEqual(local_state, VERIFICATION_UNOBSERVED)
+        self.assertIsNotNone(proof)
+        assert proof is not None
+        self.assertEqual(proof.status, COMPLETION_BLOCKED)
+        self.assertEqual(
+            proof.blocked_reason,
+            LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
         )
 
     def test_proof_only_cites_decisive_commands_not_every_executed_one(self) -> None:
@@ -379,6 +420,27 @@ class ProofTests(unittest.TestCase):
         self.assertEqual(proof.status, COMPLETION_COMPLETE)
         self.assertTrue(proof.satisfied)
         self.assertEqual(proof.limitation_refs, ())
+
+    def test_proof_external_refs_include_workspace_revision(self) -> None:
+        provenance = verification_provenance(
+            local_state=VERIFICATION_FRESH_PASS,
+            checkpoint_green=False,
+        )
+        proof = build_coding_completion_proof(
+            run_id="run-clean",
+            stop_reason="done",
+            task_changed=True,
+            files=("src/mod.py",),
+            selected_check_present=True,
+            provenance=provenance,
+            workspace_revision=3,
+            project=_ROOT,
+        )
+
+        self.assertIsNotNone(proof)
+        assert proof is not None
+        self.assertIn("workspace_revision:", proof.external_refs[-1])
+        self.assertTrue(proof.external_refs[-1].endswith(":3"))
 
     def test_docs_only_change_stays_complete_with_limitations(self) -> None:
         provenance = verification_provenance(

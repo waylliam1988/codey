@@ -16,6 +16,7 @@ from unittest import mock
 
 from codey import __version__
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers import profile_doctor
 from codey.runtime import cancellation
@@ -80,11 +81,11 @@ def _scripted_agent_run(*steps):
     """
     steps_iter = iter(steps)
 
-    def _run(_provider, _project, _task, **kwargs):
+    def _run(request: AgentRequest):
         result, observed = next(steps_iter)
         if observed:
             for event in _observable_edit_and_pass_events():
-                kwargs["on_event"](event)
+                request.on_event(event)
         if isinstance(result, BaseException):
             raise result
         return result
@@ -535,8 +536,8 @@ class ProviderStatusTests(unittest.TestCase):
 
     def test_health_filter_excludes_open_provider_from_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
-            state.provider_supervisor.record_failure(
+            state = server.AppContext(td)
+            state.providers.supervisor.record_failure(
                 "qwen",
                 ProviderFailure(
                     "Qwen",
@@ -570,7 +571,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertIn("stepfun", reviewers)
 
     def test_reviewer_candidates_keep_ui_terms_out_of_payload(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         with mock.patch.object(server, "STATE", state):
             reviewers = server.reviewer_candidates("deepseek")
             payload = server.provider_payload({"deepseek": True, "mimo": True})
@@ -586,8 +587,8 @@ class ProviderStatusTests(unittest.TestCase):
 
     def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
-            state.provider_supervisor.record_failure(
+            state = server.AppContext(td)
+            state.providers.supervisor.record_failure(
                 "qwen",
                 ProviderFailure(
                     "Qwen",
@@ -622,7 +623,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertFalse(by_id["local"]["available"])
 
     def test_provider_warmup_failure_does_not_emit_or_raise(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
 
         def fail() -> dict[str, bool]:
@@ -643,7 +644,7 @@ class ProviderStatusTests(unittest.TestCase):
         submit.assert_called_once_with(server._run_provider_warmup, runner)
 
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         with mock.patch.object(
             server,
             "provider_tab_availability",
@@ -674,7 +675,7 @@ class ProviderStatusTests(unittest.TestCase):
         connected.assert_not_called()
 
     def test_run_review_includes_safe_review_impact_map(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         reviewer = mock.Mock()
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
@@ -717,7 +718,7 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.close.assert_called_once_with()
 
     def test_run_review_reuses_precomputed_review_impact_map(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         reviewer = mock.Mock()
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
@@ -755,7 +756,7 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.close.assert_called_once_with()
 
     def test_run_review_treats_empty_precomputed_review_impact_map_as_final(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         reviewer = mock.Mock()
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
@@ -793,7 +794,7 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.close.assert_called_once_with()
 
     def test_run_review_uses_self_review_after_external_reviewers_fail(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.set_provider_session("deepseek", "session-1")
         events = state.subscribe()
         reviewer = mock.Mock()
@@ -833,14 +834,14 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(reviewed[0], "deepseek")
         connect_existing.assert_called_once_with("stepfun")
         connect_self_review.assert_called_once_with("deepseek")
-        self.assertEqual(state.provider_sessions["deepseek"], "session-1")
+        self.assertEqual(state.providers.sessions_snapshot()["deepseek"], "session-1")
         reviewer.new_chat.assert_called_once_with()
         reviewer.close.assert_called_once_with()
         review_event = events.get_nowait()
         self.assertEqual(review_event["text"], "DeepSeek self-review approved")
 
     def test_run_review_records_prompt_envelope_for_real_sends(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         reviewer = mock.Mock()
         reviewer.send.side_effect = [
             "not json",
@@ -879,7 +880,7 @@ class ProviderStatusTests(unittest.TestCase):
         trace.record_permission_profile.assert_called_once_with("reviewer", phase="review")
 
     def test_run_review_self_review_cancellation_closes_temp_reviewer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         reviewer = mock.Mock()
         reviewer.send.side_effect = cancellation.TaskCancelled("task stopped")
 
@@ -902,7 +903,7 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.close.assert_called_once_with()
 
     def test_run_review_cancellation_before_self_review_does_not_open_fresh_tab(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         event = threading.Event()
 
         def fail_and_cancel(_provider_id: str):
@@ -1072,7 +1073,7 @@ class RunEventUiProjectionTests(unittest.TestCase):
 class ResearchGraphApiTests(unittest.TestCase):
     def test_research_graph_api_returns_graph_packet(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State()
+            state = server.AppContext()
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             synthesis = KnowledgeNote.create(
                 type="synthesis",
@@ -1125,7 +1126,7 @@ class ResearchGraphApiTests(unittest.TestCase):
 
     def test_research_graph_api_unknown_focus_returns_empty_graph(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State()
+            state = server.AppContext()
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1151,7 +1152,7 @@ class ResearchGraphApiTests(unittest.TestCase):
 
     def test_research_concept_graph_api_returns_concepts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State()
+            state = server.AppContext()
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             note = KnowledgeNote.create(
                 type="note",
@@ -1185,7 +1186,7 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(payload["graph"]["edges"][0]["kind"], "affects")
 
     def test_research_concept_graph_api_without_store_is_404(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = None
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1209,7 +1210,7 @@ class ResearchGraphApiTests(unittest.TestCase):
 
 class ResearchServerHelperTests(unittest.TestCase):
     def test_research_graph_response_parses_bounded_query(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = object()
         graph = SimpleNamespace(to_dict=lambda: {"nodes": [], "edges": []})
 
@@ -1245,7 +1246,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         )
 
     def test_research_graph_response_reports_unconfigured_store(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = None
         with mock.patch.object(server, "STATE", state):
             status, payload = server._research_graph_response({})
@@ -1259,7 +1260,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": False, "error": "id required"})
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State()
+            state = server.AppContext()
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             note = KnowledgeNote.create(
                 type="fact",
@@ -1288,7 +1289,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(missing_payload, {"ok": False, "error": "note not found"})
 
     def test_research_note_response_reports_unconfigured_store(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = None
         with mock.patch.object(server, "STATE", state):
             status, payload = server._research_note_response({"id": ["n1"]})
@@ -1301,7 +1302,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(missing_status, 400)
         self.assertEqual(missing_payload, {"ok": False, "error": "run_id required"})
 
-        state = server.State()
+        state = server.AppContext()
         with mock.patch.object(server, "STATE", state):
             with mock.patch.object(state, "restore_research_changes", return_value={"ok": False, "error": "busy"}):
                 failed_status, failed_payload = server._research_restore_response({"run_id": "r1"})
@@ -1383,7 +1384,7 @@ class ResearchServerHelperTests(unittest.TestCase):
             (400, {"ok": False, "error": "session_id and run_id required"}),
         )
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             writer = state.run_ledgers.open(
                 run_id="run-details",
                 session_id="session-details",
@@ -1411,7 +1412,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         )
 
     def test_run_details_response_quiet_unavailable_without_stores(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         with mock.patch.object(server, "STATE", state):
             status, payload = server._run_details_response(
                 {
@@ -1562,7 +1563,7 @@ class LocalProviderApiTests(unittest.TestCase):
 
     def test_new_chat_returns_409_while_session_run_is_active(self) -> None:
         httpd, host, port = self._start_server()
-        state = server.State()
+        state = server.AppContext()
         run = state.reserve_run(
             session_id="session-busy",
             project=None,
@@ -1593,7 +1594,7 @@ class LocalProviderApiTests(unittest.TestCase):
         with _tempfile.TemporaryDirectory() as td:
             project = str(Path(td))
             httpd, host, port = self._start_server()
-            state = server.State()
+            state = server.AppContext()
             run = state.reserve_run(
                 session_id="session-restore",
                 project=project,
@@ -1626,7 +1627,7 @@ class LocalProviderApiTests(unittest.TestCase):
         with _tempfile.TemporaryDirectory() as td:
             project = str(Path(td))
             httpd, host, port = self._start_server()
-            state = server.State()
+            state = server.AppContext()
             run = state.reserve_run(
                 session_id="session-done",
                 project=project,
@@ -1830,7 +1831,7 @@ class LocalProviderApiTests(unittest.TestCase):
 
 class ConsensusConnectionTests(unittest.TestCase):
     def test_consensus_borrows_sibling_tab_from_selected_provider(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         selected = mock.Mock()
         selected.session.page = object()
         selected.send.return_value = "combined answer"
@@ -1867,7 +1868,7 @@ class ConsensusConnectionTests(unittest.TestCase):
         selected.send.assert_called_once()
 
     def test_project_audit_borrows_sibling_tab_from_selected_provider(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         selected = mock.Mock()
         selected.session.page = object()
         advisor = mock.Mock()
@@ -1905,10 +1906,10 @@ class ConsensusConnectionTests(unittest.TestCase):
 
 class RunSnapshotTests(unittest.TestCase):
     def test_state_has_no_unused_legacy_event_queue(self) -> None:
-        self.assertFalse(hasattr(server.State(), "events"))
+        self.assertFalse(hasattr(server.AppContext(), "events"))
 
     def test_reserve_run_is_atomic(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         barrier = threading.Barrier(8)
         results = []
 
@@ -1931,12 +1932,12 @@ class RunSnapshotTests(unittest.TestCase):
 
         accepted = [item for item in results if item is not None]
         self.assertEqual(len(accepted), 1)
-        self.assertTrue(state.busy)
-        self.assertEqual(state.active_run, accepted[0])
+        self.assertTrue(state.run_registry.is_busy())
+        self.assertEqual(state.run_registry.current(), accepted[0])
 
     def test_stop_after_reservation_survives_task_start(self) -> None:
-        state = server.State()
-        state.stop_flag.set()
+        state = server.AppContext()
+        state.run_registry.stop_flag.set()
         run = state.reserve_run(
             session_id="session-1",
             project=None,
@@ -1944,16 +1945,16 @@ class RunSnapshotTests(unittest.TestCase):
             provider_id="deepseek",
         )
         self.assertIsNotNone(run)
-        self.assertFalse(state.stop_flag.is_set())
+        self.assertFalse(state.run_registry.stop_flag.is_set())
         assert run is not None
 
-        state.stop_flag.set()
+        state.run_registry.stop_flag.set()
         self.assertTrue(state.start_run(run.run_id))
 
-        self.assertTrue(state.stop_flag.is_set())
+        self.assertTrue(state.run_registry.stop_flag.is_set())
 
     def test_stop_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         state.add_pending_shell_approval("shell-9", {
             "id": "shell-9",
@@ -1978,7 +1979,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(state.pop_pending_shell_approval("shell-9"))
 
     def test_state_snapshot_keeps_pending_action_and_terminal_event(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         run = state.reserve_run(
             session_id="session-1",
             project="E:/demo",
@@ -2013,7 +2014,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["last_terminal_event"]["run_id"], run.run_id)
 
     def test_emit_full_subscriber_queue_drops_oldest_and_keeps_latest(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         q = state.event_bus.subscribe(maxsize=3)
         try:
             state.emit({"type": "info", "seq": 1})
@@ -2032,7 +2033,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertNotIn(1, [item.get("seq") for item in items if item["type"] == "info"])
 
     def test_emit_overflow_queues_resync_marker_for_slow_clients(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         bounded = state.event_bus.subscribe(maxsize=3)
         try:
             state.emit({"type": "info", "seq": 1})
@@ -2055,7 +2056,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(last["seq"], 4)
 
     def test_replay_events_after_cursor_returns_missed_events(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.emit({"type": "info", "seq": 1})
         state.emit({"type": "info", "seq": 2})
         sub = state.subscribe()
@@ -2072,7 +2073,7 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_replay_events_after_expired_cursor_requests_resync(self) -> None:
         with mock.patch.object(server, "SSE_REPLAY_LIMIT", 2):
-            state = server.State()
+            state = server.AppContext()
         state.emit({"type": "info", "seq": 1})
         state.emit({"type": "info", "seq": 2})
         state.emit({"type": "info", "seq": 3})
@@ -2093,7 +2094,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(server._sse_replay_cursor("7"), 7)
 
     def test_sse_initial_connect_does_not_replay_history(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.emit({"type": "info", "seq": 1})
         original_replay = state.replay_events_after
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -2128,7 +2129,7 @@ class RunSnapshotTests(unittest.TestCase):
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             changes = KnowledgeChanges(state.knowledge_store.root)
             note = KnowledgeNote.create(type="synthesis", title="Run", body="Report", session_id="s1")
@@ -2154,7 +2155,7 @@ class RunSnapshotTests(unittest.TestCase):
                 self.started.set()
                 self.release.wait(2)
 
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = SlowStore()
         state.record_research_changes(
             "run-research",
@@ -2226,7 +2227,7 @@ class RunSnapshotTests(unittest.TestCase):
                 ),
             )
 
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = CoalescingStore()
         for run_id in ("run-1", "run-2", "run-3"):
             state.record_research_changes(run_id, change())
@@ -2254,7 +2255,7 @@ class RunSnapshotTests(unittest.TestCase):
                 self.started.set()
                 raise RuntimeError("index failed")
 
-        state = server.State()
+        state = server.AppContext()
         state.knowledge_store = FailingStore()
         state.record_research_changes(
             "run-research",
@@ -2275,7 +2276,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(state.knowledge_store.started.wait(1))
 
     def test_state_snapshot_restores_active_teaching_card(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         run = state.reserve_run(
             session_id="session-1",
             project=None,
@@ -2300,7 +2301,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["pending_event"], teaching)
 
     def test_active_run_does_not_restore_an_unrelated_old_card(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.add_pending_shell_approval("old", {
             "ui_event": {
                 "type": "shell_request",
@@ -2320,9 +2321,9 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(state.run_state_payload()["pending_event"])
 
     def test_ghost_summary_api_is_unavailable_without_state_home(self) -> None:
-        old_state = server.STATE
+        old_state = server.AppContext
         try:
-            server.STATE = server.State(None)
+            server.STATE = server.AppContext(None)
             status, payload = server._ghost_summary_response(
                 {
                     "session_id": ["s1"],
@@ -2345,9 +2346,9 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_ghost_summary_api_returns_bounded_local_context(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            old_state = server.STATE
+            old_state = server.AppContext
             try:
-                state = server.State(td)
+                state = server.AppContext(td)
                 seed_ghost_style_memory(state, session_id="s1", project="")
                 server.STATE = state
                 status, payload = server._ghost_summary_response({"session_id": ["s1"]})
@@ -2372,19 +2373,23 @@ class RunSnapshotTests(unittest.TestCase):
         from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
-            state.last_terminal_event = {
-                "type": "task_done",
-                "run_id": "run_old",
-                "session_id": "session-1",
-            }
-            state.last_summary = "old receipt"
-            state.last_stop_reason = "done"
-            state.last_shell_result = {
-                "type": "shell_result",
-                "id": "shell-old",
-                "session_id": "session-1",
-            }
+            state = server.AppContext(td)
+            state.run_registry.set_last_terminal_event(
+                {
+                    "type": "task_done",
+                    "run_id": "run_old",
+                    "session_id": "session-1",
+                }
+            )
+            state.run_registry.set_last_summary("old receipt")
+            state.run_registry.set_last_stop_reason("done")
+            state.run_registry.set_last_shell_result(
+                {
+                    "type": "shell_result",
+                    "id": "shell-old",
+                    "session_id": "session-1",
+                }
+            )
             seed_ghost_continuity(
                 state,
                 session_id="session-1",
@@ -2474,7 +2479,7 @@ class RunSnapshotTests(unittest.TestCase):
             router_records = state.ghost_router.export_state()["router"]["records"]
             work_items = state.ghost_work_queue.export_state()["work_queue"]["items"]
             affinity_nodes = state.ghost_affinity.export_state()["affinity"]["nodes"]
-            self.assertIsNotNone(state.last_terminal_event)
+            self.assertIsNotNone(state.run_registry.last_terminal_event())
             self.assertEqual([row["session_id"] for row in router_records], ["session-1"])
             self.assertEqual(len(work_items), 1)
             self.assertEqual([row["key"] for row in affinity_nodes], ["session-one"])
@@ -2488,10 +2493,10 @@ class RunSnapshotTests(unittest.TestCase):
             )
             state.forget_conversation("session-1")
 
-            self.assertIsNone(state.last_terminal_event)
-            self.assertIsNone(state.last_shell_result)
-            self.assertEqual(state.last_summary, "")
-            self.assertEqual(state.last_stop_reason, "")
+            self.assertIsNone(state.run_registry.last_terminal_event())
+            self.assertIsNone(state.run_registry.last_shell_result())
+            self.assertEqual(state.run_registry.last_summary(), "")
+            self.assertEqual(state.run_registry.last_stop_reason(), "")
             self.assertNotIn(
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
@@ -2504,7 +2509,7 @@ class RunSnapshotTests(unittest.TestCase):
         from codey.runtime.effects import RuntimeOperationStore
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
             assert state.runtime_operations is not None
             started = state.runtime_operations.start(
@@ -2524,13 +2529,13 @@ class RunSnapshotTests(unittest.TestCase):
     def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
         from codey.runtime.effects import RuntimeOperationStore
 
-        state = server.State()
+        state = server.AppContext()
         self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
         self.assertIsNotNone(state.runtime_log)
         self.assertIsNone(state.ghost_inbox)
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         first = {
             "type": "shell_result",
             "id": "shell-1",
@@ -2545,7 +2550,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(state.run_state_payload()["last_shell_result"], latest)
 
     def test_submit_task_reserves_before_browser_queue(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(server, "submit_browser_task") as submit,
@@ -2555,15 +2560,15 @@ class RunSnapshotTests(unittest.TestCase):
 
         self.assertIsNotNone(run_id)
         self.assertIsNone(rejected)
-        self.assertTrue(state.busy)
+        self.assertTrue(state.run_registry.is_busy())
         self.assertEqual(submit.call_args.args[-1], run_id)
 
     def test_shell_continuation_does_not_submit_after_user_stop(self) -> None:
         # A Stop pressed while the approved shell command ran must win: the
         # continuation path used to swallow it because reserve_run() cleared
         # the flag on the next submit.
-        state = server.State()
-        state.stop_flag.set()
+        state = server.AppContext()
+        state.run_registry.stop_flag.set()
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -2581,11 +2586,11 @@ class RunSnapshotTests(unittest.TestCase):
             )
 
         self.assertIsNone(run_id)
-        self.assertTrue(state.stop_flag.is_set())
+        self.assertTrue(state.run_registry.stop_flag.is_set())
         submit.assert_not_called()
 
     def test_active_run_for_matches_session_and_project_scope(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         run = state.reserve_run(
             session_id="session-1",
             project="E:/demo",
@@ -2600,7 +2605,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(state.active_run_for(project="E:/other"))
 
     def test_shell_continuation_waits_for_approval_run_slot_release(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         previous = state.reserve_run(
             session_id="session-1",
             project="E:/demo",
@@ -2649,7 +2654,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[-1], run_id)
 
     def test_shell_continuation_does_not_steal_unrelated_active_run(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         active = state.reserve_run(
             session_id="session-2",
             project="E:/demo",
@@ -2682,8 +2687,8 @@ class RunSnapshotTests(unittest.TestCase):
         # The authoritative guard must live inside reserve_run's lock: a Stop
         # landing between an external peek and the reservation still wins,
         # the flag stays set, and no slot is taken.
-        state = server.State()
-        state.stop_flag.set()
+        state = server.AppContext()
+        state.run_registry.stop_flag.set()
 
         self.assertIsNone(
             state.reserve_run(
@@ -2694,9 +2699,9 @@ class RunSnapshotTests(unittest.TestCase):
                 abort_if_stopped=True,
             )
         )
-        self.assertTrue(state.stop_flag.is_set())
-        self.assertIsNone(state.active_run)
-        self.assertFalse(state.busy)
+        self.assertTrue(state.run_registry.stop_flag.is_set())
+        self.assertIsNone(state.run_registry.current())
+        self.assertFalse(state.run_registry.is_busy())
 
         # A plain reservation keeps its existing semantics: clear and go.
         run = state.reserve_run(
@@ -2706,14 +2711,14 @@ class RunSnapshotTests(unittest.TestCase):
             provider_id="deepseek",
         )
         assert run is not None
-        self.assertFalse(state.stop_flag.is_set())
+        self.assertFalse(state.run_registry.stop_flag.is_set())
 
     def test_shell_continuation_uses_the_atomic_stop_guard(self) -> None:
         # Simulate the race: the flag flips to stopped right after the first
         # external peek; the atomic reservation must refuse the slot without
         # clearing the flag.
-        state = server.State()
-        real_flag = state.stop_flag
+        state = server.AppContext()
+        real_flag = state.run_registry.stop_flag
 
         class FlippingFlag:
             """Reports not-stopped once, then always stopped."""
@@ -2732,7 +2737,7 @@ class RunSnapshotTests(unittest.TestCase):
                 raise AssertionError("continuation must never clear a user Stop")
 
         flipping = FlippingFlag()
-        state.stop_flag = flipping  # type: ignore[assignment]
+        state.run_registry.stop_flag = flipping  # type: ignore[assignment]
 
         with (
             mock.patch.object(server, "STATE", state),
@@ -2753,7 +2758,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertGreaterEqual(flipping.calls, 2)
 
     def test_oversized_post_body_is_rejected_before_dispatch(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -2782,7 +2787,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["error"], "request body too large")
 
     def test_shell_approval_continuation_uses_current_active_provider(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         run = state.reserve_run(
             session_id="session-1",
             project="E:/demo",
@@ -2869,7 +2874,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.project_audit_patch.stop()
         self.consensus_patch.stop()
 
-    def _state(self, path) -> server.State:
+    def _state(self, path) -> server.AppContext:
         """State without background side effects for research-UI flows.
 
         Only research/UX flow tests should use this: the ghost-sleep
@@ -2877,27 +2882,27 @@ class SessionThreadingTests(unittest.TestCase):
         using real State instances.
         """
 
-        state = server.State(path)
+        state = server.AppContext(path)
         state.kick_ghost_sleep = mock.Mock(return_value=False)
         state.wait_for_ghost_sleep = mock.Mock(return_value=True)
         state.kick_self_repair = mock.Mock(return_value=False)
         return state
 
     def test_conversation_state_is_bounded(self) -> None:
-        state = server.State()
+        state = server.AppContext()
 
         for index in range(server.MAX_CONVERSATION_STATES + 1):
             state.conversation_for(f"session-{index}")
 
-        self.assertEqual(len(state.conversations), server.MAX_CONVERSATION_STATES)
-        self.assertNotIn("session-0", state.conversations)
+        self.assertEqual(len(state.conversation_registry.contexts), server.MAX_CONVERSATION_STATES)
+        self.assertNotIn("session-0", state.conversation_registry.contexts)
 
     def test_state_opens_provider_connection_each_time(self) -> None:
         class FakeProvider:
             name = "DeepSeek Web"
             location = "https://chat.deepseek.com/"
 
-        state = server.State()
+        state = server.AppContext()
         with mock.patch.object(
             server,
             "connect_provider",
@@ -2912,7 +2917,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_mode_prepends_ghost_directive(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-ghost")
             seed_ghost_continuity(state, session_id="session-ghost")
             events = state.subscribe()
@@ -2950,7 +2955,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_mode_runs_post_turn_ghost_learning_after_task_done(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -2967,7 +2972,7 @@ class SessionThreadingTests(unittest.TestCase):
                 '"metadata":{"conflict_key":"reply_length","value_key":"concise"}'
                 "}]}"
             )
-            state.ghost_learning_provider_factory = mock.Mock(return_value=learning_provider)
+            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=learning_provider)
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3007,7 +3012,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_ghost_disable_skips_post_turn_provider_call(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             assert state.ghost_inbox is not None
             state.ghost_inbox.set_learning_enabled(False)
             events = state.subscribe()
@@ -3015,7 +3020,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
-            state.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
+            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3035,7 +3040,7 @@ class SessionThreadingTests(unittest.TestCase):
             while not events.empty():
                 emitted.append(events.get_nowait())
 
-        state.ghost_learning_provider_factory.assert_not_called()
+        state.providers.ghost_learning_provider_factory.assert_not_called()
         learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
         continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
         self.assertEqual(learning_event["skipped_reason"], "learning_disabled")
@@ -3043,7 +3048,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_state_kicks_ghost_sleep_without_sse_event(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             events = state.subscribe()
             started = threading.Event()
             assert state.ghost_sleep is not None
@@ -3061,7 +3066,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_state_ghost_sleep_is_single_flight(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             started = threading.Event()
             release = threading.Event()
             active = 0
@@ -3101,7 +3106,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_pending_ghost_sleep_uses_latest_cursor(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seen: list[dict[str, object]] = []
 
             def run_once(**kwargs):
@@ -3135,7 +3140,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_ghost_disable_blocks_auto_sleep(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             assert state.ghost_inbox is not None
             assert state.ghost_sleep is not None
             state.ghost_inbox.set_learning_enabled(False)
@@ -3148,7 +3153,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_task_done_kicks_ghost_sleep_without_sleep_event(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -3179,11 +3184,11 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            state.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
+            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3204,12 +3209,12 @@ class SessionThreadingTests(unittest.TestCase):
                     "planning",
                 )
 
-        state.ghost_learning_provider_factory.assert_not_called()
+        state.providers.ghost_learning_provider_factory.assert_not_called()
 
     def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
         self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-ghost")
             seed_ghost_continuity(state, session_id="session-ghost")
             provider = mock.Mock()
@@ -3242,7 +3247,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-plan", project=td)
             seed_ghost_continuity(
                 state,
@@ -3273,16 +3278,17 @@ class SessionThreadingTests(unittest.TestCase):
                     "planning",
                 )
 
-        self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "planning_readonly")
-        self.assertIn("Local Context:", agent_run.call_args.kwargs["ghost_directive"])
-        self.assertNotIn("Ghost", agent_run.call_args.kwargs["ghost_directive"])
-        self.assertIn("Local Context:", agent_run.call_args.kwargs["ghost_continuity"])
-        self.assertIn("Plan bounded continuity projection", agent_run.call_args.kwargs["ghost_continuity"])
-        self.assertNotIn("Ghost", agent_run.call_args.kwargs["ghost_continuity"])
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.permission_profile, "planning_readonly")
+        self.assertIn("Local Context:", agent_request.ghost_directive)
+        self.assertNotIn("Ghost", agent_request.ghost_directive)
+        self.assertIn("Local Context:", agent_request.ghost_continuity)
+        self.assertIn("Plan bounded continuity projection", agent_request.ghost_continuity)
+        self.assertNotIn("Ghost", agent_request.ghost_continuity)
 
     def test_project_writer_receives_empty_ghost_directive(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-project", project=td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -3307,16 +3313,17 @@ class SessionThreadingTests(unittest.TestCase):
                     "project",
                 )
 
-        self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "coding_writer")
-        self.assertEqual(agent_run.call_args.kwargs["ghost_directive"], "")
-        self.assertEqual(agent_run.call_args.kwargs["ghost_continuity"], "")
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.permission_profile, "coding_writer")
+        self.assertEqual(agent_request.ghost_directive, "")
+        self.assertEqual(agent_request.ghost_continuity, "")
 
     def test_state_marks_provider_available_after_connect(self) -> None:
         class FakeProvider:
             name = "StepFun Chat"
             location = "https://chat.stepfun.com/chats/"
 
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         with mock.patch.object(server, "connect_provider", return_value=FakeProvider()):
             state.get_provider("stepfun")
@@ -3328,7 +3335,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(providers["providers"], [{"id": "stepfun", "label": "StepFun", "available": True}])
 
     def test_state_pauses_for_control_teaching_and_resumes_with_captured_control(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         page = mock.Mock()
         page.url = "https://chat.qwen.ai/"
@@ -3367,7 +3374,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.pending_teach_requests(), {})
 
     def test_profile_doctor_uses_one_healthy_sibling_model_call(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.set_provider_session("stepfun", "old-session")
         page = mock.Mock()
         helper = mock.Mock()
@@ -3404,7 +3411,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertTrue(state.provider_session_changed("stepfun", "old-session"))
 
     def test_profile_doctor_tries_next_model_after_call_failure(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         page = mock.Mock()
         first = mock.Mock()
         first.send.side_effect = TimeoutError("failed")
@@ -3433,7 +3440,7 @@ class SessionThreadingTests(unittest.TestCase):
         second.send.assert_called_once()
 
     def test_profile_doctor_reduces_shared_budget_after_new_chat(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         page = mock.Mock()
         helper = mock.Mock()
         helper.send.return_value = '{"candidate_id":"c1"}'
@@ -3459,7 +3466,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(helper.send.call_args.kwargs["timeout"], 80.0)
 
     def test_profile_doctor_tries_next_model_after_null_decision(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         page = mock.Mock()
         first = mock.Mock()
         first.send.return_value = '{"candidate_id":null}'
@@ -3480,7 +3487,7 @@ class SessionThreadingTests(unittest.TestCase):
         second.close.assert_called_once_with()
 
     def test_profile_doctor_stops_after_all_three_siblings_decline(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         page = mock.Mock()
         helpers = [mock.Mock() for _ in range(3)]
         for helper in helpers:
@@ -3501,7 +3508,7 @@ class SessionThreadingTests(unittest.TestCase):
             helper.close.assert_called_once_with()
 
     def test_profile_doctor_honors_task_cancellation_before_borrowing_tab(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         request = profile_doctor.make_request(
             "deepseek",
             provider_controls.CONTROL_SEND_BUTTON,
@@ -3523,7 +3530,7 @@ class SessionThreadingTests(unittest.TestCase):
     def test_flow_recovery_tries_next_healthy_sibling(self) -> None:
         from codey.providers import flow as provider_flow
 
-        state = server.State()
+        state = server.AppContext()
         page = mock.Mock()
         first = mock.Mock()
         second = mock.Mock()
@@ -3582,7 +3589,7 @@ class SessionThreadingTests(unittest.TestCase):
     def test_flow_recovery_honors_stop_before_borrowing_tab(self) -> None:
         from codey.providers import flow as provider_flow
 
-        state = server.State()
+        state = server.AppContext()
         request = provider_flow.FlowRecoveryRequest(
             provider_id="deepseek",
             stage=provider_flow.STAGE_COMPLETION,
@@ -3603,7 +3610,7 @@ class SessionThreadingTests(unittest.TestCase):
         borrowed.assert_not_called()
 
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "Qwen Studio"
@@ -3622,7 +3629,8 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "task", 8, False, "qwen")
 
         get_provider.assert_called_once_with("qwen")
-        self.assertIs(agent_run.call_args.args[0], provider)
+        agent_request = agent_run.call_args.args[0]
+        self.assertIs(agent_request.provider, provider)
         provider.close.assert_called_once_with()
         emitted = []
         while not events.empty():
@@ -3630,17 +3638,17 @@ class SessionThreadingTests(unittest.TestCase):
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["provider"], "qwen")
         self.assertEqual(task_done["receipt"]["display"]["summary"], "No files changed · checks passed")
-        self.assertEqual(state.provider_id, "qwen")
+        self.assertEqual(state.run_registry.provider_id(), "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
-        self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+        self.assertIsNotNone(agent_request.change_tracker)
         self.assertIs(provider_flow._handler.__self__, state)
         for name in provider_controls._TASK_CONTEXT_FIELDS:
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_research_unavailable_fallback_uses_capability_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
-        state.provider_supervisor.record_failure(
+        state.providers.supervisor.record_failure(
             "deepseek",
             ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
         )
@@ -3668,7 +3676,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         get_provider.assert_called_once_with("stepfun")
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
-        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_project_run_retains_truncated_run_output_as_managed_handle(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -3676,7 +3684,7 @@ class SessionThreadingTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "large.py").write_text("print('large')\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -3687,18 +3695,18 @@ class SessionThreadingTests(unittest.TestCase):
                 stderr="",
             )
 
-            def fake_agent_run(*_args, **kwargs):
-                self.assertEqual(kwargs["permission_profile"], "coding_writer")
-                tool_fns = kwargs["tool_fns"]
+            def fake_agent_run(request: AgentRequest):
+                self.assertEqual(request.permission_profile, "coding_writer")
+                tool_fns = request.tool_fns
                 self.assertIsNotNone(tool_fns)
                 outcome = tool_fns.execute_run_command(
                     project,
                     ".",
                     "python large.py",
-                    permission_profile=kwargs["permission_profile"],
+                    permission_profile=request.permission_profile,
                     tool_id="1:0",
                 )
-                kwargs["on_event"](
+                request.on_event(
                     RunEvent.tool_finished(
                         1,
                         ToolCall("run", {"path": ".", "command": "python large.py"}),
@@ -3727,7 +3735,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            run_id = state.last_terminal_event["run_id"]
+            run_id = state.run_registry.last_terminal_event()["run_id"]
             rows = [item.payload for item in read_ledger(state.run_ledgers.path_for("session-managed-output", run_id))]
             run_row = next(item for item in rows if item["type"] == "tool_finished" and item["tool"] == "run")
             handle = run_row["output_handle"]
@@ -3752,9 +3760,9 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertEqual(metadata["tool_id"], "1:0")
 
     def test_hybrid_unavailable_fallback_uses_research_capability_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
-        state.provider_supervisor.record_failure(
+        state.providers.supervisor.record_failure(
             "deepseek",
             ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
         )
@@ -3794,10 +3802,10 @@ class SessionThreadingTests(unittest.TestCase):
 
         get_provider.assert_called_once_with("stepfun")
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
-        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_research_connect_failure_uses_capability_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
         provider = mock.Mock()
         provider.name = "StepFun Chat"
@@ -3830,12 +3838,12 @@ class SessionThreadingTests(unittest.TestCase):
             ["deepseek", "stepfun"],
         )
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
-        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_research_fallback_does_not_block_only_avoid_provider(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("mimo",)
-        state.provider_supervisor.record_failure(
+        state.providers.supervisor.record_failure(
             "deepseek",
             ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
         )
@@ -3863,10 +3871,10 @@ class SessionThreadingTests(unittest.TestCase):
 
         get_provider.assert_called_once_with("mimo")
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "mimo")
-        self.assertEqual(state.last_terminal_event["provider"], "mimo")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "mimo")
 
     def test_writer_failover_uses_project_capability_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("stepfun", "glm")
         first = mock.Mock()
         first.name = "DeepSeek Web"
@@ -3924,10 +3932,10 @@ class SessionThreadingTests(unittest.TestCase):
             ["deepseek", "glm"],
         )
         rank.assert_called_with(("stepfun", "glm"), mode="project", preferred="")
-        self.assertEqual(state.last_terminal_event["provider"], "glm")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "glm")
 
     def test_hybrid_writer_failover_uses_project_capability_order(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("mimo", "stepfun")
         first = mock.Mock()
         first.name = "DeepSeek Web"
@@ -3991,10 +3999,10 @@ class SessionThreadingTests(unittest.TestCase):
         )
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "deepseek")
         rank.assert_called_with(("mimo", "stepfun"), mode="project", preferred="")
-        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_shell_request_includes_risk_explanation(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -4023,7 +4031,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("install scripts", shell_event["risk_detail"])
 
     def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -4078,7 +4086,7 @@ class SessionThreadingTests(unittest.TestCase):
                 pass
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             seed_ghost_style_memory(state, session_id="session-research")
             from codey.knowledge import KnowledgeStore
 
@@ -4329,7 +4337,7 @@ class SessionThreadingTests(unittest.TestCase):
                 pass
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             from codey.knowledge import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
@@ -4409,7 +4417,7 @@ class SessionThreadingTests(unittest.TestCase):
             project = Path(td, "project")
             project.mkdir()
             project_text = str(project.resolve())
-            state = server.State(td)
+            state = server.AppContext(td)
             from codey.knowledge import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
@@ -4459,7 +4467,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             project = Path(td, "project")
             project.mkdir()
-            state = server.State(td)
+            state = server.AppContext(td)
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()
             provider = mock.Mock()
@@ -4518,7 +4526,7 @@ class SessionThreadingTests(unittest.TestCase):
             project = Path(td, "project")
             project.mkdir()
             (project / "app.py").write_text("value = 1\n", encoding="utf-8")
-            state = server.State(td)
+            state = server.AppContext(td)
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()
             provider = mock.Mock()
@@ -4573,7 +4581,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("receipt", done)
 
     def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         first = mock.Mock()
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"
@@ -4597,7 +4605,7 @@ class SessionThreadingTests(unittest.TestCase):
         second.send.assert_called_once_with("Follow-up question")
 
     def test_plain_chat_uses_hidden_consensus_when_advisors_are_available(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -4630,7 +4638,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(done["run_id"], reply["run_id"])
 
     def test_plain_chat_consensus_aggregate_failure_does_not_resend_prompt(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -4656,7 +4664,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("aggregate timed out", task_done["summary"])
 
     def test_plain_chat_degraded_consensus_forgets_provider_session(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -4672,7 +4680,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         agent_run.assert_not_called()
         provider.send.assert_not_called()
-        self.assertNotIn("deepseek", state.provider_sessions)
+        self.assertNotIn("deepseek", state.providers.sessions_snapshot())
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -4681,7 +4689,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_plain_chat_followup_consensus_uses_context_not_owner_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
-            state = server.State(state_home)
+            state = server.AppContext(state_home)
             first = mock.Mock()
             first.name = "DeepSeek Web"
             first.location = "https://chat.deepseek.com/"
@@ -4712,7 +4720,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_recovered_chat_handoff_goes_to_owner_not_advisor_context(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
-            state = server.State(state_home)
+            state = server.AppContext(state_home)
             context = state.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
             context.update_snapshot(
@@ -4770,7 +4778,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_to_project_handoff_reaches_writer(self) -> None:
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
-            state = server.State(state_home)
+            state = server.AppContext(state_home)
             project = Path(td)
             (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
             context = state.conversation_for("session-1")
@@ -4843,9 +4851,10 @@ class SessionThreadingTests(unittest.TestCase):
                 )
 
         self.assertEqual(agent_run.call_count, 1)
-        self.assertEqual(agent_run.call_args.args[2], "Apply the plan here.")
-        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
-        handoff = agent_run.call_args.kwargs["handoff"]
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.task, "Apply the plan here.")
+        self.assertTrue(agent_request.fresh_chat)
+        handoff = agent_request.handoff
         self.assertIn("Build a small notes app", handoff)
         self.assertIn("Use SQLite", handoff)
         self.assertIn("recent_visible_conversation", handoff)
@@ -4856,7 +4865,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
             project = Path(td)
             (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
-            first = server.State(state_home)
+            first = server.AppContext(state_home)
             context = first.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
             context.record_exchange(
@@ -4911,7 +4920,7 @@ class SessionThreadingTests(unittest.TestCase):
                 }
             )
 
-            restarted = server.State(state_home)
+            restarted = server.AppContext(state_home)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -4940,9 +4949,10 @@ class SessionThreadingTests(unittest.TestCase):
                 )
 
         self.assertEqual(agent_run.call_count, 1)
-        self.assertEqual(agent_run.call_args.args[2], "Apply the plan here.")
-        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
-        handoff = agent_run.call_args.kwargs["handoff"]
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.task, "Apply the plan here.")
+        self.assertTrue(agent_request.fresh_chat)
+        handoff = agent_request.handoff
         self.assertIn("Build a small notes app", handoff)
         self.assertIn("Use SQLite", handoff)
         self.assertIn("recent_visible_conversation", handoff)
@@ -4952,7 +4962,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("secret shell output", handoff)
 
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -4977,7 +4987,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Add a migration plan", prompt)
 
     def test_returning_to_session_restores_its_model_chat(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         first_a = mock.Mock()
         first_a.name = "DeepSeek Web"
         first_a.location = "https://chat.deepseek.com/"
@@ -5010,7 +5020,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("Session B answer.", prompt)
 
     def test_project_continue_starts_fresh_chat_with_original_goal(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         first = mock.Mock()
         first.name = "DeepSeek Web"
         first.location = "https://chat.deepseek.com/"
@@ -5047,7 +5057,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Continue the unfinished task.", prompt)
 
     def test_run_task_emits_receipt_and_inline_changes(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -5108,7 +5118,7 @@ class SessionThreadingTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(Path(td, "state"))
+            state = server.AppContext(Path(td, "state"))
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             project = Path(td, "project")
             project.mkdir()
@@ -5135,8 +5145,8 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
 
-            def fake_agent_run(*_args, **kwargs):
-                on_event = kwargs["on_event"]
+            def fake_agent_run(request: AgentRequest):
+                on_event = request.on_event
                 on_event(
                     RunEvent.tool_finished(
                         1,
@@ -5207,7 +5217,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
     def test_run_task_recovers_failed_diff_before_review_and_receipt(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -5262,7 +5272,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["receipt"]["work"]["changed_count"], 1)
 
     def test_run_task_uses_second_model_for_approved_review(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5314,7 +5324,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["summary"], "complete")
 
     def test_run_task_sends_review_findings_back_to_writer_once(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5353,12 +5363,13 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 2)
-        followup = agent_run.call_args_list[1].args[2]
+        followup_request = agent_run.call_args_list[1].args[0]
+        followup = followup_request.task
         self.assertIn("A review pass inspected the current diff", followup)
         self.assertNotIn("second model reviewed", followup)
         self.assertIn("Missing empty case", followup)
-        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
-        self.assertLessEqual(agent_run.call_args_list[1].kwargs["max_turns"], server.REVIEW_FIX_TURNS)
+        self.assertFalse(followup_request.fresh_chat)
+        self.assertLessEqual(followup_request.max_turns, server.REVIEW_FIX_TURNS)
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -5368,7 +5379,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["summary"], "review fixed")
 
     def test_run_task_self_review_findings_repair_writer_once(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5419,11 +5430,12 @@ class SessionThreadingTests(unittest.TestCase):
         reviewer.new_chat.assert_called_once_with()
         reviewer.close.assert_called_once_with()
         self.assertEqual(agent_run.call_count, 2)
-        followup = agent_run.call_args_list[1].args[2]
+        followup_request = agent_run.call_args_list[1].args[0]
+        followup = followup_request.task
         self.assertIn("A review pass inspected the current diff", followup)
         self.assertNotIn("second model reviewed", followup)
         self.assertIn("Missing empty case", followup)
-        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
+        self.assertFalse(followup_request.fresh_chat)
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -5433,7 +5445,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["summary"], "self-review fixed")
 
     def test_review_repair_uses_writer_failover(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5496,20 +5508,22 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(agent_run.call_count, 3)
         self.assertEqual(collect_changes.call_count, 2)
         self.assertEqual(get_provider.call_count, 3)
-        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
-        self.assertTrue(agent_run.call_args_list[2].kwargs["fresh_chat"])
-        self.assertTrue(agent_run.call_args_list[2].kwargs["strict_fresh_chat"])
-        self.assertEqual(agent_run.call_args_list[2].kwargs["provider_id"], "stepfun")
-        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
-        self.assertEqual(state.last_terminal_event["summary"], "fixed by sibling")
-        self.assertEqual(state.last_terminal_event["changes"]["changed_count"], 2)
+        first_repair = agent_run.call_args_list[1].args[0]
+        sibling_repair = agent_run.call_args_list[2].args[0]
+        self.assertFalse(first_repair.fresh_chat)
+        self.assertTrue(sibling_repair.fresh_chat)
+        self.assertTrue(sibling_repair.strict_fresh_chat)
+        self.assertEqual(sibling_repair.provider_id, "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
+        self.assertEqual(state.run_registry.last_terminal_event()["summary"], "fixed by sibling")
+        self.assertEqual(state.run_registry.last_terminal_event()["changes"]["changed_count"], 2)
         self.assertEqual(
-            state.last_terminal_event["changes"]["files"],
+            state.run_registry.last_terminal_event()["changes"]["files"],
             repaired_changes["files"],
         )
 
     def test_review_followup_without_changes_preserves_prior_checks_passed(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5560,7 +5574,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
     def test_review_followup_failed_check_does_not_inherit_prior_checks_passed(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5610,7 +5624,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(task_done["receipt"]["verification"]["checks_passed"])
 
     def test_review_followup_no_progress_does_not_inherit_prior_checks_passed(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5661,7 +5675,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertTrue(task_done["receipt"]["work"]["restore_available"])
 
     def test_run_task_falls_back_to_one_model_when_review_unavailable(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5704,7 +5718,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["summary"], "complete")
 
     def test_run_task_repairs_invalid_review_json_once(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5745,7 +5759,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(review_event["text"], "MiMo approved")
 
     def test_run_task_suppresses_manual_teaching_during_review(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -5789,7 +5803,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(states, [(False, False)])
 
     def test_run_task_skips_review_when_there_are_no_changes(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5833,7 +5847,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("changes", task_done)
 
     def test_project_read_only_task_can_use_hidden_consensus_answer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5864,9 +5878,10 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(consensus_kwargs.get("draft_first", False))
         self.assertIn("Project Map", consensus_kwargs["context"])
         self.assertIn("app.py", consensus_kwargs["context"])
-        self.assertEqual(agent_run.call_args.args[2], "Discuss architecture")
-        self.assertIn("Project Map", agent_run.call_args.kwargs["project_map"])
-        self.assertIn("app.py", agent_run.call_args.kwargs["project_map"])
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.task, "Discuss architecture")
+        self.assertIn("Project Map", agent_request.project_map)
+        self.assertIn("app.py", agent_request.project_map)
         connect_review.assert_not_called()
         emitted = []
         while not events.empty():
@@ -5876,7 +5891,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(task_done["changed"])
 
     def test_existing_project_uses_read_only_audit_reports_before_writer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5905,7 +5920,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Project Map", self.project_audit_mock.call_args.kwargs["context"])
         self.assertIn("app.py", self.project_audit_mock.call_args.kwargs["context"])
         self.consensus_mock.assert_not_called()
-        task = agent_run.call_args.args[2]
+        task = agent_run.call_args.args[0].task
         self.assertIn("Private ChangeBrief", task)
         self.assertIn("read-only project audit", task)
         self.assertIn("Possible bug in app.py.", task)
@@ -5917,7 +5932,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(task_done["changed"])
 
     def test_existing_project_audit_failure_degrades_to_writer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -5942,10 +5957,10 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
 
         self.project_audit_mock.assert_called_once()
-        self.assertEqual(agent_run.call_args.args[2], "Review this project for bugs")
+        self.assertEqual(agent_run.call_args.args[0].task, "Review this project for bugs")
 
     def test_project_read_only_consensus_failure_keeps_writer_answer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5971,7 +5986,7 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
 
         self.consensus_mock.assert_called_once()
-        self.assertNotIn("deepseek", state.provider_sessions)
+        self.assertNotIn("deepseek", state.providers.sessions_snapshot())
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -5980,7 +5995,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["stop_reason"], "done")
 
     def test_existing_project_write_task_skips_consensus_and_keeps_review_after_changes(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
@@ -5996,8 +6011,8 @@ class SessionThreadingTests(unittest.TestCase):
             "diff": _clean_diff("app.py", old="print('existing')", new="new"),
         }
 
-        def write_and_finish(*args, **kwargs):
-            project_root = Path(args[1])
+        def write_and_finish(request: AgentRequest):
+            project_root = request.project
             (project_root / "tests").mkdir()
             (project_root / "tests" / "test_app.py").write_text(
                 "def test_ok():\n    assert True\n",
@@ -6021,10 +6036,11 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
 
         self.consensus_mock.assert_not_called()
-        self.assertEqual(agent_run.call_args.args[2], "Build the feature")
-        self.assertNotIn("Private ChangeBrief", agent_run.call_args.args[2])
-        self.assertIn("Project Map", agent_run.call_args.kwargs["project_map"])
-        self.assertIn("app.py", agent_run.call_args.kwargs["project_map"])
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.task, "Build the feature")
+        self.assertNotIn("Private ChangeBrief", agent_request.task)
+        self.assertIn("Project Map", agent_request.project_map)
+        self.assertIn("app.py", agent_request.project_map)
         review_connect.assert_called_once_with("mimo")
         self.assertNotIn("Private ChangeBrief", reviewer.send.call_args.args[0])
         self.assertIn("Project Map", reviewer.send.call_args.args[0])
@@ -6037,7 +6053,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(review_event["text"], "MiMo approved")
 
     def test_review_verification_map_uses_policy_candidate_command_lines(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -6111,7 +6127,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("- frontend/: pnpm test", verification_map)
 
     def test_empty_project_uses_hidden_plan_before_writer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -6140,14 +6156,15 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertTrue(consensus_kwargs["draft_first"])
         self.assertTrue(consensus_kwargs["plan"])
         self.assertIn("Project Map", consensus_kwargs["context"])
-        task = agent_run.call_args.args[2]
+        agent_request = agent_run.call_args.args[0]
+        task = agent_request.task
         self.assertIn("Private ChangeBrief", task)
         self.assertIn("new-project planning", task)
         self.assertIn("Start with the smallest useful app.", task)
-        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+        self.assertTrue(agent_request.fresh_chat)
 
     def test_empty_project_change_brief_reaches_writer_and_reviewer(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -6177,7 +6194,7 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
 
-        writer_task = agent_run.call_args.args[2]
+        writer_task = agent_run.call_args.args[0].task
         review_prompt = reviewer.send.call_args.args[0]
         self.assertIn("Private ChangeBrief", writer_task)
         self.assertIn("Use app.py and add a smoke test.", writer_task)
@@ -6187,7 +6204,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Use app.py and add a smoke test.", review_prompt)
 
     def test_empty_project_plan_failure_opens_fresh_writer_chat(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
@@ -6214,8 +6231,9 @@ class SessionThreadingTests(unittest.TestCase):
         consensus_kwargs = self.consensus_mock.call_args.kwargs
         self.assertTrue(consensus_kwargs["draft_first"])
         self.assertTrue(consensus_kwargs["plan"])
-        self.assertEqual(agent_run.call_args.args[2], "Build a new breathing app")
-        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+        agent_request = agent_run.call_args.args[0]
+        self.assertEqual(agent_request.task, "Build a new breathing app")
+        self.assertTrue(agent_request.fresh_chat)
 
     def test_empty_project_detector_skips_directory_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as root_td, tempfile.TemporaryDirectory() as outside_td:
@@ -6230,7 +6248,7 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertFalse(project_has_user_files(root_td))
 
     def test_run_task_emits_provider_failure_diagnostic_on_error(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "StepFun"
@@ -6270,10 +6288,10 @@ class SessionThreadingTests(unittest.TestCase):
                 "time": task_done["provider_failure"]["time"],
             },
         )
-        self.assertIsNot(state.last_provider_failure, provider.last_failure)
+        self.assertIsNot(state.run_registry.last_provider_failure(), provider.last_failure)
 
     def test_run_task_records_connect_failure_without_provider_page(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         state.provider_failover_order = lambda: ("qwen", "deepseek", "stepfun", "glm")
         events = state.subscribe()
 
@@ -6305,7 +6323,7 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_run_task_treats_control_teaching_cancel_as_stop(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "Qwen Studio"
@@ -6332,15 +6350,15 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIsNone(task_done["provider_failure"])
 
     def test_run_task_treats_shared_cancellation_as_stop_and_forgets_provider_session(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         events = state.subscribe()
         provider = mock.Mock()
         provider.name = "Qwen Studio"
         provider.location = "https://chat.qwen.ai/"
         state.set_provider_session("qwen", "session-1")
 
-        def cancelled_agent(*_args, **kwargs):
-            kwargs["on_event"](RunEvent.turn_started(3, "partial reply"))
+        def cancelled_agent(request: AgentRequest):
+            request.on_event(RunEvent.turn_started(3, "partial reply"))
             raise cancellation.TaskCancelled("task stopped")
 
         with (
@@ -6368,13 +6386,13 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_stopped_agent_result_also_forgets_provider_session(self) -> None:
-        state = server.State()
+        state = server.AppContext()
         provider = mock.Mock(name="provider")
         provider.name = "Qwen Studio"
         state.set_provider_session("qwen", "session-1")
 
         def stopped_agent(*_args, **_kwargs):
-            state.stop_flag.set()
+            state.run_registry.stop_flag.set()
             return RunResult("stopped", "stopped", 2, False)
 
         with (
@@ -6418,12 +6436,13 @@ class SessionThreadingTests(unittest.TestCase):
             subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
-            state = server.State(state_td)
+            state = server.AppContext(state_td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
-            def fake_agent_run(*_args, **kwargs):
-                tracker = kwargs["change_tracker"]
+            def fake_agent_run(request: AgentRequest):
+                tracker = request.change_tracker
+                assert tracker is not None
                 tracker.capture_before("app.py")
                 path.write_text("new\n", encoding="utf-8")
                 tracker.capture_after("app.py")
@@ -6449,7 +6468,7 @@ class SessionThreadingTests(unittest.TestCase):
             root = Path(td)
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
-            state = server.State(state_td)
+            state = server.AppContext(state_td)
             snapshot_tracker = state.change_tracker_for(root, persistent=True)
             snapshot_tracker.capture_before("app.py")
             path.write_text("new\n", encoding="utf-8")
@@ -6473,7 +6492,7 @@ class SessionThreadingTests(unittest.TestCase):
 class UiLaunchTests(unittest.TestCase):
     def test_state_persists_ui_state_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             payload = {
                 "active_id": "chat-1",
                 "updated_at": 123,

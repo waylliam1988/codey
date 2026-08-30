@@ -5,13 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
-import json
 import math
-import os
 from pathlib import Path
-import uuid
 from typing import Iterable
 
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
@@ -41,6 +39,17 @@ NODE_KINDS = SIGNAL_KINDS
 NODE_STATUSES = ("active", "superseded", "expired")
 EDGE_RELATIONS = ("coactivated_with",)
 _STATE_KIND = "ghost_hebbian_state_projection"
+_HEBBIAN_EVENT_TYPES = frozenset(
+    {
+        "ghost_hebbian_node_upsert",
+        "ghost_hebbian_node_superseded",
+        "ghost_hebbian_edge_upsert",
+        "ghost_hebbian_candidate_removed",
+        "ghost_hebbian_scope_deleted",
+        "ghost_hebbian_state_decayed",
+        "ghost_hebbian_store_compacted",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +202,17 @@ class GhostHebbianStore:
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
 
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=HEBBIAN_SCHEMA_VERSION,
+            max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
+            max_warnings=MAX_HEBBIAN_WARNINGS,
+            source_name="hebbian_events.jsonl",
+            allowed_event_kinds=_HEBBIAN_EVENT_TYPES,
+            bad_row_policy="warn",
+        )
+
     def reinforce_candidate(
         self,
         candidate: GhostMemoryCandidate,
@@ -241,7 +261,7 @@ class GhostHebbianStore:
                     edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                     events = [_node_event(node, action="superseded") for node in changed_nodes]
                     events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                    if not self._append_events(events):
+                    if not self._append_events_or_rewrite_state(events, nodes, edges):
                         return GhostReinforceResult(False, "event_write_failed")
                     try:
                         self._write_projection(nodes, edges)
@@ -286,7 +306,7 @@ class GhostHebbianStore:
                     for changed_node in changed_nodes
                 ]
                 events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                if not self._append_events(events):
+                if not self._append_events_or_rewrite_state(events, nodes, edges):
                     return GhostReinforceResult(False, "event_write_failed")
                 try:
                     self._write_projection(nodes, edges)
@@ -686,39 +706,10 @@ class GhostHebbianStore:
         return bounded_nodes, bounded_edges
 
     def _read_events_unlocked(self) -> tuple[dict[str, object], ...]:
-        warnings: list[str] = []
-        self._events_read_blocked = False
-        try:
-            if not self.events_path.is_file():
-                self.last_warnings = ()
-                return ()
-            if self.events_path.stat().st_size > MAX_HEBBIAN_EVENTS_BYTES:
-                self.last_warnings = ("hebbian_events_too_large",)
-                self._events_read_blocked = True
-                return ()
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("hebbian_events_unreadable",)
-            self._events_read_blocked = True
-            return ()
-        events: list[dict[str, object]] = []
-        for index, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                warnings.append(f"hebbian_events.jsonl:{index}:bad_json")
-                continue
-            if not isinstance(value, dict):
-                warnings.append(f"hebbian_events.jsonl:{index}:not_object")
-                continue
-            if value.get("schema_version") != HEBBIAN_SCHEMA_VERSION:
-                warnings.append(f"hebbian_events.jsonl:{index}:unsupported_schema")
-                continue
-            events.append(value)
-        self.last_warnings = tuple(warnings[:MAX_HEBBIAN_WARNINGS])
-        return tuple(events)
+        read = self._event_log().read()
+        self._events_read_blocked = read.blocked
+        self.last_warnings = _event_read_warnings(read.warnings)
+        return tuple(read.rows)
 
     def _write_projection(self, nodes: Iterable[GhostNode], edges: Iterable[GhostEdge]) -> None:
         node_rows = _bounded_nodes(nodes)
@@ -745,17 +736,32 @@ class GhostHebbianStore:
         }
 
     def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        rows = list(events)
-        if not rows:
+        return self._event_log().append(events)
+
+    def _append_events_or_rewrite_state(
+        self,
+        events: Iterable[dict[str, object]],
+        nodes: Iterable[GhostNode],
+        edges: Iterable[GhostEdge],
+    ) -> bool:
+        if self._append_events(events):
             return True
         try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                for event in rows:
-                    handle.write(_json_line(event))
-            return True
+            self._rewrite_events_from_state(
+                nodes,
+                edges,
+                control_event=_control_event(
+                    "ghost_hebbian_store_compacted",
+                    {
+                        "reason": "event_bytes_limit",
+                        "max_events": MAX_HEBBIAN_EVENTS,
+                        "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
+                    },
+                ),
+            )
         except (OSError, TypeError, ValueError):
             return False
+        return True
 
     def _rewrite_events_from_state(
         self,
@@ -773,23 +779,7 @@ class GhostHebbianStore:
         self._write_events_atomic(events)
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        rows = list(events)
-        data = "".join(_json_line(event) for event in rows).encode("utf-8")
-        if len(data) > MAX_HEBBIAN_EVENTS_BYTES:
-            raise ValueError("ghost hebbian events are too large")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic(events)
 
     def _compact_if_needed(
         self,
@@ -1245,13 +1235,13 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
-def _json_line(value: dict[str, object]) -> str:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        + "\n"
-    )
+def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "hebbian_events.jsonl:too_large":
+            mapped.append("hebbian_events_too_large")
+        elif warning == "hebbian_events.jsonl:unreadable":
+            mapped.append("hebbian_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return tuple(mapped[:MAX_HEBBIAN_WARNINGS])

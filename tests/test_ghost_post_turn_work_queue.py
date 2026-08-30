@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.note import KnowledgeNote
@@ -77,7 +78,7 @@ def _reviewable_changes(*_args, **_kwargs) -> dict:
 
 
 def _runner(
-    state: server.State,
+    state: server.AppContext,
     *,
     agent_run=None,
     collect_changes=_empty_changes,
@@ -92,6 +93,7 @@ def _runner(
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -102,7 +104,7 @@ def _runner(
     )
 
 
-def _seed_research_item(state: server.State) -> str:
+def _seed_research_item(state: server.AppContext) -> str:
     assert state.ghost_continuity is not None
     assert state.ghost_work_queue is not None
     state.ghost_continuity.sync_from_sources(
@@ -195,7 +197,7 @@ def _research_record():
     )
 
 
-def _seed_review_item(state: server.State, project: Path) -> str:
+def _seed_review_item(state: server.AppContext, project: Path) -> str:
     assert state.ghost_work_queue is not None
     item = work_queue_module._new_item(
         kind="review",
@@ -229,16 +231,16 @@ def _seed_review_item(state: server.State, project: Path) -> str:
     return item.id
 
 
-def _last_trace_payload(state: server.State) -> dict[str, object]:
+def _last_trace_payload(state: server.AppContext) -> dict[str, object]:
     assert state.run_traces is not None
-    run_id = str(state.last_terminal_event["run_id"])
+    run_id = str(state.run_registry.last_terminal_event()["run_id"])
     path = state.run_traces.path_for("s1", run_id)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_strict_continue_consumes_research_item_before_router() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         item_id = _seed_research_item(state)
         queued_item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
         wrapped_question = work_queue_module.render_work_item_task(
@@ -271,7 +273,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
 
     router_factory.assert_not_called()
     assert research_iteration.call_count == 1
-    assert state.last_terminal_event["mode"] == "research"
+    assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
     assert item.status == "done"
     assert any(ref.startswith("research_proof:") for ref in item.proof_refs)
@@ -288,7 +290,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
 
 def test_strict_continue_blocks_research_item_without_research_record() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         item_id = _seed_research_item(state)
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
         runner = _runner(state, router_provider_factory=router_factory)
@@ -314,7 +316,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
 
     router_factory.assert_not_called()
     assert research_iteration.call_count == 1
-    assert state.last_terminal_event["mode"] == "research"
+    assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
     assert item.status == "blocked"
     assert item.blocked_reason == "research_proof_missing_research_record"
@@ -344,7 +346,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
 
 def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_trace() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         item_id = _seed_research_item(state)
         queued_item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
         wrapped_question = work_queue_module.render_work_item_task(
@@ -377,7 +379,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
 
     router_factory.assert_not_called()
     assert research_iteration.call_count == 1
-    assert state.last_terminal_event["mode"] == "research"
+    assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
     assert item.status == "blocked"
     proof_reviews = trace_payload["research_proof_reviews"]
@@ -397,7 +399,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
 
 def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         _seed_research_item(state)
         route_provider = _Provider('{"mode":"chat","confidence":0.99,"reason":"chat"}')
         router_factory = mock.Mock(return_value=route_provider)
@@ -410,13 +412,13 @@ def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
         item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
 
     router_factory.assert_called_once()
-    assert state.last_terminal_event["mode"] == "chat"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert item.status == "queued"
 
 
 def test_post_turn_sync_harvests_research_interest_candidates() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         state.knowledge_store = KnowledgeStore(Path(td, "knowledge"))
         assert state.ghost_work_queue is not None
         try:
@@ -458,7 +460,7 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         project = Path(td, "project")
         project.mkdir()
         (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         assert state.ghost_work_queue is not None
         checkpoints = WorkCheckpointStore(state.state_home)
         checkpoint = checkpoints.start(
@@ -475,17 +477,17 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         )
         # Real observable facts (edit + passing check): under 0.4.13 a
         # claimed green with no local observation would block this run.
-        def _fake_agent_run(_provider, _project, _task, **kwargs):
+        def _fake_agent_run(request: AgentRequest):
             from codey.runtime.events import RunEvent
             from codey.runtime.models import ToolCall
             from codey.toolchain.runtime import ToolOutcome
 
-            kwargs["on_event"](RunEvent.tool_finished(
+            request.on_event(RunEvent.tool_finished(
                 1,
                 ToolCall("edit", {"path": "app.py", "old_string": "1", "new_string": "2"}),
                 ToolOutcome("edited", True, changed=True),
             ))
-            kwargs["on_event"](RunEvent.tool_finished(
+            request.on_event(RunEvent.tool_finished(
                 2,
                 ToolCall("run", {"command": "python -m pytest", "path": "."}),
                 ToolOutcome("all passed", True, exit_code=0),
@@ -510,12 +512,13 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         start = next(event for event in emitted if event.get("type") == "task_start")
         item = state.ghost_work_queue.list_items()[0]
 
-    assert state.last_terminal_event["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["mode"] == "agent"
     assert start["continue_task"] is True
     assert "Continue this saved local task" in start["task"]
     assert agent_run.called
-    assert "Continue this saved local task" in agent_run.call_args.args[2]
-    assert "Fix the failing parser test" in agent_run.call_args.args[2]
+    agent_request = agent_run.call_args.args[0]
+    assert "Continue this saved local task" in agent_request.task
+    assert "Fix the failing parser test" in agent_request.task
     assert item.status == "done"
 
 
@@ -523,7 +526,7 @@ def test_project_followup_without_proof_blocks_item() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         assert state.ghost_work_queue is not None
         checkpoints = WorkCheckpointStore(state.state_home)
         checkpoint = checkpoints.start(
@@ -550,7 +553,7 @@ def test_project_followup_without_proof_blocks_item() -> None:
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
 
-    assert state.last_terminal_event["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["mode"] == "agent"
     assert item.status == "blocked"
     assert item.blocked_reason == "missing_proof"
 
@@ -559,7 +562,7 @@ def test_review_item_consumes_into_review_without_writer() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         _seed_review_item(state, project)
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         run_review = mock.Mock(return_value=("qwen", ReviewResult("approved", "Looks good", [])))
@@ -582,13 +585,13 @@ def test_review_item_consumes_into_review_without_writer() -> None:
 
     agent_run.assert_not_called()
     run_review.assert_called_once()
-    assert state.last_terminal_event["mode"] == "review"
+    assert state.run_registry.last_terminal_event()["mode"] == "review"
     assert item.status == "done"
 
 
 def test_no_queued_item_falls_back_to_router() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         route_provider = _Provider('{"mode":"chat","confidence":0.99,"reason":"chat"}')
         router_factory = mock.Mock(return_value=route_provider)
         runner = _runner(state, router_provider_factory=router_factory)
@@ -598,12 +601,12 @@ def test_no_queued_item_falls_back_to_router() -> None:
             state.wait_for_ghost_sleep(timeout=2)
 
     router_factory.assert_called_once()
-    assert state.last_terminal_event["mode"] == "chat"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
 
 
 def test_claimed_item_is_released_on_stop() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         _seed_research_item(state)
         provider = _Provider()
         runner = _runner(state)
@@ -617,5 +620,5 @@ def test_claimed_item_is_released_on_stop() -> None:
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
 
-    assert state.last_terminal_event["stop_reason"] == "stopped"
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
     assert item.status == "queued"

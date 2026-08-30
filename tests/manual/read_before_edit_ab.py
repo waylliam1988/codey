@@ -14,6 +14,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.runtime.events import RunEvent, render_run_event
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
@@ -22,6 +23,10 @@ from tests.manual.project_task_context import render_production_project_map
 
 GUARD_MESSAGE = "read_file required before editing existing file:"
 ARMS = ("baseline", "guard")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)
@@ -191,7 +196,7 @@ def _run_case(provider, root: Path, case: GuardCase, arm: str, max_turns: int) -
     events: list[RunEvent] = []
     original_guard = _with_guard(arm)
     try:
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

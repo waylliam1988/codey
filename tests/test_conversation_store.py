@@ -46,7 +46,7 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_state_reloads_same_session_and_keeps_new_session_isolated(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            first = server.State(td)
+            first = server.AppContext(td)
             context = first.conversation_for("chat-1")
             context.begin_window("stepfun", "project", "E:/demo")
             context.update_snapshot(ConversationSnapshot(
@@ -58,7 +58,7 @@ class ConversationStoreTests(unittest.TestCase):
                 checks_passed=True,
             ))
 
-            second = server.State(td)
+            second = server.AppContext(td)
             restored = second.conversation_for("chat-1")
             unrelated = second.conversation_for("chat-2")
 
@@ -69,11 +69,11 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_forget_deletes_memory_and_disk_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             state.conversation_for("chat-1").update_snapshot(
                 ConversationSnapshot(mode="chat", goal="temporary")
             )
-            path = state.conversation_store.path_for("chat-1")
+            path = state.conversation_registry.store.path_for("chat-1")
             self.assertTrue(path.is_file())
 
             state.forget_conversation("chat-1")
@@ -83,12 +83,12 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_forgotten_context_cannot_recreate_deleted_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             old_context = state.conversation_for("chat-1")
             old_context.update_snapshot(
                 ConversationSnapshot(mode="chat", goal="old")
             )
-            path = state.conversation_store.path_for("chat-1")
+            path = state.conversation_registry.store.path_for("chat-1")
 
             state.forget_conversation("chat-1")
             old_context.update_snapshot(
@@ -98,17 +98,17 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertFalse(path.exists())
             fresh = state.conversation_for("chat-1")
             fresh.update_snapshot(ConversationSnapshot(mode="chat", goal="new"))
-            self.assertEqual(state.conversation_store.load("chat-1").snapshot.goal, "new")
+            self.assertEqual(state.conversation_registry.store.load("chat-1").snapshot.goal, "new")
 
     def test_forget_wins_over_save_already_in_progress(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             context = state.conversation_for("chat-1")
             context.update_snapshot(ConversationSnapshot(mode="chat", goal="old"))
-            path = state.conversation_store.path_for("chat-1")
+            path = state.conversation_registry.store.path_for("chat-1")
             save_started = threading.Event()
             allow_save = threading.Event()
-            real_save = state.conversation_store.save
+            real_save = state.conversation_registry.store.save
 
             def blocking_save(session_id, value):
                 save_started.set()
@@ -116,7 +116,7 @@ class ConversationStoreTests(unittest.TestCase):
                 real_save(session_id, value)
 
             with mock.patch.object(
-                state.conversation_store,
+                state.conversation_registry.store,
                 "save",
                 side_effect=blocking_save,
             ):
@@ -170,7 +170,7 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_restart_opens_fresh_provider_chat_with_silent_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            first = server.State(td)
+            first = server.AppContext(td)
             context = first.conversation_for("chat-1")
             context.begin_window("deepseek", "chat")
             context.record_exchange(
@@ -204,7 +204,7 @@ class ConversationStoreTests(unittest.TestCase):
                 "projects": [],
             })
 
-            restarted = server.State(td)
+            restarted = server.AppContext(td)
             events = restarted.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -231,11 +231,11 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_persistence_failure_does_not_break_live_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             context = state.conversation_for("chat-1")
 
             with mock.patch.object(
-                state.conversation_store,
+                state.conversation_registry.store,
                 "save",
                 side_effect=OSError("disk full"),
             ):

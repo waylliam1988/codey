@@ -20,6 +20,7 @@ if __package__ in (None, ""):
 
 from codey.toolchain import runtime as tool_runtime
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.runtime.events import RunEvent, render_run_event
@@ -28,6 +29,10 @@ from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("baseline", "context")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 TARGET = "config.py"
 ORIGINAL_LINE = "    timeout = settings.get('request_timeout', 10)\n"
 STALE_BLOCK = (
@@ -106,7 +111,7 @@ def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
         if arm == "baseline":
             tool_runtime._render_edit_failure_context = lambda _content, _search: ""
         try:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 TASK,

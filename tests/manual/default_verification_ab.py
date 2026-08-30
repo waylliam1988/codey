@@ -16,6 +16,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.runtime.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
@@ -29,6 +30,10 @@ from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("baseline", "current")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 @dataclass(frozen=True)
 class Case:
     name: str
@@ -163,7 +168,7 @@ def _run_arm(provider, case: Case, arm: str, max_turns: int) -> dict[str, Any]:
         candidates = discover_verification_candidates(root, case.facts)
         selected = select_verification_candidate(candidates, case.expected_changes)
         gate = arm == "current" and selected is not None
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

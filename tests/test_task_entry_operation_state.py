@@ -16,6 +16,7 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.completion import engine as completion_engine_module
 from codey.completion.decision import (
@@ -99,10 +100,10 @@ class ObservingWriter:
         self.observed_phases: list[str | None] = []
         self.steps = list(steps)
 
-    def __call__(self, _provider, _project, task, **kwargs) -> RunResult:
-        self.calls.append({"task": task, "kwargs": kwargs})
-        state = kwargs["state_ref"]
-        run_id = state.active_run.run_id if state.active_run is not None else ""
+    def __call__(self, request: AgentRequest, *, state_ref: server.AppContext) -> RunResult:
+        self.calls.append({"task": request.task, "request": request})
+        state = state_ref
+        run_id = state.run_registry.current().run_id if state.run_registry.current() is not None else ""
         store = state.runtime_operations
         observed = store.load(SESSION, run_id) if store is not None else None
         self.observed_phases.append(observed.phase if observed is not None else None)
@@ -111,7 +112,7 @@ class ObservingWriter:
             raise step
         events, result = step
         for event in events:
-            kwargs["on_event"](event)
+            request.on_event(event)
         return result
 
 
@@ -151,7 +152,7 @@ def _pytest_project(td: Path) -> Path:
 
 
 def _runner(
-    state: server.State,
+    state: server.AppContext,
     writer: ObservingWriter,
     *,
     agent_run=None,
@@ -163,6 +164,7 @@ def _runner(
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -174,14 +176,14 @@ def _runner(
 
 def _run(
     runner: TaskRunDeps,
-    state: server.State,
+    state: server.AppContext,
     project: Path,
     writer: ObservingWriter,
     *,
     run_id: str = "",
 ) -> dict:
-    def observed_agent_run(provider, project_path, task, **kwargs):
-        return writer(provider, project_path, task, state_ref=state, **kwargs)
+    def observed_agent_run(request: AgentRequest):
+        return writer(request, state_ref=state)
 
     runner = replace(runner, agent_run=observed_agent_run)
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -197,17 +199,17 @@ def _run(
                 run_id=run_id,
             )
         )
-    return dict(state.last_terminal_event)
+    return dict(state.run_registry.last_terminal_event())
 
 
-def _operation(state: server.State, run_id: str):
+def _operation(state: server.AppContext, run_id: str):
     assert state.runtime_operations is not None
     operation = state.runtime_operations.load(SESSION, run_id)
     assert operation is not None
     return operation
 
 
-def _ledger_run_finished(state: server.State, run_id: str) -> dict:
+def _ledger_run_finished(state: server.AppContext, run_id: str) -> dict:
     assert state.run_ledgers is not None
     rows = [
         record.payload
@@ -218,7 +220,7 @@ def _ledger_run_finished(state: server.State, run_id: str) -> dict:
     return rows[-1]
 
 
-def _runtime_outcome(state: server.State, run_id: str) -> str:
+def _runtime_outcome(state: server.AppContext, run_id: str) -> str:
     assert state.runtime_log is not None
     projection = reduce_session(state.runtime_log.read(SESSION))
     return projection.operations[operation_id_for_run(run_id)].outcome
@@ -231,7 +233,7 @@ class CleanRunTerminalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             run_id = str(event["run_id"])
@@ -293,7 +295,7 @@ class CleanRunTerminalTests(unittest.TestCase):
             state_home = root / "state"
             run_id = "resume-run-1"
 
-            crashed_state = server.State(state_home)
+            crashed_state = server.AppContext(state_home)
             reserved = crashed_state.reserve_run(
                 session_id=SESSION,
                 project=str(project),
@@ -325,7 +327,7 @@ class CleanRunTerminalTests(unittest.TestCase):
             )
             crashed_state.release_run(run_id)
 
-            resumed_state = server.State(state_home)
+            resumed_state = server.AppContext(state_home)
             event = _run(
                 _runner(resumed_state, writer),
                 resumed_state,
@@ -375,7 +377,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         writer = ObservingWriter()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             runner = _runner(state, writer)
             assert state.runtime_log is not None
 
@@ -405,7 +407,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
     def test_research_terminal_uses_request_budget_for_runtime_phase(self) -> None:
         writer = ObservingWriter()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             runner = _runner(state, writer)
             runner = replace(runner, search_factory=lambda: object())
             result = ResearchRunResult(
@@ -435,7 +437,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                     )
                 )
 
-            event = dict(state.last_terminal_event)
+            event = dict(state.run_registry.last_terminal_event())
             operation = _operation(state, str(event["run_id"]))
             runtime_outcome = _runtime_outcome(state, str(event["run_id"]))
 
@@ -449,7 +451,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             root = Path(td)
             project = _pytest_project(root)
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             runner = _runner(state, writer)
             runner = replace(runner, search_factory=lambda: object())
             result = ResearchRunResult(
@@ -479,7 +481,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                     )
                 )
 
-            event = dict(state.last_terminal_event)
+            event = dict(state.run_registry.last_terminal_event())
             operation = _operation(state, str(event["run_id"]))
             runtime_outcome = _runtime_outcome(state, str(event["run_id"]))
 
@@ -501,7 +503,7 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             real_build = completion_engine_module.build_completion_decision
 
             def build_with_int_satisfied(**kwargs):
@@ -531,7 +533,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
@@ -562,7 +564,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             # One provider only: the failed repair round cannot switch, so
             # the ProviderActionError surfaces immediately.
             state.provider_failover_order = lambda: ("deepseek",)
@@ -586,7 +588,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
@@ -609,7 +611,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
@@ -626,7 +628,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
@@ -884,7 +886,7 @@ class PayloadHygieneTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             _run(_runner(state, writer), state, project, writer)
 
             assert state.runtime_log is not None
@@ -907,7 +909,7 @@ class PayloadHygieneTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
             assert state.runtime_log is not None

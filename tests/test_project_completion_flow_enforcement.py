@@ -9,6 +9,7 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.operations import project_completion_flow as project_completion_module
 from codey.agents.runner import RunResult
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
@@ -71,11 +72,11 @@ class ScriptedWriter:
         self.steps = list(steps)
         self.calls: list[dict[str, Any]] = []
 
-    def __call__(self, _provider, _project, task, **kwargs) -> RunResult:
-        self.calls.append({"task": task, "kwargs": kwargs})
+    def __call__(self, request: AgentRequest) -> RunResult:
+        self.calls.append({"task": request.task, "request": request})
         events, result = self.steps.pop(0)
         for event in events:
-            kwargs["on_event"](event)
+            request.on_event(event)
         return result
 
 
@@ -122,7 +123,7 @@ def _scoped_run_event(command: str, path: str, ok: bool) -> RunEvent:
     )
 
 
-def _runner(state: server.State, writer: ScriptedWriter) -> TaskRunDeps:
+def _runner(state: server.AppContext, writer: ScriptedWriter) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
@@ -130,6 +131,7 @@ def _runner(state: server.State, writer: ScriptedWriter) -> TaskRunDeps:
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -149,7 +151,7 @@ def _pytest_project(td: Path) -> Path:
     return project
 
 
-def _run(runner: TaskRunDeps, state: server.State, project: Path) -> dict:
+def _run(runner: TaskRunDeps, state: server.AppContext, project: Path) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         run_task_submission(runner, TaskSubmission(
             "s-enforce",
@@ -160,12 +162,12 @@ def _run(runner: TaskRunDeps, state: server.State, project: Path) -> dict:
             "deepseek",
             intent="project",
         ))
-    return dict(state.last_terminal_event)
+    return dict(state.run_registry.last_terminal_event())
 
 
-def _trace_payload(state: server.State) -> dict:
+def _trace_payload(state: server.AppContext) -> dict:
     assert state.run_traces is not None
-    path = state.run_traces.path_for("s-enforce", state.last_terminal_event["run_id"])
+    path = state.run_traces.path_for("s-enforce", state.run_registry.last_terminal_event()["run_id"])
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -176,7 +178,7 @@ def test_fresh_pass_allows_done_with_verified_receipt() -> None:
     ))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 1
@@ -202,16 +204,17 @@ def test_fresh_fail_runs_one_repair_round_then_completes() -> None:
     )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 2
         repair_call = writer.calls[1]
         assert repair_call["task"] == COMPLETION_REPAIR_FOLLOWUP
-        context_text = repair_call["kwargs"]["completion_repair_context"]
+        repair_request = repair_call["request"]
+        context_text = repair_request.completion_repair_context
         assert "Completion repair context. Facts only." in context_text
         assert "python -m pytest" in context_text
-        payload = repair_call["kwargs"]["completion_repair_context_payload"]
+        payload = repair_request.completion_repair_context_payload
         assert payload["admitted"] is True
         assert payload["failure_class"] == "product_failure"
 
@@ -261,7 +264,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
         project = Path(td) / "project"
         (project / "frontend" / "src").mkdir(parents=True)
         (project / "backend").mkdir(parents=True)
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=mock.Mock(side_effect=collect),
@@ -269,6 +272,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -297,7 +301,7 @@ def test_still_failing_after_repair_round_blocks_honestly() -> None:
     )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 2
@@ -335,7 +339,7 @@ def test_unobserved_verification_blocks_without_any_repair() -> None:
     ))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 1
@@ -353,7 +357,7 @@ def test_forbidden_verification_allows_limited_done() -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = _runner(state, writer)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -367,7 +371,7 @@ def test_forbidden_verification_allows_limited_done() -> None:
                 intent="project",
             ))
 
-        event = dict(state.last_terminal_event)
+        event = dict(state.run_registry.last_terminal_event())
 
         assert len(writer.calls) == 1
         assert event["stop_reason"] == "done"
@@ -401,7 +405,7 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = Path(td) / "project"
         (project / "src").mkdir(parents=True)
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=collect,
@@ -409,6 +413,7 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -429,7 +434,7 @@ def test_environment_failure_blocks_without_repair() -> None:
     )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         # The check could not even run: blocking is honest, repairing the
@@ -456,7 +461,7 @@ def test_dependency_failure_with_exit_one_blocks_without_repair() -> None:
     ))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 1
@@ -478,7 +483,7 @@ def test_exhausted_turn_budget_never_runs_an_extra_repair_turn() -> None:
     ))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 1
@@ -500,7 +505,7 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
     writer = ScriptedWriter(([_edit_event()], RunResult("trust me", "done", 2)))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=unavailable_changes),
@@ -508,6 +513,7 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -540,7 +546,7 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
     writer = ScriptedWriter(([_edit_event()], RunResult("reverted", "done", 2)))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=empty_git_changes),
@@ -548,6 +554,7 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -581,7 +588,7 @@ def test_docs_only_change_keeps_limited_done() -> None:
             "[tool.pytest.ini_options]\n",
             encoding="utf-8",
         )
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         runner = TaskRunDeps(state=state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=docs_changes),
@@ -589,6 +596,7 @@ def test_docs_only_change_keeps_limited_done() -> None:
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -613,7 +621,7 @@ def test_repair_phase_ending_in_max_turns_becomes_blocked() -> None:
     )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 2
@@ -633,7 +641,7 @@ def test_user_stop_during_repair_stays_stopped_not_fake_done() -> None:
     )
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         event = _run(_runner(state, writer), state, project)
 
         assert len(writer.calls) == 2

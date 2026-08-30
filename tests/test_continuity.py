@@ -15,7 +15,7 @@ class LocalContinuityTests(unittest.TestCase):
         script = (
             "import os,sys; from pathlib import Path; from codey.app import server; "
             "from codey.agents.handoff import ConversationSnapshot; "
-            "root=Path(sys.argv[1]); state=server.State(sys.argv[2]); "
+            "root=Path(sys.argv[1]); state=server.AppContext(sys.argv[2]); "
             "state.project_facts.record_success(root,'.','python -m unittest'); "
             "context=state.conversation_for('chat-1'); "
             "context.begin_window('deepseek','project',str(root.resolve())); "
@@ -37,7 +37,7 @@ class LocalContinuityTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            restarted = server.State(state_td)
+            restarted = server.AppContext(state_td)
             facts = restarted.project_facts.render(root)
             conversation = restarted.conversation_for("chat-1")
             tracker = restarted.change_tracker_for(root, persistent=True)

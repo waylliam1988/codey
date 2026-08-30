@@ -22,6 +22,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
@@ -33,6 +34,10 @@ from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("baseline", "hint")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
 MIN_SYMBOL_LEN = 5
@@ -424,7 +429,7 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         root = Path(td)
         _write_project(root, case.files)
         probe = _RefactorHintProbe(arm=arm)
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

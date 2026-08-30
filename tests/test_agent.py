@@ -7,7 +7,10 @@ from pathlib import Path
 from unittest import mock
 
 from codey.runtime import cancellation
+from codey.agents import context as agent_context
+from codey.agents import protocol as agent_protocol
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.runtime.events import render_run_event
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
@@ -37,6 +40,10 @@ class FakeProvider:
         del timeout
         self.sent.append(_text)
         return self.replies.pop(0)
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
     def close(self) -> None:
         pass
@@ -527,8 +534,8 @@ class ToolTests(unittest.TestCase):
 class ProjectInstructionTests(unittest.TestCase):
     def test_missing_project_instructions_returns_empty_list(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            self.assertEqual(agent.load_project_instructions(Path(td)), [])
-            self.assertEqual(agent.format_project_instructions([]), "")
+            self.assertEqual(agent_context.load_project_instructions(Path(td)), [])
+            self.assertEqual(agent_context.format_project_instructions([]), "")
 
     def test_loads_root_agent_and_claude_instructions(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -536,12 +543,12 @@ class ProjectInstructionTests(unittest.TestCase):
             (root / "AGENTS.md").write_text("Use tests first.\n", encoding="utf-8")
             (root / "CLAUDE.md").write_text("Keep changes small.\n", encoding="utf-8")
 
-            docs = agent.load_project_instructions(root)
+            docs = agent_context.load_project_instructions(root)
 
             self.assertEqual([doc.name for doc in docs], ["AGENTS.md", "CLAUDE.md"])
             self.assertEqual(docs[0].content, "Use tests first.\n")
             self.assertFalse(docs[0].truncated)
-            formatted = agent.format_project_instructions(docs)
+            formatted = agent_context.format_project_instructions(docs)
             self.assertIn("--- AGENTS.md ---", formatted)
             self.assertIn("Keep changes small.", formatted)
 
@@ -571,7 +578,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            agent.run(
+            run_agent(
                 provider,
                 root,
                 "inspect this project",
@@ -595,7 +602,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "AGENTS.md").write_text("Use tests first.\n", encoding="utf-8")
 
-            agent.run(
+            run_agent(
                 provider,
                 root,
                 "update this project",
@@ -625,7 +632,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            agent.run(
+            run_agent(
                 provider,
                 root,
                 "update this project",
@@ -648,7 +655,7 @@ class RunLoopTests(unittest.TestCase):
         }))
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Discuss the product first. Do not write code.",
@@ -663,7 +670,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Review project structure",
@@ -679,7 +686,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Review project config",
@@ -698,7 +705,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Review project config",
@@ -715,7 +722,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Implement the researched tool",
@@ -735,7 +742,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Plan the change",
@@ -756,7 +763,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Implement the change",
@@ -779,7 +786,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Plan the change",
@@ -800,7 +807,7 @@ class RunLoopTests(unittest.TestCase):
     def test_project_intro_includes_local_execution_checkpoint_when_provided(self) -> None:
         provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Continue the task",
@@ -838,7 +845,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertGreater(len(rendered_checkpoint), 3000)
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Continue the task",
@@ -859,7 +866,7 @@ class RunLoopTests(unittest.TestCase):
             raise OSError("listing unavailable")
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Continue without listing",
@@ -884,7 +891,7 @@ class RunLoopTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaises(cancellation.TaskCancelled):
-                agent.run(
+                run_agent(
                     provider,
                     Path(td),
                     "Stop during context assembly",
@@ -905,7 +912,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py",
@@ -949,7 +956,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Find calculate_total references",
@@ -973,7 +980,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py",
@@ -1000,7 +1007,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Update app.py",
@@ -1034,7 +1041,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            agent.run(
+            run_agent(
                 provider,
                 root,
                 "Read app.py",
@@ -1054,7 +1061,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py",
@@ -1086,7 +1093,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("original\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Inspect only",
@@ -1114,7 +1121,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py",
@@ -1142,7 +1149,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read then create new.txt",
@@ -1174,7 +1181,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "safe.py").write_text("SAFE = True\n", encoding="utf-8")
             (root / "app.py").write_text("original\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Inspect safely",
@@ -1205,7 +1212,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Create app.py",
@@ -1243,7 +1250,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "first.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Create second.txt.",
@@ -1287,7 +1294,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Run tests",
@@ -1321,7 +1328,7 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider(direct_answer, done)
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Answer if changes are needed.",
@@ -1345,7 +1352,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Inspect app.py",
@@ -1373,7 +1380,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py from the beginning.",
@@ -1405,7 +1412,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "first.py").write_text("FIRST = 1\n", encoding="utf-8")
             (root / "second.py").write_text("SECOND = 2\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read the second file.",
@@ -1431,7 +1438,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read app.py from the beginning.",
@@ -1470,7 +1477,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Update app.py.",
@@ -1504,7 +1511,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Update app.py.",
@@ -1530,7 +1537,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Read the relevant page",
@@ -1578,7 +1585,7 @@ class RunLoopTests(unittest.TestCase):
             ))
             context.used_tokens = 149
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Add the final test",
@@ -1626,7 +1633,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Check app.py and run tests if you change it.",
@@ -1657,7 +1664,7 @@ class RunLoopTests(unittest.TestCase):
             ))
             context.used_tokens = 149
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Finish the task",
@@ -1677,7 +1684,7 @@ class RunLoopTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaisesRegex(RuntimeError, "button missing"):
-                agent.run(
+                run_agent(
                     provider,
                     Path(td),
                     "Continue safely",
@@ -1708,7 +1715,7 @@ class RunLoopTests(unittest.TestCase):
             context.used_tokens = 149
 
             with self.assertRaisesRegex(TimeoutError, "send failed"):
-                agent.run(
+                run_agent(
                     provider,
                     root,
                     "Finish the task",
@@ -1730,7 +1737,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("def value():\n    return 'old'\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read, reply, done),
                 root,
                 "update app",
@@ -1759,7 +1766,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("def value():\n    return 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Change value without running checks.",
@@ -1800,7 +1807,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("VALUE = 1\nNAME = 'old'\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read, edit, done),
                 root,
                 "update both values",
@@ -1833,7 +1840,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read, reply, done),
                 root,
                 "update app",
@@ -1852,7 +1859,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply, done),
                 root,
                 "create app",
@@ -1874,7 +1881,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(edit, read, retry, done),
                 root,
                 "update app",
@@ -1899,7 +1906,7 @@ class RunLoopTests(unittest.TestCase):
             original = "first = 1\nsecond = 2\nthird = 3\n"
             path.write_text(original, encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read, overwrite, done),
                 root,
                 "update large.py",
@@ -1938,7 +1945,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(edit, done),
                 root,
                 "update app",
@@ -1964,7 +1971,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read_missing, edit, done),
                 root,
                 "update app",
@@ -1985,7 +1992,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(write, done),
                 root,
                 "create a new file",
@@ -2005,7 +2012,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(write, edit, done),
                 root,
                 "create and update a new file",
@@ -2027,7 +2034,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read_files, edit, done),
                 root,
                 "update app",
@@ -2053,7 +2060,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read_parallel, edit, done),
                 root,
                 "update app",
@@ -2083,7 +2090,7 @@ class RunLoopTests(unittest.TestCase):
             for name in paths:
                 (root / name).write_text(f"{name}\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read_files, done),
                 root,
                 "read files",
@@ -2130,7 +2137,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply, done),
                 root,
                 "read and edit",
@@ -2171,7 +2178,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply, done),
                 root,
                 "inspect references",
@@ -2204,7 +2211,7 @@ class RunLoopTests(unittest.TestCase):
 
         events = []
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(parallel, done),
                 Path(td),
                 "handle search failure",
@@ -2244,7 +2251,7 @@ class RunLoopTests(unittest.TestCase):
             return tool_runtime.ToolOutcome("exit 0: ok", True, exit_code=0)
 
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply, done),
                 Path(td),
                 "run tests",
@@ -2269,7 +2276,7 @@ class RunLoopTests(unittest.TestCase):
             path = root / "src" / "app.py"
             path.write_text("old\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(read, edit, done),
                 root,
                 "update app",
@@ -2300,7 +2307,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply, done),
                 root,
                 "read app",
@@ -2317,7 +2324,7 @@ class RunLoopTests(unittest.TestCase):
         requests: list[tuple[str, str]] = []
         events = []
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(reply),
                 Path(td),
                 "check git",
@@ -2335,7 +2342,7 @@ class RunLoopTests(unittest.TestCase):
         done = '{"tool":"done","args":{"summary":"not run"}}'
         events = []
         with tempfile.TemporaryDirectory() as td:
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(shell, done),
                 Path(td),
                 "check git",
@@ -2370,7 +2377,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Fix app.py, then run python -m unittest.",
@@ -2397,7 +2404,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
             (root / "test_app.py").write_text("import app\n\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "In app.py change VALUE from 1 to 2. Do not run any commands; report done once edited.",
@@ -2435,22 +2442,22 @@ class RunLoopTests(unittest.TestCase):
 
     def test_negated_setup_command_does_not_hide_explicit_verification_request(self) -> None:
         self.assertFalse(
-            agent.task_requests_verification(
+            agent_protocol.task_requests_verification(
                 "Do not run any commands; report done once edited."
             )
         )
         self.assertTrue(
-            agent.task_forbids_verification(
+            agent_protocol.task_forbids_verification(
                 "Do not run any commands; report done once edited."
             )
         )
         self.assertTrue(
-            agent.task_requests_verification(
+            agent_protocol.task_requests_verification(
                 "Do not run npm install; run python -m py_compile app.py after editing."
             )
         )
         self.assertFalse(
-            agent.task_forbids_verification(
+            agent_protocol.task_forbids_verification(
                 "Do not run npm install; run python -m py_compile app.py after editing."
             )
         )
@@ -2474,7 +2481,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Update app.py, then run python -m py_compile app.py.",
@@ -2510,7 +2517,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Fix app.py, then run python -m unittest.",
@@ -2538,7 +2545,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(run, read, edit, done),
                 root,
                 "update app",
@@ -2559,7 +2566,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 FakeProvider(run_ok, read, edit, run_fail, done),
                 root,
                 "update app",
@@ -2583,7 +2590,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2609,7 +2616,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2655,7 +2662,7 @@ class RunLoopTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2683,7 +2690,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2704,7 +2711,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "continue update",
@@ -2734,7 +2741,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2761,7 +2768,7 @@ class RunLoopTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
             (root / "other.py").write_text("VALUE = 0\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app",
@@ -2783,7 +2790,7 @@ class RunLoopTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "create project config",
@@ -2809,7 +2816,7 @@ class RunLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.js").write_text("old\n", encoding="utf-8")
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "update app metadata",
@@ -2841,7 +2848,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="fake",
             )
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Read the page then finish",
@@ -2881,7 +2888,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="fake",
             )
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Read the page then finish",
@@ -2920,7 +2927,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="fake",
             )
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Read the page then finish",
@@ -2961,7 +2968,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="fake",
             )
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "Create the file with a local tool",
@@ -3003,7 +3010,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
             root = Path(td)
             (root / "main.py").write_text("print('hello')\n", encoding="utf-8")
             events: list[str] = []
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 "read main.py",

@@ -134,7 +134,7 @@ def _run_case(
 ) -> dict[str, object]:
     started = time.time()
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         provider = _new_provider(provider_id, provider_factory)
         try:
             runner = _runner(state)
@@ -163,7 +163,7 @@ def _run_case(
                 intent = "chat" if case.kind == "explicit" else "auto"
                 run_task_submission(runner, TaskSubmission("s1", None, case.prompt, 8, False, provider_id, intent=intent))
                 state.wait_for_ghost_sleep(timeout=2)
-            terminal = state.last_terminal_event or {}
+            terminal = state.run_registry.last_terminal_event() or {}
             return _score_case(case, arm, state, terminal, provider, elapsed_seconds=time.time() - started)
         except Exception as exc:
             return _failure_row(case, arm, exc, elapsed_seconds=time.time() - started)
@@ -180,7 +180,7 @@ def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | 
     return _RecordingProvider(connect_fresh_provider_tab(provider_id))
 
 
-def _runner(state: server.State) -> TaskRunDeps:
+def _runner(state: server.AppContext) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -188,6 +188,7 @@ def _runner(state: server.State) -> TaskRunDeps:
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -198,7 +199,7 @@ def _runner(state: server.State) -> TaskRunDeps:
     )
 
 
-def _seed_case(state: server.State, case: AffinityCase, *, arm: str) -> None:
+def _seed_case(state: server.AppContext, case: AffinityCase, *, arm: str) -> None:
     assert state.ghost_affinity is not None
     if case.kind == "chat":
         _seed_directive_case(state, arm=arm)
@@ -215,7 +216,7 @@ def _seed_case(state: server.State, case: AffinityCase, *, arm: str) -> None:
             )
 
 
-def _seed_directive_case(state: server.State, *, arm: str) -> None:
+def _seed_directive_case(state: server.AppContext, *, arm: str) -> None:
     assert state.ghost_hebbian is not None
     state.ghost_hebbian._write_projection(
         (
@@ -481,7 +482,7 @@ def _write_work_snapshot(store, items) -> None:
 
 
 class _patch_provider:
-    def __init__(self, state: server.State, provider: object) -> None:
+    def __init__(self, state: server.AppContext, provider: object) -> None:
         self.state = state
         self.provider = provider
         self.patch = None
@@ -499,7 +500,7 @@ class _patch_provider:
 def _score_case(
     case: AffinityCase,
     arm: str,
-    state: server.State,
+    state: server.AppContext,
     terminal: dict[str, object],
     provider: object,
     *,

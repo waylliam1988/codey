@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.completion import engine as completion_engine_module
 from codey.completion.edit_integrity import observe_edit_integrity
@@ -76,11 +77,11 @@ class ScriptedWriter:
         self.steps = list(steps)
         self.calls: list[dict] = []
 
-    def __call__(self, _provider, _project, task, **kwargs) -> RunResult:
-        self.calls.append({"task": task, "kwargs": kwargs})
+    def __call__(self, request: AgentRequest) -> RunResult:
+        self.calls.append({"task": request.task, "request": request})
         events, result = self.steps.pop(0)
         for event in events:
-            kwargs["on_event"](event)
+            request.on_event(event)
         return result
 
 
@@ -107,6 +108,7 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunDep
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -128,6 +130,7 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -148,12 +151,12 @@ def _run(runner: TaskRunDeps, state, project: Path, task: str) -> dict:
             "deepseek",
             intent="project",
         ))
-    return dict(state.last_terminal_event)
+    return dict(state.run_registry.last_terminal_event())
 
 
 def _trace_payload(state) -> dict:
     assert state.run_traces is not None
-    path = state.run_traces.path_for("s-integrity", state.last_terminal_event["run_id"])
+    path = state.run_traces.path_for("s-integrity", state.run_registry.last_terminal_event()["run_id"])
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -169,7 +172,7 @@ class TamperedFixtureRunTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(
                 _runner(state, writer, files=("tests/test_mod.py",)),
                 state,
@@ -208,7 +211,7 @@ class TamperedFixtureRunTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             runner = _runner(state, writer, files=("tests/test_mod.py",))
             with mock.patch(
                 "codey.operations.project_completion_flow.record_project_memory",
@@ -237,7 +240,7 @@ class CleanRunTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(
                 _runner(state, writer, files=("src/mod.py",)),
                 state,
@@ -270,7 +273,7 @@ class MissingDiffRunTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             missing_diff = _changes("src/mod.py")
             missing_diff["diff"] = ""
             event = _run(
@@ -314,7 +317,7 @@ class RepairRoundTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(
                 _runner_with_changes(
                     state,
@@ -353,7 +356,7 @@ class RepairRoundTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             event = _run(
                 _runner_with_changes(
                     state,
@@ -404,7 +407,7 @@ class MonitorFailureTests(unittest.TestCase):
             project = Path(td) / "project"
             (project / "src").mkdir(parents=True)
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             with mock.patch.object(
                 completion_engine_module,
                 "observe_edit_integrity",
@@ -439,7 +442,7 @@ class TerminalReceiptProjectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = Path(td) / "project"
             project.mkdir()
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             assert state.run_ledgers is not None
             writer = state.run_ledgers.open(
                 run_id="run-terminal",

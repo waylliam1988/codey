@@ -10,11 +10,10 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
-import uuid
 
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -39,6 +38,14 @@ MAX_CONTINUITY_WARNINGS = 20
 MAX_CONTINUITY_TEXT_CHARS = 160
 MAX_CONTINUITY_METADATA_KEYS = 12
 _PROJECTION_KIND = "ghost_continuity_projection"
+_CONTINUITY_EVENT_TYPES = frozenset(
+    {
+        "ghost_continuity_item_upsert",
+        "ghost_continuity_synced",
+        "ghost_continuity_scope_deleted",
+        "ghost_continuity_events_compacted",
+    }
+)
 
 CONTINUITY_KINDS = frozenset(
     {
@@ -204,6 +211,17 @@ class GhostContinuityStore:
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
 
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=CONTINUITY_SCHEMA_VERSION,
+            max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
+            max_warnings=MAX_CONTINUITY_WARNINGS,
+            source_name="continuity_events.jsonl",
+            allowed_event_kinds=_CONTINUITY_EVENT_TYPES,
+            bad_row_policy="quarantine_tail",
+        )
+
     def sync_from_sources(
         self,
         *,
@@ -297,12 +315,15 @@ class GhostContinuityStore:
                         )
                     )
                     if not self._append_events(events):
-                        self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
-                        return GhostContinuityResult(
-                            False,
-                            skipped_reason="event_write_failed",
-                            warnings=self.last_warnings,
-                        )
+                        try:
+                            self._rewrite_events_from_items(merged)
+                        except (OSError, TypeError, ValueError):
+                            self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
+                            return GhostContinuityResult(
+                                False,
+                                skipped_reason="event_write_failed",
+                                warnings=self.last_warnings,
+                            )
                 elif projection_changed:
                     self._rewrite_events_from_items(merged)
                 self._write_projection(merged, now=now, warnings=warnings)
@@ -516,60 +537,18 @@ class GhostContinuityStore:
         )
 
     def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        rows = [event for event in events if isinstance(event, dict)]
-        if not rows:
-            return True
-        try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                for event in rows:
-                    handle.write(_json_line(event))
-            return True
-        except (OSError, TypeError, ValueError):
-            return False
+        return self._event_log().append(events)
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
-        self._events_read_blocked = False
-        try:
-            if self.events_path.stat().st_size > MAX_CONTINUITY_EVENTS_BYTES:
-                self.last_warnings = ("continuity_events_too_large",)
-                self._events_read_blocked = True
-                return []
-        except OSError:
-            return []
-        rows: list[dict[str, object]] = []
-        try:
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("continuity_events_unreadable",)
-            self._events_read_blocked = True
-            return []
-        for line in lines:
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("schema_version") == CONTINUITY_SCHEMA_VERSION:
-                rows.append(payload)
-        return rows
+        read = self._event_log().read()
+        self._events_read_blocked = read.blocked
+        self.last_warnings = _event_read_warnings(read.warnings)
+        return list(read.rows)
 
     def _rewrite_events_from_items(self, items: Iterable[GhostContinuityItem]) -> None:
         rows = [_item_event(item, action="upsert") for item in _bounded_items(items)]
         rows.append(_control_event("ghost_continuity_events_compacted", {"items": len(rows)}))
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                for row in rows:
-                    handle.write(_json_line(row).encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic(rows)
 
     def _compact_if_needed(self, items: Iterable[GhostContinuityItem]) -> None:
         try:
@@ -1257,20 +1236,20 @@ def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "continuity_events.jsonl:too_large":
+            mapped.append("continuity_events_too_large")
+        elif warning == "continuity_events.jsonl:unreadable":
+            mapped.append("continuity_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return _bounded_warnings(mapped)
+
+
 def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
     return tuple(-ord(ch) for ch in str(value or ""))
-
-
-def _json_line(value: dict[str, object]) -> str:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        + "\n"
-    )
 
 
 def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:

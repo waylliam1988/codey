@@ -22,6 +22,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.runtime.events import RunEvent, render_run_event
@@ -32,6 +33,10 @@ from codey.toolchain.runtime import edit_file as runtime_edit_file
 
 
 ARMS = ("baseline", "hint")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 TARGET = "limits.py"
 VALID_DEF = "def clamp(value):\n"
 BROKEN_DEF = "def clamp(value)\n"
@@ -135,7 +140,7 @@ def _run_arm(
         root = Path(td)
         _write_project(root)
         probe = _EditProbe(root, arm=arm, inject_fault=inject_fault)
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             TASK,

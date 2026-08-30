@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from codey.runtime.outcome import OperationOutcome, operation_outcome_from_stop_reason
-from codey.runtime.reducer import reduce_session
+from codey.runtime.reducer import RuntimeProjection
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import project_key, session_key
 
@@ -456,13 +456,14 @@ class RuntimeOperationStore:
                 updated_at=now,
                 task_kind=_text(task_kind, "task_kind"),
             )
-            entries = self.session_log.read(session)
-            existing = _existing_open_phase(entries, state)
-            if existing is not None:
-                return existing
+            projection = self.session_log.projection(session)
+            if _operation_is_open(projection, state):
+                existing = self.load(session, run)
+                if existing is not None:
+                    return existing
             self.session_log.append_many(
                 session,
-                _start_entries(entries, state),
+                _start_entries(projection, state),
             )
         except Exception:
             return None
@@ -473,7 +474,7 @@ class RuntimeOperationStore:
         lane = lane_for_run(str(run_id or ""))
         latest: RuntimeOperationState | None = None
         try:
-            entries = self.session_log.read(session_id)
+            entries = self.session_log.entries(session_id)
         except Exception:
             return None
         for entry in entries:
@@ -531,11 +532,8 @@ class RuntimeOperationStore:
 
     def delete_session(self, session_id: str) -> None:
         try:
-            path = self.session_log.path_for(session_id)
-            path.unlink()
-        except FileNotFoundError:
-            return
-        except OSError:
+            self.session_log.delete_session(session_id)
+        except Exception:
             return
 
 
@@ -763,10 +761,9 @@ def _operation_started_entry(state: RuntimeOperationState) -> dict[str, object]:
 
 
 def _start_entries(
-    entries: tuple[object, ...],
+    projection: RuntimeProjection,
     state: RuntimeOperationState,
 ) -> tuple[dict[str, object], ...]:
-    projection = reduce_session(entries)
     existing = projection.operations.get(state.operation_id)
     if existing is None:
         return (_operation_started_entry(state), _phase_entry(state))
@@ -775,32 +772,16 @@ def _start_entries(
     return (_phase_entry(state),)
 
 
-def _existing_open_phase(
-    entries: tuple[object, ...],
+def _operation_is_open(
+    projection: RuntimeProjection,
     state: RuntimeOperationState,
-) -> RuntimeOperationState | None:
-    projection = reduce_session(entries)
+) -> bool:
     existing = projection.operations.get(state.operation_id)
     if existing is None:
-        return None
+        return False
     if existing.lane != state.lane or existing.status != "open":
         raise RuntimeOperationTransitionError("task operation is not open")
-    latest: RuntimeOperationState | None = None
-    for entry in entries:
-        if entry.operation_id != state.operation_id or entry.kind != "operation_effect":
-            continue
-        if entry.payload.get("effect_kind") != "run_phase":
-            continue
-        phase = RuntimeOperationState.from_payload(entry.payload.get("state"))
-        if (
-            phase is not None
-            and phase.session_id == state.session_id
-            and phase.run_id == state.run_id
-            and phase.operation_id == state.operation_id
-            and phase.lane == state.lane
-        ):
-            latest = phase
-    return latest
+    return True
 
 
 def _outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:

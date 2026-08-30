@@ -21,6 +21,7 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
@@ -158,7 +159,7 @@ def _run_case(
         if case.project:
             project.mkdir()
             (project / "app.py").write_text("value = 1\n", encoding="utf-8")
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         session_id = f"{arm}-{case.name}"
         if arm == "queue":
             _seed_case_item(state, case, project if case.project else None, session_id=session_id)
@@ -167,8 +168,8 @@ def _run_case(
         research_calls = 0
         review_calls = 0
 
-        def agent_run(*_args, **kwargs):
-            permission = str(kwargs.get("permission_profile") or "")
+        def agent_run(request: AgentRequest):
+            permission = request.permission_profile
             agent_calls.append(permission)
             changed = permission == "coding_writer"
             return RunResult(
@@ -202,6 +203,7 @@ def _run_case(
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -255,7 +257,7 @@ def _run_case(
                     provider.close()
             except Exception:
                 pass
-        done = dict(state.last_terminal_event or {})
+        done = dict(state.run_registry.last_terminal_event() or {})
         start = _last_start_event(events)
         observed = _observed_mode(start, done, agent_calls, research_calls, review_calls)
         item_rows = state.ghost_work_queue.list_items() if state.ghost_work_queue is not None else ()
@@ -369,7 +371,7 @@ def _proof_record(question: str, *, run_id: str):
 
 
 def _seed_case_item(
-    state: server.State,
+    state: server.AppContext,
     case: WorkQueueCase,
     project: Path | None,
     *,
@@ -446,7 +448,7 @@ def _write_work_snapshot(store, items) -> None:
 
 
 class _patched_provider:
-    def __init__(self, state: server.State, provider: Any) -> None:
+    def __init__(self, state: server.AppContext, provider: Any) -> None:
         self.state = state
         self.provider = provider
         self.patch = None

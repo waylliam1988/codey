@@ -115,7 +115,7 @@ Source / Evidence / Claim / Assumption / AnalysisRun / Artifact / Review
 - `ghost/extractor.py`、`ghost/inbox.py`、`ghost/hebbian.py` 让长期偏好和纠错先进候选区，再被审计接受。
 - `ghost/directive.py` 和 `context_source.py` 让本地连续性以有预算的中性文本进入 prompt，且不能授权工具。
 - `ghost/learning_loop.py`、`ghost/continuity.py`、`ghost/sleep.py` 让 Codey 能记住长期主题、开放问题和用户偏好，但不保存完整聊天正文。
-- `ghost/router.py` 让 Ghost 只提出意图；手动入口、PermissionProfile 和 TaskRunner 仍然优先。
+- `ghost/router.py` 让 Ghost 只提出意图；手动入口、PermissionProfile 和 TaskRuntime/operation function 仍然优先。
 - `ghost/work_queue.py` 和 `knowledge/research_interest.py` 让开放问题变成可追踪 work item，完成时需要 proof refs。
 - `ghost/affinity.py` 让长期主题能排序和衰减，但关联边不等于事实。
 - `Research Notes v2` 和 `research/controller.py` 让 Research 仍然是用户显式开启的受控闭环。
@@ -140,7 +140,8 @@ User
        - route intention
        - Ghost Directive
   -> Codey Action Layer
-       - TaskRunner
+       - TaskRuntime
+       - operation functions
        - ResearchRunner
        - ToolRuntime
        - PermissionProfile
@@ -345,7 +346,7 @@ ChatGPT/Cursor 式交互
 11. Ghost 必须从第一版就有 disable、export、reset 和 delete scope 的控制入口；UI 可以晚做，控制权不能晚给。
 12. `state_home=None` 时 Ghost 写入默认禁用，避免测试、嵌入和一次性脚本写入真实长期状态。
 13. Ghost 的长期意图必须落成可审计 work item，不能变成隐藏后台冲动。
-14. Work item 可以建议下一步，但不能绕过用户显式入口、PermissionProfile 或 TaskRunner。
+14. Work item 可以建议下一步，但不能绕过用户显式入口、PermissionProfile 或 TaskRuntime。
 15. 版本号可以出现在 roadmap 标题或 release label 里，例如 `Tool Contract v2`
     和 `Action Policy Pipeline v1`；长期 API、类型、模块、字段名不要用
     `V2`、`Next`、`New` 这类迁移期命名。应该演进稳定名字，例如
@@ -3250,7 +3251,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3253 passed, 16 skipped in 306.31s` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3263 passed, 16 skipped in 284.42s` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 
@@ -3267,8 +3268,8 @@ TaskSubmission
 operation identity 只保留一条：
 
 ```text
-operation_id = task:<hash(run_id)>
-lane         = task:<hash(run_id)>
+operation_id = task:<sha256(run_id)[:24]>
+lane         = run:<session_key(run_id)[:24]>
 ```
 
 发布前已删除外层 `runtime:<run_id>` 语义；`TaskRuntime`、`RuntimeOperationStore`、terminal settlement 和 Run Details 共用同一条 task operation。这个选择是有意的，不是 parent/child 过渡结构：一次用户任务只有一条 durable operation，phase effect 与最终 outcome 都挂在同一条 operation 上。
@@ -3287,6 +3288,27 @@ terminal
 ```
 
 `RuntimeOperationStore.start()` 会恢复同一个 open operation 的最新 phase，不会把 resume 重新写回 `accepted`；相同 phase commit 幂等返回当前 projection，不制造重复 effect。scheduler 负责 open operation 一定 settle：正常返回、stop/cancel、业务异常和未知异常都会先写 settlement，再按调用策略返回或 re-raise。
+
+`RuntimeSessionLog` 维护进程内 entries + projection cache。append 仍通过 reducer
+做增量 fail-closed 校验；`RuntimeOperationStore.load()` 在文件大小未变化时从缓存
+entries 扫描当前 run phase，不再让每次 phase commit 都全量读盘。外部写入、
+compaction 和 delete session 会触发缓存重建或失效。
+
+### AgentRunner 拆分
+
+0.5.1 也收掉 runner.py 的宽接口债务，但只做 ownership 拆分，不改变 prompt 或
+tool 协议：
+
+```text
+codey.agents.protocol  JSON protocol repair / edit parsing / verification text helpers
+codey.agents.context   project instructions + prompt context assembly
+codey.agents.request   AgentRequest
+codey.agents.runner    run(AgentRequest) + loop state
+```
+
+调用方不再传一长串关键字参数；server/headless/project completion/planning/task_run 都构造
+`AgentRequest`。循环内部的 progress、verification、stagnation 也变成显式 state
+object，避免继续在大函数 locals 里长出隐式生命周期。
 
 ### TaskFlow 删除后的 owner
 
@@ -3310,6 +3332,14 @@ codey.task.model                         TaskSubmission model-only boundary
 
 `codey/task/service.py` 和 `codey/operations/task_flow.py` 均已删除；`codey.task` 不导出 `TaskFlow`。server/headless/manual harness 只认 `task_entry.run_task_submission()` 这个稳定公共面；测试按 owner patch `research_flow`、`project_completion_flow`、`ghost_post_turn` 等模块，不再要求生产类保留私有方法。
 
+### AppContext 收敛
+
+`server.State` 已重命名并收敛为 `AppContext`。它不再提供 `project`、`task`、
+`active_run`、`provider_supervisor` 这类转发 property；生产调用直接走
+`run_registry`、`event_bus`、`providers` 等 owner。无 `state_home` 的 AppContext 也会创建
+ephemeral runtime log / operation store / workspace revision store，让测试和 headless 路径
+无条件经过同一 runtime 内核，而不是靠缺省 fallback 跳过 runtime。
+
 ### Crash / Resume
 
 0.5.1 的 smoke 不再只是“kill 后读最后 phase”。manual self-test 会：
@@ -3318,7 +3348,7 @@ codey.task.model                         TaskSubmission model-only boundary
 1. 启动真实 headless child run
 2. 等到同一条 task operation 到 writer_running
 3. hard kill child
-4. fresh State / fresh RuntimeOperationStore 读回 writer_running
+4. fresh AppContext / fresh RuntimeOperationStore 读回 writer_running
 5. 用同一个 run_id 重新提交
 6. 验证只有一条 operation_started、同一 lane terminal settled、Details 不显示 stale Progress
 ```
@@ -3340,6 +3370,21 @@ runtime log 还会在同一把文件锁下做 replay 等价 compaction，只保�
 
 测试必须迁就新架构：research harness patch `codey.operations.research_flow.run_research_iteration`；project completion 测试 patch `codey.operations.project_completion_flow` 的公开 operation/helper，而不是要求生产类保留旧私有方法。
 
+### Workspace Revision，不是 Context Epoch
+
+0.5.1 落地的是 workspace revision：项目文件状态的递增版本，用来判断 verification
+observation 是否还能支撑 completion proof。它和 0.4.14 已有的
+`workspace/context_epoch.py` 不是同一个概念：
+
+```text
+context epoch       = prompt 看见了哪些 source refs / digest，服务溯源审计
+workspace revision  = 项目文件状态第几版，服务 verification freshness
+```
+
+因此 proof provenance 里两者互补：`ctx_epoch_ref` 证明模型当时看见了什么；
+`workspace_revision` 证明验证观察针对的是哪一个项目状态。冷启动不做旧 checkpoint
+兼容：没有 revision 的 seed check 不能继承 green，宁可多跑一次验证。
+
 ### 验证
 
 ```text
@@ -3349,7 +3394,7 @@ task_entry / project_completion / edit-integrity / completion-enforcement / anal
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
 manual completion_operation_resume_smoke.py --self-test 通过
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
-全量 pytest 3253 passed, 16 skipped in 306.31s
+全量 pytest 3263 passed, 16 skipped in 284.42s
 ```
 
 ### A/B

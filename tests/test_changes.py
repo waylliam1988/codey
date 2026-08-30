@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
@@ -247,14 +248,14 @@ class ChangeTrackerTests(unittest.TestCase):
             tracker = ChangeTracker(root, store)
 
             with mock.patch.object(store, "put_baseline", side_effect=OSError("disk full")):
-                agent.run(
-                    FakeProvider(write, done),
-                    root,
-                    "update app",
+                agent.run(AgentRequest(
+                    provider=FakeProvider(write, done),
+                    project=root,
+                    task="update app",
                     fresh_chat=False,
                     change_tracker=tracker,
                     on_event=lambda _event: None,
-                )
+                ))
 
             self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
             self.assertFalse(tracker.has_snapshots)

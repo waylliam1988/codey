@@ -35,6 +35,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.runtime.events import RunEvent, render_run_event
 from codey.knowledge.brief import KnowledgeBriefBuilder
@@ -58,6 +59,10 @@ from tests.manual.ab_journal import ABJournalWriter
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.
 TracingProvider = common.TracingProvider
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 ARMS = ("baseline", "projection")
@@ -365,7 +370,7 @@ def _run_arm(
         root = Path(td).resolve()
         _write_case(root)
         prompts_before = len(provider.prompts)
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             TASK,

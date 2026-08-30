@@ -236,9 +236,9 @@ class TimedProvider:
 
 
 @contextmanager
-def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.State]:
-    state = codey_server.State(state_home)
-    original_state = codey_server.STATE
+def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.AppContext]:
+    state = codey_server.AppContext(state_home)
+    original_state = codey_server.AppContext
     original_connect_provider = codey_server.connect_provider
     original_connect_existing = codey_server.connect_existing_provider
     original_borrow_open_provider = codey_server.borrow_open_provider
@@ -351,7 +351,7 @@ def verify_snake_project(project: Path) -> dict:
 
 def run_task(
     *,
-    state: codey_server.State,
+    state: codey_server.AppContext,
     recorder: FlowRecorder,
     session_id: str,
     project: Path | None,
@@ -367,7 +367,7 @@ def run_task(
         continue_task=continue_task,
         provider_id=WRITER_ID,
     )
-    terminal = state.last_terminal_event or {}
+    terminal = state.run_registry.last_terminal_event() or {}
     recorder.event("task_terminal", terminal=terminal)
     if terminal.get("stop_reason") != "done":
         raise RuntimeError(f"task failed: {terminal.get('summary') or terminal}")
@@ -385,7 +385,7 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def run_reviewer_matrix(project: Path, recorder: FlowRecorder) -> list[dict]:
-    changes = collect_changes(project, codey_server.STATE.change_tracker_for(
+    changes = collect_changes(project, codey_server.AppContext.change_tracker_for(
         str(project.resolve()),
         persistent=not is_git_repository(project),
     ))

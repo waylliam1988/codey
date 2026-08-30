@@ -39,7 +39,7 @@ class _Provider:
         pass
 
 
-def _runner(state: server.State, *, agent_run=None, router_provider_factory=None) -> TaskRunDeps:
+def _runner(state: server.AppContext, *, agent_run=None, router_provider_factory=None) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -47,6 +47,7 @@ def _runner(state: server.State, *, agent_run=None, router_provider_factory=None
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -190,7 +191,7 @@ def _research_record(concept: str):
 
 def test_task_entry_uses_affinity_to_order_strict_continue_work_items() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         assert state.ghost_work_queue is not None
         assert state.ghost_affinity is not None
         favored = _queued_research_item(title="Research alpha provider recovery", concept="alpha", priority=0.50)
@@ -238,7 +239,7 @@ def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
     from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         assert state.ghost_inbox is not None
         assert state.ghost_hebbian is not None
         assert state.ghost_affinity is not None
@@ -278,7 +279,7 @@ def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
 
 def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         assert state.ghost_inbox is not None
         assert state.ghost_work_queue is not None
         assert state.ghost_affinity is not None
@@ -303,7 +304,7 @@ def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
 
 def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         assert state.ghost_affinity is not None
         runner = _runner(state, router_provider_factory=None)
 

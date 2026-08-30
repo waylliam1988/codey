@@ -1045,9 +1045,9 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
         from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun")
-            state.provider_supervisor.record_failure(
+            state.providers.supervisor.record_failure(
                 "deepseek",
                 ProviderFailure(
                     "DeepSeek",
@@ -1102,7 +1102,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(args[0], "deepseek")
             self.assertEqual(args[1].kind, FAILURE_RESPONSE_MISSING)
             self.assertEqual(args[2].state, STATE_DEGRADED)
-            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+            self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
 
     def test_state_kicks_self_repair_queue_only_when_idle(self) -> None:
         from codey.app import server
@@ -1114,7 +1114,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ran.set()
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
             state.self_repair.maybe_enqueue(
                 "qwen",
@@ -1140,7 +1140,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ran.set()
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
             state.self_repair.maybe_enqueue(
                 "qwen",
@@ -1161,7 +1161,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
         from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             state.provider_failover_order = lambda: ("qwen", "stepfun", "deepseek")
             with mock.patch.object(
                 server,
@@ -1184,8 +1184,8 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ran.set()
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
-            state = server.State(Path(td) / "state")
-            state.busy = True
+            state = server.AppContext(Path(td) / "state")
+            state.run_registry.set_busy(True)
             state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
             state.self_repair.maybe_enqueue(
                 "qwen",
@@ -1201,7 +1201,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
         from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state")
             state._self_repair_running = True
 
             reserved = state.reserve_run(

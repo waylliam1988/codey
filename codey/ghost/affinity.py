@@ -10,13 +10,12 @@ import ast
 from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime, timezone
 import hashlib
-import json
 import math
-import os
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
@@ -381,6 +380,18 @@ class GhostAffinityStore:
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
         self._events_blocked_reason = ""
+
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=AFFINITY_SCHEMA_VERSION,
+            max_bytes=MAX_AFFINITY_EVENTS_BYTES,
+            max_warnings=MAX_AFFINITY_WARNINGS,
+            source_name="affinity_events.jsonl",
+            allowed_event_kinds=_AFFINITY_EVENT_TYPES,
+            bad_row_policy="block",
+            event_validator=lambda event: _valid_affinity_event(event),
+        )
 
     def sync_from_sources(
         self,
@@ -1088,53 +1099,14 @@ class GhostAffinityStore:
     def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         self._events_blocked_reason = ""
-        try:
-            if not self.events_path.is_file():
-                self.last_warnings = ()
-                return []
-            if self.events_path.stat().st_size > MAX_AFFINITY_EVENTS_BYTES:
-                self.last_warnings = ("affinity_events_too_large",)
-                self._events_read_blocked = True
-                self._events_blocked_reason = "events_read_blocked"
-                return []
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("affinity_events_unreadable",)
+        read = self._event_log().read()
+        if read.blocked:
             self._events_read_blocked = True
+            self.last_warnings = _event_read_warnings(read.warnings)
             self._events_blocked_reason = "events_read_blocked"
             return []
-        rows: list[dict[str, object]] = []
-        warnings: list[str] = []
-        for index, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                warnings.append(f"affinity_events.jsonl:{index}:bad_json")
-                self._events_read_blocked = True
-                continue
-            if not isinstance(payload, dict):
-                warnings.append(f"affinity_events.jsonl:{index}:not_object")
-                self._events_read_blocked = True
-                continue
-            if payload.get("schema_version") != AFFINITY_SCHEMA_VERSION:
-                warnings.append(f"affinity_events.jsonl:{index}:unsupported_schema")
-                self._events_read_blocked = True
-                continue
-            if str(payload.get("type") or "") not in _AFFINITY_EVENT_TYPES:
-                warnings.append(f"affinity_events.jsonl:{index}:unsupported_event")
-                self._events_read_blocked = True
-                continue
-            if not _valid_affinity_event(payload):
-                warnings.append(f"affinity_events.jsonl:{index}:invalid_event")
-                self._events_read_blocked = True
-                continue
-            rows.append(payload)
-        self.last_warnings = _bounded_warnings(warnings)
-        if self._events_read_blocked:
-            self._events_blocked_reason = "events_read_blocked"
-            return []
+        rows = list(read.rows)
+        self.last_warnings = _event_read_warnings(read.warnings)
         if not _affinity_events_replay_cleanly(rows):
             self.last_warnings = _bounded_warnings(("affinity_events.jsonl:semantic_invalid_event",))
             self._events_read_blocked = True
@@ -1184,23 +1156,7 @@ class GhostAffinityStore:
             return result
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        rows = [event for event in events if isinstance(event, dict)]
-        data = "".join(_json_line(event) for event in rows).encode("utf-8")
-        if len(data) > MAX_AFFINITY_EVENTS_BYTES:
-            raise ValueError("ghost affinity events are too large")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic(events)
 
     def _write_projection(
         self,
@@ -2727,6 +2683,18 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
+def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "affinity_events.jsonl:too_large":
+            mapped.append("affinity_events_too_large")
+        elif warning == "affinity_events.jsonl:unreadable":
+            mapped.append("affinity_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return _bounded_warnings(mapped)
+
+
 def _compact_payload(
     ok: bool,
     compacted: bool,
@@ -2743,10 +2711,6 @@ def _compact_payload(
         "bytes_after": int(after.get("bytes") or 0),
         "warnings": list(_bounded_warnings(warnings)),
     }
-
-
-def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
 
 
 __all__ = [

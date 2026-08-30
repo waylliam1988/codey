@@ -971,7 +971,7 @@ codey/
   storage/                  atomic I/O, OS-backed file locks, event-backed reset helpers, managed outputs, UI state, and conversation state
   toolchain/                coding tool metadata/runtime and tolerant final JSON tool-reply repair
   utils/                    citation scanner, bounded references, refs, and text budgeting
-  workspace/                bounded scans, diffs, project config/facts/map, setup context, task context, and context epochs
+  workspace/                bounded scans, diffs, project config/facts/map, setup context, task context, context epochs, and workspace revisions
   web/
     index.html              UI core: state, SSE, composer, boot
     assets/                 zero-build CSS tokens/styles and plain-script UI modules

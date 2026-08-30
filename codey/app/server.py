@@ -44,7 +44,8 @@ from codey.runtime import cancellation
 from codey.providers import profile_doctor
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey import __version__
-from codey.agents.runner import DEFAULT_MAX_TURNS, run as agent_run
+from codey.agents.request import DEFAULT_MAX_TURNS
+from codey.agents.runner import run as agent_run
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.workspace.changes import (
     ChangeTracker,
@@ -89,12 +90,12 @@ from codey.providers.local_openai import (
     save_local_config,
 )
 from codey.providers.capabilities import rank_providers
-from codey.providers.diagnostics import ProviderFailure, capture_provider_failure
-from codey.providers.supervisor import ProviderSupervisor
+from codey.providers.diagnostics import capture_provider_failure
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.repairs.self_repair_worker import run_self_repair_worker
 from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.revision import WorkspaceRevisionStore
 from codey.workspace.task_context import safe_verification_candidates
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
@@ -186,15 +187,16 @@ def _sse_replay_cursor(value: object) -> int | None:
     return parsed if value is not None and parsed > 0 else None
 
 
-def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
+def reviewer_candidates(writer_id: str, *, supervisor: object | None = None) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
-    supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
+    if supervisor is None:
+        supervisor = STATE.providers.supervisor
     candidates = tuple(
         provider_id
         for provider_id in PROVIDER_LABELS
         if provider_id != writer
         and provider_id != "local"
-        and (supervisor is None or supervisor.is_available(provider_id))
+        and supervisor.is_available(provider_id)
     )
     return rank_providers(candidates, mode="review")
 
@@ -208,9 +210,7 @@ def provider_availability() -> dict[str, bool]:
 
 
 def provider_availability_from_statuses(statuses: dict[str, bool]) -> dict[str, bool]:
-    supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
-    if supervisor is None:
-        return statuses
+    supervisor = globals()["STATE"].providers.supervisor
     return {
         provider_id: available and supervisor.is_available(provider_id)
         for provider_id, available in statuses.items()
@@ -512,7 +512,7 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
         cwd = _safe_project_cwd(project, rel)
         # Run through the shared process-tree owner so Stop also terminates
         # children of the approved command instead of orphaning them.
-        with cancellation.scope(STATE.stop_flag):
+        with cancellation.scope(STATE.run_registry.stop_flag):
             proc = cancellation.run_process(
                 command,
                 cwd=cwd,
@@ -645,7 +645,7 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-class State:
+class AppContext:
     def __init__(self, state_home: str | Path | None = None) -> None:
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
@@ -682,6 +682,7 @@ class State:
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
+        self.workspace_revisions = WorkspaceRevisionStore(runtime_state_home)
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
@@ -699,7 +700,7 @@ class State:
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
-            stop_requested=lambda: self.stop_flag.is_set(),
+            stop_requested=lambda: self.run_registry.stop_flag.is_set(),
             run_once=self._run_ghost_sleep_once,
         )
         repair_runner = (
@@ -719,146 +720,6 @@ class State:
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
-
-    @property
-    def busy(self) -> bool:
-        return self.run_registry.is_busy()
-
-    @busy.setter
-    def busy(self, value: bool) -> None:
-        self.run_registry.set_busy(value)
-
-    @property
-    def project(self) -> str | None:
-        return self.run_registry.project()
-
-    @project.setter
-    def project(self, value: str | None) -> None:
-        self.run_registry.set_project(value)
-
-    @property
-    def task(self) -> str | None:
-        return self.run_registry.task()
-
-    @task.setter
-    def task(self, value: str | None) -> None:
-        self.run_registry.set_task(value)
-
-    @property
-    def provider_id(self) -> str:
-        return self.run_registry.provider_id()
-
-    @provider_id.setter
-    def provider_id(self, value: str) -> None:
-        self.run_registry.set_provider_id(value)
-
-    @property
-    def status(self) -> str:
-        return self.run_registry.status()
-
-    @status.setter
-    def status(self, value: str) -> None:
-        self.run_registry.set_status(value)
-
-    @property
-    def last_summary(self) -> str | None:
-        return self.run_registry.last_summary()
-
-    @last_summary.setter
-    def last_summary(self, value: str | None) -> None:
-        self.run_registry.set_last_summary(value)
-
-    @property
-    def last_stop_reason(self) -> str | None:
-        return self.run_registry.last_stop_reason()
-
-    @last_stop_reason.setter
-    def last_stop_reason(self, value: str | None) -> None:
-        self.run_registry.set_last_stop_reason(value)
-
-    @property
-    def last_provider_failure(self) -> ProviderFailure | None:
-        return self.run_registry.last_provider_failure()
-
-    @last_provider_failure.setter
-    def last_provider_failure(self, value: ProviderFailure | None) -> None:
-        self.run_registry.set_last_provider_failure(value)
-
-    @property
-    def stop_flag(self) -> threading.Event:
-        return self.run_registry.stop_flag
-
-    @stop_flag.setter
-    def stop_flag(self, value: threading.Event) -> None:
-        self.run_registry.stop_flag = value
-
-    @property
-    def active_run(self) -> RunSnapshot | None:
-        return self.run_registry.current()
-
-    @active_run.setter
-    def active_run(self, value: RunSnapshot | None) -> None:
-        self.run_registry.set_active(value)
-
-    @property
-    def last_terminal_event(self) -> dict | None:
-        return self.run_registry.last_terminal_event()
-
-    @last_terminal_event.setter
-    def last_terminal_event(self, value: dict | None) -> None:
-        self.run_registry.set_last_terminal_event(value)
-
-    @property
-    def last_shell_result(self) -> dict | None:
-        return self.run_registry.last_shell_result()
-
-    @last_shell_result.setter
-    def last_shell_result(self, value: dict | None) -> None:
-        self.run_registry.set_last_shell_result(value)
-
-    @property
-    def provider_sessions(self) -> dict[str, str]:
-        return self.providers.sessions_snapshot()
-
-    @property
-    def provider_supervisor(self) -> ProviderSupervisor:
-        return self.providers.supervisor
-
-    @provider_supervisor.setter
-    def provider_supervisor(self, value: ProviderSupervisor) -> None:
-        self.providers.supervisor = value
-
-    @property
-    def ghost_learning_provider_factory(self):
-        return self.providers.ghost_learning_provider_factory
-
-    @ghost_learning_provider_factory.setter
-    def ghost_learning_provider_factory(self, value) -> None:
-        self.providers.ghost_learning_provider_factory = value
-
-    @property
-    def ghost_router_provider_factory(self):
-        return self.providers.ghost_router_provider_factory
-
-    @ghost_router_provider_factory.setter
-    def ghost_router_provider_factory(self, value) -> None:
-        self.providers.ghost_router_provider_factory = value
-
-    @property
-    def conversations(self) -> dict[str, ConversationContext]:
-        return self.conversation_registry.contexts
-
-    @property
-    def conversation_tokens(self) -> dict[str, object]:
-        return self.conversation_registry.tokens
-
-    @property
-    def conversation_store_lock(self) -> threading.Lock:
-        return self.conversation_registry.store_lock
-
-    @property
-    def conversation_store(self):
-        return self.conversation_registry.store
 
     def load_ui_state(self) -> dict:
         with self.ui_state_store_lock:
@@ -1309,9 +1170,12 @@ class State:
         """Try healthy sibling tabs within one bounded recovery deadline."""
         cancellation.check()
         deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in reviewer_candidates(request.provider_id)[:3]:
+        for provider_id in reviewer_candidates(
+            request.provider_id,
+            supervisor=self.providers.supervisor,
+        )[:3]:
             cancellation.check()
-            if not self.provider_supervisor.is_available(provider_id):
+            if not self.providers.supervisor.is_available(provider_id):
                 continue
             if time.monotonic() >= deadline:
                 return None
@@ -1352,9 +1216,12 @@ class State:
         """Ask healthy siblings to choose only among fixed flow predicates."""
         cancellation.check()
         deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in reviewer_candidates(request.provider_id)[:3]:
+        for provider_id in reviewer_candidates(
+            request.provider_id,
+            supervisor=self.providers.supervisor,
+        )[:3]:
             cancellation.check()
-            if not self.provider_supervisor.is_available(provider_id):
+            if not self.providers.supervisor.is_available(provider_id):
                 continue
             if time.monotonic() >= deadline:
                 return None
@@ -1390,9 +1257,9 @@ class State:
         return None
 
 
-STATE = State(DEFAULT_STATE_HOME)
-STATE.ghost_learning_provider_factory = connect_fresh_provider_tab
-STATE.ghost_router_provider_factory = connect_fresh_provider_tab
+STATE = AppContext(DEFAULT_STATE_HOME)
+STATE.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
+STATE.providers.ghost_router_provider_factory = connect_fresh_provider_tab
 provider_controls.set_teach_handler(STATE.handle_control_teach)
 provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
 provider_flow.set_recovery_handler(STATE.handle_flow_recovery)
@@ -1472,6 +1339,7 @@ def _run_task(
         run_research_advisors=_run_research_advisors,
         project_facts=STATE.project_facts,
         work_checkpoints=STATE.work_checkpoints,
+        workspace_revisions=STATE.workspace_revisions,
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
         evidence_ledgers=STATE.evidence_ledgers,
@@ -1480,8 +1348,8 @@ def _run_task(
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
-        ghost_learning_provider_factory=getattr(STATE, "ghost_learning_provider_factory", None),
-        ghost_router_provider_factory=getattr(STATE, "ghost_router_provider_factory", None),
+        ghost_learning_provider_factory=STATE.providers.ghost_learning_provider_factory,
+        ghost_router_provider_factory=STATE.providers.ghost_router_provider_factory,
     )
     try:
         run_task_submission(
@@ -1558,7 +1426,7 @@ def _submit_task_after_slot_release(
         # Fast path; the authoritative guard is the atomic
         # abort_if_stopped reservation below, which closes the race where a
         # Stop lands between this peek and the reserve.
-        if STATE.stop_flag.is_set():
+        if STATE.run_registry.stop_flag.is_set():
             return None
         active = STATE.current_run()
         if active is not None and previous_run_id and active.run_id != previous_run_id:
@@ -2124,7 +1992,7 @@ class Handler(BaseHTTPRequestHandler):
             continued = False
             continuation_stopped = False
             if pending.get("continue_after"):
-                if STATE.stop_flag.is_set():
+                if STATE.run_registry.stop_flag.is_set():
                     # The user stopped while the approved command ran; do not
                     # resurrect the task through the continuation slot.
                     continuation_stopped = True
@@ -2163,7 +2031,7 @@ class Handler(BaseHTTPRequestHandler):
                         previous_run_id=str(pending.get("run_id") or ""),
                     )
                     continued = continuation_run is not None
-                    continuation_stopped = not continued and STATE.stop_flag.is_set()
+                    continuation_stopped = not continued and STATE.run_registry.stop_flag.is_set()
             self._send_json(200, {
                 "ok": True,
                 "approved": True,
@@ -2194,7 +2062,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/stop":
-            STATE.stop_flag.set()
+            STATE.run_registry.stop_flag.set()
             STATE.cancel_pending_teach()
             STATE.expire_pending_shell_approvals()
             self._send_json(200, {"ok": True})

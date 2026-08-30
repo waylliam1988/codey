@@ -18,7 +18,7 @@ from codey.ghost.schema import (
 )
 from codey.ghost.signal_codec import GhostSignalCodec
 from codey.ghost.store import GhostSignalStore
-from codey.app.server import State
+from codey.app.server import AppContext
 from tests.manual import ghost_signal_extractor_ab as ghost_ab
 from tests.manual.ghost_signal_extractor_ab import _should_close_provider
 
@@ -335,7 +335,7 @@ class GhostSignalStoreTests(unittest.TestCase):
             self.assertFalse(store.path.exists())
 
     def test_bare_state_disables_ghost_signal_store(self) -> None:
-        self.assertIsNone(State().ghost_signals)
+        self.assertIsNone(AppContext().ghost_signals)
 
 
 class GhostArchitectureTests(unittest.TestCase):

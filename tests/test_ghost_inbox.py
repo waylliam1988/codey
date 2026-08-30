@@ -15,7 +15,7 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore, conflict_key_for_signal, value_key_for_signal
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
-from codey.app.server import State
+from codey.app.server import AppContext
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -720,9 +720,9 @@ class GhostInboxStoreTests(unittest.TestCase):
             )
 
     def test_bare_state_disables_ghost_inbox(self) -> None:
-        self.assertIsNone(State().ghost_inbox)
-        self.assertIsNone(State().ghost_hebbian)
-        self.assertIsNone(State().ghost_sleep)
+        self.assertIsNone(AppContext().ghost_inbox)
+        self.assertIsNone(AppContext().ghost_hebbian)
+        self.assertIsNone(AppContext().ghost_sleep)
 
 
 class GhostSignalStoreScopeTests(unittest.TestCase):

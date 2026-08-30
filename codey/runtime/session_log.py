@@ -75,6 +75,13 @@ class RuntimeLogWriteError(RuntimeLogError):
 
 
 @dataclass(frozen=True)
+class _ProjectionCache:
+    file_size: int
+    entries: tuple["RuntimeLogEntry", ...]
+    projection: Any
+
+
+@dataclass(frozen=True)
 class RuntimeLogEntry:
     session_id: str
     lane: str
@@ -230,6 +237,7 @@ class RuntimeSessionLog:
         self.state_home = Path(state_home) if state_home is not None else DEFAULT_STATE_HOME
         self.max_entry_bytes = max_entry_bytes
         self.max_log_bytes = max_log_bytes
+        self._projection_cache: dict[str, _ProjectionCache] = {}
 
     def path_for(self, session_id: str) -> Path:
         return self.state_home / "runtime" / "sessions" / f"{session_key(session_id)}.jsonl"
@@ -238,6 +246,52 @@ class RuntimeSessionLog:
         path = self.path_for(session_id)
         with with_file_lock(path):
             return self._read_unlocked(session_id, repair_tail=False)
+
+    def projection(self, session_id: str):
+        """Return the cached projection for a session.
+
+        The returned projection is the process-cache object; callers must treat
+        it as read-only and derive new state through reducer.apply_entries().
+        """
+        path = self.path_for(session_id)
+        with with_file_lock(path):
+            return self._cache_for_session_unlocked(session_id).projection
+
+    def entries(self, session_id: str) -> tuple[RuntimeLogEntry, ...]:
+        """Return cached valid entries, repairing a torn tail before caching."""
+        path = self.path_for(session_id)
+        with with_file_lock(path):
+            return self._cache_for_session_unlocked(session_id).entries
+
+    def _cache_for_session_unlocked(self, session_id: str) -> _ProjectionCache:
+        path = self.path_for(session_id)
+        current_size = _file_size(path)
+        cached = self._projection_cache.get(session_id)
+        if cached is not None and cached.file_size == current_size:
+            return cached
+
+        entries = self._read_unlocked(session_id, repair_tail=True)
+        from codey.runtime.reducer import reduce_session
+
+        cache = _ProjectionCache(
+            file_size=_file_size(path),
+            entries=entries,
+            projection=reduce_session(entries),
+        )
+        self._projection_cache[session_id] = cache
+        return cache
+
+    def delete_session(self, session_id: str) -> None:
+        path = self.path_for(session_id)
+        with with_file_lock(path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeLogWriteError("unable to delete runtime log") from exc
+            finally:
+                self._projection_cache.pop(session_id, None)
 
     def _read_unlocked(
         self,
@@ -274,6 +328,7 @@ class RuntimeSessionLog:
         valid = _complete_batch_prefix(entries)
         if repair_tail and (bad_tail or len(valid) < len(entries)):
             write_bytes_atomic(path, b"".join(entry.to_json_line().encode("utf-8") for entry in valid))
+            self._projection_cache.pop(session_id, None)
         return tuple(valid)
 
     def append(
@@ -326,16 +381,25 @@ class RuntimeSessionLog:
         path = self.path_for(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with with_file_lock(path):
-            entries = self._read_unlocked(session_id, repair_tail=True)
-            from codey.runtime.reducer import reduce_session
+            from codey.runtime.reducer import apply_entries, reduce_session
 
-            candidate = (*entries, *rows)
-            reduce_session(candidate)
-            current_size = path.stat().st_size if path.exists() else 0
+            current_size = _file_size(path)
+            cached = self._projection_cache.get(session_id)
+            if cached is not None and cached.file_size == current_size:
+                base_entries = cached.entries
+                base_projection = cached.projection
+            else:
+                base_entries = self._read_unlocked(session_id, repair_tail=True)
+                current_size = _file_size(path)
+
+                base_projection = reduce_session(base_entries)
+
+            candidate_projection = apply_entries(base_projection, rows)
             total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
             if current_size + total_new_bytes > max(0, self.max_log_bytes // 2):
+                candidate = (*base_entries, *rows)
                 compacted = _compact_entries(candidate)
-                reduce_session(compacted)
+                compacted_projection = reduce_session(compacted)
                 encoded_compacted = tuple(
                     row.to_json_line().encode("utf-8") for row in compacted
                 )
@@ -344,11 +408,28 @@ class RuntimeSessionLog:
                 if sum(len(encoded) for encoded in encoded_compacted) > self.max_log_bytes:
                     raise RuntimeLogWriteError("runtime log exceeds size limit")
                 write_bytes_atomic(path, b"".join(encoded_compacted))
+                self._projection_cache[session_id] = _ProjectionCache(
+                    file_size=sum(len(encoded) for encoded in encoded_compacted),
+                    entries=compacted,
+                    projection=compacted_projection,
+                )
                 return rows
             with path.open("ab") as handle:
                 for encoded in encoded_rows:
                     handle.write(encoded)
+            self._projection_cache[session_id] = _ProjectionCache(
+                file_size=current_size + total_new_bytes,
+                entries=(*base_entries, *rows),
+                projection=candidate_projection,
+            )
         return rows
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 def _complete_batch_prefix(

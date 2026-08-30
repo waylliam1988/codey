@@ -5,7 +5,6 @@ from __future__ import annotations
 from codey.runtime.cancellation import TaskCancelled
 from codey.runtime.operation import Operation, OperationContext
 from codey.runtime.outcome import OperationOutcome
-from codey.runtime.reducer import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 
 
@@ -36,7 +35,7 @@ class OperationScheduler:
         return outcome
 
     def ensure_open(self, session_id: str, operation: Operation) -> None:
-        projection = reduce_session(self.session_log.read(session_id))
+        projection = self.session_log.projection(session_id)
         existing = projection.operations.get(operation.operation_id)
         if existing is not None:
             if existing.lane != operation.lane:
@@ -75,7 +74,7 @@ class OperationScheduler:
         operation: Operation,
         outcome: OperationOutcome,
     ) -> None:
-        projection = reduce_session(self.session_log.read(session_id))
+        projection = self.session_log.projection(session_id)
         current = projection.operations.get(operation.operation_id)
         if current is None or current.status != "open":
             return

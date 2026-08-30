@@ -14,6 +14,7 @@ from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
 from codey.runtime.events import RunEvent
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
+from codey.workspace.revision import INITIAL_WORKSPACE_REVISION
 
 
 @dataclass
@@ -49,6 +50,11 @@ class RunWork:
     artifact_payloads: list[dict[str, object]] = field(default_factory=list)
     operation: RuntimeOperationState | None = None
     turns_observed: int = 0
+    workspace_revision: int = INITIAL_WORKSPACE_REVISION
+
+    def advance_workspace_revision(self, store: Any, project: str) -> None:
+        self.workspace_revision = store.bump(project)
+        self.evidence.set_workspace_revision(self.workspace_revision)
 
 
 @dataclass(frozen=True)

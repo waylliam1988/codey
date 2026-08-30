@@ -54,7 +54,7 @@ def _make_frame(project_text: str) -> RunFrame:
     )
 
 
-def _deps(state: server.State) -> ResearchFlowDeps:
+def _deps(state: server.AppContext) -> ResearchFlowDeps:
     def ghost_continuity(*, project: str = "", session_id: str = ""):
         store = getattr(state, "ghost_continuity", None)
         if store is None:
@@ -83,7 +83,7 @@ def _seed_open_question_note(store: KnowledgeStore, *, session_id: str) -> None:
     ))
 
 
-def _seed_prior_claim(state: server.State, *, session_id: str, project: str) -> None:
+def _seed_prior_claim(state: server.AppContext, *, session_id: str, project: str) -> None:
     url = "https://example.com/prior-claim"
     claim = "Provider recovery depends on a warm browser session."
     source_text = f"{claim} 2026 source note."
@@ -159,7 +159,7 @@ def _seed_prior_claim(state: server.State, *, session_id: str, project: str) -> 
 def test_topic_continuity_admission_is_bounded_refs_and_hint_text() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
         if state.ghost_continuity is not None:
@@ -191,7 +191,7 @@ def test_topic_continuity_admission_is_bounded_refs_and_hint_text() -> None:
 
 
 def _seed_prior_claim_overflow(
-    state: server.State,
+    state: server.AppContext,
     *,
     session_id: str,
     project: str,
@@ -282,7 +282,7 @@ def test_prior_claim_overflow_reports_truncated_honestly() -> None:
         root = Path(td)
         project = str(root / "project")
         (root / "project").mkdir()
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_prior_claim_overflow(
             state,
@@ -313,7 +313,7 @@ def test_prior_claims_enter_as_stale_refs_never_evidence() -> None:
         root = Path(td)
         project = str(root / "project")
         (root / "project").mkdir()
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_prior_claim(state, session_id="s1", project=project)
         text, payload = build_research_topic_continuity(
@@ -337,7 +337,7 @@ def test_prior_claims_enter_as_stale_refs_never_evidence() -> None:
 def test_closed_profile_gate_returns_empty_baseline() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
         with mock.patch(
@@ -361,7 +361,7 @@ def test_cancellation_is_never_swallowed_by_the_builder() -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
         trace_calls: list[tuple] = []
@@ -388,7 +388,7 @@ def test_cancellation_is_never_swallowed_by_the_builder() -> None:
 def test_empty_local_state_admits_nothing() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         text, payload = build_research_topic_continuity(
             _deps(state),
@@ -406,7 +406,7 @@ def test_build_research_context_carries_bounded_continuity() -> None:
         root = Path(td)
         project = str(root / "project")
         (root / "project").mkdir()
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
         if state.ghost_continuity is not None:
@@ -435,7 +435,7 @@ def test_build_research_context_carries_bounded_continuity() -> None:
 def test_build_research_context_baseline_without_seeds() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         frame = _make_frame(project_text=str(root / "project"))
 

@@ -18,6 +18,10 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+from codey.workspace.revision import (
+    INITIAL_WORKSPACE_REVISION,
+    valid_workspace_revision,
+)
 
 
 SCHEMA_VERSION = 1
@@ -101,6 +105,7 @@ class CheckpointFile:
 class CheckpointCheck:
     command: str
     cwd: str = "."
+    workspace_revision: int = INITIAL_WORKSPACE_REVISION
 
 
 @dataclass(frozen=True)
@@ -189,8 +194,9 @@ class WorkCheckpointStore:
                     continue
                 command = _text(item.get("command"), MAX_COMMAND_CHARS)
                 cwd = _rel_path(item.get("cwd") or ".")
-                if command and cwd:
-                    checks.append(CheckpointCheck(command, cwd))
+                revision = valid_workspace_revision(item.get("workspace_revision"))
+                if command and cwd and revision:
+                    checks.append(CheckpointCheck(command, cwd, revision))
                 if len(checks) >= MAX_SUCCESSFUL_CHECKS:
                     break
             action_value = payload.get("last_action")
@@ -270,12 +276,21 @@ class WorkCheckpointStore:
         self.save(updated)
         return updated
 
-    def record_run(self, checkpoint: WorkCheckpoint, *, command: str, cwd: str, ok: bool) -> WorkCheckpoint:
+    def record_run(
+        self,
+        checkpoint: WorkCheckpoint,
+        *,
+        command: str,
+        cwd: str,
+        ok: bool,
+        workspace_revision: int,
+    ) -> WorkCheckpoint:
         safe_command = _text(command, MAX_COMMAND_CHARS)
         safe_cwd = _rel_path(cwd or ".") or "."
+        revision = valid_workspace_revision(workspace_revision)
         checks = list(checkpoint.successful_checks_after_last_change)
-        if ok and safe_command:
-            check = CheckpointCheck(safe_command, safe_cwd)
+        if ok and safe_command and revision:
+            check = CheckpointCheck(safe_command, safe_cwd, revision)
             checks = [item for item in checks if item != check]
             checks.append(check)
         elif not ok:

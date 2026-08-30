@@ -62,15 +62,15 @@ class _FakeProvider:
         pass
 
 
-def _scripted_writer(_provider, _project, _task, **kwargs):
+def _scripted_writer(request):
     """Stay inside the writer phase long enough to be killed there."""
 
-    kwargs["on_event"](_writer_event())
+    request.on_event(_writer_event())
     time.sleep(WRITER_SLEEP_SECONDS)
     raise AssertionError("the smoke process must be killed before this line")
 
 
-def _resuming_writer(_provider, _project, _task, **_kwargs):
+def _resuming_writer(_request):
     from codey.agents.runner import RunResult
 
     return RunResult("resumed to terminal", "done", 1)

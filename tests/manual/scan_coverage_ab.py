@@ -23,6 +23,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.runtime.events import RunEvent, render_run_event
@@ -35,6 +36,10 @@ from codey.toolchain.runtime import ToolOutcome, safe_join
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scan-coverage-ab.json"
 OVERSIZED_SOURCE_MARKER = "LEGACY_PROCESS_PAYMENT_CALL"
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)
@@ -319,7 +324,7 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         _write_project(root)
         probe = _CoverageReferencesProbe(arm=arm)
         started = time.monotonic()
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

@@ -8,6 +8,7 @@ from unittest import mock
 from codey.app import server
 from codey.agents.consensus import ConsensusResult
 from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runs.trace import digest_text
 from codey.research.ledger import ResearchLedger
@@ -61,7 +62,7 @@ class _UnavailableSupervisor:
 
 
 def _runner(
-    state: server.State,
+    state: server.AppContext,
     *,
     agent_run=None,
     collect_changes=None,
@@ -87,6 +88,7 @@ def _runner(
         run_project_audit=run_project_audit,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -97,7 +99,7 @@ def _runner(
     )
 
 
-def _trace_payload(state: server.State, session_id: str, run_id: str) -> dict:
+def _trace_payload(state: server.AppContext, session_id: str, run_id: str) -> dict:
     assert state.run_traces is not None
     path = state.run_traces.path_for(session_id, run_id)
     return json.loads(path.read_text(encoding="utf-8"))
@@ -179,11 +181,11 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
         root = Path(td)
         project = root / "project"
         project.mkdir()
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         secret_prompt = "SECRET_PROMPT_SHOULD_NOT_BE_SAVED"
 
-        def fake_agent(*_args, **kwargs):
-            trace = kwargs["trace_recorder"]
+        def fake_agent(request: AgentRequest):
+            trace = request.trace_recorder
             trace.record_permission_profile("coding_writer")
             trace.record_tool_contract_hash("sha256:" + "a" * 64)
             trace.record_prompt_section("fake_prompt", secret_prompt)
@@ -217,7 +219,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-trace", run_id)
         serialized = json.dumps(payload, ensure_ascii=False)
 
@@ -237,7 +239,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
 def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         route_provider = _Provider('{"mode":"research","confidence":0.92,"reason":"fresh info"}')
         main_provider = _Provider()
 
@@ -289,10 +291,10 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
                 )
                 state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-research-trace", run_id)
         serialized = json.dumps(payload, ensure_ascii=False)
-        research_payload = state.last_terminal_event["research"]
+        research_payload = state.run_registry.last_terminal_event()["research"]
 
         assert payload["mode_initial"] == "chat"
         assert payload["mode_final"] == "research"
@@ -331,7 +333,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         root = Path(td)
         project = root / "project"
         project.mkdir()
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         record = _research_record(project)
         result = ResearchRunResult(
             question="Research helium",
@@ -373,9 +375,9 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             session_id="session-evidence-ledger",
             project=project,
         )
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         trace_payload = _trace_payload(state, "session-evidence-ledger", run_id)
-        terminal_research_payload = state.last_terminal_event["research"]
+        terminal_research_payload = state.run_registry.last_terminal_event()["research"]
         serialized_trace = json.dumps(trace_payload, ensure_ascii=False)
 
         assert snapshot.available is True
@@ -452,10 +454,10 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
         project = root / "project"
         project.mkdir()
         (project / "app.py").write_text("print('hi')\n", encoding="utf-8")
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
 
-        def fake_agent(*_args, **kwargs):
-            trace = kwargs["trace_recorder"]
+        def fake_agent(request: AgentRequest):
+            trace = request.trace_recorder
             trace.record_permission_profile("coding_writer", phase="writer")
             trace.record_tool_contract_hash("sha256:" + "w" * 64, phase="writer")
             return RunResult("writer done", "done", 1)
@@ -496,7 +498,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                 )
                 state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-hybrid-trace", run_id)
         serialized = json.dumps(payload, ensure_ascii=False)
 
@@ -527,7 +529,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         project = root / "project"
         project.mkdir()
         (project / "app.py").write_text("print('old')\n", encoding="utf-8")
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         secret_diff = "SECRET_REVIEW_DIFF_SHOULD_NOT_BE_SAVED"
         changes = {
             "ok": True,
@@ -566,7 +568,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-secondary-trace", run_id)
         names = {item["name"] for item in payload["prompt_sections"]}
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -591,7 +593,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
 
 def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         secret_task = "SECRET_CONSENSUS_TASK_SHOULD_NOT_BE_SAVED"
         consensus = mock.Mock(return_value=ConsensusResult("combined", 1))
 
@@ -610,7 +612,7 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-consensus-trace", run_id)
         names = {item["name"] for item in payload["prompt_sections"]}
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -628,7 +630,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
     # Non-consensus chat sends go straight through the runner's own prompt
     # boundary; their outbound row must name the capability that owns it.
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         consensus = mock.Mock(return_value=None)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -646,7 +648,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-chat-provenance", run_id)
         outbound = next(item for item in payload["prompt_sections"] if item["name"] == "chat_outbound_prompt")
 
@@ -659,7 +661,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
 def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         session_id = "session-handoff-summary-trace"
         provider = _Provider(reply='{"current_state":"Keep the plan"}')
         conversation = state.conversation_for(session_id)
@@ -688,7 +690,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, session_id, run_id)
         handoff = next(
             item for item in payload["prompt_sections"] if item["name"] == "conversation_handoff_summary_prompt"
@@ -713,7 +715,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
         project = root / "project"
         project.mkdir()
         (project / "app.py").write_text("print('hello')\n", encoding="utf-8")
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         secret_task = "SECRET_PROJECT_AUDIT_TASK_SHOULD_NOT_BE_SAVED"
         project_audit = mock.Mock(return_value=())
 
@@ -732,7 +734,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-project-audit-prepared", run_id)
         audit_task = next(item for item in payload["prompt_sections"] if item["name"] == "project_audit_task")
         serialized = json.dumps(payload, ensure_ascii=False)
@@ -748,8 +750,8 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
         root = Path(td)
         project = root / "project"
         project.mkdir()
-        state = server.State(root / "state")
-        state.provider_supervisor = _UnavailableSupervisor()
+        state = server.AppContext(root / "state")
+        state.providers.supervisor = _UnavailableSupervisor()
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
@@ -766,7 +768,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
             )
             state.wait_for_ghost_sleep(timeout=2)
 
-        run_id = state.last_terminal_event["run_id"]
+        run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-fallback-trace", run_id)
 
         assert payload["provider_initial"] == "deepseek"
@@ -793,7 +795,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
 def test_forget_conversation_deletes_session_run_traces() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
         assert state.run_traces is not None
         recorder = state.run_traces.open(
             run_id="run-forget",
@@ -811,7 +813,7 @@ def test_forget_conversation_deletes_session_run_traces() -> None:
         assert not path.exists()
 
 
-def _run_project_task(state: server.State, project: Path, session_id: str, task: str, changes: dict) -> dict:
+def _run_project_task(state: server.AppContext, project: Path, session_id: str, task: str, changes: dict) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner = _runner(
             state,
@@ -829,7 +831,7 @@ def _run_project_task(state: server.State, project: Path, session_id: str, task:
             )
         )
         state.wait_for_ghost_sleep(timeout=2)
-    run_id = state.last_terminal_event["run_id"]
+    run_id = state.run_registry.last_terminal_event()["run_id"]
     return _trace_payload(state, session_id, run_id)
 
 
@@ -837,7 +839,7 @@ def test_done_project_run_records_shadow_completion_proof_for_code_change() -> N
     with tempfile.TemporaryDirectory() as td:
         project = Path(td) / "project"
         (project / "src").mkdir(parents=True)
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
 
         payload = _run_project_task(
             state,
@@ -879,7 +881,7 @@ def test_docs_only_done_run_completes_with_limitations() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td) / "project"
         project.mkdir()
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
 
         payload = _run_project_task(
             state,
@@ -915,7 +917,7 @@ def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td) / "project"
         project.mkdir()
-        state = server.State(Path(td) / "state")
+        state = server.AppContext(Path(td) / "state")
 
         payload = _run_project_task(
             state,

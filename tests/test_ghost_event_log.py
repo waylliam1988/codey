@@ -137,6 +137,28 @@ class GhostEventLogTests(unittest.TestCase):
         self.assertEqual(read.rows, ())
         self.assertEqual(read.warnings, ("events.jsonl:2:unsupported_event",))
 
+    def test_event_validator_is_enforced_on_append_and_read(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "events.jsonl"
+            log = GhostEventLog(
+                path,
+                schema_version=1,
+                event_validator=lambda event: event.get("ok") is True,
+                source_name="events.jsonl",
+            )
+
+            self.assertFalse(log.append(({"schema_version": 1, "ok": False},)))
+            self.assertTrue(log.append(({"schema_version": 1, "ok": True},)))
+            path.write_text(
+                path.read_text(encoding="utf-8") + '{"schema_version":1,"ok":false}\n',
+                encoding="utf-8",
+            )
+            read = log.read()
+
+        self.assertTrue(read.blocked)
+        self.assertEqual(read.rows, ())
+        self.assertEqual(read.warnings, ("events.jsonl:2:invalid_event",))
+
     def test_quarantine_tail_keeps_valid_prefix_and_blocks_mid_file_corruption(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "events.jsonl"

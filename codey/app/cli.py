@@ -550,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sp_agent = sub.add_parser("agent", help="CLI agent loop")
     sp_agent.add_argument("--project", required=True)
-    from codey.agents.runner import DEFAULT_MAX_TURNS
+    from codey.agents.request import DEFAULT_MAX_TURNS
     sp_agent.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)

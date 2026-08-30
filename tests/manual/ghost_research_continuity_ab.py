@@ -54,6 +54,7 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
@@ -281,7 +282,7 @@ def _run_case(
     tracing_provider: TracingProvider | None = None
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         session_id = f"{arm}-{case.name}"
         project = str(root / "project")
@@ -293,8 +294,8 @@ def _run_case(
         research_contexts: list[ResearchContext] = []
         admission_results: list[tuple[str, dict[str, object] | None]] = []
 
-        def agent_run(*_args, **kwargs):
-            permission = str(kwargs.get("permission_profile") or "")
+        def agent_run(request: AgentRequest):
+            permission = request.permission_profile
             agent_calls.append(permission)
             return RunResult("stub agent done", "done", 1)
 
@@ -308,6 +309,7 @@ def _run_case(
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -417,7 +419,7 @@ def _run_case(
                     raw_provider.close()
             except Exception:
                 pass
-        done = dict(state.last_terminal_event or {})
+        done = dict(state.run_registry.last_terminal_event() or {})
         research_ran = bool(research_contexts)
 
     admitted_text = admission_results[0][0] if admission_results else ""
@@ -492,7 +494,7 @@ def _leaked_internal_terms(*texts: str) -> bool:
 
 
 def _seed_case(
-    state: server.State,
+    state: server.AppContext,
     case: ContinuityCase,
     *,
     session_id: str,
@@ -570,7 +572,7 @@ def _seed_case(
 
 
 def _seed_prior_claim(
-    state: server.State,
+    state: server.AppContext,
     *,
     session_id: str,
     project: str,

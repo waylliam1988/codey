@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from codey.agents.request import AgentRequest
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
@@ -66,14 +67,14 @@ def run_planning_readonly_mode(
         session_id=request.session_id,
     )
     record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
-    result = deps.agent_run(
-        frame.provider,
-        Path(project),
-        request.task,
+    result = deps.agent_run(AgentRequest(
+        provider=frame.provider,
+        project=Path(project),
+        task=request.task,
         max_turns=request.max_turns,
         on_event=lambda event: record_planning_event(deps, frame, work, event),
         on_shell_request=None,
-        stop_flag=state.stop_flag,
+        stop_flag=state.run_registry.stop_flag,
         fresh_chat=frame.fresh_chat,
         strict_fresh_chat=False,
         change_tracker=None,
@@ -88,7 +89,7 @@ def run_planning_readonly_mode(
         ghost_continuity=ghost_continuity.text,
         permission_profile="planning_readonly",
         trace_recorder=frame.trace,
-    )
+    ))
     state.set_provider_session(
         frame.provider_id,
         None if result.stop_reason == "stopped" else request.session_id,

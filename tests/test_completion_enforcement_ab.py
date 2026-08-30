@@ -13,6 +13,14 @@ from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import open_journal_for_output
 
 
+class _FakeRunRegistry:
+    def __init__(self, event: dict[str, object]) -> None:
+        self._event = dict(event)
+
+    def last_terminal_event(self) -> dict[str, object]:
+        return dict(self._event)
+
+
 def test_live_resume_skips_completed_rows_without_opening_provider(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -419,10 +427,10 @@ def test_live_false_completion_row_fails_report_and_journal(
 
 def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
     class FakeState:
-        last_terminal_event = {
+        run_registry = _FakeRunRegistry({
             "stop_reason": "error",
             "summary": "ERROR: provider setup failed",
-        }
+        })
         run_traces = None
 
     row = harness._finish_row(
@@ -480,10 +488,10 @@ def test_finish_row_rejects_live_test_fixture_mutation(tmp_path: Path) -> None:
     trace.flush()
 
     class FakeState:
-        last_terminal_event = {
+        run_registry = _FakeRunRegistry({
             "stop_reason": "done",
             "run_id": run_id,
-        }
+        })
         run_traces = store
 
     row = harness._finish_row(
@@ -517,9 +525,7 @@ def test_finish_row_accepts_live_source_change_with_intact_fixture(tmp_path: Pat
     (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
 
     class FakeState:
-        last_terminal_event = {
-            "stop_reason": "done",
-        }
+        run_registry = _FakeRunRegistry({"stop_reason": "done"})
         run_traces = None
 
     row = harness._finish_row(
@@ -560,9 +566,7 @@ def test_finish_row_rejects_live_docs_only_source_mutation(tmp_path: Path) -> No
     (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
 
     class FakeState:
-        last_terminal_event = {
-            "stop_reason": "done",
-        }
+        run_registry = _FakeRunRegistry({"stop_reason": "done"})
         run_traces = None
 
     row = harness._finish_row(
@@ -607,7 +611,7 @@ def test_terminal_provider_no_reply_is_classified() -> None:
 
 
 def test_build_runner_live_path_uses_real_callables(tmp_path: Path) -> None:
-    state = harness.server.State(tmp_path / "state")
+    state = harness.server.AppContext(tmp_path / "state")
 
     runner = harness._build_runner(state)
 

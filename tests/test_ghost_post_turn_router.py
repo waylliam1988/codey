@@ -69,7 +69,7 @@ def _reviewable_changes(*_args, **_kwargs) -> dict:
 
 
 def _runner(
-    state: server.State,
+    state: server.AppContext,
     *,
     agent_run=None,
     collect_changes=_empty_changes,
@@ -84,6 +84,7 @@ def _runner(
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
@@ -92,13 +93,13 @@ def _runner(
     )
 
 
-def _done_events(state: server.State) -> list[dict]:
-    return list(state.last_terminal_event and [state.last_terminal_event] or [])
+def _done_events(state: server.AppContext) -> list[dict]:
+    return list(state.run_registry.last_terminal_event() and [state.run_registry.last_terminal_event()] or [])
 
 
 def _run_and_wait_for_local_maintenance(
     runner: TaskRunDeps,
-    state: server.State,
+    state: server.AppContext,
     request: TaskSubmission,
 ) -> None:
     run_task_submission(runner, request)
@@ -107,7 +108,7 @@ def _run_and_wait_for_local_maintenance(
 
 def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         events = state.subscribe()
         main_provider = _Provider()
         route_provider = _Provider('{"mode":"research","confidence":0.91,"reason":"fresh info"}')
@@ -159,7 +160,7 @@ def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> Non
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         route_provider = _Provider('{"mode":"project_writer","confidence":0.96,"reason":"project"}')
         agent_run = mock.Mock(return_value=RunResult("plan", "done", 1))
         runner = _runner(
@@ -182,16 +183,17 @@ def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> Non
                 ),
             )
 
-    assert agent_run.call_args.kwargs["permission_profile"] == "planning_readonly"
-    assert agent_run.call_args.kwargs["change_tracker"] is None
-    assert state.last_terminal_event["mode"] == "planning"
+    agent_request = agent_run.call_args.args[0]
+    assert agent_request.permission_profile == "planning_readonly"
+    assert agent_request.change_tracker is None
+    assert state.run_registry.last_terminal_event()["mode"] == "planning"
 
 
 def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         main_provider = _Provider("plain chat")
         route_provider = _Provider('{"mode":"project_writer","confidence":0.96,"reason":"project"}')
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
@@ -218,8 +220,8 @@ def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -
 
     agent_run.assert_not_called()
     assert main_provider.prompts
-    assert state.last_terminal_event["mode"] == "chat"
-    assert state.last_terminal_event["summary"] == "plain chat"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
+    assert state.run_registry.last_terminal_event()["summary"] == "plain chat"
     assert exported["router"]["records"][-1]["selected_mode"] == "project"
     assert exported["router"]["records"][-1]["final_mode"] == "chat"
     assert exported["router"]["records"][-1]["skipped_reason"] == "project_access_forbidden"
@@ -229,7 +231,7 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         main_provider = _Provider("chat reply")
         route_provider = _Provider('{"mode":"chat","confidence":0.96,"reason":"general chat"}')
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
@@ -261,14 +263,14 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
     start = next(event for event in emitted if event["type"] == "task_start")
     agent_run.assert_not_called()
     assert main_provider.prompts
-    assert state.last_terminal_event["summary"] == "chat reply"
+    assert state.run_registry.last_terminal_event()["summary"] == "chat reply"
     assert start["mode"] == "chat"
-    assert state.last_terminal_event["mode"] == "chat"
+    assert state.run_registry.last_terminal_event()["mode"] == "chat"
 
 
 def test_manual_intent_bypasses_router() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":1}'))
         runner = _runner(state, router_provider_factory=router_factory)
         research_iteration = mock.Mock(
@@ -296,7 +298,7 @@ def test_manual_intent_bypasses_router() -> None:
             )
 
     router_factory.assert_not_called()
-    assert state.last_terminal_event["mode"] == "research"
+    assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert research_iteration.call_count == 1
 
 
@@ -304,7 +306,7 @@ def test_router_failure_falls_back_to_existing_baseline() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         runner = _runner(
             state,
@@ -328,8 +330,8 @@ def test_router_failure_falls_back_to_existing_baseline() -> None:
 
         exported = state.ghost_router.export_state()
 
-    assert agent_run.call_args.kwargs["permission_profile"] == "coding_writer"
-    assert state.last_terminal_event["stop_reason"] == "done"
+    assert agent_run.call_args.args[0].permission_profile == "coding_writer"
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "done"
     assert exported["router"]["records"][-1]["skipped_reason"] == "router_error"
 
 
@@ -337,7 +339,7 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         route_provider = _CancelProvider("{}")
         runner = _runner(
@@ -357,8 +359,8 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
             ))
 
     agent_run.assert_not_called()
-    assert state.last_terminal_event["stop_reason"] == "stopped"
-    assert state.last_terminal_event["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
+    assert state.run_registry.last_terminal_event()["mode"] == "agent"
     assert route_provider.closed
 
 
@@ -366,7 +368,7 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         route_provider = _TeachCancelProvider("{}")
         runner = _runner(
@@ -386,8 +388,8 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
             ))
 
     agent_run.assert_not_called()
-    assert state.last_terminal_event["stop_reason"] == "stopped"
-    assert state.last_terminal_event["mode"] == "agent"
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
+    assert state.run_registry.last_terminal_event()["mode"] == "agent"
     assert route_provider.closed
 
 
@@ -395,7 +397,7 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         assert state.ghost_inbox is not None
         state.ghost_inbox.set_learning_enabled(False)
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":1}'))
@@ -421,14 +423,14 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
             )
 
     router_factory.assert_not_called()
-    assert agent_run.call_args.kwargs["permission_profile"] == "coding_writer"
+    assert agent_run.call_args.args[0].permission_profile == "coding_writer"
 
 
 def test_review_only_route_does_not_start_writer_or_repair() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         route_provider = _Provider('{"mode":"review","confidence":0.94,"reason":"review diff"}')
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         review = ReviewResult(
@@ -465,16 +467,16 @@ def test_review_only_route_does_not_start_writer_or_repair() -> None:
 
     agent_run.assert_not_called()
     run_review.assert_called_once()
-    assert state.last_terminal_event["mode"] == "review"
-    assert state.last_terminal_event["changed"] is False
-    assert "Bug remains" in state.last_terminal_event["summary"]
+    assert state.run_registry.last_terminal_event()["mode"] == "review"
+    assert state.run_registry.last_terminal_event()["changed"] is False
+    assert "Bug remains" in state.run_registry.last_terminal_event()["summary"]
 
 
 def test_review_only_provider_failure_is_reported_without_error() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         route_provider = _Provider('{"mode":"review","confidence":0.94,"reason":"review diff"}')
         run_review = mock.Mock(side_effect=RuntimeError("review provider down"))
         runner = _runner(
@@ -503,10 +505,10 @@ def test_review_only_provider_failure_is_reported_without_error() -> None:
             )
 
     run_review.assert_called_once()
-    assert state.last_terminal_event["stop_reason"] == "done"
-    assert state.last_terminal_event["mode"] == "review"
-    assert state.last_terminal_event["changed"] is False
-    assert state.last_terminal_event["summary"] == "Review unavailable. No files were changed."
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "done"
+    assert state.run_registry.last_terminal_event()["mode"] == "review"
+    assert state.run_registry.last_terminal_event()["changed"] is False
+    assert state.run_registry.last_terminal_event()["summary"] == "Review unavailable. No files were changed."
 
 
 def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
@@ -515,7 +517,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
         project.mkdir()
         target = project / "app.py"
         target.write_text("old\n", encoding="utf-8")
-        state = server.State(Path(td, "state"))
+        state = server.AppContext(Path(td, "state"))
         tracker = state.change_tracker_for(project, persistent=True)
         tracker.capture_before("app.py")
         target.write_text("new\n", encoding="utf-8")
@@ -549,6 +551,6 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
                 ),
             )
 
-    assert state.last_terminal_event["mode"] == "review"
-    assert state.last_terminal_event["changed"] is False
+    assert state.run_registry.last_terminal_event()["mode"] == "review"
+    assert state.run_registry.last_terminal_event()["changed"] is False
     assert run_review.call_args.kwargs["changes"]["mode"] == "snapshot"

@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import uuid
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file
@@ -36,6 +36,7 @@ class GhostEventLog:
         source_name: str = "",
         allowed_event_kinds: Iterable[str] | None = None,
         bad_row_policy: BadRowPolicy = "block",
+        event_validator: Callable[[dict[str, object]], bool] | None = None,
     ) -> None:
         self.path = Path(path)
         self.schema_version = int(schema_version)
@@ -50,12 +51,14 @@ class GhostEventLog:
         if bad_row_policy not in {"warn", "block", "quarantine_tail"}:
             raise ValueError("bad_row_policy must be warn, block, or quarantine_tail")
         self.bad_row_policy = bad_row_policy
+        self.event_validator = event_validator
 
     def read(self) -> GhostEventRead:
         with with_file_lock(self.path):
-            return self._read_locked()
+            return self.read_locked()
 
-    def _read_locked(self) -> GhostEventRead:
+    def read_locked(self) -> GhostEventRead:
+        """Read events when the caller already holds this log's file lock."""
         try:
             if not self.path.is_file():
                 return GhostEventRead(())
@@ -112,6 +115,11 @@ class GhostEventLog:
             return False
 
     def write_atomic(self, events: Iterable[dict[str, object]]) -> None:
+        with with_file_lock(self.path):
+            self.write_atomic_locked(events)
+
+    def write_atomic_locked(self, events: Iterable[dict[str, object]]) -> None:
+        """Replace the log when the caller already holds this log's file lock."""
         rows = list(events)
         for event in rows:
             warning = self._validate_event(event, 0)
@@ -122,18 +130,17 @@ class GhostEventLog:
             raise ValueError(f"{self.source_name} is too large")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_name(f".{self.path.name}.{uuid.uuid4().hex}.tmp")
-        with with_file_lock(self.path):
+        try:
+            with temporary.open("xb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+        finally:
             try:
-                with temporary.open("xb") as handle:
-                    handle.write(data)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.replace(temporary, self.path)
-            finally:
-                try:
-                    temporary.unlink()
-                except OSError:
-                    pass
+                temporary.unlink()
+            except OSError:
+                pass
 
     def prune_tail(self, max_rows: int) -> None:
         count = max(0, int(max_rows))
@@ -170,6 +177,8 @@ class GhostEventLog:
             event_kind = str(payload.get("type") or payload.get("kind") or "").strip()
             if event_kind not in self.allowed_event_kinds:
                 return f"{row}:unsupported_event"
+        if self.event_validator is not None and not self.event_validator(payload):
+            return f"{row}:invalid_event"
         return ""
 
     def _quarantine_tail(

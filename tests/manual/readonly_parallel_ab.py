@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.runtime.models import ToolCall
 from codey.protocols.json_codec import JsonToolCodec
@@ -44,6 +45,10 @@ PARALLEL_READONLY_TOOL_NAMES = frozenset({"read", "ls", "search"})
 DEFAULT_WORKERS = 4
 ARMS = ("serial", "concurrent")
 LIVE_MARKERS = ("MARKER_ALPHA", "MARKER_BRAVO", "MARKER_CHARLIE", "MARKER_DELTA")
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -542,7 +547,7 @@ def run_live_provider(
         with tempfile.TemporaryDirectory(prefix="codey-readonly-parallel-live-") as td:
             root = Path(td)
             _write_live_project(root)
-            result = agent.run(
+            result = run_agent(
                 provider,
                 root,
                 _live_task(live_case),

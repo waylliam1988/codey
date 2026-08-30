@@ -84,6 +84,7 @@ from codey.workspace.config import (
     load_project_config,
     preferred_provider_for,
 )
+from codey.workspace.revision import INITIAL_WORKSPACE_REVISION
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ class TaskRunDeps:
     collect_changes: Callable
     run_review: Callable
     capture_provider_failure: Callable
+    workspace_revisions: Any
     run_consensus: Callable | None = None
     run_project_audit: Callable | None = None
     run_research_advisors: Callable | None = None
@@ -198,8 +200,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
     provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
     provider_flow.set_recovery_handler(getattr(state, "handle_flow_recovery", None))
     provider_controls.begin_task_context(session_id)
-    state.last_provider_failure = None
-    previous_cancel_event = cancellation.set_event(state.stop_flag)
+    state.run_registry.set_last_provider_failure(None)
+    previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
 
     review_deps = _review_deps(deps)
     ghost_deps = _ghost_deps(deps, review_deps)
@@ -279,10 +281,13 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
 
         work = RunWork(
             recent_events=[],
-            evidence=ExecutionEvidence(),
+            evidence=ExecutionEvidence(
+                workspace_revision=_current_workspace_revision(deps, project),
+            ),
             claimed_work_item=claimed_work_item,
             trace=trace,
         )
+        work.workspace_revision = work.evidence.workspace_revision
         project_completion_deps = _project_completion_deps(
             deps,
             lambda active_work, transition: _commit_run_operation_with_store(
@@ -351,6 +356,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 state.emit(payload)
             if event.kind == "tool_start":
                 return
+            if project and _workspace_edit_event(event):
+                work.advance_workspace_revision(deps.workspace_revisions, project)
             work.evidence.record(event)
             message = render_run_event(event)
             work.recent_events.append(message)
@@ -401,7 +408,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             state.add_pending_shell_approval(approval_id, pending)
             state.emit(pending["ui_event"])
 
-        supervisor = getattr(state, "provider_supervisor", None)
+        supervisor = state.providers.supervisor
         self_repair = getattr(state, "self_repair", None)
 
         def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
@@ -616,7 +623,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 error=exc,
             )
         )
-        state.last_provider_failure = failure
+        state.run_registry.set_last_provider_failure(failure)
         if failure is not None and work is not None and work.ledger is not None:
             try:
                 work.ledger.append_provider_failure(current_id, failure)
@@ -699,6 +706,24 @@ def _open_trace(
         return None
 
 
+def _current_workspace_revision(deps: TaskRunDeps, project: str | None) -> int:
+    store = deps.workspace_revisions
+    if not project:
+        return INITIAL_WORKSPACE_REVISION
+    return store.current(project)
+
+
+def _workspace_edit_event(event: RunEvent) -> bool:
+    return (
+        event.kind == "tool"
+        and event.call is not None
+        and event.outcome is not None
+        and event.call.name == "edit"
+        and bool(event.outcome.ok)
+        and bool(event.outcome.changed)
+    )
+
+
 def _review_deps(deps: TaskRunDeps) -> ReviewFlowDeps:
     return ReviewFlowDeps(
         state=deps.state,
@@ -762,6 +787,7 @@ def _project_completion_deps(
         run_project_audit=deps.run_project_audit,
         project_facts=deps.project_facts,
         work_checkpoints=deps.work_checkpoints,
+        workspace_revisions=deps.workspace_revisions,
         managed_outputs=deps.managed_outputs,
         knowledge_store=deps.knowledge_store,
         is_git_repository=deps.is_git_repository or (lambda _project: False),
@@ -891,9 +917,7 @@ def _start_run_operation(
     max_repair_rounds: int,
     task_kind: str,
 ) -> None:
-    runtime_operations: RuntimeOperationStore | None = getattr(deps.state, "runtime_operations", None)
-    if runtime_operations is None:
-        raise RuntimeError("task entry requires RuntimeOperationStore")
+    runtime_operations: RuntimeOperationStore = deps.state.runtime_operations
     try:
         work.operation = runtime_operations.start(
             session_id=session_id,
@@ -928,8 +952,8 @@ def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, obj
 
 def _commit_run_operation_with_store(deps: TaskRunDeps, work: RunWork, transition: Callable) -> None:
     operation = work.operation
-    runtime_operations: RuntimeOperationStore | None = getattr(deps.state, "runtime_operations", None)
-    if operation is None or runtime_operations is None:
+    runtime_operations: RuntimeOperationStore = deps.state.runtime_operations
+    if operation is None:
         return
     try:
         work.operation = runtime_operations.commit(

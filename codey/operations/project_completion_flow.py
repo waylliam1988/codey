@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from codey.agents.consensus import render_project_context
-from codey.agents.runner import RunResult, task_forbids_verification
+from codey.agents.protocol import task_forbids_verification
+from codey.agents.request import AgentRequest
+from codey.agents.runner import RunResult
 from codey.agents.tools import AgentToolFns
 from codey.agents.writer_failover import (
     CheckpointView,
@@ -105,6 +107,7 @@ class ProjectCompletionDeps:
     run_review: Callable
     capture_provider_failure: Callable[..., ProviderFailure]
     commit_run_operation: Callable[[RunWork, Callable], None]
+    workspace_revisions: Any
     run_consensus: Callable | None = None
     run_project_audit: Callable | None = None
     project_facts: ProjectFactsStore | None = None
@@ -359,6 +362,8 @@ def run_project_mode(
     resumed_changed_files = project_context.checkpoint.changed_files
     resumed_successful_checks = project_context.checkpoint.successful_checks
     work.evidence.seed_checks(project_context.checkpoint.seed_checks)
+    if project_context.checkpoint.workspace_changed:
+        work.advance_workspace_revision(deps.workspace_revisions, project)
     agent_task = request.task
     change_brief: ChangeBrief | None = None
     agent_fresh_chat = frame.fresh_chat
@@ -452,7 +457,7 @@ def run_project_mode(
             resumed_changed_files = refreshed.changed_files
             resumed_successful_checks = refreshed.successful_checks
         if refreshed.workspace_changed:
-            work.evidence.invalidate_checks()
+            work.advance_workspace_revision(deps.workspace_revisions, project)
         return CheckpointView(
             prompt=checkpoint_prompt,
             changed_files=resumed_changed_files,
@@ -467,14 +472,14 @@ def run_project_mode(
             note_turn(event.turn)
             hooks.on_event(event)
 
-        return deps.agent_run(
-            spec.provider,
-            Path(project),
-            spec.task,
+        return deps.agent_run(AgentRequest(
+            provider=spec.provider,
+            project=Path(project),
+            task=spec.task,
             max_turns=spec.remaining_turns,
             on_event=on_writer_event,
             on_shell_request=hooks.on_shell_request,
-            stop_flag=state.stop_flag,
+            stop_flag=state.run_registry.stop_flag,
             fresh_chat=spec.fresh_chat,
             strict_fresh_chat=spec.strict_fresh_chat,
             change_tracker=tracker,
@@ -509,7 +514,7 @@ def run_project_mode(
                 run_id=frame.run_id,
             ),
             trace_recorder=frame.trace,
-        )
+        ))
 
     def select_next_writer(excluded: set[str]) -> str | None:
         mode = _writer_failover_mode(frame.task_kind)
@@ -594,7 +599,7 @@ def run_project_mode(
         clear_session=lambda pid: state.set_provider_session(pid, None),
         on_switch=on_writer_switch,
         refresh_checkpoint=refresh_checkpoint_view,
-        stopped=state.stop_flag.is_set,
+        stopped=state.run_registry.stop_flag.is_set,
     )
 
     deps.commit_run_operation(
@@ -659,7 +664,7 @@ def run_project_mode(
         and not used_project_audit
         and result.stop_reason == "done"
         and not result.changed
-        and not state.stop_flag.is_set()
+        and not state.run_registry.stop_flag.is_set()
     ):
         context = render_project_context(
             frame.conversation.snapshot,
@@ -806,7 +811,7 @@ def run_project_mode(
         checks_before_review_followup=(
             work.evidence.has_successful_checks or (not work.evidence.observed_tool_events and result.checks_passed)
         ),
-        stop_requested=state.stop_flag.is_set,
+        stop_requested=state.run_registry.stop_flag.is_set,
         refresh_project_map=refresh_review_project_map,
         build_verification_map=lambda changes, current_project_map: safe_verification_map(
             project,
@@ -936,7 +941,7 @@ def run_project_mode(
     if (
         proof is not None
         and not proof.satisfied
-        and not state.stop_flag.is_set()
+        and not state.run_registry.stop_flag.is_set()
         and remaining_turns > 0
         and repair_candidate(
             proof.status,
@@ -1272,6 +1277,7 @@ def handle_project_tool_event(
                 command=command,
                 cwd=cwd,
                 ok=ok,
+                workspace_revision=work.workspace_revision,
             )
         )
         record_analysis_run(

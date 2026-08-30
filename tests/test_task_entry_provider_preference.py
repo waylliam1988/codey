@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
@@ -60,7 +61,7 @@ def _write_preferred_config(project: Path, mode: str, provider_id: str) -> None:
     )
 
 
-def _build_runner(state: server.State, *, agent_run) -> TaskRunDeps:
+def _build_runner(state: server.AppContext, *, agent_run) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run,
         collect_changes=mock.Mock(
@@ -70,6 +71,7 @@ def _build_runner(state: server.State, *, agent_run) -> TaskRunDeps:
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -79,7 +81,7 @@ def _build_runner(state: server.State, *, agent_run) -> TaskRunDeps:
     )
 
 
-def _run_project_task(project: Path, state: server.State, *, provider_id: str) -> None:
+def _run_project_task(project: Path, state: server.AppContext, *, provider_id: str) -> None:
     runner = _build_runner(state, agent_run=_agent_run)
     run_task_submission(runner, TaskSubmission(
         "session-preferred-providers",
@@ -92,7 +94,7 @@ def _run_project_task(project: Path, state: server.State, *, provider_id: str) -
     ))
 
 
-def _agent_run(_provider, _project, _task, **_kwargs) -> RunResult:
+def _agent_run(_request: AgentRequest) -> RunResult:
     raise AssertionError("writer should have been replaced by the fake below")
 
 
@@ -113,7 +115,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td)
         _write_preferred_config(project, "project", "glm")
-        state = server.State(td)
+        state = server.AppContext(td)
         state.provider_failover_order = lambda: ("deepseek", "stepfun", "glm")
         providers = {
             "deepseek": _Provider("DeepSeek Web"),
@@ -123,7 +125,8 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
 
         calls: list[str] = []
 
-        def agent_run(provider, _project, _task, **_kwargs) -> RunResult:
+        def agent_run(request: AgentRequest) -> RunResult:
+            provider = request.provider
             calls.append(provider.name)
             if len(calls) == 1:
                 raise _failure()
@@ -136,6 +139,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
             ),
             run_review=mock.Mock(return_value=None),
             capture_provider_failure=server.capture_provider_failure,
+            workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
         with mock.patch.object(
@@ -157,14 +161,14 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
     # Without the preference the tie-broken order would try stepfun first;
     # the soft preference moves glm to the front of the failover candidates.
     assert [name for name in calls] == ["DeepSeek Web", "GLM"]
-    assert state.last_terminal_event["provider"] == "glm"
+    assert state.run_registry.last_terminal_event()["provider"] == "glm"
 
 
 def test_preference_does_not_override_the_user_selected_provider() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td)
         _write_preferred_config(project, "project", "glm")
-        state = server.State(td)
+        state = server.AppContext(td)
         providers = {
             "deepseek": _Provider("DeepSeek Web"),
             "stepfun": _Provider("StepFun Chat"),
@@ -172,7 +176,8 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
         }
         writer_ids: list[str] = []
 
-        def agent_run(provider, _project, _task, **_kwargs) -> RunResult:
+        def agent_run(request: AgentRequest) -> RunResult:
+            provider = request.provider
             for provider_id, candidate in providers.items():
                 if candidate is provider:
                     writer_ids.append(provider_id)
@@ -185,6 +190,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
             ),
             run_review=mock.Mock(return_value=None),
             capture_provider_failure=server.capture_provider_failure,
+            workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
         with mock.patch.object(
@@ -206,17 +212,17 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
     # The user picked stepfun; the project preference must not replace it,
     # not even when the preferred provider sits earlier in every ranking.
     assert writer_ids == ["stepfun"]
-    assert state.last_terminal_event["provider"] == "stepfun"
+    assert state.run_registry.last_terminal_event()["provider"] == "stepfun"
 
 
 def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td)
         _write_preferred_config(project, "project", "glm")
-        state = server.State(td)
+        state = server.AppContext(td)
         state.provider_failover_order = lambda: ("deepseek", "stepfun", "glm")
         # The supervisor's health boundary outranks any project preference.
-        state.provider_supervisor.record_failure(
+        state.providers.supervisor.record_failure(
             "glm",
             ProviderFailure(
                 "GLM",
@@ -235,7 +241,8 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
         }
         calls: list[str] = []
 
-        def agent_run(provider, _project, _task, **_kwargs) -> RunResult:
+        def agent_run(request: AgentRequest) -> RunResult:
+            provider = request.provider
             calls.append(provider.name)
             if len(calls) == 1:
                 raise _failure()
@@ -248,6 +255,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
             ),
             run_review=mock.Mock(return_value=None),
             capture_provider_failure=server.capture_provider_failure,
+            workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
         with mock.patch.object(
@@ -267,12 +275,12 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
             state.wait_for_ghost_sleep(timeout=2)
 
     assert calls[1] == "StepFun Chat"
-    assert state.last_terminal_event["provider"] == "stepfun"
+    assert state.run_registry.last_terminal_event()["provider"] == "stepfun"
 
 
 def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.State(td)
+        state = server.AppContext(td)
         runner = TaskRunDeps(state=state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
             collect_changes=mock.Mock(
@@ -280,6 +288,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
             ),
             run_review=mock.Mock(return_value=None),
             capture_provider_failure=server.capture_provider_failure,
+            workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
 
@@ -301,11 +310,11 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
 
     # The started run must end with a bounded error terminal event, not a
     # permanently busy slot.
-    terminal = state.last_terminal_event
+    terminal = state.run_registry.last_terminal_event()
     assert terminal is not None and terminal["stop_reason"] == "error"
     assert "route exploded" in str(terminal["summary"])
     with state.lock:
-        assert state.active_run is None and not state.busy
+        assert state.run_registry.current() is None and not state.run_registry.is_busy()
 
 
 if __name__ == "__main__":

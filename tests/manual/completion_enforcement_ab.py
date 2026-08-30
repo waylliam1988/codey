@@ -32,6 +32,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.app import server
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult, run as default_agent_run
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
@@ -331,7 +332,7 @@ def _trace_integrity_row(manifest: dict[str, Any]) -> dict[str, Any]:
     return rows[-1] if rows else {}
 
 
-def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any] | None = None):
+def _build_runner(state: server.AppContext, *, scripted=None, observed: dict[str, Any] | None = None):
     """Task entry with either a scripted writer or the real one."""
 
     if scripted is None:
@@ -341,16 +342,16 @@ def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any
         index = {"n": -1}
         observed_collector = observed if observed is not None else {}
 
-        def agent_run(_provider, _project, task, **kwargs) -> RunResult:  # type: ignore[misc]
+        def agent_run(request: AgentRequest) -> RunResult:
             index["n"] += 1
             if index["n"] > 0 and observed_collector is not None:
                 observed_collector.setdefault("repair_context_texts", []).append(
-                    str(kwargs.get("completion_repair_context") or "")
+                    request.completion_repair_context
                 )
-                observed_collector["repair_followup_task"] = task
+                observed_collector["repair_followup_task"] = request.task
             bounded = min(index["n"], len(scripted.results_per_phase) - 1)
             for event in scripted.events_per_phase[bounded]:
-                kwargs["on_event"](event)
+                request.on_event(event)
             return scripted.results_per_phase[bounded]
 
         collect = mock.Mock(side_effect=lambda *_a, **_k: _changes(scripted.changes_files))
@@ -362,6 +363,7 @@ def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any
         capture_provider_failure=server.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -375,7 +377,7 @@ def _finish_row(
     *,
     case_name: str,
     arm: str,
-    state: server.State,
+    state: server.AppContext,
     session_suffix: str,
     project: Path,
     observed: dict[str, Any],
@@ -385,7 +387,7 @@ def _finish_row(
     elapsed_s: float,
     independent_ok: bool | None = None,
 ) -> dict[str, Any]:
-    event = dict(state.last_terminal_event or {})
+    event = dict(state.run_registry.last_terminal_event() or {})
     manifest: dict[str, Any] = {}
     if state.run_traces is not None and event.get("run_id"):
         path = state.run_traces.path_for(f"s-ab-{session_suffix}", event["run_id"])
@@ -522,7 +524,7 @@ def run_self_test() -> None:
             observed: dict[str, Any] = {}
             with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                 project = _pytest_project(Path(td))
-                state = server.State(Path(td) / "state")
+                state = server.AppContext(Path(td) / "state")
                 runner = _build_runner(state, scripted=case, observed=observed)
                 patches = _start_arm_patches(arm)
                 with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -817,7 +819,7 @@ def run_live(
             try:
                 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                     project = _live_project(Path(td), spec)
-                    state = server.State(Path(td) / "state")
+                    state = server.AppContext(Path(td) / "state")
                     runner = _build_runner(state, observed=observed)
                     patches = _start_arm_patches(arm)
                     with mock.patch.object(state, "get_provider", return_value=tracing_provider):
@@ -847,7 +849,7 @@ def run_live(
                         observed=observed,
                         writer_phases=None,
                         tool_calls=tracing_provider.send_index,
-                        turns=(state.last_terminal_event or {}).get("turns"),
+                        turns=(state.run_registry.last_terminal_event() or {}).get("turns"),
                         elapsed_s=time.monotonic() - started,
                     )
                     row["send_count"] = tracing_provider.send_index

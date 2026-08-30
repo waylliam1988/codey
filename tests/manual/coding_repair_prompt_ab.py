@@ -19,7 +19,7 @@ from typing import Any, Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agents.runner import _protocol_repair_prompt
+from codey.agents.protocol import protocol_repair_prompt
 from codey.providers import controls as provider_controls
 from codey.runtime.models import ToolPlan
 from codey.protocols import JsonToolCodec
@@ -212,7 +212,7 @@ def _baseline_repair(case: RepairCase) -> str:
 
 
 def _typed_repair(case: RepairCase) -> str:
-    return _protocol_repair_prompt(
+    return protocol_repair_prompt(
         JsonToolCodec(),
         _bad_plan(case),
         previous_reply=case.bad_reply,

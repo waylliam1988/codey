@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
@@ -33,6 +34,10 @@ class FakeProvider:
 
     def close(self) -> None:
         pass
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 class ProjectFactsTests(unittest.TestCase):
@@ -220,7 +225,7 @@ class ProjectFactsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 Path(td),
                 "Fix it",
@@ -234,19 +239,19 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_records_success_and_injects_it_into_next_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.State()
+            state = server.AppContext()
             state.project_facts = ProjectFactsStore(state_td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             captured_facts: list[str] = []
             run_count = 0
 
-            def fake_agent_run(*_args, **kwargs):
+            def fake_agent_run(request: AgentRequest):
                 nonlocal run_count
                 run_count += 1
-                captured_facts.append(kwargs.get("project_facts", ""))
+                captured_facts.append(request.project_facts)
                 if run_count == 1:
-                    kwargs["on_event"](RunEvent.tool_finished(
+                    request.on_event(RunEvent.tool_finished(
                         1,
                         ToolCall("run", {"path": ".", "command": "python -m unittest"}),
                         ToolOutcome("exit 0", True, exit_code=0),
@@ -280,19 +285,19 @@ class ProjectFactsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (backend / "app.js").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = server.AppContext(root / "state")
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
-            def fake_agent_run(*args, **kwargs):
-                target = Path(args[1]) / "backend" / "app.js"
+            def fake_agent_run(request: AgentRequest):
+                target = request.project / "backend" / "app.js"
                 target.write_text("after\n", encoding="utf-8")
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("edit", {"path": "backend/app.js"}),
                     ToolOutcome("edited", True, changed=True),
                 ))
-                kwargs["on_event"](RunEvent.tool_finished(
+                request.on_event(RunEvent.tool_finished(
                     2,
                     ToolCall("run", {"path": "backend", "command": "npm test"}),
                     ToolOutcome("ok", True, exit_code=0),
@@ -337,13 +342,13 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_does_not_record_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.State()
+            state = server.AppContext()
             state.project_facts = ProjectFactsStore(state_td)
             provider = mock.Mock()
             provider.name = "Qwen Studio"
 
-            def fake_agent_run(*_args, **kwargs):
-                kwargs["on_event"](RunEvent.tool_finished(
+            def fake_agent_run(request: AgentRequest):
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),
                     ToolOutcome("exit 1", False, exit_code=1),
@@ -366,12 +371,12 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_facts_persistence_failure_does_not_fail_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.State(state_td)
+            state = server.AppContext(state_td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
-            def fake_agent_run(*_args, **kwargs):
-                kwargs["on_event"](RunEvent.tool_finished(
+            def fake_agent_run(request: AgentRequest):
+                request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),
                     ToolOutcome("exit 0", True, exit_code=0),
@@ -395,7 +400,7 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 server._run_task("session-1", td, "task", 4, False, "deepseek")
 
-            self.assertEqual(state.last_stop_reason, "done")
+            self.assertEqual(state.run_registry.last_stop_reason(), "done")
 
 
 if __name__ == "__main__":

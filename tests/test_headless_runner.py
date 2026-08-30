@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
@@ -45,8 +46,8 @@ class HeadlessRunnerTests(unittest.TestCase):
     def test_project_task_emits_jsonl_and_writes_ledger(self) -> None:
         rows: list[dict[str, object]] = []
 
-        def fake_agent(*_args, **kwargs):
-            on_event = kwargs["on_event"]
+        def fake_agent(request: AgentRequest):
+            on_event = request.on_event
             call = ToolCall("run", {"path": ".", "command": "python -m pytest -q"})
             on_event(RunEvent.turn_started(1, '{"tool":"run","args":{}}'))
             on_event(RunEvent.tool_started(1, call, "Running tests"))
@@ -93,8 +94,7 @@ class HeadlessRunnerTests(unittest.TestCase):
     def test_project_task_commits_runtime_operation_terminal(self) -> None:
         rows: list[dict[str, object]] = []
 
-        def fake_agent(*_args, **kwargs):
-            del kwargs
+        def fake_agent(_request: AgentRequest):
             return RunResult("finished", "done", 1, checks_passed=True, checks_ran=True)
 
         with tempfile.TemporaryDirectory() as td:
@@ -130,10 +130,10 @@ class HeadlessRunnerTests(unittest.TestCase):
         rows: list[dict[str, object]] = []
         calls = 0
 
-        def fake_agent(*_args, **kwargs):
+        def fake_agent(request: AgentRequest):
             nonlocal calls
             calls += 1
-            kwargs["on_event"](RunEvent.status("running custom id"))
+            request.on_event(RunEvent.status("running custom id"))
             return RunResult("finished", "done", 1)
 
         with tempfile.TemporaryDirectory() as td:
@@ -165,8 +165,9 @@ class HeadlessRunnerTests(unittest.TestCase):
     def test_shell_request_is_rejected_and_exits_nonzero(self) -> None:
         rows: list[dict[str, object]] = []
 
-        def fake_agent(*_args, **kwargs):
-            kwargs["on_shell_request"](".", "python setup.py install")
+        def fake_agent(request: AgentRequest):
+            assert request.on_shell_request is not None
+            request.on_shell_request(".", "python setup.py install")
             return RunResult("shell command requires approval", "approval", 1)
 
         with tempfile.TemporaryDirectory() as td:
@@ -194,11 +195,11 @@ class HeadlessRunnerTests(unittest.TestCase):
     def test_readonly_planning_uses_readonly_profile_without_change_tracker(self) -> None:
         seen: dict[str, object] = {}
 
-        def fake_agent(*_args, **kwargs):
-            seen["permission_profile"] = kwargs.get("permission_profile")
-            seen["change_tracker"] = kwargs.get("change_tracker")
-            seen["project_map"] = kwargs.get("project_map")
-            seen["project_config_warnings"] = kwargs.get("project_config_warnings")
+        def fake_agent(request: AgentRequest):
+            seen["permission_profile"] = request.permission_profile
+            seen["change_tracker"] = request.change_tracker
+            seen["project_map"] = request.project_map
+            seen["project_config_warnings"] = request.project_config_warnings
             return RunResult("plan only", "done", 1)
 
         with tempfile.TemporaryDirectory() as td:
@@ -237,9 +238,9 @@ class HeadlessRunnerTests(unittest.TestCase):
             '{"mode":"planning_readonly","confidence":0.91,"reason":"plan only"}'
         )
 
-        def fake_agent(*_args, **kwargs):
-            seen["permission_profile"] = kwargs.get("permission_profile")
-            seen["change_tracker"] = kwargs.get("change_tracker")
+        def fake_agent(request: AgentRequest):
+            seen["permission_profile"] = request.permission_profile
+            seen["change_tracker"] = request.change_tracker
             return RunResult("plan only", "done", 1)
 
         with tempfile.TemporaryDirectory() as td:

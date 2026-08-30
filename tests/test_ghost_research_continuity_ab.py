@@ -178,7 +178,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         journal_dir = root / "journal-archive"
         journal = ab.ABJournalWriter(
@@ -197,6 +197,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,
@@ -240,7 +241,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         journal_dir = root / "journal-digest"
         journal = ab.ABJournalWriter(
@@ -259,6 +260,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
             evidence_ledgers=state.evidence_ledgers,

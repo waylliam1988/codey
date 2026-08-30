@@ -14,7 +14,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
-from codey.agents import runner as agent_module
+from codey.agents.request import DEFAULT_MAX_TURNS
+from codey.agents.runner import run as default_agent_run
 from codey.workspace.changes import collect_changes as default_collect_changes
 from codey.runtime.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -25,9 +26,9 @@ from codey.providers import (
     connect_provider as default_connect_provider,
 )
 from codey.app.server import (
+    AppContext,
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
-    State,
     _should_wait_for_local_ghost_sleep,
     is_git_repository,
 )
@@ -44,7 +45,7 @@ class HeadlessRequest:
     project: Path
     task: str
     provider_id: str = DEFAULT_PROVIDER_ID
-    max_turns: int = agent_module.DEFAULT_MAX_TURNS
+    max_turns: int = DEFAULT_MAX_TURNS
     session_id: str = ""
     run_id: str = ""
     intent: str = "project"
@@ -61,7 +62,7 @@ class HeadlessResult:
     ledger_path: str = ""
 
 
-class HeadlessState(State):
+class HeadlessAppContext(AppContext):
     def __init__(
         self,
         state_home: str | Path | None,
@@ -92,7 +93,7 @@ class HeadlessState(State):
             self._emit_jsonl(payload)
         if payload_event.get("type") == "shell_request":
             self.shell_rejected = True
-            self.stop_flag.set()
+            self.run_registry.stop_flag.set()
             rejected = {
                 "schema_version": SCHEMA_VERSION,
                 "type": "shell_rejected",
@@ -156,7 +157,7 @@ def run_headless(
     project.mkdir(parents=True, exist_ok=True)
     session_id = request.session_id or HEADLESS_SESSION_PREFIX + uuid.uuid4().hex[:12]
     state_home = Path(request.state_home).expanduser() if request.state_home else None
-    state = HeadlessState(
+    state = HeadlessAppContext(
         state_home,
         port=request.port,
         emit_jsonl=emit_jsonl,
@@ -170,12 +171,13 @@ def run_headless(
     )
     deps = TaskRunDeps(
         state=state,
-        agent_run=agent_run or agent_module.run,
+        agent_run=agent_run or default_agent_run,
         collect_changes=collect_changes or default_collect_changes,
         run_review=_no_headless_review,
         capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
         evidence_ledgers=state.evidence_ledgers,
@@ -207,7 +209,7 @@ def run_headless(
     finally:
         if _should_wait_for_local_ghost_sleep(state.state_home):
             state.wait_for_ghost_sleep()
-    terminal = dict(state.last_terminal_event or {})
+    terminal = dict(state.run_registry.last_terminal_event() or {})
     run_id = str(terminal.get("run_id") or request.run_id or "")
     stop_reason = str(terminal.get("stop_reason") or "error")
     ledger_path = ""
@@ -328,7 +330,7 @@ def _no_headless_review(**_kwargs):
 
 
 def _pre_reserve_run_id(
-    state: HeadlessState,
+    state: HeadlessAppContext,
     *,
     request: HeadlessRequest,
     session_id: str,

@@ -22,6 +22,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
@@ -50,6 +51,10 @@ NON_UTF8_MARKER = "RARE_NON_UTF8_SEARCH_MARKER"
 UNREADABLE_MARKER = "RARE_UNREADABLE_SEARCH_MARKER"
 OVERSIZED_MARKER = "RARE_OVERSIZED_SEARCH_MARKER"
 BUDGET_MARKER = "RARE_BUDGET_SEARCH_MARKER"
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 @dataclass(frozen=True)
@@ -500,7 +505,7 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
             return runtime_read_file(root_path, read_rel, *args, **kwargs)
 
         started = time.monotonic()
-        result = agent.run(
+        result = run_agent(
             provider,
             root,
             case.task,

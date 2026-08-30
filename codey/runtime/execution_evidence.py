@@ -6,6 +6,10 @@ from dataclasses import dataclass
 
 from codey.runtime.events import RunEvent
 from codey.policies.redaction import looks_prompt_visible_secret
+from codey.workspace.revision import (
+    INITIAL_WORKSPACE_REVISION,
+    valid_workspace_revision,
+)
 
 MAX_CHANGED_FILES = 32
 MAX_READS = 48
@@ -63,6 +67,7 @@ class CheckEvidence:
     error_code: str = ""
     result_summary: str = ""
     managed_output_handle: str = ""
+    workspace_revision: int = INITIAL_WORKSPACE_REVISION
 
 
 @dataclass(frozen=True)
@@ -95,7 +100,11 @@ class TruncatedEvidence:
 class ExecutionEvidence:
     """Aggregate local tool facts without persisting source or tool output."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, workspace_revision: int = INITIAL_WORKSPACE_REVISION) -> None:
+        self.workspace_revision = (
+            valid_workspace_revision(workspace_revision)
+            or INITIAL_WORKSPACE_REVISION
+        )
         self.edit_epoch = 0
         self.changed_files: list[str] = []
         self.reads: list[ReadEvidence] = []
@@ -111,8 +120,19 @@ class ExecutionEvidence:
         for item in checks or ():
             command = _text(getattr(item, "command", ""))
             cwd = _text(getattr(item, "cwd", "."), 240) or "."
-            if command:
-                self._append_check(self.checks_after_edit, CheckEvidence(command, cwd))
+            revision = valid_workspace_revision(
+                getattr(item, "workspace_revision", 0)
+            )
+            if command and revision:
+                self._append_check(
+                    self.checks_after_edit,
+                    CheckEvidence(command, cwd, workspace_revision=revision),
+                )
+
+    def set_workspace_revision(self, revision: object) -> None:
+        number = valid_workspace_revision(revision)
+        if number:
+            self.workspace_revision = number
 
     def record(self, event: RunEvent) -> None:
         if event.kind != "tool" or event.call is None or event.outcome is None:
@@ -162,7 +182,19 @@ class ExecutionEvidence:
 
     @property
     def successful_checks(self) -> tuple[CheckEvidence, ...]:
-        return tuple(self.checks_after_edit)
+        return tuple(
+            item
+            for item in self.checks_after_edit
+            if item.workspace_revision == self.workspace_revision
+        )
+
+    @property
+    def failed_checks(self) -> tuple[CheckEvidence, ...]:
+        return tuple(
+            item
+            for item in self.failed_checks_after_edit
+            if item.workspace_revision == self.workspace_revision
+        )
 
     @property
     def has_successful_checks(self) -> bool:
@@ -212,8 +244,8 @@ class ExecutionEvidence:
             f"- Complete searches after latest edit: {self._joined(complete_searches)}",
             f"- Incomplete/truncated searches during task: {self._joined(all_incomplete_searches)}",
             f"- Incomplete/truncated searches after latest edit: {self._joined(incomplete_searches)}",
-            f"- Successful checks after latest edit: {self._checks(self.checks_after_edit)}",
-            f"- Failed checks after latest edit: {self._checks(self.failed_checks_after_edit)}",
+            f"- Successful checks after latest edit: {self._checks(list(self.successful_checks))}",
+            f"- Failed checks after latest edit: {self._checks(list(self.failed_checks))}",
             f"- Truncated tool results during task: {self._joined(truncated)}",
             f"- Repeated identical information calls within edit epochs: {self.duplicate_info_tools}",
             "This is execution evidence, not proof of correctness or coverage.",
@@ -246,6 +278,7 @@ class ExecutionEvidence:
             error_code=_text(getattr(outcome, "error_code", ""), 80),
             result_summary="" if ok else check_failure_summary(outcome),
             managed_output_handle=handle,
+            workspace_revision=self.workspace_revision,
         )
         if ok:
             self.failed_checks_after_edit[:] = [

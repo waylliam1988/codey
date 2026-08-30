@@ -156,6 +156,125 @@ class RuntimeSessionLogTests(unittest.TestCase):
 
         self.assertEqual(projection.operations["op-1"].outcome, "aborted")
 
+    def test_projection_cache_replays_after_external_append_changes_file_size(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            cached = log.projection("s1")
+            self.assertEqual(cached.lanes["current"].open_operation_id, "op-1")
+
+            externally_written = RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_settled",
+                payload={"outcome": "completed"},
+            )
+            path = log.path_for("s1")
+            with path.open("ab") as handle:
+                handle.write(externally_written.to_json_line().encode("utf-8"))
+
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-2",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            projection = log.projection("s1")
+
+        self.assertEqual(projection.operations["op-1"].status, "settled")
+        self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
+
+    def test_failed_append_validation_does_not_pollute_projection_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            self.assertEqual(log.projection("s1").operations, {})
+
+            with self.assertRaises(RuntimeLogCorruption):
+                log.append(
+                    "s1",
+                    lane="current",
+                    operation_id="op-missing",
+                    kind="operation_settled",
+                    payload={"outcome": "completed"},
+                )
+
+            log.append_many(
+                "s1",
+                (
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_started",
+                        "payload": {"operation_kind": "agent"},
+                    },
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_settled",
+                        "payload": {"outcome": "completed"},
+                    },
+                ),
+            )
+            projection = log.projection("s1")
+
+        self.assertEqual(projection.operations["op-1"].outcome, "completed")
+        self.assertEqual(projection.lanes["current"].open_operation_id, "")
+
+    def test_append_uses_cache_after_compaction(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td), max_log_bytes=1800)
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "task"},
+            )
+            for index in range(12):
+                log.append(
+                    "s1",
+                    lane="current",
+                    operation_id="op-1",
+                    kind="operation_effect",
+                    payload={
+                        "effect_kind": "run_phase",
+                        "ref": f"phase:{index}",
+                        "padding": "x" * 80,
+                    },
+                )
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_settled",
+                payload={"outcome": "completed"},
+            )
+            compacted_entries = log.entries("s1")
+            self.assertEqual(
+                [entry.kind for entry in compacted_entries if entry.operation_id == "op-1"],
+                ["operation_started", "operation_effect", "operation_settled"],
+            )
+
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-2",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            projection = log.projection("s1")
+
+        self.assertEqual(projection.operations["op-1"].status, "settled")
+        self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
+
     def test_rejects_second_open_operation_in_lane(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))

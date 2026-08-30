@@ -81,7 +81,7 @@ def run_provider_smoke(
     *,
     port: int,
     timeout: float,
-    state: server.State,
+    state: server.AppContext,
     store: Path,
 ) -> dict:
     module = PROVIDER_MODULES[provider_id]
@@ -188,13 +188,13 @@ def main() -> int:
 
     selected = provider_ids() if args.provider == "all" else (args.provider,)
     output = args.output or Path(tempfile.gettempdir()) / "codey-provider-revival-smoke.json"
-    old_state = server.STATE
+    old_state = server.AppContext
     old_store = provider_controls.CONTROL_STORE
     results: list[dict] = []
     with tempfile.TemporaryDirectory(prefix="codey-revival-state-") as td:
         state_home = Path(td)
         store = state_home / "provider-controls.json"
-        state = server.State(state_home)
+        state = server.AppContext(state_home)
         try:
             server.STATE = state
             provider_controls.CONTROL_STORE = store

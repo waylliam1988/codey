@@ -9,7 +9,7 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
-## 0.5.1 TaskFlow Deletion + Runtime Kernel Pruning (2026-08-31)
+## 0.5.1 TaskFlow Deletion + Runtime/Agent/Ghost Finalization (2026-08-31)
 
 Scope:
 
@@ -20,15 +20,28 @@ production: deleted codey/operations/task_flow.py as a production concept.
             wires TaskRuntime, while task_run owns TaskRunDeps and the
             non-business run lifecycle. mode_dispatch/review_flow/planning_flow
             and ghost_context/ghost_post_turn own their business boundaries.
+            AgentRunner now accepts a single AgentRequest, with protocol repair
+            helpers and context assembly split into codey.agents.protocol and
+            codey.agents.context. Loop progress, verification, and stagnation
+            state are explicit objects instead of a wide locals surface.
             RuntimeSessionLog remains the single durable fact source and now
             compacts under file lock before the 4 MB guard can brick a session.
-            Runtime read() also uses the file lock. Future-only runtime
+            Runtime read() also uses the file lock, and append validation now
+            keeps an entries+projection cache so phase commit loads do not
+            replay the whole JSONL file on the hot path. Future-only runtime
             scaffolding was removed: lane queues, suspension, TaskRuntimePort,
             tool invocation log entries, TaskContract, TaskState, and the
             OperationKind literal. ControlTeachCancelled now inherits
             TaskCancelled; stop_reason->OperationOutcome mapping has one
-            implementation. State() without state_home uses an ephemeral runtime
-            log/store so tests still exercise the production runtime path.
+            implementation. AppContext without state_home uses an ephemeral
+            runtime log/store and WorkspaceRevisionStore so tests and headless
+            paths still exercise the production runtime path.
+            WorkspaceRevisionStore records project-state revisions for
+            verification freshness; it is intentionally separate from
+            workspace/context_epoch.py, which remains prompt-source provenance.
+            Ghost inbox, continuity, work queue, affinity, and Hebbian stores
+            now use the shared GhostEventLog IO layer with policy-specific bad
+            row handling.
 harness:    test_task_flow_* files were renamed by owner
             (task_entry/project_completion_flow/ghost_post_turn/research_flow/
             workspace_project_map). Pure component tests were corrected after a
@@ -39,7 +52,7 @@ harness:    test_task_flow_* files were renamed by owner
             runner object.
 mode:       compileall, ruff, focused gates, wider server/research/manual
             harness gates, same-run crash/resume self-test, then full pytest.
-            No release, no version bump, no GitHub push.
+            No release and no version bump.
 ```
 
 Focused and related gates before the final full run:
@@ -86,9 +99,10 @@ git diff --check
 no whitespace errors
 ```
 
-The first full run after the final rename exposed three stale manual completion
-A/B harness tests that still faked a `.run()` runner object. They were migrated
-to patch `run_task_submission()` directly, then the focused harness test and
+The first full run after the cache/AppContext cleanup exposed four stale
+completion-enforcement fake states that still exposed the removed
+`last_terminal_event` attribute instead of a `run_registry.last_terminal_event()`
+method. They were migrated to a fake run registry, then the focused test and
 full suite were rerun.
 
 Final full local pytest (Windows, Python 3.12, 2026-08-31, after code was
@@ -96,7 +110,7 @@ stable and before updating this report):
 
 ```text
 python -m pytest
-3253 passed, 16 skipped in 306.31s (0:05:06)
+3263 passed, 16 skipped in 284.42s (0:04:44)
 ```
 
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)

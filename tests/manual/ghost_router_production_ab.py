@@ -21,6 +21,7 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.pipeline import ResearchIterationRun
@@ -112,14 +113,14 @@ def _run_case(
         if case.project:
             project.mkdir()
             (project / "app.py").write_text("value = 1\n", encoding="utf-8")
-        state = server.State(root / "state")
+        state = server.AppContext(root / "state")
         events = state.subscribe()
         agent_calls: list[str] = []
         research_calls = 0
         review_calls = 0
 
-        def agent_run(*_args, **kwargs):
-            permission = str(kwargs.get("permission_profile") or "")
+        def agent_run(request: AgentRequest):
+            permission = request.permission_profile
             agent_calls.append(permission)
             changed = permission == "coding_writer"
             return RunResult(
@@ -153,6 +154,7 @@ def _run_case(
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
@@ -187,7 +189,7 @@ def _run_case(
             error = f"{type(exc).__name__}: {exc}"
         emitted = _drain(events)
         start = next((event for event in emitted if event.get("type") == "task_start"), {})
-        done = dict(state.last_terminal_event or {})
+        done = dict(state.run_registry.last_terminal_event() or {})
         route_record = _latest_route_record(state)
         observed = _observed_mode(start, done, agent_calls, research_calls, review_calls)
     exact = not error and observed == case.expected_mode
@@ -218,7 +220,7 @@ def _run_case(
     }
 
 
-def _latest_route_record(state: server.State) -> dict[str, object]:
+def _latest_route_record(state: server.AppContext) -> dict[str, object]:
     router = getattr(state, "ghost_router", None)
     if router is None:
         return {}
@@ -230,7 +232,7 @@ def _latest_route_record(state: server.State) -> dict[str, object]:
 
 
 class _patched_provider:
-    def __init__(self, state: server.State) -> None:
+    def __init__(self, state: server.AppContext) -> None:
         self.state = state
         self.patch = None
 

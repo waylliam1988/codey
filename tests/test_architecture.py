@@ -54,7 +54,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.providers.web_drivers.qwen", imports)
         self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
         self.assertNotIn("codey.providers.web_drivers.glm", imports)
-        self.assertIn("codey.providers", imports)
+        self.assertNotIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
 
     def test_orchestrators_create_providers_instead_of_browser_sessions(self) -> None:
@@ -157,9 +157,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("self.provider_supervisor = ProviderSupervisor", server_source)
         self.assertNotIn("self.sessions: dict", registry_source)
         self.assertIn("self._sessions: dict", registry_source)
-        self.assertIn("def provider_sessions", server_source)
-        self.assertIn("sessions_snapshot", server_source)
-        self.assertIn("def provider_supervisor", server_source)
+        self.assertNotIn("def provider_sessions", server_source)
+        self.assertIn("def sessions_snapshot", registry_source)
+        self.assertNotIn("def provider_supervisor", server_source)
+        self.assertIn("self.supervisor =", registry_source)
 
     def test_conversation_registry_owns_conversation_cache_and_store(self) -> None:
         server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")

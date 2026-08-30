@@ -824,7 +824,7 @@ codey/
   storage/                  atomic I/O、OS-backed file lock、event-backed reset helper、managed output、UI state 和 conversation state
   toolchain/                coding 工具元数据/runtime 和最终 JSON tool reply 的宽容修复
   utils/                    citation scanner、有界 reference、refs 和 text budget helper
-  workspace/                有界扫描、diff、项目 config/facts/map、setup context、task context 和 context epoch
+  workspace/                有界扫描、diff、项目 config/facts/map、setup context、task context、context epoch 和 workspace revision
   web/
     index.html              UI 核心：state、SSE、composer、boot
     assets/                 零构建 CSS tokens/样式和普通脚本 UI 模块

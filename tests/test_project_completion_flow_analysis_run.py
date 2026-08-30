@@ -49,7 +49,7 @@ def _run_event(outcome: ToolOutcome, *, name: str = "run", index: int = 2) -> Ru
 class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_successful_run_projects_analysis_artifact_and_capsule(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             recorder = state.run_traces.open(
                 run_id="run-analysis",
                 session_id="session-analysis",
@@ -109,7 +109,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
     def test_failed_run_records_failure_and_skips_project_facts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             recorder = state.run_traces.open(
                 run_id="run-failed",
                 session_id="session-analysis",
@@ -140,7 +140,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
     def test_edit_event_keeps_checkpoint_branch_without_analysis_run(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             recorder = state.run_traces.open(
                 run_id="run-edit",
                 session_id="session-analysis",
@@ -176,7 +176,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
         """
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             recorder = state.run_traces.open(
                 run_id="run-denied",
                 session_id="session-analysis",
@@ -212,7 +212,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
     def test_timed_out_execution_is_recorded_as_failed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
             recorder = state.run_traces.open(
                 run_id="run-timeout",
                 session_id="session-analysis",
@@ -252,7 +252,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
     def test_trace_failures_fail_open(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = server.AppContext(td)
 
             class _ExplodingTrace:
                 def record_analysis_run(self, _payload):
@@ -276,7 +276,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
         def update_checkpoint(fn) -> None:
             class _Store:
-                def record_run(self, item, *, command, cwd, ok):
+                def record_run(self, item, *, command, cwd, ok, workspace_revision):
+                    del workspace_revision
                     record("run", (command, cwd, ok))
 
                 def record_edit(self, item, rel):
@@ -288,7 +289,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
     def _handle_project_event(
         self,
-        state: server.State,
+        state: server.AppContext,
         **kwargs,
     ) -> None:
         deps = ProjectCompletionDeps(
@@ -299,6 +300,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             capture_provider_failure=server.capture_provider_failure,
             commit_run_operation=mock.Mock(),
             project_facts=state.project_facts,
+            workspace_revisions=state.workspace_revisions,
         )
         handle_project_tool_event(deps, **kwargs)
 

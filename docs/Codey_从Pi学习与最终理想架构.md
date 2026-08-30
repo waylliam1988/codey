@@ -427,7 +427,7 @@ VerificationObservation
     source: local_run
     command: pytest tests/
     observed_at: ...
-    workspace_epoch: 42
+    workspace_revision: 42
 }
 ```
 
@@ -436,7 +436,7 @@ Evidence 应尽量包含：
 ```text
 id
 operation_id
-workspace_epoch
+workspace_revision
 kind
 source
 observation
@@ -445,19 +445,19 @@ timestamp
 
 ---
 
-# 5. 0.4.20 的 verification epoch 应成为核心 invariant
+# 5. Verification Revision 应成为核心 invariant
 
 设：
 
 ```text
-E = latest relevant edit epoch
-V = verification observation epoch
+W = current workspace revision
+V = verification observation revision
 ```
 
 只有：
 
 ```text
-V >= E
+V == W
 ```
 
 才能证明 verification 针对当前工作状态。
@@ -635,14 +635,14 @@ Workspace
  ├── git
  ├── project facts
  ├── artifacts
- └── epoch
+ └── revision
 ```
 
 不要让 Workspace 变成一个巨大的 service locator。
 
 ---
 
-# 11. Workspace Epoch
+# 11. Workspace Revision 与 Context Epoch
 
 所有影响 verification 的 mutation：
 
@@ -659,18 +659,29 @@ reset
 都导致：
 
 ```text
-epoch += 1
+workspace_revision += 1
 ```
 
-Evidence 绑定 epoch：
+Evidence 绑定 workspace revision：
 
 ```text
-Evidence.workspace_epoch = 17
+Evidence.workspace_revision = 17
 ```
 
 当前 Workspace 已经是 18 时，这个 evidence 自动被视为 stale。
 
 这是非常强的设计。
+
+注意这和 `workspace/context_epoch.py` 不是同一个概念：
+
+```text
+context epoch       = prompt 内容出处，回答“模型当轮看见了哪些 sources”
+workspace revision  = 项目文件状态，回答“这条 verification 针对哪个文件状态”
+```
+
+二者都可以进入 completion proof provenance，但语义互补，不能合并成一个
+`epoch` 字段。`ctx_epoch_ref` 证明模型输入的来源；`workspace_revision` 证明验证观察
+没有被后续 edit / external change 变旧。
 
 ---
 
@@ -698,7 +709,7 @@ stale
 并记录：
 
 ```text
-epoch
+workspace_revision
 command
 exit_code
 stdout
@@ -719,7 +730,7 @@ Evidence
 {
     id
     operation_id
-    workspace_epoch
+    workspace_revision
     kind
     source
     observation
@@ -929,7 +940,7 @@ task_run: task lifecycle wrapper around operation functions
                          v
 +------------------------------------------------+
 |                     TASK                       |
-|          Contract / State / Completion         |
+|        Submission / Contract / Completion      |
 +------------------------+-----------------------+
                          |
                          v
@@ -952,7 +963,7 @@ task_run: task lifecycle wrapper around operation functions
                   +----------------+
                   |   WORKSPACE    |
                   | files/git/facts|
-                  | artifacts/epoch|
+                  | artifacts/rev  |
                   +-------+--------+
                           |
                           v
@@ -1200,19 +1211,21 @@ Outcome
 
 先不改变行为；不要保留没有生产写入方的 runtime 类。
 
-## Phase 2：Agent 成为 Operation
+## Phase 2：Agent 接口收成 Operation 形状
 
-将：
-
-```text
-AgentRunner
-```
-
-变成：
+已完成第一刀：
 
 ```text
-AgentOperation
+AgentRequest
+  -> agents.runner.run(request)
 ```
+
+JSON protocol repair helper、context assembly 和 loop state 已拆出 owner。
+不引入一个会重新长大的 `AgentOperation` 大类；runtime lifecycle 仍由
+`TaskRuntime` / `OperationScheduler` 负责，agent 只是一种 operation function 的实现。
+
+后续如果记录 provider send / tool run effect，也应作为真实 session-log fact 增量接线，
+不是先保留无生产写入方的脚手架。
 
 ## Phase 3：删除 TaskFlow 生产概念
 
@@ -1226,15 +1239,15 @@ mode dispatch、research、review、planning、Ghost post-turn 和 project compl
 尤其是把 provider/session/trace cleanup、receipt projection 和 Ghost terminal
 projection 进一步事件化；仍然不为测试保留私有 wrapper 或兼容 alias。
 
-## Phase 4：统一 Workspace Epoch
+## Phase 4：统一 Workspace Revision
 
 所有 mutation：
 
 ```text
--> epoch++
+-> workspace_revision++
 ```
 
-Verification 绑定 epoch。
+Verification 绑定 workspace revision；context epoch 仍只表示 prompt source provenance。
 
 ## Phase 5：Completion Proof 独立
 
@@ -1284,7 +1297,7 @@ context overflow
 ## Workspace
 
 ```text
-epoch increment
+workspace revision increment
 mutation tracking
 git state
 artifact tracking

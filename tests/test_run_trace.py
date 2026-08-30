@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents import runner as agent
+from codey.agents.request import AgentRequest
 from codey.workspace.context_source import (
     ContextSource,
     render_context_sources,
@@ -35,6 +36,10 @@ class _PromptProvider:
     def send(self, text: str) -> str:
         self.prompts.append(text)
         return '{"tool":"done","args":{"summary":"ok"}}'
+
+
+def run_agent(provider, project, task, **kwargs):
+    return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 class _NoopTrace:
@@ -1417,7 +1422,7 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             project = Path(td)
             (project / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            result = agent.run(
+            result = run_agent(
                 provider,
                 project,
                 "Read app.py",
@@ -1462,14 +1467,14 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             baseline_provider = _PromptProvider()
             traced_provider = _PromptProvider()
 
-            agent.run(
+            run_agent(
                 baseline_provider,
                 project,
                 "Inspect the project",
                 max_turns=1,
                 fresh_chat=False,
             )
-            agent.run(
+            run_agent(
                 traced_provider,
                 project,
                 "Inspect the project",
@@ -1506,7 +1511,7 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             project = Path(td) / "project"
             project.mkdir()
 
-            agent.run(
+            run_agent(
                 _PromptProvider(),
                 project,
                 "Inspect the project",
@@ -1569,7 +1574,7 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             project.mkdir()
             (project / "README.md").write_text("hello\n", encoding="utf-8")
 
-            agent.run(
+            run_agent(
                 _EchoProvider(),
                 project,
                 "Inspect the project",

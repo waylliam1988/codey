@@ -38,7 +38,13 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             target.write_text("one\n", encoding="utf-8")
             store = WorkCheckpointStore(home)
             item = store.start(run_id="run-1", session_id="session-1", project=project, task="Change app")
-            item = store.record_run(item, command="python -m unittest", cwd=".", ok=True)
+            item = store.record_run(
+                item,
+                command="python -m unittest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+            )
             self.assertEqual(len(item.successful_checks_after_last_change), 1)
 
             item = store.record_edit(item, "app.py")
@@ -104,6 +110,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m unittest",
                 cwd=".",
                 ok=True,
+                workspace_revision=1,
             )
 
             item = store.record_edit(item, "sub/../app.py")
@@ -116,6 +123,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m unittest",
                 cwd=".",
                 ok=True,
+                workspace_revision=1,
             )
             item = store.record_edit(item, str(target.resolve()))
 
@@ -133,6 +141,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m unittest",
                 cwd=".",
                 ok=True,
+                workspace_revision=1,
             )
 
             item = store.record_edit(item, "../outside.py")
@@ -152,6 +161,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m unittest",
                 cwd=".",
                 ok=True,
+                workspace_revision=1,
             )
 
             item = store.record_edit(item, "a" * 241)
@@ -167,7 +177,13 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             store = WorkCheckpointStore(Path(td) / "state")
             item = store.start(run_id="r", session_id="s", project=project, task="task")
 
-            item = store.record_run(item, command="python -m pytest", cwd="tests", ok=False)
+            item = store.record_run(
+                item,
+                command="python -m pytest",
+                cwd="tests",
+                ok=False,
+                workspace_revision=1,
+            )
 
             self.assertEqual(item.successful_checks_after_last_change, ())
             self.assertEqual(item.last_action.tool, "run")
@@ -185,6 +201,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m pytest tests/test_app.py",
                 cwd=".",
                 ok=True,
+                workspace_revision=1,
             )
 
             item = store.record_run(
@@ -192,6 +209,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 command="python -m pytest",
                 cwd=".",
                 ok=False,
+                workspace_revision=1,
             )
 
             self.assertEqual(item.successful_checks_after_last_change, ())
@@ -207,7 +225,13 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             store = WorkCheckpointStore(Path(td) / "state")
             item = store.start(run_id="r", session_id="s", project=project, task="task")
             item = store.record_edit(item, "app.py")
-            item = store.record_run(item, command="python -m unittest", cwd=".", ok=True)
+            item = store.record_run(
+                item,
+                command="python -m unittest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+            )
             target.write_text("two", encoding="utf-8")
 
             item = store.reconcile(item)
@@ -242,6 +266,41 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             path.write_text("x" * (MAX_CHECKPOINT_BYTES + 1), encoding="utf-8")
             self.assertIsNone(store.load("s"))
 
+    def test_legacy_checkpoint_check_without_workspace_revision_is_not_inherited(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkCheckpointStore(Path(td) / "state")
+            path = store.path_for("s")
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "run_id": "r",
+                        "session_id": "s",
+                        "project": str(project),
+                        "original_task": "task",
+                        "status": "interrupted",
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z",
+                        "changed_files": [],
+                        "hash_unavailable_files": [],
+                        "successful_checks_after_last_change": [
+                            {"command": "python -m pytest", "cwd": "."}
+                        ],
+                        "stop_reason": "no_progress",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            item = store.load("s")
+
+        self.assertIsNotNone(item)
+        assert item is not None
+        self.assertEqual(item.successful_checks_after_last_change, ())
+
     def test_render_contains_only_bounded_execution_facts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"
@@ -250,7 +309,13 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             store = WorkCheckpointStore(Path(td) / "state")
             item = store.start(run_id="r", session_id="s", project=project, task="Fix app")
             item = store.record_edit(item, "app.py")
-            item = store.record_run(item, command="python -m unittest", cwd=".", ok=True)
+            item = store.record_run(
+                item,
+                command="python -m unittest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+            )
 
             rendered = render_work_checkpoint(item)
 
