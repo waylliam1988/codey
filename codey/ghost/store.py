@@ -6,18 +6,16 @@ does not mark any signal as accepted long-term memory.
 
 from __future__ import annotations
 
-import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
-import uuid
 
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.schema import (
     SCHEMA_VERSION,
     GhostSignalParseResult,
     clip_signal_text,
 )
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file
+from codey.storage.local_store import DEFAULT_STATE_HOME
 
 
 MAX_GHOST_EVENTS = 5_000
@@ -33,6 +31,12 @@ class GhostSignalStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.directory = Path(state_home) / "ghost"
         self.path = self.directory / "signals.jsonl"
+        self.log = GhostEventLog(
+            self.path,
+            schema_version=SCHEMA_VERSION,
+            source_name="signals.jsonl",
+        )
+        self.last_warnings: tuple[str, ...] = ()
 
     def append_extraction(
         self,
@@ -61,18 +65,9 @@ class GhostSignalStore:
                 for item in result.diagnostics[:MAX_STORED_DIAGNOSTICS]
             ],
         }
-        try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write(json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ) + "\n")
-            self._prune()
-        except (OSError, TypeError, ValueError):
+        if not self.log.append((payload,)):
             return False
+        self._prune()
         return True
 
     def read_recent(self, limit: int = 20) -> tuple[dict[str, object], ...]:
@@ -86,7 +81,7 @@ class GhostSignalStore:
         return tuple(self._read_rows())
 
     def delete_all(self) -> None:
-        delete_file(self.path)
+        self.log.delete()
 
     def delete_scope(
         self,
@@ -130,48 +125,19 @@ class GhostSignalStore:
             if kept_signals:
                 rewritten.append(clean_row)
         if removed:
-            self._write_rows_atomic(rewritten)
+            self.log.write_atomic(rewritten)
         return removed
 
     def _read_rows(self) -> list[dict[str, object]]:
-        try:
-            lines = self.path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            return []
-        rows: list[dict[str, object]] = []
-        for line in lines:
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(value, dict) and value.get("schema_version") == SCHEMA_VERSION:
-                rows.append(value)
-        return rows
+        read = self.log.read()
+        self.last_warnings = read.warnings
+        return list(read.rows)
 
     def _prune(self) -> None:
-        rows = self._read_rows()
-        if len(rows) <= MAX_GHOST_EVENTS:
-            return
         try:
-            self._write_rows_atomic(rows[-MAX_GHOST_EVENTS:])
+            self.log.prune_tail(MAX_GHOST_EVENTS)
         except OSError:
             pass
-
-    def _write_rows_atomic(self, rows: list[dict[str, object]]) -> None:
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_name(f".{self.path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                for row in rows:
-                    handle.write(_json_line(row).encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
 
 
 def _signal_scope_match(
@@ -202,12 +168,3 @@ def _normalize_project(value: object) -> str:
         return clip_signal_text(Path(text).expanduser().resolve(), 240)
     except (OSError, RuntimeError, ValueError):
         return clip_signal_text(text, 240)
-
-
-def _json_line(value: dict[str, object]) -> str:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ) + "\n"

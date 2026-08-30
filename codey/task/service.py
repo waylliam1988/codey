@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +12,17 @@ from codey.task.model import (
     TaskContract as _TaskContract,
     TaskSubmission as _TaskSubmission,
 )
+from codey.operations.context import (
+    RunFrame as _RunFrame,
+    RunHooks as _RunHooks,
+    RunWork as _RunWork,
+)
+from codey.operations.chat import run_chat_mode
+from codey.operations.prompting import (
+    record_local_context_trace as _record_local_context_trace,
+    record_secondary_input_prepared_trace as _record_secondary_input_prepared_trace,
+)
+from codey.operations.result import ModeOutcome as _ModeOutcome
 from codey.runtime import cancellation
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.policies.action import ActionSubject, evaluate_action
@@ -71,9 +82,7 @@ from codey.ghost.work_queue import (
     proof_refs_from_task_event,
 )
 from codey.agents.handoff import (
-    ConversationContext,
     ConversationSnapshot,
-    render_continuation_prompt,
     render_handoff,
     render_recovered_handoff,
 )
@@ -155,7 +164,6 @@ from codey.runs.work_checkpoint import (
 )
 from codey.run_operation import (
     PHASE_COMPLETION_PROOF_RECORDED,
-    RunOperationState,
     RunOperationStore,
     mark_completion_blocked,
     mark_completion_proof_recorded,
@@ -176,127 +184,6 @@ from codey.agents.writer_failover import (
 PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
 PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0
 PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
-
-
-@dataclass
-class _RunFrame:
-    request: _TaskSubmission
-    run_id: str
-    task_kind: str
-    provider: Any | None
-    provider_id: str
-    project_text: str
-    conversation: ConversationContext
-    fresh_chat: bool
-    handoff: str
-    research_handoff: str
-    prior_snapshot: ConversationSnapshot
-    recovered_owner_prompt: str
-    provider_session_changed: bool
-    preflight_tried: set[str]
-    preflight_switches: int
-    trace: Any | None = None
-
-
-@dataclass
-class _RunWork:
-    recent_events: list[str]
-    evidence: ExecutionEvidence
-    work_checkpoint: WorkCheckpoint | None = None
-    ledger: RunLedgerWriter | None = None
-    trace: Any | None = None
-    record_agent_events_in_ledger: bool = False
-    claimed_work_item: GhostWorkItem | None = None
-    analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
-    artifact_payloads: list[dict[str, object]] = field(default_factory=list)
-    operation: RunOperationState | None = None
-    turns_observed: int = 0
-
-
-@dataclass(frozen=True)
-class _RunHooks:
-    on_event: Callable[[RunEvent], None]
-    on_shell_request: Callable[[str, str], None]
-    update_checkpoint: Callable[
-        [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
-        None,
-    ]
-    record_provider_failure: Callable[[str, ProviderFailure], None]
-    append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None]
-    provider_failover_order: Callable[[], tuple[str, ...]]
-    supervisor: Any | None
-    trace: Any | None = None
-
-
-@dataclass(frozen=True)
-class _ModeOutcome:
-    event: dict
-    research_result: Any | None = None
-    research_pipeline_result: Any | None = None
-
-
-def _prepend_ghost_directive(prompt: str, directive: str) -> str:
-    text = str(directive or "").strip()
-    if not text:
-        return prompt
-    return f"{text}\n\n{prompt}"
-
-
-def _owner_prompt_with_ghost_directive(owner_prompt: str, directive: str) -> str:
-    text = str(directive or "").strip()
-    existing = str(owner_prompt or "").strip()
-    if text and existing:
-        return f"{text}\n\n{existing}"
-    return text or existing
-
-
-def _join_local_contexts(*values: str) -> str:
-    return "\n\n".join(str(value or "").strip() for value in values if str(value or "").strip())
-
-
-def _record_local_context_trace(trace: Any | None, *contexts: Any) -> None:
-    if trace is None:
-        return
-    refs: list[dict[str, object]] = []
-    for context in contexts:
-        for node in getattr(context, "selected_nodes", ()) or ():
-            refs.append({
-                "id": getattr(node, "id", ""),
-                "scope": getattr(node, "scope", ""),
-                "kind": getattr(node, "kind", ""),
-                "source": "local_context",
-            })
-        for item in getattr(context, "selected_items", ()) or ():
-            refs.append({
-                "id": getattr(item, "id", ""),
-                "scope": getattr(item, "scope", ""),
-                "kind": getattr(item, "kind", ""),
-                "source": getattr(item, "source", "continuity"),
-            })
-    if not refs:
-        return
-    FailOpenPromptTrace(trace).call("record_local_context_refs", refs)
-
-
-def _record_secondary_input_prepared_trace(
-    trace: Any | None,
-    phase: str,
-    **sections: object,
-) -> None:
-    if trace is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    phase_text = str(phase or "secondary").strip() or "secondary"
-    for name, text in sections.items():
-        if not str(text or ""):
-            continue
-        sink.record_section(PromptEnvelopeSection(
-            name=f"{phase_text}_{name}",
-            text=str(text or ""),
-            purpose=f"{phase_text} secondary input prepared",
-            freshness="secondary_input_prepared",
-            source_refs=(f"secondary_input:{phase_text}:{name}",),
-        ))
 
 
 def _record_review_input_prepared_trace(
@@ -2250,113 +2137,13 @@ class TaskService:
         )
 
     def _run_chat_mode(self, frame: _RunFrame) -> _ModeOutcome:
-        state = self.state
-        request = frame.request
-        if frame.provider is None:
-            raise RuntimeError("provider is not connected")
-        if frame.fresh_chat:
-            frame.provider.new_chat()
-        prompt = (
-            render_continuation_prompt(frame.handoff, request.task)
-            if frame.handoff
-            else request.task
+        return run_chat_mode(
+            frame,
+            state=self.state,
+            run_consensus=self.run_consensus,
+            ghost_directive=self._ghost_directive,
+            ghost_continuity=self._ghost_continuity,
         )
-        ghost_directive = self._ghost_directive(
-            session_id=request.session_id,
-        )
-        ghost_continuity = self._ghost_continuity(session_id=request.session_id)
-        _record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
-        ghost_context = _join_local_contexts(
-            ghost_directive.text,
-            ghost_continuity.text,
-        )
-        prompt = _prepend_ghost_directive(prompt, ghost_context)
-        trace = FailOpenPromptTrace(frame.trace)
-        trace.call("record_permission_profile", "chat", phase="chat")
-        consulted = None
-        if self.run_consensus is not None:
-            compact_context = (
-                render_handoff(frame.prior_snapshot)
-                if frame.fresh_chat and frame.handoff
-                else (
-                    render_handoff(frame.conversation.snapshot)
-                    if frame.conversation.initialized
-                    else ""
-                )
-            )
-            try:
-                owner_prompt = _owner_prompt_with_ghost_directive(
-                    frame.recovered_owner_prompt,
-                    ghost_context,
-                )
-                _record_secondary_input_prepared_trace(
-                    frame.trace,
-                    "consensus",
-                    task=request.task,
-                    context=compact_context,
-                    owner_prompt=owner_prompt,
-                )
-                consulted = self.run_consensus(
-                    selected_provider=frame.provider,
-                    selected_provider_id=frame.provider_id,
-                    task=request.task,
-                    context=compact_context,
-                    draft_first=True,
-                    owner_prompt=owner_prompt,
-                    trace_recorder=frame.trace,
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                state.set_provider_session(frame.provider_id, None)
-                raise
-        if consulted is not None:
-            reply = consulted.answer
-        else:
-            record_provider_send_prompt(
-                frame.trace,
-                name="chat_outbound_prompt",
-                text=prompt,
-                purpose="chat prompt sent to provider",
-                source_ref="provider_send:chat",
-                capability_id="chat_runner",
-            )
-            reply = frame.provider.send(prompt)
-        if frame.fresh_chat:
-            frame.conversation.begin_window(frame.provider_id, "chat")
-        state.set_provider_session(
-            frame.provider_id,
-            None if consulted is not None and consulted.degraded else request.session_id,
-        )
-        frame.conversation.record_exchange(
-            prompt,
-            reply,
-            replace(
-                frame.conversation.snapshot,
-                provider_id=frame.provider_id,
-                blocker="",
-                latest_user=request.task,
-                latest_reply=reply,
-            ),
-        )
-        state.emit({
-            "type": "reply",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": reply,
-        })
-        result = RunResult(reply, "done", 1)
-        return _ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "chat",
-        })
 
     def _run_planning_readonly_mode(
         self,

@@ -3085,7 +3085,7 @@ class SessionThreadingTests(unittest.TestCase):
             release.set()
             for _ in range(50):
                 with state.lock:
-                    running = state._ghost_sleep_running
+                    running = state.ghost_sleep_daemon.running
                 if not running:
                     break
                 threading.Event().wait(0.02)

@@ -9,20 +9,18 @@ from codey.app import server
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.context import RunFrame
 from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
 from codey.task.model import TaskSubmission
-from codey.task.service import (
-    TaskService,
-    _RunFrame,
-)
+from codey.task.service import TaskService
 
 _QUESTION = "Should provider recovery be re-checked against fresh sources?"
 
 
-def _make_frame(project_text: str) -> _RunFrame:
+def _make_frame(project_text: str) -> RunFrame:
     request = TaskSubmission(
         session_id="s1",
         project=None,
@@ -31,7 +29,7 @@ def _make_frame(project_text: str) -> _RunFrame:
         continue_task=False,
         provider_id="deepseek",
     )
-    return _RunFrame(
+    return RunFrame(
         request=request,
         run_id="run-topic-continuity",
         task_kind="research",

@@ -35,7 +35,6 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -53,7 +52,6 @@ from codey.workspace.changes import (
     is_git_repository,
     restore_snapshot_changes,
 )
-from codey.storage.conversation_store import ConversationStore
 from codey.agents.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.agents.handoff import ConversationContext
 from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -110,6 +108,12 @@ from codey.reviews.core import (
     render_review_prompt,
 )
 from codey.reviews.impact_map import safe_review_impact_map
+from codey.app.approval_registry import ApprovalRegistry
+from codey.app.conversation_registry import ConversationRegistry
+from codey.app.ghost_daemon import GhostSleepDaemon
+from codey.app.knowledge_indexer import KnowledgeIndexer
+from codey.app.provider_registry import ProviderRegistry
+from codey.app.run_registry import RunRegistry, RunSnapshot, same_project
 from codey.task.model import TaskSubmission
 from codey.task.service import TaskService
 from codey.app.event_bus import EventBus, EventSubscriber
@@ -614,16 +618,6 @@ def _shell_followup_hints(
     ))
 
 
-@dataclass(frozen=True)
-class RunSnapshot:
-    run_id: str
-    session_id: str
-    project: str | None
-    task: str
-    provider_id: str
-    status: str = "queued"
-
-
 RUN_EVENT_TYPES = {
     "task_start",
     "turn",
@@ -654,33 +648,16 @@ class State:
         self.state_home = Path(state_home) if state_home else None
         self.lock = threading.Lock()
         self.event_bus = EventBus(replay_limit=SSE_REPLAY_LIMIT)
-        self.busy = False
-        self.project: str | None = None
-        self.task: str | None = None
-        self.provider_id = DEFAULT_PROVIDER_ID
-        self.status: str = "idle"
-        self.last_summary: str | None = None
-        self.last_stop_reason: str | None = None
-        self.last_provider_failure: ProviderFailure | None = None
-        self.stop_flag = threading.Event()
-        self.pending_shell: dict[str, dict] = {}
-        self.pending_teach: dict[str, dict] = {}
+        self.run_registry = RunRegistry()
+        self.approvals = ApprovalRegistry()
         self.research_changes: dict[str, object] = {}
-        self._knowledge_rebuild_running = False
-        self._knowledge_rebuild_pending = False
-        self._ghost_sleep_running = False
-        self._ghost_sleep_pending = False
-        self._ghost_sleep_pending_payload: dict[str, object] | None = None
-        self._ghost_sleep_thread: threading.Thread | None = None
         self.change_trackers: dict[str, ChangeTracker] = {}
-        self.conversations: dict[str, ConversationContext] = {}
-        self.conversation_tokens: dict[str, object] = {}
-        self.conversation_store_lock = threading.Lock()
+        self.conversation_registry = ConversationRegistry(
+            state_home,
+            max_states=MAX_CONVERSATION_STATES,
+        )
         self.ui_state_store_lock = threading.Lock()
-        self.provider_sessions: dict[str, str] = {}
-        self.active_run: RunSnapshot | None = None
-        self.last_terminal_event: dict | None = None
-        self.last_shell_result: dict | None = None
+        self.providers = ProviderRegistry(state_home)
         self.project_facts = (
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
         )
@@ -689,6 +666,10 @@ class State:
             KnowledgeStore(Path(state_home) / "vault")
             if resolved_state_home == DEFAULT_STATE_HOME.expanduser().resolve()
             else None
+        )
+        self.knowledge_indexer = KnowledgeIndexer(
+            lock=self.lock,
+            store=lambda: self.knowledge_store,
         )
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
@@ -706,10 +687,11 @@ class State:
         self.ghost_work_queue = GhostWorkQueueStore(state_home) if state_home else None
         self.ghost_affinity = GhostAffinityStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
-        self.ghost_learning_provider_factory = None
-        self.ghost_router_provider_factory = None
-        self.provider_supervisor = (
-            ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
+        self.ghost_sleep_daemon = GhostSleepDaemon(
+            lock=self.lock,
+            is_busy=lambda: self.busy,
+            stop_requested=lambda: self.stop_flag.is_set(),
+            run_once=self._run_ghost_sleep_once,
         )
         repair_runner = (
             self._run_self_repair_job
@@ -722,15 +704,161 @@ class State:
             else SelfRepairSupervisor(None)
         )
         self._self_repair_running = False
-        self.conversation_store = (
-            ConversationStore(state_home) if state_home else ConversationStore()
-        )
         self.snapshot_store = (
             SnapshotStore(state_home) if state_home else SnapshotStore()
         )
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
+
+    @property
+    def busy(self) -> bool:
+        return self.run_registry.busy
+
+    @busy.setter
+    def busy(self, value: bool) -> None:
+        self.run_registry.busy = value
+
+    @property
+    def project(self) -> str | None:
+        return self.run_registry.project
+
+    @project.setter
+    def project(self, value: str | None) -> None:
+        self.run_registry.project = value
+
+    @property
+    def task(self) -> str | None:
+        return self.run_registry.task
+
+    @task.setter
+    def task(self, value: str | None) -> None:
+        self.run_registry.task = value
+
+    @property
+    def provider_id(self) -> str:
+        return self.run_registry.provider_id
+
+    @provider_id.setter
+    def provider_id(self, value: str) -> None:
+        self.run_registry.provider_id = value
+
+    @property
+    def status(self) -> str:
+        return self.run_registry.status
+
+    @status.setter
+    def status(self, value: str) -> None:
+        self.run_registry.status = value
+
+    @property
+    def last_summary(self) -> str | None:
+        return self.run_registry.last_summary
+
+    @last_summary.setter
+    def last_summary(self, value: str | None) -> None:
+        self.run_registry.last_summary = value
+
+    @property
+    def last_stop_reason(self) -> str | None:
+        return self.run_registry.last_stop_reason
+
+    @last_stop_reason.setter
+    def last_stop_reason(self, value: str | None) -> None:
+        self.run_registry.last_stop_reason = value
+
+    @property
+    def last_provider_failure(self) -> ProviderFailure | None:
+        return self.run_registry.last_provider_failure
+
+    @last_provider_failure.setter
+    def last_provider_failure(self, value: ProviderFailure | None) -> None:
+        self.run_registry.last_provider_failure = value
+
+    @property
+    def stop_flag(self) -> threading.Event:
+        return self.run_registry.stop_flag
+
+    @stop_flag.setter
+    def stop_flag(self, value: threading.Event) -> None:
+        self.run_registry.stop_flag = value
+
+    @property
+    def active_run(self) -> RunSnapshot | None:
+        return self.run_registry.active_run
+
+    @active_run.setter
+    def active_run(self, value: RunSnapshot | None) -> None:
+        self.run_registry.active_run = value
+        self.run_registry.busy = value is not None
+
+    @property
+    def last_terminal_event(self) -> dict | None:
+        return self.run_registry.last_terminal_event
+
+    @last_terminal_event.setter
+    def last_terminal_event(self, value: dict | None) -> None:
+        self.run_registry.last_terminal_event = value
+
+    @property
+    def last_shell_result(self) -> dict | None:
+        return self.run_registry.last_shell_result
+
+    @last_shell_result.setter
+    def last_shell_result(self, value: dict | None) -> None:
+        self.run_registry.last_shell_result = value
+
+    @property
+    def pending_shell(self) -> dict[str, dict]:
+        return self.approvals.pending_shell
+
+    @property
+    def pending_teach(self) -> dict[str, dict]:
+        return self.approvals.pending_teach
+
+    @property
+    def provider_sessions(self) -> dict[str, str]:
+        return self.providers.sessions
+
+    @property
+    def provider_supervisor(self) -> ProviderSupervisor:
+        return self.providers.supervisor
+
+    @provider_supervisor.setter
+    def provider_supervisor(self, value: ProviderSupervisor) -> None:
+        self.providers.supervisor = value
+
+    @property
+    def ghost_learning_provider_factory(self):
+        return self.providers.ghost_learning_provider_factory
+
+    @ghost_learning_provider_factory.setter
+    def ghost_learning_provider_factory(self, value) -> None:
+        self.providers.ghost_learning_provider_factory = value
+
+    @property
+    def ghost_router_provider_factory(self):
+        return self.providers.ghost_router_provider_factory
+
+    @ghost_router_provider_factory.setter
+    def ghost_router_provider_factory(self, value) -> None:
+        self.providers.ghost_router_provider_factory = value
+
+    @property
+    def conversations(self) -> dict[str, ConversationContext]:
+        return self.conversation_registry.contexts
+
+    @property
+    def conversation_tokens(self) -> dict[str, object]:
+        return self.conversation_registry.tokens
+
+    @property
+    def conversation_store_lock(self) -> threading.Lock:
+        return self.conversation_registry.store_lock
+
+    @property
+    def conversation_store(self):
+        return self.conversation_registry.store
 
     def load_ui_state(self) -> dict:
         with self.ui_state_store_lock:
@@ -746,20 +874,6 @@ class State:
                 session_id,
                 current_request=current_request,
             )
-
-    def _save_conversation(
-        self,
-        session_id: str,
-        token: object,
-        context: ConversationContext,
-    ) -> None:
-        with self.conversation_store_lock:
-            if self.conversation_tokens.get(session_id) is not token:
-                return
-            try:
-                self.conversation_store.save(session_id, context)
-            except (OSError, ValueError):
-                pass
 
     def change_tracker_for(
         self,
@@ -800,26 +914,13 @@ class State:
         stop-flag peek could not see a Stop landing between the peek and
         this reserve.
         """
-        with self.lock:
-            if self.active_run is not None or self.busy:
-                return None
-            if abort_if_stopped and self.stop_flag.is_set():
-                return None
-            self.stop_flag.clear()
-            run = RunSnapshot(
-                run_id="run_" + uuid.uuid4().hex,
-                session_id=session_id,
-                project=project,
-                task=task,
-                provider_id=provider_id,
-            )
-            self.active_run = run
-            self.busy = True
-            self.project = project
-            self.task = task
-            self.provider_id = provider_id
-            self.status = run.status
-            return run
+        return self.run_registry.reserve(
+            session_id=session_id,
+            project=project,
+            task=task,
+            provider_id=provider_id,
+            abort_if_stopped=abort_if_stopped,
+        )
 
     def active_run_for(
         self,
@@ -832,15 +933,7 @@ class State:
         Project scope compares resolved paths, so an active run started with
         a differently-spelled but identical directory still matches.
         """
-        with self.lock:
-            run = self.active_run
-        if run is None:
-            return None
-        if session_id and run.session_id != session_id:
-            return None
-        if project and not self._same_project(run.project or "", project):
-            return None
-        return run
+        return self.run_registry.active_for(session_id=session_id, project=project)
 
     def has_active_run_for_project(self, project_key: str) -> bool:
         """True when the active run writes inside the given project."""
@@ -848,66 +941,29 @@ class State:
 
     @staticmethod
     def _same_project(left: str, right: str) -> bool:
-        if not left or not right:
-            return False
-        try:
-            return (
-                Path(left).expanduser().resolve()
-                == Path(right).expanduser().resolve()
-            )
-        except (OSError, RuntimeError, ValueError):
-            return left == right
+        return same_project(left, right)
 
     def start_run(self, run_id: str) -> bool:
-        with self.lock:
-            if self.active_run is None or self.active_run.run_id != run_id:
-                return False
-            self.active_run = replace(self.active_run, status="running")
-            self.status = "running"
-            return True
+        return self.run_registry.start(run_id)
 
     def set_run_status(self, status: str) -> None:
-        with self.lock:
-            if self.active_run is not None:
-                self.active_run = replace(self.active_run, status=status)
-            self.status = status
+        self.run_registry.set_status(status)
 
     def switch_run_provider(self, run_id: str, provider_id: str) -> bool:
-        with self.lock:
-            if self.active_run is None or self.active_run.run_id != run_id:
-                return False
-            self.active_run = replace(self.active_run, provider_id=provider_id)
-            return True
+        return self.run_registry.switch_provider(run_id, provider_id)
 
     def release_run(self, run_id: str) -> None:
-        with self.lock:
-            if self.active_run is None or self.active_run.run_id != run_id:
-                return
-            self.active_run = None
-            self.busy = False
-            self.status = "idle"
+        self.run_registry.release(run_id)
 
     def finish_run(self, run_id: str, event: dict) -> bool:
-        payload = dict(event)
-        payload["run_id"] = run_id
-        with self.lock:
-            run = self.active_run
-            if run is None or run.run_id != run_id:
-                return False
-            payload.setdefault("session_id", run.session_id)
-            self.active_run = None
-            self.busy = False
-            self.last_terminal_event = payload
-            self.last_summary = str(payload.get("summary") or "")
-            self.last_stop_reason = str(payload.get("stop_reason") or "done")
-            self.status = "error" if self.last_stop_reason == "error" else "done"
+        payload = self.run_registry.finish(run_id, event)
+        if payload is None:
+            return False
         self.emit(payload)
         return True
 
     def record_shell_result(self, event: dict) -> None:
-        payload = dict(event)
-        with self.lock:
-            self.last_shell_result = payload
+        payload = self.run_registry.record_shell_result(event)
         self.emit(payload)
 
     def expire_pending_shell_approvals(self) -> None:
@@ -919,20 +975,9 @@ class State:
         """
 
         with self.lock:
-            stale = list(self.pending_shell.values())
-            self.pending_shell.clear()
-        for pending in stale:
-            self.record_shell_result({
-                "type": "shell_result",
-                "run_id": pending.get("run_id") or "",
-                "session_id": pending.get("session_id") or "",
-                "id": pending.get("id") or "",
-                "approved": False,
-                "command": pending.get("command") or "",
-                "cwd": pending.get("cwd") or "",
-                "output": "任务已停止，该命令的执行批准已过期。",
-                "exit_code": None,
-            })
+            events = self.approvals.expire_shell_results()
+        for event in events:
+            self.record_shell_result(event)
 
     def record_research_changes(self, run_id: str, changes: object) -> None:
         with self.lock:
@@ -960,34 +1005,7 @@ class State:
         }
 
     def _schedule_knowledge_rebuild(self) -> None:
-        if self.knowledge_store is None:
-            return
-        with self.lock:
-            if self._knowledge_rebuild_running:
-                self._knowledge_rebuild_pending = True
-                return
-            self._knowledge_rebuild_running = True
-            self._knowledge_rebuild_pending = False
-        threading.Thread(
-            target=self._run_knowledge_rebuild,
-            name="codey-knowledge-rebuild",
-            daemon=True,
-        ).start()
-
-    def _run_knowledge_rebuild(self) -> None:
-        while True:
-            store = self.knowledge_store
-            if store is not None:
-                try:
-                    store.rebuild()
-                except Exception:
-                    pass
-            with self.lock:
-                if self._knowledge_rebuild_pending:
-                    self._knowledge_rebuild_pending = False
-                    continue
-                self._knowledge_rebuild_running = False
-                return
+        self.knowledge_indexer.schedule()
 
     def kick_ghost_sleep(
         self,
@@ -1015,112 +1033,43 @@ class State:
             "project": project,
             "run_projection": run_projection,
         }
-        with self.lock:
-            if self.busy:
-                self._ghost_sleep_pending = True
-                self._ghost_sleep_pending_payload = payload
-                return False
-            if self._ghost_sleep_running:
-                self._ghost_sleep_pending = True
-                self._ghost_sleep_pending_payload = payload
-                return False
-            self._ghost_sleep_running = True
-            self._ghost_sleep_pending = False
-            self._ghost_sleep_pending_payload = None
+        return self.ghost_sleep_daemon.kick(payload)
 
-        def _worker() -> None:
-            current_payload = payload
-            while True:
-                try:
-                    sleep.run_once(
-                        inbox_store=getattr(self, "ghost_inbox", None),
-                        hebbian_store=getattr(self, "ghost_hebbian", None),
-                        continuity_store=getattr(self, "ghost_continuity", None),
-                        work_queue_store=getattr(self, "ghost_work_queue", None),
-                        affinity_store=getattr(self, "ghost_affinity", None),
-                        router_store=getattr(self, "ghost_router", None),
-                        knowledge_store=getattr(self, "knowledge_store", None),
-                        run_projection=current_payload.get("run_projection"),
-                        trigger=str(current_payload.get("trigger") or "post_turn"),
-                        run_id=str(current_payload.get("run_id") or ""),
-                        session_id=str(current_payload.get("session_id") or ""),
-                        project=str(current_payload.get("project") or ""),
-                        should_cancel=lambda: self.busy or self.stop_flag.is_set(),
-                    )
-                except Exception:
-                    pass
-                with self.lock:
-                    if self._ghost_sleep_pending and not self.busy:
-                        current_payload = self._ghost_sleep_pending_payload or current_payload
-                        self._ghost_sleep_pending = False
-                        self._ghost_sleep_pending_payload = None
-                        continue
-                    self._ghost_sleep_running = False
-                    self._ghost_sleep_pending_payload = None
-                    if self._ghost_sleep_thread is threading.current_thread():
-                        self._ghost_sleep_thread = None
-                    return
-
-        thread = threading.Thread(target=_worker, name="codey-ghost-sleep", daemon=True)
-        with self.lock:
-            self._ghost_sleep_thread = thread
-        thread.start()
-        return True
+    def _run_ghost_sleep_once(self, payload: dict[str, object]) -> None:
+        sleep = getattr(self, "ghost_sleep", None)
+        if sleep is None:
+            return
+        sleep.run_once(
+            inbox_store=getattr(self, "ghost_inbox", None),
+            hebbian_store=getattr(self, "ghost_hebbian", None),
+            continuity_store=getattr(self, "ghost_continuity", None),
+            work_queue_store=getattr(self, "ghost_work_queue", None),
+            affinity_store=getattr(self, "ghost_affinity", None),
+            router_store=getattr(self, "ghost_router", None),
+            knowledge_store=getattr(self, "knowledge_store", None),
+            run_projection=payload.get("run_projection"),
+            trigger=str(payload.get("trigger") or "post_turn"),
+            run_id=str(payload.get("run_id") or ""),
+            session_id=str(payload.get("session_id") or ""),
+            project=str(payload.get("project") or ""),
+            should_cancel=self.ghost_sleep_daemon.should_cancel_current,
+        )
 
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool:
-        with self.lock:
-            thread = self._ghost_sleep_thread
-        if thread is None:
-            return True
-        thread.join(timeout)
-        return not thread.is_alive()
+        return self.ghost_sleep_daemon.wait(timeout)
 
     def run_state_payload(self) -> dict:
         with self.lock:
-            active = self.active_run
-            terminal = dict(self.last_terminal_event) if self.last_terminal_event else None
-            shell_result = dict(self.last_shell_result) if self.last_shell_result else None
+            active = self.run_registry.active_run
             pending = self._pending_ui_event_locked(active)
-            source = active
-            run_id = source.run_id if source else str((terminal or {}).get("run_id") or "")
-            session_id = source.session_id if source else str((terminal or {}).get("session_id") or "")
-            research_restore_runs = sorted(self.research_changes)
-            return {
-                "run_id": run_id,
-                "session_id": session_id,
-                "busy": active is not None,
-                "run_status": active.status if active else self.status,
-                "project": active.project if active else self.project,
-                "task": active.task if active else self.task,
-                "provider": active.provider_id if active else self.provider_id,
-                "summary": self.last_summary,
-                "stop_reason": self.last_stop_reason,
-                "provider_failure": (
-                    self.last_provider_failure.to_dict()
-                    if self.last_provider_failure
-                    else None
-                ),
-                "pending_event": pending,
-                "last_terminal_event": terminal,
-                "last_shell_result": shell_result,
-                "research_restore_runs": research_restore_runs,
-            }
+            research_restore_runs = tuple(sorted(self.research_changes))
+        return self.run_registry.payload(
+            pending_event=lambda _active: pending,
+            research_restore_runs=research_restore_runs,
+        )
 
     def _pending_ui_event_locked(self, active: RunSnapshot | None) -> dict | None:
-        candidates = [
-            pending.get("ui_event")
-            for pending in [
-                *reversed(tuple(self.pending_teach.values())),
-                *reversed(tuple(self.pending_shell.values())),
-            ]
-            if isinstance(pending.get("ui_event"), dict)
-        ]
-        if active is not None:
-            for event in candidates:
-                if event.get("run_id") == active.run_id:
-                    return dict(event)
-            return None
-        return dict(candidates[0]) if candidates else None
+        return self.approvals.pending_ui_event(active)
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -1198,74 +1147,22 @@ class State:
         )
 
     def _self_repair_model_candidates(self, broken_provider_id: str) -> tuple[str, ...]:
-        broken = str(broken_provider_id or "").strip().lower()
-        ordered = self.provider_failover_order()
-        return tuple(
-            provider_id
-            for provider_id in ordered
-            if provider_id != broken and self.provider_supervisor.is_available(provider_id)
+        return self.providers.self_repair_candidates(
+            broken_provider_id,
+            ordered=self.provider_failover_order(),
         )
 
     def provider_failover_order(self) -> tuple[str, ...]:
-        """Prefer already-open sibling tabs, then keep the registry order stable."""
-        try:
-            statuses = provider_tab_availability()
-        except Exception:
-            statuses = {}
-        opened = tuple(
-            provider_id
-            for provider_id in PROVIDER_LABELS
-            if provider_id != "local" and statuses.get(provider_id)
-        )
-        return opened + tuple(
-            provider_id
-            for provider_id in PROVIDER_LABELS
-            if provider_id != "local" and provider_id not in opened
-        )
+        return self.providers.failover_order(provider_tab_availability)
 
     def conversation_for(self, session_id: str) -> ConversationContext:
-        with self.lock:
-            context = self.conversations.pop(session_id, None)
-            if context is None:
-                if len(self.conversations) >= MAX_CONVERSATION_STATES:
-                    oldest = next(iter(self.conversations))
-                    evicted = self.conversations.pop(oldest)
-                    evicted.on_change = None
-                    with self.conversation_store_lock:
-                        self.conversation_tokens.pop(oldest, None)
-                with self.conversation_store_lock:
-                    token = object()
-                    self.conversation_tokens[session_id] = token
-                    context = self.conversation_store.load(session_id)
-                context.on_change = lambda value, owner=session_id, owner_token=token: (
-                    self._save_conversation(owner, owner_token, value)
-                )
-            self.conversations[session_id] = context
-            return context
+        return self.conversation_registry.for_session(session_id)
 
     def forget_conversation(self, session_id: str) -> None:
+        self.conversation_registry.forget(session_id)
         with self.lock:
-            context = self.conversations.pop(session_id, None)
-            if context is not None:
-                context.on_change = None
-            if (
-                self.last_terminal_event is not None
-                and self.last_terminal_event.get("session_id") == session_id
-            ):
-                self.last_terminal_event = None
-                self.last_summary = ""
-                self.last_stop_reason = ""
-            if (
-                self.last_shell_result is not None
-                and self.last_shell_result.get("session_id") == session_id
-            ):
-                self.last_shell_result = None
-            for provider_id, owner in list(self.provider_sessions.items()):
-                if owner == session_id:
-                    self.provider_sessions.pop(provider_id)
-            with self.conversation_store_lock:
-                self.conversation_tokens.pop(session_id, None)
-                self.conversation_store.delete(session_id)
+            self.providers.forget_session(session_id)
+        self.run_registry.clear_session_outputs(session_id)
         continuity = getattr(self, "ghost_continuity", None)
         if continuity is not None:
             try:
@@ -1311,14 +1208,11 @@ class State:
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
-            return self.provider_sessions.get(provider_id) != session_id
+            return self.providers.session_changed(provider_id, session_id)
 
     def set_provider_session(self, provider_id: str, session_id: str | None) -> None:
         with self.lock:
-            if session_id:
-                self.provider_sessions[provider_id] = session_id
-            else:
-                self.provider_sessions.pop(provider_id, None)
+            self.providers.set_session(provider_id, session_id)
 
     def handle_control_teach(self, request: provider_controls.ControlTeachRequest):
         while True:

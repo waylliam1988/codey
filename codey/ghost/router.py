@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 from typing import Callable, Iterable, Protocol
 import uuid
 
 from codey.runtime import cancellation
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
 from codey.storage.event_state import reset_event_backed_state
@@ -205,6 +205,14 @@ class GhostRouteStore:
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
 
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=ROUTER_SCHEMA_VERSION,
+            max_bytes=MAX_ROUTER_EVENTS_BYTES,
+            source_name="router_events.jsonl",
+        )
+
     def append_result(
         self,
         result: GhostRouteResult,
@@ -219,9 +227,9 @@ class GhostRouteStore:
                 if records and not self.events_path.exists():
                     self._rewrite_events(records)
                 records = _bounded_records((*records, _record_from_event(event)))
-                self.directory.mkdir(parents=True, exist_ok=True)
-                with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                    handle.write(_json_line(event))
+                if not self._event_log().append((event,)):
+                    self.last_warnings = ("router_audit_write_failed",)
+                    return False
                 warnings: list[str] = []
                 try:
                     write_json_atomic(
@@ -389,30 +397,10 @@ class GhostRouteStore:
         return _bounded_records(_record_from_event(event) for event in events)
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
-        self._events_read_blocked = False
-        try:
-            if not self.events_path.is_file():
-                self.last_warnings = ()
-                return []
-            if self.events_path.stat().st_size > MAX_ROUTER_EVENTS_BYTES:
-                self.last_warnings = ("router_events_too_large",)
-                self._events_read_blocked = True
-                return []
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("router_events_unreadable",)
-            self._events_read_blocked = True
-            return []
-        rows: list[dict[str, object]] = []
-        for line in lines:
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("schema_version") == ROUTER_SCHEMA_VERSION:
-                rows.append(payload)
-        self.last_warnings = ()
-        return rows
+        read = self._event_log().read()
+        self._events_read_blocked = read.blocked
+        self.last_warnings = _event_read_warnings(read.warnings)
+        return list(read.rows)
 
     def _rewrite_events(
         self,
@@ -425,20 +413,7 @@ class GhostRouteStore:
             rows.append(control_event)
         else:
             rows.append(_control_event("ghost_router_events_compacted", {"records": len(rows)}))
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                for row in rows:
-                    handle.write(_json_line(row).encode("utf-8"))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic(rows)
 
     def _compact_if_needed(self, records: Iterable[dict[str, object]]) -> None:
         stats = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
@@ -1087,6 +1062,18 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
+def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "router_events.jsonl:too_large":
+            mapped.append("router_events_too_large")
+        elif warning == "router_events.jsonl:unreadable":
+            mapped.append("router_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return tuple(mapped)
+
+
 def _compact_payload(
     ok: bool,
     compacted: bool,
@@ -1117,18 +1104,6 @@ def _read_json_dict(path: Path, *, max_bytes: int) -> dict | None:
 
 def _list(value: object) -> list:
     return value if isinstance(value, list) else []
-
-
-def _json_line(value: dict[str, object]) -> str:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        + "\n"
-    )
 
 
 def _now() -> str:

@@ -468,6 +468,9 @@ class StepFunDriverTests(unittest.TestCase):
             last = ""
 
             def __init__(self, **kwargs):
+                self.page = kwargs["page"]
+                self.provider_id = kwargs["provider_id"]
+                self.display_name = kwargs["display_name"]
                 self.sent_at = kwargs["sent_at"]
                 self.recorded: list[str] = []
                 self.trace = mock.Mock()
@@ -479,7 +482,12 @@ class StepFunDriverTests(unittest.TestCase):
                 self.recorded.append(current)
                 self.last = current
 
-        ctx = FakeContext(sent_at=0.0)
+        ctx = FakeContext(
+            page=page,
+            provider_id=stepfun.PROVIDER_ID,
+            display_name="StepFun",
+            sent_at=0.0,
+        )
         with (
             mock.patch.object(stepfun, "wait_ready"),
             mock.patch.object(stepfun, "_response_count", return_value=0),

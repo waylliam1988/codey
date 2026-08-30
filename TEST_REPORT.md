@@ -9,6 +9,105 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Runtime Architecture Continuation (2026-08-30)
+
+Scope:
+
+```text
+production: split app run, approval, provider, conversation, knowledge-index,
+            and Ghost-sleep worker state out of server.State; moved operation
+            frame/work/hooks/outcome values plus plain chat operation/prompting
+            into codey.operations; introduced a shared Ghost JSONL event log
+            and migrated signal/router/sleep stores; introduced a shared web
+            driver stable-completion loop and migrated DeepSeek + StepFun
+harness:    new unit tests for app registries/daemons, GhostEventLog, and
+            operation boundaries; architecture tests prevent reintroducing
+            task-service-owned value objects, server-owned worker flags, and
+            hand-written DeepSeek/StepFun response stability loops
+mode:       targeted gates first, then one full local pytest; no release,
+            no GitHub push
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -m pytest -q tests/test_run_registry.py \
+  tests/test_architecture.py::ArchitectureBoundaryTests::test_run_registry_owns_run_lifecycle_state
+7 passed, 4 subtests passed in 0.21s
+
+python -m pytest -q tests/test_approval_registry.py tests/test_server.py -k \
+  "stop_expires_pending_shell or pending_action or active_run_does_not_restore or shell_continuation or teach"
+12 passed, 176 deselected in 0.84s
+
+python -m pytest -q tests/test_task_runner_analysis_run.py \
+  tests/test_task_runner_research_topic_continuity.py \
+  tests/test_architecture.py::ArchitectureBoundaryTests::test_operation_context_values_are_not_defined_by_task_service
+15 passed, 4 subtests passed in 2.87s
+
+python -m pytest -q tests/test_ghost_event_log.py \
+  tests/test_ghost_signal_extractor.py::GhostSignalStoreTests \
+  tests/test_ghost_inbox.py::GhostSignalStoreScopeTests \
+  tests/test_ghost_router.py tests/test_ghost_sleep.py
+54 passed, 6 subtests passed in 1.65s
+
+python -m pytest -q tests/test_deepseek.py tests/test_stepfun.py
+52 passed in 0.69s
+
+python -m pytest -q tests/test_provider_registry_app.py \
+  tests/test_architecture.py::ArchitectureBoundaryTests::test_provider_registry_owns_provider_sessions_and_health \
+  tests/test_server.py::ProviderStatusTests::test_failover_order_prefers_open_tabs_then_registry_order \
+  tests/test_server.py::ProviderStatusTests::test_run_review_uses_self_review_after_external_reviewers_fail
+6 passed in 0.65s
+
+python -m pytest -q tests/test_conversation_registry.py tests/test_conversation_store.py \
+  tests/test_continuity.py \
+  tests/test_architecture.py::ArchitectureBoundaryTests::test_conversation_registry_owns_conversation_cache_and_store \
+  tests/test_server.py::ProviderStatusTests::test_run_review_uses_self_review_after_external_reviewers_fail
+15 passed, 4 subtests passed in 2.37s
+
+python -m pytest -q tests/test_app_background_workers.py \
+  tests/test_conversation_registry.py tests/test_provider_registry_app.py \
+  tests/test_architecture.py::ArchitectureBoundaryTests::test_background_workers_own_single_flight_state \
+  tests/test_server.py -k "ghost_sleep or knowledge_rebuild or failover_order_prefers_open_tabs or self_review"
+10 passed, 185 deselected in 1.20s
+
+python -m pytest -q tests/test_architecture.py tests/test_server.py \
+  tests/test_app_background_workers.py tests/test_approval_registry.py \
+  tests/test_run_registry.py tests/test_provider_registry_app.py \
+  tests/test_conversation_registry.py tests/test_conversation_store.py tests/test_continuity.py
+274 passed, 1 skipped, 260 subtests passed in 39.70s
+
+python -m pytest -q tests/test_ghost_event_log.py tests/test_ghost_signal_extractor.py \
+  tests/test_ghost_inbox.py tests/test_ghost_router.py tests/test_ghost_sleep.py \
+  tests/test_deepseek.py tests/test_stepfun.py
+163 passed, 98 subtests passed in 5.92s
+
+python -m pytest -q tests/test_task_runner_analysis_run.py \
+  tests/test_task_runner_research_topic_continuity.py tests/test_task_runner_run_trace.py \
+  tests/test_task_runner_router.py tests/test_task_runner_provider_preference.py \
+  tests/test_task_runner_completion_enforcement.py tests/test_task_runner_edit_integrity.py \
+  tests/test_task_runner_work_queue.py tests/test_task_runner_affinity.py
+84 passed in 36.90s
+
+python -m ruff check codey tests tools
+All checks passed
+
+python -m compileall -q codey tests tools
+passed
+
+git diff --check
+no whitespace errors; Git reported CRLF/LF normalization warnings for
+codey/ghost/router.py and tests/test_stepfun.py
+```
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after updating
+TEST_REPORT only once the full run had passed):
+
+```text
+python -m pytest -q
+3303 passed, 17 skipped, 1286 subtests passed in 293.70s (0:04:53)
+```
+
 ## 0.5.1 Runtime Kernel Cold-start Refactor (2026-08-30)
 
 Scope:

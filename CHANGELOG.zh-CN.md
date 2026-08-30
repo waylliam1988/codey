@@ -11,6 +11,14 @@
     `codey.task.model.TaskSubmission`，执行服务属于
     `codey.task.service.TaskService`；server、headless、manual harness 和
     测试调用点已一次性迁移，不保留旧模块 shim。
+  - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
+    provider session/health/order、conversation cache/store、knowledge rebuild
+    single-flight、Ghost sleep single-flight 现在都有独立 app 模块。
+    `server.State` 保留产品调用方法，但没有 old/new runtime 开关。
+  - operation frame/work/hooks/outcome 值对象移入 `codey.operations`，plain
+    chat operation 和 prompt/local-context trace helper 也从 `TaskService`
+    迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
+    emission 现在有明确 operation owner。
   - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
     contract、suspended operation、lane queue、小型 scheduler，以及
     append-only session log + fail-closed reducer。reducer 测试覆盖单 lane
@@ -23,8 +31,12 @@
     `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
     `codey.app.event_bus`；`State` 只负责在 emit 前注入 active run identity。
-  - StepFun 响应变化路径改用 `ProviderSendContext.record_response()`，
-    不再手写 `ctx.last`，stable-response 计数与其他 web driver 对齐。
+  - 新增共享 Ghost JSONL event-log primitive，并把 signal、router、sleep
+    store 迁到它上面。腐坏或超限读取仍可观测，router/sleep 保留已有的
+    fail-closed mutation 语义。
+  - 新增共享 browser-provider stable-completion loop，并迁移 DeepSeek 与
+    StepFun。两个 driver 都改用 `ProviderSendContext.record_response()`，
+    不再手写 `ctx.last`，stable-response 计数集中到一处。
 - 审查后的冷启动清理：
   - A/B harness 的 git-state 读取改成 bytes 路径，未跟踪的中文文件名不会再在
     Windows locale 解码阶段把全量 pytest 打红。

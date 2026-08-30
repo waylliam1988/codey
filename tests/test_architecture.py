@@ -70,6 +70,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
                 self.assertNotIn("codey.providers.web_drivers.glm", imports)
 
+    def test_deepseek_and_stepfun_share_stability_loop(self) -> None:
+        base_source = (ROOT / "codey" / "providers" / "web_drivers" / "base.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("def wait_for_stable_completion", base_source)
+        for name in ("deepseek.py", "stepfun.py"):
+            path = ROOT / "codey" / "providers" / "web_drivers" / name
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(driver=name):
+                self.assertIn("from codey.providers.web_drivers import base", source)
+                self.assertIn("wait_for_stable_completion(", source)
+                self.assertNotIn("ctx.last = current", source)
+
     def test_http_server_delegates_task_orchestration(self) -> None:
         imports = imported_modules(ROOT / "codey" / "app" / "server.py")
         source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
@@ -88,6 +101,91 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("self.event_sequence", server_source)
         self.assertIn("queue", bus_imports)
 
+    def test_run_registry_owns_run_lifecycle_state(self) -> None:
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        registry_source = (ROOT / "codey" / "app" / "run_registry.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("codey.app.run_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("class RunRegistry", registry_source)
+        self.assertNotIn("class RunSnapshot", server_source)
+        for token in (
+            "self.active_run = run",
+            "self.busy = True",
+            "self.last_terminal_event = payload",
+            "self.last_shell_result = payload",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, server_source)
+
+    def test_approval_registry_owns_pending_approval_maps(self) -> None:
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        approval_source = (ROOT / "codey" / "app" / "approval_registry.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("codey.app.approval_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("class ApprovalRegistry", approval_source)
+        self.assertNotIn("self.pending_shell: dict", server_source)
+        self.assertNotIn("self.pending_teach: dict", server_source)
+        self.assertIn("def pending_shell", server_source)
+        self.assertIn("def pending_teach", server_source)
+
+    def test_provider_registry_owns_provider_sessions_and_health(self) -> None:
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        registry_source = (ROOT / "codey" / "app" / "provider_registry.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("codey.app.provider_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("class ProviderRegistry", registry_source)
+        self.assertNotIn("self.provider_sessions: dict", server_source)
+        self.assertNotIn("self.provider_supervisor = ProviderSupervisor", server_source)
+        self.assertIn("def provider_sessions", server_source)
+        self.assertIn("def provider_supervisor", server_source)
+
+    def test_conversation_registry_owns_conversation_cache_and_store(self) -> None:
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        registry_source = (ROOT / "codey" / "app" / "conversation_registry.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("codey.app.conversation_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("class ConversationRegistry", registry_source)
+        for token in (
+            "self.conversations: dict",
+            "self.conversation_tokens: dict",
+            "self.conversation_store =",
+            "def _save_conversation",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, server_source)
+
+    def test_background_workers_own_single_flight_state(self) -> None:
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        ghost_source = (ROOT / "codey" / "app" / "ghost_daemon.py").read_text(
+            encoding="utf-8"
+        )
+        indexer_source = (ROOT / "codey" / "app" / "knowledge_indexer.py").read_text(
+            encoding="utf-8"
+        )
+
+        imports = imported_modules(ROOT / "codey" / "app" / "server.py")
+        self.assertIn("codey.app.ghost_daemon", imports)
+        self.assertIn("codey.app.knowledge_indexer", imports)
+        self.assertIn("class GhostSleepDaemon", ghost_source)
+        self.assertIn("class KnowledgeIndexer", indexer_source)
+        for token in (
+            "_knowledge_rebuild_running",
+            "_knowledge_rebuild_pending",
+            "_ghost_sleep_running",
+            "_ghost_sleep_pending",
+            "_ghost_sleep_thread",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, server_source)
+
     def test_task_service_has_no_http_dependency(self) -> None:
         imports = imported_modules(TASK_SERVICE_PATH)
 
@@ -102,6 +200,38 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class TaskSubmission", model_source)
         self.assertNotIn("class TaskSubmission", service_source)
         self.assertFalse(hasattr(task_service, "TaskSubmission"))
+
+    def test_operation_context_values_are_not_defined_by_task_service(self) -> None:
+        service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        context_source = (ROOT / "codey" / "operations" / "context.py").read_text(
+            encoding="utf-8"
+        )
+        result_source = (ROOT / "codey" / "operations" / "result.py").read_text(
+            encoding="utf-8"
+        )
+        imports = imported_modules(TASK_SERVICE_PATH)
+
+        self.assertIn("codey.operations.context", imports)
+        self.assertIn("codey.operations.result", imports)
+        for token in ("class _RunFrame", "class _RunWork", "class _RunHooks", "class _ModeOutcome"):
+            with self.subTest(token=token):
+                self.assertNotIn(token, service_source)
+        self.assertIn("class RunFrame", context_source)
+        self.assertIn("class RunWork", context_source)
+        self.assertIn("class RunHooks", context_source)
+        self.assertIn("class ModeOutcome", result_source)
+
+    def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
+        service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("codey.operations.chat", imported_modules(TASK_SERVICE_PATH))
+        self.assertIn("def run_chat_mode", chat_source)
+        self.assertIn("return run_chat_mode(", service_source)
+        self.assertNotIn("chat_outbound_prompt", service_source)
+        self.assertIn("chat_outbound_prompt", chat_source)
 
     def test_legacy_task_runner_module_is_gone(self) -> None:
         self.assertFalse((ROOT / "codey" / "app" / "task_runner.py").exists())

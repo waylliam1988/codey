@@ -11,6 +11,15 @@ This file records Codey's release history. The newest release appears first.
     submissions now live in `codey.task.model.TaskSubmission`, execution lives
     in `codey.task.service.TaskService`, and server/headless/manual/test
     callers were migrated without keeping a legacy shim.
+  - Split app runtime state out of the HTTP server shell: run lifecycle,
+    approval queues, provider sessions/health/order, conversation cache/store,
+    knowledge rebuild single-flight, and Ghost sleep single-flight now live in
+    dedicated app modules. `server.State` keeps product-facing methods but no
+    old/new runtime switch.
+  - Moved operation frame/work/hooks/outcome values into `codey.operations` and
+    moved the plain chat operation plus prompt/local-context tracing helpers
+    out of `TaskService`. Chat prompt assembly, consensus handoff, provider
+    session settlement, and reply emission now have an operation owner.
   - Added a Pi-style runtime kernel under `codey.runtime`: typed operation
     outcomes, operation contracts, suspended operations, lane queues, a small
     scheduler, and an append-only session log with a fail-closed reducer.
@@ -27,9 +36,14 @@ This file records Codey's release history. The newest release appears first.
   - Split SSE subscriber queues, replay IDs, overflow markers, and replay-window
     checks into `codey.app.event_bus`; `State` only injects active run identity
     before emitting.
-  - Fixed StepFun's response-change path to use
+  - Added a shared Ghost JSONL event-log primitive and migrated the signal,
+    router, and sleep stores onto it. Corrupt or oversized reads remain
+    observable, and router/sleep keep their existing fail-closed mutation
+    behavior.
+  - Added a shared browser-provider stable-completion loop and migrated
+    DeepSeek and StepFun onto it. Both drivers now use
     `ProviderSendContext.record_response()` instead of mutating `ctx.last`,
-    keeping stable-response accounting aligned with the other web drivers.
+    keeping stable-response accounting centralized.
 - Post-review cold-start cleanup:
   - A/B harness git-state capture now reads Git output as bytes, so untracked
     CJK filenames cannot trip Windows locale decoding before a full pytest run.

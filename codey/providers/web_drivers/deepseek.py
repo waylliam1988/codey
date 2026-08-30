@@ -23,8 +23,9 @@ from codey.providers import controls as controls
 from codey.providers import flow as provider_flow
 from codey.providers import send_loop as send_loop
 from codey.providers.profiles import get_profile
-from codey.providers.diagnostics import ControlMissing, RateLimited, ResponseMissing
+from codey.providers.diagnostics import ControlMissing, RateLimited
 from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers.web_drivers import base as driver_base
 from codey.providers.web_drivers import common as driver_common
 from codey.toolchain.json_reply import (
     is_json_tool_reply as _is_json_tool_reply,
@@ -34,7 +35,6 @@ from codey.toolchain.json_reply import (
 )
 from codey.providers.submission import (
     SendAttempt,
-    SubmissionUncertain,
     confirm_submission,
 )
 from codey.automation.web_clipboard import copy_action_text
@@ -375,81 +375,48 @@ def chat(
             display_name="DeepSeek",
             sent_at=time.time(),
         )
-        start_deadline = ctx.sent_at + response_timeout
-        stable = 0
-        while time.time() < start_deadline:
-            cancellation.wait(tick)
+
+        def _retry_rate_limit_if_needed(context: send_loop.ProviderSendContext) -> bool:
             if (
                 _response_count(page) <= baseline
                 and _rate_limit_visible(page)
             ):
                 if _click_rate_limit_retry(page):
-                    ctx.reset_text_progress(sent_at=time.time())
-                    stable = 0
-                    continue
+                    context.reset_text_progress(sent_at=time.time())
+                    return True
+            return False
+
+        def _current_response() -> str:
             current = _last_text(page)
             if _response_count(page) <= baseline and current == baseline_text:
-                continue
-            confirm_submission(attempt, PROVIDER_ID)
-            ctx.appeared = True
-            if not current:
-                stable = 0
-                continue
-            same = ctx.same_as_last(current)
-            observation = provider_flow.FlowObservation(
-                response_stable=same,
-                response_nonempty=bool(current),
-            )
-            ctx.trace.add(observation)
-            if same and (time.time() - ctx.sent_at) >= min_wait:
-                stable += 1
-                is_json_tool = _is_json_tool_reply(current)
-                repairable_json_tool = False
-                if _looks_like_json_tool_reply(current) and not is_json_tool:
-                    repairable_json_tool = bool(
-                        _repair_missing_trailing_braces_json_tool_reply(current)
-                    )
-                    if not repairable_json_tool and stable < stable_ticks:
-                        continue
-                if stable >= JSON_TOOL_STABLE_TICKS and is_json_tool:
-                    return send_loop.read_completion(
-                        ctx,
-                        lambda: _final_text(page),
-                    )
-                if repairable_json_tool and stable < stable_ticks:
-                    continue
-                if repairable_json_tool:
-                    return send_loop.read_completion(
-                        ctx,
-                        lambda: _final_text(page),
-                    )
-                ready = send_loop.completion_ready(
-                    ctx,
-                    observation,
-                    built_in_ready=stable >= stable_ticks,
-                )
-                if ready:
-                    return send_loop.read_completion(
-                        ctx,
-                        lambda: _final_text(page),
-                    )
-            else:
-                stable = 0
-                ctx.last = current
-        if _rate_limit_visible(page):
-            raise RateLimited("DeepSeek is rate limited")
-        late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
-        if late:
-            confirm_submission(attempt, PROVIDER_ID)
-            return late
-        if ctx.appeared and ctx.last:
-            return _final_text(page)
-        recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
-        if recovered is not None:
-            confirm_submission(attempt, PROVIDER_ID)
-            return recovered
-        if not attempt.confirmed:
-            if attempt.method == "click" and attempt.action_error is not None:
-                controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-            raise SubmissionUncertain("DeepSeek submission status is uncertain")
-        raise ResponseMissing(f"DeepSeek response timed out after {response_timeout:.0f}s")
+                return ""
+            return current
+
+        def _raise_if_rate_limited() -> None:
+            if _rate_limit_visible(page):
+                raise RateLimited("DeepSeek is rate limited")
+
+        return driver_base.wait_for_stable_completion(
+            ctx,
+            attempt,
+            response_timeout=response_timeout,
+            stable_ticks=stable_ticks,
+            tick=tick,
+            min_wait=min_wait,
+            read_current=_current_response,
+            read_final=lambda: _final_text(page),
+            read_late=lambda: _wait_late_response(
+                page,
+                baseline,
+                baseline_text=baseline_text,
+                grace=TIMEOUT_GRACE,
+                tick=tick,
+            ),
+            before_poll=_retry_rate_limit_if_needed,
+            before_recover=_raise_if_rate_limited,
+            is_json_tool=_is_json_tool_reply,
+            looks_like_json_tool=_looks_like_json_tool_reply,
+            repair_json_tool=_repair_missing_trailing_braces_json_tool_reply,
+            json_tool_stable_ticks=JSON_TOOL_STABLE_TICKS,
+            uncertain_message="DeepSeek submission status is uncertain",
+        )

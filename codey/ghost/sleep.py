@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
-import os
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Iterable, Mapping
@@ -17,6 +16,7 @@ import uuid
 
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.event_log import GhostEventLog
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -146,6 +146,15 @@ class GhostSleepStore:
         self.events_path = self.directory / "sleep_events.jsonl"
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
+
+    def _event_log(self) -> GhostEventLog:
+        return GhostEventLog(
+            self.events_path,
+            schema_version=SLEEP_SCHEMA_VERSION,
+            max_bytes=MAX_SLEEP_EVENTS_BYTES,
+            max_warnings=MAX_SLEEP_WARNINGS,
+            source_name="sleep_events.jsonl",
+        )
 
     def run_once(
         self,
@@ -609,66 +618,16 @@ class GhostSleepStore:
         )
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
-        self._events_read_blocked = False
-        try:
-            if not self.events_path.is_file():
-                self.last_warnings = ()
-                return []
-            if self.events_path.stat().st_size > MAX_SLEEP_EVENTS_BYTES:
-                self.last_warnings = ("sleep_events_too_large",)
-                self._events_read_blocked = True
-                return []
-            lines = self.events_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            self.last_warnings = ("sleep_events_unreadable",)
-            self._events_read_blocked = True
-            return []
-        rows: list[dict[str, object]] = []
-        warnings: list[str] = []
-        for index, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                warnings.append(f"sleep_events.jsonl:{index}:bad_json")
-                continue
-            if isinstance(payload, dict) and payload.get("schema_version") == SLEEP_SCHEMA_VERSION:
-                rows.append(payload)
-        self.last_warnings = _bounded_warnings(warnings)
-        return rows
+        read = self._event_log().read()
+        self._events_read_blocked = read.blocked
+        self.last_warnings = _sleep_event_read_warnings(read.warnings)
+        return list(read.rows)
 
     def _append_events(self, events: Iterable[dict[str, object]]) -> bool:
-        rows = [event for event in events if isinstance(event, dict)]
-        if not rows:
-            return True
-        try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                for event in rows:
-                    handle.write(_json_line(event))
-            return True
-        except (OSError, TypeError, ValueError):
-            return False
+        return self._event_log().append(events)
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        rows = [event for event in events if isinstance(event, dict)]
-        data = "".join(_json_line(event) for event in rows).encode("utf-8")
-        if len(data) > MAX_SLEEP_EVENTS_BYTES:
-            raise ValueError("ghost sleep events are too large")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        temporary = self.events_path.with_name(f".{self.events_path.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, self.events_path)
-        finally:
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
+        self._event_log().write_atomic(events)
 
     def _compact_if_needed(self) -> None:
         with with_file_lock(self.events_path):
@@ -804,18 +763,6 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
         return "unreadable"
 
 
-def _json_line(value: dict[str, object]) -> str:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        + "\n"
-    )
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -831,6 +778,18 @@ def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:
         if len(out) >= MAX_SLEEP_WARNINGS:
             break
     return tuple(out)
+
+
+def _sleep_event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
+    mapped: list[str] = []
+    for warning in warnings:
+        if warning == "sleep_events.jsonl:too_large":
+            mapped.append("sleep_events_too_large")
+        elif warning == "sleep_events.jsonl:unreadable":
+            mapped.append("sleep_events_unreadable")
+        else:
+            mapped.append(str(warning))
+    return _bounded_warnings(mapped)
 
 
 def _list(value: object) -> list[object]:

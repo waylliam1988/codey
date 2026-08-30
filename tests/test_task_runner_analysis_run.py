@@ -6,11 +6,12 @@ from unittest import mock
 
 from codey.app import server
 from codey.agents.runner import RunResult
+from codey.operations.context import RunWork
 from codey.runtime.events import RunEvent
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
-from codey.task.service import TaskService, _RunWork
+from codey.task.service import TaskService
 
 
 def _outcome(
@@ -55,7 +56,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="deepseek",
             )
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
 
             runner._handle_project_tool_event(
@@ -111,7 +112,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="deepseek",
             )
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
 
             runner._handle_project_tool_event(
@@ -142,7 +143,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="deepseek",
             )
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
             outcome = ToolOutcome("saved", True, changed=True)
 
@@ -178,7 +179,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="deepseek",
             )
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
 
             denied = ToolOutcome(
@@ -214,7 +215,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 mode_initial="project",
                 provider_initial="deepseek",
             )
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
 
             timed_out = ToolOutcome(
                 "command timed out after 30s (this is a timeout, not a test failure)",
@@ -252,7 +253,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 def record_analysis_run(self, _payload):
                     raise RuntimeError("trace disk full")
 
-            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=_ExplodingTrace())
+            work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=_ExplodingTrace())
 
             runner._handle_project_tool_event(
                 event=_run_event(_outcome()),
