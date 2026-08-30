@@ -1070,6 +1070,66 @@ class StrictReaderTests(unittest.TestCase):
             RunOperationState.from_payload(failed_settled.to_payload()), failed_settled
         )
 
+    def test_repair_phases_carry_only_the_failed_proof(self) -> None:
+        # The arm is reachable only from an unsatisfied failed proof, and it
+        # carries that proof's facts through every repair phase.
+        for phase, overrides in (
+            (PHASE_REPAIR_CONTEXT_ADMITTED, {"repair_context_ref": CONTEXT_REF}),
+            (
+                PHASE_REPAIR_RUNNING,
+                {"repair_context_ref": CONTEXT_REF, "repair_rounds": 1},
+            ),
+            (
+                PHASE_REPAIR_SETTLED,
+                {"repair_context_ref": CONTEXT_REF, "repair_rounds": 1},
+            ),
+        ):
+            for status, satisfied in (
+                ("complete", True),
+                ("complete_with_limitations", False),
+                ("blocked", False),
+            ):
+                with self.subTest(phase=phase, status=status):
+                    payload = _fresh_state(
+                        phase,
+                        completion_proof_ref=PROOF_REF_OK,
+                        completion_proof_status=status,
+                        completion_proof_satisfied=satisfied,
+                        **overrides,
+                    ).to_payload()
+                    self.assertIsNone(RunOperationState.from_payload(payload))
+
+        # The reachable repair arm keeps round-tripping...
+        settled_arm = mark_repair_settled(
+            mark_repair_running(
+                mark_repair_context_admitted(
+                    mark_completion_proof_recorded(
+                        _fresh_state(PHASE_WRITER_SETTLED),
+                        proof_ref=PROOF_REF_FAIL,
+                        proof_status="failed",
+                        proof_satisfied=False,
+                    ),
+                    context_ref=CONTEXT_REF,
+                ),
+                provider_id="deepseek",
+            ),
+            provider_id="deepseek",
+            stop_reason="done",
+        )
+        self.assertEqual(
+            RunOperationState.from_payload(settled_arm.to_payload()), settled_arm
+        )
+
+        # ...and the post-repair re-proof to complete stays legal: that is
+        # completion_proof_recorded + repair facts, not an active phase.
+        reproof = mark_completion_proof_recorded(
+            settled_arm,
+            proof_ref=PROOF_REF_OK,
+            proof_status="complete",
+            proof_satisfied=True,
+        )
+        self.assertEqual(RunOperationState.from_payload(reproof.to_payload()), reproof)
+
     def test_terminal_blocked_reason_must_match_the_snapshot(self) -> None:
         terminal = mark_terminal(
             mark_completion_blocked(
@@ -1656,24 +1716,15 @@ class TransitionTableTests(unittest.TestCase):
             )
 
         # A complete-proof repair position cannot claim a provider failure.
-        running = mark_repair_running(
-            mark_repair_context_admitted(
-                mark_completion_proof_recorded(
-                    mark_writer_settled(
-                        mark_writer_running(
-                            _fresh_state(PHASE_ACCEPTED), provider_id="deepseek"
-                        ),
-                        provider_id="deepseek",
-                        turns_used=2,
-                        stop_reason="done",
-                    ),
-                    proof_ref=PROOF_REF_OK,
-                    proof_status="complete",
-                    proof_satisfied=True,
-                ),
-                context_ref=CONTEXT_REF,
-            ),
-            provider_id="deepseek",
+        # Such a position is not table-reachable -- admission refuses it --
+        # so it is built directly to exercise the verdict guard.
+        running = _fresh_state(
+            PHASE_REPAIR_RUNNING,
+            completion_proof_ref=PROOF_REF_OK,
+            completion_proof_status="complete",
+            completion_proof_satisfied=True,
+            repair_context_ref=CONTEXT_REF,
+            repair_rounds=1,
         )
         with self.assertRaises(RunOperationTransitionError):
             mark_repair_settled(
@@ -1682,6 +1733,40 @@ class TransitionTableTests(unittest.TestCase):
                 stop_reason="done",
                 blocked_reason="provider_failure",
             )
+
+    def test_only_a_failed_proof_admits_the_repair_arm(self) -> None:
+        # The repair arm exists for product failures: a complete, limited,
+        # or blocked proof never sends the run into repair -- the completion
+        # projection admits a context for unsatisfied failed proofs only.
+        settled = mark_writer_settled(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            provider_id="deepseek",
+            turns_used=2,
+            stop_reason="done",
+        )
+        for status, satisfied in (
+            ("complete", True),
+            ("complete_with_limitations", False),
+            ("blocked", False),
+        ):
+            proof = mark_completion_proof_recorded(
+                settled,
+                proof_ref=PROOF_REF_OK,
+                proof_status=status,
+                proof_satisfied=satisfied,
+            )
+            with self.subTest(status=status):
+                with self.assertRaises(RunOperationTransitionError):
+                    mark_repair_context_admitted(proof, context_ref=CONTEXT_REF)
+
+        failed = mark_completion_proof_recorded(
+            settled,
+            proof_ref=PROOF_REF_FAIL,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        admitted = mark_repair_context_admitted(failed, context_ref=CONTEXT_REF)
+        self.assertEqual(RunOperationState.from_payload(admitted.to_payload()), admitted)
 
     def test_blocked_verdict_is_final_until_terminal(self) -> None:
         # Once the verdict is on the counter, the run may only end: the

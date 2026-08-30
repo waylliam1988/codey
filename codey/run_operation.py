@@ -29,7 +29,8 @@ Boundaries:
   unknown phase, unknown keys (top-level or inside the terminal snapshot),
   wrong JSON types (bool-as-int, numeric strings), missing fields, padded
   text fields, raw or malformed refs, impossible phase states (repair or
-  proof facts before the phases that produce them, post-proof phases and
+  proof facts before the phases that produce them, repair phases not
+  carrying the failed proof that admitted them, post-proof phases and
   terminal without the facts their source phase committed, a re-proof with
   a partial repair record, a blocked verdict outside the phases that may
   carry one or without its unsatisfied failed/blocked proof, proof refs or
@@ -192,6 +193,9 @@ _RECORDED_PROOF_STATUSES = frozenset(
     {"complete", "complete_with_limitations", "failed", "blocked"}
 )
 _BLOCKABLE_PROOF_STATUSES = frozenset({"failed", "blocked"})
+# The repair arm exists for product failures: the completion projection
+# admits a context for unsatisfied failed proofs only.
+_REPAIR_SOURCE_PROOF_STATUSES = frozenset({"failed"})
 
 
 class RunOperationTransitionError(Exception):
@@ -319,6 +323,21 @@ def _blocked_verdict_supported(proof_ref: str, proof_status: str, satisfied: obj
     return (
         _proof_facts_complete(proof_ref, proof_status, satisfied)
         and proof_status in _BLOCKABLE_PROOF_STATUSES
+        and satisfied is False
+    )
+
+
+def _repair_candidate_proof(proof_ref: str, proof_status: str, satisfied: object) -> bool:
+    """Whether the recorded proof can admit a repair context.
+
+    Only an unsatisfied failed proof sends the run into the repair arm; a
+    complete or limited pass needs no repair and a blocked one cannot run
+    one.
+    """
+
+    return (
+        _proof_facts_complete(proof_ref, proof_status, satisfied)
+        and proof_status in _REPAIR_SOURCE_PROOF_STATUSES
         and satisfied is False
     )
 
@@ -483,8 +502,13 @@ class RunOperationState:
                 raise _SchemaError("completion_proof_status is not a recorded status")
             # Phase invariants: the register may only claim what the closed
             # transition table could have produced at this phase.
-            if phase in _REPAIR_PHASES and not repair_context_ref:
-                raise _SchemaError(f"{phase} requires a committed repair context ref")
+            if phase in _REPAIR_PHASES:
+                if not repair_context_ref:
+                    raise _SchemaError(f"{phase} requires a committed repair context ref")
+                if proof_status != "failed":
+                    # The arm is reachable only from an unsatisfied failed
+                    # proof, and it carries that proof throughout.
+                    raise _SchemaError(f"{phase} requires the failed proof that admitted it")
             if phase in _REPAIR_EXECUTING_PHASES and repair_rounds < 1:
                 raise _SchemaError(f"{phase} requires a committed repair round")
             if phase in _PRE_REPAIR_PHASES:
@@ -665,6 +689,12 @@ def mark_repair_context_admitted(
     *,
     context_ref: str,
 ) -> RunOperationState:
+    if not _repair_candidate_proof(
+        state.completion_proof_ref, state.completion_proof_status, state.completion_proof_satisfied
+    ):
+        raise RunOperationTransitionError(
+            "only an unsatisfied failed proof admits a repair context"
+        )
     digest = _strict_text(context_ref, field="context_ref", limit=MAX_REF_CHARS)
     if not _SHA256_REF_RE.match(digest):
         raise RunOperationTransitionError("context_ref must be a sha256:<64 hex> digest ref")

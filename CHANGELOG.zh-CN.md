@@ -15,7 +15,8 @@
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
     terminal`；任何非 terminal phase 都可以直接进 terminal；
-    `repair_running` 必须先有已提交的 admission。terminal 保留一份与
+    `repair_running` 必须先有已提交的 admission——而 admission 只属于
+    unsatisfied 的 failed proof。terminal 保留一份与
     `RunLedger.finish()` 字段对齐的有界快照（summary 只存字符数，不存文本）。
   - 只存 refs/status/counts/reasons：proof id/status/satisfied、
     repair-context digest、稳定的 `project:<key>` ref（绝不保存 raw
@@ -28,7 +29,8 @@
     文本字段、空 provider id、显式 null 的 proof 标志、raw 或畸形 ref、
     不可能的 phase 状态（产生这些事实的 phase 之前带 repair、proof 或
     settled writer 事实——新寄存器不带任何事实，running 的 writer 尚未
-    settled——、terminal 带着任何 source phase 都提交不出来的事实组合——
+    settled——、repair 相位未携带 admission 它的那个 failed proof、terminal
+    带着任何 source phase 都提交不出来的事实组合——
     残缺的 proof triple、没有 admission 的 repair round、没有已记录 proof
     的 context——、带残缺 repair 记录的 re-proof、没有 unsatisfied
     failed/blocked proof 支撑的 blocked verdict、proof ref 或 status 超出

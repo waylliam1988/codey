@@ -17,7 +17,8 @@ This file records Codey's release history. The newest release appears first.
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
     terminal`, every non-terminal phase may go straight to terminal, and
-    `repair_running` cannot be reached without a committed admission. The
+    `repair_running` cannot be reached without a committed admission --
+    which only an unsatisfied failed proof can earn. The
     terminal commit keeps one bounded snapshot that mirrors
     `RunLedger.finish()` fields (summary is a char count, not text).
   - Refs/status/counts/reasons only: proof id/status/satisfied, the
@@ -32,7 +33,8 @@ This file records Codey's release history. The newest release appears first.
     fields, an empty provider id, an explicit-null proof flag, raw or
     malformed refs, impossible phase states (repair, proof, or settled
     writer facts before the phases that produce them -- a fresh register
-    carries nothing and a running writer has not settled --, terminal fact
+    carries nothing and a running writer has not settled --, repair phases
+    not carrying the failed proof that admitted them, terminal fact
     combinations no source phase could have committed -- a partial proof
     triple, repair rounds without the admitted context, a context without
     its recorded proof --, a re-proof with a partial repair record, a
