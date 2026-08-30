@@ -15,7 +15,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey import __version__
+from codey.app import api as app_api
+from codey.app import http_plumbing
 from codey.app import server
+from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers import profile_doctor
@@ -123,8 +126,8 @@ def setUpModule() -> None:
     """Forbid real web-provider tab connections for every test here.
 
     Review/memory/receipt tests only need the fallback text paths; any test
-    that wants a provider must patch ``server.connect_existing_provider`` or
-    ``server.connect_fresh_provider_tab`` explicitly, which nests cleanly
+    that wants a provider must patch ``app_services.connect_existing_provider`` or
+    ``app_services.connect_fresh_provider_tab`` explicitly, which nests cleanly
     over these guards. Live browser flows belong to manual/live-smoke
     tooling, never to plain pytest.
     """
@@ -132,14 +135,14 @@ def setUpModule() -> None:
     def _deny(*_args: object, **_kwargs: object) -> None:
         raise AssertionError(
             "test attempted a real provider tab connection; patch "
-            "server.connect_existing_provider / connect_fresh_provider_tab "
+            "app_services.connect_existing_provider / connect_fresh_provider_tab "
             "instead of opening live pages"
         )
 
     _PROVIDER_TAB_GUARDS.extend(
         [
-            mock.patch.object(server, "connect_existing_provider", side_effect=_deny),
-            mock.patch.object(server, "connect_fresh_provider_tab", side_effect=_deny),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=_deny),
+            mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=_deny),
         ]
     )
     for guard in _PROVIDER_TAB_GUARDS:
@@ -372,7 +375,12 @@ class GitChangesTests(unittest.TestCase):
 class ApprovedShellTests(unittest.TestCase):
     def test_execute_approved_shell_runs_in_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.execute_approved_shell(td, ".", "python -c \"print('approved')\"")
+            data = app_services.execute_approved_shell(
+                server.AppContext(),
+                td,
+                ".",
+                "python -c \"print('approved')\"",
+            )
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["exit_code"], 0)
@@ -380,7 +388,12 @@ class ApprovedShellTests(unittest.TestCase):
 
     def test_execute_approved_shell_rejects_escaped_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.execute_approved_shell(td, "..", "python -c \"print('approved')\"")
+            data = app_services.execute_approved_shell(
+                server.AppContext(),
+                td,
+                "..",
+                "python -c \"print('approved')\"",
+            )
 
             self.assertFalse(data["ok"])
         self.assertIn("escapes project root", data["error"])
@@ -394,10 +407,15 @@ class ApprovedShellTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "SHELL_OUTPUT_LIMIT", 80),
-            mock.patch.object(server.cancellation, "run_process", return_value=completed) as run_process,
+            mock.patch.object(app_services, "SHELL_OUTPUT_LIMIT", 80),
+            mock.patch.object(app_services.cancellation, "run_process", return_value=completed) as run_process,
         ):
-            data = server.execute_approved_shell(td, ".", "command")
+            data = app_services.execute_approved_shell(
+                server.AppContext(),
+                td,
+                ".",
+                "command",
+            )
 
         self.assertTrue(run_process.call_args.kwargs.get("shell") is True)
         self.assertTrue(data["truncated"])
@@ -406,7 +424,7 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("middle of output omitted", data["output"])
 
     def test_shell_approval_continuation_includes_post_approval_checklist(self) -> None:
-        prompt = server.build_shell_approval_continuation(
+        prompt = app_services.build_shell_approval_continuation(
             command="npm install",
             result={"exit_code": 0, "output": "added 10 packages", "truncated": False},
             post_approval_instructions=(
@@ -436,14 +454,14 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertLess(prompt.index("Post-approval checklist"), prompt.index("Follow-up hints"))
 
     def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
-        with mock.patch.object(server, "safe_setup_context", return_value="Setup Context"):
-            setup = server._shell_continuation_setup_context(
+        with mock.patch.object(app_services, "safe_setup_context", return_value="Setup Context"):
+            setup = app_services.shell_continuation_setup_context(
                 {
                     "project": "E:/demo",
                     "risk_label": "dependency_install",
                 }
             )
-            generic = server._shell_continuation_setup_context(
+            generic = app_services.shell_continuation_setup_context(
                 {
                     "project": "E:/demo",
                     "risk_label": "generic",
@@ -454,9 +472,9 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertEqual(generic, "")
 
     def test_shell_followup_verification_candidates_are_limited_to_relevant_risks(self) -> None:
-        with mock.patch.object(server, "safe_verification_candidates", return_value=("candidate",)) as discover:
-            dependency = server._shell_followup_verification_candidates("E:/demo", "dependency_install")
-            generic = server._shell_followup_verification_candidates("E:/demo", "generic")
+        with mock.patch.object(app_services, "safe_verification_candidates", return_value=("candidate",)) as discover:
+            dependency = app_services.shell_followup_verification_candidates("E:/demo", "dependency_install")
+            generic = app_services.shell_followup_verification_candidates("E:/demo", "generic")
 
         self.assertEqual(dependency, ("candidate",))
         self.assertEqual(generic, ())
@@ -466,17 +484,17 @@ class ApprovedShellTests(unittest.TestCase):
         candidate = VerificationCandidate("npm test", "frontend", "package.json")
         with (
             mock.patch.object(
-                server,
-                "_shell_followup_verification_candidates",
+                app_services,
+                "shell_followup_verification_candidates",
                 return_value=(candidate,),
             ) as discover,
             mock.patch.object(
-                server,
+                app_services,
                 "render_shell_followup",
                 return_value="Follow-up hints:\n- ok",
             ) as render,
         ):
-            text = server._shell_followup_hints(
+            text = app_services.shell_followup_hints(
                 pending={
                     "project": "E:/demo",
                     "risk_label": "dependency_install",
@@ -500,7 +518,7 @@ class ApprovedShellTests(unittest.TestCase):
 
 class ProviderStatusTests(unittest.TestCase):
     def test_provider_payload_marks_available_models(self) -> None:
-        payload = server.provider_payload({"deepseek": True, "stepfun": False})
+        payload = app_services.provider_payload({"deepseek": True, "stepfun": False})
 
         by_id = {item["id"]: item for item in payload}
         self.assertTrue(by_id["deepseek"]["available"])
@@ -512,20 +530,20 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(set(by_id["deepseek"]), {"id", "label", "available"})
 
     def test_provider_status_update_only_reports_changed_model(self) -> None:
-        payload = server.provider_status_update("deepseek", True)
+        payload = app_services.provider_status_update("deepseek", True)
 
         self.assertEqual(payload, [{"id": "deepseek", "label": "DeepSeek", "available": True}])
 
     def test_provider_availability_reads_cdp_tabs_without_connecting(self) -> None:
         with (
             mock.patch.object(
-                server,
+                app_services,
                 "provider_tab_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ) as detected,
-            mock.patch.object(server, "connect_existing_provider") as connected,
+            mock.patch.object(app_services, "connect_existing_provider") as connected,
         ):
-            statuses = server.provider_availability()
+            statuses = app_services.provider_availability(server.AppContext())
 
         self.assertEqual(
             statuses,
@@ -552,7 +570,7 @@ class ProviderStatusTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(
-                    server,
+                    app_services,
                     "provider_tab_availability",
                     return_value={
                         "deepseek": True,
@@ -562,8 +580,8 @@ class ProviderStatusTests(unittest.TestCase):
                     },
                 ),
             ):
-                statuses = server.provider_availability()
-                reviewers = server.reviewer_candidates("deepseek")
+                statuses = app_services.provider_availability(state)
+                reviewers = app_services.reviewer_candidates(state, "deepseek")
 
         self.assertFalse(statuses["qwen"])
         self.assertNotIn("qwen", reviewers)
@@ -572,9 +590,8 @@ class ProviderStatusTests(unittest.TestCase):
 
     def test_reviewer_candidates_keep_ui_terms_out_of_payload(self) -> None:
         state = server.AppContext()
-        with mock.patch.object(server, "STATE", state):
-            reviewers = server.reviewer_candidates("deepseek")
-            payload = server.provider_payload({"deepseek": True, "mimo": True})
+        reviewers = app_services.reviewer_candidates(state, "deepseek")
+        payload = app_services.provider_payload({"deepseek": True, "mimo": True})
 
         self.assertNotIn("local", reviewers)
         self.assertNotIn("deepseek", reviewers)
@@ -602,15 +619,15 @@ class ProviderStatusTests(unittest.TestCase):
             )
             events = state.subscribe()
 
-            with mock.patch.object(server, "STATE", state):
-                server._run_provider_warmup(
-                    runner=lambda: {
-                        "deepseek": True,
-                        "stepfun": True,
-                        "qwen": True,
-                        "glm": False,
-                    }
-                )
+            app_services.run_provider_warmup(
+                state,
+                runner=lambda: {
+                    "deepseek": True,
+                    "stepfun": True,
+                    "qwen": True,
+                    "glm": False,
+                },
+            )
 
         event = events.get_nowait()
         by_id = {item["id"]: item for item in event["providers"]}
@@ -629,19 +646,19 @@ class ProviderStatusTests(unittest.TestCase):
         def fail() -> dict[str, bool]:
             raise RuntimeError("browser unavailable")
 
-        with mock.patch.object(server, "STATE", state):
-            server._run_provider_warmup(runner=fail)
+        app_services.run_provider_warmup(state, runner=fail)
 
         self.assertTrue(events.empty())
 
     def test_start_provider_warmup_uses_browser_worker(self) -> None:
         runner = mock.Mock()
 
-        with mock.patch.object(server, "submit_browser_task") as submit:
-            result = server._start_provider_warmup(runner=runner)
+        state = server.AppContext()
+        with mock.patch.object(app_services, "submit_browser_task") as submit:
+            result = app_services.start_provider_warmup(state, runner=runner)
 
         self.assertIsNone(result)
-        submit.assert_called_once_with(server._run_provider_warmup, runner)
+        submit.assert_called_once_with(app_services.run_provider_warmup, state, runner)
 
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
         state = server.AppContext()
@@ -659,10 +676,11 @@ class ProviderStatusTests(unittest.TestCase):
         event.set()
         with (
             cancellation.scope(event),
-            mock.patch.object(server, "connect_existing_provider") as connected,
+            mock.patch.object(app_services, "connect_existing_provider") as connected,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                server._run_review(
+                app_services.run_review(
+                    server.AppContext(),
                     session_id="session-1",
                     project="E:/demo",
                     task="task",
@@ -690,18 +708,18 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
             mock.patch.object(
-                server,
+                app_services,
                 "safe_review_impact_map",
                 return_value=(
                     "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
                 ),
             ) as impact_map,
         ):
-            reviewed = server._run_review(
+            reviewed = app_services.run_review(
+                state,
                 session_id="session-1",
                 project="E:/demo",
                 task="task",
@@ -734,12 +752,12 @@ class ProviderStatusTests(unittest.TestCase):
         impact = "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
-            mock.patch.object(server, "safe_review_impact_map") as impact_map,
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "safe_review_impact_map") as impact_map,
         ):
-            reviewed = server._run_review(
+            reviewed = app_services.run_review(
+                state,
                 session_id="session-1",
                 project="E:/demo",
                 task="task",
@@ -771,12 +789,12 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
-            mock.patch.object(server, "safe_review_impact_map") as impact_map,
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "safe_review_impact_map") as impact_map,
         ):
-            reviewed = server._run_review(
+            reviewed = app_services.run_review(
+                state,
                 session_id="session-1",
                 project="E:/demo",
                 task="task",
@@ -807,20 +825,20 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
             mock.patch.object(
-                server,
+                app_services,
                 "connect_existing_provider",
                 side_effect=RuntimeError("not open"),
             ) as connect_existing,
             mock.patch.object(
-                server,
+                app_services,
                 "connect_fresh_provider_tab",
                 return_value=reviewer,
             ) as connect_self_review,
         ):
-            reviewed = server._run_review(
+            reviewed = app_services.run_review(
+                state,
                 session_id="session-1",
                 project="E:/demo",
                 task="task",
@@ -856,11 +874,11 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
-            reviewed = server._run_review(
+            reviewed = app_services.run_review(
+                state,
                 session_id="session-review-trace",
                 project="E:/demo",
                 task="task",
@@ -885,12 +903,12 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.send.side_effect = cancellation.TaskCancelled("task stopped")
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=()),
-            mock.patch.object(server, "connect_fresh_provider_tab", return_value=reviewer),
+            mock.patch.object(app_services, "reviewer_candidates", return_value=()),
+            mock.patch.object(app_services, "connect_fresh_provider_tab", return_value=reviewer),
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                server._run_review(
+                app_services.run_review(
+                    state,
                     session_id="session-1",
                     project="E:/demo",
                     task="task",
@@ -912,13 +930,13 @@ class ProviderStatusTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(server, "connect_existing_provider", side_effect=fail_and_cancel),
-            mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
+            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=fail_and_cancel),
+            mock.patch.object(app_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                server._run_review(
+                app_services.run_review(
+                    state,
                     session_id="session-1",
                     project="E:/demo",
                     task="task",
@@ -1215,12 +1233,12 @@ class ResearchServerHelperTests(unittest.TestCase):
         graph = SimpleNamespace(to_dict=lambda: {"nodes": [], "edges": []})
 
         with (
-            mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "UnifiedResearchGraphBuilder") as builder_cls,
+            mock.patch.object(app_api, "UnifiedResearchGraphBuilder") as builder_cls,
         ):
             builder = builder_cls.return_value
             builder.build_for_session.return_value = graph
-            status, payload = server._research_graph_response(
+            status, payload = app_api.research_graph_response(
+                state,
                 {
                     "session_id": ["s1"],
                     "focus": ["fact-1"],
@@ -1248,14 +1266,13 @@ class ResearchServerHelperTests(unittest.TestCase):
     def test_research_graph_response_reports_unconfigured_store(self) -> None:
         state = server.AppContext()
         state.knowledge_store = None
-        with mock.patch.object(server, "STATE", state):
-            status, payload = server._research_graph_response({})
+        status, payload = app_api.research_graph_response(state, {})
 
         self.assertEqual(status, 404)
         self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
 
     def test_research_note_response_validation_and_payload(self) -> None:
-        status, payload = server._research_note_response({})
+        status, payload = app_api.research_note_response(server.AppContext(), {})
         self.assertEqual(status, 400)
         self.assertEqual(payload, {"ok": False, "error": "id required"})
 
@@ -1271,9 +1288,8 @@ class ResearchServerHelperTests(unittest.TestCase):
             )
             state.knowledge_store.write_note(note)
             try:
-                with mock.patch.object(server, "STATE", state):
-                    found_status, found_payload = server._research_note_response({"id": [note.id]})
-                    missing_status, missing_payload = server._research_note_response({"id": ["missing"]})
+                found_status, found_payload = app_api.research_note_response(state, {"id": [note.id]})
+                missing_status, missing_payload = app_api.research_note_response(state, {"id": ["missing"]})
             finally:
                 state.knowledge_store.close()
 
@@ -1291,23 +1307,21 @@ class ResearchServerHelperTests(unittest.TestCase):
     def test_research_note_response_reports_unconfigured_store(self) -> None:
         state = server.AppContext()
         state.knowledge_store = None
-        with mock.patch.object(server, "STATE", state):
-            status, payload = server._research_note_response({"id": ["n1"]})
+        status, payload = app_api.research_note_response(state, {"id": ["n1"]})
 
         self.assertEqual(status, 404)
         self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
 
     def test_research_restore_response_preserves_status_mapping(self) -> None:
-        missing_status, missing_payload = server._research_restore_response({})
+        missing_status, missing_payload = app_api.research_restore_response(server.AppContext(), {})
         self.assertEqual(missing_status, 400)
         self.assertEqual(missing_payload, {"ok": False, "error": "run_id required"})
 
         state = server.AppContext()
-        with mock.patch.object(server, "STATE", state):
-            with mock.patch.object(state, "restore_research_changes", return_value={"ok": False, "error": "busy"}):
-                failed_status, failed_payload = server._research_restore_response({"run_id": "r1"})
-            with mock.patch.object(state, "restore_research_changes", return_value={"ok": True, "restored": []}):
-                ok_status, ok_payload = server._research_restore_response({"run_id": "r1"})
+        with mock.patch.object(state, "restore_research_changes", return_value={"ok": False, "error": "busy"}):
+            failed_status, failed_payload = app_api.research_restore_response(state, {"run_id": "r1"})
+        with mock.patch.object(state, "restore_research_changes", return_value={"ok": True, "restored": []}):
+            ok_status, ok_payload = app_api.research_restore_response(state, {"run_id": "r1"})
 
         self.assertEqual(failed_status, 409)
         self.assertEqual(failed_payload, {"ok": False, "error": "busy"})
@@ -1316,62 +1330,67 @@ class ResearchServerHelperTests(unittest.TestCase):
 
     def test_run_submit_response_validation_and_submit_mapping(self) -> None:
         self.assertEqual(
-            server._run_submit_response({"task": "hello", "intent": "bad"}), (400, {"error": "invalid intent"})
+            app_api.run_submit_response({"task": "hello", "intent": "bad"}, mock.Mock()),
+            (400, {"error": "invalid intent"}),
         )
         self.assertEqual(
-            server._run_submit_response({"task": "hello", "max_turns": "bad"}),
+            app_api.run_submit_response({"task": "hello", "max_turns": "bad"}, mock.Mock()),
             (400, {"error": "invalid max_turns"}),
         )
-        self.assertEqual(server._run_submit_response({"task": ""}), (400, {"error": "task required"}))
         self.assertEqual(
-            server._run_submit_response({"task": "hello", "provider": "missing"}),
+            app_api.run_submit_response({"task": ""}, mock.Mock()),
+            (400, {"error": "task required"}),
+        )
+        self.assertEqual(
+            app_api.run_submit_response({"task": "hello", "provider": "missing"}, mock.Mock()),
             (400, {"error": "unsupported provider: missing"}),
         )
 
-        with mock.patch.object(server, "_submit_task", return_value="run-1") as submit:
-            status, payload = server._run_submit_response(
-                {
-                    "task": "hello",
-                    "session_id": "",
-                    "provider": "deepseek",
-                    "max_turns": "999",
-                    "continue_task": True,
-                    "intent": "research",
-                }
-            )
+        submit = mock.Mock(return_value="run-1")
+        status, payload = app_api.run_submit_response(
+            {
+                "task": "hello",
+                "session_id": "",
+                "provider": "deepseek",
+                "max_turns": "999",
+                "continue_task": True,
+                "intent": "research",
+            },
+            submit,
+        )
 
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"ok": True, "run_id": "run-1"})
         submit.assert_called_once_with("default", None, "hello", 500, True, "deepseek", "research")
 
         self.assertEqual(
-            server._run_submit_response({"task": "review diff", "intent": "review"}),
+            app_api.run_submit_response({"task": "review diff", "intent": "review"}, mock.Mock()),
             (400, {"error": "project required for review"}),
         )
 
-        with (
-            tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "_submit_task", return_value="run-2") as submit,
-        ):
-            review_status, review_payload = server._run_submit_response(
+        with tempfile.TemporaryDirectory() as td:
+            submit = mock.Mock(return_value="run-2")
+            review_status, review_payload = app_api.run_submit_response(
                 {
                     "task": "review diff",
                     "project": td,
                     "provider": "deepseek",
                     "intent": "review",
-                }
+                },
+                submit,
             )
 
         self.assertEqual(review_status, 200)
         self.assertEqual(review_payload, {"ok": True, "run_id": "run-2"})
         submit.assert_called_once_with(
-            "default", td, "review diff", server.DEFAULT_MAX_TURNS, False, "deepseek", "review"
+            "default", td, "review diff", app_api.DEFAULT_MAX_TURNS, False, "deepseek", "review"
         )
 
-        with mock.patch.object(server, "_submit_task", return_value=None):
-            busy_status, busy_payload = server._run_submit_response({"task": "hello"})
-        with mock.patch.object(server, "_submit_task", side_effect=RuntimeError("boom")):
-            error_status, error_payload = server._run_submit_response({"task": "hello"})
+        busy_status, busy_payload = app_api.run_submit_response({"task": "hello"}, mock.Mock(return_value=None))
+        error_status, error_payload = app_api.run_submit_response(
+            {"task": "hello"},
+            mock.Mock(side_effect=RuntimeError("boom")),
+        )
 
         self.assertEqual(busy_status, 409)
         self.assertEqual(busy_payload, {"error": "busy"})
@@ -1380,7 +1399,7 @@ class ResearchServerHelperTests(unittest.TestCase):
 
     def test_run_details_response_validation_and_payload(self) -> None:
         self.assertEqual(
-            server._run_details_response({}),
+            app_api.run_details_response(server.AppContext(), {}),
             (400, {"ok": False, "error": "session_id and run_id required"}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -1394,13 +1413,13 @@ class ResearchServerHelperTests(unittest.TestCase):
                 mode="chat",
             )
             writer.finish(stop_reason="done", turns=1, max_turns=8, provider="deepseek")
-            with mock.patch.object(server, "STATE", state):
-                status, payload = server._run_details_response(
-                    {
-                        "session_id": ["session-details"],
-                        "run_id": ["run-details"],
-                    }
-                )
+            status, payload = app_api.run_details_response(
+                state,
+                {
+                    "session_id": ["session-details"],
+                    "run_id": ["run-details"],
+                },
+            )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
@@ -1413,13 +1432,13 @@ class ResearchServerHelperTests(unittest.TestCase):
 
     def test_run_details_response_quiet_unavailable_without_stores(self) -> None:
         state = server.AppContext()
-        with mock.patch.object(server, "STATE", state):
-            status, payload = server._run_details_response(
-                {
-                    "session_id": ["session-missing"],
-                    "run_id": ["run-missing"],
-                }
-            )
+        status, payload = app_api.run_details_response(
+            state,
+            {
+                "session_id": ["session-missing"],
+                "run_id": ["run-missing"],
+            },
+        )
 
         self.assertEqual(status, 200)
         self.assertTrue(payload["ok"])
@@ -1702,15 +1721,15 @@ class LocalProviderApiTests(unittest.TestCase):
         try:
             with (
                 mock.patch.object(
-                    server,
+                    app_api,
                     "load_local_config",
                     return_value={
                         "base_url": "http://127.0.0.1:1234/v1",
                         "api_key": "old-secret",
                     },
                 ),
-                mock.patch.object(server, "probe_local_endpoint") as probe,
-                mock.patch.object(server, "save_local_config") as save,
+                mock.patch.object(app_api, "probe_local_endpoint") as probe,
+                mock.patch.object(app_api, "save_local_config") as save,
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -1744,7 +1763,7 @@ class LocalProviderApiTests(unittest.TestCase):
         try:
             with (
                 mock.patch.object(
-                    server,
+                    app_api,
                     "load_local_config",
                     return_value={
                         "base_url": "http://127.0.0.1:1234/v1",
@@ -1752,12 +1771,12 @@ class LocalProviderApiTests(unittest.TestCase):
                     },
                 ),
                 mock.patch.object(
-                    server,
+                    app_api,
                     "probe_local_endpoint",
                     return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
                 ) as probe,
-                mock.patch.object(server, "save_local_config") as save,
-                mock.patch.object(server, "local_config_payload", return_value={"connected": True}),
+                mock.patch.object(app_api, "save_local_config") as save,
+                mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -1792,14 +1811,14 @@ class LocalProviderApiTests(unittest.TestCase):
         httpd, host, port = self._start_server()
         try:
             with (
-                mock.patch.object(server, "load_local_config", return_value={"api_key": "old-secret"}),
+                mock.patch.object(app_api, "load_local_config", return_value={"api_key": "old-secret"}),
                 mock.patch.object(
-                    server,
+                    app_api,
                     "probe_local_endpoint",
                     return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
                 ) as probe,
-                mock.patch.object(server, "save_local_config") as save,
-                mock.patch.object(server, "local_config_payload", return_value={"connected": True}),
+                mock.patch.object(app_api, "save_local_config") as save,
+                mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -1840,20 +1859,20 @@ class ConsensusConnectionTests(unittest.TestCase):
         advisor.send.return_value = "advisor note"
 
         with (
-            mock.patch.object(server, "STATE", state),
             mock.patch.object(
-                server,
+                app_services,
                 "provider_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
-            mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(app_services, "borrow_open_provider", return_value=advisor) as borrowed,
             mock.patch.object(
-                server,
+                app_services,
                 "connect_existing_provider",
                 side_effect=AssertionError("should borrow sibling tab"),
             ),
         ):
-            result = server._run_consensus(
+            result = app_services.run_consensus(
+                state,
                 selected_provider=selected,
                 selected_provider_id="deepseek",
                 task="Explain breathing apps",
@@ -1877,21 +1896,21 @@ class ConsensusConnectionTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(server, "STATE", state),
             mock.patch.object(
-                server,
+                app_services,
                 "provider_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
-            mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(app_services, "borrow_open_provider", return_value=advisor) as borrowed,
             mock.patch.object(
-                server,
+                app_services,
                 "connect_existing_provider",
                 side_effect=AssertionError("should borrow sibling tab"),
             ),
         ):
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            reports = server._run_project_audit(
+            reports = app_services.run_project_audit(
+                state,
                 project=td,
                 selected_provider=selected,
                 selected_provider_id="deepseek",
@@ -2086,12 +2105,12 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual([item["seq"] for _, item in replay[1:]], [2, 3])
 
     def test_sse_replay_cursor_requires_positive_header(self) -> None:
-        self.assertIsNone(server._sse_replay_cursor(None))
-        self.assertIsNone(server._sse_replay_cursor(""))
-        self.assertIsNone(server._sse_replay_cursor("0"))
-        self.assertIsNone(server._sse_replay_cursor("-1"))
-        self.assertIsNone(server._sse_replay_cursor("not-an-id"))
-        self.assertEqual(server._sse_replay_cursor("7"), 7)
+        self.assertIsNone(http_plumbing.sse_replay_cursor(None))
+        self.assertIsNone(http_plumbing.sse_replay_cursor(""))
+        self.assertIsNone(http_plumbing.sse_replay_cursor("0"))
+        self.assertIsNone(http_plumbing.sse_replay_cursor("-1"))
+        self.assertIsNone(http_plumbing.sse_replay_cursor("not-an-id"))
+        self.assertEqual(http_plumbing.sse_replay_cursor("7"), 7)
 
     def test_sse_initial_connect_does_not_replay_history(self) -> None:
         state = server.AppContext()
@@ -2321,22 +2340,20 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(state.run_state_payload()["pending_event"])
 
     def test_ghost_summary_api_is_unavailable_without_state_home(self) -> None:
-        old_state = server.AppContext
-        try:
-            server.STATE = server.AppContext(None)
-            status, payload = server._ghost_summary_response(
-                {
-                    "session_id": ["s1"],
-                    "project": ["E:/project"],
-                }
-            )
-            action_status, action_payload = server._ghost_action_response(
-                {
-                    "action": "disable_updates",
-                }
-            )
-        finally:
-            server.STATE = old_state
+        state = server.AppContext(None)
+        status, payload = app_api.ghost_summary_response(
+            state,
+            {
+                "session_id": ["s1"],
+                "project": ["E:/project"],
+            },
+        )
+        action_status, action_payload = app_api.ghost_action_response(
+            state,
+            {
+                "action": "disable_updates",
+            },
+        )
 
         self.assertEqual(status, 200)
         self.assertFalse(payload["ok"])
@@ -2346,14 +2363,9 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_ghost_summary_api_returns_bounded_local_context(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            old_state = server.AppContext
-            try:
-                state = server.AppContext(td)
-                seed_ghost_style_memory(state, session_id="s1", project="")
-                server.STATE = state
-                status, payload = server._ghost_summary_response({"session_id": ["s1"]})
-            finally:
-                server.STATE = old_state
+            state = server.AppContext(td)
+            seed_ghost_style_memory(state, session_id="s1", project="")
+            status, payload = app_api.ghost_summary_response(state, {"session_id": ["s1"]})
 
         encoded = json.dumps(payload, ensure_ascii=False)
         self.assertEqual(status, 200)
@@ -2816,7 +2828,7 @@ class RunSnapshotTests(unittest.TestCase):
         try:
             with (
                 mock.patch.object(server, "STATE", state),
-                mock.patch.object(server, "execute_approved_shell", return_value={
+                mock.patch.object(app_services, "execute_approved_shell", return_value={
                     "ok": True,
                     "exit_code": 0,
                     "output": "ok",
@@ -2849,11 +2861,11 @@ class RunSnapshotTests(unittest.TestCase):
 
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.consensus_patch = mock.patch.object(server, "_run_consensus", return_value=None)
+        self.consensus_patch = mock.patch.object(app_services, "run_consensus", return_value=None)
         self.consensus_mock = self.consensus_patch.start()
-        self.project_audit_patch = mock.patch.object(server, "_run_project_audit", return_value=())
+        self.project_audit_patch = mock.patch.object(app_services, "run_project_audit", return_value=())
         self.project_audit_mock = self.project_audit_patch.start()
-        self.research_advisors_patch = mock.patch.object(server, "_run_research_advisors", return_value=None)
+        self.research_advisors_patch = mock.patch.object(app_services, "run_research_advisors", return_value=None)
         self.research_advisors_mock = self.research_advisors_patch.start()
         self._real_getaddrinfo = socket.getaddrinfo
 
@@ -3722,7 +3734,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(
                     server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
                 mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
             ):
@@ -3788,7 +3800,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(server, "_run_project_audit", return_value=()),
+            mock.patch.object(app_services, "run_project_audit", return_value=()),
         ):
             server._run_task(
                 "session-hybrid-fallback",
@@ -3912,7 +3924,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(server, "_run_project_audit", return_value=()),
+            mock.patch.object(app_services, "run_project_audit", return_value=()),
             mock.patch(
                 "codey.operations.project_completion_flow.rank_providers",
                 return_value=("glm", "stepfun"),
@@ -3977,7 +3989,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(server, "_run_project_audit", return_value=()),
+            mock.patch.object(app_services, "run_project_audit", return_value=()),
             mock.patch(
                 "codey.operations.project_completion_flow.rank_providers",
                 return_value=("stepfun", "mimo"),
@@ -4013,7 +4025,7 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
             server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
 
@@ -4136,7 +4148,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(server, "_run_research_advisors", None),
+                mock.patch.object(app_services, "run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -4395,7 +4407,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(server, "_run_research_advisors", None),
+                mock.patch.object(app_services, "run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
                 server._run_task(
@@ -5090,8 +5102,8 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=_verified_writer_agent_run("complete"),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
-            mock.patch.object(server, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
             # A pytest manifest gives the run a selectable verification
             # candidate covering app.py.
@@ -5168,8 +5180,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
-                mock.patch.object(server, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
+                mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+                mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
                 server._run_task(
                     "session-memory",
@@ -5249,7 +5261,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[{"ok": False, "error": "snapshot unavailable"}, final_changes],
             ) as collect_changes,
             mock.patch.object(
-                server,
+                app_services,
                 "connect_existing_provider",
                 return_value=reviewer,
             ) as connect_review,
@@ -5302,8 +5314,8 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value=changes,
             ) as collect_changes,
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
-            mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer) as connect_review,
+            mock.patch.object(app_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 8, False, "deepseek")
@@ -5357,7 +5369,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -5413,12 +5425,12 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(
-                server,
+                app_services,
                 "connect_existing_provider",
                 side_effect=RuntimeError("not open"),
             ),
             mock.patch.object(
-                server,
+                app_services,
                 "connect_fresh_provider_tab",
                 return_value=reviewer,
             ) as connect_self_review,
@@ -5500,7 +5512,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 side_effect=[changes, repaired_changes],
             ) as collect_changes,
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-review-failover", td, "task", 12, False, "deepseek")
@@ -5557,7 +5569,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -5608,7 +5620,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ],
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
@@ -5658,7 +5670,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ],
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
@@ -5697,9 +5709,9 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(
-                server,
+                app_services,
                 "connect_fresh_provider_tab",
                 side_effect=RuntimeError("self-review failed"),
             ) as connect_self_review,
@@ -5747,7 +5759,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -5796,7 +5808,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -5829,7 +5841,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
-            mock.patch.object(server, "connect_existing_provider") as connect_review,
+            mock.patch.object(app_services, "connect_existing_provider") as connect_review,
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -5868,7 +5880,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
-            mock.patch.object(server, "connect_existing_provider") as connect_review,
+            mock.patch.object(app_services, "connect_existing_provider") as connect_review,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
             server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
@@ -6030,7 +6042,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=write_and_finish,
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as review_connect,
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
             server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
@@ -6089,7 +6101,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("implemented", "done", 1, False, True),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
             mock.patch(
                 "codey.completion.verification_policy.shutil.which",
                 return_value="exe",
@@ -6190,7 +6202,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("implemented", "done", 2, True, True, True),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
-            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
 
@@ -6521,7 +6533,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(server, "_start_provider_warmup") as warmup,
+            mock.patch.object(app_services, "start_provider_warmup") as warmup,
         ):
             httpd = mock.Mock()
             httpd.server_address = ("127.0.0.1", 43210)
@@ -6536,7 +6548,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with()
+        warmup.assert_called_once_with(server.STATE)
         _, kwargs = fake_webview.start.call_args
         self.assertFalse(kwargs["private_mode"])
         self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
@@ -6549,7 +6561,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(server, "_start_provider_warmup") as warmup,
+            mock.patch.object(app_services, "start_provider_warmup") as warmup,
             mock.patch.object(server, "_wait_for_manual_browser", side_effect=KeyboardInterrupt) as fallback,
             mock.patch("builtins.print") as printed,
         ):
@@ -6561,7 +6573,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with()
+        warmup.assert_called_once_with(server.STATE)
         fallback.assert_called_once()
         self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/")
         self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))

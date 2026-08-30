@@ -20,10 +20,22 @@ production: deleted codey/operations/task_flow.py as a production concept.
             wires TaskRuntime, while task_run owns TaskRunDeps and the
             non-business run lifecycle. mode_dispatch/review_flow/planning_flow
             and ghost_context/ghost_post_turn own their business boundaries.
-            AgentRunner now accepts a single AgentRequest, with protocol repair
-            helpers and context assembly split into codey.agents.protocol and
-            codey.agents.context. Loop progress, verification, and stagnation
-            state are explicit objects instead of a wide locals surface.
+            AgentRunner now accepts a single AgentRequest; codey.agents.runner
+            is a thin public surface, while codey.agents.loop owns the explicit
+            AgentLoopSession, TurnState, tool execution functions, and loop
+            progress/verification/stagnation state. Protocol repair helpers
+            and context assembly live in codey.agents.protocol and
+            codey.agents.context.
+            Project completion is now a phase script rather than a closure
+            cluster: prepare, writer failover, review cycle, completion
+            enforcement, and finalize are explicit functions over _ProjectRun,
+            with no nonlocal state.
+            HTTP server responsibilities are split: codey.app.http_plumbing
+            owns Host/Origin checks, static assets, JSON, and SSE encoding;
+            codey.app.api owns ordinary JSON endpoint payloads; codey.app.services
+            owns provider warmup, review/consensus/audit/advisor calls, approved
+            shell execution, and shell continuation prompts. SSE streaming
+            remains in Handler as the transport exception.
             RuntimeSessionLog remains the single durable fact source and now
             compacts under file lock before the 4 MB guard can brick a session.
             Runtime read() also uses the file lock, and append validation now
@@ -49,7 +61,9 @@ harness:    test_task_flow_* files were renamed by owner
             their own runner.run(...) APIs; task submission tests use
             run_task_submission(...). Manual completion A/B tests patch the
             task-entry function directly instead of faking an obsolete .run()
-            runner object.
+            runner object. Server tests now patch app.services/app.api owners
+            for review, provider, shell, research, and local-provider helpers
+            instead of requiring server to re-export old private service names.
 mode:       compileall, ruff, focused gates, wider server/research/manual
             harness gates, same-run crash/resume self-test, then full pytest.
             No release and no version bump.
@@ -64,53 +78,47 @@ ok
 python -m ruff check codey tests
 All checks passed
 
-python tests/manual/completion_operation_resume_smoke.py --self-test
+python -B tests/manual/completion_operation_resume_smoke.py --self-test
 ok: crash resume reports the last committed phase and resumes the same run
 
-python -m pytest tests/test_runtime_session_log.py tests/test_runtime_effects.py \
-  tests/test_architecture.py tests/test_events.py tests/test_prompt_envelope.py \
-  tests/test_writer_failover.py
-126 passed in 10.85s
-
-python -m pytest tests/test_task_entry_operation_state.py \
-  tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py \
-  tests/test_project_completion_flow_analysis_run.py \
-  tests/test_project_completion_flow_enforcement.py \
+python -m pytest tests/test_project_completion_flow_analysis_run.py \
   tests/test_project_completion_flow_edit_integrity.py \
-  tests/test_research_flow_topic_continuity.py tests/test_workspace_project_map.py \
-  tests/test_ghost_post_turn_router.py tests/test_ghost_post_turn_work_queue.py \
-  tests/test_ghost_post_turn_affinity.py tests/test_ghost_research_continuity_ab.py
-240 passed in 63.12s
+  tests/test_project_completion_flow_enforcement.py \
+  tests/test_task_entry_operation_state.py tests/test_work_checkpoint_flow.py -q
+62 passed, 6 subtests passed in 15.58s
 
-python -m pytest tests/test_server.py
-184 passed, 1 skipped in 31.68s
+python -m pytest tests/test_server.py tests/test_work_checkpoint_flow.py -q
+199 passed, 1 skipped in 29.50s
 
-python -m pytest tests/test_research.py tests/test_run_ledger.py tests/test_source_connectors.py
-181 passed in 32.10s
+python -m pytest tests/test_agent.py tests/test_run_trace.py \
+  tests/test_task_entry_run_trace.py tests/test_architecture.py \
+  tests/test_project_completion_flow_analysis_run.py \
+  tests/test_project_completion_flow_edit_integrity.py \
+  tests/test_project_completion_flow_enforcement.py \
+  tests/test_task_entry_operation_state.py tests/test_work_checkpoint_flow.py \
+  tests/test_server.py -q
+509 passed, 3 skipped, 280 subtests passed in 72.15s (0:01:12)
 
-python -m pytest tests/test_adapter_self_repair.py tests/test_context_delta_ab.py \
-  tests/test_scoped_task_plan_ab.py
-90 passed, 3 skipped in 23.80s
-
-python -m pytest tests/test_completion_enforcement_ab.py
-14 passed in 3.83s
+python -m pytest tests/test_adapter_self_repair.py tests/test_conversation_store.py \
+  tests/test_project_facts.py tests/test_run_ledger.py tests/test_server.py \
+  tests/test_work_checkpoint_flow.py -q
+310 passed, 4 skipped, 6 subtests passed in 64.52s (0:01:04)
 
 git diff --check
-no whitespace errors
+no whitespace errors; Git reported only CRLF normalization warnings
 ```
 
-The first full run after the cache/AppContext cleanup exposed four stale
-completion-enforcement fake states that still exposed the removed
-`last_terminal_event` attribute instead of a `run_registry.last_terminal_event()`
-method. They were migrated to a fake run registry, then the focused test and
-full suite were rerun.
+The first full run after the app-services split exposed stale tests that still
+patched removed server-private service names. They were migrated to
+`codey.app.services` / `codey.app.api`, then the focused set and full suite
+were rerun.
 
 Final full local pytest (Windows, Python 3.12, 2026-08-31, after code was
 stable and before updating this report):
 
 ```text
 python -m pytest
-3263 passed, 16 skipped in 284.42s (0:04:44)
+3264 passed, 16 skipped in 291.62s (0:04:51)
 ```
 
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)

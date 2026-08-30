@@ -8,6 +8,7 @@ from unittest import mock
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.app import server
+from codey.app import services as app_services
 from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
 from codey.runtime.execution_evidence import CheckEvidence
@@ -42,7 +43,7 @@ def run_agent(provider, project, task, **kwargs):
 
 class ProjectFactsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.consensus_patch = mock.patch.object(server, "_run_consensus", return_value=None)
+        self.consensus_patch = mock.patch.object(app_services, "run_consensus", return_value=None)
         self.consensus_patch.start()
 
     def tearDown(self) -> None:
@@ -324,8 +325,8 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
-                mock.patch.object(server, "_run_review", return_value=None),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_review", return_value=None),
                 mock.patch(
                     "codey.completion.verification_policy.shutil.which",
                     return_value="npm",

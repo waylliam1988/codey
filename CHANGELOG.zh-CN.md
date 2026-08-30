@@ -19,6 +19,19 @@
     helper 进入 `codey.agents.protocol`，prompt/context 组装进入
     `codey.agents.context`，调用方传单个 `AgentRequest`，loop progress /
     verification / stagnation 状态成为显式对象，不再散在一大片 locals 里。
+  - agent loop 实现迁入 `codey.agents.loop`。`codey.agents.runner` 现在只是
+    public entry/re-export surface；`AgentLoopSession` 和显式 tool-call
+    执行 helper 拥有原来的闭包状态。policy deny 的控制流仍留在 loop
+    本体可见：工具执行返回 `ToolOutcome`，由 loop 负责记录和 `continue`。
+  - `codey.operations.project_completion_flow.run_project_mode()` 改成基于
+    `_ProjectRun` 的显式 phase script：project context prepare、writer
+    failover、review cycle、completion enforcement、final receipt/facts/terminal
+    projection 都有独立函数 owner，不再依赖 `nonlocal` 闭包状态。
+  - 本地 HTTP app 边界拆成 `codey.app.http_plumbing`、`codey.app.api` 和
+    `codey.app.services`。Handler 只做 origin 校验、HTTP 解析、普通 JSON
+    endpoint route-table dispatch，并把 SSE 保留为 streaming transport 例外；
+    review、consensus/audit/advisor、provider warmup、approved shell 执行和
+    shell continuation prompt 都进入 services，并显式接收 `AppContext`。
   - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
     provider session/health/order、conversation cache/store、knowledge rebuild
     single-flight、Ghost sleep single-flight 现在都有独立 app 模块。

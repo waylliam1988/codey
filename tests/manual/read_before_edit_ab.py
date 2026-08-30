@@ -13,6 +13,7 @@ from typing import Any, Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents import loop as agent_loop
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
@@ -182,14 +183,14 @@ def _disabled_guard(_root: Path, _rel: str, _known_file_paths: set[str]) -> None
 
 def _with_guard(arm: str) -> Callable:
     if arm != "baseline":
-        return agent._read_before_edit_outcome
-    original = agent._read_before_edit_outcome
-    agent._read_before_edit_outcome = _disabled_guard
+        return agent_loop._read_before_edit_outcome
+    original = agent_loop._read_before_edit_outcome
+    agent_loop._read_before_edit_outcome = _disabled_guard
     return original
 
 
 def _restore_guard(original: Callable) -> None:
-    agent._read_before_edit_outcome = original
+    agent_loop._read_before_edit_outcome = original
 
 
 def _run_case(provider, root: Path, case: GuardCase, arm: str, max_turns: int) -> dict[str, Any]:

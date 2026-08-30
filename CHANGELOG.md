@@ -21,6 +21,24 @@ This file records Codey's release history. The newest release appears first.
     lives in `codey.agents.context`, callers pass a single `AgentRequest`, and
     loop progress/verification/stagnation state is explicit instead of spread
     across a broad local-variable surface.
+  - Moved the agent loop implementation into `codey.agents.loop`. The
+    `codey.agents.runner` module is now only the public entry/re-export
+    surface, while `AgentLoopSession` and explicit tool-call execution helpers
+    own the former closure state. Policy-deny control flow stays visible in the
+    loop: tool execution returns a `ToolOutcome`, and the loop records or
+    continues.
+  - Reworked `codey.operations.project_completion_flow.run_project_mode()` into
+    an explicit phase script over `_ProjectRun`: project context preparation,
+    writer failover, review cycle, completion enforcement, and final receipt /
+    facts / terminal projection now have separate function owners without
+    `nonlocal` closure state.
+  - Split the local HTTP app boundary into `codey.app.http_plumbing`,
+    `codey.app.api`, and `codey.app.services`. The Handler now validates
+    origin, parses HTTP, dispatches ordinary JSON endpoints through route
+    tables, and keeps SSE as the streaming transport exception; review,
+    consensus/audit/advisor, provider warmup, approved shell execution, and
+    shell continuation prompts live in services and take `AppContext`
+    explicitly.
   - Split app runtime state out of the HTTP server shell: run lifecycle,
     approval queues, provider sessions/health/order, conversation cache/store,
     knowledge rebuild single-flight, and Ghost sleep single-flight now live in

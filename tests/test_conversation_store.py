@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import services as app_services
 from codey.storage.conversation_store import (
     MAX_PERSISTED_CONVERSATIONS,
     ConversationStore,
@@ -212,7 +213,7 @@ class ConversationStoreTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", restarted),
                 mock.patch.object(restarted, "get_provider", return_value=provider),
-                mock.patch.object(server, "_run_consensus", return_value=None),
+                mock.patch.object(app_services, "run_consensus", return_value=None),
             ):
                 server._run_task("chat-1", None, "Continue", 4, False, "deepseek")
 

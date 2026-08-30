@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
@@ -310,8 +311,8 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=fake_agent),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
-                mock.patch.object(server, "_run_review", return_value=None),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_review", return_value=None),
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
 
@@ -384,7 +385,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=fake_agent),
                 mock.patch.object(server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
             ):
                 server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
 
@@ -404,7 +405,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=TimeoutError("response timed out")),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-error-ledger",

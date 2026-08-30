@@ -23,7 +23,7 @@ if __package__ in (None, ""):
 
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
-from codey.app.server import build_shell_approval_continuation
+from codey.app.services import build_shell_approval_continuation
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.completion.verification_policy import VerificationCandidate
 

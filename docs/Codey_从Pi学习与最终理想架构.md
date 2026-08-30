@@ -925,7 +925,7 @@ Scheduler
 
 ```text
 task_entry: submission -> TaskRuntime
-task_run: task lifecycle wrapper around operation functions
+task_run: non-business lifecycle shell around operation functions
 ```
 
 ---
@@ -1155,21 +1155,25 @@ codey/
 +-- runtime/
 |   +-- operation.py
 |   +-- scheduler.py
-|   +-- lane.py
+|   +-- session_log.py
+|   +-- effects.py
+|   +-- terminalizer.py
 |   +-- outcome.py
-|   +-- suspension.py
 |
-+-- agent/
-|   +-- agent.py
++-- agents/
+|   +-- runner.py
 |   +-- loop.py
 |   +-- context.py
+|   +-- protocol.py
+|   +-- request.py
 |   +-- tools.py
 |
 +-- workspace/
 |   +-- workspace.py
 |   +-- filesystem.py
 |   +-- git.py
-|   +-- epoch.py
+|   +-- revision.py
+|   +-- context_epoch.py
 |   +-- facts.py
 |
 +-- verification/
@@ -1196,6 +1200,11 @@ codey/
 
 这是一张**目标架构图**，不是要求一次性重构。
 
+0.5.1 的实现刻意没有保留未接线的 `runtime/lane.py`、`runtime/suspension.py`
+或 `TaskRuntimePort` 脚手架；它们只在有真实生产写入方和恢复语义时再引入。
+这里的 `workspace/revision.py` 表示项目文件状态版本，不能和
+`workspace/context_epoch.py` 的 prompt-source provenance 混为一个概念。
+
 ---
 
 # 27. 推荐重构顺序
@@ -1220,7 +1229,9 @@ AgentRequest
   -> agents.runner.run(request)
 ```
 
-JSON protocol repair helper、context assembly 和 loop state 已拆出 owner。
+JSON protocol repair helper、context assembly 和 loop state 已拆出 owner：
+`agents.runner` 只保留公共入口，`agents.loop` 拥有 `AgentLoopSession`、
+`TurnState`、工具执行函数和循环状态。
 不引入一个会重新长大的 `AgentOperation` 大类；runtime lifecycle 仍由
 `TaskRuntime` / `OperationScheduler` 负责，agent 只是一种 operation function 的实现。
 

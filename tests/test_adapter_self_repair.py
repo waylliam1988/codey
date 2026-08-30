@@ -13,6 +13,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.app import server
+from codey.app import services as app_services
 from codey.repairs import adapter_overrides
 from codey.repairs.adapter_repair import (
     AdapterRepairResult,
@@ -1042,8 +1044,6 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
 
 class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
-        from codey.app import server
-
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(Path(td) / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun")
@@ -1093,7 +1093,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                     side_effect=[failure, RunResult("done", "done", 1, False, False)],
                 ),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(app_services, "run_project_audit", return_value=()),
             ):
                 server._run_task("session-self-repair", td, "task", 8, False, "deepseek")
 

@@ -3251,7 +3251,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3263 passed, 16 skipped in 284.42s` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3264 passed, 16 skipped in 291.62s (0:04:51)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 
@@ -3303,12 +3303,14 @@ tool 协议：
 codey.agents.protocol  JSON protocol repair / edit parsing / verification text helpers
 codey.agents.context   project instructions + prompt context assembly
 codey.agents.request   AgentRequest
-codey.agents.runner    run(AgentRequest) + loop state
+codey.agents.loop      AgentLoopSession / TurnState / tool execution / loop state
+codey.agents.runner    thin public run(AgentRequest) surface
 ```
 
 调用方不再传一长串关键字参数；server/headless/project completion/planning/task_run 都构造
 `AgentRequest`。循环内部的 progress、verification、stagnation 也变成显式 state
-object，避免继续在大函数 locals 里长出隐式生命周期。
+object，工具执行从闭包和循环内联分支里迁到 `agents.loop`，避免继续在大函数
+locals 里长出隐式生命周期。
 
 ### TaskFlow 删除后的 owner
 
@@ -3326,11 +3328,21 @@ codey.operations.research_flow           research/hybrid research pipeline hando
 codey.operations.project_completion_flow coding writer / review cycle / completion proof / repair / receipt
 codey.operations.ghost_context           prompt-time Ghost context
 codey.operations.ghost_post_turn         terminal-event Ghost projections
+codey.app.http_plumbing                  Host/Origin/static/JSON/SSE transport helpers
+codey.app.api                            ordinary JSON endpoint payloads
+codey.app.services                       provider/review/consensus/shell service calls
 codey.runtime.terminalizer               terminal task_done event + turn accounting
 codey.task.model                         TaskSubmission model-only boundary
 ```
 
 `codey/task/service.py` 和 `codey/operations/task_flow.py` 均已删除；`codey.task` 不导出 `TaskFlow`。server/headless/manual harness 只认 `task_entry.run_task_submission()` 这个稳定公共面；测试按 owner patch `research_flow`、`project_completion_flow`、`ghost_post_turn` 等模块，不再要求生产类保留私有方法。
+
+`codey/operations/project_completion_flow.py` 也从 closure cluster 改为 `_ProjectRun`
+上的相位脚本：prepare、writer failover、review cycle、completion enforcement 和
+finalize 分别拥有显式函数，`run_project_mode()` 只串联相位，不再依赖
+`nonlocal` 状态。completion enforcement 已经成型为独立相位，但暂不迁到
+`completion/engine.py`；这一步只改变 owner，不改变 repair admission、TaskCancelled
+re-raise 或 fallback 语义。
 
 ### AppContext 收敛
 
@@ -3394,7 +3406,7 @@ task_entry / project_completion / edit-integrity / completion-enforcement / anal
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
 manual completion_operation_resume_smoke.py --self-test 通过
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
-全量 pytest 3263 passed, 16 skipped in 284.42s
+全量 pytest 3264 passed, 16 skipped in 291.62s (0:04:51)
 ```
 
 ### A/B

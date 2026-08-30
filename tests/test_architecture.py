@@ -46,7 +46,7 @@ def event_matrix_capability_ids() -> set[str]:
 
 class ArchitectureBoundaryTests(unittest.TestCase):
     def test_agent_runtime_has_no_browser_or_deepseek_dependency(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "agents" / "runner.py")
+        imports = imported_modules(ROOT / "codey" / "agents" / "loop.py")
 
         self.assertNotIn("playwright.sync_api", imports)
         self.assertNotIn("codey.automation.browser", imports)
@@ -1198,6 +1198,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def _trace(", research_source)
         self.assertNotIn("def _trace_call", task_run_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
+
+    def test_agent_runner_is_only_the_public_entry_surface(self) -> None:
+        source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        function_names = {
+            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+        }
+        class_names = {
+            node.name for node in tree.body if isinstance(node, ast.ClassDef)
+        }
+
+        self.assertEqual(function_names, set())
+        self.assertEqual(class_names, set())
+        self.assertIn("from codey.agents.loop import", source)
+        self.assertNotIn("def _read_before_edit_outcome", source)
 
     def test_run_operation_fact_source_is_runtime_only(self) -> None:
         self.assertFalse((ROOT / "codey" / "run_operation.py").exists())

@@ -10,8 +10,10 @@ from codey.runtime import cancellation
 from codey.agents import context as agent_context
 from codey.agents import protocol as agent_protocol
 from codey.agents import runner as agent
-from codey.agents.request import AgentRequest
+from codey.agents.request import DEFAULT_MAX_TURNS, AgentRequest
 from codey.agents.tools import AgentToolFns
+from codey.completion.verification_policy import VerificationCandidate
+from codey.protocols import JsonToolCodec
 from codey.runtime.events import render_run_event
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.runs.trace import RunTraceStore
@@ -557,7 +559,7 @@ class ProjectInstructionTests(unittest.TestCase):
             root = Path(td)
             (root / "AGENTS.md").write_text("abcdef", encoding="utf-8")
 
-            docs = agent.load_project_instructions(root, max_chars=3)
+            docs = agent_context.load_project_instructions(root, max_chars=3)
 
             self.assertEqual(len(docs), 1)
             self.assertTrue(docs[0].truncated)
@@ -566,10 +568,10 @@ class ProjectInstructionTests(unittest.TestCase):
 
 class DefaultsTests(unittest.TestCase):
     def test_default_turn_limit_is_shared_with_server(self) -> None:
-        from codey.app import server
+        from codey.app import api as app_api
 
-        self.assertEqual(agent.DEFAULT_MAX_TURNS, 50)
-        self.assertIs(server.DEFAULT_MAX_TURNS, agent.DEFAULT_MAX_TURNS)
+        self.assertEqual(DEFAULT_MAX_TURNS, 50)
+        self.assertIs(app_api.DEFAULT_MAX_TURNS, DEFAULT_MAX_TURNS)
 
 
 class RunLoopTests(unittest.TestCase):
@@ -1002,7 +1004,7 @@ class RunLoopTests(unittest.TestCase):
             '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
             '{"tool":"done","args":{"summary":"updated and checked"}}',
         )
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -1125,7 +1127,7 @@ class RunLoopTests(unittest.TestCase):
                 provider,
                 root,
                 "Read app.py",
-                codec=agent.JsonToolCodec(permission_profile="planning_readonly"),
+                codec=JsonToolCodec(permission_profile="planning_readonly"),
                 permission_profile="chat",
                 project_facts="Fact that should be filtered",
                 project_map="Map that should be filtered",
@@ -2398,7 +2400,7 @@ class RunLoopTests(unittest.TestCase):
         done = '{"tool":"done","args":{"summary":"updated without running commands"}}'
         provider = FakeProvider(read, edit, done)
         events = []
-        candidate = agent.VerificationCandidate("python -m pytest", ".")
+        candidate = VerificationCandidate("python -m pytest", ".")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -2578,7 +2580,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertFalse(result.checks_passed)
 
     def test_default_verification_reminds_once_and_passes(self) -> None:
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         replies = (
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
@@ -2606,7 +2608,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
     def test_proactive_compatible_check_avoids_default_reminder(self) -> None:
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
@@ -2629,7 +2631,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertFalse(any("trusted local check" in prompt for prompt in provider.sent))
 
     def test_scoped_pytest_does_not_satisfy_default_unittest_candidate(self) -> None:
-        candidate = agent.VerificationCandidate("python -m unittest discover")
+        candidate = VerificationCandidate("python -m unittest discover")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"src/app.py"}}',
             '{"tool":"edit","args":{"path":"src/app.py","old_string":"return 1","new_string":"return 2"}}',
@@ -2679,7 +2681,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
     def test_default_verification_does_not_repeat_after_failure(self) -> None:
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE ="}}',
@@ -2706,7 +2708,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
     def test_checkpoint_green_check_is_reused(self) -> None:
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -2727,7 +2729,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(len(provider.sent), 1)
 
     def test_new_edit_after_failed_default_check_gets_new_reminder(self) -> None:
-        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        candidate = VerificationCandidate("python -m py_compile app.py")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE ="}}',
@@ -2756,7 +2758,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
     def test_unrelated_green_run_does_not_satisfy_default_candidate(self) -> None:
-        candidate = agent.VerificationCandidate("python -m pytest")
+        candidate = VerificationCandidate("python -m pytest")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
@@ -2797,7 +2799,7 @@ class RunLoopTests(unittest.TestCase):
                 fresh_chat=False,
                 on_event=lambda _event: None,
                 verification_candidate_loader=lambda: (
-                    agent.VerificationCandidate("python -m pytest"),
+                    VerificationCandidate("python -m pytest"),
                 ),
             )
 
@@ -2807,7 +2809,7 @@ class RunLoopTests(unittest.TestCase):
         )
 
     def test_default_candidate_refresh_drops_removed_manifest_command(self) -> None:
-        stale = agent.VerificationCandidate("npm test")
+        stale = VerificationCandidate("npm test")
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.js"}}',
             '{"tool":"edit","args":{"path":"app.js","old_string":"old","new_string":"new"}}',
