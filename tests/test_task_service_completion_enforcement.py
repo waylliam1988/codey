@@ -9,17 +9,17 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
-from codey.task import service as task_service_module
+from codey.operations import task_flow as task_service_module
 from codey.agents.runner import RunResult
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
+from codey.operations.task_flow import _blocked_result
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
 from codey.task.service import (
     COMPLETION_REPAIR_FOLLOWUP,
     TaskService,
-    _blocked_result,
 )
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
@@ -133,7 +133,6 @@ def _runner(state: server.State, writer: ScriptedWriter) -> TaskService:
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        run_operations=state.run_operations,
         evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
@@ -622,8 +621,8 @@ def test_repair_phase_ending_in_max_turns_becomes_blocked() -> None:
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "blocked"
         assert "no turn budget remains" in str(event["summary"])
-        assert state.run_operations is not None
-        operation = state.run_operations.load("s-enforce", event["run_id"])
+        assert state.runtime_operations is not None
+        operation = state.runtime_operations.load("s-enforce", event["run_id"])
         assert operation is not None
         assert operation.terminal is not None
         assert operation.terminal.blocked_reason == BLOCKED_TURN_BUDGET_EXHAUSTED

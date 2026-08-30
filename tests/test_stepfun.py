@@ -503,7 +503,7 @@ class StepFunDriverTests(unittest.TestCase):
             mock.patch.object(stepfun, "_final_text", return_value="final"),
             mock.patch.object(stepfun, "_wait_response_footer_ready"),
             mock.patch.object(stepfun.cancellation, "wait"),
-            mock.patch.object(stepfun.time, "time", side_effect=[0.0, 0.0, 1.0]),
+            mock.patch.object(stepfun.time, "time", side_effect=[0.0, 0.0, 0.0, 1.0]),
         ):
             result = stepfun.chat(page, "hello", response_timeout=0.5)
 

@@ -4,13 +4,14 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
+## Unreleased (0.5.1) - Runtime Operation State + Completion Repair Durability v1
 
 - 运行时冷启动重构：
   - 删除内部 `codey/app/task_runner.py` 入口。Task submission 现在属于
-    `codey.task.model.TaskSubmission`，执行服务属于
-    `codey.task.service.TaskService`；server、headless、manual harness 和
-    测试调用点已一次性迁移，不保留旧模块 shim。
+    `codey.task.model.TaskSubmission`，公开服务 facade 是很薄的
+    `codey.task.service.TaskService`，当前执行流属于
+    `codey.operations.task_flow.TaskFlow`；server、headless、manual harness
+    和测试调用点已一次性迁移，不保留旧模块 shim。
   - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
     provider session/health/order、conversation cache/store、knowledge rebuild
     single-flight、Ghost sleep single-flight 现在都有独立 app 模块。
@@ -19,16 +20,25 @@
     chat operation 和 prompt/local-context trace helper 也从 `TaskService`
     迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
     emission 现在有明确 operation owner。
+  - task 包边界与 operation flow 分开：`codey.task` 不再 eager import
+    执行服务，`codey/task/service.py` 只是小 facade，架构测试阻止
+    provider/Ghost/research/toolchain import 回流到这个 facade。
   - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
     contract、suspended operation、lane queue、小型 scheduler，以及
     append-only session log + fail-closed reducer。reducer 测试覆盖单 lane
     只能有一个 open operation、重复 tool invocation 拒绝、settled 后追加
-    拒绝、有界 payload、unknown effect 记录但不 replay。
+    拒绝、有界 payload、缺失 effect ref 拒绝，以及 unknown effect 拒绝。
   - completion verdict 所有权移入 `codey.completion.engine`，包括 blocked
     note 词汇和 proof + edit-integrity evaluation。`TaskService` 只消费
     engine 输出，不再内联重建这条决策链。
   - terminal `task_done` 事件构造和 terminal turn 计数移入
     `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
+  - runtime submission identity 对齐：TaskRuntime 现在调度与详细 phase
+    projection、terminal event 相同的已 reserve `run_*` id，不再生成另一条
+    submit-local operation id。
+  - runtime operation tracking 保持解释性、fail-open：如果严格 phase fact
+    校验拒绝了 malformed proof projection，用户可见任务结果不受影响，
+    operation projection 停在最后一个合法 phase。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
     `codey.app.event_bus`；`State` 只负责在 emit 前注入 active run identity。
   - 新增共享 Ghost JSONL event-log primitive，并把 signal、router、sleep
@@ -83,91 +93,53 @@
     （`DOC_SUFFIXES`、`_query_bool`、protocol JSON alias、browser-search 的
     不可达 raise）。更大的 audit-only 模块留到单独架构清理，避免这个 bugfix
     提交变成难审的大迁移。
-- 新增 `codey/run_operation.py`：一次 coding run 的 completion/repair 生命
-  周期最小 durable program counter，借鉴 pi 的核心原则——operation state 是
-  每次转移都整体覆写的"当前总状态"，不是事件历史，更不能从事件缺失反推。
-  - 每个 run 一个寄存器：
-    `state/run_operations/<session_key>/<run_id>.json`，用
-    `with_file_lock()` + `write_json_atomic()` 写入，64 KB 上限。phase 链：
+- Runtime operation 事实现在只来自 session log。此前开发中的独立
+  `codey/run_operation.py` 寄存器在发布前删除；唯一 durable source 是
+  `RuntimeSessionLog`，`codey.runtime.effects` 从 `operation_effect` 行投影
+  最新的有界 run phase。
+  - `RuntimeOperationStore.start()` 会把 `operation_started` 和初始 phase
+    原子追加到 runtime log；后续 phase commit 只追加一个 `run_phase`
+    effect，terminal 时再追加一个匹配的 `operation_settled` outcome。
+    不存在第二套 JSON 寄存器、迁移路径或旧格式 lookup。
+  - phase 合同仍然封闭：
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
-    terminal`；任何非 terminal phase 都可以直接进 terminal；
-    `repair_running` 必须先有已提交的 admission——而 admission 只属于
-    unsatisfied 的 failed proof。terminal 保留一份与
-    `RunLedger.finish()` 字段对齐的有界快照（summary 只存字符数，不存文本）。
-  - 只存 refs/status/counts/reasons：proof id/status/satisfied、
-    repair-context digest、稳定的 `project:<key>` ref（绝不保存 raw
-    绝对路径）、turn 计数、provider id 和有界的 blocked reason。
-    payload 里不存在 raw prompt、reply、stdout/stderr、diff、source body 或
-    repair prompt 文本。
-  - reader fail closed 且不做任何规范化：坏 schema、错 session/run id、非法
-    phase、未知 key——顶层或 terminal 快照内部（"扩展"字段、raw prompt、
-    diff）、错误 JSON 类型（bool-as-int、数字字符串）、缺失字段、带空白的
-    文本字段、空 provider id、显式 null 的 proof 标志、raw 或畸形 ref、
-    不可能的 phase 状态（产生这些事实的 phase 之前带 repair、proof 或
-    settled writer 事实——新寄存器不带任何事实，running 的 writer 尚未
-    settled——、repair 相位未携带 admission 它的那个 failed proof、terminal
-    带着任何 source phase 都提交不出来的事实组合——
-    残缺的 proof triple、没有 admission 的 repair round、没有已记录 proof
-    的 context、没有它那个 failed proof 的已 admit context——、带残缺
-    repair 记录的 re-proof、没有 unsatisfied
-    failed/blocked proof 支撑的 blocked verdict、proof ref 或 status 超出
-    recorded-proof 合同、rounds 超预算）、超长文件一律 load 为 `None`。
-    只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
-  - blocked verdict 是终局裁决且绑定到它的 proof：`mark_completion_blocked()`
-    要求完整的 proof triple 且 status 为 `failed`/`blocked`、
-    `satisfied=False`，带 verdict 的寄存器之后只能走向 terminal（被 block
-    的 proof 不能再 admit repair，provider-failure 的 settled repair 不能
-    re-proof），terminal 快照必须与寄存器携带同一 verdict，verdict 的写入
-    方（`mark_terminal()`、`mark_repair_settled()`）也拒绝无支撑的
-    verdict——complete、带保留或未证明的 run 绝不会被读成 "blocked"。
-  - 已记录 proof 有自己的封闭合同，与 completion trace 的 proof 词表对齐：
-    ref 必须是 `completion_proof:<16 hex>`，status 只能是 `complete` /
-    `complete_with_limitations` / `failed` / `blocked`（绝不 pending/
-    running），且 `satisfied == (status == "complete")`——这正是 proof
-    builder 自身保证的推导，带保留的完成如实记为不满足。writer helper 与
-    reader payload 两侧都执行这份合同。
-  - writer 被要求达到 reader 的标准：transition helper 用和 reader 完全
-    相同的规则校验每个事实——不裁剪、不强转，非 canonical 的事实（空或
-    畸形的 repair-context digest、数字字符串的 turn 计数、bool-as-int、
-    超长 reason）直接抛 `RunOperationTransitionError`，绝不裁剪进一个下次
-    `load()` 会拒绝的寄存器；`commit()` 在落盘前用 canonical schema 重新
-    推导候选状态，并拒绝会移动寄存器 identity 的提交。
-  - `start()` 校验所有参数且绝不 clobber：非 canonical 的 session/run id
-    （空、带空白、超 200 字符、非字符串）、provider id 或 budget 直接拒绝
-    且不写任何文件——寄存器不可能变成只能用裁剪后的 id 找回；exists 检查
-    与写入共用 commit 的文件锁，损坏的旧寄存器不会被静默覆盖，并发 start
-    只产生一个寄存器。
-- TaskRunner 在真实生命周期边界提交 phase，completion/repair 状态不再只活在
-  `_run_project_mode()` 的函数栈里。崩溃、用户停止或 provider 故障后，最后
-  一个 committed phase 能说明 run 实际停在哪里。proof 的事实原样透传、
-  零强转——strict helper 负责校验并拒绝任何无法如实记录的东西。运行时接线
-  fail open：一次提交失败只禁用该 run 的跟踪，绝不改变 coding run 本身的
-  行为。
+    terminal`；任何非 terminal phase 都能直接终止，repair admission 只属于
+    unsatisfied 的 failed proof，blocked verdict 只能走向 terminal。
+  - runtime log 行和 phase payload 都是 schema-v1、封闭 key、零强转：
+    缺 durable id/timestamp、带空白字符串、bool-as-int 计数、畸形
+    proof/context/project ref、unknown effect kind、缺 effect ref、不可能的
+    phase facts，或 forbidden raw 字段（`prompt`、`reply`、`stdout`、
+    `stderr`、`diff`）都会在 replay 或 commit 前 fail closed。
+  - recorded proof 和 blocked verdict 仍绑定 completion proof 词表：
+    proof ref 是 `completion_proof:<16 hex>`，status 只能是 `complete` /
+    `complete_with_limitations` / `failed` / `blocked`，
+    `satisfied == (status == "complete")`，blocked verdict 必须由
+    unsatisfied 的 `failed` 或 `blocked` proof 支撑。
+- TaskService 现在在 runtime log 可用时通过 `TaskRuntime` 调度生产
+  submission，并在真实生命周期边界提交 completion/repair phase。runtime
+  persistence 对用户任务保持 fail-open：坏 runtime fact 只会禁用该 run 的
+  progress projection，不改变 coding run 行为。
 - Run Details 增加一行安静的 `Progress`，只在用户点开 Details、operation
   state 未到 terminal 且 ledger 没有 `run_finished`（旧快照不污染已完成
   run）时出现：`Writing was interrupted`、`Completion check was
   interrupted`、`Finishing was interrupted` 或 `Stopped during repair`——
   文案如实描述被中断的是哪一步：repair 已结束就说 check 被中断，proof 已
   满足就说收尾被中断。不加 chip、banner，不出现内部词汇。
-- 顺手抽薄 TaskRunner：stringly 的 `completion_repair_admission` dict 换成
+- 顺手抽薄 TaskService：stringly 的 `completion_repair_admission` dict 换成
   类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
   `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
   封闭词表由测试锁住。
-- 注册 `run_operation` capability（durable state `run_operations`、fail
-  open、unit-test gate）和 event matrix 的 `run_operation.state` 行。
-  `State.forget_conversation()` 现在会删除该 session 的 operation bucket。
-  不加 Manager 类，不做 provider/tool replay，不改任何 prompt。
-- 验证：六个 deterministic crash-position 测试（writing / check / finishing /
-  repair 各中断位置恢复后均给出诚实 progress）、phase round-trip、严格
-  fail-closed reader（proof-fact 与 sha256-context 的 phase invariant、
-  terminal 事实可达性、padded 文本拒绝、terminal 封闭 key set、
-  blocked-verdict 支持与终局规则）、两侧执行的 recorded-proof 合同、达到 reader
-  标准的严格 writer 加 commit canonical 门、terminal 不可变、加锁的并发
-  start/commit、ledger/terminal 一致性、payload 卫生，以及
-  `tests/manual/completion_operation_resume_smoke.py --self-test`——真实
-  kill 进程后由全新 store 读回最后 committed phase。不需要 live provider
-  A/B——本版不改任何模型可见内容。
+- event matrix 注册 `runtime_operation.state` 行，durable state 是
+  `runtime_session_log`。`State.forget_conversation()` 现在会删除该 session
+  的 runtime log bucket。不加 Manager 类，不做 provider/tool replay，不改
+  任何 prompt。
+- 验证：deterministic crash-position 测试（writing / check / finishing /
+  repair 各中断位置恢复后均给出诚实 progress）、runtime reducer 异常结算、
+  phase round-trip、严格 fail-closed reader/writer、terminal 不可变、
+  ledger/terminal 一致性、payload 卫生、
+  `tests/manual/completion_operation_resume_smoke.py --self-test`，以及全量
+  本地 pytest。不需要 live provider A/B——本版不改任何模型可见内容。
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 

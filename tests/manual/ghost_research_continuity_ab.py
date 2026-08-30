@@ -374,14 +374,14 @@ def _run_case(
                 if not live and seeded_interest_candidates:
                     stack.enter_context(
                         mock.patch(
-                            "codey.task.service.build_research_interest_candidates",
+                            "codey.operations.task_flow.build_research_interest_candidates",
                             return_value=seeded_interest_candidates,
                         )
                     )
                 if not gate_open:
                     stack.enter_context(
                         mock.patch(
-                            "codey.task.service.allows_context_source",
+                            "codey.operations.task_flow.allows_context_source",
                             return_value=False,
                         )
                     )

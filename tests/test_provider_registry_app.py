@@ -24,8 +24,9 @@ class ProviderRegistryTests(unittest.TestCase):
 
         registry.forget_session("s1")
 
-        self.assertNotIn("deepseek", registry.sessions)
-        self.assertEqual(registry.sessions["qwen"], "s2")
+        sessions = registry.sessions_snapshot()
+        self.assertNotIn("deepseek", sessions)
+        self.assertEqual(sessions["qwen"], "s2")
 
     def test_self_repair_candidates_skip_broken_and_unavailable(self) -> None:
         registry = ProviderRegistry()

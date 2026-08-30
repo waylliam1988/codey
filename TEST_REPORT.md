@@ -9,6 +9,101 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Runtime Fact-source Completion (2026-08-30)
+
+Scope:
+
+```text
+production: deleted the standalone codey/run_operation.py register and moved
+            run phase facts onto RuntimeSessionLog via codey.runtime.effects;
+            TaskService now runs through TaskRuntime when runtime logging is
+            available; TaskRuntime schedules the reserved run_* identity used
+            by the phase projection and terminal event; codey/task/service.py
+            is now a thin public facade over codey.operations.task_flow;
+            RuntimeSessionLog/Reducer/Effects reject missing,
+            padded, coerced, unknown, and raw-field facts fail-closed; server
+            approval/provider/run registries no longer expose mutable maps or
+            direct RunRegistry fields; GhostEventLog uses strict bad-row
+            policy validation; completion repair context no longer carries
+            DETAIL_MINIMAL/DETAIL_FULL A/B residue; provider stable-completion
+            deadline no longer extends when drivers reset text progress
+harness:    tests/test_task_runner_*.py renamed to tests/test_task_service_*.py;
+            new runtime effect/log tests cover closed schema, durable identity,
+            missing operation/effect facts, phase/verdict invariants, and
+            operation-store identity filtering; scheduler tests prove failed
+            and cancelled operations settle their lanes before re-raising;
+            registry and provider tests moved to snapshot/method contracts
+mode:       focused gates first, manual crash/resume smoke, ruff, then full
+            local pytest after code was stable; no release
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -m pytest tests/test_runtime_session_log.py tests/test_runtime_effects.py -q
+21 passed, 23 subtests passed in 0.37s
+
+python -m pytest tests/test_runtime_effects.py tests/test_runtime_session_log.py \
+  tests/test_task_service_operation_state.py tests/test_run_details.py \
+  tests/test_headless_runner.py tests/test_completion_repair_context.py \
+  tests/test_ghost_event_log.py tests/test_ghost_router.py \
+  tests/test_approval_registry.py tests/test_server.py::RunSnapshotTests \
+  tests/test_server.py::SessionThreadingTests tests/test_provider_send_loop.py \
+  tests/test_architecture.py -q
+301 passed, 1 skipped, 300 subtests passed in 29.94s
+
+python tests/manual/completion_operation_resume_smoke.py --self-test
+ok: crash resume reports the last committed phase honestly
+recovered phase: writer_running
+Details Progress: Writing was interrupted
+
+python -m pytest tests/test_provider_send_loop.py tests/test_ghost_event_log.py \
+  tests/test_completion_repair_context.py -q
+38 passed, 2 subtests passed in 0.36s
+
+$files = Get-ChildItem -Path tests -Filter 'test_task_service_*.py' | ForEach-Object { $_.FullName }
+python -m pytest $files -q
+98 passed, 6 subtests passed in 38.82s
+
+python -m pytest tests/test_provider_registry_app.py tests/test_run_registry.py tests/test_stepfun.py -q
+40 passed in 0.64s
+
+python -m ruff check codey tests
+All checks passed
+
+python -m pytest tests/test_runtime_effects.py tests/test_runtime_session_log.py \
+  tests/test_architecture.py tests/test_run_details.py tests/test_headless_runner.py \
+  tests/test_completion_repair_context.py tests/test_ghost_event_log.py \
+  tests/test_ghost_router.py tests/test_approval_registry.py \
+  tests/test_provider_send_loop.py tests/test_provider_registry_app.py \
+  tests/test_run_registry.py tests/test_task_service_research_topic_continuity.py \
+  tests/test_server.py::RunSnapshotTests tests/test_server.py::SessionThreadingTests \
+  tests/test_task_service_*.py -q
+396 passed, 1 skipped, 302 subtests passed in 64.73s (0:01:04)
+
+python -m pytest tests/test_events.py tests/test_ghost_research_continuity_ab.py \
+  tests/test_work_checkpoint_flow.py -q
+30 passed, 6 subtests passed in 17.13s
+
+python -m pytest tests/test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
+1 passed in 0.60s
+```
+
+The first full run after the registry/test-file rename exposed only stale test
+contracts: provider/run registry tests still read the removed public maps and a
+StepFun unit test under-specified its mocked clock after fixed overall-deadline
+initialization. A later full run after the thin-facade split exposed only stale
+test patch paths still targeting `codey.task.service` implementation symbols;
+those were migrated to `codey.operations.task_flow` before the final full run.
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after updating
+TEST_REPORT only once the full run had passed):
+
+```text
+python -m pytest
+3238 passed, 16 skipped in 302.17s (0:05:02)
+```
+
 ## 0.5.1 Runtime Architecture Continuation (2026-08-30)
 
 Scope:

@@ -7,6 +7,7 @@ from codey.providers import send_loop as send_loop
 from codey.providers import flow as provider_flow
 from codey.providers.diagnostics import ResponseMissing
 from codey.providers.submission import SendAttempt, SubmissionUncertain
+from codey.providers.web_drivers import base as driver_base
 
 
 class ProviderSendLoopTests(unittest.TestCase):
@@ -220,6 +221,45 @@ class ProviderSendLoopTests(unittest.TestCase):
                     response_timeout=7.0,
                     uncertain_message="uncertain",
                 )
+
+    def test_stable_completion_uses_fixed_overall_deadline_after_progress_reset(self) -> None:
+        clock = {"now": 100.0, "ticks": 0}
+        ctx = send_loop.ProviderSendContext(object(), "glm", "GLM", clock["now"])
+        attempt = SendAttempt(phase="confirmed", method="click")
+
+        def now() -> float:
+            return clock["now"]
+
+        def wait(tick: float) -> None:
+            clock["ticks"] += 1
+            if clock["ticks"] > 10:
+                raise AssertionError("overall deadline moved with attempt sent_at")
+            clock["now"] += tick
+
+        def before_poll(context: send_loop.ProviderSendContext) -> bool:
+            context.reset_text_progress(sent_at=clock["now"])
+            return True
+
+        with (
+            mock.patch.object(driver_base.time, "time", side_effect=now),
+            mock.patch.object(driver_base.cancellation, "wait", side_effect=wait),
+            mock.patch.object(driver_base.controls, "recover_response", return_value=None),
+        ):
+            with self.assertRaises(ResponseMissing):
+                driver_base.wait_for_stable_completion(
+                    ctx,
+                    attempt,
+                    response_timeout=3.0,
+                    stable_ticks=2,
+                    tick=1.0,
+                    min_wait=0.0,
+                    read_current=mock.Mock(return_value=""),
+                    read_final=mock.Mock(return_value=""),
+                    read_late=mock.Mock(return_value=""),
+                    uncertain_message="uncertain",
+                )
+
+        self.assertLessEqual(clock["ticks"], 4)
 
 
 if __name__ == "__main__":

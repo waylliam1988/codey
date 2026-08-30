@@ -1,4 +1,4 @@
-"""TaskService commits its completion/repair lifecycle to RunOperationStore.
+"""TaskService commits its completion/repair lifecycle to runtime effects.
 
 These tests prove the 0.5.1 contract end to end: the phases a project run
 passes through are visible on the durable counter while the run is alive,
@@ -8,7 +8,6 @@ the payload never carries raw prompt, diff, or failure output.
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -25,14 +24,14 @@ from codey.completion.decision import (
     completion_blocked_reason,
 )
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
-from codey.run_operation import (
+from codey.runtime.effects import (
     PHASE_COMPLETION_PROOF_RECORDED,
     PHASE_REPAIR_RUNNING,
     PHASE_REPAIR_SETTLED,
     PHASE_TERMINAL,
     PHASE_WRITER_RUNNING,
     PHASE_WRITER_SETTLED,
-    RunOperationStore,
+    RuntimeOperationStore,
     mark_completion_proof_recorded,
     mark_repair_context_admitted,
     mark_repair_running,
@@ -45,6 +44,7 @@ from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
+from codey.runtime.session_log import RuntimeSessionLog
 from codey.task.model import TaskSubmission
 from codey.task.service import (
     COMPLETION_REPAIR_FOLLOWUP,
@@ -99,7 +99,7 @@ class ObservingWriter:
         self.calls.append({"task": task, "kwargs": kwargs})
         state = kwargs["state_ref"]
         run_id = state.active_run.run_id if state.active_run is not None else ""
-        store = state.run_operations
+        store = state.runtime_operations
         observed = store.load(SESSION, run_id) if store is not None else None
         self.observed_phases.append(observed.phase if observed is not None else None)
         step = self.steps.pop(0)
@@ -157,7 +157,6 @@ def _runner(state: server.State, writer: ObservingWriter) -> TaskService:
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        run_operations=state.run_operations,
         evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
@@ -186,8 +185,8 @@ def _run(runner: TaskService, state: server.State, project: Path, writer: Observ
 
 
 def _operation(state: server.State, run_id: str):
-    assert state.run_operations is not None
-    operation = state.run_operations.load(SESSION, run_id)
+    assert state.runtime_operations is not None
+    operation = state.runtime_operations.load(SESSION, run_id)
     assert operation is not None
     return operation
 
@@ -237,14 +236,25 @@ class CleanRunTerminalTests(unittest.TestCase):
                 len(str(event.get("summary") or "")),
             )
             self.assertIs(operation.completion_proof_satisfied, True)
+            assert state.runtime_log is not None
+            runtime_starts = [
+                entry
+                for entry in state.runtime_log.read(SESSION)
+                if entry.kind == "operation_started"
+                and entry.operation_id.startswith("runtime:")
+            ]
+            self.assertEqual(
+                [entry.operation_id for entry in runtime_starts],
+                [f"runtime:{run_id}"],
+            )
 
 
 class NonBoolSatisfiedWiringTests(unittest.TestCase):
-    def test_fake_proof_with_int_satisfied_records_terminal_error(self) -> None:
+    def test_fake_proof_with_int_satisfied_disables_runtime_tracking_only(self) -> None:
         # TaskService passes the proof's facts through uncoerced: the strict
         # helper validates them. A proof carrying satisfied=1 (an int)
-        # must not be swallowed by the operation writer; the run reaches a
-        # visible terminal error instead of leaving the register silently stale.
+        # disables explanatory operation tracking, but it must not perturb
+        # the user-visible task result.
         writer = ObservingWriter(
             ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
         )
@@ -265,11 +275,10 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
                 event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
-            self.assertEqual(event["stop_reason"], "error")
-            self.assertIn("proof_satisfied must be a bool", str(event["summary"]))
-            self.assertEqual(operation.phase, PHASE_TERMINAL)
-            assert operation.terminal is not None
-            self.assertEqual(operation.terminal.stop_reason, "error")
+            self.assertEqual(event["stop_reason"], "done")
+            self.assertEqual(event["summary"], "implemented")
+            self.assertEqual(operation.phase, PHASE_WRITER_SETTLED)
+            self.assertIsNone(operation.terminal)
             self.assertIsNone(operation.completion_proof_satisfied)
 
 
@@ -473,7 +482,7 @@ class CrashPositionTests(unittest.TestCase):
             with self.subTest(phase=expected_phase):
                 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                     state_home = Path(td) / "state"
-                    store = RunOperationStore(state_home)
+                    store = RuntimeOperationStore(RuntimeSessionLog(state_home))
                     started = store.start(
                         session_id=SESSION,
                         run_id="run-crash",
@@ -491,11 +500,11 @@ class CrashPositionTests(unittest.TestCase):
                         store.commit(SESSION, "run-crash", transition)
 
                     # The run opened a ledger but never wrote run_finished.
-                    ledgers = RunOperationLedgersStub(state_home)
+                    ledgers = RuntimeOperationLedgersStub(state_home)
                     ledgers.open_interrupted(SESSION, "run-crash")
 
                     # A fresh process would build a fresh store.
-                    recovered_store = RunOperationStore(state_home)
+                    recovered_store = RuntimeOperationStore(RuntimeSessionLog(state_home))
                     recovered = recovered_store.load(SESSION, "run-crash")
                     assert recovered is not None
                     self.assertEqual(recovered.phase, expected_phase)
@@ -503,7 +512,7 @@ class CrashPositionTests(unittest.TestCase):
                     summary = load_run_details(
                         run_ledgers=ledgers,
                         run_traces=None,
-                        run_operations=recovered_store,
+                        runtime_operations=recovered_store,
                         session_id=SESSION,
                         run_id="run-crash",
                     )
@@ -514,7 +523,7 @@ class CrashPositionTests(unittest.TestCase):
     def test_stale_non_terminal_snapshot_never_shows_progress_after_finished_run(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            store = RunOperationStore(state_home)
+            store = RuntimeOperationStore(RuntimeSessionLog(state_home))
             started = store.start(
                 session_id=SESSION,
                 run_id="run-stale",
@@ -530,7 +539,7 @@ class CrashPositionTests(unittest.TestCase):
                 lambda s: mark_writer_running(s, provider_id="deepseek"),
             )
 
-            ledgers = RunOperationLedgersStub(state_home)
+            ledgers = RuntimeOperationLedgersStub(state_home)
             writer = ledgers.writer(SESSION, "run-stale")
             writer.finish(
                 summary="done",
@@ -543,7 +552,7 @@ class CrashPositionTests(unittest.TestCase):
             summary = load_run_details(
                 run_ledgers=ledgers,
                 run_traces=None,
-                run_operations=store,
+                runtime_operations=store,
                 session_id=SESSION,
                 run_id="run-stale",
             )
@@ -555,7 +564,7 @@ class CrashPositionTests(unittest.TestCase):
     def test_terminal_operation_shows_no_progress_line(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            store = RunOperationStore(state_home)
+            store = RuntimeOperationStore(RuntimeSessionLog(state_home))
             started = store.start(
                 session_id=SESSION,
                 run_id="run-done",
@@ -579,9 +588,9 @@ class CrashPositionTests(unittest.TestCase):
             )
 
             summary = load_run_details(
-                run_ledgers=RunOperationLedgersStub(state_home),
+                run_ledgers=RuntimeOperationLedgersStub(state_home),
                 run_traces=None,
-                run_operations=store,
+                runtime_operations=store,
                 session_id=SESSION,
                 run_id="run-done",
             )
@@ -591,7 +600,7 @@ class CrashPositionTests(unittest.TestCase):
             )
 
 
-class RunOperationLedgersStub:
+class RuntimeOperationLedgersStub:
     """Minimal ledger-store stand-in for details-only tests."""
 
     def __init__(self, state_home: Path) -> None:
@@ -633,11 +642,10 @@ class PayloadHygieneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
             state = server.State(Path(td) / "state")
-            event = _run(_runner(state, writer), state, project, writer)
+            _run(_runner(state, writer), state, project, writer)
 
-            assert state.run_operations is not None
-            path = state.run_operations.path_for(SESSION, str(event["run_id"]))
-            raw = path.read_text(encoding="utf-8")
+            assert state.runtime_log is not None
+            raw = state.runtime_log.path_for(SESSION).read_text(encoding="utf-8")
 
             for fragment in (
                 "Change the module and verify",  # owner task
@@ -648,8 +656,7 @@ class PayloadHygieneTests(unittest.TestCase):
                 "trust me",
             ):
                 self.assertNotIn(fragment, raw)
-            payload = json.loads(raw)
-            self.assertNotIn("prompt", json.dumps(payload))
+            self.assertNotIn("prompt", raw)
 
     def test_operation_payload_never_contains_the_raw_project_path(self) -> None:
         writer = ObservingWriter(
@@ -660,16 +667,15 @@ class PayloadHygieneTests(unittest.TestCase):
             state = server.State(Path(td) / "state")
             event = _run(_runner(state, writer), state, project, writer)
 
-            assert state.run_operations is not None
-            path = state.run_operations.path_for(SESSION, str(event["run_id"]))
-            raw = path.read_text(encoding="utf-8")
+            assert state.runtime_log is not None
+            raw = state.runtime_log.path_for(SESSION).read_text(encoding="utf-8")
 
             # The roadmap requires a ref, never the raw absolute path; the
             # resolved temp project path must not appear in any form.
             self.assertNotIn(str(project), raw)
             self.assertNotIn(str(project).replace("\\", "/"), raw)
-            payload = json.loads(raw)
-            self.assertRegex(payload["project_ref"], r"^project:[0-9a-f]{24}$")
+            operation = _operation(state, str(event["run_id"]))
+            self.assertRegex(operation.project_ref, r"^project:[0-9a-f]{24}$")
 
 
 class BlockedReasonProjectionTests(unittest.TestCase):

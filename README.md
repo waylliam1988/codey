@@ -290,9 +290,9 @@ fresh background tab in the same logged-in Codey browser profile, so it does
 not need to copy cookies or block your current task. Candidates start as
 provisional, become active only after natural successes, and roll back after
 repeated structural failures. Core files such as `codey/agents/runner.py`,
-`codey/app/task_runner.py`, `codey/toolchain/runtime.py`,
-`codey/app/server.py`, and the recovery/safety modules are not self-modified
-by this v1.
+`codey/operations/task_flow.py`, `codey/task/service.py`, `codey/runtime/*`,
+`codey/app/server.py`, and the
+recovery/safety modules are not self-modified by this v1.
 
 ---
 
@@ -936,14 +936,17 @@ Browser Session + provider DOM driver
 codey/
   __main__.py               `python -m codey` entry point
   agents/                   provider-independent agent loop, consensus, handoff, tools, and writer failover
-  app/                      local HTTP/SSE server, TaskRunner orchestration, CLI, and headless runner
+  app/                      local HTTP/SSE server, CLI, registries, and headless adapters
   automation/               browser/CDP helpers, Playwright worker, and bounded web-clipboard transactions
   completion/               CompletionProof, verification policy, edit scope/integrity, receipt decisions, and bounded repair-context projection
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, graph/FTS index, restore, concepts, and Research Briefs
+  operations/               task operation flow, mode contexts, chat operation, and prompt/local-context projections
   policies/                 action/capability/permission/prompt/network safety, command tokenizer, run-command semantics, and shell risk
   protocols/                codec interfaces and JSON-only tool protocol
   providers/                provider registry, profiles, controls, discovery, revival/supervision, worker isolation, local OpenAI, and web drivers
+  runtime/                  append-only runtime session log, scheduler, cancellation, and operation projections
+  task/                     thin TaskService facade and task-facing submission model
     profiles.json           versioned selectors for supported model pages
     web_drivers/            per-site page drivers plus common scaffolding
       common.py             control/response/rate-limit/late-response plumbing

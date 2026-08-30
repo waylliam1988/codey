@@ -154,6 +154,13 @@ class GhostSleepStore:
             max_bytes=MAX_SLEEP_EVENTS_BYTES,
             max_warnings=MAX_SLEEP_WARNINGS,
             source_name="sleep_events.jsonl",
+            allowed_event_kinds=(
+                "ghost_sleep_report",
+                "ghost_sleep_events_compacted",
+                "ghost_sleep_reset",
+                "ghost_sleep_scope_deleted",
+            ),
+            bad_row_policy="block",
         )
 
     def run_once(

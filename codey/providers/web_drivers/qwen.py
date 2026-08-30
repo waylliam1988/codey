@@ -559,7 +559,7 @@ def _chat(
             display_name="Qwen Studio",
             sent_at=time.time(),
         )
-        deadline = ctx.sent_at + response_timeout
+        deadline = time.time() + max(0.0, response_timeout)
         regenerated = False
         while time.time() < deadline:
             cancellation.wait(tick)
@@ -569,7 +569,6 @@ def _chat(
                     raise RuntimeError("Qwen Studio returned an empty response")
                 regenerated = True
                 ctx.reset_text_progress(sent_at=time.time())
-                deadline = ctx.sent_at + response_timeout
                 continue
             count = _response_count(page)
             current = _last_text(page) if count else ""

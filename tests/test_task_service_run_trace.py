@@ -15,7 +15,7 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.task import service as task_service_module
+from codey.operations import task_flow as task_service_module
 from codey.task.model import TaskSubmission
 from codey.task.service import TaskService
 
@@ -506,7 +506,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         with (
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(
-                "codey.task.service.safe_review_impact_map",
+                "codey.operations.task_flow.safe_review_impact_map",
                 return_value="SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED",
             ) as impact_map,
         ):

@@ -35,6 +35,8 @@ class GhostSignalStore:
             self.path,
             schema_version=SCHEMA_VERSION,
             source_name="signals.jsonl",
+            allowed_event_kinds=("ghost_signal_extraction",),
+            bad_row_policy="warn",
         )
         self.last_warnings: tuple[str, ...] = ()
 

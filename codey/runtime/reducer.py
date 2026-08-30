@@ -14,6 +14,7 @@ _KNOWN_EFFECT_KINDS = {
     "evidence_ref",
     "observation",
     "receipt_ref",
+    "run_phase",
     "status",
     "trace_ref",
 }
@@ -42,7 +43,6 @@ class LaneProjection:
 class RuntimeProjection:
     lanes: dict[str, LaneProjection]
     operations: dict[str, OperationProjection]
-    ignored_effect_entry_ids: tuple[str, ...] = ()
 
 
 def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
@@ -50,8 +50,6 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
     operations: dict[str, OperationProjection] = {}
     tool_invocations: set[tuple[str, str]] = set()
     settled_tools: set[tuple[str, str]] = set()
-    ignored_effects: list[str] = []
-
     for entry in entries:
         lane = lanes.setdefault(entry.lane, LaneProjection(entry.lane))
         operation = operations.get(entry.operation_id)
@@ -61,11 +59,12 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
                 raise RuntimeLogCorruption("operation started twice")
             if lane.open_operation_id:
                 raise RuntimeLogCorruption("lane already has an open operation")
+            operation_kind = _required_payload_text(entry, "operation_kind")
             lane.open_operation_id = entry.operation_id
             operations[entry.operation_id] = OperationProjection(
                 operation_id=entry.operation_id,
                 lane=entry.lane,
-                kind=str(entry.payload.get("operation_kind") or "operation"),
+                kind=operation_kind,
             )
             continue
 
@@ -75,11 +74,10 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
             raise RuntimeLogCorruption("operation record after settlement")
 
         if entry.kind == "operation_effect":
-            effect_kind = str(entry.payload.get("effect_kind") or "")
+            effect_kind = _required_payload_text(entry, "effect_kind")
             if effect_kind not in _KNOWN_EFFECT_KINDS:
-                ignored_effects.append(entry.entry_id)
-                continue
-            effect_ref = str(entry.payload.get("ref") or entry.entry_id)
+                raise RuntimeLogCorruption("unknown operation effect")
+            effect_ref = _required_payload_text(entry, "ref")
             operation.effect_refs.append(effect_ref)
             continue
 
@@ -115,11 +113,7 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
 
         raise RuntimeLogCorruption("unknown runtime log entry kind")
 
-    return RuntimeProjection(
-        lanes=lanes,
-        operations=operations,
-        ignored_effect_entry_ids=tuple(ignored_effects),
-    )
+    return RuntimeProjection(lanes=lanes, operations=operations)
 
 
 def _required_payload_text(entry: RuntimeLogEntry, field: str) -> str:

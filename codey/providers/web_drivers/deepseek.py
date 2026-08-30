@@ -52,6 +52,7 @@ RATE_LIMIT_COOLDOWN = 10.0
 RATE_LIMIT_TEXT = "消息发送过于频繁"
 RATE_LIMIT_RETRY_BUTTON = "div[role='button'].ds-button--warning"
 RATE_LIMIT_RETRY_TEXT = "重试"
+RATE_LIMIT_MAX_RETRIES = 2
 JSON_TOOL_STABLE_TICKS = 2
 
 
@@ -376,12 +377,18 @@ def chat(
             sent_at=time.time(),
         )
 
+        rate_limit_retries = 0
+
         def _retry_rate_limit_if_needed(context: send_loop.ProviderSendContext) -> bool:
+            nonlocal rate_limit_retries
             if (
                 _response_count(page) <= baseline
                 and _rate_limit_visible(page)
             ):
+                if rate_limit_retries >= RATE_LIMIT_MAX_RETRIES:
+                    raise RateLimited("DeepSeek is rate limited")
                 if _click_rate_limit_retry(page):
+                    rate_limit_retries += 1
                     context.reset_text_progress(sent_at=time.time())
                     return True
             return False

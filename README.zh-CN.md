@@ -233,7 +233,7 @@ Codey 只有在当前布尔事实能证明规则成立时，才会晋级学到�
 Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile 的后台新标签页，
 不会复制 cookie，也不会阻塞你当前的编程任务。候选先是 provisional，自然成功后才
 晋级 active，连续结构性失败会自动回滚。`codey/agents/runner.py`、
-`codey/app/task_runner.py`、`codey/toolchain/runtime.py`、`codey/app/server.py`
+`codey/operations/task_flow.py`、`codey/task/service.py`、`codey/runtime/*`、`codey/app/server.py`
 以及恢复/安全控制面不在 v1 自修改范围内。
 
 ---
@@ -788,14 +788,17 @@ Browser Session + provider DOM driver
 codey/
   __main__.py               `python -m codey` 入口
   agents/                   与 provider 无关的 agent 循环、consensus、handoff、工具和 Writer failover
-  app/                      本地 HTTP/SSE server、TaskRunner 编排、CLI 和 headless runner
+  app/                      本地 HTTP/SSE server、CLI、registry 和 headless adapter
   automation/               browser/CDP helper、Playwright worker 和有边界的网页剪贴板事务
   completion/               CompletionProof、verification policy、edit scope/integrity、receipt decision 和有边界的 repair context 投影
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、graph/FTS 索引、restore、concept 和 Research Brief
+  operations/               任务 operation flow、mode context、chat operation 和 prompt/local-context 投影
   policies/                 action/capability/permission/prompt/network safety、命令分词、run-command 语义和 shell 风险
   protocols/                codec 接口和 JSON-only 工具协议
   providers/                provider registry、profile、control、discovery、revival/supervision、worker 隔离、本地 OpenAI 和网页驱动
+  runtime/                  append-only runtime session log、scheduler、cancellation 和 operation projection
+  task/                     很薄的 TaskService facade 和任务提交模型
     profiles.json           支持模型网页的版本化选择器
     web_drivers/            各站点页面驱动与公共脚手架
       common.py             控件定位/响应计数/限流检测/迟到响应轮询

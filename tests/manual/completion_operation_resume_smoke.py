@@ -1,13 +1,13 @@
-"""Stop / crash resume smoke for the run operation state (0.5.1).
+"""Stop / crash resume smoke for runtime operation effects (0.5.1).
 
 Roadmap 0.5.1 requires deterministic crash-position tests plus one manual
 stop/resume smoke. This script is that smoke entry: it runs the production
 headless spine (``run_headless``), hard-kills the process mid-run the way a
-crash would, and then reads the last committed phase with a fresh store --
-recovery must switch on the register, never on missing events.
+crash would, and then reads the last committed runtime phase with a fresh
+store -- recovery must switch on the log projection, never on missing events.
 
     --self-test   deterministic and offline: the parent waits until the run's
-                  register reaches the writer_running phase, hard-kills the
+                  runtime phase reaches the writer_running phase, hard-kills the
                   process the way a crash would, then checks the recovered
                   register and the honest Run Details progress line. This is
                   the release gate.
@@ -31,10 +31,11 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.run_operation import (
+from codey.runtime.effects import (
     PHASE_WRITER_RUNNING,
-    RunOperationStore,
+    RuntimeOperationStore,
 )
+from codey.runtime.session_log import RuntimeSessionLog
 from codey.runs.details import load_run_details
 
 
@@ -126,7 +127,7 @@ def _self_test() -> int:
             stderr=subprocess.DEVNULL,
         )
         try:
-            store = RunOperationStore(state_home)
+            store = RuntimeOperationStore(RuntimeSessionLog(state_home))
             deadline = time.monotonic() + KILL_TIMEOUT_SECONDS
             while time.monotonic() < deadline:
                 register = store.load(SESSION, RUN)
@@ -153,7 +154,7 @@ def _self_test() -> int:
                 child.kill()
                 child.wait(timeout=10)
 
-        recovered = RunOperationStore(state_home).load(SESSION, RUN)
+        recovered = RuntimeOperationStore(RuntimeSessionLog(state_home)).load(SESSION, RUN)
         if recovered is None:
             print("FAIL: register did not survive the crash")
             return 1
@@ -164,7 +165,7 @@ def _self_test() -> int:
         summary = load_run_details(
             run_ledgers=RunLedgerStore(state_home),
             run_traces=None,
-            run_operations=RunOperationStore(state_home),
+            runtime_operations=RuntimeOperationStore(RuntimeSessionLog(state_home)),
             session_id=SESSION,
             run_id=RUN,
         )

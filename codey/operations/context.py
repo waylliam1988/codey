@@ -8,7 +8,7 @@ from typing import Any, Callable
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.ghost.work_queue import GhostWorkItem
 from codey.providers.diagnostics import ProviderFailure
-from codey.run_operation import RunOperationState
+from codey.runtime.effects import RuntimeOperationState
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
 from codey.runtime.events import RunEvent
@@ -47,7 +47,7 @@ class RunWork:
     claimed_work_item: GhostWorkItem | None = None
     analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
     artifact_payloads: list[dict[str, object]] = field(default_factory=list)
-    operation: RunOperationState | None = None
+    operation: RuntimeOperationState | None = None
     turns_observed: int = 0
 
 
@@ -64,4 +64,3 @@ class RunHooks:
     provider_failover_order: Callable[[], tuple[str, ...]]
     supervisor: Any | None
     trace: Any | None = None
-

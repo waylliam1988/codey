@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 TASK_SERVICE_PATH = ROOT / "codey" / "task" / "service.py"
+TASK_FLOW_PATH = ROOT / "codey" / "operations" / "task_flow.py"
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -110,7 +111,18 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("codey.app.run_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
         self.assertIn("class RunRegistry", registry_source)
         self.assertNotIn("class RunSnapshot", server_source)
+        self.assertIn("self._active_run: RunSnapshot | None", registry_source)
+        self.assertIn("self._last_terminal_event: dict | None", registry_source)
         for token in (
+            "self.active_run: RunSnapshot",
+            "self.project: str | None",
+            "self.task: str | None",
+            "self.provider_id = DEFAULT_PROVIDER_ID",
+            "self.status = \"idle\"",
+            "self.last_terminal_event: dict",
+            "self.last_shell_result: dict",
+            "self.run_registry.active_run =",
+            "self.run_registry.last_terminal_event =",
             "self.active_run = run",
             "self.busy = True",
             "self.last_terminal_event = payload",
@@ -129,8 +141,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class ApprovalRegistry", approval_source)
         self.assertNotIn("self.pending_shell: dict", server_source)
         self.assertNotIn("self.pending_teach: dict", server_source)
-        self.assertIn("def pending_shell", server_source)
-        self.assertIn("def pending_teach", server_source)
+        self.assertNotIn("def pending_shell(self", server_source)
+        self.assertNotIn("def pending_teach(self", server_source)
+        self.assertNotIn("self.pending_shell", approval_source)
+        self.assertNotIn("self.pending_teach", approval_source)
+        self.assertIn("self._pending_shell: dict", approval_source)
+        self.assertIn("self._pending_teach: dict", approval_source)
+        self.assertIn("def add_pending_shell_approval", server_source)
+        self.assertIn("def pop_pending_shell_approval", server_source)
+        self.assertIn("def resume_pending_teach", server_source)
 
     def test_provider_registry_owns_provider_sessions_and_health(self) -> None:
         server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
@@ -142,7 +161,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class ProviderRegistry", registry_source)
         self.assertNotIn("self.provider_sessions: dict", server_source)
         self.assertNotIn("self.provider_supervisor = ProviderSupervisor", server_source)
+        self.assertNotIn("self.sessions: dict", registry_source)
+        self.assertIn("self._sessions: dict", registry_source)
         self.assertIn("def provider_sessions", server_source)
+        self.assertIn("sessions_snapshot", server_source)
         self.assertIn("def provider_supervisor", server_source)
 
     def test_conversation_registry_owns_conversation_cache_and_store(self) -> None:
@@ -192,6 +214,33 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("http.server", imports)
         self.assertNotIn("codey.app.server", imports)
 
+    def test_task_service_is_thin_submission_facade(self) -> None:
+        source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        imports = imported_modules(TASK_SERVICE_PATH)
+        forbidden = {
+            "codey.agents",
+            "codey.completion.engine",
+            "codey.ghost",
+            "codey.providers",
+            "codey.research",
+            "codey.reviews",
+            "codey.toolchain",
+        }
+
+        self.assertLessEqual(len(source.splitlines()), 80)
+        self.assertEqual(
+            sorted(
+                name
+                for name in imports
+                if name == "codey" or name.startswith("codey.")
+            ),
+            ["codey.operations.task_flow"],
+        )
+        self.assertTrue(
+            forbidden.isdisjoint(imports),
+            sorted(forbidden & imports),
+        )
+
     def test_task_submission_model_is_not_defined_by_execution_service(self) -> None:
         model_source = (ROOT / "codey" / "task" / "model.py").read_text(encoding="utf-8")
         service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
@@ -203,34 +252,36 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_operation_context_values_are_not_defined_by_task_service(self) -> None:
         service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
         context_source = (ROOT / "codey" / "operations" / "context.py").read_text(
             encoding="utf-8"
         )
         result_source = (ROOT / "codey" / "operations" / "result.py").read_text(
             encoding="utf-8"
         )
-        imports = imported_modules(TASK_SERVICE_PATH)
+        imports = imported_modules(TASK_FLOW_PATH)
 
         self.assertIn("codey.operations.context", imports)
         self.assertIn("codey.operations.result", imports)
-        for token in ("class _RunFrame", "class _RunWork", "class _RunHooks", "class _ModeOutcome"):
+        for token in ("_RunFrame", "_RunWork", "_RunHooks", "_ModeOutcome", "_TaskSubmission"):
             with self.subTest(token=token):
                 self.assertNotIn(token, service_source)
+                self.assertNotIn(token, flow_source)
         self.assertIn("class RunFrame", context_source)
         self.assertIn("class RunWork", context_source)
         self.assertIn("class RunHooks", context_source)
         self.assertIn("class ModeOutcome", result_source)
 
     def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
-        service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
         chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("codey.operations.chat", imported_modules(TASK_SERVICE_PATH))
+        self.assertIn("codey.operations.chat", imported_modules(TASK_FLOW_PATH))
         self.assertIn("def run_chat_mode", chat_source)
-        self.assertIn("return run_chat_mode(", service_source)
-        self.assertNotIn("chat_outbound_prompt", service_source)
+        self.assertIn("return run_chat_mode(", flow_source)
+        self.assertNotIn("chat_outbound_prompt", flow_source)
         self.assertIn("chat_outbound_prompt", chat_source)
 
     def test_legacy_task_runner_module_is_gone(self) -> None:
@@ -304,14 +355,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         pipeline = ROOT / "codey" / "research" / "pipeline.py"
         research_runner = ROOT / "codey" / "research" / "runner.py"
         pipeline_source = pipeline.read_text(encoding="utf-8")
-        task_service_source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        task_flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
         research_runner_source = research_runner.read_text(encoding="utf-8")
 
         self.assertIn("ResearchIterationRun", pipeline_source)
-        self.assertIn("ResearchIterationRun", task_service_source)
+        self.assertIn("ResearchIterationRun", task_flow_source)
         self.assertNotIn("codey.task.service", imported_modules(pipeline))
         self.assertNotIn("codey.app.server", imported_modules(pipeline))
-        self.assertNotIn("_run_research_task", task_service_source)
+        self.assertNotIn("_run_research_task", task_flow_source)
         self.assertNotIn("close_search", pipeline_source)
         self.assertNotIn("runtime_tools", research_runner_source)
 
@@ -1088,6 +1139,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "codey" / "runs" / "trace.py",
             *(ROOT / "codey" / "research").glob("*.py"),
             TASK_SERVICE_PATH,
+            TASK_FLOW_PATH,
             ROOT / "codey" / "app" / "server.py",
         ]
         for path in consumers:
@@ -1196,32 +1248,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def _trace_call", task_service_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
-    def test_run_operation_is_a_storage_leaf(self) -> None:
-        # The durable run-operation counter (0.5.1) is persistence only:
-        # stdlib plus the storage primitives, never agents, providers,
-        # tools, server, ghost, or completion semantics.
-        path = ROOT / "codey" / "run_operation.py"
-        imports = imported_modules(path)
-
-        internal = sorted(
-            name for name in imports if name == "codey" or name.startswith("codey.")
-        )
-        self.assertEqual(
-            internal,
-            ["codey.storage.file_lock", "codey.storage.local_store"],
-        )
-        forbidden = {
-            "codey.agents",
-            "codey.app",
-            "codey.completion",
-            "codey.ghost",
-            "codey.policies",
-            "codey.providers",
-            "codey.research",
-            "codey.runs",
-            "codey.toolchain",
-        }
-        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+    def test_run_operation_fact_source_is_runtime_only(self) -> None:
+        self.assertFalse((ROOT / "codey" / "run_operation.py").exists())
+        offenders: dict[str, list[str]] = {}
+        forbidden = "codey." + "run_operation"
+        for path in (ROOT / "codey").rglob("*.py"):
+            imports = imported_modules(path)
+            if forbidden in imports:
+                offenders[str(path.relative_to(ROOT))] = sorted(imports)
+        self.assertEqual(offenders, {})
 
     def test_completion_repair_context_is_pure_projection_leaf(self) -> None:
         # The repair context (0.4.13) consumes an already-evaluated proof
@@ -1340,7 +1375,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_completion_enforcement_has_explicit_stop_conditions(self) -> None:
         # The repair loop must be bounded by named stop conditions, never a
         # bare `while not complete`. Locks the v1 shape: one round max.
-        source = TASK_SERVICE_PATH.read_text(encoding="utf-8")
+        source = TASK_FLOW_PATH.read_text(encoding="utf-8")
         engine_source = (ROOT / "codey" / "completion" / "engine.py").read_text(
             encoding="utf-8"
         )

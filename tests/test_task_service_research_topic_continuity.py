@@ -340,7 +340,7 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
         runner = _runner(state)
 
         with mock.patch(
-            "codey.task.service.allows_context_source",
+            "codey.operations.task_flow.allows_context_source",
             return_value=False,
         ):
             text, payload = runner._build_research_topic_continuity(

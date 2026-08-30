@@ -44,7 +44,8 @@ def wait_for_stable_completion(
             before_return()
         return send_loop.read_completion(ctx, reader)
 
-    while time.time() < ctx.sent_at + response_timeout:
+    overall_deadline = time.time() + max(0.0, response_timeout)
+    while time.time() < overall_deadline:
         cancellation.wait(tick)
         if before_poll is not None:
             if before_poll(ctx):

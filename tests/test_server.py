@@ -33,7 +33,8 @@ from codey.providers.local_openai import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
-from codey.task.service import TaskService, _project_has_user_files
+from codey.operations.task_flow import _project_has_user_files
+from codey.task.service import TaskService
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
 
@@ -1955,19 +1956,18 @@ class RunSnapshotTests(unittest.TestCase):
     def test_stop_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
         state = server.State()
         events = state.subscribe()
-        state.pending_shell["shell-9"] = {
+        state.add_pending_shell_approval("shell-9", {
             "id": "shell-9",
             "session_id": "session-stop",
             "run_id": "run-stop",
             "command": "rm -rf /",
             "cwd": ".",
             "project": None,
-        }
+        })
 
         state.expire_pending_shell_approvals()
 
-        with state.lock:
-            self.assertEqual(state.pending_shell, {})
+        self.assertEqual(state.pending_shell_approvals(), {})
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -1976,7 +1976,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertFalse(results[0]["approved"])
         self.assertEqual(results[0]["command"], "rm -rf /")
         # A later Allow POST finds nothing to execute: the id is gone.
-        self.assertIsNone(state.pending_shell.pop("shell-9", None))
+        self.assertIsNone(state.pop_pending_shell_approval("shell-9"))
 
     def test_state_snapshot_keeps_pending_action_and_terminal_event(self) -> None:
         state = server.State()
@@ -1997,7 +1997,7 @@ class RunSnapshotTests(unittest.TestCase):
             "command": "pytest",
             "cwd": ".",
         }
-        state.pending_shell["shell-1"] = {"ui_event": pending}
+        state.add_pending_shell_approval("shell-1", {"ui_event": pending})
         terminal = {
             "type": "task_done",
             "session_id": run.session_id,
@@ -2293,7 +2293,7 @@ class RunSnapshotTests(unittest.TestCase):
             "id": "teach-1",
             "text": "Click the message box",
         }
-        state.pending_teach["teach-1"] = {"ui_event": teaching}
+        state.add_pending_teach("teach-1", {"ui_event": teaching})
 
         payload = state.run_state_payload()
 
@@ -2302,14 +2302,14 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_active_run_does_not_restore_an_unrelated_old_card(self) -> None:
         state = server.State()
-        state.pending_shell["old"] = {
+        state.add_pending_shell_approval("old", {
             "ui_event": {
                 "type": "shell_request",
                 "run_id": "run_old",
                 "session_id": "session-old",
                 "id": "old",
             }
-        }
+        })
         run = state.reserve_run(
             session_id="session-new",
             project=None,
@@ -2501,14 +2501,14 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
             self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
-    def test_state_owns_run_operation_store_and_forget_deletes_it(self) -> None:
-        from codey.run_operation import RunOperationStore
+    def test_state_owns_runtime_operation_store_and_forget_deletes_it(self) -> None:
+        from codey.runtime.effects import RuntimeOperationStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            self.assertIsInstance(state.run_operations, RunOperationStore)
-            assert state.run_operations is not None
-            started = state.run_operations.start(
+            self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
+            assert state.runtime_operations is not None
+            started = state.runtime_operations.start(
                 session_id="session-forget",
                 run_id="run-forget",
                 project="",
@@ -2520,10 +2520,10 @@ class RunSnapshotTests(unittest.TestCase):
 
             state.forget_conversation("session-forget")
 
-            self.assertIsNone(state.run_operations.load("session-forget", "run-forget"))
+            self.assertIsNone(state.runtime_operations.load("session-forget", "run-forget"))
 
-    def test_state_without_state_home_has_no_run_operation_store(self) -> None:
-        self.assertIsNone(server.State().run_operations)
+    def test_state_without_state_home_has_no_runtime_operation_store(self) -> None:
+        self.assertIsNone(server.State().runtime_operations)
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()
@@ -2788,7 +2788,7 @@ class RunSnapshotTests(unittest.TestCase):
         assert run is not None
         self.assertTrue(state.start_run(run.run_id))
         self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
-        state.pending_shell["shell-1"] = {
+        state.add_pending_shell_approval("shell-1", {
             "id": "shell-1",
             "session_id": run.session_id,
             "run_id": run.run_id,
@@ -2799,7 +2799,7 @@ class RunSnapshotTests(unittest.TestCase):
             "max_turns": 8,
             "provider": "deepseek",
             "risk_label": "generic",
-        }
+        })
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -3351,8 +3351,7 @@ class SessionThreadingTests(unittest.TestCase):
             thread.start()
             emitted = events.get(timeout=1)
             pending_id = emitted["id"]
-            with state.lock:
-                state.pending_teach[pending_id]["event"].set()
+            self.assertTrue(state.resume_pending_teach(pending_id))
             thread.join(timeout=1)
 
         self.assertEqual(slot, [button])
@@ -3361,7 +3360,7 @@ class SessionThreadingTests(unittest.TestCase):
         start.assert_called_once_with(page)
         finish.assert_called_once_with(page, "token", provider_controls.CONTROL_SEND_BUTTON, timeout=1.0)
         resolve.assert_called_once_with(request, captured)
-        self.assertEqual(state.pending_teach, {})
+        self.assertEqual(state.pending_teach_requests(), {})
 
     def test_profile_doctor_uses_one_healthy_sibling_model_call(self) -> None:
         state = server.State()
@@ -3907,7 +3906,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.task.service.rank_providers",
+                "codey.operations.task_flow.rank_providers",
                 return_value=("glm", "stepfun"),
             ) as rank,
         ):
@@ -3973,7 +3972,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.task.service.rank_providers",
+                "codey.operations.task_flow.rank_providers",
                 return_value=("stepfun", "mimo"),
             ) as rank,
         ):
@@ -4011,7 +4010,7 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
 
-        pending = next(iter(state.pending_shell.values()))
+        pending = next(iter(state.pending_shell_approvals().values()))
         self.assertEqual(pending["risk_label"], "dependency_install")
         self.assertIn("download packages", pending["risk_detail"])
         self.assertIn("Post-approval checklist", pending["post_approval_instructions"])
@@ -4129,7 +4128,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task.service.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -4255,7 +4254,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task.service.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
                 mock.patch.dict(
                     sys.modules,
@@ -4388,7 +4387,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task.service.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):

@@ -70,11 +70,13 @@ class RunEventUiPayloadTests(unittest.TestCase):
         })
 
     def test_task_service_no_longer_owns_ui_event_projection(self) -> None:
-        source = (ROOT / "codey" / "task" / "service.py").read_text(encoding="utf-8")
+        service_source = (ROOT / "codey" / "task" / "service.py").read_text(encoding="utf-8")
+        flow_source = (ROOT / "codey" / "operations" / "task_flow.py").read_text(encoding="utf-8")
 
-        self.assertNotIn("def _ui_event", source)
-        self.assertNotIn("def _display_tool", source)
-        self.assertIn("run_event_ui_payload", source)
+        self.assertNotIn("def _ui_event", service_source)
+        self.assertNotIn("def _display_tool", service_source)
+        self.assertNotIn("run_event_ui_payload", service_source)
+        self.assertIn("run_event_ui_payload", flow_source)
 
 
 if __name__ == "__main__":

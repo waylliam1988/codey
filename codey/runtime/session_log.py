@@ -7,8 +7,10 @@ not persist raw prompts, model replies, command output, or diffs.
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -34,6 +36,18 @@ _ENTRY_KINDS = {
     "tool_settled",
     "operation_settled",
 }
+_KNOWN_ENTRY_KEYS = frozenset(
+    {
+        "schema_version",
+        "entry_id",
+        "created_at",
+        "session_id",
+        "lane",
+        "operation_id",
+        "kind",
+        "payload",
+    }
+)
 _FORBIDDEN_PAYLOAD_KEYS = {
     "diff",
     "prompt",
@@ -76,7 +90,7 @@ class RuntimeLogEntry:
             raise RuntimeLogCorruption("unsupported runtime log schema")
         for field_name in ("session_id", "lane", "operation_id", "kind"):
             value = getattr(self, field_name)
-            if not isinstance(value, str) or not value.strip():
+            if not isinstance(value, str) or not value.strip() or value.strip() != value:
                 raise RuntimeLogCorruption(f"{field_name} must be a non-empty string")
         if self.kind not in _ENTRY_KINDS:
             raise RuntimeLogCorruption(f"unknown runtime log entry kind: {self.kind}")
@@ -85,10 +99,19 @@ class RuntimeLogEntry:
         offender = _forbidden_payload_key(self.payload)
         if offender:
             raise RuntimeLogWriteError(f"runtime log payload contains raw field: {offender}")
+        if isinstance(self.created_at, bool) or not isinstance(self.created_at, (int, float)):
+            raise RuntimeLogCorruption("created_at must be a finite number")
+        created_at = float(self.created_at)
+        if not math.isfinite(created_at) or created_at < 0:
+            raise RuntimeLogCorruption("created_at must be a finite number")
         if not self.entry_id:
             object.__setattr__(self, "entry_id", f"entry-{uuid.uuid4().hex}")
-        if not self.created_at:
+        elif not isinstance(self.entry_id, str) or not self.entry_id.strip() or self.entry_id.strip() != self.entry_id:
+            raise RuntimeLogCorruption("entry_id must be a non-empty string")
+        if not created_at:
             object.__setattr__(self, "created_at", time.time())
+        else:
+            object.__setattr__(self, "created_at", created_at)
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -115,15 +138,29 @@ class RuntimeLogEntry:
     def from_payload(cls, payload: object) -> "RuntimeLogEntry":
         if not isinstance(payload, dict):
             raise RuntimeLogCorruption("runtime log entry must be an object")
+        if set(payload) - _KNOWN_ENTRY_KEYS:
+            raise RuntimeLogCorruption("runtime log entry carries unknown keys")
+        entry_id = payload.get("entry_id")
+        if not isinstance(entry_id, str) or not entry_id.strip() or entry_id.strip() != entry_id:
+            raise RuntimeLogCorruption("entry_id must be a non-empty string")
+        created_at = payload.get("created_at")
+        if isinstance(created_at, bool) or not isinstance(created_at, (int, float)):
+            raise RuntimeLogCorruption("created_at must be a finite number")
+        created_at = float(created_at)
+        if not math.isfinite(created_at) or created_at <= 0:
+            raise RuntimeLogCorruption("created_at must be a positive finite number")
+        entry_payload = payload.get("payload")
+        if not isinstance(entry_payload, dict):
+            raise RuntimeLogCorruption("payload must be an object")
         return cls(
             schema_version=payload.get("schema_version"),
-            entry_id=payload.get("entry_id") or "",
-            created_at=float(payload.get("created_at") or 0.0),
+            entry_id=entry_id,
+            created_at=created_at,
             session_id=payload.get("session_id"),
             lane=payload.get("lane"),
             operation_id=payload.get("operation_id"),
             kind=payload.get("kind"),
-            payload=payload.get("payload") or {},
+            payload=entry_payload,
         )
 
 
@@ -190,15 +227,37 @@ class RuntimeSessionLog:
         kind: RuntimeEntryKind | str,
         payload: dict[str, Any] | None = None,
     ) -> RuntimeLogEntry:
-        entry = RuntimeLogEntry(
-            session_id=session_id,
-            lane=lane,
-            operation_id=operation_id,
-            kind=kind,
-            payload=dict(payload or {}),
+        return self.append_many(
+            session_id,
+            (
+                {
+                    "lane": lane,
+                    "operation_id": operation_id,
+                    "kind": kind,
+                    "payload": {} if payload is None else payload,
+                },
+            ),
+        )[0]
+
+    def append_many(
+        self,
+        session_id: str,
+        entries: Iterable[dict[str, Any]],
+    ) -> tuple[RuntimeLogEntry, ...]:
+        rows = tuple(
+            RuntimeLogEntry(
+                session_id=session_id,
+                lane=entry.get("lane"),
+                operation_id=entry.get("operation_id"),
+                kind=entry.get("kind"),
+                payload=entry.get("payload"),
+            )
+            for entry in entries
         )
-        encoded = entry.to_json_line().encode("utf-8")
-        if len(encoded) > self.max_entry_bytes:
+        if not rows:
+            return ()
+        encoded_rows = tuple(row.to_json_line().encode("utf-8") for row in rows)
+        if any(len(encoded) > self.max_entry_bytes for encoded in encoded_rows):
             raise RuntimeLogWriteError("runtime log entry exceeds size limit")
         path = self.path_for(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,10 +265,12 @@ class RuntimeSessionLog:
             entries = self.read(session_id)
             from codey.runtime.reducer import reduce_session
 
-            reduce_session((*entries, entry))
+            reduce_session((*entries, *rows))
             current_size = path.stat().st_size if path.exists() else 0
-            if current_size + len(encoded) > self.max_log_bytes:
+            total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
+            if current_size + total_new_bytes > self.max_log_bytes:
                 raise RuntimeLogWriteError("runtime log exceeds size limit")
             with path.open("ab") as handle:
-                handle.write(encoded)
-        return entry
+                for encoded in encoded_rows:
+                    handle.write(encoded)
+        return rows

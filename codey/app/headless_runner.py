@@ -178,7 +178,6 @@ def run_headless(
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        run_operations=state.run_operations,
         evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
@@ -343,9 +342,7 @@ def _pre_reserve_run_id(
     )
     if reserved is None:
         return ""
-    with state.lock:
-        if state.active_run is not None and state.active_run.run_id == reserved.run_id:
-            state.active_run = replace(reserved, run_id=requested)
+    state.replace_reserved_run(reserved.run_id, replace(reserved, run_id=requested))
     return requested
 
 

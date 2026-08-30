@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codey.runtime.cancellation import TaskCancelled
 from codey.runtime.operation import Operation, OperationContext
 from codey.runtime.outcome import OperationOutcome
 from codey.runtime.session_log import RuntimeSessionLog
@@ -20,7 +21,28 @@ class OperationScheduler:
             kind="operation_started",
             payload={"operation_kind": operation.kind},
         )
-        outcome = operation.run(context)
+        try:
+            outcome = operation.run(context)
+        except TaskCancelled as exc:
+            outcome = OperationOutcome.aborted(
+                reason="task_cancelled",
+                summary=_bounded_exception_summary(exc),
+            )
+            self.settle(session_id, operation, outcome)
+            raise
+        except Exception as exc:
+            if type(exc).__name__ == "ControlTeachCancelled":
+                outcome = OperationOutcome.aborted(
+                    reason="control_teach_cancelled",
+                    summary=_bounded_exception_summary(exc),
+                )
+            else:
+                outcome = OperationOutcome.failed(
+                    reason=_exception_reason(exc),
+                    summary=_bounded_exception_summary(exc),
+                )
+            self.settle(session_id, operation, outcome)
+            raise
         self.settle(session_id, operation, outcome)
         return outcome
 
@@ -53,3 +75,12 @@ class OperationScheduler:
             kind="operation_settled",
             payload=outcome.to_payload(),
         )
+
+
+def _exception_reason(exc: Exception) -> str:
+    name = type(exc).__name__.strip() or "operation_exception"
+    return "".join(char.lower() if char.isalnum() else "_" for char in name).strip("_") or "operation_exception"
+
+
+def _bounded_exception_summary(exc: Exception) -> str:
+    return " ".join(str(exc or "").split())[:240]

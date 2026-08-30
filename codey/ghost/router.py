@@ -211,6 +211,13 @@ class GhostRouteStore:
             schema_version=ROUTER_SCHEMA_VERSION,
             max_bytes=MAX_ROUTER_EVENTS_BYTES,
             source_name="router_events.jsonl",
+            allowed_event_kinds=(
+                "ghost_router_decision",
+                "ghost_router_reset",
+                "ghost_router_events_compacted",
+                "ghost_router_scope_deleted",
+            ),
+            bad_row_policy="block",
         )
 
     def append_result(

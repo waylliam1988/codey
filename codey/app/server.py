@@ -98,7 +98,8 @@ from codey.workspace.task_context import safe_verification_candidates
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
-from codey.run_operation import RunOperationStore
+from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.session_log import RuntimeSessionLog
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.workspace.setup_context import safe_setup_context
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -676,7 +677,12 @@ class State:
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
-        self.run_operations = RunOperationStore(state_home) if state_home else None
+        self.runtime_log = RuntimeSessionLog(state_home) if state_home else None
+        self.runtime_operations = (
+            RuntimeOperationStore(self.runtime_log)
+            if self.runtime_log is not None
+            else None
+        )
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
@@ -689,7 +695,7 @@ class State:
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
-            is_busy=lambda: self.busy,
+            is_busy=self.is_busy,
             stop_requested=lambda: self.stop_flag.is_set(),
             run_once=self._run_ghost_sleep_once,
         )
@@ -713,67 +719,67 @@ class State:
 
     @property
     def busy(self) -> bool:
-        return self.run_registry.busy
+        return self.run_registry.is_busy()
 
     @busy.setter
     def busy(self, value: bool) -> None:
-        self.run_registry.busy = value
+        self.run_registry.set_busy(value)
 
     @property
     def project(self) -> str | None:
-        return self.run_registry.project
+        return self.run_registry.project()
 
     @project.setter
     def project(self, value: str | None) -> None:
-        self.run_registry.project = value
+        self.run_registry.set_project(value)
 
     @property
     def task(self) -> str | None:
-        return self.run_registry.task
+        return self.run_registry.task()
 
     @task.setter
     def task(self, value: str | None) -> None:
-        self.run_registry.task = value
+        self.run_registry.set_task(value)
 
     @property
     def provider_id(self) -> str:
-        return self.run_registry.provider_id
+        return self.run_registry.provider_id()
 
     @provider_id.setter
     def provider_id(self, value: str) -> None:
-        self.run_registry.provider_id = value
+        self.run_registry.set_provider_id(value)
 
     @property
     def status(self) -> str:
-        return self.run_registry.status
+        return self.run_registry.status()
 
     @status.setter
     def status(self, value: str) -> None:
-        self.run_registry.status = value
+        self.run_registry.set_status(value)
 
     @property
     def last_summary(self) -> str | None:
-        return self.run_registry.last_summary
+        return self.run_registry.last_summary()
 
     @last_summary.setter
     def last_summary(self, value: str | None) -> None:
-        self.run_registry.last_summary = value
+        self.run_registry.set_last_summary(value)
 
     @property
     def last_stop_reason(self) -> str | None:
-        return self.run_registry.last_stop_reason
+        return self.run_registry.last_stop_reason()
 
     @last_stop_reason.setter
     def last_stop_reason(self, value: str | None) -> None:
-        self.run_registry.last_stop_reason = value
+        self.run_registry.set_last_stop_reason(value)
 
     @property
     def last_provider_failure(self) -> ProviderFailure | None:
-        return self.run_registry.last_provider_failure
+        return self.run_registry.last_provider_failure()
 
     @last_provider_failure.setter
     def last_provider_failure(self, value: ProviderFailure | None) -> None:
-        self.run_registry.last_provider_failure = value
+        self.run_registry.set_last_provider_failure(value)
 
     @property
     def stop_flag(self) -> threading.Event:
@@ -785,40 +791,31 @@ class State:
 
     @property
     def active_run(self) -> RunSnapshot | None:
-        return self.run_registry.active_run
+        return self.run_registry.current()
 
     @active_run.setter
     def active_run(self, value: RunSnapshot | None) -> None:
-        self.run_registry.active_run = value
-        self.run_registry.busy = value is not None
+        self.run_registry.set_active(value)
 
     @property
     def last_terminal_event(self) -> dict | None:
-        return self.run_registry.last_terminal_event
+        return self.run_registry.last_terminal_event()
 
     @last_terminal_event.setter
     def last_terminal_event(self, value: dict | None) -> None:
-        self.run_registry.last_terminal_event = value
+        self.run_registry.set_last_terminal_event(value)
 
     @property
     def last_shell_result(self) -> dict | None:
-        return self.run_registry.last_shell_result
+        return self.run_registry.last_shell_result()
 
     @last_shell_result.setter
     def last_shell_result(self, value: dict | None) -> None:
-        self.run_registry.last_shell_result = value
-
-    @property
-    def pending_shell(self) -> dict[str, dict]:
-        return self.approvals.pending_shell
-
-    @property
-    def pending_teach(self) -> dict[str, dict]:
-        return self.approvals.pending_teach
+        self.run_registry.set_last_shell_result(value)
 
     @property
     def provider_sessions(self) -> dict[str, str]:
-        return self.providers.sessions
+        return self.providers.sessions_snapshot()
 
     @property
     def provider_supervisor(self) -> ProviderSupervisor:
@@ -935,6 +932,18 @@ class State:
         """
         return self.run_registry.active_for(session_id=session_id, project=project)
 
+    def current_run(self) -> RunSnapshot | None:
+        return self.run_registry.current()
+
+    def is_busy(self) -> bool:
+        return self.run_registry.is_busy()
+
+    def run_status(self) -> str:
+        return self.run_registry.status()
+
+    def replace_reserved_run(self, current_run_id: str, replacement: RunSnapshot) -> bool:
+        return self.run_registry.replace_active(current_run_id, replacement)
+
     def has_active_run_for_project(self, project_key: str) -> bool:
         """True when the active run writes inside the given project."""
         return self.active_run_for(project=project_key) is not None
@@ -978,6 +987,38 @@ class State:
             events = self.approvals.expire_shell_results()
         for event in events:
             self.record_shell_result(event)
+
+    def add_pending_shell_approval(self, approval_id: str, pending: dict) -> None:
+        with self.lock:
+            self.approvals.add_shell(approval_id, pending)
+
+    def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
+        with self.lock:
+            return self.approvals.pop_shell(approval_id)
+
+    def pending_shell_approvals(self) -> dict[str, dict]:
+        with self.lock:
+            return self.approvals.shell_snapshot()
+
+    def add_pending_teach(self, teach_id: str, pending: dict) -> None:
+        with self.lock:
+            self.approvals.add_teach(teach_id, pending)
+
+    def pop_pending_teach(self, teach_id: str) -> dict | None:
+        with self.lock:
+            return self.approvals.pop_teach(teach_id)
+
+    def resume_pending_teach(self, teach_id: str) -> bool:
+        with self.lock:
+            return self.approvals.resume_teach(teach_id)
+
+    def cancel_pending_teach(self) -> None:
+        with self.lock:
+            self.approvals.cancel_teach()
+
+    def pending_teach_requests(self) -> dict[str, dict]:
+        with self.lock:
+            return self.approvals.teach_snapshot()
 
     def record_research_changes(self, run_id: str, changes: object) -> None:
         with self.lock:
@@ -1060,13 +1101,11 @@ class State:
 
     def run_state_payload(self) -> dict:
         with self.lock:
-            active = self.run_registry.active_run
-            pending = self._pending_ui_event_locked(active)
             research_restore_runs = tuple(sorted(self.research_changes))
-        return self.run_registry.payload(
-            pending_event=lambda _active: pending,
-            research_restore_runs=research_restore_runs,
-        )
+            return self.run_registry.payload(
+                pending_event=self._pending_ui_event_locked,
+                research_restore_runs=research_restore_runs,
+            )
 
     def _pending_ui_event_locked(self, active: RunSnapshot | None) -> dict | None:
         return self.approvals.pending_ui_event(active)
@@ -1074,7 +1113,7 @@ class State:
     def emit(self, event: dict) -> None:
         with self.lock:
             payload = dict(event)
-            active = self.active_run
+            active = self.run_registry.current()
             if (
                 active is not None
                 and payload.get("type") in RUN_EVENT_TYPES
@@ -1122,7 +1161,7 @@ class State:
         if callable(has_due_work) and not has_due_work():
             return False
         with self.lock:
-            if self.busy or self._self_repair_running:
+            if self.is_busy() or self._self_repair_running:
                 return False
             self._self_repair_running = True
 
@@ -1199,7 +1238,7 @@ class State:
                 traces.delete_session(session_id)
             except Exception:
                 pass
-        operations = getattr(self, "run_operations", None)
+        operations = getattr(self, "runtime_operations", None)
         if operations is not None:
             try:
                 operations.delete_session(session_id)
@@ -1226,12 +1265,8 @@ class State:
                 "cancelled": False,
             }
             with self.lock:
-                run_id = (
-                    self.active_run.run_id
-                    if self.active_run is not None
-                    and self.active_run.session_id == request.session_id
-                    else ""
-                )
+                active = self.current_run()
+                run_id = active.run_id if active is not None and active.session_id == request.session_id else ""
                 pending["ui_event"] = {
                     "type": "teach_request",
                     "run_id": run_id,
@@ -1239,11 +1274,10 @@ class State:
                     "id": teach_id,
                     "text": request.message,
                 }
-                self.pending_teach[teach_id] = pending
+                self.approvals.add_teach(teach_id, pending)
             self.emit(pending["ui_event"])
             if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
-                with self.lock:
-                    self.pending_teach.pop(teach_id, None)
+                self.pop_pending_teach(teach_id)
                 provider_controls.cancel_click_capture(request.page)
                 raise TimeoutError("Timed out waiting for Resume")
             if pending.get("cancelled"):
@@ -1260,8 +1294,7 @@ class State:
             except ValueError:
                 continue
             finally:
-                with self.lock:
-                    self.pending_teach.pop(teach_id, None)
+                self.pop_pending_teach(teach_id)
 
     def handle_profile_doctor(
         self,
@@ -1445,7 +1478,6 @@ def _run_task(
         work_checkpoints=STATE.work_checkpoints,
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
-        run_operations=STATE.run_operations,
         evidence_ledgers=STATE.evidence_ledgers,
         managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
@@ -1529,10 +1561,9 @@ def _submit_task_after_slot_release(
         # Stop lands between this peek and the reserve.
         if STATE.stop_flag.is_set():
             return None
-        with STATE.lock:
-            active = STATE.active_run
-            if active is not None and previous_run_id and active.run_id != previous_run_id:
-                return None
+        active = STATE.current_run()
+        if active is not None and previous_run_id and active.run_id != previous_run_id:
+            return None
         run_id = _submit_task(
             session_id,
             project,
@@ -1545,10 +1576,9 @@ def _submit_task_after_slot_release(
         )
         if run_id is not None:
             return run_id
-        with STATE.lock:
-            active = STATE.active_run
-            if active is not None and previous_run_id and active.run_id != previous_run_id:
-                return None
+        active = STATE.current_run()
+        if active is not None and previous_run_id and active.run_id != previous_run_id:
+            return None
         if time.monotonic() >= deadline:
             return None
         time.sleep(SHELL_CONTINUATION_IDLE_POLL)
@@ -1649,7 +1679,7 @@ def _run_details_response(query: dict[str, list[str]]) -> tuple[int, dict]:
     summary = load_run_details(
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
-        run_operations=STATE.run_operations,
+        runtime_operations=STATE.runtime_operations,
         session_id=session_id,
         run_id=run_id,
     )
@@ -2055,8 +2085,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/shell_approval":
             approval_id = str(body.get("id") or "").strip()
             approved = body.get("approved") is True
-            with STATE.lock:
-                pending = STATE.pending_shell.pop(approval_id, None)
+            pending = STATE.pop_pending_shell_approval(approval_id)
             if not pending:
                 self._send_json(404, {"error": "approval not found"})
                 return
@@ -2115,15 +2144,14 @@ class Handler(BaseHTTPRequestHandler):
                         setup_context=setup_context,
                         followup_hints=followup_hints,
                     )
-                    with STATE.lock:
-                        active = STATE.active_run
-                        active_provider = (
-                            active.provider_id
-                            if active is not None
-                            and active.run_id == str(pending.get("run_id") or "")
-                            and active.session_id == session_id
-                            else ""
-                        )
+                    active = STATE.current_run()
+                    active_provider = (
+                        active.provider_id
+                        if active is not None
+                        and active.run_id == str(pending.get("run_id") or "")
+                        and active.session_id == session_id
+                        else ""
+                    )
                     provider_id = active_provider or pending.get("provider") or DEFAULT_PROVIDER_ID
                     continuation_run = _submit_task_after_slot_release(
                         session_id,
@@ -2148,12 +2176,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/teach/resume":
             teach_id = str(body.get("id") or "").strip()
-            with STATE.lock:
-                pending = STATE.pending_teach.get(teach_id)
-            if not pending:
+            if not STATE.resume_pending_teach(teach_id):
                 self._send_json(404, {"error": "pause not found"})
                 return
-            pending["event"].set()
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/new_chat":
@@ -2171,11 +2196,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/stop":
             STATE.stop_flag.set()
-            with STATE.lock:
-                pending_teach = list(STATE.pending_teach.values())
-            for pending in pending_teach:
-                pending["cancelled"] = True
-                pending["event"].set()
+            STATE.cancel_pending_teach()
             STATE.expire_pending_shell_approvals()
             self._send_json(200, {"ok": True})
             return
@@ -2192,7 +2213,7 @@ class Handler(BaseHTTPRequestHandler):
         replay_cursor = _sse_replay_cursor(self.headers.get("Last-Event-ID"))
         q = STATE.subscribe()
         try:
-            if not self._write_sse_event({"type": "hello", "status": STATE.status}):
+            if not self._write_sse_event({"type": "hello", "status": STATE.run_status()}):
                 return
             if replay_cursor is not None:
                 for event_id, replay in STATE.replay_events_after(

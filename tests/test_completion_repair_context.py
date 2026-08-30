@@ -8,7 +8,6 @@ import unittest
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
-    DETAIL_MINIMAL,
     PROMPT_SOURCE_REF,
     REFUSED_NO_SAFE_CHECK_FACTS,
     REFUSED_NOT_FAILED,
@@ -110,22 +109,19 @@ class AdmissionTests(unittest.TestCase):
                 self.assertEqual(payload["admitted"], False)
                 self.assertEqual(payload["refused_reason"], REFUSED_NO_SAFE_CHECK_FACTS)
 
-    def test_fully_screened_decisive_command_is_refused_in_both_details(self) -> None:
+    def test_fully_screened_decisive_command_is_refused(self) -> None:
         sensitive = DecisiveCheckFact(
             command="pytest -q --token api_key=sk-abcdefghijklmnop123456",
             cwd=".",
             exit_code=1,
         )
-        for detail in ("full", DETAIL_MINIMAL):
-            with self.subTest(detail=detail):
-                projection = project_repair_context(
-                    proof=_proof_payload(),
-                    failure_class="product_failure",
-                    decisive_checks=(sensitive,),
-                    detail=detail,
-                )
-                self.assertFalse(projection.admitted)
-                self.assertEqual(projection.refused_reason, REFUSED_NO_SAFE_CHECK_FACTS)
+        projection = project_repair_context(
+            proof=_proof_payload(),
+            failure_class="product_failure",
+            decisive_checks=(sensitive,),
+        )
+        self.assertFalse(projection.admitted)
+        self.assertEqual(projection.refused_reason, REFUSED_NO_SAFE_CHECK_FACTS)
 
     def test_accepts_completion_proof_objects_not_only_mappings(self) -> None:
         from codey.completion.contract import (
@@ -173,28 +169,6 @@ class RenderTests(unittest.TestCase):
         lowered = text.casefold()
         for phrase in ("you should fix", "change line", "replace with", "suggested fix"):
             self.assertNotIn(phrase, lowered)
-
-    def test_minimal_detail_is_deliberately_under_specified(self) -> None:
-        full = project_repair_context(
-            proof=_proof_payload(),
-            failure_class="product_failure",
-            decisive_checks=(_FACT,),
-            changed_files=["src/foo.py"],
-            analysis_run_refs=["analysis_run:" + "c" * 16],
-        )
-        minimal = project_repair_context(
-            proof=_proof_payload(),
-            failure_class="product_failure",
-            decisive_checks=(_FACT,),
-            changed_files=["src/foo.py"],
-            detail=DETAIL_MINIMAL,
-        )
-        self.assertTrue(minimal.admitted)
-        self.assertIn("Failing check: pytest -q (cwd .)", minimal.prompt_text)
-        self.assertNotIn("Exit: 1", minimal.prompt_text)
-        self.assertNotIn("Output tail", minimal.prompt_text)
-        self.assertNotIn("Refs:", minimal.prompt_text)
-        self.assertLess(len(minimal.prompt_text), len(full.prompt_text))
 
     def test_secret_lines_never_reach_the_prompt(self) -> None:
         leaky = DecisiveCheckFact(

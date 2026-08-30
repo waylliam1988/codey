@@ -4,13 +4,15 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
+## Unreleased (0.5.1) - Runtime Operation State + Completion Repair Durability v1
 
 - Runtime cold-start refactor:
   - Removed the internal `codey/app/task_runner.py` entry point. Task
-    submissions now live in `codey.task.model.TaskSubmission`, execution lives
-    in `codey.task.service.TaskService`, and server/headless/manual/test
-    callers were migrated without keeping a legacy shim.
+    submissions now live in `codey.task.model.TaskSubmission`, the public
+    service facade is the thin `codey.task.service.TaskService`, and the
+    current execution flow lives in `codey.operations.task_flow.TaskFlow`.
+    Server/headless/manual/test callers were migrated without keeping a legacy
+    shim.
   - Split app runtime state out of the HTTP server shell: run lifecycle,
     approval queues, provider sessions/health/order, conversation cache/store,
     knowledge rebuild single-flight, and Ghost sleep single-flight now live in
@@ -20,12 +22,16 @@ This file records Codey's release history. The newest release appears first.
     moved the plain chat operation plus prompt/local-context tracing helpers
     out of `TaskService`. Chat prompt assembly, consensus handoff, provider
     session settlement, and reply emission now have an operation owner.
+  - Split the task package boundary from the operation flow: `codey.task` no
+    longer eagerly imports the execution service, `codey/task/service.py` is a
+    small facade, and architecture tests keep provider/Ghost/research/toolchain
+    imports out of that facade.
   - Added a Pi-style runtime kernel under `codey.runtime`: typed operation
     outcomes, operation contracts, suspended operations, lane queues, a small
     scheduler, and an append-only session log with a fail-closed reducer.
     Reducer tests cover one-open-operation-per-lane, duplicate tool
     invocation rejection, post-settlement record rejection, bounded payloads,
-    and ignored unknown effects.
+    missing effect-ref rejection, and unknown effect rejection.
   - Moved completion verdict ownership into `codey.completion.engine`, including
     blocked-note vocabulary and the proof + edit-integrity evaluation pass.
     `TaskService` now consumes the engine instead of rebuilding that decision
@@ -33,6 +39,13 @@ This file records Codey's release history. The newest release appears first.
   - Moved terminal `task_done` event construction and terminal turn accounting
     into `codey.runtime.terminalizer`, so stop/error/done paths share one
     terminal projection.
+  - Aligned runtime submission identity: TaskRuntime now schedules the same
+    reserved `run_*` id that the detailed phase projection and terminal event
+    use, instead of creating a separate submit-local operation id.
+  - Runtime operation tracking stays explanatory and fail-open: if strict phase
+    fact validation rejects a malformed proof projection, the user-visible task
+    result is preserved and the operation projection stops at its last valid
+    phase.
   - Split SSE subscriber queues, replay IDs, overflow markers, and replay-window
     checks into `codey.app.event_bus`; `State` only injects active run identity
     before emitting.
@@ -98,82 +111,37 @@ This file records Codey's release history. The newest release appears first.
     an unreachable browser-search raise). Larger audit-only modules remain for
     a separate architecture cleanup so this bugfix commit stays behaviorally
     reviewable.
-- Added `codey/run_operation.py`: a minimal durable program counter for one
-  coding run's completion/repair lifecycle, borrowed from pi's core principle
-  that operation state is the *total current state* overwritten at every
-  transition -- never an event history, and never inferred from missing
-  events.
-  - One register per run at
-    `state/run_operations/<session_key>/<run_id>.json`, written with
-    `with_file_lock()` + `write_json_atomic()` under a 64 KB budget. Phases:
+- Runtime operation facts are now session-log native. The previous standalone
+  `codey/run_operation.py` register was deleted before release; the only
+  durable source is `RuntimeSessionLog`, and `codey.runtime.effects`
+  projects the latest bounded run phase from `operation_effect` rows.
+  - `RuntimeOperationStore.start()` appends `operation_started` and the
+    initial phase atomically to the runtime log; later phase commits append
+    one `run_phase` effect and, at terminal, one matching
+    `operation_settled` outcome. There is no parallel JSON register,
+    migration path, or legacy lookup.
+  - The phase contract stays closed:
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
-    terminal`, every non-terminal phase may go straight to terminal, and
-    `repair_running` cannot be reached without a committed admission --
-    which only an unsatisfied failed proof can earn. The
-    terminal commit keeps one bounded snapshot that mirrors
-    `RunLedger.finish()` fields (summary is a char count, not text).
-  - Refs/status/counts/reasons only: proof id/status/satisfied, the
-    repair-context digest, a stable `project:<key>` ref (never the raw
-    absolute project path), turn counts, provider id, and a bounded blocked
-    reason. No raw prompt, reply, stdout/stderr, diff, source body, or
-    repair prompt text exists anywhere in the payload.
-  - The reader fails closed and canonicalizes nothing: bad schema, wrong
-    session/run ids, unknown phase, unknown keys -- top-level or inside the
-    terminal snapshot (an "extension" field, a raw prompt, a diff) -- wrong
-    JSON types (bool-as-int, numeric strings), missing fields, padded text
-    fields, an empty provider id, an explicit-null proof flag, raw or
-    malformed refs, impossible phase states (repair, proof, or settled
-    writer facts before the phases that produce them -- a fresh register
-    carries nothing and a running writer has not settled --, repair phases
-    not carrying the failed proof that admitted them, terminal fact
-    combinations no source phase could have committed -- a partial proof
-    triple, repair rounds without the admitted context, a context without
-    its recorded proof, an admitted context without its failed proof --, a
-    re-proof with a partial repair record, a
-    blocked verdict without its unsatisfied failed/blocked proof, proof
-    refs or statuses outside the recorded-proof contract, rounds over
-    budget), or an oversize file load as `None`. Schema v1 only -- no
-    migration, no coercion, no legacy guessing.
-  - The blocked verdict is final and bound to its proof:
-    `mark_completion_blocked()` requires the complete proof triple with
-    status `failed`/`blocked` and `satisfied=False`, a verdict-carrying
-    register may only be followed by terminal (a blocked proof cannot
-    admit a repair, a provider-failure settle cannot re-proof), the
-    terminal snapshot must carry the same verdict as the register, and the
-    verdict carriers (`mark_terminal()`, `mark_repair_settled()`) refuse
-    an unbacked verdict -- a complete, limited, or unproven run can never
-    read as "blocked".
-  - The recorded proof has its own closed contract, mirroring the
-    completion trace's proof vocabulary: the ref must be
-    `completion_proof:<16 hex>`, the status one of `complete` /
-    `complete_with_limitations` / `failed` / `blocked` (never
-    pending/running), and `satisfied == (status == "complete")` -- the
-    exact derivation the proof builder itself guarantees, so a limited
-    pass is honestly unsatisfied. The writer helper and the reader payload
-    both enforce it.
-  - The writer is held to the reader's bar: the transition helpers validate
-    every fact exactly as the reader will -- nothing is clipped or coerced,
-    and a non-canonical fact (an empty or malformed repair-context digest,
-    a numeric-string turn count, a bool-as-int, an over-length reason)
-    raises `RunOperationTransitionError` instead of being clipped into a
-    register the next `load()` would reject -- and `commit()` re-derives
-    the canonical schema from the candidate state before it may touch the
-    disk, refusing a commit that would move the register's identity.
-  - `start()` validates every argument and never clobbers: a non-canonical
-    session/run id (empty, padded, over 200 chars, non-string), provider id,
-    or budget is refused without writing anything -- a register can never
-    end up reachable only under a trimmed id -- and the exists check plus
-    the write share the commit file lock, so a corrupted leftover register
-    is never silently overwritten and concurrent starts yield exactly one
-    register.
-- TaskRunner now commits at the real lifecycle boundaries instead of keeping
-  completion/repair state only on `_run_project_mode()`'s function stack.
-  After a crash, stop, or provider failure, the last committed phase says
-  where the run actually was. The proof's facts pass through uncoerced --
-  the strict helper validates them and refuses anything it cannot record
-  honestly. Runtime wiring is fail-open: a failed commit disables tracking
-  for that run and never changes the coding run's behavior.
+    terminal`; every non-terminal phase may terminate, repair admission only
+    belongs to an unsatisfied failed proof, and a blocked verdict may only
+    finish.
+  - Runtime log rows and phase payloads are schema-v1, closed-key, and
+    no-coercion: missing durable ids/timestamps, padded strings,
+    bool-as-int counts, malformed proof/context/project refs, unknown
+    effect kinds, missing effect refs, impossible phase facts, or forbidden
+    raw fields (`prompt`, `reply`, `stdout`, `stderr`, `diff`) fail closed
+    before replay or commit.
+  - The recorded proof and blocked verdict contracts remain bound to the
+    completion proof vocabulary: proof refs are `completion_proof:<16 hex>`,
+    statuses are `complete` / `complete_with_limitations` / `failed` /
+    `blocked`, `satisfied == (status == "complete")`, and a blocked verdict
+    requires an unsatisfied `failed` or `blocked` proof.
+- TaskService now schedules production submissions through `TaskRuntime` when
+  runtime logging is available, and commits completion/repair phases at the
+  real lifecycle boundaries. Runtime persistence remains fail-open for the
+  user task: a bad runtime fact disables this run's progress projection but
+  never changes the coding run's behavior.
 - Run Details gained one quiet `Progress` row, shown only when the user opens
   Details for a run whose operation state never reached terminal and whose
   ledger has no `run_finished` row (stale snapshots never pollute finished
@@ -182,28 +150,22 @@ This file records Codey's release history. The newest release appears first.
   what was actually interrupted, including that a settled repair is over and
   a satisfied proof was already finishing. No chips, banners, or internal
   vocabulary.
-- Thinned TaskRunner along the way: the stringly
+- Thinned TaskService along the way: the stringly
   `completion_repair_admission` dict became a typed
   `RepairContextProjection | None`, and the blocked-reason ternary chain moved
   into the pure `completion_blocked_reason()` projection in
   `codey/completion/decision.py` with its closed vocabulary locked by tests.
-- Registered the `run_operation` capability (durable state `run_operations`,
-  fail-open, unit-test gate) and the `run_operation.state` row in the event
-  matrix. `State.forget_conversation()` now deletes the session's operation
-  bucket. No manager classes, no provider/tool replay, no prompt changes.
-- Verification: six deterministic crash-position tests (writing, check,
+- Registered the `runtime_operation.state` event-matrix row on
+  `runtime_session_log`. `State.forget_conversation()` now deletes the
+  session's runtime log bucket. No manager classes, no provider/tool replay,
+  no prompt changes.
+- Verification: deterministic crash-position tests (writing, check,
   finishing, and repair positions recover with an honest progress line),
-  phase round-trips, strict fail-closed readers (proof-fact and
-  sha256-context phase invariants, terminal fact reachability, padded-text
-  rejection, closed terminal key set, blocked-verdict support and
-  finality), the
-  recorded-proof contract on both sides, strict writers held to the
-  reader's bar with the commit canonical gate, terminal immutability,
-  locked concurrent start/commit, ledger/terminal consistency, payload
-  hygiene, and `tests/manual/completion_operation_resume_smoke.py
-  --self-test` -- a real process kill mid-writer recovered by a fresh
-  store. No live provider A/B -- this version changes nothing
-  model-visible.
+  runtime reducer exception settlement, phase round-trips, strict
+  fail-closed readers/writers, terminal immutability, ledger/terminal
+  consistency, payload hygiene, `tests/manual/completion_operation_resume_smoke.py
+  --self-test`, and the full local pytest gate. No live provider A/B --
+  this version changes nothing model-visible.
 
 ## 0.5.0 - Verified Completion v2 and Edit Integrity Monitor
 

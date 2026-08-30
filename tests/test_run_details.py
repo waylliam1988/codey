@@ -10,6 +10,12 @@ from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
+from codey.runtime.effects import (
+    RuntimeOperationStore,
+    mark_terminal,
+    mark_writer_running,
+)
+from codey.runtime.session_log import RuntimeSessionLog
 
 
 CLEAN_SOURCE_DIFF = (
@@ -306,17 +312,11 @@ class RunDetailsTests(unittest.TestCase):
         self.assertNotIn("provider", json.dumps(payload))
 
     def test_operation_state_adds_one_quiet_progress_row_when_interrupted(self) -> None:
-        from codey.run_operation import (
-            RunOperationStore,
-            mark_terminal,
-            mark_writer_running,
-        )
-
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)
             ledger_store = RunLedgerStore(state)
             trace_store = RunTraceStore(state)
-            store = RunOperationStore(state)
+            store = RuntimeOperationStore(RuntimeSessionLog(state))
             started = store.start(
                 session_id="session-progress",
                 run_id="run-progress",
@@ -345,7 +345,7 @@ class RunDetailsTests(unittest.TestCase):
                 for row in load_run_details(
                     run_ledgers=ledger_store,
                     run_traces=trace_store,
-                    run_operations=store,
+                    runtime_operations=store,
                     session_id="session-progress",
                     run_id="run-progress",
                 ).to_jsonable()["rows"]
@@ -371,7 +371,7 @@ class RunDetailsTests(unittest.TestCase):
                 for row in load_run_details(
                     run_ledgers=ledger_store,
                     run_traces=trace_store,
-                    run_operations=store,
+                    runtime_operations=store,
                     session_id="session-progress",
                     run_id="run-progress",
                 ).to_jsonable()["rows"]

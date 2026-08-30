@@ -31,8 +31,8 @@ class RunRegistryTests(unittest.TestCase):
 
         accepted = [item for item in results if item is not None]
         self.assertEqual(len(accepted), 1)
-        self.assertTrue(registry.busy)
-        self.assertEqual(registry.active_run, accepted[0])
+        self.assertTrue(registry.is_busy())
+        self.assertEqual(registry.current(), accepted[0])
 
     def test_stop_flag_survives_start_after_reservation(self) -> None:
         registry = RunRegistry()
@@ -65,8 +65,8 @@ class RunRegistryTests(unittest.TestCase):
 
         self.assertIsNone(run)
         self.assertTrue(registry.stop_flag.is_set())
-        self.assertIsNone(registry.active_run)
-        self.assertFalse(registry.busy)
+        self.assertIsNone(registry.current())
+        self.assertFalse(registry.is_busy())
 
     def test_finish_returns_terminal_payload_and_releases_slot(self) -> None:
         registry = RunRegistry()
@@ -85,12 +85,12 @@ class RunRegistryTests(unittest.TestCase):
         )
 
         assert payload is not None
-        self.assertFalse(registry.busy)
-        self.assertIsNone(registry.active_run)
+        self.assertFalse(registry.is_busy())
+        self.assertIsNone(registry.current())
         self.assertEqual(payload["run_id"], run.run_id)
         self.assertEqual(payload["session_id"], "session-1")
-        self.assertEqual(registry.last_terminal_event, payload)
-        self.assertEqual(registry.status, "done")
+        self.assertEqual(registry.last_terminal_event(), payload)
+        self.assertEqual(registry.status(), "done")
 
     def test_payload_keeps_pending_event_and_research_restore_refs(self) -> None:
         registry = RunRegistry()

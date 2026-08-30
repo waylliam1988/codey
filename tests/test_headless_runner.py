@@ -8,6 +8,8 @@ from pathlib import Path
 from codey.agents.runner import RunResult
 from codey.runtime.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
+from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
@@ -88,7 +90,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(rows[-1]["mode"], "agent")
         self.assertEqual(rows[-1]["ledger_path"], result.ledger_path)
 
-    def test_project_task_commits_run_operation_terminal(self) -> None:
+    def test_project_task_commits_runtime_operation_terminal(self) -> None:
         rows: list[dict[str, object]] = []
 
         def fake_agent(*_args, **kwargs):
@@ -111,9 +113,10 @@ class HeadlessRunnerTests(unittest.TestCase):
                 collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
             )
-            from codey.run_operation import RunOperationStore
-
-            operation = RunOperationStore(state_home).load("session-op", result.run_id)
+            operation = RuntimeOperationStore(RuntimeSessionLog(state_home)).load(
+                "session-op",
+                result.run_id,
+            )
 
         self.assertEqual(result.stop_reason, "done")
         self.assertIsNotNone(operation)

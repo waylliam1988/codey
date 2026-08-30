@@ -9,17 +9,17 @@ from codey.app.run_registry import RunSnapshot
 class ApprovalRegistryTests(unittest.TestCase):
     def test_expire_shell_results_clears_pending_and_reports_denials(self) -> None:
         approvals = ApprovalRegistry()
-        approvals.pending_shell["shell-1"] = {
+        approvals.add_shell("shell-1", {
             "id": "shell-1",
             "session_id": "session-1",
             "run_id": "run-1",
             "command": "pytest",
             "cwd": ".",
-        }
+        })
 
         events = approvals.expire_shell_results()
 
-        self.assertEqual(approvals.pending_shell, {})
+        self.assertEqual(approvals.shell_snapshot(), {})
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["type"], "shell_result")
         self.assertFalse(events[0]["approved"])
@@ -27,12 +27,12 @@ class ApprovalRegistryTests(unittest.TestCase):
 
     def test_pending_ui_event_prefers_active_run_scope(self) -> None:
         approvals = ApprovalRegistry()
-        approvals.pending_shell["old"] = {
+        approvals.add_shell("old", {
             "ui_event": {"type": "shell_request", "run_id": "run-old"}
-        }
-        approvals.pending_teach["new"] = {
+        })
+        approvals.add_teach("new", {
             "ui_event": {"type": "teach_request", "run_id": "run-new"}
-        }
+        })
         active = RunSnapshot(
             run_id="run-new",
             session_id="session-1",
@@ -57,12 +57,12 @@ class ApprovalRegistryTests(unittest.TestCase):
 
     def test_pending_ui_event_without_active_run_returns_latest(self) -> None:
         approvals = ApprovalRegistry()
-        approvals.pending_shell["old"] = {
+        approvals.add_shell("old", {
             "ui_event": {"type": "shell_request", "run_id": "run-old"}
-        }
-        approvals.pending_teach["new"] = {
+        })
+        approvals.add_teach("new", {
             "ui_event": {"type": "teach_request", "run_id": "run-new"}
-        }
+        })
 
         self.assertEqual(
             approvals.pending_ui_event(None),

@@ -15,10 +15,6 @@ projection leaf:
   outcomes refuse to admit any text at all. Admission also refuses when no
   safe decisive check fact survives screening: an admitted brief without
   observed check facts would be an unbounded claim, not a fact.
-
-The ``minimal`` detail level exists for the A/B treatment that separates
-"proof enforcement alone" from "informative repair context": same facts'
-vocabulary, deliberately under-specified rendering.
 """
 
 from __future__ import annotations
@@ -47,9 +43,6 @@ MAX_REPAIR_WARNINGS = 8
 
 PROOF_STATUS_FAILED = "failed"
 FAILURE_PRODUCT = "product_failure"
-DETAIL_FULL = "full"
-DETAIL_MINIMAL = "minimal"
-REPAIR_DETAILS = frozenset({DETAIL_FULL, DETAIL_MINIMAL})
 
 REFUSED_NOT_FAILED = "refused_proof_not_failed"
 REFUSED_NOT_PRODUCT = "refused_not_product_failure"
@@ -87,7 +80,6 @@ class RepairContextProjection:
     reason_codes: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     truncated: bool = False
-    detail: str = DETAIL_FULL
     proof_id: str = ""
     contract_id: str = ""
     check_count: int = 0
@@ -112,7 +104,6 @@ class RepairContextProjection:
                 "kind": _PROJECTION_KIND,
                 "admitted": self.admitted,
                 "failure_class": self.failure_class,
-                "detail": self.detail,
                 "proof_id": self.proof_id,
                 "contract_id": self.contract_id,
                 "check_count": max(0, int(self.check_count)),
@@ -136,7 +127,6 @@ class RepairContextProjection:
             "context_source": CONTEXT_SOURCE_KEY,
             "admitted": self.admitted,
             "failure_class": self.failure_class,
-            "detail": self.detail,
             "check_count": max(0, int(self.check_count)),
             "changed_file_count": max(0, int(self.changed_file_count)),
             "analysis_run_ref_count": max(0, int(self.analysis_run_ref_count)),
@@ -184,18 +174,15 @@ def project_repair_context(
     changed_files: Iterable[Any] = (),
     analysis_run_refs: Iterable[Any] = (),
     finding_refs: Iterable[Any] = (),
-    detail: str = DETAIL_FULL,
     budget_chars: int = DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
 ) -> RepairContextProjection:
     """Project one failed completion proof into its bounded facts brief."""
 
     warnings: list[str] = []
     fields = _proof_fields(proof)
-    clean_detail = detail if detail in REPAIR_DETAILS else DETAIL_FULL
     base = RepairContextProjection(
         prompt_text="",
         failure_class=str(failure_class or ""),
-        detail=clean_detail,
         proof_id=_token(fields.get("proof_id"), 120),
         contract_id=_token(fields.get("contract_id"), 120),
     )
@@ -231,7 +218,6 @@ def project_repair_context(
         findings=findings,
         reasons=reasons,
         proof_id=base.proof_id,
-        detail=clean_detail,
         budget_chars=budget_chars,
         warnings=warnings,
     )
@@ -244,7 +230,6 @@ def project_repair_context(
             "repair_context_budget_truncated" in warnings
             or _over_budget(text, budget_chars)
         ),
-        detail=clean_detail,
         proof_id=base.proof_id,
         contract_id=base.contract_id,
         check_count=min(len(checks), MAX_REPAIR_CHECKS) or len(failed_rows),
@@ -264,7 +249,6 @@ def _refused(
         prompt_text="",
         failure_class=base.failure_class,
         warnings=_bounded_warnings([*warnings, reason]),
-        detail=base.detail,
         proof_id=base.proof_id,
         contract_id=base.contract_id,
         refused_reason=reason,
@@ -280,7 +264,6 @@ def _render(
     findings: tuple[str, ...],
     reasons: tuple[str, ...],
     proof_id: str,
-    detail: str,
     budget_chars: int,
     warnings: list[str],
 ) -> str:
@@ -309,14 +292,6 @@ def _render(
     emit("Failure class: product_failure")
     if reasons:
         emit(f"Reason codes: {', '.join(reasons)}")
-
-    if detail == DETAIL_MINIMAL:
-        # Under-specified on purpose: class and command identity only. No
-        # exit codes, no output, no files, no refs -- the A/B compressed arm.
-        for check in checks[:MAX_REPAIR_CHECKS]:
-            emit(f"Failing check: {check.command} (cwd {check.cwd})")
-        parts.append(_FOOTER)
-        return "\n\n".join(parts)
 
     if files:
         emit("Changed files: " + ", ".join(files))
@@ -522,8 +497,6 @@ __all__ = [
     "COMPLETION_REPAIR_SCHEMA_VERSION",
     "CONTEXT_SOURCE_KEY",
     "DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS",
-    "DETAIL_FULL",
-    "DETAIL_MINIMAL",
     "FAILURE_PRODUCT",
     "MAX_REPAIR_ANALYSIS_REFS",
     "MAX_REPAIR_CHANGED_FILES",
@@ -534,7 +507,6 @@ __all__ = [
     "REFUSED_NO_SAFE_CHECK_FACTS",
     "REFUSED_NOT_FAILED",
     "REFUSED_NOT_PRODUCT",
-    "REPAIR_DETAILS",
     "DecisiveCheckFact",
     "RepairContextProjection",
     "project_repair_context",

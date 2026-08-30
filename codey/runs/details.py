@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.storage.local_store import read_json
-from codey.run_operation import (
+from codey.runtime.effects import (
     PHASE_TERMINAL,
-    RunOperationState,
+    RuntimeOperationState,
     operation_progress_text,
 )
 from codey.runs.ledger_projection import RunLedgerProjection, load_run_projection
@@ -85,7 +85,7 @@ def load_run_details(
     run_traces: Any,
     session_id: str,
     run_id: str,
-    run_operations: Any = None,
+    runtime_operations: Any = None,
 ) -> RunDetailsSummary:
     """Build a short UI-ready explanation for one run."""
 
@@ -99,7 +99,7 @@ def load_run_details(
     if projection is None and trace is None:
         return unavailable_summary()
 
-    operation = _load_operation_state(run_operations, session_id, run_id)
+    operation = _load_operation_state(runtime_operations, session_id, run_id)
     rows = _summary_rows(projection, trace or {}, operation)
     warnings = _summary_warnings(projection, trace or {})
     return RunDetailsSummary(
@@ -119,7 +119,7 @@ def unavailable_summary() -> RunDetailsSummary:
 def _summary_rows(
     projection: RunLedgerProjection | None,
     trace: Mapping[str, object],
-    operation: RunOperationState | None = None,
+    operation: RuntimeOperationState | None = None,
 ) -> list[RunDetailsRow]:
     rows: list[RunDetailsRow] = []
     work = _work_label(_projection_mode(projection) or _str(trace.get("mode_final")))
@@ -163,16 +163,16 @@ def _summary_rows(
 
 
 def _load_operation_state(
-    run_operations: Any,
+    runtime_operations: Any,
     session_id: str,
     run_id: str,
-) -> RunOperationState | None:
+) -> RuntimeOperationState | None:
     """Read one run's operation state; anything unreadable stays silent."""
 
-    if run_operations is None:
+    if runtime_operations is None:
         return None
     try:
-        operation = run_operations.load(session_id, run_id)
+        operation = runtime_operations.load(session_id, run_id)
     except Exception:
         return None
     if operation is None or operation.phase == PHASE_TERMINAL:
@@ -182,7 +182,7 @@ def _load_operation_state(
 
 def _operation_progress_row(
     projection: RunLedgerProjection | None,
-    operation: RunOperationState | None,
+    operation: RuntimeOperationState | None,
 ) -> str:
     # A non-terminal snapshot next to a finished ledger is stale: the run
     # completed, so the interrupted-position line would be a lie.

@@ -11,12 +11,15 @@ from codey.providers.supervisor import ProviderSupervisor
 
 class ProviderRegistry:
     def __init__(self, state_home: str | Path | None = None) -> None:
-        self.sessions: dict[str, str] = {}
+        self._sessions: dict[str, str] = {}
         self.supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
         self.ghost_learning_provider_factory = None
         self.ghost_router_provider_factory = None
+
+    def sessions_snapshot(self) -> dict[str, str]:
+        return dict(self._sessions)
 
     def failover_order(
         self,
@@ -51,19 +54,18 @@ class ProviderRegistry:
         )
 
     def session_changed(self, provider_id: str, session_id: str) -> bool:
-        return self.sessions.get(provider_id) != session_id
+        return self._sessions.get(provider_id) != session_id
 
     def set_session(self, provider_id: str, session_id: str | None) -> None:
         if session_id:
-            self.sessions[provider_id] = session_id
+            self._sessions[provider_id] = session_id
         else:
-            self.sessions.pop(provider_id, None)
+            self._sessions.pop(provider_id, None)
 
     def forget_session(self, session_id: str) -> None:
-        for provider_id, owner in list(self.sessions.items()):
+        for provider_id, owner in list(self._sessions.items()):
             if owner == session_id:
-                self.sessions.pop(provider_id)
+                self._sessions.pop(provider_id)
 
 
 __all__ = ["ProviderRegistry"]
-
