@@ -94,12 +94,12 @@ def load_run_details(
     if not session or not run:
         return unavailable_summary()
 
+    operation = _load_operation_state(runtime_operations, session, run)
     projection = load_run_projection(run_ledgers, session, run)
     trace = _load_trace_payload(run_traces, session, run)
-    if projection is None and trace is None:
+    if projection is None and trace is None and operation is None:
         return unavailable_summary()
 
-    operation = _load_operation_state(runtime_operations, session_id, run_id)
     rows = _summary_rows(projection, trace or {}, operation)
     warnings = _summary_warnings(projection, trace or {})
     return RunDetailsSummary(
@@ -122,7 +122,11 @@ def _summary_rows(
     operation: RuntimeOperationState | None = None,
 ) -> list[RunDetailsRow]:
     rows: list[RunDetailsRow] = []
-    work = _work_label(_projection_mode(projection) or _str(trace.get("mode_final")))
+    work = _work_label(
+        _projection_mode(projection)
+        or _str(trace.get("mode_final"))
+        or _operation_mode(operation)
+    )
     if work:
         rows.append(RunDetailsRow("Work", work))
 
@@ -130,6 +134,7 @@ def _summary_rows(
         _projection_model(projection)
         or _str(trace.get("provider_final"))
         or _str(trace.get("provider_initial"))
+        or _operation_model(operation)
     )
     if model:
         rows.append(RunDetailsRow("Model", model))
@@ -211,6 +216,14 @@ def _projection_model(projection: RunLedgerProjection | None) -> str:
     if projection is None:
         return ""
     return projection.provider_final or projection.provider_initial
+
+
+def _operation_mode(operation: RuntimeOperationState | None) -> str:
+    return operation.task_kind if operation is not None else ""
+
+
+def _operation_model(operation: RuntimeOperationState | None) -> str:
+    return operation.provider_id if operation is not None else ""
 
 
 def _work_label(value: str) -> str:

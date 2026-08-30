@@ -67,7 +67,7 @@ from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.app import server
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -167,7 +167,7 @@ def _task_request_provider_id(provider_id: str) -> str:
     normalized = str(provider_id or "").strip().lower()
     if normalized in LIVE_PROVIDERS:
         return normalized
-    # ``fake`` is a harness/reporting label. TaskService should still see a
+    # ``fake`` is a harness/reporting label. TaskFlow should still see a
     # real production provider id so offline probes do not exercise an
     # unsupported-provider path.
     return DEFAULT_PROVIDER_ID
@@ -300,7 +300,7 @@ def _run_case(
         def run_review(**_kwargs):
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=agent_run,
             collect_changes=lambda *_a, **_k: {"ok": True, "changed_count": 0, "files": [], "diff": ""},

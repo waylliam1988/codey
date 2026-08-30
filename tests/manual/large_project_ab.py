@@ -99,10 +99,10 @@ def cases(stockalarm: Path) -> dict[str, Case]:
             "codey_task_flow",
             ROOT,
             "Read-only architecture question. Explain how an HTTP project-task "
-            "request moves from codey/app/server.py through TaskService, the agent "
+            "request moves from codey/app/server.py through TaskFlow, the agent "
             "loop, Review, and the final receipt. Cite exact relative files and "
             "function/class names. Do not modify files.",
-            ("app/server.py", "task/service.py", "agents/runner.py", "reviews/core.py", "TaskService"),
+            ("app/server.py", "operations/task_flow.py", "agents/runner.py", "reviews/core.py", "TaskFlow"),
         ),
         Case(
             "stockalarm_training_flow",

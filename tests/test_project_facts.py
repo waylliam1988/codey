@@ -232,7 +232,7 @@ class ProjectFactsTests(unittest.TestCase):
         self.assertIn("python -m unittest", provider.sent[0])
         self.assertNotIn("facts.json", provider.sent[0])
 
-    def test_task_service_records_success_and_injects_it_into_next_task(self) -> None:
+    def test_task_flow_records_success_and_injects_it_into_next_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             state = server.State()
             state.project_facts = ProjectFactsStore(state_td)
@@ -269,7 +269,7 @@ class ProjectFactsTests(unittest.TestCase):
             self.assertEqual(captured_facts[0], "")
             self.assertIn("python -m unittest", captured_facts[1])
 
-    def test_task_service_records_successful_change_with_check_cwd(self) -> None:
+    def test_task_flow_records_successful_change_with_check_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             project = root / "project"
@@ -335,7 +335,7 @@ class ProjectFactsTests(unittest.TestCase):
         self.assertEqual(facts.successful_changes[-1].checks[0].cwd, "backend")
         self.assertIn("checks: backend/: npm test", rendered)
 
-    def test_task_service_does_not_record_failed_run(self) -> None:
+    def test_task_flow_does_not_record_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             state = server.State()
             state.project_facts = ProjectFactsStore(state_td)

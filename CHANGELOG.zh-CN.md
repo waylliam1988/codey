@@ -7,29 +7,27 @@
 ## Unreleased (0.5.1) - Runtime Operation State + Completion Repair Durability v1
 
 - 运行时冷启动重构：
-  - 删除内部 `codey/app/task_runner.py` 入口。Task submission 现在属于
-    `codey.task.model.TaskSubmission`，公开服务 facade 是很薄的
-    `codey.task.service.TaskService`，当前执行流属于
+  - 删除 `codey/task/service.py` facade。Task submission 现在属于
+    `codey.task.model.TaskSubmission`，当前执行流属于
     `codey.operations.task_flow.TaskFlow`；server、headless、manual harness
-    和测试调用点已一次性迁移，不保留旧模块 shim。
+    和测试调用点已直接迁移到 `TaskFlow`，不保留兼容 shim。
   - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
     provider session/health/order、conversation cache/store、knowledge rebuild
     single-flight、Ghost sleep single-flight 现在都有独立 app 模块。
     `server.State` 保留产品调用方法，但没有 old/new runtime 开关。
   - operation frame/work/hooks/outcome 值对象移入 `codey.operations`，plain
-    chat operation 和 prompt/local-context trace helper 也从 `TaskService`
+    chat operation 和 prompt/local-context trace helper 也从 `TaskFlow`
     迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
     emission 现在有明确 operation owner。
-  - task 包边界与 operation flow 分开：`codey.task` 不再 eager import
-    执行服务，`codey/task/service.py` 只是小 facade，架构测试阻止
-    provider/Ghost/research/toolchain import 回流到这个 facade。
+  - task 包边界与 operation flow 分开：`codey.task` 只保留 submission model，
+    `codey.operations.task_flow` 是任务 operation flow 的所有者。
   - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
     contract、suspended operation、lane queue、小型 scheduler，以及
     append-only session log + fail-closed reducer。reducer 测试覆盖单 lane
     只能有一个 open operation、重复 tool invocation 拒绝、settled 后追加
     拒绝、有界 payload、缺失 effect ref 拒绝，以及 unknown effect 拒绝。
   - completion verdict 所有权移入 `codey.completion.engine`，包括 blocked
-    note 词汇和 proof + edit-integrity evaluation。`TaskService` 只消费
+    note 词汇和 proof + edit-integrity evaluation。`TaskFlow` 只消费
     engine 输出，不再内联重建这条决策链。
   - terminal `task_done` 事件构造和 terminal turn 计数移入
     `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
@@ -39,6 +37,22 @@
   - runtime operation tracking 保持解释性、fail-open：如果严格 phase fact
     校验拒绝了 malformed proof projection，用户可见任务结果不受影响，
     operation projection 停在最后一个合法 phase。
+  - TaskRuntime 外层 `runtime:<run_id>` operation 现在由用户可见 terminal
+    event 决定 outcome：`done` 是 completed，`stopped` 是 aborted，
+    `approval` 是 suspended，其他 stop reason 都是 failed。任务函数如果返回
+    但没有 terminal outcome，会记录为 failed，而不是 completed。
+  - runtime scheduling 如果在 task executor 进入前失败，会释放已 reserve 的
+    app run slot。首次 runtime-log append 失败不会再让 UI 永久 busy。
+  - Runtime log 的 `append_many()` 行现在带 batch metadata。reader 会忽略
+    不完整的尾部 batch，下一次 append 写入前会修剪这个坏尾；进程死在 batch
+    中途不会留下永久 open lane。
+  - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
+    存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
+    `Progress` 行。
+  - RunRegistry 构建 `/api/state` snapshot 时不再在内部锁里调用 approval
+    callback。
+  - Research 和 hybrid terminal event 现在把原始任务 turn budget 写入
+    runtime terminal snapshot，即使 research engine 内部只用了更少轮数。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
     `codey.app.event_bus`；`State` 只负责在 emit 前注入 active run identity。
   - 新增共享 Ghost JSONL event-log primitive，并把 signal、router、sleep
@@ -116,7 +130,7 @@
     `complete_with_limitations` / `failed` / `blocked`，
     `satisfied == (status == "complete")`，blocked verdict 必须由
     unsatisfied 的 `failed` 或 `blocked` proof 支撑。
-- TaskService 现在在 runtime log 可用时通过 `TaskRuntime` 调度生产
+- TaskFlow 现在在 runtime log 可用时通过 `TaskRuntime` 调度生产
   submission，并在真实生命周期边界提交 completion/repair phase。runtime
   persistence 对用户任务保持 fail-open：坏 runtime fact 只会禁用该 run 的
   progress projection，不改变 coding run 行为。
@@ -126,7 +140,7 @@
   interrupted`、`Finishing was interrupted` 或 `Stopped during repair`——
   文案如实描述被中断的是哪一步：repair 已结束就说 check 被中断，proof 已
   满足就说收尾被中断。不加 chip、banner，不出现内部词汇。
-- 顺手抽薄 TaskService：stringly 的 `completion_repair_admission` dict 换成
+- 顺手抽薄 TaskFlow：stringly 的 `completion_repair_admission` dict 换成
   类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
   `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
   封闭词表由测试锁住。

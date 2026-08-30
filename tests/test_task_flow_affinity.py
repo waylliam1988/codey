@@ -14,7 +14,7 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 
 class _Provider:
@@ -37,8 +37,8 @@ class _Provider:
         pass
 
 
-def _runner(state: server.State, *, agent_run=None, router_provider_factory=None) -> TaskService:
-    return TaskService(
+def _runner(state: server.State, *, agent_run=None, router_provider_factory=None) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -187,7 +187,7 @@ def _research_record(concept: str):
     )
 
 
-def test_task_service_uses_affinity_to_order_strict_continue_work_items() -> None:
+def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
         assert state.ghost_work_queue is not None
@@ -230,7 +230,7 @@ def test_task_service_uses_affinity_to_order_strict_continue_work_items() -> Non
     assert items[baseline_top.id].status == "queued"
 
 
-def test_task_service_syncs_affinity_after_turn_from_local_sources() -> None:
+def test_task_flow_syncs_affinity_after_turn_from_local_sources() -> None:
     from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 
     with tempfile.TemporaryDirectory() as td:

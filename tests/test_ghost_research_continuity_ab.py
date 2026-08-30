@@ -8,7 +8,7 @@ from unittest import mock
 from codey.agents.runner import RunResult
 from codey.providers.registry import DEFAULT_PROVIDER_ID
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 from tests.manual import ghost_research_continuity_ab as ab
 from tests.manual.ab_journal import (
@@ -190,7 +190,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
         )
         raw_provider = ab._MainProvider()
         tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},
@@ -253,7 +253,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
         )
         raw_provider = ab._MainProvider()
         tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},

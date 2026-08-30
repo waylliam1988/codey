@@ -116,7 +116,7 @@ from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot, same_project
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.utils.text_budget import clip_middle
 from codey.storage.ui_state_store import UiStateStore
@@ -1102,13 +1102,14 @@ class State:
     def run_state_payload(self) -> dict:
         with self.lock:
             research_restore_runs = tuple(sorted(self.research_changes))
-            return self.run_registry.payload(
-                pending_event=self._pending_ui_event_locked,
-                research_restore_runs=research_restore_runs,
-            )
+        return self.run_registry.payload(
+            pending_event=self._pending_ui_event,
+            research_restore_runs=research_restore_runs,
+        )
 
-    def _pending_ui_event_locked(self, active: RunSnapshot | None) -> dict | None:
-        return self.approvals.pending_ui_event(active)
+    def _pending_ui_event(self, active: RunSnapshot | None) -> dict | None:
+        with self.lock:
+            return self.approvals.pending_ui_event(active)
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -1455,17 +1456,7 @@ def _run_task(
     intent: str = "auto",
     run_id: str = "",
 ) -> None:
-    if not run_id:
-        reserved = STATE.reserve_run(
-            session_id=session_id,
-            project=project,
-            task=task,
-            provider_id=provider_id,
-        )
-        if reserved is None:
-            return
-        run_id = reserved.run_id
-    runner = TaskService(
+    runner = TaskFlow(
         STATE,
         agent_run=agent_run,
         collect_changes=collect_changes,
@@ -1488,16 +1479,18 @@ def _run_task(
         ghost_router_provider_factory=getattr(STATE, "ghost_router_provider_factory", None),
     )
     try:
-        runner.run(TaskSubmission(
-            session_id=session_id,
-            project=project,
-            task=task,
-            max_turns=max_turns,
-            continue_task=continue_task,
-            provider_id=provider_id,
-            intent=intent,
-            run_id=run_id,
-        ))
+        runner.run(
+            TaskSubmission(
+                session_id=session_id,
+                project=project,
+                task=task,
+                max_turns=max_turns,
+                continue_task=continue_task,
+                provider_id=provider_id,
+                intent=intent,
+                run_id=run_id,
+            )
+        )
     finally:
         if _should_wait_for_local_ghost_sleep(STATE.state_home):
             STATE.wait_for_ghost_sleep()

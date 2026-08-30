@@ -143,6 +143,48 @@ class RuntimeOperationStoreTests(unittest.TestCase):
         )
         self.assertEqual(projection.lanes[state.lane].open_operation_id, "")
 
+    def test_terminal_commit_projects_non_done_runtime_outcomes(self) -> None:
+        cases = (
+            ("stopped", "aborted"),
+            ("approval", "suspended"),
+            ("blocked", "failed"),
+            ("error", "failed"),
+        )
+        for stop_reason, expected_outcome in cases:
+            with self.subTest(stop_reason=stop_reason):
+                with tempfile.TemporaryDirectory() as td:
+                    log = RuntimeSessionLog(Path(td))
+                    store = RuntimeOperationStore(log)
+                    state = store.start(
+                        session_id="s1",
+                        run_id="run-1",
+                        project="",
+                        provider_id="deepseek",
+                        turn_budget=5,
+                        max_repair_rounds=1,
+                        task_kind="chat",
+                    )
+                    assert state is not None
+                    state = store.commit(
+                        "s1",
+                        "run-1",
+                        lambda item: mark_terminal(
+                            item,
+                            stop_reason=stop_reason,
+                            summary_chars=4,
+                            turns=0,
+                            max_turns=5,
+                            provider="deepseek",
+                        ),
+                    )
+                    assert state is not None
+                    projection = reduce_session(log.read("s1"))
+
+                self.assertEqual(
+                    projection.operations[state.operation_id].outcome,
+                    expected_outcome,
+                )
+
     def test_runtime_phase_payload_is_closed_schema_v1(self) -> None:
         payload = _state(PHASE_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)

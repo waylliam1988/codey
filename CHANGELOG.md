@@ -7,12 +7,10 @@ This file records Codey's release history. The newest release appears first.
 ## Unreleased (0.5.1) - Runtime Operation State + Completion Repair Durability v1
 
 - Runtime cold-start refactor:
-  - Removed the internal `codey/app/task_runner.py` entry point. Task
-    submissions now live in `codey.task.model.TaskSubmission`, the public
-    service facade is the thin `codey.task.service.TaskService`, and the
-    current execution flow lives in `codey.operations.task_flow.TaskFlow`.
-    Server/headless/manual/test callers were migrated without keeping a legacy
-    shim.
+  - Removed the `codey/task/service.py` facade. Task submissions now live in
+    `codey.task.model.TaskSubmission`, and the current execution flow lives in
+    `codey.operations.task_flow.TaskFlow`. Server/headless/manual/test callers
+    import `TaskFlow` directly, without a compatibility shim.
   - Split app runtime state out of the HTTP server shell: run lifecycle,
     approval queues, provider sessions/health/order, conversation cache/store,
     knowledge rebuild single-flight, and Ghost sleep single-flight now live in
@@ -20,12 +18,11 @@ This file records Codey's release history. The newest release appears first.
     old/new runtime switch.
   - Moved operation frame/work/hooks/outcome values into `codey.operations` and
     moved the plain chat operation plus prompt/local-context tracing helpers
-    out of `TaskService`. Chat prompt assembly, consensus handoff, provider
+    out of `TaskFlow`. Chat prompt assembly, consensus handoff, provider
     session settlement, and reply emission now have an operation owner.
-  - Split the task package boundary from the operation flow: `codey.task` no
-    longer eagerly imports the execution service, `codey/task/service.py` is a
-    small facade, and architecture tests keep provider/Ghost/research/toolchain
-    imports out of that facade.
+  - Split the task package boundary from the operation flow: `codey.task` is a
+    model-only submission boundary, while `codey.operations.task_flow` owns the
+    task operation flow.
   - Added a Pi-style runtime kernel under `codey.runtime`: typed operation
     outcomes, operation contracts, suspended operations, lane queues, a small
     scheduler, and an append-only session log with a fail-closed reducer.
@@ -34,7 +31,7 @@ This file records Codey's release history. The newest release appears first.
     missing effect-ref rejection, and unknown effect rejection.
   - Moved completion verdict ownership into `codey.completion.engine`, including
     blocked-note vocabulary and the proof + edit-integrity evaluation pass.
-    `TaskService` now consumes the engine instead of rebuilding that decision
+    `TaskFlow` now consumes the engine instead of rebuilding that decision
     chain inline.
   - Moved terminal `task_done` event construction and terminal turn accounting
     into `codey.runtime.terminalizer`, so stop/error/done paths share one
@@ -46,6 +43,25 @@ This file records Codey's release history. The newest release appears first.
     fact validation rejects a malformed proof projection, the user-visible task
     result is preserved and the operation projection stops at its last valid
     phase.
+  - TaskRuntime's outer `runtime:<run_id>` operation now settles from the
+    user-visible terminal event: `done` is completed, `stopped` is aborted,
+    `approval` is suspended, and every other stop reason is failed. A task that
+    returns without a terminal outcome is recorded as failed instead of
+    completed.
+  - If runtime scheduling fails before the task executor is entered, the
+    reserved app run slot is released. A broken first runtime-log append can no
+    longer leave the UI permanently busy.
+  - Runtime log `append_many()` rows now carry batch metadata. Readers ignore an
+    incomplete final batch, and the next append trims that tail before writing,
+    so a crash mid-batch cannot leave a permanent open lane.
+  - Run Details now reads runtime operation state before ledger/trace checks, so
+    an interrupted run can still show its quiet `Progress` row even if the
+    ledger or trace was never written or has been cleaned up.
+  - RunRegistry builds `/api/state` snapshots without invoking approval
+    callbacks under its internal lock.
+  - Research and hybrid terminal events now keep the original task turn budget
+    in the runtime terminal snapshot, even when the research engine used fewer
+    turns internally.
   - Split SSE subscriber queues, replay IDs, overflow markers, and replay-window
     checks into `codey.app.event_bus`; `State` only injects active run identity
     before emitting.
@@ -137,7 +153,7 @@ This file records Codey's release history. The newest release appears first.
     statuses are `complete` / `complete_with_limitations` / `failed` /
     `blocked`, `satisfied == (status == "complete")`, and a blocked verdict
     requires an unsatisfied `failed` or `blocked` proof.
-- TaskService now schedules production submissions through `TaskRuntime` when
+- TaskFlow now schedules production submissions through `TaskRuntime` when
   runtime logging is available, and commits completion/repair phases at the
   real lifecycle boundaries. Runtime persistence remains fail-open for the
   user task: a bad runtime fact disables this run's progress projection but
@@ -150,7 +166,7 @@ This file records Codey's release history. The newest release appears first.
   what was actually interrupted, including that a settled repair is over and
   a satisfied proof was already finishing. No chips, banners, or internal
   vocabulary.
-- Thinned TaskService along the way: the stringly
+- Thinned TaskFlow along the way: the stringly
   `completion_repair_admission` dict became a typed
   `RepairContextProjection | None`, and the blocked-reason ternary chain moved
   into the pure `completion_blocked_reason()` projection in

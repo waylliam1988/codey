@@ -1,4 +1,4 @@
-"""TaskService edit-integrity wiring (0.5.0).
+"""TaskFlow edit-integrity wiring (0.5.0).
 
 The monitor must observe the real production completion path: the run's
 decision, proof diagnostics, receipt trust, trace rows, and the project
@@ -24,7 +24,7 @@ from codey.runs.receipt import build_task_receipt
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -98,8 +98,8 @@ class _Provider:
         pass
 
 
-def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskService:
-    return TaskService(
+def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes(*files)),
@@ -116,10 +116,10 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskServic
     )
 
 
-def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskService:
+def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskFlow:
     """Runner whose successive change collections come from ``collected``."""
 
-    return TaskService(
+    return TaskFlow(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: (
@@ -138,7 +138,7 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
     )
 
 
-def _run(runner: TaskService, state, project: Path, task: str) -> dict:
+def _run(runner: TaskFlow, state, project: Path, task: str) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner.run(TaskSubmission(
             "s-integrity",
@@ -212,7 +212,7 @@ class TamperedFixtureRunTests(unittest.TestCase):
             state = server.State(Path(td) / "state")
             runner = _runner(state, writer, files=("tests/test_mod.py",))
             with mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_record_project_memory",
                 autospec=True,
             ) as memory:

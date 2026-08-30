@@ -268,7 +268,7 @@ class RunRegistry:
             run_id = active.run_id if active else str((terminal or {}).get("run_id") or "")
             session_id = active.session_id if active else str((terminal or {}).get("session_id") or "")
             provider_failure = self._last_provider_failure.to_dict() if self._last_provider_failure else None
-            return {
+            payload = {
                 "run_id": run_id,
                 "session_id": session_id,
                 "busy": active is not None,
@@ -279,11 +279,12 @@ class RunRegistry:
                 "summary": self._last_summary,
                 "stop_reason": self._last_stop_reason,
                 "provider_failure": provider_failure,
-                "pending_event": pending_event(active),
                 "last_terminal_event": terminal,
                 "last_shell_result": shell_result,
                 "research_restore_runs": list(research_restore_runs),
             }
+        payload["pending_event"] = pending_event(active)
+        return payload
 
 
 def same_project(left: str, right: str) -> bool:

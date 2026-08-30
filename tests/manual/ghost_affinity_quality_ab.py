@@ -1,6 +1,6 @@
 """Manual quality/uplift A/B for Affinity-backed directive ordering.
 
-This probe uses the production TaskService chat path and real provider replies.
+This probe uses the production TaskFlow chat path and real provider replies.
 Both arms are scored by the same target metric: whether the first line follows
 the stronger local Affinity association for the target answer-structure preference.
 """
@@ -27,7 +27,7 @@ from codey.ghost.hebbian import GhostNode
 from codey.storage.local_store import write_json_atomic
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 
 RESULTS_DIR = Path(__file__).with_name("results")
@@ -160,8 +160,8 @@ def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | 
     return _RecordingProvider(connect_fresh_provider_tab(provider_id))
 
 
-def _runner(state: server.State) -> TaskService:
-    return TaskService(
+def _runner(state: server.State) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},

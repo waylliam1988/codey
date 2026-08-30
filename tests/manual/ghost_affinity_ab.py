@@ -1,7 +1,7 @@
 """Manual production-spine A/B for 0.3.10 Affinity Index.
 
 The self-test path uses stubs and writes atomic partial progress. Real runs use
-the production TaskService path and provider tabs, while mode bodies remain
+the production TaskFlow path and provider tabs, while mode bodies remain
 safe stubs so this probe does not edit files or run shell commands.
 """
 
@@ -34,7 +34,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.storage.local_store import write_json_atomic
 
 
@@ -173,8 +173,8 @@ def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | 
     return _RecordingProvider(connect_fresh_provider_tab(provider_id))
 
 
-def _runner(state: server.State) -> TaskService:
-    return TaskService(
+def _runner(state: server.State) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},

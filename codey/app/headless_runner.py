@@ -1,6 +1,6 @@
-"""Headless JSONL entry point backed by the production TaskService.
+"""Headless JSONL entry point backed by the production TaskFlow.
 
-This module does not own an agent loop.  It adapts ``TaskService`` to a bounded
+This module does not own an agent loop.  It adapts ``TaskFlow`` to a bounded
 machine-readable stream so CLI/CI callers can use the same local execution
 spine as the UI.
 """
@@ -32,7 +32,7 @@ from codey.app.server import (
     is_git_repository,
 )
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 
 SCHEMA_VERSION = 1
@@ -168,7 +168,7 @@ def run_headless(
         session_id=session_id,
         project=project,
     )
-    runner = TaskService(
+    runner = TaskFlow(
         state,
         agent_run=agent_run or agent_module.run,
         collect_changes=collect_changes or default_collect_changes,

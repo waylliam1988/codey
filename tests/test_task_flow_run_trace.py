@@ -15,9 +15,9 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.operations import task_flow as task_service_module
+from codey.operations import task_flow as task_flow_module
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 
 class _Provider:
@@ -67,8 +67,8 @@ def _runner(
     run_consensus=None,
     run_project_audit=None,
     router_provider_factory=None,
-) -> TaskService:
-    return TaskService(
+) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes
@@ -481,7 +481,7 @@ def test_local_context_trace_skips_scanning_when_trace_is_missing() -> None:
         def selected_items(self):  # pragma: no cover - exercised through early return
             raise AssertionError("should not inspect local contexts without trace")
 
-    task_service_module._record_local_context_trace(None, _ExplodingContext())
+    task_flow_module._record_local_context_trace(None, _ExplodingContext())
 
 
 def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:

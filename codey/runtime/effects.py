@@ -748,13 +748,17 @@ def _phase_entry(state: RuntimeOperationState) -> dict[str, object]:
 
 def _outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:
     reason = state.terminal.stop_reason if state.terminal is not None else state.stop_reason
+    if reason == "done":
+        return OperationOutcome.completed(summary="done")
     if reason == "stopped":
         return OperationOutcome.aborted(reason="stopped")
-    if reason == "error":
-        return OperationOutcome.failed(reason="error")
+    if reason == "approval":
+        return OperationOutcome.suspended(reason="approval")
     if state.blocked_reason:
         return OperationOutcome.failed(reason=state.blocked_reason)
-    return OperationOutcome.completed(summary=reason)
+    if reason:
+        return OperationOutcome.failed(reason=reason)
+    return OperationOutcome.completed()
 
 
 def _repair_candidate_proof(state: RuntimeOperationState) -> bool:

@@ -18,7 +18,7 @@ from codey.providers.diagnostics import (
 )
 from codey.workspace.config import preferred_provider_for
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 
 def _failure(kind: str = "response_missing") -> ProviderActionError:
@@ -62,8 +62,8 @@ def _write_preferred_config(project: Path, mode: str, provider_id: str) -> None:
     )
 
 
-def _build_runner(state: server.State, *, agent_run) -> TaskService:
-    return TaskService(
+def _build_runner(state: server.State, *, agent_run) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=agent_run,
         collect_changes=mock.Mock(
@@ -132,7 +132,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -182,7 +182,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                     writer_ids.append(provider_id)
             return RunResult("done", "done", 1)
 
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -246,7 +246,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -279,7 +279,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
 def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
             collect_changes=mock.Mock(
@@ -292,7 +292,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
 
         with (
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_maybe_route_auto",
                 side_effect=ValueError("route exploded"),
             ),

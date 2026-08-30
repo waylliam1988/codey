@@ -71,7 +71,7 @@ CASES = (
             "I need to debug how Codey reserves a run, emits SSE task events, and finishes "
             "a project task. Which files are likely involved?"
         ),
-        expected_paths=("codey/app/server.py", "codey/task/service.py", "tests/test_server.py"),
+        expected_paths=("codey/app/server.py", "codey/operations/task_flow.py", "tests/test_server.py"),
     ),
 )
 

@@ -34,7 +34,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
 from codey.operations.task_flow import _project_has_user_files
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
 
@@ -931,7 +931,7 @@ class ProviderStatusTests(unittest.TestCase):
         connect_self_review.assert_not_called()
 
 
-class TaskServiceUiEventTests(unittest.TestCase):
+class TaskFlowUiEventTests(unittest.TestCase):
     def test_turn_event_preserves_note(self) -> None:
         event = RunEvent.turn_started(17, '{"tool":"done","args":{"answer":"report"}}', note="(done)")
 
@@ -3648,7 +3648,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
@@ -3764,7 +3764,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
@@ -3809,7 +3809,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[RuntimeError("tab unavailable"), provider],
             ) as get_provider,
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
@@ -3846,7 +3846,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
@@ -3956,7 +3956,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[first, second],
             ) as get_provider,
             mock.patch.object(
-                TaskService,
+                TaskFlow,
                 "_run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
@@ -4479,7 +4479,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    TaskService,
+                    TaskFlow,
                     "_run_research_iteration",
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
@@ -4540,7 +4540,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    TaskService,
+                    TaskFlow,
                     "_run_research_iteration",
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,

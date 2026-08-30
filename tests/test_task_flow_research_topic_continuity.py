@@ -15,7 +15,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 
 _QUESTION = "Should provider recovery be re-checked against fresh sources?"
 
@@ -48,8 +48,8 @@ def _make_frame(project_text: str) -> RunFrame:
     )
 
 
-def _runner(state: server.State) -> TaskService:
-    return TaskService(
+def _runner(state: server.State) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=mock.Mock(),
         collect_changes=lambda *_args, **_kwargs: {},

@@ -1,6 +1,6 @@
 """Manual production-spine A/B for Ghost Work Queue continuation.
 
-The harness uses the production ``TaskService`` entry point. Queue consumption is
+The harness uses the production ``TaskFlow`` entry point. Queue consumption is
 real, while mode bodies are safe stubs so the probe does not edit the repository
 or run shell commands. Results are written atomically after every row.
 """
@@ -31,7 +31,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
@@ -192,7 +192,7 @@ def _run_case(
             review_calls += 1
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=agent_run,
             collect_changes=collect_changes,

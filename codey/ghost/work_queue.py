@@ -2,7 +2,7 @@
 
 The queue is a local state machine, not an autonomous runner. It can remember
 audited follow-up work and claim one item when the user explicitly asks to
-continue, but TaskService remains the only execution entry point.
+continue, but TaskFlow remains the only execution entry point.
 """
 
 from __future__ import annotations

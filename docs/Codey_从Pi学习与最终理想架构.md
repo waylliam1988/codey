@@ -61,7 +61,7 @@ Codey 当前很多复杂度最终都表现为“正在做一件事情”：
 
 ```text
 runner
-task_service
+task_flow
 handoff
 ghost
 research
@@ -110,12 +110,12 @@ OperationOutcome
 
 ---
 
-## 2.2 不要让 TaskService 成为“操作系统”
+## 2.2 不要让 TaskFlow 成为“操作系统”
 
 危险的长期演化是：
 
 ```text
-TaskService
+TaskFlow
  ├── provider
  ├── policy
  ├── agent
@@ -144,7 +144,7 @@ Scheduler
   +-- update(TaskState)
 ```
 
-TaskService 最终应该只是一个很薄的 task lifecycle adapter；runtime scheduler 和 operation log 才是生命周期事实源。
+TaskFlow 只应该是 task submission 到 runtime operation 的 adapter；runtime scheduler 和 operation log 才是生命周期事实源。
 
 ---
 
@@ -887,7 +887,7 @@ Scheduler
     +-- await(operation)
 ```
 
-TaskService 最终只是：
+TaskFlow 最终只是：
 
 ```text
 Task scheduler adapter + task lifecycle adapter
@@ -1191,9 +1191,9 @@ AgentRunner
 AgentOperation
 ```
 
-## Phase 3：薄化 TaskService
+## Phase 3：薄化 TaskFlow
 
-逐步让 TaskService 只负责 task submission、task lifecycle adapter 和面向旧 UI 的薄投影。
+逐步让 TaskFlow 只负责 task submission、task lifecycle adapter 和面向 UI 的薄投影；`codey.task` 保持 model-only 边界。
 
 ## Phase 4：统一 Workspace Epoch
 

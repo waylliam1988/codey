@@ -2,7 +2,7 @@
 
 These exercise ``WriterFailoverRunner`` in isolation with plain fakes, covering
 the nine behaviours the state machine must guarantee before it replaces the
-``TaskService`` closures.
+``TaskFlow`` closures.
 """
 
 from __future__ import annotations

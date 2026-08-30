@@ -14,7 +14,7 @@ Two modes:
                   (and the clean/docs/authorized/monitor-error controls)
                   through the production ``observe_edit_integrity`` and
                   ``build_task_receipt``, then check the receipt wording.
-    --live        minimal live smokes on the production TaskService via the
+    --live        minimal live smokes on the production TaskFlow via the
                   shared completion-enforcement machinery, e.g.
                     clean path:  --provider deepseek --case fresh_failing_test_after_edit
                     risky path:  --provider qwen --case dependency_missing_env_failure

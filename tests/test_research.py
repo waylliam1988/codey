@@ -781,7 +781,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             browser_path=None,
         )
 
-    def test_task_service_research_default_explicitly_reuses_research_browser(self) -> None:
+    def test_task_flow_research_default_explicitly_reuses_research_browser(self) -> None:
         from codey.operations import task_flow
 
         base_provider = mock.Mock()

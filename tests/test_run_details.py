@@ -378,6 +378,41 @@ class RunDetailsTests(unittest.TestCase):
             }
             self.assertNotIn("Progress", rows)
 
+    def test_runtime_only_interrupted_operation_makes_details_available(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            store = RuntimeOperationStore(RuntimeSessionLog(state))
+            started = store.start(
+                session_id="session-runtime-only",
+                run_id="run-runtime-only",
+                project="",
+                provider_id="deepseek",
+                turn_budget=6,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            self.assertIsNotNone(started)
+            store.commit(
+                "session-runtime-only",
+                "run-runtime-only",
+                lambda s: mark_writer_running(s, provider_id="deepseek"),
+            )
+
+            summary = load_run_details(
+                run_ledgers=RunLedgerStore(state),
+                run_traces=RunTraceStore(state),
+                runtime_operations=store,
+                session_id="session-runtime-only",
+                run_id="run-runtime-only",
+            )
+            rows = {row["label"]: row for row in summary.to_jsonable()["rows"]}
+
+        self.assertTrue(summary.available)
+        self.assertEqual(rows["Work"]["value"], "Project writing")
+        self.assertEqual(rows["Model"]["value"], "DeepSeek")
+        self.assertEqual(rows["Progress"]["value"], "Writing was interrupted")
+        self.assertEqual(rows["Progress"]["tone"], "warning")
+
     def test_trace_read_is_bounded_and_schema_checked(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)

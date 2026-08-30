@@ -166,7 +166,7 @@ class AdapterOverridesTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("__path__.append", shim_text)
-            self.assertFalse(any("task/service.py" in rel for rel in installed))
+            self.assertFalse(any("operations/task_flow.py" in rel for rel in installed))
 
     def test_unrelated_codey_files_are_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1040,7 +1040,7 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
         worker.assert_not_called()
 
 
-class TaskServiceSelfRepairIntegrationTests(unittest.TestCase):
+class TaskFlowSelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
         from codey.app import server
 

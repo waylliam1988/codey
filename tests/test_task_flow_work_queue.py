@@ -18,7 +18,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
@@ -82,8 +82,8 @@ def _runner(
     run_review=None,
     router_provider_factory=None,
     is_git_repository=None,
-) -> TaskService:
-    return TaskService(
+) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,

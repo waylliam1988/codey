@@ -1,4 +1,4 @@
-"""TaskService completion enforcement and one bounded repair round (0.4.13)."""
+"""TaskFlow completion enforcement and one bounded repair round (0.4.13)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
-from codey.operations import task_flow as task_service_module
+from codey.operations import task_flow as task_flow_module
 from codey.agents.runner import RunResult
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
@@ -17,9 +17,9 @@ from codey.operations.task_flow import _blocked_result
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
-from codey.task.service import (
+from codey.operations.task_flow import (
     COMPLETION_REPAIR_FOLLOWUP,
-    TaskService,
+    TaskFlow,
 )
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
@@ -122,8 +122,8 @@ def _scoped_run_event(command: str, path: str, ok: bool) -> RunEvent:
     )
 
 
-def _runner(state: server.State, writer: ScriptedWriter) -> TaskService:
-    return TaskService(
+def _runner(state: server.State, writer: ScriptedWriter) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
@@ -150,7 +150,7 @@ def _pytest_project(td: Path) -> Path:
     return project
 
 
-def _run(runner: TaskService, state: server.State, project: Path) -> dict:
+def _run(runner: TaskFlow, state: server.State, project: Path) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner.run(TaskSubmission(
             "s-enforce",
@@ -263,7 +263,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
         (project / "frontend" / "src").mkdir(parents=True)
         (project / "backend").mkdir(parents=True)
         state = server.State(Path(td) / "state")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=writer,
             collect_changes=mock.Mock(side_effect=collect),
@@ -278,7 +278,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
         )
-        with mock.patch.object(task_service_module, "safe_verification_candidates", candidates):
+        with mock.patch.object(task_flow_module, "safe_verification_candidates", candidates):
             event = _run(runner, state, project)
 
         assert len(writer.calls) == 2
@@ -400,7 +400,7 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
         project = Path(td) / "project"
         (project / "src").mkdir(parents=True)
         state = server.State(Path(td) / "state")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=writer,
             collect_changes=collect,
@@ -500,7 +500,7 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
         state = server.State(Path(td) / "state")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=unavailable_changes),
@@ -541,7 +541,7 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
         state = server.State(Path(td) / "state")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=empty_git_changes),
@@ -583,7 +583,7 @@ def test_docs_only_change_keeps_limited_done() -> None:
             encoding="utf-8",
         )
         state = server.State(Path(td) / "state")
-        runner = TaskService(
+        runner = TaskFlow(
             state,
             agent_run=writer,
             collect_changes=mock.Mock(return_value=docs_changes),

@@ -45,7 +45,7 @@ def test_stage_metrics_counts_information_repeated_from_warmup() -> None:
         ),
         RunEvent.tool_finished(
             2,
-            ToolCall("search", {"path": ".", "query": "TaskService"}),
+            ToolCall("search", {"path": ".", "query": "TaskFlow"}),
             ToolOutcome("match", True),
         ),
     ]

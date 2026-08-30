@@ -52,6 +52,110 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
         self.assertEqual(projection.operations["op-1"].effect_refs, ["trace:1"])
 
+    def test_append_many_rows_share_one_complete_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+
+            rows = log.append_many(
+                "s1",
+                (
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_started",
+                        "payload": {"operation_kind": "agent"},
+                    },
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_settled",
+                        "payload": {"outcome": "completed"},
+                    },
+                ),
+            )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row.batch_id for row in rows}, {rows[0].batch_id})
+        self.assertEqual([row.batch_index for row in rows], [0, 1])
+        self.assertEqual([row.batch_count for row in rows], [2, 2])
+
+    def test_append_repairs_incomplete_tail_batch_before_new_write(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            log.append_many(
+                "s1",
+                (
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_started",
+                        "payload": {"operation_kind": "agent"},
+                    },
+                    {
+                        "lane": "current",
+                        "operation_id": "op-1",
+                        "kind": "operation_settled",
+                        "payload": {"outcome": "completed"},
+                    },
+                ),
+            )
+            tail = RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-tail",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+                batch_id="batch-tail",
+                batch_index=0,
+                batch_count=2,
+            )
+            path = log.path_for("s1")
+            with path.open("ab") as handle:
+                handle.write(tail.to_json_line().encode("utf-8"))
+
+            self.assertEqual(
+                [entry.operation_id for entry in log.read("s1")],
+                ["op-1", "op-1"],
+            )
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-2",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            raw = path.read_text(encoding="utf-8")
+            projection = reduce_session(log.read("s1"))
+
+        self.assertNotIn("op-tail", raw)
+        self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
+
+    def test_append_repairs_partial_json_tail_before_new_write(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            path = log.path_for("s1")
+            with path.open("ab") as handle:
+                handle.write(b'{"schema_version":1')
+
+            self.assertEqual(len(log.read("s1")), 1)
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_settled",
+                payload={"outcome": "aborted"},
+            )
+            projection = reduce_session(log.read("s1"))
+
+        self.assertEqual(projection.operations["op-1"].outcome, "aborted")
+
     def test_rejects_second_open_operation_in_lane(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
@@ -330,6 +434,9 @@ class RuntimeSessionLogTests(unittest.TestCase):
             "operation_id": "op-1",
             "kind": "operation_started",
             "payload": {"operation_kind": "agent"},
+            "batch_id": "batch-1",
+            "batch_index": 0,
+            "batch_count": 1,
         }
         invalid_cases = (
             {**valid, "raw_prompt": "drop"},
@@ -337,6 +444,9 @@ class RuntimeSessionLogTests(unittest.TestCase):
             {**valid, "entry_id": ""},
             {**valid, "created_at": 0},
             {key: value for key, value in valid.items() if key != "created_at"},
+            {key: value for key, value in valid.items() if key != "batch_id"},
+            {**valid, "batch_index": True},
+            {**valid, "batch_count": 0},
         )
 
         for payload in invalid_cases:

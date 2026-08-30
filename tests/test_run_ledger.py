@@ -233,7 +233,7 @@ class RunLedgerStoreTests(unittest.TestCase):
             self.assertTrue(writer.disabled)
 
 
-class RunLedgerTaskServiceIntegrationTests(unittest.TestCase):
+class RunLedgerTaskFlowIntegrationTests(unittest.TestCase):
     def _provider(self):
         provider = mock.Mock()
         provider.name = "DeepSeek Web"

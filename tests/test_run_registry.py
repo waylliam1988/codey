@@ -118,6 +118,42 @@ class RunRegistryTests(unittest.TestCase):
         self.assertEqual(payload["pending_event"], pending)
         self.assertEqual(payload["research_restore_runs"], ["run-a"])
 
+    def test_payload_does_not_call_pending_event_under_registry_lock(self) -> None:
+        registry = RunRegistry()
+        run = registry.reserve(
+            session_id="session-1",
+            project="E:/demo",
+            task="hello",
+            provider_id="qwen",
+        )
+        assert run is not None
+        registry.start(run.run_id)
+        payloads: list[dict] = []
+        errors: list[BaseException] = []
+
+        def pending_event(_active) -> dict | None:
+            current = registry.current()
+            return {"type": "shell_request", "run_id": current.run_id if current else ""}
+
+        def build_payload() -> None:
+            try:
+                payloads.append(
+                    registry.payload(
+                        pending_event=pending_event,
+                        research_restore_runs=(),
+                    )
+                )
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=build_payload)
+        thread.start()
+        thread.join(timeout=1.0)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(payloads[0]["pending_event"]["run_id"], run.run_id)
+
     def test_same_project_compares_resolved_paths(self) -> None:
         self.assertTrue(same_project(".", "."))
         self.assertFalse(same_project("", "."))

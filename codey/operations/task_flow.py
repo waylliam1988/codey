@@ -50,8 +50,10 @@ from codey.completion.verification import (
 )
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.outcome import OperationOutcome
 from codey.runtime.terminalizer import (
     nonnegative_event_count,
+    operation_outcome_from_task_done_event,
     task_done_event,
     terminal_turns,
 )
@@ -589,6 +591,7 @@ class TaskFlow:
                 runtime_log,
                 self._run_impl,
                 prepare=self._prepare_runtime_submission,
+                on_unstarted_failure=self._release_runtime_submission,
             )
             if runtime_log is not None
             else None
@@ -609,6 +612,13 @@ class TaskFlow:
         if reserved is None:
             return None
         return replace(request, run_id=reserved.run_id)
+
+    def _release_runtime_submission(self, request: TaskSubmission) -> None:
+        if request.run_id:
+            try:
+                self.state.release_run(request.run_id)
+            except Exception:
+                return
 
     def _start_run_operation(
         self,
@@ -1239,7 +1249,7 @@ class TaskFlow:
             return
         self.runtime.run(request)
 
-    def _run_impl(self, request: TaskSubmission) -> None:
+    def _run_impl(self, request: TaskSubmission) -> OperationOutcome | None:
         state = self.state
         session_id = request.session_id
         project = request.project
@@ -1260,10 +1270,10 @@ class TaskFlow:
                 provider_id=provider_id,
             )
             if reserved is None:
-                return
+                return None
             run_id = reserved.run_id
         if not state.start_run(run_id):
-            return
+            return OperationOutcome.aborted(reason="run_not_started")
 
         contract = self._contract_from_submission(
             request,
@@ -1358,7 +1368,7 @@ class TaskFlow:
             state.finish_run(run_id, stopped_event)
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
-            return
+            return operation_outcome_from_task_done_event(stopped_event)
         except BaseException as exc:
             # Any other failure inside the claim/route window must still
             # restore the previous cancellation event and task context, or
@@ -1637,7 +1647,7 @@ class TaskFlow:
                 self._maybe_sync_ghost_continuity(frame, event)
                 self._maybe_sync_ghost_work_queue(frame, event)
                 self._maybe_kick_ghost_sleep(frame, event)
-                return
+                return operation_outcome_from_task_done_event(event)
 
             preflight_tried: set[str] = set()
             preflight_switches = 0
@@ -1945,6 +1955,7 @@ class TaskFlow:
             self._maybe_sync_ghost_continuity(frame, event)
             self._maybe_sync_ghost_work_queue(frame, event)
             self._maybe_kick_ghost_sleep(frame, event)
+            return operation_outcome_from_task_done_event(event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)
@@ -1986,6 +1997,7 @@ class TaskFlow:
                 run_id=run_id,
                 reason="stopped",
             )
+            return operation_outcome_from_task_done_event(stopped_event)
         except Exception as exc:
             current_id = current_provider_id()
             current_item = current_provider()
@@ -2050,6 +2062,7 @@ class TaskFlow:
                     project_text=str(project or ""),
                     terminal_event=error_event,
                 )
+            return operation_outcome_from_task_done_event(error_event)
         finally:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
@@ -2117,10 +2130,7 @@ class TaskFlow:
             "summary": result.summary,
             "stop_reason": result.stop_reason,
             "turns": result.turns,
-            "max_turns": min(
-                request.max_turns,
-                int(getattr(result, "max_turns_used", 0) or request.max_turns),
-            ),
+            "max_turns": request.max_turns,
             "provider": frame.provider_id,
             "mode": "research",
             "receipt": receipt,
@@ -2152,10 +2162,7 @@ class TaskFlow:
                 "summary": research_result.summary,
                 "stop_reason": research_result.stop_reason,
                 "turns": research_result.turns,
-                "max_turns": min(
-                    request.max_turns,
-                    int(getattr(research_result, "max_turns_used", 0) or request.max_turns),
-                ),
+                "max_turns": request.max_turns,
                 "provider": frame.provider_id,
                 "mode": "research",
                 "receipt": {"display": {"summary": research_result.receipt}},

@@ -1,4 +1,4 @@
-"""TaskService commits its completion/repair lifecycle to runtime effects.
+"""TaskFlow commits its completion/repair lifecycle to runtime effects.
 
 These tests prove the 0.5.1 contract end to end: the phases a project run
 passes through are visible on the durable counter while the run is alive,
@@ -44,11 +44,14 @@ from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
+from codey.runtime.reducer import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
+from codey.research.pipeline import ResearchIterationRun
+from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
-from codey.task.service import (
+from codey.operations.task_flow import (
     COMPLETION_REPAIR_FOLLOWUP,
-    TaskService,
+    TaskFlow,
 )
 from codey.toolchain.runtime import ToolOutcome
 
@@ -146,8 +149,8 @@ def _pytest_project(td: Path) -> Path:
     return project
 
 
-def _runner(state: server.State, writer: ObservingWriter) -> TaskService:
-    return TaskService(
+def _runner(state: server.State, writer: ObservingWriter) -> TaskFlow:
+    return TaskFlow(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
@@ -164,7 +167,7 @@ def _runner(state: server.State, writer: ObservingWriter) -> TaskService:
     )
 
 
-def _run(runner: TaskService, state: server.State, project: Path, writer: ObservingWriter) -> dict:
+def _run(runner: TaskFlow, state: server.State, project: Path, writer: ObservingWriter) -> dict:
     def observed_agent_run(provider, project_path, task, **kwargs):
         return writer(provider, project_path, task, state_ref=state, **kwargs)
 
@@ -200,6 +203,12 @@ def _ledger_run_finished(state: server.State, run_id: str) -> dict:
     ]
     assert rows
     return rows[-1]
+
+
+def _runtime_outcome(state: server.State, run_id: str) -> str:
+    assert state.runtime_log is not None
+    projection = reduce_session(state.runtime_log.read(SESSION))
+    return projection.operations[f"runtime:{run_id}"].outcome
 
 
 class CleanRunTerminalTests(unittest.TestCase):
@@ -247,11 +256,134 @@ class CleanRunTerminalTests(unittest.TestCase):
                 [entry.operation_id for entry in runtime_starts],
                 [f"runtime:{run_id}"],
             )
+            self.assertEqual(_runtime_outcome(state, run_id), "completed")
+
+
+class RuntimeEnvelopeTests(unittest.TestCase):
+    def test_runtime_start_failure_releases_reserved_slot(self) -> None:
+        writer = ObservingWriter()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.State(Path(td) / "state")
+            runner = _runner(state, writer)
+            assert state.runtime_log is not None
+
+            with (
+                mock.patch.object(
+                    state.runtime_log,
+                    "append_many",
+                    side_effect=RuntimeError("runtime log unavailable"),
+                ),
+                self.assertRaises(RuntimeError),
+            ):
+                runner.run(
+                    TaskSubmission(
+                        SESSION,
+                        str(project),
+                        "Change the module and verify",
+                        6,
+                        False,
+                        "deepseek",
+                        intent="project",
+                    )
+                )
+
+            self.assertIsNone(state.current_run())
+            self.assertFalse(state.is_busy())
+
+    def test_research_terminal_uses_request_budget_for_runtime_phase(self) -> None:
+        writer = ObservingWriter()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            state = server.State(Path(td) / "state")
+            runner = _runner(state, writer)
+            runner.search_factory = lambda: object()
+            result = ResearchRunResult(
+                "question",
+                "summary",
+                "done",
+                1,
+                max_turns_used=1,
+            )
+
+            with (
+                mock.patch.object(state, "get_provider", return_value=_Provider()),
+                mock.patch.object(
+                    runner,
+                    "_run_research_iteration",
+                    return_value=ResearchIterationRun(result=result),
+                ),
+            ):
+                runner.run(
+                    TaskSubmission(
+                        SESSION,
+                        "",
+                        "Research storage",
+                        8,
+                        False,
+                        "deepseek",
+                        intent="research",
+                    )
+                )
+
+            event = dict(state.last_terminal_event)
+            operation = _operation(state, str(event["run_id"]))
+            runtime_outcome = _runtime_outcome(state, str(event["run_id"]))
+
+        self.assertEqual(event["max_turns"], 8)
+        assert operation.terminal is not None
+        self.assertEqual(operation.terminal.max_turns, 8)
+        self.assertEqual(runtime_outcome, "completed")
+
+    def test_hybrid_research_failure_uses_request_budget_for_runtime_phase(self) -> None:
+        writer = ObservingWriter()
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            project = _pytest_project(root)
+            state = server.State(root / "state")
+            runner = _runner(state, writer)
+            runner.search_factory = lambda: object()
+            result = ResearchRunResult(
+                "question",
+                "need more evidence",
+                "stopped",
+                1,
+                max_turns_used=1,
+            )
+
+            with (
+                mock.patch.object(state, "get_provider", return_value=_Provider()),
+                mock.patch.object(
+                    runner,
+                    "_run_research_iteration",
+                    return_value=ResearchIterationRun(result=result),
+                ),
+            ):
+                runner.run(
+                    TaskSubmission(
+                        SESSION,
+                        str(project),
+                        "Research storage and update docs",
+                        8,
+                        False,
+                        "deepseek",
+                        intent="hybrid",
+                    )
+                )
+
+            event = dict(state.last_terminal_event)
+            operation = _operation(state, str(event["run_id"]))
+            runtime_outcome = _runtime_outcome(state, str(event["run_id"]))
+
+        self.assertEqual(event["stop_reason"], "stopped")
+        self.assertEqual(event["max_turns"], 8)
+        assert operation.terminal is not None
+        self.assertEqual(operation.terminal.max_turns, 8)
+        self.assertEqual(runtime_outcome, "aborted")
 
 
 class NonBoolSatisfiedWiringTests(unittest.TestCase):
     def test_fake_proof_with_int_satisfied_disables_runtime_tracking_only(self) -> None:
-        # TaskService passes the proof's facts through uncoerced: the strict
+        # TaskFlow passes the proof's facts through uncoerced: the strict
         # helper validates them. A proof carrying satisfied=1 (an int)
         # disables explanatory operation tracking, but it must not perturb
         # the user-visible task result.
@@ -336,6 +468,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
             self.assertEqual(operation.terminal.blocked_reason, "provider_failure")
             self.assertEqual(operation.repair_rounds, 1)
             self.assertEqual(operation.phase, PHASE_TERMINAL)
+            self.assertEqual(_runtime_outcome(state, str(event["run_id"])), "failed")
 
     def test_user_stop_during_repair_keeps_stopped_terminal(self) -> None:
         writer = ObservingWriter(
@@ -354,6 +487,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
             self.assertEqual(operation.terminal.stop_reason, "stopped")
             self.assertEqual(operation.terminal.blocked_reason, "")
             self.assertNotIn("Completion blocked", str(event["summary"]))
+            self.assertEqual(_runtime_outcome(state, str(event["run_id"])), "aborted")
 
     def test_still_failing_after_repair_names_max_repair_rounds(self) -> None:
         # The repair round runs and the budget is not the binding constraint

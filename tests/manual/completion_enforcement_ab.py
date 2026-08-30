@@ -36,7 +36,7 @@ from codey.agents.runner import RunResult, run as default_agent_run
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
-from codey.task.service import TaskService
+from codey.operations.task_flow import TaskFlow
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.changes import collect_changes as default_collect_changes
 from tests.manual.ab_harness_common import (
@@ -332,7 +332,7 @@ def _trace_integrity_row(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any] | None = None):
-    """TaskService with either a scripted writer or the real one."""
+    """TaskFlow with either a scripted writer or the real one."""
 
     if scripted is None:
         collect = default_collect_changes
@@ -355,7 +355,7 @@ def _build_runner(state: server.State, *, scripted=None, observed: dict[str, Any
 
         collect = mock.Mock(side_effect=lambda *_a, **_k: _changes(scripted.changes_files))
 
-    return TaskService(
+    return TaskFlow(
         state,
         agent_run=agent_run,
         collect_changes=collect,
@@ -480,7 +480,7 @@ def _finish_row(
             or event.get("message")
             or event.get("detail")
             or event.get("summary")
-            or "TaskService terminal event reported stop_reason=error"
+            or "TaskFlow terminal event reported stop_reason=error"
         ).strip()
     return row
 
