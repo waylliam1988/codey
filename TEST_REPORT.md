@@ -9,6 +9,73 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Runtime Kernel Cold-start Refactor (2026-08-30)
+
+Scope:
+
+```text
+production: deleted internal codey/app/task_runner.py entry; introduced
+            codey.task.model.TaskSubmission and codey.task.service.TaskService;
+            added runtime operation/outcome/lane/suspension/session_log/reducer/
+            scheduler/terminalizer modules; moved completion verdict evaluation
+            into codey.completion.engine; split SSE replay/subscriber state into
+            codey.app.event_bus; fixed StepFun changed-response accounting
+harness:    architecture locks for removed task_runner module, task submission
+            ownership, runtime-kernel dependencies, and event-bus replay state;
+            runtime session log invariant tests; StepFun regression test
+mode:       deterministic local gate + full local pytest; no release, no GitHub push
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -m compileall -q codey tests tools
+passed
+
+python -m pytest -q tests/test_runtime_session_log.py
+7 passed in 0.15s
+
+python -m pytest -q tests/test_architecture.py
+52 passed, 239 subtests passed in 8.73s
+
+python -m pytest -q tests/test_events.py
+3 passed, 6 subtests passed in 0.09s
+
+python -m pytest -q tests/test_stepfun.py
+31 passed in 0.49s
+
+python -m pytest -q tests/test_task_runner_operation_state.py \
+  tests/test_task_runner_completion_enforcement.py \
+  tests/test_task_runner_edit_integrity.py tests/test_task_runner_run_trace.py \
+  tests/test_task_runner_router.py tests/test_task_runner_provider_preference.py \
+  tests/test_task_runner_affinity.py tests/test_task_runner_work_queue.py \
+  tests/test_task_runner_research_topic_continuity.py \
+  tests/test_task_runner_analysis_run.py tests/test_task_runner_project_map.py
+98 passed, 6 subtests passed in 37.70s
+
+python -m ruff check codey tests tools
+All checks passed
+
+python -m compileall -q codey tests tools
+passed
+
+python -m pytest -q tests/test_architecture.py tests/test_runtime_session_log.py \
+  tests/test_stepfun.py tests/test_server.py -k \
+  "emit_full_subscriber_queue or emit_overflow_queues_resync or \
+  replay_events_after_cursor or replay_events_after_expired or \
+  task_submission_model or legacy_task_runner or runtime_kernel or \
+  sse_event_bus or stepfun"
+39 passed, 238 deselected in 2.30s
+```
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after updating
+TEST_REPORT only once the full run had passed):
+
+```text
+python -m pytest -q
+3274 passed, 17 skipped, 1263 subtests passed in 289.33s (0:04:49)
+```
+
 ## 0.5.1 Post-review Cold-start Cleanup (2026-08-30)
 
 Scope:

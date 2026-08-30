@@ -1,4 +1,4 @@
-"""TaskRunner edit-integrity wiring (0.5.0).
+"""TaskService edit-integrity wiring (0.5.0).
 
 The monitor must observe the real production completion path: the run's
 decision, proof diagnostics, receipt trust, trace rows, and the project
@@ -18,12 +18,13 @@ from unittest import mock
 
 from codey.app import server
 from codey.agents.runner import RunResult
+from codey.completion import engine as completion_engine_module
 from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.receipt import build_task_receipt
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
-from codey.app import task_runner as task_runner_module
-from codey.app.task_runner import TaskRunner, TaskRequest
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -97,8 +98,8 @@ class _Provider:
         pass
 
 
-def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunner:
-    return TaskRunner(
+def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskService:
+    return TaskService(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes(*files)),
@@ -115,10 +116,10 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunner
     )
 
 
-def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskRunner:
+def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskService:
     """Runner whose successive change collections come from ``collected``."""
 
-    return TaskRunner(
+    return TaskService(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: (
@@ -137,9 +138,9 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
     )
 
 
-def _run(runner: TaskRunner, state, project: Path, task: str) -> dict:
+def _run(runner: TaskService, state, project: Path, task: str) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
-        runner.run(TaskRequest(
+        runner.run(TaskSubmission(
             "s-integrity",
             str(project),
             task,
@@ -211,7 +212,7 @@ class TamperedFixtureRunTests(unittest.TestCase):
             state = server.State(Path(td) / "state")
             runner = _runner(state, writer, files=("tests/test_mod.py",))
             with mock.patch.object(
-                TaskRunner,
+                TaskService,
                 "_record_project_memory",
                 autospec=True,
             ) as memory:
@@ -407,7 +408,7 @@ class MonitorFailureTests(unittest.TestCase):
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             state = server.State(Path(td) / "state")
             with mock.patch.object(
-                task_runner_module,
+                completion_engine_module,
                 "observe_edit_integrity",
                 return_value=error_observation,
             ):

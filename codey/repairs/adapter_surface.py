@@ -7,7 +7,7 @@ allowlist is "everything web-adapter shaped", not "one provider file":
 - shared: the wrapper, send plumbing, profiles, and browser helpers every
   web provider depends on.
 
-Everything outside this surface -- task_runner, server, tool_runtime,
+Everything outside this surface -- task service, server, tool_runtime,
 evidence, completion, permission, tests -- stays forbidden: repair must
 never become Codey runtime self-modification. Because repairs install into
 a per-provider override root (``PYTHONPATH=override.root``), touching the

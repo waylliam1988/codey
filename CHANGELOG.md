@@ -6,6 +6,30 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- Runtime cold-start refactor:
+  - Removed the internal `codey/app/task_runner.py` entry point. Task
+    submissions now live in `codey.task.model.TaskSubmission`, execution lives
+    in `codey.task.service.TaskService`, and server/headless/manual/test
+    callers were migrated without keeping a legacy shim.
+  - Added a Pi-style runtime kernel under `codey.runtime`: typed operation
+    outcomes, operation contracts, suspended operations, lane queues, a small
+    scheduler, and an append-only session log with a fail-closed reducer.
+    Reducer tests cover one-open-operation-per-lane, duplicate tool
+    invocation rejection, post-settlement record rejection, bounded payloads,
+    and ignored unknown effects.
+  - Moved completion verdict ownership into `codey.completion.engine`, including
+    blocked-note vocabulary and the proof + edit-integrity evaluation pass.
+    `TaskService` now consumes the engine instead of rebuilding that decision
+    chain inline.
+  - Moved terminal `task_done` event construction and terminal turn accounting
+    into `codey.runtime.terminalizer`, so stop/error/done paths share one
+    terminal projection.
+  - Split SSE subscriber queues, replay IDs, overflow markers, and replay-window
+    checks into `codey.app.event_bus`; `State` only injects active run identity
+    before emitting.
+  - Fixed StepFun's response-change path to use
+    `ProviderSendContext.record_response()` instead of mutating `ctx.last`,
+    keeping stable-response accounting aligned with the other web drivers.
 - Post-review cold-start cleanup:
   - A/B harness git-state capture now reads Git output as bytes, so untracked
     CJK filenames cannot trip Windows locale decoding before a full pytest run.

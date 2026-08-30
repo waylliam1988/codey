@@ -781,12 +781,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             browser_path=None,
         )
 
-    def test_task_runner_research_default_explicitly_reuses_research_browser(self) -> None:
-        from codey.app import task_runner
+    def test_task_service_research_default_explicitly_reuses_research_browser(self) -> None:
+        from codey.task import service as task_service
 
         base_provider = mock.Mock()
-        with mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=base_provider) as browser_cls:
-            provider = task_runner._default_research_search_provider()
+        with mock.patch("codey.task.service.BrowserSearchProvider", return_value=base_provider) as browser_cls:
+            provider = task_service._default_research_search_provider()
 
         browser_cls.assert_called_once_with(isolated=False)
         self.assertIs(provider.base_provider, base_provider)

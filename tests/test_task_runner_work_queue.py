@@ -17,7 +17,8 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
@@ -81,8 +82,8 @@ def _runner(
     run_review=None,
     router_provider_factory=None,
     is_git_repository=None,
-) -> TaskRunner:
-    return TaskRunner(
+) -> TaskService:
+    return TaskService(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,
@@ -259,7 +260,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
@@ -299,7 +300,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
@@ -359,7 +360,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
@@ -394,7 +395,7 @@ def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
         runner = _runner(state, router_provider_factory=router_factory)
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
-            runner.run(TaskRequest("s1", None, "继续查 pytest 变化", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续查 pytest 变化", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
 
@@ -430,7 +431,7 @@ def test_post_turn_sync_harvests_research_interest_candidates() -> None:
             runner = _runner(state, router_provider_factory=None)
 
             with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
-                runner.run(TaskRequest("s1", None, "hello", 8, False, "deepseek"))
+                runner.run(TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
                 state.wait_for_ghost_sleep(timeout=2)
             items = state.ghost_work_queue.list_items(status="queued", session_id="s1")
         finally:
@@ -491,7 +492,7 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         events = state.subscribe()
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest("s1", str(project), "continue", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", str(project), "continue", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         emitted = []
         while not events.empty():
@@ -535,7 +536,7 @@ def test_project_followup_without_proof_blocks_item() -> None:
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest("s1", str(project), "continue", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", str(project), "continue", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
 
@@ -565,7 +566,7 @@ def test_review_item_consumes_into_review_without_writer() -> None:
             "get_provider",
             side_effect=AssertionError("review should not connect main provider"),
         ):
-            runner.run(TaskRequest("s1", str(project), "下一个", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", str(project), "下一个", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
 
@@ -583,7 +584,7 @@ def test_no_queued_item_falls_back_to_router() -> None:
         runner = _runner(state, router_provider_factory=router_factory)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
-            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
 
     router_factory.assert_called_once()
@@ -599,7 +600,7 @@ def test_claimed_item_is_released_on_stop() -> None:
         runner._run_research_iteration = mock.Mock(side_effect=server.cancellation.TaskCancelled("stop"))
 
         with mock.patch.object(state, "get_provider", return_value=provider):
-            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
 

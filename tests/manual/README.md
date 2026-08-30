@@ -909,7 +909,7 @@ session:
 
 `ghost_router_ab.py` and `ghost_router_production_ab.py` cover 0.3.7 automatic
 task routing. The router-only probe asks a live provider for one JSON route
-decision. The production-spine probe runs the real `TaskRunner` routing entry
+decision. The production-spine probe runs the real `TaskService` routing entry
 point with safe mode-body stubs, so it verifies `task_start.mode`,
 `task_done.mode`, and dispatch without editing the repository or running shell
 commands.
@@ -939,7 +939,7 @@ explicitly forbids project file access; production code must keep that case in
 chat even if the router model selects Writer.
 
 `ghost_work_queue_production_ab.py` covers 0.3.8 Work Queue continuation. It
-uses the production `TaskRunner` entry point and real queue claim/complete/block
+uses the production `TaskService` entry point and real queue claim/complete/block
 transitions, while mode bodies are safe stubs so the probe does not edit the
 repository or run shell commands. The live provider is only used as the normal
 main provider for paths that need it; Work Queue itself does not call a model.
@@ -988,7 +988,7 @@ against Edge CDP 9222, scoped to the Research queue row:
 - StepFun: `ghost_work_queue_production_0_4_2_stepfun_research_item.json` ok.
 - GLM: `ghost_work_queue_production_0_4_2_glm_research_item.json` ok.
 
-The first DeepSeek attempt failed before TaskRunner because CDP port 9222 was
+The first DeepSeek attempt failed before TaskService because CDP port 9222 was
 not open. After the Edge CDP session came up, DeepSeek was rerun atomically and
 passed.
 
@@ -996,7 +996,7 @@ passed.
 Interest Queue consumption. Candidate generation is deterministic and local:
 Research note structured `open_questions` and structured Concept Graph missing
 links are harvested into existing Work Queue items. The harness uses the production
-`TaskRunner` claim path, while mode bodies are safe stubs so it does not edit
+`TaskService` claim path, while mode bodies are safe stubs so it does not edit
 files or run shell commands. Since 0.4.2, the `research_proof=true` rows build
 a bounded `ResearchRecord`, append it to the Evidence Ledger, and verify queue
 completion through the Research Proof Quality Gate; `research_proof=false`
@@ -1039,7 +1039,7 @@ only, so the smoke validates proof success and proof failure without spending a
 full six-case matrix.
 
 `ghost_affinity_ab.py` covers 0.3.10 Affinity Index ordering consumption.
-The harness uses production `TaskRunner` paths with safe Research stubs. It
+The harness uses production `TaskService` paths with safe Research stubs. It
 compares baseline ordering against affinity-boosted ordering, writes progress
 atomically after each row, and verifies that explicit chat selection and
 permission boundaries are not expanded. Seeded queue rows are written as
@@ -1060,7 +1060,7 @@ Interest priority changes only queued item priority, explicit mode is not
 overridden, and affinity does not add tool or permission authority.
 
 2026-08-13 Affinity Index production-spine A/B, five-case matrix, run one
-provider per fresh webpage tab. The harness validates the real `TaskRunner`
+provider per fresh webpage tab. The harness validates the real `TaskService`
 spine, provider prompt submission, directive prompt ordering, queue claim
 ordering, and boundary checks. Research/Writer/Review bodies are safe stubs, so
 this is not a full live Research or project-writing model-quality A/B:
@@ -1077,7 +1077,7 @@ native priority item with stronger local association support. Output JSON files
 are written under `tests/manual/results/ghost_affinity_*.json`.
 
 `ghost_affinity_quality_ab.py` is the next-layer Affinity quality/uplift A/B.
-It uses the production `TaskRunner` chat path and real provider replies, but
+It uses the production `TaskService` chat path and real provider replies, but
 scores both arms with the same success metric: whether the first line follows
 the Affinity-target preference surfaced by Directive ordering. The metric is
 deliberately narrow. It proves ordering uplift on a controlled preference

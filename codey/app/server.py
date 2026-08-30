@@ -35,7 +35,6 @@ import sys
 import threading
 import time
 import uuid
-from collections import deque
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -111,7 +110,9 @@ from codey.reviews.core import (
     render_review_prompt,
 )
 from codey.reviews.impact_map import safe_review_impact_map
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
+from codey.app.event_bus import EventBus, EventSubscriber
 from codey.utils.text_budget import clip_middle
 from codey.storage.ui_state_store import UiStateStore
 
@@ -638,29 +639,6 @@ RUN_EVENT_TYPES = {
 }
 
 
-class _SsePayload(dict):
-    """Queue payload with an SSE cursor that stays out of the JSON body."""
-
-    def __init__(self, payload: dict, *, event_id: int = 0) -> None:
-        super().__init__(payload)
-        self.event_id = event_id
-
-
-class _Subscriber(queue.Queue):
-    """One SSE client queue plus an overflow marker.
-
-    Dropping the oldest event on overflow is unavoidable with a slow
-    client, but the drop must be visible: the queued ``resync_required``
-    marker tells the UI to re-pull run state and provider status instead of
-    silently missing a terminal or approval event.
-    """
-
-    def __init__(self, maxsize: int = 1000) -> None:
-        super().__init__(maxsize=maxsize)
-        self.dropped = 0
-        self.replay_cutoff = 0
-
-
 class CodeyHTTPServer(ThreadingHTTPServer):
     """Keep routine browser disconnects out of the local server log."""
 
@@ -675,9 +653,7 @@ class State:
     def __init__(self, state_home: str | Path | None = None) -> None:
         self.state_home = Path(state_home) if state_home else None
         self.lock = threading.Lock()
-        self.subscribers: list[queue.Queue[dict]] = []
-        self.event_sequence = 0
-        self.event_replay: deque[tuple[int, dict]] = deque(maxlen=SSE_REPLAY_LIMIT)
+        self.event_bus = EventBus(replay_limit=SSE_REPLAY_LIMIT)
         self.busy = False
         self.project: str | None = None
         self.task: str | None = None
@@ -1158,54 +1134,13 @@ class State:
             ):
                 payload["run_id"] = active.run_id
                 payload.setdefault("session_id", active.session_id)
-            self.event_sequence += 1
-            event_id = self.event_sequence
-            self.event_replay.append((event_id, dict(payload)))
-            queued_payload = _SsePayload(payload, event_id=event_id)
-            for sub in list(self.subscribers):
-                try:
-                    sub.put_nowait(queued_payload)
-                except queue.Full:
-                    # Make room for the resync marker plus the new event, but
-                    # tell the client it missed events so it can re-pull
-                    # authoritative state instead of silently running on a
-                    # stale terminal/approval view.
-                    limit = max(0, int(sub.maxsize or 0))
-                    while limit >= 2 and sub.qsize() > limit - 2:
-                        try:
-                            sub.get_nowait()
-                        except queue.Empty:
-                            break
-                        sub.dropped += 1
-                    if limit >= 2 and payload.get("type") != "resync_required":
-                        try:
-                            sub.put_nowait(_SsePayload(
-                                {
-                                    "type": "resync_required",
-                                    "reason": "sse_queue_overflow",
-                                    "dropped": sub.dropped,
-                                }
-                            ))
-                        except Exception:
-                            pass
-                    try:
-                        sub.put_nowait(queued_payload)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
+        self.event_bus.emit(payload)
 
-    def subscribe(self) -> "_Subscriber":
-        sub = _Subscriber()
-        with self.lock:
-            sub.replay_cutoff = self.event_sequence
-            self.subscribers.append(sub)
-        return sub
+    def subscribe(self) -> EventSubscriber:
+        return self.event_bus.subscribe()
 
-    def unsubscribe(self, sub: "_Subscriber") -> None:
-        with self.lock:
-            if sub in self.subscribers:
-                self.subscribers.remove(sub)
+    def unsubscribe(self, sub: EventSubscriber) -> None:
+        self.event_bus.unsubscribe(sub)
 
     def replay_events_after(
         self,
@@ -1213,28 +1148,10 @@ class State:
         *,
         max_event_id: int | None = None,
     ) -> list[tuple[int, dict]]:
-        start = max(0, int(last_event_id or 0))
-        with self.lock:
-            cutoff = self.event_sequence if max_event_id is None else max(0, int(max_event_id))
-            rows = [
-                (event_id, dict(payload))
-                for event_id, payload in self.event_replay
-                if start < event_id <= cutoff
-            ]
-            if (
-                start > 0
-                and self.event_replay
-                and start < self.event_replay[0][0]
-            ):
-                rows.insert(0, (
-                    0,
-                    {
-                        "type": "resync_required",
-                        "reason": "sse_replay_window_expired",
-                        "dropped": self.event_replay[0][0] - start,
-                    },
-                ))
-            return rows
+        return self.event_bus.replay_events_after(
+            last_event_id,
+            max_event_id=max_event_id,
+        )
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
         self.set_run_status("connecting")
@@ -1621,7 +1538,7 @@ def _run_task(
         if reserved is None:
             return
         run_id = reserved.run_id
-    runner = TaskRunner(
+    runner = TaskService(
         STATE,
         agent_run=agent_run,
         collect_changes=collect_changes,
@@ -1645,7 +1562,7 @@ def _run_task(
         ghost_router_provider_factory=getattr(STATE, "ghost_router_provider_factory", None),
     )
     try:
-        runner.run(TaskRequest(
+        runner.run(TaskSubmission(
             session_id=session_id,
             project=project,
             task=task,

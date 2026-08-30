@@ -8,6 +8,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
+from codey.task.model import (
+    TaskContract as _TaskContract,
+    TaskSubmission as _TaskSubmission,
+)
 from codey.runtime import cancellation
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.policies.action import ActionSubject, evaluate_action
@@ -24,14 +28,9 @@ from codey.agents.consensus import (
 from codey.completion.contract import (
     completion_proof_trace_payload,
 )
-from codey.completion.decision import (
-    CompletionDecision,
-    build_completion_decision,
-    completion_blocked_reason,
-)
+from codey.completion.engine import CompletionEngine, blocked_note
 from codey.completion.edit_integrity import (
     EditIntegrityObservation,
-    observe_edit_integrity,
 )
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.completion.repair_context import (
@@ -46,6 +45,11 @@ from codey.completion.verification import (
 )
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.terminalizer import (
+    nonnegative_event_count,
+    task_done_event,
+    terminal_turns,
+)
 from codey.ghost.continuity import build_ghost_continuity
 from codey.ghost.directive import build_ghost_directive
 from codey.ghost.learning_loop import (
@@ -174,21 +178,9 @@ PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0
 PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
 
 
-@dataclass(frozen=True)
-class TaskRequest:
-    session_id: str
-    project: str | None
-    task: str
-    max_turns: int
-    continue_task: bool
-    provider_id: str
-    intent: str = "auto"
-    run_id: str = ""
-
-
 @dataclass
 class _RunFrame:
-    request: TaskRequest
+    request: _TaskSubmission
     run_id: str
     task_kind: str
     provider: Any | None
@@ -426,38 +418,6 @@ COMPLETION_REPAIR_FOLLOWUP = (
     "failure facts. Decide and perform the next local step yourself."
 )
 
-_COMPLETION_BLOCKED_NOTE = {
-    "unobserved": (
-        "Completion blocked: the required verification was never observed "
-        "locally. Unobserved is not failure, but it is not done either."
-    ),
-    "max_repair_rounds": (
-        "Completion blocked: local verification still failing after the "
-        "repair round."
-    ),
-    "turn_budget_exhausted": (
-        "Completion blocked: local verification still failing and no turn "
-        "budget remains for a repair round."
-    ),
-    "environment_failure": (
-        "Completion blocked: the verification command could not run "
-        "(environment error), so the failure cannot be attributed to the "
-        "code."
-    ),
-    "provider_failure": (
-        "Completion blocked: provider failed during the repair phase."
-    ),
-    "repair_context_unavailable": (
-        "Completion blocked: no safe bounded failure facts were available "
-        "for a repair round."
-    ),
-    "repair_not_admitted": (
-        "Completion blocked: local verification failed and this run "
-        "admits no repair round."
-    ),
-}
-
-
 def _record_completion_proof_trace(
     trace: Any | None,
     proof: object,
@@ -482,10 +442,7 @@ def _record_edit_integrity_trace(
 
 def _blocked_result(result: RunResult, reason: str) -> RunResult:
     """Turn a claimed-done result into an honest blocked stop."""
-    note = _COMPLETION_BLOCKED_NOTE.get(
-        reason,
-        "Completion blocked: local completion proof did not pass.",
-    )
+    note = blocked_note(reason)
     summary = result.summary.strip()
     return replace(
         result,
@@ -576,7 +533,7 @@ def _safe_verification_map(
         return ""
 
 
-def _resolve_task_kind(request: TaskRequest) -> str:
+def _resolve_task_kind(request: _TaskSubmission) -> str:
     intent = (request.intent or "auto").strip().lower()
     if intent in {"planning", "planning_readonly", "readonly"}:
         return "planning_readonly" if request.project else "chat"
@@ -688,7 +645,7 @@ def _research_payload(result, *, pipeline_result: Any | None = None) -> dict:
 
 
 
-class TaskRunner:
+class TaskService:
     """Coordinate one task while leaving transport and storage outside."""
 
     def __init__(
@@ -781,70 +738,6 @@ class TaskRunner:
         except (OSError, ValueError):
             work.operation = None
 
-    @staticmethod
-    def _nonnegative_event_count(value: object) -> int:
-        if isinstance(value, bool):
-            return 0
-        if isinstance(value, int):
-            return max(0, value)
-        return 0
-
-    def _terminal_turns(
-        self,
-        work: _RunWork | None,
-        *,
-        turns: object = None,
-        max_turns: int = 0,
-    ) -> int:
-        candidates = [self._nonnegative_event_count(turns)]
-        if work is not None:
-            candidates.append(self._nonnegative_event_count(work.turns_observed))
-            if work.operation is not None:
-                candidates.append(self._nonnegative_event_count(work.operation.turns_used))
-        used = max(candidates)
-        return min(max(0, max_turns), used) if max_turns > 0 else used
-
-    def _task_done_event(
-        self,
-        *,
-        run_id: str,
-        session_id: str,
-        summary: str,
-        stop_reason: str,
-        max_turns: int,
-        provider: str,
-        mode: str,
-        work: _RunWork | None = None,
-        turns: object = None,
-        provider_failure: dict | None = None,
-        changed: bool | None = None,
-        receipt: dict | None = None,
-        changes: dict | None = None,
-        research: dict | None = None,
-    ) -> dict:
-        event: dict[str, object] = {
-            "type": "task_done",
-            "run_id": run_id,
-            "session_id": session_id,
-            "summary": summary,
-            "stop_reason": stop_reason,
-            "turns": self._terminal_turns(work, turns=turns, max_turns=max_turns),
-            "max_turns": max_turns,
-            "provider": provider,
-            "mode": mode,
-        }
-        if provider_failure is not None or stop_reason in {"stopped", "error"}:
-            event["provider_failure"] = provider_failure
-        if changed is not None:
-            event["changed"] = changed
-        if receipt is not None:
-            event["receipt"] = receipt
-        if changes is not None:
-            event["changes"] = changes
-        if research is not None:
-            event["research"] = research
-        return event
-
     def _finish_run_operation(self, work: _RunWork, event: dict) -> None:
         # Same bounded fields RunLedger.finish persists; the terminal
         # snapshot and the ledger's run_finished row must agree.
@@ -855,7 +748,7 @@ class TaskRunner:
             state,
             stop_reason=str(event.get("stop_reason") or ""),
             summary_chars=len(str(event.get("summary") or "")),
-            turns=self._terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
+            turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
             max_turns=max_turns,
             provider=str(event.get("provider") or ""),
         ))
@@ -1078,7 +971,7 @@ class TaskRunner:
 
     def _maybe_claim_ghost_work_item(
         self,
-        request: TaskRequest,
+        request: _TaskSubmission,
         *,
         run_id: str,
     ):
@@ -1190,7 +1083,7 @@ class TaskRunner:
 
     def _maybe_sync_ghost_affinity_terminal_event(
         self,
-        request: TaskRequest,
+        request: _TaskSubmission,
         *,
         run_id: str,
         project_text: str,
@@ -1311,7 +1204,7 @@ class TaskRunner:
 
     def _maybe_route_auto(
         self,
-        request: TaskRequest,
+        request: _TaskSubmission,
         *,
         baseline_mode: str,
         run_id: str,
@@ -1408,7 +1301,26 @@ class TaskRunner:
         updated["receipt"] = receipt.to_dict()
         return updated
 
-    def run(self, request: TaskRequest) -> None:
+    @staticmethod
+    def _contract_from_submission(
+        request: _TaskSubmission,
+        *,
+        run_id: str,
+        task_kind: str,
+    ) -> _TaskContract:
+        return _TaskContract(
+            session_id=request.session_id,
+            run_id=run_id,
+            kind=task_kind,
+            project=request.project,
+            prompt=request.task,
+            max_turns=request.max_turns,
+            provider_id=request.provider_id,
+            continue_task=request.continue_task,
+            intent=request.intent,
+        )
+
+    def run(self, request: _TaskSubmission) -> None:
         state = self.state
         session_id = request.session_id
         project = request.project
@@ -1433,6 +1345,13 @@ class TaskRunner:
             run_id = reserved.run_id
         if not state.start_run(run_id):
             return
+
+        contract = self._contract_from_submission(
+            request,
+            run_id=run_id,
+            task_kind=baseline_task_kind,
+        )
+        task_kind = str(contract.kind)
 
         trace = None
         if self.run_traces is not None:
@@ -1499,7 +1418,7 @@ class TaskRunner:
                 run_id=run_id,
                 reason="stopped_before_start",
             )
-            stopped_event = self._task_done_event(
+            stopped_event = task_done_event(
                 run_id=run_id,
                 session_id=session_id,
                 summary="",
@@ -1534,7 +1453,7 @@ class TaskRunner:
                 run_id=run_id,
                 reason="aborted_before_start",
             )
-            error_event = self._task_done_event(
+            error_event = task_done_event(
                 run_id=run_id,
                 session_id=session_id,
                 summary=f"ERROR: {exc}",
@@ -1651,7 +1570,7 @@ class TaskRunner:
         def on_event(event: RunEvent) -> None:
             work.turns_observed = max(
                 work.turns_observed,
-                self._nonnegative_event_count(event.turn),
+                nonnegative_event_count(event.turn),
             )
             if work.record_agent_events_in_ledger:
                 append_ledger(lambda ledger: ledger.append_run_event(event))
@@ -2115,7 +2034,7 @@ class TaskRunner:
                     provider_id=current_id,
                     blocker="stopped",
                 ))
-            stopped_event = self._task_done_event(
+            stopped_event = task_done_event(
                 run_id=run_id,
                 session_id=session_id,
                 summary="",
@@ -2169,7 +2088,7 @@ class TaskRunner:
             state.last_provider_failure = failure
             if failure is not None:
                 append_ledger_provider_failure(current_id, failure)
-            error_event = self._task_done_event(
+            error_event = task_done_event(
                 run_id=run_id,
                 session_id=session_id,
                 summary=f"ERROR: {exc}",
@@ -2546,7 +2465,7 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome(self._task_done_event(
+            return _ModeOutcome(task_done_event(
                 run_id=frame.run_id,
                 session_id=request.session_id,
                 summary=summary,
@@ -2573,7 +2492,7 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome(self._task_done_event(
+            return _ModeOutcome(task_done_event(
                 run_id=frame.run_id,
                 session_id=request.session_id,
                 summary=summary,
@@ -2592,7 +2511,7 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome(self._task_done_event(
+            return _ModeOutcome(task_done_event(
                 run_id=frame.run_id,
                 session_id=request.session_id,
                 summary=summary,
@@ -3338,27 +3257,7 @@ class TaskRunner:
         # the integrity observation must read the exact same snapshot of
         # changes/files/check as the decision it qualifies -- never a diff
         # captured before the repair.
-        def completion_decision(
-            *,
-            stop: str,
-            changed: bool,
-            scope_files: tuple[str, ...],
-            check: object,
-            diagnostic_refs: tuple[str, ...] = (),
-        ) -> CompletionDecision:
-            return build_completion_decision(
-                run_id=frame.run_id,
-                stop_reason=stop,
-                task_changed=changed,
-                files=scope_files,
-                selected_check=check,
-                evidence=work.evidence,
-                analysis_run_payloads=work.analysis_run_payloads,
-                project=project,
-                checkpoint_green=checkpoint_green,
-                verification_forbidden=verification_forbidden,
-                diagnostic_refs=diagnostic_refs,
-            )
+        completion_engine = CompletionEngine()
 
         def completion_evidence(
             *,
@@ -3367,39 +3266,22 @@ class TaskRunner:
             scope_files: tuple[str, ...],
             check: object,
             stop: str,
-        ) -> tuple[CompletionDecision, EditIntegrityObservation]:
-            # Integrity is observed against the decision's verification
-            # stance over the SAME snapshot; when it finds anything, the
-            # proof is recomputed once so its diagnostic_refs name that
-            # observation.
-            decided = completion_decision(
-                stop=stop,
-                changed=changed,
-                scope_files=scope_files,
-                check=check,
-            )
-            integrity = observe_edit_integrity(
+        ) -> tuple[object, EditIntegrityObservation]:
+            evidence = completion_engine.evaluate(
+                run_id=frame.run_id,
                 task=request.task,
                 changes=changes,
-                diff=(
-                    str(changes.get("diff") or "")
-                    if isinstance(changes, dict)
-                    else ""
-                ),
-                files=scope_files,
-                decision=decided,
+                stop_reason=stop,
+                task_changed=changed,
+                scope_files=scope_files,
                 selected_check=check,
-                run_id=frame.run_id,
+                evidence=work.evidence,
+                analysis_run_payloads=work.analysis_run_payloads,
+                project=project,
+                checkpoint_green=checkpoint_green,
+                verification_forbidden=verification_forbidden,
             )
-            if integrity.diagnostic_refs:
-                decided = completion_decision(
-                    stop=stop,
-                    changed=changed,
-                    scope_files=scope_files,
-                    check=check,
-                    diagnostic_refs=integrity.diagnostic_refs,
-                )
-            return decided, integrity
+            return evidence.decision, evidence.integrity
 
         def commit_operation_proof(proof: object) -> None:
             # Refs/status only; the proof body stays in the run trace. The
@@ -3505,7 +3387,7 @@ class TaskRunner:
                         repair_remaining_turns = (
                             request.max_turns - result.turns - repair_result.turns
                         )
-                        repair_blocked_reason = completion_blocked_reason(
+                        repair_blocked_reason = completion_engine.blocked_reason(
                             proof_status=proof.status,
                             failure_class=decision.failure_class,
                             remaining_turns=repair_remaining_turns,
@@ -3588,7 +3470,7 @@ class TaskRunner:
             # repair_rounds fact comes from this run's operation state
             # position: a round actually ran only when the repair arm
             # settled without a provider failure.
-            blocked_reason = completion_blocked_reason(
+            blocked_reason = completion_engine.blocked_reason(
                 proof_status=proof.status,
                 failure_class=decision.failure_class,
                 remaining_turns=request.max_turns - result.turns,
@@ -3724,7 +3606,7 @@ class TaskRunner:
                 research_result,
                 pipeline_result=research_pipeline_result,
             )
-        event = self._task_done_event(
+        event = task_done_event(
             run_id=frame.run_id,
             session_id=request.session_id,
             summary=result.summary,
@@ -3887,7 +3769,7 @@ class TaskRunner:
     def _build_research_context(
         self,
         frame: _RunFrame,
-        request: TaskRequest,
+        request: _TaskSubmission,
         *,
         proof_question: str,
         max_turns: int,

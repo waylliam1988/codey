@@ -69,8 +69,8 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "output_sha256": "a" * 64,
         })
 
-    def test_task_runner_no_longer_owns_ui_event_projection(self) -> None:
-        source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
+    def test_task_service_no_longer_owns_ui_event_projection(self) -> None:
+        source = (ROOT / "codey" / "task" / "service.py").read_text(encoding="utf-8")
 
         self.assertNotIn("def _ui_event", source)
         self.assertNotIn("def _display_tool", source)

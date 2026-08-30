@@ -6,16 +6,16 @@ from tests.manual import scoped_task_plan_ab
 
 
 def test_extract_paths_and_tests_from_json_with_prose() -> None:
-    text = 'ignore this\n{"paths":["./codey/app/task_runner.py"],"test_paths":["tests/test_server.py"]}'
+    text = 'ignore this\n{"paths":["./codey/task/service.py"],"test_paths":["tests/test_server.py"]}'
 
-    assert scoped_task_plan_ab._paths_from_reply(text) == ("codey/app/task_runner.py",)
+    assert scoped_task_plan_ab._paths_from_reply(text) == ("codey/task/service.py",)
     assert scoped_task_plan_ab._test_paths_from_reply(text) == ("tests/test_server.py",)
 
 
 def test_path_score_accepts_suffix_paths() -> None:
     score = scoped_task_plan_ab._score_paths(
-        ("task_runner.py",),
-        ("codey/app/task_runner.py",),
+        ("service.py",),
+        ("codey/task/service.py",),
     )
 
     assert score["hit_count"] == 1
@@ -117,7 +117,7 @@ def test_main_allows_single_scoped_arm(tmp_path, monkeypatch) -> None:
         name="single-scoped",
         project=tmp_path,
         task="Pick files.",
-        expected_paths=("codey/app/task_runner.py",),
+        expected_paths=("codey/task/service.py",),
     )
     row = {
         "case": case.name,

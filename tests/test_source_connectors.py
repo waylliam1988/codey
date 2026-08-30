@@ -76,7 +76,7 @@ def test_connector_registry_does_not_import_runtime_browser_or_provider_layers()
         "codey.providers",
         "codey.providers.controls",
         "codey.app.server",
-        "codey.app.task_runner",
+        "codey.task.service",
         "codey.toolchain.runtime",
         "codey.ghost",
     }

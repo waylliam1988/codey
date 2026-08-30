@@ -1,6 +1,6 @@
 """Writer failover state machine, isolated from Writer/Review business logic.
 
-``TaskRunner.run`` used to keep the Writer takeover logic in a cluster of
+``TaskService.run`` used to keep the Writer takeover logic in a cluster of
 closures that shared a lot of ``nonlocal`` state (current provider, switch
 count, checkpoint view, turn budget). That made the state machine hard to reason
 about and prove correct as provider resilience grows.
@@ -52,7 +52,7 @@ class WriterAttempt:
 
     The caller's ``attempt`` callback combines this with the Writer business
     inputs (project map, verified facts, verification loader, ...) that live in
-    ``TaskRunner`` and are none of the runner's concern.
+    ``TaskService`` and are none of the runner's concern.
     """
 
     task: str

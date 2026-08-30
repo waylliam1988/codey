@@ -76,7 +76,8 @@ def _source_tree(root: Path) -> None:
     ):
         (root / rel).write_text("# shared surface\n", encoding="utf-8")
     # Runtime files that must never enter an installed override.
-    (root / "codey" / "app" / "task_runner.py").write_text(
+    (root / "codey" / "task").mkdir(parents=True, exist_ok=True)
+    (root / "codey" / "task" / "service.py").write_text(
         "RUNTIME = 'unrelated'\n", encoding="utf-8"
     )
     (root / "tests" / "test_qwen.py").write_text("def test_qwen():\n    pass\n", encoding="utf-8")
@@ -165,7 +166,7 @@ class AdapterOverridesTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("__path__.append", shim_text)
-            self.assertFalse(any("task_runner" in rel for rel in installed))
+            self.assertFalse(any("task/service.py" in rel for rel in installed))
 
     def test_unrelated_codey_files_are_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -177,7 +178,7 @@ class AdapterOverridesTests(unittest.TestCase):
 
             self.assertTrue((override.root / "codey" / "__init__.py").exists())
             self.assertFalse(
-                (override.root / "codey" / "app" / "task_runner.py").exists()
+                (override.root / "codey" / "task" / "service.py").exists()
             )
             self.assertFalse((override.root / "codey" / "app").exists())
             self.assertFalse((override.root / "tests" / "test_qwen.py").exists())
@@ -261,7 +262,7 @@ class AdapterOverridesTests(unittest.TestCase):
             root = Path(td) / "src"
             _source_tree(root)
             before = adapter_overrides.adapter_base_hash("qwen", root)
-            (root / "codey" / "app" / "task_runner.py").write_text(
+            (root / "codey" / "task" / "service.py").write_text(
                 "RUNTIME = 'changed'\n", encoding="utf-8"
             )
             after = adapter_overrides.adapter_base_hash("qwen", root)
@@ -1039,7 +1040,7 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
         worker.assert_not_called()
 
 
-class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
+class TaskServiceSelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
         from codey.app import server
 

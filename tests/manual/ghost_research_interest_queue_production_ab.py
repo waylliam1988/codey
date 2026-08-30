@@ -1,7 +1,7 @@
 """Production-spine A/B for Research Interest Queue consumption.
 
 Candidate generation is deterministic and local. The harness uses the
-production TaskRunner claim path, while Research/Project/Review bodies are safe
+production TaskService claim path, while Research/Project/Review bodies are safe
 stubs so this probe does not write project files or run shell commands.
 """
 
@@ -32,7 +32,8 @@ from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -176,7 +177,7 @@ def _run_case(
             review_calls += 1
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=agent_run,
             collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -218,7 +219,7 @@ def _run_case(
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
             with _patched_provider(state, provider):
-                runner.run(TaskRequest(
+                runner.run(TaskSubmission(
                     session_id=session_id,
                     project=None,
                     task=case.task,

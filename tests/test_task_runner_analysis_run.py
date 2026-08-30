@@ -10,7 +10,7 @@ from codey.runtime.events import RunEvent
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
-from codey.app.task_runner import TaskRunner, _RunWork
+from codey.task.service import TaskService, _RunWork
 
 
 def _outcome(
@@ -279,8 +279,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
         return update_checkpoint
 
-    def _runner(self, state: server.State) -> TaskRunner:
-        return TaskRunner(
+    def _runner(self, state: server.State) -> TaskService:
+        return TaskService(
             state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
             collect_changes=mock.Mock(return_value={

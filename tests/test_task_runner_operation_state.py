@@ -1,4 +1,4 @@
-"""TaskRunner commits its completion/repair lifecycle to RunOperationStore.
+"""TaskService commits its completion/repair lifecycle to RunOperationStore.
 
 These tests prove the 0.5.1 contract end to end: the phases a project run
 passes through are visible on the durable counter while the run is alive,
@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from codey.app import server, task_runner as task_runner_module
+from codey.app import server
 from codey.agents.runner import RunResult
+from codey.completion import engine as completion_engine_module
 from codey.completion.decision import (
     BLOCKED_MAX_REPAIR_ROUNDS,
     BLOCKED_UNOBSERVED,
@@ -44,10 +45,10 @@ from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
-from codey.app.task_runner import (
+from codey.task.model import TaskSubmission
+from codey.task.service import (
     COMPLETION_REPAIR_FOLLOWUP,
-    TaskRequest,
-    TaskRunner,
+    TaskService,
 )
 from codey.toolchain.runtime import ToolOutcome
 
@@ -145,8 +146,8 @@ def _pytest_project(td: Path) -> Path:
     return project
 
 
-def _runner(state: server.State, writer: ObservingWriter) -> TaskRunner:
-    return TaskRunner(
+def _runner(state: server.State, writer: ObservingWriter) -> TaskService:
+    return TaskService(
         state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
@@ -164,14 +165,14 @@ def _runner(state: server.State, writer: ObservingWriter) -> TaskRunner:
     )
 
 
-def _run(runner: TaskRunner, state: server.State, project: Path, writer: ObservingWriter) -> dict:
+def _run(runner: TaskService, state: server.State, project: Path, writer: ObservingWriter) -> dict:
     def observed_agent_run(provider, project_path, task, **kwargs):
         return writer(provider, project_path, task, state_ref=state, **kwargs)
 
     runner.agent_run = observed_agent_run
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
         runner.run(
-            TaskRequest(
+            TaskSubmission(
                 SESSION,
                 str(project),
                 "Change the module and verify",
@@ -240,7 +241,7 @@ class CleanRunTerminalTests(unittest.TestCase):
 
 class NonBoolSatisfiedWiringTests(unittest.TestCase):
     def test_fake_proof_with_int_satisfied_records_terminal_error(self) -> None:
-        # TaskRunner passes the proof's facts through uncoerced: the strict
+        # TaskService passes the proof's facts through uncoerced: the strict
         # helper validates them. A proof carrying satisfied=1 (an int)
         # must not be swallowed by the operation writer; the run reaches a
         # visible terminal error instead of leaving the register silently stale.
@@ -250,7 +251,7 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             project = _pytest_project(Path(td))
             state = server.State(Path(td) / "state")
-            real_build = task_runner_module.build_completion_decision
+            real_build = completion_engine_module.build_completion_decision
 
             def build_with_int_satisfied(**kwargs):
                 decision = real_build(**kwargs)
@@ -259,7 +260,7 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
                 return decision
 
             with mock.patch.object(
-                task_runner_module, "build_completion_decision", build_with_int_satisfied
+                completion_engine_module, "build_completion_decision", build_with_int_satisfied
             ):
                 event = _run(_runner(state, writer), state, project, writer)
 

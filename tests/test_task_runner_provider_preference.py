@@ -17,7 +17,8 @@ from codey.providers.diagnostics import (
     ProviderFailure,
 )
 from codey.workspace.config import preferred_provider_for
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 
 
 def _failure(kind: str = "response_missing") -> ProviderActionError:
@@ -61,8 +62,8 @@ def _write_preferred_config(project: Path, mode: str, provider_id: str) -> None:
     )
 
 
-def _build_runner(state: server.State, *, agent_run) -> TaskRunner:
-    return TaskRunner(
+def _build_runner(state: server.State, *, agent_run) -> TaskService:
+    return TaskService(
         state,
         agent_run=agent_run,
         collect_changes=mock.Mock(
@@ -83,7 +84,7 @@ def _build_runner(state: server.State, *, agent_run) -> TaskRunner:
 
 def _run_project_task(project: Path, state: server.State, *, provider_id: str) -> None:
     runner = _build_runner(state, agent_run=_agent_run)
-    runner.run(TaskRequest(
+    runner.run(TaskSubmission(
         "session-preferred-providers",
         str(project),
         "Inspect the project",
@@ -131,7 +132,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -146,7 +147,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-preferred-order",
                 str(project),
                 "Inspect the project",
@@ -181,7 +182,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                     writer_ids.append(provider_id)
             return RunResult("done", "done", 1)
 
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -196,7 +197,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-preferred-no-override",
                 str(project),
                 "Inspect the project",
@@ -245,7 +246,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
@@ -260,7 +261,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-preferred-unavailable",
                 str(project),
                 "Inspect the project",
@@ -278,7 +279,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
 def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
             collect_changes=mock.Mock(
@@ -291,13 +292,13 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
 
         with (
             mock.patch.object(
-                TaskRunner,
+                TaskService,
                 "_maybe_route_auto",
                 side_effect=ValueError("route exploded"),
             ),
             pytest.raises(ValueError),
         ):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-early-error",
                 td,
                 "Inspect the project",

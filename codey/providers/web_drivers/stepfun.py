@@ -611,7 +611,7 @@ def chat(
                     )
             else:
                 stable = 0
-                ctx.last = current
+                ctx.record_response(current, observation)
 
         late = _wait_late_response(page, baseline, grace=TIMEOUT_GRACE, tick=tick)
         if late:

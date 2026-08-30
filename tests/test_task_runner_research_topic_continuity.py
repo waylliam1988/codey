@@ -13,9 +13,9 @@ from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
-from codey.app.task_runner import (
-    TaskRequest,
-    TaskRunner,
+from codey.task.model import TaskSubmission
+from codey.task.service import (
+    TaskService,
     _RunFrame,
 )
 
@@ -23,7 +23,7 @@ _QUESTION = "Should provider recovery be re-checked against fresh sources?"
 
 
 def _make_frame(project_text: str) -> _RunFrame:
-    request = TaskRequest(
+    request = TaskSubmission(
         session_id="s1",
         project=None,
         task="research the continuity question",
@@ -50,8 +50,8 @@ def _make_frame(project_text: str) -> _RunFrame:
     )
 
 
-def _runner(state: server.State) -> TaskRunner:
-    return TaskRunner(
+def _runner(state: server.State) -> TaskService:
+    return TaskService(
         state,
         agent_run=mock.Mock(),
         collect_changes=lambda *_args, **_kwargs: {},
@@ -342,7 +342,7 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
         runner = _runner(state)
 
         with mock.patch(
-            "codey.app.task_runner.allows_context_source",
+            "codey.task.service.allows_context_source",
             return_value=False,
         ):
             text, payload = runner._build_research_topic_continuity(

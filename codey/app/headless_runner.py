@@ -1,6 +1,6 @@
-"""Headless JSONL entry point backed by the production TaskRunner.
+"""Headless JSONL entry point backed by the production TaskService.
 
-This module does not own an agent loop.  It adapts ``TaskRunner`` to a bounded
+This module does not own an agent loop.  It adapts ``TaskService`` to a bounded
 machine-readable stream so CLI/CI callers can use the same local execution
 spine as the UI.
 """
@@ -31,7 +31,8 @@ from codey.app.server import (
     _should_wait_for_local_ghost_sleep,
     is_git_repository,
 )
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 
 
 SCHEMA_VERSION = 1
@@ -167,7 +168,7 @@ def run_headless(
         session_id=session_id,
         project=project,
     )
-    runner = TaskRunner(
+    runner = TaskService(
         state,
         agent_run=agent_run or agent_module.run,
         collect_changes=collect_changes or default_collect_changes,
@@ -191,7 +192,7 @@ def run_headless(
         ),
     )
     try:
-        runner.run(TaskRequest(
+        runner.run(TaskSubmission(
             session_id=session_id,
             project=str(project),
             task=request.task,

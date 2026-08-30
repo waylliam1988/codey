@@ -66,7 +66,8 @@ from codey.research.report_quality import review_report_quality
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 from codey.app import server
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -166,7 +167,7 @@ def _task_request_provider_id(provider_id: str) -> str:
     normalized = str(provider_id or "").strip().lower()
     if normalized in LIVE_PROVIDERS:
         return normalized
-    # ``fake`` is a harness/reporting label. TaskRunner should still see a
+    # ``fake`` is a harness/reporting label. TaskService should still see a
     # real production provider id so offline probes do not exercise an
     # unsupported-provider path.
     return DEFAULT_PROVIDER_ID
@@ -299,7 +300,7 @@ def _run_case(
         def run_review(**_kwargs):
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskRunner(
+        runner = TaskService(
             state,
             agent_run=agent_run,
             collect_changes=lambda *_a, **_k: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -373,18 +374,18 @@ def _run_case(
                 if not live and seeded_interest_candidates:
                     stack.enter_context(
                         mock.patch(
-                            "codey.app.task_runner.build_research_interest_candidates",
+                            "codey.task.service.build_research_interest_candidates",
                             return_value=seeded_interest_candidates,
                         )
                     )
                 if not gate_open:
                     stack.enter_context(
                         mock.patch(
-                            "codey.app.task_runner.allows_context_source",
+                            "codey.task.service.allows_context_source",
                             return_value=False,
                         )
                     )
-                request = TaskRequest(
+                request = TaskSubmission(
                     session_id=session_id,
                     project=project,
                     task=case.task,

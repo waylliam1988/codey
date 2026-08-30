@@ -12,7 +12,8 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.app import server
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 
 
 class _Provider:
@@ -73,8 +74,8 @@ def _runner(
     run_review=None,
     router_provider_factory=None,
     is_git_repository=None,
-) -> TaskRunner:
-    return TaskRunner(
+) -> TaskService:
+    return TaskService(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,
@@ -95,9 +96,9 @@ def _done_events(state: server.State) -> list[dict]:
 
 
 def _run_and_wait_for_local_maintenance(
-    runner: TaskRunner,
+    runner: TaskService,
     state: server.State,
-    request: TaskRequest,
+    request: TaskSubmission,
 ) -> None:
     runner.run(request)
     state.wait_for_ghost_sleep(timeout=2)
@@ -130,7 +131,7 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest("session-1", None, "查一下今天的版本变化", 8, False, "deepseek"),
+                TaskSubmission("session-1", None, "查一下今天的版本变化", 8, False, "deepseek"),
             )
 
         emitted = []
@@ -167,7 +168,7 @@ def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> Non
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "先别改代码，只给我一个修改方案",
@@ -200,7 +201,7 @@ def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "不要读写项目文件，只普通聊一下这个想法。",
@@ -239,7 +240,7 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "解释一下这个项目的整体设计，不要改文件",
@@ -276,7 +277,7 @@ def test_manual_intent_bypasses_router() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     None,
                     "Research storage",
@@ -308,7 +309,7 @@ def test_router_failure_falls_back_to_existing_baseline() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "修复测试",
@@ -339,7 +340,7 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-1",
                 str(project),
                 "修复测试",
@@ -368,7 +369,7 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-1",
                 str(project),
                 "修复测试",
@@ -402,7 +403,7 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "修复测试",
@@ -445,7 +446,7 @@ def test_review_only_route_does_not_start_writer_or_repair() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "review 一下这次 diff，有问题只列 findings，不要修改",
@@ -484,7 +485,7 @@ def test_review_only_provider_failure_is_reported_without_error() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "review 一下这次 diff，不要修改",
@@ -531,7 +532,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
-                TaskRequest(
+                TaskSubmission(
                     "session-1",
                     str(project),
                     "review 一下这次 diff，不要修改",

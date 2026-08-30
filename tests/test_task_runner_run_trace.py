@@ -15,8 +15,9 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.app import task_runner as task_runner_module
-from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.task import service as task_service_module
+from codey.task.model import TaskSubmission
+from codey.task.service import TaskService
 
 
 class _Provider:
@@ -66,8 +67,8 @@ def _runner(
     run_consensus=None,
     run_project_audit=None,
     router_provider_factory=None,
-) -> TaskRunner:
-    return TaskRunner(
+) -> TaskService:
+    return TaskService(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes
@@ -189,7 +190,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=fake_agent)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-trace",
                 str(project),
                 "Build the feature",
@@ -256,7 +257,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             runner = _runner(state, router_provider_factory=router_factory)
             runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-research-trace",
                 None,
                 "查一下最新 storage 方案",
@@ -326,7 +327,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
             runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-evidence-ledger",
                 str(project),
                 "Research helium",
@@ -447,7 +448,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                 ))
 
             runner._run_research_iteration = mock.Mock(side_effect=fake_research_task)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-hybrid-trace",
                 str(project),
                 "Research then edit",
@@ -480,7 +481,7 @@ def test_local_context_trace_skips_scanning_when_trace_is_missing() -> None:
         def selected_items(self):  # pragma: no cover - exercised through early return
             raise AssertionError("should not inspect local contexts without trace")
 
-    task_runner_module._record_local_context_trace(None, _ExplodingContext())
+    task_service_module._record_local_context_trace(None, _ExplodingContext())
 
 
 def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
@@ -505,7 +506,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         with (
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(
-                "codey.app.task_runner.safe_review_impact_map",
+                "codey.task.service.safe_review_impact_map",
                 return_value="SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED",
             ) as impact_map,
         ):
@@ -515,7 +516,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                 collect_changes=mock.Mock(return_value=changes),
                 run_review=run_review,
             )
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-secondary-trace",
                 str(project),
                 "Build the feature",
@@ -557,7 +558,7 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-consensus-trace",
                 None,
                 secret_task,
@@ -591,7 +592,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-chat-provenance",
                 None,
                 "plain question",
@@ -635,7 +636,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=provider):
             runner = _runner(state, run_consensus=mock.Mock(return_value=None))
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 session_id,
                 None,
                 "continue with the plan",
@@ -679,7 +680,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_project_audit=project_audit)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-project-audit-prepared",
                 str(project),
                 secret_task,
@@ -715,7 +716,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
-            runner.run(TaskRequest(
+            runner.run(TaskSubmission(
                 "session-fallback-trace",
                 str(project),
                 "Build the feature",
@@ -775,7 +776,7 @@ def _run_project_task(state: server.State, project: Path, session_id: str, task:
             state,
             collect_changes=mock.Mock(return_value=changes),
         )
-        runner.run(TaskRequest(
+        runner.run(TaskSubmission(
             session_id,
             str(project),
             task,

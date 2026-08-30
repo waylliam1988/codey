@@ -6,6 +6,25 @@
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- 运行时冷启动重构：
+  - 删除内部 `codey/app/task_runner.py` 入口。Task submission 现在属于
+    `codey.task.model.TaskSubmission`，执行服务属于
+    `codey.task.service.TaskService`；server、headless、manual harness 和
+    测试调用点已一次性迁移，不保留旧模块 shim。
+  - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
+    contract、suspended operation、lane queue、小型 scheduler，以及
+    append-only session log + fail-closed reducer。reducer 测试覆盖单 lane
+    只能有一个 open operation、重复 tool invocation 拒绝、settled 后追加
+    拒绝、有界 payload、unknown effect 记录但不 replay。
+  - completion verdict 所有权移入 `codey.completion.engine`，包括 blocked
+    note 词汇和 proof + edit-integrity evaluation。`TaskService` 只消费
+    engine 输出，不再内联重建这条决策链。
+  - terminal `task_done` 事件构造和 terminal turn 计数移入
+    `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
+  - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
+    `codey.app.event_bus`；`State` 只负责在 emit 前注入 active run identity。
+  - StepFun 响应变化路径改用 `ProviderSendContext.record_response()`，
+    不再手写 `ctx.last`，stable-response 计数与其他 web driver 对齐。
 - 审查后的冷启动清理：
   - A/B harness 的 git-state 读取改成 bytes 路径，未跟踪的中文文件名不会再在
     Windows locale 解码阶段把全量 pytest 打红。

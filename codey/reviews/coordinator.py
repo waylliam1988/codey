@@ -1,6 +1,6 @@
 """Coordinate the bounded diff-review lifecycle for one project task.
 
-The reviewer connection and Writer failover machinery stay in ``TaskRunner``.
+The reviewer connection and Writer failover machinery stay in ``TaskService``.
 This module owns only the diff-review lifecycle:
 
 * retry an unavailable diff before deciding whether to review,

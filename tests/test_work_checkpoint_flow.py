@@ -693,7 +693,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "_run_review", review),
                 mock.patch(
-                    "codey.app.task_runner.render_verification_map",
+                    "codey.task.service.render_verification_map",
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):

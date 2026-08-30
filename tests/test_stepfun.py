@@ -458,6 +458,50 @@ class StepFunDriverTests(unittest.TestCase):
 
         reject.assert_not_called()
 
+    def test_chat_records_changed_response_through_send_context(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt(phase="confirmed", method="click")
+
+        class FakeContext:
+            appeared = False
+            last = ""
+
+            def __init__(self, **kwargs):
+                self.sent_at = kwargs["sent_at"]
+                self.recorded: list[str] = []
+                self.trace = mock.Mock()
+
+            def same_as_last(self, current: str) -> bool:
+                return current == self.last
+
+            def record_response(self, current: str, observation: object) -> None:
+                self.recorded.append(current)
+                self.last = current
+
+        ctx = FakeContext(sent_at=0.0)
+        with (
+            mock.patch.object(stepfun, "wait_ready"),
+            mock.patch.object(stepfun, "_response_count", return_value=0),
+            mock.patch.object(stepfun, "_response_action_count", return_value=0),
+            mock.patch.object(stepfun, "_message_box", return_value=textarea),
+            mock.patch.object(stepfun, "_fill_message_until_stable", return_value="hello"),
+            mock.patch.object(stepfun.controls, "confirm_control"),
+            mock.patch.object(stepfun, "_submit", return_value=attempt),
+            mock.patch.object(stepfun.send_loop, "response_watch", return_value=nullcontext()),
+            mock.patch.object(stepfun.send_loop, "ProviderSendContext", return_value=ctx),
+            mock.patch.object(stepfun, "_fresh_response_text", return_value="partial"),
+            mock.patch.object(stepfun, "_wait_late_response", return_value=""),
+            mock.patch.object(stepfun, "_final_text", return_value="final"),
+            mock.patch.object(stepfun, "_wait_response_footer_ready"),
+            mock.patch.object(stepfun.cancellation, "wait"),
+            mock.patch.object(stepfun.time, "time", side_effect=[0.0, 0.0, 1.0]),
+        ):
+            result = stepfun.chat(page, "hello", response_timeout=0.5)
+
+        self.assertEqual(result, "final")
+        self.assertEqual(ctx.recorded, ["partial"])
+
 
 if __name__ == "__main__":
     unittest.main()
