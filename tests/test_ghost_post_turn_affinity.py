@@ -14,7 +14,7 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -39,9 +39,8 @@ class _Provider:
         pass
 
 
-def _runner(state: server.State, *, agent_run=None, router_provider_factory=None) -> TaskFlow:
-    return TaskFlow(
-        state,
+def _runner(state: server.State, *, agent_run=None, router_provider_factory=None) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
         run_review=mock.Mock(return_value=None),
@@ -189,7 +188,7 @@ def _research_record(concept: str):
     )
 
 
-def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
+def test_task_entry_uses_affinity_to_order_strict_continue_work_items() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
         assert state.ghost_work_queue is not None
@@ -226,7 +225,7 @@ def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
-            runner.run(TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
+            run_task_submission(runner, TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
@@ -235,7 +234,7 @@ def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
     assert items[baseline_top.id].status == "queued"
 
 
-def test_task_flow_syncs_affinity_after_turn_from_local_sources() -> None:
+def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
     from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 
     with tempfile.TemporaryDirectory() as td:
@@ -269,7 +268,7 @@ def test_task_flow_syncs_affinity_after_turn_from_local_sources() -> None:
         runner = _runner(state, router_provider_factory=None)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
-            runner.run(TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
+            run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         nodes = state.ghost_affinity.list_nodes(kind="user_preference")
 
@@ -294,7 +293,7 @@ def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
         runner = _runner(state, router_provider_factory=None)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("chat")):
-            runner.run(TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
+            run_task_submission(runner, TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
@@ -313,7 +312,7 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
             "get_provider",
             return_value=_Provider(error=RuntimeError("raw SECRET_TOKEN_FIXTURE provider failure")),
         ):
-            runner.run(TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
+            run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         nodes = state.ghost_affinity.list_nodes(kind="provider_behavior", session_id="s1")
         raw = state.ghost_affinity.events_path.read_text(encoding="utf-8")

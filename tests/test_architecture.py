@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 TASK_FLOW_PATH = ROOT / "codey" / "operations" / "task_flow.py"
+TASK_ENTRY_PATH = ROOT / "codey" / "operations" / "task_entry.py"
+TASK_RUN_PATH = ROOT / "codey" / "operations" / "task_run.py"
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -59,7 +61,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         paths = (
             ("cli.py", ROOT / "codey" / "app" / "cli.py"),
             ("server.py", ROOT / "codey" / "app" / "server.py"),
-            ("operations/task_flow.py", TASK_FLOW_PATH),
+            ("operations/task_entry.py", TASK_ENTRY_PATH),
+            ("operations/task_run.py", TASK_RUN_PATH),
         )
         for name, path in paths:
             with self.subTest(name=name):
@@ -85,7 +88,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         imports = imported_modules(ROOT / "codey" / "app" / "server.py")
         source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.operations.task_flow", imports)
+        self.assertIn("codey.operations.task_entry", imports)
         self.assertNotIn("on_shell_request(cwd_rel", source)
         self.assertNotIn("conversation.prepare_model_handoff", source)
 
@@ -193,63 +196,67 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, server_source)
 
-    def test_task_flow_has_no_http_dependency(self) -> None:
-        imports = imported_modules(TASK_FLOW_PATH)
+    def test_task_entry_and_task_run_have_no_http_dependency(self) -> None:
+        for path in (TASK_ENTRY_PATH, TASK_RUN_PATH):
+            with self.subTest(path=path.name):
+                imports = imported_modules(path)
+                self.assertNotIn("http.server", imports)
+                self.assertNotIn("codey.app.server", imports)
 
-        self.assertNotIn("http.server", imports)
-        self.assertNotIn("codey.app.server", imports)
-
-    def test_task_flow_facade_is_removed(self) -> None:
+    def test_legacy_task_flow_facade_is_removed(self) -> None:
         self.assertFalse((ROOT / "codey" / "task" / "service.py").exists())
+        self.assertFalse(TASK_FLOW_PATH.exists())
 
     def test_task_submission_model_is_not_defined_by_execution_service(self) -> None:
         model_source = (ROOT / "codey" / "task" / "model.py").read_text(encoding="utf-8")
-        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        entry_source = TASK_ENTRY_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         import codey.task as task_package
 
         self.assertIn("class TaskSubmission", model_source)
-        self.assertNotIn("class TaskSubmission", flow_source)
+        self.assertNotIn("class TaskSubmission", entry_source)
+        self.assertNotIn("class TaskSubmission", task_run_source)
         self.assertFalse(hasattr(task_package, "TaskFlow"))
 
     def test_operation_context_values_are_not_defined_by_task_flow(self) -> None:
-        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         context_source = (ROOT / "codey" / "operations" / "context.py").read_text(encoding="utf-8")
         result_source = (ROOT / "codey" / "operations" / "result.py").read_text(encoding="utf-8")
-        imports = imported_modules(TASK_FLOW_PATH)
+        imports = imported_modules(TASK_RUN_PATH)
 
         self.assertIn("codey.operations.context", imports)
         self.assertIn("codey.operations.result", imports)
         for token in ("_RunFrame", "_RunWork", "_RunHooks", "_ModeOutcome", "_TaskSubmission"):
             with self.subTest(token=token):
-                self.assertNotIn(token, flow_source)
+                self.assertNotIn(token, task_run_source)
         self.assertIn("class RunFrame", context_source)
         self.assertIn("class RunWork", context_source)
         self.assertIn("class RunHooks", context_source)
         self.assertIn("class ModeOutcome", result_source)
 
     def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
-        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.operations.chat", imported_modules(TASK_FLOW_PATH))
+        self.assertIn("codey.operations.chat", imported_modules(TASK_RUN_PATH))
         self.assertIn("def run_chat_mode", chat_source)
-        self.assertIn("return run_chat_mode(", flow_source)
-        self.assertNotIn("chat_outbound_prompt", flow_source)
+        self.assertIn("run_chat_mode(", task_run_source)
+        self.assertNotIn("chat_outbound_prompt", task_run_source)
         self.assertIn("chat_outbound_prompt", chat_source)
 
     def test_project_completion_logic_lives_in_project_completion_operation(self) -> None:
-        flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         completion_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
 
         self.assertIn("def run_project_mode", completion_source)
         self.assertIn("WriterFailoverRunner", completion_source)
         self.assertIn("project_repair_context", completion_source)
         self.assertIn("build_task_receipt", completion_source)
-        self.assertIn("run_project_mode(", flow_source)
-        self.assertNotIn("def _run_project_mode", flow_source)
-        self.assertNotIn("ReviewCoordinator", flow_source)
-        self.assertNotIn("project_repair_context", flow_source)
-        self.assertNotIn("build_task_receipt(", flow_source)
+        self.assertIn("run_project_mode(", task_run_source)
+        self.assertNotIn("def _run_project_mode", task_run_source)
+        self.assertNotIn("ReviewCoordinator", task_run_source)
+        self.assertNotIn("project_repair_context", task_run_source)
+        self.assertNotIn("build_task_receipt(", task_run_source)
 
     def test_legacy_task_runner_module_is_gone(self) -> None:
         self.assertFalse((ROOT / "codey" / "app" / "task_runner.py").exists())
@@ -283,22 +290,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.reducer",
             "codey.runtime.scheduler",
             "codey.runtime.session_log",
-            "codey.runtime.suspension",
             "codey.runtime.terminalizer",
+            "codey.storage.atomic_io",
             "codey.storage.file_lock",
             "codey.storage.local_store",
         }
         offenders: dict[str, list[str]] = {}
         kernel_files = (
-            "lane.py",
             "operation.py",
             "outcome.py",
             "reducer.py",
             "scheduler.py",
             "session_log.py",
-            "suspension.py",
             "terminalizer.py",
         )
+        self.assertFalse((ROOT / "codey" / "runtime" / "lane.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "suspension.py").exists())
         for name in kernel_files:
             path = ROOT / "codey" / "runtime" / name
             imports = imported_modules(path)
@@ -318,16 +325,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         research_runner = ROOT / "codey" / "research" / "runner.py"
         pipeline_source = pipeline.read_text(encoding="utf-8")
         research_flow_source = research_flow.read_text(encoding="utf-8")
-        task_flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         research_runner_source = research_runner.read_text(encoding="utf-8")
 
         self.assertIn("ResearchIterationRun", pipeline_source)
         self.assertIn("ResearchIterationRun", research_flow_source)
-        self.assertNotIn("ResearchIterationRun", task_flow_source)
+        self.assertNotIn("ResearchIterationRun", task_run_source)
         self.assertNotIn("codey.operations.task_flow", imported_modules(pipeline))
         self.assertNotIn("codey.app.server", imported_modules(pipeline))
-        self.assertNotIn("_run_research_task", task_flow_source)
-        self.assertNotIn("_run_research_iteration", task_flow_source)
+        self.assertNotIn("_run_research_task", task_run_source)
+        self.assertNotIn("_run_research_iteration", task_run_source)
         self.assertNotIn("close_search", pipeline_source)
         self.assertNotIn("runtime_tools", research_runner_source)
 
@@ -423,8 +430,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
 
-    def test_task_flow_does_not_carry_capability_registry_for_decisions(self) -> None:
-        source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+    def test_task_run_does_not_carry_capability_registry_for_decisions(self) -> None:
+        source = TASK_RUN_PATH.read_text(encoding="utf-8")
 
         self.assertNotIn("CapabilityRegistry", source)
         self.assertNotIn("self.capabilities", source)
@@ -434,7 +441,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # The metadata-only catalog never influenced any decision and was
         # removed ahead of 0.4.x instead of shipping dead surface.
         self.assertFalse((ROOT / "codey" / "builtin_profiles.py").exists())
-        source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        source = TASK_RUN_PATH.read_text(encoding="utf-8")
         self.assertNotIn("builtin_profiles", source)
         server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
         self.assertNotIn("builtin_profiles", server_source)
@@ -1094,7 +1101,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         consumers = [
             ROOT / "codey" / "runs" / "trace.py",
             *(ROOT / "codey" / "research").glob("*.py"),
-            TASK_FLOW_PATH,
+            TASK_ENTRY_PATH,
+            TASK_RUN_PATH,
             ROOT / "codey" / "app" / "server.py",
         ]
         for path in consumers:
@@ -1181,13 +1189,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
         research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")
-        task_flow_source = TASK_FLOW_PATH.read_text(encoding="utf-8")
+        task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
         tool_source = (ROOT / "codey" / "toolchain" / "runtime.py").read_text(encoding="utf-8")
 
         self.assertNotIn("class StepResult", agent_source)
         self.assertNotIn("def trace_call", agent_source)
         self.assertNotIn("def _trace(", research_source)
-        self.assertNotIn("def _trace_call", task_flow_source)
+        self.assertNotIn("def _trace_call", task_run_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
     def test_run_operation_fact_source_is_runtime_only(self) -> None:

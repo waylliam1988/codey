@@ -32,6 +32,7 @@ import json
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -116,7 +117,7 @@ from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot, same_project
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.utils.text_budget import clip_middle
 from codey.storage.ui_state_store import UiStateStore
@@ -646,7 +647,13 @@ class CodeyHTTPServer(ThreadingHTTPServer):
 
 class State:
     def __init__(self, state_home: str | Path | None = None) -> None:
+        self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
+        runtime_state_home = (
+            self.state_home
+            if self.state_home is not None
+            else Path(self._ephemeral_runtime_home.name)
+        )
         self.lock = threading.Lock()
         self.event_bus = EventBus(replay_limit=SSE_REPLAY_LIMIT)
         self.run_registry = RunRegistry()
@@ -677,12 +684,8 @@ class State:
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
-        self.runtime_log = RuntimeSessionLog(state_home) if state_home else None
-        self.runtime_operations = (
-            RuntimeOperationStore(self.runtime_log)
-            if self.runtime_log is not None
-            else None
-        )
+        self.runtime_log = RuntimeSessionLog(runtime_state_home)
+        self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
@@ -1458,8 +1461,8 @@ def _run_task(
     intent: str = "auto",
     run_id: str = "",
 ) -> None:
-    runner = TaskFlow(
-        STATE,
+    deps = TaskRunDeps(
+        state=STATE,
         agent_run=agent_run,
         collect_changes=collect_changes,
         run_review=_run_review,
@@ -1481,7 +1484,8 @@ def _run_task(
         ghost_router_provider_factory=getattr(STATE, "ghost_router_provider_factory", None),
     )
     try:
-        runner.run(
+        run_task_submission(
+            deps,
             TaskSubmission(
                 session_id=session_id,
                 project=project,

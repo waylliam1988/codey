@@ -12,14 +12,6 @@ from typing import Any, Literal, Protocol
 
 from codey.runtime.outcome import OperationOutcome
 
-OperationKind = Literal[
-    "agent",
-    "research",
-    "verification",
-    "repair",
-    "review",
-    "compaction",
-]
 OperationStatus = Literal["pending", "running", "settled"]
 
 
@@ -40,7 +32,7 @@ class OperationContext:
 @dataclass(frozen=True)
 class OperationState:
     operation_id: str
-    kind: OperationKind | str
+    kind: str
     lane: str
     status: OperationStatus
     turns_used: int = 0
@@ -48,7 +40,7 @@ class OperationState:
 
 class Operation(Protocol):
     operation_id: str
-    kind: OperationKind | str
+    kind: str
     lane: str
     intent: OperationIntent
 

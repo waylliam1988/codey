@@ -4,34 +4,39 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased (0.5.1) - Runtime Operation State + Completion Repair Durability v1
+## Unreleased (0.5.1) - Task Runtime Finalization + Completion Repair Durability v1
 
 - 运行时冷启动重构：
-  - 删除 `codey/task/service.py` facade。Task submission 现在属于
-    `codey.task.model.TaskSubmission`，当前执行流属于
-    `codey.operations.task_flow.TaskFlow`；server、headless、manual harness
-    和测试调用点已直接迁移到 `TaskFlow`，不保留兼容 shim。
+  - 删除生产 `TaskFlow` 概念并移除 `codey/operations/task_flow.py`。
+    server、headless、manual harness 和测试现在都通过
+    `codey.operations.task_entry.run_task_submission()` 接收
+    `TaskSubmission`；不保留兼容 shim 或 old/new 开关。
+  - 剩余 task lifecycle 按 ownership 拆成清晰名字：`task_entry.py` 只把
+    submission 接到 `TaskRuntime`，`task_run.py` 拥有非业务 run 生命周期和
+    `TaskRunDeps`，`mode_dispatch.py` 选择 operation function，review /
+    planning / Ghost post-turn 进入各自 operation 模块。
   - app runtime 状态从 HTTP server 外壳拆出：run 生命周期、approval 队列、
     provider session/health/order、conversation cache/store、knowledge rebuild
     single-flight、Ghost sleep single-flight 现在都有独立 app 模块。
     `server.State` 保留产品调用方法，但没有 old/new runtime 开关。
   - operation frame/work/hooks/outcome 值对象移入 `codey.operations`，plain
-    chat operation 和 prompt/local-context trace helper 也从 `TaskFlow`
+    chat operation 和 prompt/local-context trace helper 也从 task runner
     迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
     emission 现在有明确 operation owner。
   - project completion 执行迁入
     `codey.operations.project_completion_flow`：writer failover、completion
     proof evaluation、bounded repair admission、receipt/facts/memory 写入和
-    analysis-run projection 不再落在 `TaskFlow` 上。
-  - task 包边界与 operation flow 分开：`codey.task` 只保留 submission model，
-    `codey.operations.task_flow` 是任务 operation flow 的所有者。
-  - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
-    contract、suspended operation、lane queue、小型 scheduler，以及
-    append-only session log + fail-closed reducer。reducer 测试覆盖单 lane
-    只能有一个 open operation、重复 tool invocation 拒绝、settled 后追加
-    拒绝、有界 payload、缺失 effect ref 拒绝，以及 unknown effect 拒绝。
+    analysis-run projection 现在都由 project-completion operation 拥有。
+  - task 包边界与执行分开：`codey.task` 只保留 model-only 的
+    `TaskSubmission` 和 `TaskKind`；`TaskContract`、`TaskState` 和旧 service
+    facade 都已删除。
+  - Pi 风格 runtime kernel 收缩到只有已接线的生产事实：typed operation
+    outcome、operation contract、小型 scheduler，以及 append-only session log
+    + fail-closed reducer。发布前删除了未来态脚手架：lane queue、
+    suspended operation、`TaskRuntimePort`、tool-invocation log entry 和未使用的
+    `OperationKind` literal。
   - completion verdict 所有权移入 `codey.completion.engine`，包括 blocked
-    note 词汇和 proof + edit-integrity evaluation。`TaskFlow` 只消费
+    note 词汇和 proof + edit-integrity evaluation。project completion 消费
     engine 输出，不再内联重建这条决策链。
   - terminal `task_done` 事件构造和 terminal turn 计数移入
     `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
@@ -52,12 +57,18 @@
   - Runtime log 的 `append_many()` 行现在带 batch metadata。reader 会忽略
     不完整的尾部 batch，下一次 append 写入前会修剪这个坏尾；进程死在 batch
     中途不会留下永久 open lane。
+  - Runtime log 会在同一把文件锁下、触碰 4 MB 上限前做 compaction，避免
+    长生命周期 session 被写满后永久 brick。Compaction 保留 replay 等价骨架：
+    `operation_started`、最新 `run_phase` effect，以及存在时的 terminal
+    `operation_settled`。
   - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
     存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
     `Progress` 行。terminal runtime state 也能在没有 ledger/trace 时提供最小
     Work/Model 解释，但不会显示过期的 Progress。
   - RunRegistry 构建 `/api/state` snapshot 时不再在内部锁里调用 approval
     callback。
+  - 无参 `State()` 现在也有 ephemeral runtime-session log 和 operation store，
+    测试/临时调用走同一 runtime path，但不会写入用户真实 durable state home。
   - Research 和 hybrid terminal event 现在把原始任务 turn budget 写入
     runtime terminal snapshot，即使 research engine 内部只用了更少轮数。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入
@@ -71,7 +82,7 @@
   - project completion 测试现在直接面向 operation module：analysis-run
     projection、repair 常量、verification candidate selection 和 writer
     failover ranking 的 patch 点都已迁移。生产代码不再为了测试保留
-    `TaskFlow` 私有方法入口。
+    旧 task-runner 私有方法入口。
 - 审查后的冷启动清理：
   - A/B harness 的 git-state 读取改成 bytes 路径，未跟踪的中文文件名不会再在
     Windows locale 解码阶段把全量 pytest 打红。
@@ -145,26 +156,26 @@
     `complete_with_limitations` / `failed` / `blocked`，
     `satisfied == (status == "complete")`，blocked verdict 必须由
     unsatisfied 的 `failed` 或 `blocked` proof 支撑。
-- TaskFlow 现在在 runtime log 可用时通过 `TaskRuntime` 调度生产
-  submission，并在真实生命周期边界提交 completion/repair phase。runtime
-  persistence 对用户任务保持 fail-open：坏 runtime fact 只会禁用该 run 的
-  progress projection，不改变 coding run 行为。
+- Task entry 现在通过 `TaskRuntime` 调度所有生产 submission，并在真实生命周期
+  边界提交 completion/repair phase。runtime persistence 对用户任务保持
+  fail-open：坏 runtime fact 只会禁用该 run 的 progress projection，不改变
+  coding run 行为。
 - Run Details 增加一行安静的 `Progress`，只在用户点开 Details、operation
   state 未到 terminal 且 ledger 没有 `run_finished`（旧快照不污染已完成
   run）时出现：`Writing was interrupted`、`Completion check was
   interrupted`、`Finishing was interrupted` 或 `Stopped during repair`——
   文案如实描述被中断的是哪一步：repair 已结束就说 check 被中断，proof 已
   满足就说收尾被中断。不加 chip、banner，不出现内部词汇。
-- 顺手抽薄 TaskFlow：stringly 的 `completion_repair_admission` dict 换成
-  类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
-  `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
-  封闭词表由测试锁住。
-- 按稳定边界继续拆 TaskFlow，但不新增 Manager：
-  `provider_preflight.py`、`conversation_plan.py`、`research_flow.py` 和
-  `project_completion_flow.py` 分别承接 provider 启动、handoff 规划、
-  Research/Hybrid 编排与 completion helper 投影。`TaskFlow` 上测试专用的
-  Research iteration 字段已删除；测试和 manual harness 直接 patch
-  `codey.operations.research_flow.run_research_iteration`。
+- 这次不是继续抽薄 TaskFlow，而是删除 TaskFlow：stringly 的
+  `completion_repair_admission` dict 换成类型化的
+  `RepairContextProjection | None`；blocked reason 的长三元链移入纯函数
+  `completion_blocked_reason()`；生产编排按真实 owner 拆到
+  `provider_preflight.py`、`conversation_plan.py`、`mode_dispatch.py`、
+  `task_run.py`、`research_flow.py`、`review_flow.py`、`planning_flow.py`、
+  `ghost_context.py`、`ghost_post_turn.py` 和 `project_completion_flow.py`。
+- 测试和 manual harness 现在直接 patch owning module，例如
+  `codey.operations.research_flow.run_research_iteration`，不再要求生产类保留
+  私有方法 patch 点。
 - event matrix 注册 `runtime_operation.state` 行，durable state 是
   `runtime_session_log`。`State.forget_conversation()` 现在会删除该 session
   的 runtime log bucket。不加 Manager 类，不做 provider/tool replay，不改

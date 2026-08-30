@@ -1,4 +1,4 @@
-"""TaskFlow commits its completion/repair lifecycle to runtime effects.
+"""Task entry commits its completion/repair lifecycle to runtime effects.
 
 These tests prove the 0.5.1 contract end to end: the phases a project run
 passes through are visible on the durable counter while the run is alive,
@@ -52,7 +52,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
 from codey.operations.project_completion_flow import COMPLETION_REPAIR_FOLLOWUP
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -150,10 +150,14 @@ def _pytest_project(td: Path) -> Path:
     return project
 
 
-def _runner(state: server.State, writer: ObservingWriter) -> TaskFlow:
-    return TaskFlow(
-        state,
-        agent_run=writer,
+def _runner(
+    state: server.State,
+    writer: ObservingWriter,
+    *,
+    agent_run=None,
+) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
+        agent_run=agent_run or writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
         run_review=mock.Mock(return_value=None),
         capture_provider_failure=server.capture_provider_failure,
@@ -169,7 +173,7 @@ def _runner(state: server.State, writer: ObservingWriter) -> TaskFlow:
 
 
 def _run(
-    runner: TaskFlow,
+    runner: TaskRunDeps,
     state: server.State,
     project: Path,
     writer: ObservingWriter,
@@ -179,9 +183,9 @@ def _run(
     def observed_agent_run(provider, project_path, task, **kwargs):
         return writer(provider, project_path, task, state_ref=state, **kwargs)
 
-    runner.agent_run = observed_agent_run
+    runner = replace(runner, agent_run=observed_agent_run)
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
-        runner.run(
+        run_task_submission(runner, 
             TaskSubmission(
                 SESSION,
                 str(project),
@@ -383,7 +387,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 ),
                 self.assertRaises(RuntimeError),
             ):
-                runner.run(
+                run_task_submission(runner, 
                     TaskSubmission(
                         SESSION,
                         str(project),
@@ -403,7 +407,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state = server.State(Path(td) / "state")
             runner = _runner(state, writer)
-            runner.search_factory = lambda: object()
+            runner = replace(runner, search_factory=lambda: object())
             result = ResearchRunResult(
                 "question",
                 "summary",
@@ -419,7 +423,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
                 mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
-                runner.run(
+                run_task_submission(runner, 
                     TaskSubmission(
                         SESSION,
                         "",
@@ -447,7 +451,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             project = _pytest_project(root)
             state = server.State(root / "state")
             runner = _runner(state, writer)
-            runner.search_factory = lambda: object()
+            runner = replace(runner, search_factory=lambda: object())
             result = ResearchRunResult(
                 "question",
                 "need more evidence",
@@ -463,7 +467,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
                 mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
-                runner.run(
+                run_task_submission(runner, 
                     TaskSubmission(
                         SESSION,
                         str(project),
@@ -488,7 +492,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
 
 class NonBoolSatisfiedWiringTests(unittest.TestCase):
     def test_fake_proof_with_int_satisfied_disables_runtime_tracking_only(self) -> None:
-        # TaskFlow passes the proof's facts through uncoerced: the strict
+        # Task entry passes the proof's facts through uncoerced: the strict
         # helper validates them. A proof carrying satisfied=1 (an int)
         # disables explanatory operation tracking, but it must not perturb
         # the user-visible task result.

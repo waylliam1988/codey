@@ -158,7 +158,7 @@ class PromptEnvelopeTests(unittest.TestCase):
             )
 
         class _ControlTeachStoppingTrace:
-            class ControlTeachCancelled(RuntimeError):
+            class ControlTeachCancelled(cancellation.TaskCancelled):
                 pass
 
             def record_prompt_section(self, *_args, **_kwargs) -> None:
@@ -168,6 +168,17 @@ class PromptEnvelopeTests(unittest.TestCase):
             FailOpenPromptTrace(_ControlTeachStoppingTrace()).record_section(
                 PromptEnvelopeSection("section", "text")
             )
+
+        class _OldNameOnlyStoppingTrace:
+            class ControlTeachCancelled(RuntimeError):
+                pass
+
+            def record_prompt_section(self, *_args, **_kwargs) -> None:
+                raise self.ControlTeachCancelled("stop")
+
+        FailOpenPromptTrace(_OldNameOnlyStoppingTrace()).record_section(
+            PromptEnvelopeSection("section", "text")
+        )
 
     def test_trace_sink_ignores_section_normalization_errors(self) -> None:
         class _BadSection:

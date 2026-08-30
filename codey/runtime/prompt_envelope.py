@@ -227,10 +227,7 @@ def record_provider_send_prompt(
 
 
 def _is_trace_cancellation(exc: BaseException) -> bool:
-    return (
-        isinstance(exc, (cancellation.TaskCancelled, cancellation.DeadlineExceeded))
-        or type(exc).__name__ == "ControlTeachCancelled"
-    )
+    return isinstance(exc, (cancellation.TaskCancelled, cancellation.DeadlineExceeded))
 
 
 def _source_refs(values: Iterable[object], fallback_name: object) -> tuple[str, ...]:

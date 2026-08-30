@@ -1,6 +1,6 @@
 """Manual production-spine A/B for automatic routing.
 
-This harness uses the production ``TaskFlow`` and ``codey.ghost.router``
+This harness uses the production ``task_entry`` path and ``codey.ghost.router``
 implementation. The front router can be a live web provider, while the actual
 mode bodies use safe stubs so the A/B does not edit the repository or run shell
 commands.
@@ -28,7 +28,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from tests.manual.ghost_router_ab import (
     DEFAULT_CASES,
     RESULTS_DIR,
@@ -146,8 +146,7 @@ def _run_case(
             review_calls += 1
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=agent_run,
             collect_changes=collect_changes,
             run_review=run_review,
@@ -173,7 +172,7 @@ def _run_case(
                 _patched_provider(state),
                 mock.patch(RESEARCH_ITERATION, side_effect=research_task),
             ):
-                runner.run(TaskSubmission(
+                run_task_submission(runner, TaskSubmission(
                     session_id=f"{arm}-{case.name}",
                     project=str(project) if case.project else None,
                     task=case.task,

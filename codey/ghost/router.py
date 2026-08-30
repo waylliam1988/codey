@@ -1038,7 +1038,7 @@ def _diagnostic_code(stage: str, exc: BaseException) -> str:
 
 
 def _is_cancel_signal(exc: BaseException | None) -> bool:
-    return isinstance(exc, cancellation.TaskCancelled) or type(exc).__name__ == "ControlTeachCancelled"
+    return isinstance(exc, cancellation.TaskCancelled)
 
 
 def _route_reason_code(result: GhostRouteResult) -> str:

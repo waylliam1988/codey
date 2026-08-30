@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable
 
-from codey.runtime.outcome import OperationOutcome
+from codey.runtime.outcome import OperationOutcome, operation_outcome_from_stop_reason
 from codey.runtime.reducer import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import project_key, session_key
@@ -805,17 +805,11 @@ def _existing_open_phase(
 
 def _outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:
     reason = state.terminal.stop_reason if state.terminal is not None else state.stop_reason
-    if reason == "done":
-        return OperationOutcome.completed(summary="done")
-    if reason == "stopped":
-        return OperationOutcome.aborted(reason="stopped")
-    if reason == "approval":
-        return OperationOutcome.suspended(reason="approval")
-    if state.blocked_reason:
-        return OperationOutcome.failed(reason=state.blocked_reason)
-    if reason:
-        return OperationOutcome.failed(reason=reason)
-    return OperationOutcome.completed()
+    return operation_outcome_from_stop_reason(
+        reason,
+        blocked_reason=state.blocked_reason,
+        summary="done" if reason == "done" else "",
+    )
 
 
 def _repair_candidate_proof(state: RuntimeOperationState) -> bool:

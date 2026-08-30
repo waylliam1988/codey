@@ -13,7 +13,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -76,9 +76,8 @@ def _runner(
     run_review=None,
     router_provider_factory=None,
     is_git_repository=None,
-) -> TaskFlow:
-    return TaskFlow(
-        state,
+) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,
         run_review=run_review or mock.Mock(return_value=None),
@@ -98,11 +97,11 @@ def _done_events(state: server.State) -> list[dict]:
 
 
 def _run_and_wait_for_local_maintenance(
-    runner: TaskFlow,
+    runner: TaskRunDeps,
     state: server.State,
     request: TaskSubmission,
 ) -> None:
-    runner.run(request)
+    run_task_submission(runner, request)
     state.wait_for_ghost_sleep(timeout=2)
 
 
@@ -348,7 +347,7 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskSubmission(
+            run_task_submission(runner, TaskSubmission(
                 "session-1",
                 str(project),
                 "修复测试",
@@ -377,7 +376,7 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
-            runner.run(TaskSubmission(
+            run_task_submission(runner, TaskSubmission(
                 "session-1",
                 str(project),
                 "修复测试",

@@ -23,24 +23,3 @@ class TaskSubmission:
     provider_id: str
     intent: str = "auto"
     run_id: str = ""
-
-
-@dataclass(frozen=True)
-class TaskContract:
-    session_id: str
-    run_id: str
-    kind: TaskKind | str
-    project: str | None
-    prompt: str
-    max_turns: int
-    provider_id: str
-    continue_task: bool = False
-    intent: str = "auto"
-
-
-@dataclass(frozen=True)
-class TaskState:
-    contract: TaskContract
-    turns_used: int = 0
-    terminal: bool = False
-    completion_status: str = ""

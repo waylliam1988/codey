@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
 
@@ -24,16 +25,12 @@ DEFAULT_MAX_LOG_BYTES = 4 * 1024 * 1024
 RuntimeEntryKind = Literal[
     "operation_started",
     "operation_effect",
-    "tool_invocation",
-    "tool_settled",
     "operation_settled",
 ]
 
 _ENTRY_KINDS = {
     "operation_started",
     "operation_effect",
-    "tool_invocation",
-    "tool_settled",
     "operation_settled",
 }
 _KNOWN_ENTRY_KEYS = frozenset(
@@ -238,9 +235,11 @@ class RuntimeSessionLog:
         return self.state_home / "runtime" / "sessions" / f"{session_key(session_id)}.jsonl"
 
     def read(self, session_id: str) -> tuple[RuntimeLogEntry, ...]:
-        return self._read(session_id, repair_tail=False)
+        path = self.path_for(session_id)
+        with with_file_lock(path):
+            return self._read_unlocked(session_id, repair_tail=False)
 
-    def _read(
+    def _read_unlocked(
         self,
         session_id: str,
         *,
@@ -274,7 +273,7 @@ class RuntimeSessionLog:
             entries.append(entry)
         valid = _complete_batch_prefix(entries)
         if repair_tail and (bad_tail or len(valid) < len(entries)):
-            path.write_bytes(b"".join(entry.to_json_line().encode("utf-8") for entry in valid))
+            write_bytes_atomic(path, b"".join(entry.to_json_line().encode("utf-8") for entry in valid))
         return tuple(valid)
 
     def append(
@@ -327,14 +326,25 @@ class RuntimeSessionLog:
         path = self.path_for(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with with_file_lock(path):
-            entries = self._read(session_id, repair_tail=True)
+            entries = self._read_unlocked(session_id, repair_tail=True)
             from codey.runtime.reducer import reduce_session
 
-            reduce_session((*entries, *rows))
+            candidate = (*entries, *rows)
+            reduce_session(candidate)
             current_size = path.stat().st_size if path.exists() else 0
             total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
-            if current_size + total_new_bytes > self.max_log_bytes:
-                raise RuntimeLogWriteError("runtime log exceeds size limit")
+            if current_size + total_new_bytes > max(0, self.max_log_bytes // 2):
+                compacted = _compact_entries(candidate)
+                reduce_session(compacted)
+                encoded_compacted = tuple(
+                    row.to_json_line().encode("utf-8") for row in compacted
+                )
+                if any(len(encoded) > self.max_entry_bytes for encoded in encoded_compacted):
+                    raise RuntimeLogWriteError("runtime log entry exceeds size limit")
+                if sum(len(encoded) for encoded in encoded_compacted) > self.max_log_bytes:
+                    raise RuntimeLogWriteError("runtime log exceeds size limit")
+                write_bytes_atomic(path, b"".join(encoded_compacted))
+                return rows
             with path.open("ab") as handle:
                 for encoded in encoded_rows:
                     handle.write(encoded)
@@ -368,3 +378,60 @@ def _complete_batch_prefix(
         valid.extend(batch)
         index += batch_count
     return valid
+
+
+def _compact_entries(
+    entries: tuple[RuntimeLogEntry, ...],
+) -> tuple[RuntimeLogEntry, ...]:
+    """Keep the replay-equivalent task-operation spine."""
+    ordered_operations: list[str] = []
+    started: dict[str, RuntimeLogEntry] = {}
+    latest_phase: dict[str, RuntimeLogEntry] = {}
+    settled: dict[str, RuntimeLogEntry] = {}
+    for entry in entries:
+        if entry.kind == "operation_started":
+            if entry.operation_id not in started:
+                ordered_operations.append(entry.operation_id)
+            started[entry.operation_id] = entry
+            continue
+        if entry.kind == "operation_effect":
+            if entry.payload.get("effect_kind") == "run_phase":
+                latest_phase[entry.operation_id] = entry
+            continue
+        if entry.kind == "operation_settled":
+            settled[entry.operation_id] = entry
+    compacted: list[RuntimeLogEntry] = []
+    for operation_id in ordered_operations:
+        start = started.get(operation_id)
+        if start is None:
+            continue
+        compacted.append(start)
+        phase = latest_phase.get(operation_id)
+        if phase is not None:
+            compacted.append(phase)
+        finish = settled.get(operation_id)
+        if finish is not None:
+            compacted.append(finish)
+    return _rebatch(compacted)
+
+
+def _rebatch(entries: list[RuntimeLogEntry]) -> tuple[RuntimeLogEntry, ...]:
+    if not entries:
+        return ()
+    batch_id = f"batch-{uuid.uuid4().hex}"
+    batch_count = len(entries)
+    return tuple(
+        RuntimeLogEntry(
+            session_id=entry.session_id,
+            lane=entry.lane,
+            operation_id=entry.operation_id,
+            kind=entry.kind,
+            payload=dict(entry.payload),
+            entry_id=entry.entry_id,
+            created_at=entry.created_at,
+            batch_id=batch_id,
+            batch_index=index,
+            batch_count=batch_count,
+        )
+        for index, entry in enumerate(entries)
+    )

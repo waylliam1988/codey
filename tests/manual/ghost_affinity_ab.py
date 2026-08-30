@@ -1,7 +1,7 @@
 """Manual production-spine A/B for 0.3.10 Affinity Index.
 
 The self-test path uses stubs and writes atomic partial progress. Real runs use
-the production TaskFlow path and provider tabs, while mode bodies remain
+the production task-entry path and provider tabs, while mode bodies remain
 safe stubs so this probe does not edit files or run shell commands.
 """
 
@@ -36,7 +36,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.storage.local_store import write_json_atomic
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
@@ -161,7 +161,7 @@ def _run_case(
                 if research_task is not None:
                     stack.enter_context(mock.patch(RESEARCH_ITERATION, side_effect=research_task))
                 intent = "chat" if case.kind == "explicit" else "auto"
-                runner.run(TaskSubmission("s1", None, case.prompt, 8, False, provider_id, intent=intent))
+                run_task_submission(runner, TaskSubmission("s1", None, case.prompt, 8, False, provider_id, intent=intent))
                 state.wait_for_ghost_sleep(timeout=2)
             terminal = state.last_terminal_event or {}
             return _score_case(case, arm, state, terminal, provider, elapsed_seconds=time.time() - started)
@@ -180,9 +180,8 @@ def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | 
     return _RecordingProvider(connect_fresh_provider_tab(provider_id))
 
 
-def _runner(state: server.State) -> TaskFlow:
-    return TaskFlow(
-        state,
+def _runner(state: server.State) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
         run_review=lambda **_kwargs: None,

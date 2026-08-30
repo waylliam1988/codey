@@ -1,6 +1,6 @@
 """Manual quality/uplift A/B for Affinity-backed directive ordering.
 
-This probe uses the production TaskFlow chat path and real provider replies.
+This probe uses the production task-entry chat path and real provider replies.
 Both arms are scored by the same target metric: whether the first line follows
 the stronger local Affinity association for the target answer-structure preference.
 """
@@ -27,7 +27,7 @@ from codey.ghost.hebbian import GhostNode
 from codey.storage.local_store import write_json_atomic
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 
 RESULTS_DIR = Path(__file__).with_name("results")
@@ -133,7 +133,7 @@ def _run_case(
             _seed_directive_state(state, arm=arm)
             runner = _runner(state)
             with _patch_provider(state, provider):
-                runner.run(TaskSubmission(
+                run_task_submission(runner, TaskSubmission(
                     "s1",
                     None,
                     _case_prompt(case),
@@ -160,9 +160,8 @@ def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | 
     return _RecordingProvider(connect_fresh_provider_tab(provider_id))
 
 
-def _runner(state: server.State) -> TaskFlow:
-    return TaskFlow(
-        state,
+def _runner(state: server.State) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
         run_review=lambda **_kwargs: None,

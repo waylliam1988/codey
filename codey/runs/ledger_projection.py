@@ -273,6 +273,25 @@ def build_task_receipt_from_projection(
     return projection.final_changes.receipt
 
 
+def event_with_projected_receipt(
+    store: RunLedgerStore | None,
+    event: dict[str, object],
+    *,
+    session_id: str,
+    run_id: str,
+) -> dict[str, object]:
+    """Attach the durable receipt projection to a terminal event when present."""
+
+    receipt = build_task_receipt_from_projection(
+        load_run_projection(store, session_id, run_id)
+    )
+    if receipt is None:
+        return event
+    updated = dict(event)
+    updated["receipt"] = receipt.to_dict()
+    return updated
+
+
 def _sorted_payloads(records: Iterable[RunLedgerRecord]) -> list[dict[str, object]]:
     payloads: list[tuple[int, int, dict[str, object]]] = []
     for index, record in enumerate(records):

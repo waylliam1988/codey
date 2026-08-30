@@ -1,6 +1,6 @@
-"""Headless JSONL entry point backed by the production TaskFlow.
+"""Headless JSONL entry point backed by the production task entry.
 
-This module does not own an agent loop.  It adapts ``TaskFlow`` to a bounded
+This module does not own an agent loop.  It adapts the task entry to a bounded
 machine-readable stream so CLI/CI callers can use the same local execution
 spine as the UI.
 """
@@ -32,7 +32,7 @@ from codey.app.server import (
     is_git_repository,
 )
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 
 SCHEMA_VERSION = 1
@@ -168,8 +168,8 @@ def run_headless(
         session_id=session_id,
         project=project,
     )
-    runner = TaskFlow(
-        state,
+    deps = TaskRunDeps(
+        state=state,
         agent_run=agent_run or agent_module.run,
         collect_changes=collect_changes or default_collect_changes,
         run_review=_no_headless_review,
@@ -191,16 +191,19 @@ def run_headless(
         ),
     )
     try:
-        runner.run(TaskSubmission(
-            session_id=session_id,
-            project=str(project),
-            task=request.task,
-            max_turns=request.max_turns,
-            continue_task=False,
-            provider_id=request.provider_id,
-            intent=_request_intent(request.intent),
-            run_id=pre_reserved_run_id,
-        ))
+        run_task_submission(
+            deps,
+            TaskSubmission(
+                session_id=session_id,
+                project=str(project),
+                task=request.task,
+                max_turns=request.max_turns,
+                continue_task=False,
+                provider_id=request.provider_id,
+                intent=_request_intent(request.intent),
+                run_id=pre_reserved_run_id,
+            ),
+        )
     finally:
         if _should_wait_for_local_ghost_sleep(state.state_home):
             state.wait_for_ghost_sleep()

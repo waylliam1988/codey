@@ -1,7 +1,7 @@
 """Production-spine A/B for Research Interest Queue consumption.
 
 Candidate generation is deterministic and local. The harness uses the
-production TaskFlow claim path, while Research/Project/Review bodies are safe
+production task-entry claim path, while Research/Project/Review bodies are safe
 stubs so this probe does not write project files or run shell commands.
 """
 
@@ -34,7 +34,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -180,8 +180,7 @@ def _run_case(
             review_calls += 1
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=agent_run,
             collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
             run_review=run_review,
@@ -224,7 +223,7 @@ def _run_case(
                 _patched_provider(state, provider),
                 mock.patch(RESEARCH_ITERATION, side_effect=research_task),
             ):
-                runner.run(TaskSubmission(
+                run_task_submission(runner, TaskSubmission(
                     session_id=session_id,
                     project=None,
                     task=case.task,

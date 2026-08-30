@@ -35,7 +35,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 lane="current",
                 operation_id="op-1",
                 kind="operation_effect",
-                payload={"effect_kind": "trace_ref", "ref": "trace:1"},
+                payload={"effect_kind": "run_phase", "ref": "phase:1"},
             )
             log.append(
                 "s1",
@@ -50,7 +50,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual(projection.lanes["current"].open_operation_id, "")
         self.assertEqual(projection.lanes["current"].settled_operation_ids, ["op-1"])
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
-        self.assertEqual(projection.operations["op-1"].effect_refs, ["trace:1"])
+        self.assertEqual(projection.operations["op-1"].effect_refs, ["phase:1"])
 
     def test_append_many_rows_share_one_complete_batch(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -178,33 +178,17 @@ class RuntimeSessionLogTests(unittest.TestCase):
 
             self.assertEqual(len(log.read("s1")), 1)
 
-    def test_rejects_duplicate_tool_invocation(self) -> None:
-        entries = (
-            RuntimeLogEntry(
-                session_id="s1",
-                lane="current",
-                operation_id="op-1",
-                kind="operation_started",
-                payload={"operation_kind": "agent"},
-            ),
-            RuntimeLogEntry(
-                session_id="s1",
-                lane="current",
-                operation_id="op-1",
-                kind="tool_invocation",
-                payload={"invocation_id": "tool-1"},
-            ),
-            RuntimeLogEntry(
-                session_id="s1",
-                lane="current",
-                operation_id="op-1",
-                kind="tool_invocation",
-                payload={"invocation_id": "tool-1"},
-            ),
-        )
-
-        with self.assertRaises(RuntimeLogCorruption):
-            reduce_session(entries)
+    def test_unwired_tool_entries_are_not_runtime_log_schema(self) -> None:
+        for kind in ("tool_invocation", "tool_settled"):
+            with self.subTest(kind=kind):
+                with self.assertRaises(RuntimeLogCorruption):
+                    RuntimeLogEntry(
+                        session_id="s1",
+                        lane="current",
+                        operation_id="op-1",
+                        kind=kind,
+                        payload={"invocation_id": "tool-1"},
+                    )
 
     def test_rejects_record_after_operation_settlement(self) -> None:
         entries = (
@@ -227,7 +211,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 lane="current",
                 operation_id="op-1",
                 kind="operation_effect",
-                payload={"effect_kind": "trace_ref", "ref": "trace:late"},
+                payload={"effect_kind": "run_phase", "ref": "phase:late"},
             ),
         )
 
@@ -280,7 +264,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                     lane="current",
                     operation_id="op-1",
                     kind="operation_effect",
-                    payload={"effect_kind": "trace_ref"},
+                    payload={"effect_kind": "run_phase"},
                 ),
             ),
         )
@@ -289,6 +273,49 @@ class RuntimeSessionLogTests(unittest.TestCase):
             with self.subTest(entries=entries):
                 with self.assertRaises(RuntimeLogCorruption):
                     reduce_session(entries)
+
+    def test_append_compacts_phase_history_before_log_limit_bricks_session(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td), max_log_bytes=1800)
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "task"},
+            )
+            for index in range(12):
+                log.append(
+                    "s1",
+                    lane="current",
+                    operation_id="op-1",
+                    kind="operation_effect",
+                    payload={
+                        "effect_kind": "run_phase",
+                        "ref": f"phase:{index}",
+                        "padding": "x" * 80,
+                    },
+                )
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_settled",
+                payload={"outcome": "completed"},
+            )
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-2",
+                kind="operation_started",
+                payload={"operation_kind": "task"},
+            )
+            projection = reduce_session(log.read("s1"))
+            kinds = [entry.kind for entry in log.read("s1") if entry.operation_id == "op-1"]
+
+        self.assertEqual(kinds, ["operation_started", "operation_effect", "operation_settled"])
+        self.assertEqual(projection.operations["op-1"].outcome, "completed")
+        self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
 
     def test_payload_rejects_raw_prompt_or_output_fields(self) -> None:
         with self.assertRaises(RuntimeLogWriteError):

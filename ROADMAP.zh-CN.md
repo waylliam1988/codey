@@ -3248,14 +3248,15 @@ delete/degrade:
   删除生产接线，最多保留 manual harness scorer。
 ```
 
-## 0.5.1 - Runtime Session Log Operation State + TaskFlow Decomposition
+## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-30，focused gates、same-run crash/resume smoke、Ghost deterministic self-tests 和全量 pytest 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，而是把 run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3253 passed, 16 skipped in 306.31s` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 
 ```text
 TaskSubmission
+  -> task_entry.run_task_submission
   -> TaskRuntime
   -> OperationScheduler
   -> RuntimeSessionLog operation_started/effect/settled
@@ -3287,20 +3288,27 @@ terminal
 
 `RuntimeOperationStore.start()` 会恢复同一个 open operation 的最新 phase，不会把 resume 重新写回 `accepted`；相同 phase commit 幂等返回当前 projection，不制造重复 effect。scheduler 负责 open operation 一定 settle：正常返回、stop/cancel、业务异常和未知异常都会先写 settlement，再按调用策略返回或 re-raise。
 
-### TaskFlow 拆分
+### TaskFlow 删除后的 owner
 
-0.5.1 不追求为了行数漂亮而新建 Manager，而是拆稳定事实边界：
+0.5.1 不追求为了行数漂亮而新建 Manager，也不新建一个新的 `TaskOperation` 大类；Runtime 负责 lifecycle，operation function 负责业务动作。生产 `codey/operations/task_flow.py` 已删除：
 
 ```text
+codey.operations.task_entry           public submission entry + TaskRuntime wiring
+codey.operations.task_run             non-business task-run lifecycle + TaskRunDeps
+codey.operations.mode_dispatch        pure mode -> operation function dispatch
 codey.operations.provider_preflight      provider connect / canary / startup failover
 codey.operations.conversation_plan       fresh-chat / handoff / recovered owner prompt
+codey.operations.review_flow             review-only operation
+codey.operations.planning_flow           planning-readonly operation
 codey.operations.research_flow           research/hybrid research pipeline handoff
 codey.operations.project_completion_flow coding writer / review cycle / completion proof / repair / receipt
+codey.operations.ghost_context           prompt-time Ghost context
+codey.operations.ghost_post_turn         terminal-event Ghost projections
 codey.runtime.terminalizer               terminal task_done event + turn accounting
-codey.task.model                         TaskSubmission / TaskContract model-only boundary
+codey.task.model                         TaskSubmission model-only boundary
 ```
 
-`codey/task/service.py` 已删除；`codey.task` 不导出 `TaskFlow`。`TaskFlow` 现在仍是生产 task envelope：reserve/start/finish、runtime scheduling、mode dispatch、provider/session/trace cleanup、Ghost post-turn sync 仍在这里。project completion 的真实复杂度已经迁出：writer failover、completion proof、edit-integrity、bounded repair、receipt/facts/memory、analysis-run projection 都由 `project_completion_flow.py` 拥有。下一轮如果继续拆，应优先看 Ghost post-turn sync 和 review/planning operation，而不是把已经拆出的 project completion 再包一层。
+`codey/task/service.py` 和 `codey/operations/task_flow.py` 均已删除；`codey.task` 不导出 `TaskFlow`。server/headless/manual harness 只认 `task_entry.run_task_submission()` 这个稳定公共面；测试按 owner patch `research_flow`、`project_completion_flow`、`ghost_post_turn` 等模块，不再要求生产类保留私有方法。
 
 ### Crash / Resume
 
@@ -3317,14 +3325,17 @@ codey.task.model                         TaskSubmission / TaskContract model-onl
 
 `RuntimeSessionLog.append_many()` 带 batch metadata；reader 忽略不完整尾 batch，下一次 append 会先修剪坏尾，避免 crash mid-batch 留下永久 open lane。
 
+runtime log 还会在同一把文件锁下做 replay 等价 compaction，只保留每条 operation 的 `operation_started`、最新 `run_phase` effect 和已存在的 `operation_settled`，避免长生命周期 session 写满 4 MB 后永久 brick。
+
 ### 冷启动删除项
 
 ```text
 删除 codey/task/service.py compatibility facade
 删除独立 codey/run_operation.py JSON register 方案
 删除外层 runtime:<run_id> operation
-删除 TaskFlow.research_iteration_runner 测试注入字段
-删除 TaskFlow._run_project_mode / _handle_project_tool_event / _record_project_memory 私有测试入口
+删除 codey/operations/task_flow.py 生产概念
+删除 TaskFlow.research_iteration_runner 测试注入字段和所有 TaskFlow 私有测试入口
+删除 runtime/lane.py、runtime/suspension.py、TaskRuntimePort、tool_invocation/tool_settled log entry、TaskContract、TaskState、OperationKind literal 等未接线脚手架
 ```
 
 测试必须迁就新架构：research harness patch `codey.operations.research_flow.run_research_iteration`；project completion 测试 patch `codey.operations.project_completion_flow` 的公开 operation/helper，而不是要求生产类保留旧私有方法。
@@ -3334,11 +3345,11 @@ codey.task.model                         TaskSubmission / TaskContract model-onl
 ```text
 compileall + ruff 全过
 runtime/effects/session-log/details/operation-state focused tests 通过
-TaskFlow project completion / edit-integrity / completion-enforcement / analysis-run focused tests 通过
+task_entry / project_completion / edit-integrity / completion-enforcement / analysis-run focused tests 通过
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
 manual completion_operation_resume_smoke.py --self-test 通过
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
-全量 pytest 3252 passed, 16 skipped in 308.13s
+全量 pytest 3253 passed, 16 skipped in 306.31s
 ```
 
 ### A/B

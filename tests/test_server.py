@@ -930,7 +930,7 @@ class ProviderStatusTests(unittest.TestCase):
         connect_self_review.assert_not_called()
 
 
-class TaskFlowUiEventTests(unittest.TestCase):
+class RunEventUiProjectionTests(unittest.TestCase):
     def test_turn_event_preserves_note(self) -> None:
         event = RunEvent.turn_started(17, '{"tool":"done","args":{"answer":"report"}}', note="(done)")
 
@@ -2521,8 +2521,13 @@ class RunSnapshotTests(unittest.TestCase):
 
             self.assertIsNone(state.runtime_operations.load("session-forget", "run-forget"))
 
-    def test_state_without_state_home_has_no_runtime_operation_store(self) -> None:
-        self.assertIsNone(server.State().runtime_operations)
+    def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
+        from codey.runtime.effects import RuntimeOperationStore
+
+        state = server.State()
+        self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
+        self.assertIsNotNone(state.runtime_log)
+        self.assertIsNone(state.ghost_inbox)
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()

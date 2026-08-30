@@ -26,16 +26,10 @@ class OperationScheduler:
             self.settle_if_open(session_id, operation, outcome)
             raise
         except Exception as exc:
-            if type(exc).__name__ == "ControlTeachCancelled":
-                outcome = OperationOutcome.aborted(
-                    reason="control_teach_cancelled",
-                    summary=_bounded_exception_summary(exc),
-                )
-            else:
-                outcome = OperationOutcome.failed(
-                    reason=_exception_reason(exc),
-                    summary=_bounded_exception_summary(exc),
-                )
+            outcome = OperationOutcome.failed(
+                reason=_exception_reason(exc),
+                summary=_bounded_exception_summary(exc),
+            )
             self.settle_if_open(session_id, operation, outcome)
             raise
         self.settle_if_open(session_id, operation, outcome)
@@ -59,22 +53,6 @@ class OperationScheduler:
             operation_id=operation.operation_id,
             kind="operation_started",
             payload={"operation_kind": operation.kind},
-        )
-
-    def record_effect(
-        self,
-        session_id: str,
-        operation: Operation,
-        *,
-        effect_kind: str,
-        ref: str,
-    ) -> None:
-        self.session_log.append(
-            session_id,
-            lane=operation.lane,
-            operation_id=operation.operation_id,
-            kind="operation_effect",
-            payload={"effect_kind": effect_kind, "ref": ref},
         )
 
     def settle(

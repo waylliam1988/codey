@@ -103,7 +103,7 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "first?"
             ),
             expected_paths=(
-                "codey/operations/task_flow.py",
+                "codey/operations/task_run.py",
                 "codey/workspace/change_brief.py",
                 "codey/agents/consensus.py",
             ),
@@ -157,7 +157,7 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
             ),
             expected_paths=(
                 "codey/agents/writer_failover.py",
-                "codey/operations/task_flow.py",
+                "codey/operations/project_completion_flow.py",
                 "codey/runs/work_checkpoint.py",
             ),
             expected_tests=(
@@ -722,10 +722,10 @@ def run_provider(
 
 
 def run_self_test() -> None:
-    text = 'prefix {"paths":["./codey/operations/task_flow.py"],"tests":["tests/test_server.py"]}'
-    assert _paths_from_reply(text) == ("codey/operations/task_flow.py",)
+    text = 'prefix {"paths":["./codey/operations/task_run.py"],"tests":["tests/test_server.py"]}'
+    assert _paths_from_reply(text) == ("codey/operations/task_run.py",)
     assert _test_paths_from_reply(text) == ("tests/test_server.py",)
-    score = _score_paths(("service.py",), ("codey/operations/task_flow.py",))
+    score = _score_paths(("task_run.py",), ("codey/operations/task_run.py",))
     assert score["hit_count"] == 1, score
     term_score = _score_terms("Private ChangeBrief and Project Map", ("ChangeBrief",))
     assert term_score["hit_count"] == 1, term_score

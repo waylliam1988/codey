@@ -2,7 +2,8 @@
 
 The queue is a local state machine, not an autonomous runner. It can remember
 audited follow-up work and claim one item when the user explicitly asks to
-continue, but TaskFlow remains the only execution entry point.
+continue. Task entry runs the claimed item; Ghost post-turn policy updates the
+queue from terminal task facts.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """The completion decision for one coding run (0.5.0).
 
-``build_completion_decision`` is the single pure projection the TaskFlow
-calls at each completion decision point. It combines the verification
+``build_completion_decision`` is the single pure projection the project
+completion operation calls at each decision point. It combines the verification
 facts this run observed -- tri-state freshness, explicit provenance, the
 decisive analysis runs, and the hard-gate proof -- into one value, so the
 agent loop never re-derives them inline and every consumer (repair
@@ -146,7 +146,7 @@ def completion_blocked_reason(
 ) -> str:
     """Name honestly why a done claim backed by a failed/blocked proof blocks.
 
-    Pure vocabulary projection of the 0.4.13 decision; the TaskFlow calls
+    Pure vocabulary projection of the 0.4.13 decision; project completion calls
     this instead of inlining the chain. ``repair_rounds`` counts rounds that
     actually ran, so ``max_repair_rounds`` is never claimed when no round was
     admitted.

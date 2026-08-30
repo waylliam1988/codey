@@ -2,7 +2,7 @@
 
 These exercise ``WriterFailoverRunner`` in isolation with plain fakes, covering
 the nine behaviours the state machine must guarantee before it replaces the
-``TaskFlow`` closures.
+old task-run closures.
 """
 
 from __future__ import annotations
@@ -156,8 +156,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_succeed(turns=2)]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
-        result = runner.run(
-            task="t",
+        result = runner.run(task="t",
             turn_budget=5,
             fresh=False,
             handoff="H",
@@ -179,8 +178,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_succeed()]
         runner = h.make_runner(provider=None, provider_id="p1")
 
-        runner.run(
-            task="t",
+        runner.run(task="t",
             turn_budget=5,
             fresh=False,
             handoff="H",
@@ -202,8 +200,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_fail(turn=3), _succeed(turns=2)]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
-        result = runner.run(
-            task="t",
+        result = runner.run(task="t",
             turn_budget=10,
             fresh=True,
             handoff="H",
@@ -222,8 +219,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_fail(turn=1), _succeed()]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1", tried=())
 
-        runner.run(
-            task="t",
+        runner.run(task="t",
             turn_budget=5,
             fresh=True,
             handoff="H",
@@ -240,8 +236,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
         with self.assertRaises(TaskCancelled):
-            runner.run(
-                task="t",
+            runner.run(task="t",
                 turn_budget=5,
                 fresh=True,
                 handoff="",
@@ -261,8 +256,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_succeed()]
         runner = h.make_runner(provider=None, provider_id="p1")
 
-        runner.run(
-            task="t",
+        runner.run(task="t",
             turn_budget=5,
             fresh=False,
             handoff="",
@@ -288,8 +282,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         runner.max_switches = 1
 
         with self.assertRaises(ProviderActionError):
-            runner.run(
-                task="t",
+            runner.run(task="t",
                 turn_budget=5,
                 fresh=False,
                 handoff="",
@@ -306,8 +299,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
         with self.assertRaises(ProviderActionError):
-            runner.run(
-                task="t",
+            runner.run(task="t",
                 turn_budget=100,
                 fresh=True,
                 handoff="",
@@ -323,8 +315,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
         with self.assertRaises(ProviderActionError):
-            runner.run(
-                task="t",
+            runner.run(task="t",
                 turn_budget=100,
                 fresh=True,
                 handoff="",
@@ -340,8 +331,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_fail(turn=1), _succeed()]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
-        runner.run(
-            task="t",
+        runner.run(task="t",
             turn_budget=10,
             fresh=True,
             handoff="H",
@@ -357,8 +347,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_fail(turn=1), _succeed()]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
-        runner.run(
-            task="init",
+        runner.run(task="init",
             turn_budget=10,
             fresh=True,
             handoff="",
@@ -371,8 +360,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         runner.provider = None
         h.script = [_fail(turn=1), _fail(turn=1)]
         with self.assertRaises(ProviderActionError):
-            runner.run(
-                task="repair",
+            runner.run(task="repair",
                 turn_budget=10,
                 fresh=False,
                 handoff="",
@@ -388,8 +376,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         h.script = [_fail(turn=1), _fail(turn=1), _succeed()]
         runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
 
-        runner.run(
-            task="t",
+        runner.run(task="t",
             turn_budget=100,
             fresh=True,
             handoff="",

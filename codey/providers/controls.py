@@ -76,7 +76,7 @@ class _PendingControl:
     locator: Any | None = None
 
 
-class ControlTeachCancelled(RuntimeError):
+class ControlTeachCancelled(cancellation.TaskCancelled):
     """Raised when the user stops a paused control teaching request."""
 
 

@@ -96,13 +96,13 @@ class BaselineCodec(JsonToolCodec):
 def cases(stockalarm: Path) -> dict[str, Case]:
     values = (
         Case(
-            "codey_task_flow",
+            "codey_task_run",
             ROOT,
             "Read-only architecture question. Explain how an HTTP project-task "
-            "request moves from codey/app/server.py through TaskFlow, the agent "
-            "loop, Review, and the final receipt. Cite exact relative files and "
+            "request moves from codey/app/server.py through task entry, task run, "
+            "the agent loop, Review, and the final receipt. Cite exact relative files and "
             "function/class names. Do not modify files.",
-            ("app/server.py", "operations/task_flow.py", "agents/runner.py", "reviews/core.py", "TaskFlow"),
+            ("app/server.py", "operations/task_entry.py", "operations/task_run.py", "agents/runner.py", "reviews/core.py"),
         ),
         Case(
             "stockalarm_training_flow",

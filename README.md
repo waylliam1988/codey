@@ -290,8 +290,8 @@ fresh background tab in the same logged-in Codey browser profile, so it does
 not need to copy cookies or block your current task. Candidates start as
 provisional, become active only after natural successes, and roll back after
 repeated structural failures. Core files such as `codey/agents/runner.py`,
-`codey/operations/task_flow.py`, `codey/runtime/*`,
-`codey/app/server.py`, and the
+`codey/operations/task_entry.py`, `codey/operations/task_run.py`,
+`codey/runtime/*`, `codey/app/server.py`, and the
 recovery/safety modules are not self-modified by this v1.
 
 ---
@@ -941,7 +941,7 @@ codey/
   completion/               CompletionProof, verification policy, edit scope/integrity, receipt decisions, and bounded repair-context projection
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, graph/FTS index, restore, concepts, and Research Briefs
-  operations/               TaskFlow runtime entry, mode contexts, chat operation, and prompt/local-context projections
+  operations/               task entry/run lifecycle, mode dispatch, chat/project/research/review/planning operations, and Ghost task projections
   policies/                 action/capability/permission/prompt/network safety, command tokenizer, run-command semantics, and shell risk
   protocols/                codec interfaces and JSON-only tool protocol
   providers/                provider registry, profiles, controls, discovery, revival/supervision, worker isolation, local OpenAI, and web drivers

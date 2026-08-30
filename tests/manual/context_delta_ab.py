@@ -75,13 +75,13 @@ def cases(stockalarm: Path) -> dict[str, Case]:
             "codey_execution_evidence",
             ROOT,
             "Read-only orientation: trace a project task from the HTTP request "
-            "through TaskFlow and the agent tool loop. Cite exact relative files "
+            "through task entry and the agent tool loop. Cite exact relative files "
             "and symbols. Do not modify files or run commands.",
             "Continue the same read-only analysis. Explain how a successful edit "
             "invalidates old checks, how later run results are recorded, and how "
             "Review consumes the fresh evidence. Cite exact files and symbols. "
             "Do not modify files or run commands.",
-            ("operations/task_flow.py", "execution_evidence.py", "record", "render_for_review"),
+            ("operations/task_entry.py", "operations/task_run.py", "execution_evidence.py", "record"),
         ),
         Case(
             "stockalarm_training_followup",

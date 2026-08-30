@@ -1,7 +1,7 @@
 """Pure coding verification facts and completion-proof projection (0.4.13).
 
-TaskFlow collects execution facts and wires I/O; this module explains what
-those facts mean for completion. It is a projection leaf like
+Project completion collects execution facts and wires I/O; this module explains
+what those facts mean for completion. It is a projection leaf like
 ``completion_contract``: no I/O, no models, no commands, and it never treats
 a model's own claim as a local fact.
 

@@ -237,10 +237,6 @@ def test_rerun_failed_replaces_old_error_row(
         def close(self) -> None:
             pass
 
-    class FakeRunner:
-        def run(self, _request: object) -> None:
-            pass
-
     def live_project(root: Path, _spec: dict[str, object]) -> Path:
         project = root / "project"
         project.mkdir()
@@ -267,7 +263,8 @@ def test_rerun_failed_replaces_old_error_row(
 
     monkeypatch.setattr("codey.providers.registry.connect_provider", lambda *_a, **_k: FakeProvider())
     monkeypatch.setattr(harness, "_live_project", live_project)
-    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: FakeRunner())
+    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: object())
+    monkeypatch.setattr(harness, "run_task_submission", lambda *_a, **_k: None)
     monkeypatch.setattr(harness, "_finish_row", finish_row)
 
     report = harness.run_live(
@@ -299,10 +296,6 @@ def test_live_terminal_error_row_fails_report_and_journal(
         def close(self) -> None:
             pass
 
-    class FakeRunner:
-        def run(self, _request: object) -> None:
-            pass
-
     def live_project(root: Path, _spec: dict[str, object]) -> Path:
         project = root / "project"
         project.mkdir()
@@ -329,7 +322,8 @@ def test_live_terminal_error_row_fails_report_and_journal(
 
     monkeypatch.setattr("codey.providers.registry.connect_provider", lambda *_a, **_k: FakeProvider())
     monkeypatch.setattr(harness, "_live_project", live_project)
-    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: FakeRunner())
+    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: object())
+    monkeypatch.setattr(harness, "run_task_submission", lambda *_a, **_k: None)
     monkeypatch.setattr(harness, "_finish_row", finish_row)
 
     report = harness.run_live(
@@ -367,10 +361,6 @@ def test_live_false_completion_row_fails_report_and_journal(
         def close(self) -> None:
             pass
 
-    class FakeRunner:
-        def run(self, _request: object) -> None:
-            pass
-
     def live_project(root: Path, _spec: dict[str, object]) -> Path:
         project = root / "project"
         project.mkdir()
@@ -397,7 +387,8 @@ def test_live_false_completion_row_fails_report_and_journal(
 
     monkeypatch.setattr("codey.providers.registry.connect_provider", lambda *_a, **_k: FakeProvider())
     monkeypatch.setattr(harness, "_live_project", live_project)
-    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: FakeRunner())
+    monkeypatch.setattr(harness, "_build_runner", lambda *_a, **_k: object())
+    monkeypatch.setattr(harness, "run_task_submission", lambda *_a, **_k: None)
     monkeypatch.setattr(harness, "_finish_row", finish_row)
 
     report = harness.run_live(

@@ -9,6 +9,96 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 TaskFlow Deletion + Runtime Kernel Pruning (2026-08-31)
+
+Scope:
+
+```text
+production: deleted codey/operations/task_flow.py as a production concept.
+            server/headless/manual harnesses now submit TaskSubmission through
+            codey.operations.task_entry.run_task_submission(); task_entry only
+            wires TaskRuntime, while task_run owns TaskRunDeps and the
+            non-business run lifecycle. mode_dispatch/review_flow/planning_flow
+            and ghost_context/ghost_post_turn own their business boundaries.
+            RuntimeSessionLog remains the single durable fact source and now
+            compacts under file lock before the 4 MB guard can brick a session.
+            Runtime read() also uses the file lock. Future-only runtime
+            scaffolding was removed: lane queues, suspension, TaskRuntimePort,
+            tool invocation log entries, TaskContract, TaskState, and the
+            OperationKind literal. ControlTeachCancelled now inherits
+            TaskCancelled; stop_reason->OperationOutcome mapping has one
+            implementation. State() without state_home uses an ephemeral runtime
+            log/store so tests still exercise the production runtime path.
+harness:    test_task_flow_* files were renamed by owner
+            (task_entry/project_completion_flow/ghost_post_turn/research_flow/
+            workspace_project_map). Pure component tests were corrected after a
+            global rename accident: ResearchRunner and WriterFailoverRunner use
+            their own runner.run(...) APIs; task submission tests use
+            run_task_submission(...). Manual completion A/B tests patch the
+            task-entry function directly instead of faking an obsolete .run()
+            runner object.
+mode:       compileall, ruff, focused gates, wider server/research/manual
+            harness gates, same-run crash/resume self-test, then full pytest.
+            No release, no version bump, no GitHub push.
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -m compileall -q codey tests
+ok
+
+python -m ruff check codey tests
+All checks passed
+
+python tests/manual/completion_operation_resume_smoke.py --self-test
+ok: crash resume reports the last committed phase and resumes the same run
+
+python -m pytest tests/test_runtime_session_log.py tests/test_runtime_effects.py \
+  tests/test_architecture.py tests/test_events.py tests/test_prompt_envelope.py \
+  tests/test_writer_failover.py
+126 passed in 10.85s
+
+python -m pytest tests/test_task_entry_operation_state.py \
+  tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py \
+  tests/test_project_completion_flow_analysis_run.py \
+  tests/test_project_completion_flow_enforcement.py \
+  tests/test_project_completion_flow_edit_integrity.py \
+  tests/test_research_flow_topic_continuity.py tests/test_workspace_project_map.py \
+  tests/test_ghost_post_turn_router.py tests/test_ghost_post_turn_work_queue.py \
+  tests/test_ghost_post_turn_affinity.py tests/test_ghost_research_continuity_ab.py
+240 passed in 63.12s
+
+python -m pytest tests/test_server.py
+184 passed, 1 skipped in 31.68s
+
+python -m pytest tests/test_research.py tests/test_run_ledger.py tests/test_source_connectors.py
+181 passed in 32.10s
+
+python -m pytest tests/test_adapter_self_repair.py tests/test_context_delta_ab.py \
+  tests/test_scoped_task_plan_ab.py
+90 passed, 3 skipped in 23.80s
+
+python -m pytest tests/test_completion_enforcement_ab.py
+14 passed in 3.83s
+
+git diff --check
+no whitespace errors
+```
+
+The first full run after the final rename exposed three stale manual completion
+A/B harness tests that still faked a `.run()` runner object. They were migrated
+to patch `run_task_submission()` directly, then the focused harness test and
+full suite were rerun.
+
+Final full local pytest (Windows, Python 3.12, 2026-08-31, after code was
+stable and before updating this report):
+
+```text
+python -m pytest
+3253 passed, 16 skipped in 306.31s (0:05:06)
+```
+
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)
 
 Scope:

@@ -141,18 +141,32 @@ Scheduler
   |
   +-- schedule(Operation)
   +-- await(Operation)
-  +-- update(TaskState)
+  +-- update(OperationState)
 ```
 
-TaskFlow 只应该是 task submission 到 runtime operation 的 adapter；runtime scheduler 和 operation log 才是生命周期事实源。
+Task submission 到 runtime operation 的 adapter 应该小到可以直接命名为
+`task_entry`；runtime scheduler 和 operation log 才是生命周期事实源。
 
-当前 0.5.1 已经完成第一段收束：`RuntimeSessionLog` 是 durable fact source，
+当前 0.5.1 已经完成这段收束：`RuntimeSessionLog` 是 durable fact source，
 `TaskRuntime` 和 `RuntimeOperationStore` 共用单条 `task:<hash(run_id)>`
-operation/lane，外层 `runtime:<run_id>` 语义已删除。`TaskFlow` 仍是 production
-envelope，负责 reserve/start/finish、mode dispatch、provider/session/trace 清理和
-Ghost post-turn sync；但 project completion 的真实复杂度已经迁出到
-`codey.operations.project_completion_flow`，包括 writer failover、completion proof、
-bounded repair、receipt/facts/memory 和 analysis-run projection。
+operation/lane，外层 `runtime:<run_id>` 语义已删除，生产
+`codey/operations/task_flow.py` 也已删除。现在的形态是：
+
+```text
+server/headless/manual
+  -> task_entry.run_task_submission(TaskSubmission)
+  -> TaskRuntime
+  -> task_run.execute_task_run(TaskRunDeps, TaskSubmission)
+  -> mode_dispatch
+  -> chat/project/research/review/planning operation function
+  -> terminal event
+  -> ghost_post_turn projection
+```
+
+Runtime 负责 lifecycle；operation function 负责业务动作。`task_run.py` 只保留
+reserve/start/finish、provider/session/trace cleanup、runtime phase projection 和
+terminal settlement 这些非业务外壳；review、planning、research、project
+completion、Ghost context/post-turn 都有自己的 owner。
 
 ---
 
@@ -178,11 +192,11 @@ Lane
 
 ---
 
-## 2.4 学习 SuspendedOperation
+## 2.4 学习 suspension 语义，但不要提前保留未接线类
 
 恢复应该是一等概念，而不是散落在 checkpoint、handoff、ghost、runner 中。
 
-建议：
+概念上可以是：
 
 ```text
 SuspendedOperation
@@ -193,6 +207,11 @@ SuspendedOperation
     continuation
 }
 ```
+
+但 0.5.1 的冷启动实现刻意删除了未接线的
+`codey.runtime.suspension.SuspendedOperation` 脚手架。只有当真实生产路径需要
+user-deferred、provider-failure 或 crash continuation 时，再把它作为
+session-log fact 引回 runtime；否则它只是想象中的复杂度。
 
 例如：
 
@@ -278,7 +297,6 @@ CompletionProof
 必须定义少量 canonical state：
 
 ```text
-TaskState
 OperationState
 WorkspaceState
 ```
@@ -859,9 +877,6 @@ resume
 Operation
    |
    v
-SuspendedOperation
-   |
-   v
 Continuation
 ```
 
@@ -895,10 +910,11 @@ Scheduler
     +-- await(operation)
 ```
 
-TaskFlow 最终只是：
+0.5.1 后，原来的 TaskFlow 生产概念已经删除，剩下的是：
 
 ```text
-Task scheduler adapter + task lifecycle adapter
+task_entry: submission -> TaskRuntime
+task_run: task lifecycle wrapper around operation functions
 ```
 
 ---
@@ -1180,10 +1196,9 @@ codey/
 ```text
 Operation
 Outcome
-SuspendedOperation
 ```
 
-先不改变行为。
+先不改变行为；不要保留没有生产写入方的 runtime 类。
 
 ## Phase 2：Agent 成为 Operation
 
@@ -1199,13 +1214,17 @@ AgentRunner
 AgentOperation
 ```
 
-## Phase 3：薄化 TaskFlow
+## Phase 3：删除 TaskFlow 生产概念
 
-已完成：`codey.task` 是 model-only 边界；`codey/task/service.py` facade 已删除；
-provider preflight、conversation plan、research flow 和 project completion flow 已迁出。
+已完成：`codey.task` 是 model-only 边界；`codey/task/service.py` facade 和
+`codey/operations/task_flow.py` 均已删除。`task_entry` 是稳定提交入口；
+`task_run` 拥有非业务 lifecycle；provider preflight、conversation plan、
+mode dispatch、research、review、planning、Ghost post-turn 和 project completion
+都已迁出到各自 owner。
 
-未完成：TaskFlow 仍负责 Ghost post-turn sync、review-only 和 planning-readonly 的外层
-编排。下一步继续拆这些真实边界，不为测试保留私有 wrapper 或兼容 alias。
+剩余未来工作：不是继续瘦 TaskFlow，而是继续把 `task_run` 中的生命周期外壳压薄，
+尤其是把 provider/session/trace cleanup、receipt projection 和 Ghost terminal
+projection 进一步事件化；仍然不为测试保留私有 wrapper 或兼容 alias。
 
 ## Phase 4：统一 Workspace Epoch
 

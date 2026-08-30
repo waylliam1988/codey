@@ -7,8 +7,6 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
-
 from codey.app import server
 from codey.agents.runner import RunResult
 from codey.providers.diagnostics import (
@@ -18,7 +16,7 @@ from codey.providers.diagnostics import (
 )
 from codey.workspace.config import preferred_provider_for
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 
 def _failure(kind: str = "response_missing") -> ProviderActionError:
@@ -62,9 +60,8 @@ def _write_preferred_config(project: Path, mode: str, provider_id: str) -> None:
     )
 
 
-def _build_runner(state: server.State, *, agent_run) -> TaskFlow:
-    return TaskFlow(
-        state,
+def _build_runner(state: server.State, *, agent_run) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=agent_run,
         collect_changes=mock.Mock(
             return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
@@ -84,7 +81,7 @@ def _build_runner(state: server.State, *, agent_run) -> TaskFlow:
 
 def _run_project_task(project: Path, state: server.State, *, provider_id: str) -> None:
     runner = _build_runner(state, agent_run=_agent_run)
-    runner.run(TaskSubmission(
+    run_task_submission(runner, TaskSubmission(
         "session-preferred-providers",
         str(project),
         "Inspect the project",
@@ -132,8 +129,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
@@ -147,7 +143,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskSubmission(
+            run_task_submission(runner, TaskSubmission(
                 "session-preferred-order",
                 str(project),
                 "Inspect the project",
@@ -182,8 +178,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                     writer_ids.append(provider_id)
             return RunResult("done", "done", 1)
 
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
@@ -197,7 +192,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskSubmission(
+            run_task_submission(runner, TaskSubmission(
                 "session-preferred-no-override",
                 str(project),
                 "Inspect the project",
@@ -246,8 +241,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 raise _failure()
             return RunResult("done", "done", 1)
 
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=agent_run,
             collect_changes=mock.Mock(
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
@@ -261,7 +255,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
             "get_provider",
             side_effect=lambda provider_id: providers[provider_id],
         ):
-            runner.run(TaskSubmission(
+            run_task_submission(runner, TaskSubmission(
                 "session-preferred-unavailable",
                 str(project),
                 "Inspect the project",
@@ -279,8 +273,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
 def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
             collect_changes=mock.Mock(
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
@@ -290,15 +283,11 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
             is_git_repository=lambda _project: True,
         )
 
-        with (
-            mock.patch.object(
-                TaskFlow,
-                "_maybe_route_auto",
-                side_effect=ValueError("route exploded"),
-            ),
-            pytest.raises(ValueError),
-        ):
-            runner.run(TaskSubmission(
+        with mock.patch(
+            "codey.operations.task_run.maybe_route_auto",
+            side_effect=ValueError("route exploded"),
+        ) as route:
+            run_task_submission(runner, TaskSubmission(
                 "session-early-error",
                 td,
                 "Inspect the project",
@@ -308,6 +297,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
                 intent="auto",
             ))
             state.wait_for_ghost_sleep(timeout=2)
+        route.assert_called_once()
 
     # The started run must end with a bounded error terminal event, not a
     # permanently busy slot.

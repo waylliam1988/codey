@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.runtime.outcome import OperationOutcome
+from codey.runtime.outcome import OperationOutcome, operation_outcome_from_stop_reason
 
 
 def nonnegative_event_count(value: object) -> int:
@@ -81,10 +81,7 @@ def operation_outcome_from_task_done_event(event: dict[str, object]) -> Operatio
     """Project a user-visible task terminal event into a runtime outcome."""
 
     reason = str(event.get("stop_reason") or "").strip() or "done"
-    if reason == "done":
-        return OperationOutcome.completed(summary="task_done")
-    if reason == "stopped":
-        return OperationOutcome.aborted(reason="stopped")
-    if reason == "approval":
-        return OperationOutcome.suspended(reason="approval")
-    return OperationOutcome.failed(reason=reason, summary="task_not_done")
+    return operation_outcome_from_stop_reason(
+        reason,
+        summary="task_done" if reason == "done" else "task_not_done",
+    )

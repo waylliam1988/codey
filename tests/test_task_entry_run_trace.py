@@ -15,9 +15,9 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.operations import task_flow as task_flow_module
+from codey.operations.prompting import record_local_context_trace
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -69,9 +69,8 @@ def _runner(
     run_consensus=None,
     run_project_audit=None,
     router_provider_factory=None,
-) -> TaskFlow:
-    return TaskFlow(
-        state,
+) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes
         or mock.Mock(
@@ -205,7 +204,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=fake_agent)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-trace",
                     str(project),
@@ -277,7 +276,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
             runner = _runner(state, router_provider_factory=router_factory)
             research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
             with mock.patch(RESEARCH_ITERATION, research_iteration):
-                runner.run(
+                run_task_submission(runner, 
                     TaskSubmission(
                         "session-research-trace",
                         None,
@@ -356,7 +355,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             runner = _runner(state)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-evidence-ledger",
                     str(project),
@@ -484,7 +483,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
 
             research_iteration = mock.Mock(side_effect=fake_research_task)
             with mock.patch(RESEARCH_ITERATION, research_iteration):
-                runner.run(
+                run_task_submission(runner, 
                     TaskSubmission(
                         "session-hybrid-trace",
                         str(project),
@@ -519,7 +518,7 @@ def test_local_context_trace_skips_scanning_when_trace_is_missing() -> None:
         def selected_items(self):  # pragma: no cover - exercised through early return
             raise AssertionError("should not inspect local contexts without trace")
 
-    task_flow_module._record_local_context_trace(None, _ExplodingContext())
+    record_local_context_trace(None, _ExplodingContext())
 
 
 def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
@@ -554,7 +553,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                 collect_changes=mock.Mock(return_value=changes),
                 run_review=run_review,
             )
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-secondary-trace",
                     str(project),
@@ -598,7 +597,7 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-consensus-trace",
                     None,
@@ -634,7 +633,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-chat-provenance",
                     None,
@@ -676,7 +675,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=provider):
             runner = _runner(state, run_consensus=mock.Mock(return_value=None))
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     session_id,
                     None,
@@ -720,7 +719,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_project_audit=project_audit)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-project-audit-prepared",
                     str(project),
@@ -754,7 +753,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
-            runner.run(
+            run_task_submission(runner, 
                 TaskSubmission(
                     "session-fallback-trace",
                     str(project),
@@ -818,7 +817,7 @@ def _run_project_task(state: server.State, project: Path, session_id: str, task:
             state,
             collect_changes=mock.Mock(return_value=changes),
         )
-        runner.run(
+        run_task_submission(runner, 
             TaskSubmission(
                 session_id,
                 str(project),

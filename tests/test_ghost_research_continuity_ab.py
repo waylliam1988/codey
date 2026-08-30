@@ -8,7 +8,7 @@ from unittest import mock
 from codey.agents.runner import RunResult
 from codey.providers.registry import DEFAULT_PROVIDER_ID
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 from tests.manual import ghost_research_continuity_ab as ab
 from tests.manual.ab_journal import (
@@ -190,8 +190,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
         )
         raw_provider = ab._MainProvider()
         tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},
             run_review=mock.Mock(return_value=None),
@@ -208,7 +207,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
         )
         try:
             with mock.patch.object(state, "get_provider", return_value=tracing):
-                runner.run(
+                run_task_submission(runner,
                     TaskSubmission(
                         session_id="s-journal",
                         project=None,
@@ -253,8 +252,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
         )
         raw_provider = ab._MainProvider()
         tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
-        runner = TaskFlow(
-            state,
+        runner = TaskRunDeps(state=state,
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},
             run_review=mock.Mock(return_value=None),
@@ -271,7 +269,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
         )
         try:
             with mock.patch.object(state, "get_provider", return_value=tracing):
-                runner.run(
+                run_task_submission(runner,
                     TaskSubmission(
                         session_id="s-journal-digest",
                         project=None,

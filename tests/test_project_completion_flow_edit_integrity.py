@@ -1,4 +1,4 @@
-"""TaskFlow edit-integrity wiring (0.5.0).
+"""Project-completion edit-integrity wiring (0.5.0).
 
 The monitor must observe the real production completion path: the run's
 decision, proof diagnostics, receipt trust, trace rows, and the project
@@ -20,11 +20,12 @@ from codey.app import server
 from codey.agents.runner import RunResult
 from codey.completion import engine as completion_engine_module
 from codey.completion.edit_integrity import observe_edit_integrity
+from codey.runs.ledger_projection import event_with_projected_receipt
 from codey.runs.receipt import build_task_receipt
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -98,9 +99,8 @@ class _Provider:
         pass
 
 
-def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskFlow:
-    return TaskFlow(
-        state,
+def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunDeps:
+    return TaskRunDeps(state=state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes(*files)),
         run_review=mock.Mock(return_value=None),
@@ -116,11 +116,10 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskFlow:
     )
 
 
-def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskFlow:
+def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -> TaskRunDeps:
     """Runner whose successive change collections come from ``collected``."""
 
-    return TaskFlow(
-        state,
+    return TaskRunDeps(state=state,
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: (
             collected.pop(0) if collected else dict(collected[-1])
@@ -138,9 +137,9 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
     )
 
 
-def _run(runner: TaskFlow, state, project: Path, task: str) -> dict:
+def _run(runner: TaskRunDeps, state, project: Path, task: str) -> dict:
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
-        runner.run(TaskSubmission(
+        run_task_submission(runner, TaskSubmission(
             "s-integrity",
             str(project),
             task,
@@ -480,11 +479,8 @@ class TerminalReceiptProjectionTests(unittest.TestCase):
                 "mode": "agent",
             }
 
-            projected = _runner(
-                state,
-                ScriptedWriter(),
-                files=(),
-            )._event_with_projected_receipt(
+            projected = event_with_projected_receipt(
+                state.run_ledgers,
                 raw_event,
                 session_id="s-integrity",
                 run_id="run-terminal",

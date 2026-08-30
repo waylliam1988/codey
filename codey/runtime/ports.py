@@ -27,14 +27,8 @@ class TaskStartFailureHandler(Protocol):
         ...
 
 
-class TaskRuntimePort(Protocol):
-    def run(self, request: TaskSubmission) -> None:
-        ...
-
-
 __all__ = [
     "TaskExecutor",
     "TaskPreparer",
-    "TaskRuntimePort",
     "TaskStartFailureHandler",
 ]

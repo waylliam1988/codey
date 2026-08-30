@@ -69,13 +69,16 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "output_sha256": "a" * 64,
         })
 
-    def test_task_flow_no_longer_owns_ui_event_projection(self) -> None:
-        flow_source = (ROOT / "codey" / "operations" / "task_flow.py").read_text(encoding="utf-8")
+    def test_task_run_no_longer_owns_ui_event_projection(self) -> None:
+        task_run_source = (ROOT / "codey" / "operations" / "task_run.py").read_text(encoding="utf-8")
+        events_source = (ROOT / "codey" / "runtime" / "events.py").read_text(encoding="utf-8")
 
         self.assertFalse((ROOT / "codey" / "task" / "service.py").exists())
-        self.assertNotIn("def _ui_event", flow_source)
-        self.assertNotIn("def _display_tool", flow_source)
-        self.assertIn("run_event_ui_payload", flow_source)
+        self.assertFalse((ROOT / "codey" / "operations" / "task_flow.py").exists())
+        self.assertNotIn("def _ui_event", task_run_source)
+        self.assertNotIn("def _display_tool", task_run_source)
+        self.assertIn("run_event_ui_payload", task_run_source)
+        self.assertIn("def run_event_ui_payload", events_source)
 
 
 if __name__ == "__main__":

@@ -61,6 +61,27 @@ class OperationOutcome:
         return payload
 
 
+def operation_outcome_from_stop_reason(
+    stop_reason: str,
+    *,
+    blocked_reason: str = "",
+    summary: str = "",
+) -> OperationOutcome:
+    reason = str(stop_reason or "")
+    blocked = str(blocked_reason or "")
+    if reason == "done":
+        return OperationOutcome.completed(summary=summary or "done")
+    if reason == "stopped":
+        return OperationOutcome.aborted(reason="stopped")
+    if reason == "approval":
+        return OperationOutcome.suspended(reason="approval")
+    if blocked:
+        return OperationOutcome.failed(reason=blocked, summary=summary)
+    if reason:
+        return OperationOutcome.failed(reason=reason, summary=summary)
+    return OperationOutcome.completed(summary=summary)
+
+
 @dataclass(frozen=True)
 class CompletionVerdict:
     status: TaskCompletionStatus
