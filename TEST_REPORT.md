@@ -159,35 +159,46 @@ Round 8 (repair-arm admission, same day):
     active phase) still round-trips. Production was already guarded by
     repair_candidate()/project_repair_context(); this closes the durable
     register to the same vocabulary.
+
+Round 9 (terminal stop-before-repair, same day):
+23. The terminal reader invariant is closed to the writer-reachable set
+    exactly: terminal + repair_context_ref + repair_rounds == 0 is the
+    admitted-but-not-run stop, and it must carry the failed proof that
+    earned the admission -- complete / complete_with_limitations / blocked
+    proofs on that shape fail closed. A committed round means the repair
+    ran, so any recorded re-proof status on that shape keeps round-tripping
+    (the enumeration gap the writer-reachable vs reader-accepted diff
+    showed -- 4 extra states -- is gone).
 Release hygiene: the 0.5.1 changelog entries moved under "## Unreleased";
 __version__ stays 0.5.0 until the release commit renames the heading.
 ```
 
-Full local pytest (Windows, Python 3.12, 2026-08-30, after all eight review
+Full local pytest (Windows, Python 3.12, 2026-08-30, after all nine review
 rounds):
 
 ```text
 python -B -m pytest
-3296 passed, 3 skipped, 1265 subtests passed in 299.86s (0:04:59)
+3297 passed, 3 skipped, 1271 subtests passed in 299.36s (0:04:59)
 ```
 
-Focused gates before the full run (Round 8 candidate, 2026-08-30):
+Focused gates before the full run (Round 9 candidate, 2026-08-30):
 
 ```text
 ruff check .                                                        -> All checks passed
-tests/test_run_operation.py                                         -> 81 passed, 244 subtests (round-trips,
+tests/test_run_operation.py                                         -> 82 passed, 250 subtests (round-trips,
                                                                        strict fail-closed reader + full phase-
                                                                        state closure (proof/repair/writer facts,
                                                                        verdict support + finality, repair-arm
-                                                                       admission, padded-text rejection), closed
-                                                                       terminal key set, recorded-proof contract
-                                                                       on both sides, strict writer helpers (no
-                                                                       clipping, no coercion), commit canonical
-                                                                       gate + identity lock, terminal
-                                                                       immutability, locked/atomic start+commit,
-                                                                       concurrent starts, canonical identity at
-                                                                       and beyond the boundary, project ref
-                                                                       format, payload hygiene, import boundary)
+                                                                       admission, terminal admitted-context stop,
+                                                                       padded-text rejection), closed terminal
+                                                                       key set, recorded-proof contract on both
+                                                                       sides, strict writer helpers (no clipping,
+                                                                       no coercion), commit canonical gate +
+                                                                       identity lock, terminal immutability,
+                                                                       locked/atomic start+commit, concurrent
+                                                                       starts, canonical identity at and beyond
+                                                                       the boundary, project ref format, payload
+                                                                       hygiene, import boundary)
 tests/test_task_runner_operation_state.py +
 test_run_details / test_headless_runner                             -> 29 passed, 6 subtests (terminal/ledger/event
                                                                        consistency, repair phase sequence observed

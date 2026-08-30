@@ -1130,6 +1130,78 @@ class StrictReaderTests(unittest.TestCase):
         )
         self.assertEqual(RunOperationState.from_payload(reproof.to_payload()), reproof)
 
+    def test_terminal_admitted_context_requires_its_failed_proof(self) -> None:
+        # repair_context_admitted -> terminal is the stop before the repair
+        # ran, and admission belongs to an unsatisfied failed proof: a
+        # context with no committed round cannot ride a non-failed proof.
+        for status, satisfied in (
+            ("complete", True),
+            ("complete_with_limitations", False),
+            ("blocked", False),
+        ):
+            with self.subTest(status=status):
+                payload = mark_terminal(
+                    mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+                    stop_reason="stopped",
+                    summary_chars=0,
+                    turns=0,
+                    max_turns=8,
+                    provider="deepseek",
+                ).to_payload()
+                payload["repair_context_ref"] = CONTEXT_REF
+                payload["completion_proof_ref"] = PROOF_REF_OK
+                payload["completion_proof_status"] = status
+                payload["completion_proof_satisfied"] = satisfied
+                self.assertIsNone(RunOperationState.from_payload(payload))
+
+        # The reachable shapes keep loading: the admitted-but-not-run stop
+        # carries its failed proof...
+        admitted = mark_repair_context_admitted(
+            mark_completion_proof_recorded(
+                _fresh_state(PHASE_WRITER_SETTLED),
+                proof_ref=PROOF_REF_FAIL,
+                proof_status="failed",
+                proof_satisfied=False,
+            ),
+            context_ref=CONTEXT_REF,
+        )
+        stopped_early = mark_terminal(
+            admitted,
+            stop_reason="stopped",
+            summary_chars=0,
+            turns=0,
+            max_turns=8,
+            provider="deepseek",
+        )
+        self.assertEqual(
+            RunOperationState.from_payload(stopped_early.to_payload()), stopped_early
+        )
+
+        # ...and a committed round means the repair ran, so any recorded
+        # re-proof status is reachable on the way to terminal.
+        running = mark_repair_running(admitted, provider_id="deepseek")
+        for status, satisfied in (
+            ("failed", False),
+            ("complete", True),
+            ("blocked", False),
+        ):
+            reproof = mark_completion_proof_recorded(
+                mark_repair_settled(running, provider_id="deepseek", stop_reason="done"),
+                proof_ref=PROOF_REF_OK,
+                proof_status=status,
+                proof_satisfied=satisfied,
+            )
+            ended = mark_terminal(
+                reproof,
+                stop_reason="stopped",
+                summary_chars=0,
+                turns=0,
+                max_turns=8,
+                provider="deepseek",
+            )
+            with self.subTest(reproof_status=status):
+                self.assertEqual(RunOperationState.from_payload(ended.to_payload()), ended)
+
     def test_terminal_blocked_reason_must_match_the_snapshot(self) -> None:
         terminal = mark_terminal(
             mark_completion_blocked(

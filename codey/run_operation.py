@@ -541,6 +541,12 @@ class RunOperationState:
                     raise _SchemaError("terminal carries repair facts without the recorded proof")
                 if repair_rounds > 0 and not repair_context_ref:
                     raise _SchemaError("terminal carries repair rounds without the context ref")
+                if repair_context_ref and repair_rounds == 0 and proof_status != "failed":
+                    # repair_context_admitted -> terminal is the stop before
+                    # the repair ran, and admission belongs to a failed proof.
+                    raise _SchemaError(
+                        "terminal carries an admitted repair context without its failed proof"
+                    )
                 if proof_complete and satisfied != (proof_status == "complete"):
                     raise _SchemaError("terminal proof satisfied must match the recorded status")
             # A blocked verdict is final: it may only sit on the phase that

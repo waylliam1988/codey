@@ -37,7 +37,8 @@ This file records Codey's release history. The newest release appears first.
     not carrying the failed proof that admitted them, terminal fact
     combinations no source phase could have committed -- a partial proof
     triple, repair rounds without the admitted context, a context without
-    its recorded proof --, a re-proof with a partial repair record, a
+    its recorded proof, an admitted context without its failed proof --, a
+    re-proof with a partial repair record, a
     blocked verdict without its unsatisfied failed/blocked proof, proof
     refs or statuses outside the recorded-proof contract, rounds over
     budget), or an oversize file load as `None`. Schema v1 only -- no

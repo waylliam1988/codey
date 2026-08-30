@@ -32,7 +32,8 @@
     settled——、repair 相位未携带 admission 它的那个 failed proof、terminal
     带着任何 source phase 都提交不出来的事实组合——
     残缺的 proof triple、没有 admission 的 repair round、没有已记录 proof
-    的 context——、带残缺 repair 记录的 re-proof、没有 unsatisfied
+    的 context、没有它那个 failed proof 的已 admit context——、带残缺
+    repair 记录的 re-proof、没有 unsatisfied
     failed/blocked proof 支撑的 blocked verdict、proof ref 或 status 超出
     recorded-proof 合同、rounds 超预算）、超长文件一律 load 为 `None`。
     只认 schema v1——不做迁移、不做类型强转、不猜旧格式。
