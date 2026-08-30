@@ -55,7 +55,16 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertIsNotNone(untracked)
             body, line_count = untracked
             self.assertNotIn("\n\n", body)
+            self.assertIn("diff --git a/untracked.py b/untracked.py", body)
             self.assertEqual(line_count, 2)
+
+    def test_git_commands_disable_quoted_paths_for_cjk_status(self) -> None:
+        with mock.patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            changes._run_git(Path("C:/project"), ["status", "--short"])
+
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
 
     def test_collects_new_file_snapshot_diff(self) -> None:
         with tempfile.TemporaryDirectory() as td:

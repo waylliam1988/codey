@@ -562,7 +562,7 @@ class ChangeTracker:
 
 def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(project), *args],
+        ["git", "-c", "core.quotePath=false", "-C", str(project), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -636,7 +636,9 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
         tofile=f"b/{rel_posix}",
         lineterm="",
     )
-    return "\n".join(diff), len(lines)
+    body = "\n".join(diff)
+    header = f"diff --git a/{rel_posix} b/{rel_posix}\nnew file mode 100644"
+    return f"{header}\n{body}" if body else header, len(lines)
 
 
 def collect_git_changes(project: str | Path | None) -> dict:

@@ -57,6 +57,13 @@ def _fixture_response(url: str, *, timeout: float) -> str:
     raise AssertionError(url)
 
 
+def _allow_http_url(url: str, *args, **kwargs) -> str | None:
+    del args, kwargs
+    if url.startswith(("http://", "https://")):
+        return None
+    return "only http(s) URLs are allowed"
+
+
 def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_document() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
@@ -72,7 +79,8 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
     with tempfile.TemporaryDirectory() as td:
         store = KnowledgeStore(Path(td))
         tools = ResearchTools(provider, store, KnowledgeChanges(store.root))
-        opened = tools.open_url(results[0]["url"])
+        with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+            opened = tools.open_url(results[0]["url"])
         store.close()
 
     assert "hepatotoxicity" in opened

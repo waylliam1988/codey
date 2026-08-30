@@ -384,13 +384,11 @@ class BrowserSearchProvider:
 
 def _page_content_after_navigation(page) -> str:
     stop_at = time.monotonic() + _CONTENT_RETRY_TIMEOUT
-    last_error: Exception | None = None
     while True:
         cancellation.check()
         try:
             return str(page.content() or "")
         except Exception as exc:
-            last_error = exc
             if not _content_retryable(exc) or time.monotonic() >= stop_at:
                 raise
             try:
@@ -398,7 +396,6 @@ def _page_content_after_navigation(page) -> str:
             except Exception:
                 pass
             cancellation.wait(_CONTENT_RETRY_TICK)
-    raise RuntimeError("unreachable") from last_error
 
 
 def _content_retryable(exc: Exception) -> bool:

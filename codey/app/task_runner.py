@@ -11,7 +11,6 @@ from typing import Any, Callable
 from codey.runtime import cancellation
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.policies.action import ActionSubject, evaluate_action
-from codey.policies.capability_registry import CapabilityRegistry
 from codey.agents.runner import RunResult, task_forbids_verification
 from codey.agents.tools import AgentToolFns
 from codey.workspace.change_brief import (
@@ -220,6 +219,7 @@ class _RunWork:
     analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
     artifact_payloads: list[dict[str, object]] = field(default_factory=list)
     operation: RunOperationState | None = None
+    turns_observed: int = 0
 
 
 @dataclass(frozen=True)
@@ -719,7 +719,6 @@ class TaskRunner:
         run_traces: RunTraceStore | None = None,
         run_operations: RunOperationStore | None = None,
         evidence_ledgers: EvidenceLedgerStore | None = None,
-        capabilities: CapabilityRegistry | None = None,
         managed_outputs: ManagedOutputStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
@@ -744,7 +743,6 @@ class TaskRunner:
         self.run_traces = run_traces
         self.run_operations = run_operations
         self.evidence_ledgers = evidence_ledgers
-        self.capabilities = capabilities
         self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or _default_research_search_provider
@@ -777,7 +775,7 @@ class TaskRunner:
                 turn_budget=turn_budget,
                 max_repair_rounds=max_repair_rounds,
             )
-        except Exception:
+        except (OSError, ValueError):
             work.operation = None
 
     def _commit_run_operation(self, work: _RunWork, transition: Callable) -> None:
@@ -791,20 +789,85 @@ class TaskRunner:
                 work.operation.run_id,
                 transition,
             )
-        except Exception:
+        except (OSError, ValueError):
             work.operation = None
+
+    @staticmethod
+    def _nonnegative_event_count(value: object) -> int:
+        if isinstance(value, bool):
+            return 0
+        if isinstance(value, int):
+            return max(0, value)
+        return 0
+
+    def _terminal_turns(
+        self,
+        work: _RunWork | None,
+        *,
+        turns: object = None,
+        max_turns: int = 0,
+    ) -> int:
+        candidates = [self._nonnegative_event_count(turns)]
+        if work is not None:
+            candidates.append(self._nonnegative_event_count(work.turns_observed))
+            if work.operation is not None:
+                candidates.append(self._nonnegative_event_count(work.operation.turns_used))
+        used = max(candidates)
+        return min(max(0, max_turns), used) if max_turns > 0 else used
+
+    def _task_done_event(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        summary: str,
+        stop_reason: str,
+        max_turns: int,
+        provider: str,
+        mode: str,
+        work: _RunWork | None = None,
+        turns: object = None,
+        provider_failure: dict | None = None,
+        changed: bool | None = None,
+        receipt: dict | None = None,
+        changes: dict | None = None,
+        research: dict | None = None,
+    ) -> dict:
+        event: dict[str, object] = {
+            "type": "task_done",
+            "run_id": run_id,
+            "session_id": session_id,
+            "summary": summary,
+            "stop_reason": stop_reason,
+            "turns": self._terminal_turns(work, turns=turns, max_turns=max_turns),
+            "max_turns": max_turns,
+            "provider": provider,
+            "mode": mode,
+        }
+        if provider_failure is not None or stop_reason in {"stopped", "error"}:
+            event["provider_failure"] = provider_failure
+        if changed is not None:
+            event["changed"] = changed
+        if receipt is not None:
+            event["receipt"] = receipt
+        if changes is not None:
+            event["changes"] = changes
+        if research is not None:
+            event["research"] = research
+        return event
 
     def _finish_run_operation(self, work: _RunWork, event: dict) -> None:
         # Same bounded fields RunLedger.finish persists; the terminal
         # snapshot and the ledger's run_finished row must agree.
         if work.operation is None:
             return
+        max_turns = int(event.get("max_turns") or 0)
         self._commit_run_operation(work, lambda state: mark_terminal(
             state,
             stop_reason=str(event.get("stop_reason") or ""),
             summary_chars=len(str(event.get("summary") or "")),
-            turns=event.get("turns") or 0,
-            max_turns=event.get("max_turns") or 0,
+            turns=self._terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
+            max_turns=max_turns,
             provider=str(event.get("provider") or ""),
         ))
 
@@ -1447,18 +1510,15 @@ class TaskRunner:
                 run_id=run_id,
                 reason="stopped_before_start",
             )
-            stopped_event = {
-                "type": "task_done",
-                "run_id": run_id,
-                "session_id": session_id,
-                "summary": "",
-                "stop_reason": "stopped",
-                "turns": 0,
-                "max_turns": max_turns,
-                "provider": provider_id,
-                "mode": _ui_mode(baseline_task_kind, project),
-                "provider_failure": None,
-            }
+            stopped_event = self._task_done_event(
+                run_id=run_id,
+                session_id=session_id,
+                summary="",
+                stop_reason="stopped",
+                max_turns=max_turns,
+                provider=provider_id,
+                mode=_ui_mode(baseline_task_kind, project),
+            )
             trace_sink.call(
                 "record_router",
                 baseline_mode=_trace_mode(baseline_task_kind, project),
@@ -1485,18 +1545,15 @@ class TaskRunner:
                 run_id=run_id,
                 reason="aborted_before_start",
             )
-            error_event = {
-                "type": "task_done",
-                "run_id": run_id,
-                "session_id": session_id,
-                "summary": f"ERROR: {exc}",
-                "stop_reason": "error",
-                "turns": 0,
-                "max_turns": max_turns,
-                "provider": provider_id,
-                "mode": _ui_mode(task_kind, project),
-                "provider_failure": None,
-            }
+            error_event = self._task_done_event(
+                run_id=run_id,
+                session_id=session_id,
+                summary=f"ERROR: {exc}",
+                stop_reason="error",
+                max_turns=max_turns,
+                provider=provider_id,
+                mode=_ui_mode(task_kind, project),
+            )
             finish_trace(error_event)
             state.finish_run(run_id, error_event)
             cancellation.set_event(previous_cancel_event)
@@ -1603,6 +1660,10 @@ class TaskRunner:
                 pass
 
         def on_event(event: RunEvent) -> None:
+            work.turns_observed = max(
+                work.turns_observed,
+                self._nonnegative_event_count(event.turn),
+            )
             if work.record_agent_events_in_ledger:
                 append_ledger(lambda ledger: ledger.append_run_event(event))
             payload = run_event_ui_payload(run_id, session_id, event)
@@ -2065,18 +2126,16 @@ class TaskRunner:
                     provider_id=current_id,
                     blocker="stopped",
                 ))
-            stopped_event = {
-                "type": "task_done",
-                "run_id": run_id,
-                "session_id": session_id,
-                "summary": "",
-                "stop_reason": "stopped",
-                "turns": 0,
-                "max_turns": max_turns,
-                "provider": current_id,
-                "mode": _ui_mode(task_kind, project),
-                "provider_failure": None,
-            }
+            stopped_event = self._task_done_event(
+                run_id=run_id,
+                session_id=session_id,
+                summary="",
+                stop_reason="stopped",
+                max_turns=max_turns,
+                provider=current_id,
+                mode=_ui_mode(task_kind, project),
+                work=work,
+            )
             append_ledger(lambda ledger: ledger.finish(**stopped_event))
             stopped_event = self._event_with_projected_receipt(
                 stopped_event,
@@ -2121,18 +2180,17 @@ class TaskRunner:
             state.last_provider_failure = failure
             if failure is not None:
                 append_ledger_provider_failure(current_id, failure)
-            error_event = {
-                "type": "task_done",
-                "run_id": run_id,
-                "session_id": session_id,
-                "summary": f"ERROR: {exc}",
-                "stop_reason": "error",
-                "turns": 0,
-                "max_turns": max_turns,
-                "provider": current_id,
-                "mode": _ui_mode(task_kind, project),
-                "provider_failure": failure.to_dict() if failure else None,
-            }
+            error_event = self._task_done_event(
+                run_id=run_id,
+                session_id=session_id,
+                summary=f"ERROR: {exc}",
+                stop_reason="error",
+                max_turns=max_turns,
+                provider=current_id,
+                mode=_ui_mode(task_kind, project),
+                work=work,
+                provider_failure=failure.to_dict() if failure else None,
+            )
             append_ledger(lambda ledger: ledger.finish(**error_event))
             error_event = self._event_with_projected_receipt(
                 error_event,
@@ -2499,18 +2557,17 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": summary,
-                "stop_reason": "done",
-                "turns": 0,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "review",
-                "changed": False,
-            })
+            return _ModeOutcome(self._task_done_event(
+                run_id=frame.run_id,
+                session_id=request.session_id,
+                summary=summary,
+                stop_reason="done",
+                turns=0,
+                max_turns=request.max_turns,
+                provider=frame.provider_id,
+                mode="review",
+                changed=False,
+            ))
         changes = self._collect_review_changes(project)
         trace.record_section(PromptEnvelopeSection(
             name="review_changes",
@@ -2527,18 +2584,17 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": summary,
-                "stop_reason": "done",
-                "turns": 0,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "review",
-                "changed": False,
-            })
+            return _ModeOutcome(self._task_done_event(
+                run_id=frame.run_id,
+                session_id=request.session_id,
+                summary=summary,
+                stop_reason="done",
+                turns=0,
+                max_turns=request.max_turns,
+                provider=frame.provider_id,
+                mode="review",
+                changed=False,
+            ))
         if not has_reviewable_changes(changes):
             summary = "No reviewable local diff was found."
             state.emit({
@@ -2547,24 +2603,23 @@ class TaskRunner:
                 "session_id": request.session_id,
                 "text": summary,
             })
-            return _ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": summary,
-                "stop_reason": "done",
-                "turns": 0,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "review",
-                "changed": False,
-                "changes": {
+            return _ModeOutcome(self._task_done_event(
+                run_id=frame.run_id,
+                session_id=request.session_id,
+                summary=summary,
+                stop_reason="done",
+                turns=0,
+                max_turns=request.max_turns,
+                provider=frame.provider_id,
+                mode="review",
+                changed=False,
+                changes={
                     "changed_count": changes.get("changed_count", 0),
                     "files": changes.get("files", [])[:3],
                     "mode": changes.get("mode"),
                     "project": project,
                 },
-            })
+            ))
         try:
             try:
                 review_impact_map = safe_review_impact_map(project, changes)
@@ -3464,6 +3519,11 @@ class TaskRunner:
                             ),
                         )
                     else:
+                        repair_blocked_reason = (
+                            ""
+                            if repair_result.stop_reason in {"done", "approval", "stopped"}
+                            else "max_repair_rounds"
+                        )
                         self._commit_run_operation(
                             work,
                             lambda state: mark_repair_settled(
@@ -3471,8 +3531,11 @@ class TaskRunner:
                                 provider_id=frame.provider_id,
                                 stop_reason=repair_result.stop_reason,
                                 turns_used=result.turns + repair_result.turns,
+                                blocked_reason=repair_blocked_reason,
                             ),
                         )
+                        if repair_blocked_reason:
+                            blocked_reason = repair_blocked_reason
                     finally:
                         repair_projection = None
                     repaired_once = not blocked_reason
@@ -3525,8 +3588,6 @@ class TaskRunner:
                             commit_operation_proof(proof)
                         else:
                             result = replace(repair_result, turns=turns)
-                            if repair_result.stop_reason != "approval":
-                                blocked_reason = "max_repair_rounds"
 
         if COMPLETION_ENFORCEMENT_MODE == ENFORCEMENT_OFF:
             # 0.4.12 control semantics: the shadow proof stays trace-only and
@@ -3686,31 +3747,35 @@ class TaskRunner:
             summary=result.summary,
             blocker="" if result.stop_reason == "done" else result.summary,
         ))
-        event = {
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "hybrid" if research_result is not None else "agent",
-            "changed": task_changed,
-            "receipt": receipt.to_dict(),
-        }
+        changes_payload = None
         if task_changed and task_changes and task_changes.get("ok"):
-            event["changes"] = {
+            changes_payload = {
                 "changed_count": task_changes.get("changed_count", 0),
                 "files": task_changes.get("files", [])[:3],
                 "mode": task_changes.get("mode"),
                 "project": project,
             }
+        research_payload = None
         if research_result is not None:
-            event["research"] = _research_payload(
+            research_payload = _research_payload(
                 research_result,
                 pipeline_result=research_pipeline_result,
             )
+        event = self._task_done_event(
+            run_id=frame.run_id,
+            session_id=request.session_id,
+            summary=result.summary,
+            stop_reason=result.stop_reason,
+            turns=result.turns,
+            max_turns=request.max_turns,
+            provider=frame.provider_id,
+            mode="hybrid" if research_result is not None else "agent",
+            work=work,
+            changed=task_changed,
+            receipt=receipt.to_dict(),
+            changes=changes_payload,
+            research=research_payload,
+        )
         return _ModeOutcome(
             event,
             research_result=research_result,

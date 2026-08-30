@@ -9,6 +9,90 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Cold-start Audit Hardening (2026-08-30)
+
+Scope:
+
+```text
+production: TaskRunner terminal event construction + operation-state commits;
+            edit_integrity diff section parser; workspace change collection;
+            research record merge/object model/knowledge_write/evidence ledger;
+            network policy; JSON tool codec; consensus and writer failover;
+            server POST/SSE/shell-approval continuation; web stopped/provider/localStorage UI;
+            small dead-shim cleanup
+harness:    focused coverage in test_task_runner_operation_state, test_server,
+            test_completion_edit_integrity, test_changes, test_research*,
+            test_run_operation, test_consensus, test_writer_failover,
+            test_json_codec, test_ui, test_ui_browser_e2e
+mode:       deterministic local gate + full local pytest; no release, no GitHub push
+```
+
+Audit fixes covered:
+
+```text
+1. User-stopped/error terminal events now preserve observed turns instead of
+   writing zero; repair exhaustion persists max_repair_rounds into the durable
+   operation register.
+2. Headerless untracked diffs are no longer attributed to the preceding tracked
+   file, and Git status/diff handling is deterministic for CJK filenames.
+3. Research synthesis no longer invents conclusion/counter-evidence rows;
+   citation binding can fall back to persisted Sources rows; knowledge note
+   updates merge instead of replacing provenance and ownership fields.
+4. Full or unreadable evidence ledgers rotate with observable warning reason
+   codes, giving fail-closed research completion a recovery path.
+5. DNS fake-IP compatibility is opt-in; tests that use fake search backends now
+   stub URL guard behavior explicitly instead of depending on local DNS.
+6. Consensus advisor failures are visible as degraded reasons, JSON-tool
+   parsing ignores <think> JSON examples and de-duplicates identical calls,
+   writer failover does not reselect the just-failed provider, and shell
+   approval continuation reads the current active provider.
+7. SSE reconnects get bounded replay, POST bodies are capped, stopped runs
+   render a terminal UI row, provider status refreshes on boot, localStorage
+   quota errors are caught, and real Edge E2E is opt-in.
+8. Runtime capability-registry injection and small stale shims were removed;
+   larger audit-only modules are intentionally left for a separate architecture
+   cleanup rather than folded into this behavior-fix commit.
+```
+
+Focused gates before the final full run:
+
+```text
+python -m ruff check .                                                  -> All checks passed
+python -m compileall -q codey tests                                      -> passed
+git diff --check                                                        -> passed
+                                                                        -> Git emitted CRLF/LF warnings only
+tests/test_connector_search.py + tests/test_research_plan_executor.py    -> 24 passed in 1.64s
+impacted set (21 files, including research/network/server/UI/runtime)    -> 880 passed, 4 skipped in 69.76s
+terminal helper/server targeted rerun after final event-shape cleanup     -> 203 passed, 1 skipped in 30.04s
+```
+
+First full run after the runtime changes:
+
+```text
+python -B -m pytest
+3299 passed, 17 skipped, 4 failed in 285.26s (0:04:45)
+
+Failures:
+tests/test_connector_search.py::test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_document
+tests/test_research_plan_executor.py::test_plan_executor_bounds_queries_sources_and_url_guard
+tests/test_research_plan_executor.py::test_plan_executor_stops_before_search_when_total_source_budget_is_full
+tests/test_research_plan_executor.py::test_plan_executor_deduplicates_redirected_fresh_sources
+
+Cause:
+fake-backend unit tests depended on local DNS accepting example.com after the
+default policy was tightened to block DNS fake-IP ranges. The tests now stub the
+HTTP(S) URL guard explicitly while keeping file:// blocked.
+```
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after all runtime
+changes and test isolation; documentation was updated only after passing full
+pytest):
+
+```text
+python -B -m pytest
+3303 passed, 17 skipped in 282.35s (0:04:42)
+```
+
 ## 0.5.1 Run Operation State + Completion Repair Durability v1 (2026-08-29)
 
 Scope:

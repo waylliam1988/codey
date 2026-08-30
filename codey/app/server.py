@@ -35,6 +35,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -46,7 +47,6 @@ from codey.providers import controls as provider_controls, flow as provider_flow
 from codey import __version__
 from codey.agents.runner import DEFAULT_MAX_TURNS, run as agent_run
 from codey.automation.browser_worker import submit as submit_browser_task
-from codey.policies.capability_registry import builtin_capability_registry
 from codey.workspace.changes import (
     ChangeTracker,
     SnapshotStore,
@@ -156,12 +156,22 @@ REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
 PROFILE_DOCTOR_TIMEOUT = 90.0
+MAX_POST_BODY_BYTES = 16 * 1024 * 1024
+SSE_REPLAY_LIMIT = 512
 
 
 def _profile_doctor_timeout(deadline: float) -> float:
     remaining = deadline - time.monotonic()
     return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
 MAX_CONVERSATION_STATES = 32
+
+
+def _parse_sse_event_id(value: object) -> int:
+    try:
+        parsed = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
 
 
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
@@ -623,6 +633,14 @@ RUN_EVENT_TYPES = {
 }
 
 
+class _SsePayload(dict):
+    """Queue payload with an SSE cursor that stays out of the JSON body."""
+
+    def __init__(self, payload: dict, *, event_id: int = 0) -> None:
+        super().__init__(payload)
+        self.event_id = event_id
+
+
 class _Subscriber(queue.Queue):
     """One SSE client queue plus an overflow marker.
 
@@ -635,6 +653,7 @@ class _Subscriber(queue.Queue):
     def __init__(self, maxsize: int = 1000) -> None:
         super().__init__(maxsize=maxsize)
         self.dropped = 0
+        self.replay_cutoff = 0
 
 
 class CodeyHTTPServer(ThreadingHTTPServer):
@@ -652,6 +671,8 @@ class State:
         self.state_home = Path(state_home) if state_home else None
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[dict]] = []
+        self.event_sequence = 0
+        self.event_replay: deque[tuple[int, dict]] = deque(maxlen=SSE_REPLAY_LIMIT)
         self.busy = False
         self.project: str | None = None
         self.task: str | None = None
@@ -695,7 +716,6 @@ class State:
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.run_operations = RunOperationStore(state_home) if state_home else None
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
-        self.capabilities = builtin_capability_registry()
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
@@ -1133,9 +1153,13 @@ class State:
             ):
                 payload["run_id"] = active.run_id
                 payload.setdefault("session_id", active.session_id)
+            self.event_sequence += 1
+            event_id = self.event_sequence
+            self.event_replay.append((event_id, dict(payload)))
+            queued_payload = _SsePayload(payload, event_id=event_id)
             for sub in list(self.subscribers):
                 try:
-                    sub.put_nowait(payload)
+                    sub.put_nowait(queued_payload)
                 except queue.Full:
                     # Make room for the resync marker plus the new event, but
                     # tell the client it missed events so it can re-pull
@@ -1150,15 +1174,17 @@ class State:
                         sub.dropped += 1
                     if limit >= 2 and payload.get("type") != "resync_required":
                         try:
-                            sub.put_nowait({
-                                "type": "resync_required",
-                                "reason": "sse_queue_overflow",
-                                "dropped": sub.dropped,
-                            })
+                            sub.put_nowait(_SsePayload(
+                                {
+                                    "type": "resync_required",
+                                    "reason": "sse_queue_overflow",
+                                    "dropped": sub.dropped,
+                                }
+                            ))
                         except Exception:
                             pass
                     try:
-                        sub.put_nowait(payload)
+                        sub.put_nowait(queued_payload)
                     except Exception:
                         pass
                 except Exception:
@@ -1167,6 +1193,7 @@ class State:
     def subscribe(self) -> "_Subscriber":
         sub = _Subscriber()
         with self.lock:
+            sub.replay_cutoff = self.event_sequence
             self.subscribers.append(sub)
         return sub
 
@@ -1174,6 +1201,35 @@ class State:
         with self.lock:
             if sub in self.subscribers:
                 self.subscribers.remove(sub)
+
+    def replay_events_after(
+        self,
+        last_event_id: int,
+        *,
+        max_event_id: int | None = None,
+    ) -> list[tuple[int, dict]]:
+        start = max(0, int(last_event_id or 0))
+        with self.lock:
+            cutoff = self.event_sequence if max_event_id is None else max(0, int(max_event_id))
+            rows = [
+                (event_id, dict(payload))
+                for event_id, payload in self.event_replay
+                if start < event_id <= cutoff
+            ]
+            if (
+                start > 0
+                and self.event_replay
+                and start < self.event_replay[0][0]
+            ):
+                rows.insert(0, (
+                    0,
+                    {
+                        "type": "resync_required",
+                        "reason": "sse_replay_window_expired",
+                        "dropped": self.event_replay[0][0] - start,
+                    },
+                ))
+            return rows
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
         self.set_run_status("connecting")
@@ -1575,7 +1631,6 @@ def _run_task(
         run_traces=STATE.run_traces,
         run_operations=STATE.run_operations,
         evidence_ledgers=STATE.evidence_ledgers,
-        capabilities=STATE.capabilities,
         managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,
@@ -1705,13 +1760,6 @@ def _query_int(
     except (TypeError, ValueError):
         value = default
     return max(minimum, min(maximum, value))
-
-
-def _query_bool(query: dict[str, list[str]], key: str, default: bool) -> bool:
-    value = str((query.get(key) or [""])[0]).strip().lower()
-    if not value:
-        return default
-    return value not in {"0", "false", "no", "off"}
 
 
 def _query_value(query: dict[str, list[str]], key: str) -> str:
@@ -2052,7 +2100,17 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_foreign_origin()
             return
         url = urlparse(self.path)
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(400, {"error": "invalid content length"})
+            return
+        if length < 0:
+            self._send_json(400, {"error": "invalid content length"})
+            return
+        if length > MAX_POST_BODY_BYTES:
+            self._send_json(413, {"error": "request body too large"})
+            return
         raw = self.rfile.read(length) if length else b""
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
@@ -2241,13 +2299,23 @@ class Handler(BaseHTTPRequestHandler):
                         setup_context=setup_context,
                         followup_hints=followup_hints,
                     )
+                    with STATE.lock:
+                        active = STATE.active_run
+                        active_provider = (
+                            active.provider_id
+                            if active is not None
+                            and active.run_id == str(pending.get("run_id") or "")
+                            and active.session_id == session_id
+                            else ""
+                        )
+                    provider_id = active_provider or pending.get("provider") or DEFAULT_PROVIDER_ID
                     continuation_run = _submit_task_after_slot_release(
                         session_id,
                         pending["project"],
                         continuation,
                         int(pending["max_turns"]),
                         True,
-                        pending.get("provider") or DEFAULT_PROVIDER_ID,
+                        provider_id,
                         "project",
                         previous_run_id=str(pending.get("run_id") or ""),
                     )
@@ -2305,9 +2373,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+        last_event_id = _parse_sse_event_id(self.headers.get("Last-Event-ID"))
         q = STATE.subscribe()
         try:
-            q.put_nowait({"type": "hello", "status": STATE.status})
+            if not self._write_sse_event({"type": "hello", "status": STATE.status}):
+                return
+            for event_id, replay in STATE.replay_events_after(
+                last_event_id,
+                max_event_id=q.replay_cutoff,
+            ):
+                if not self._write_sse_event(replay, event_id=event_id):
+                    return
             while True:
                 try:
                     ev = q.get(timeout=15)
@@ -2318,14 +2394,20 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         break
                     continue
-                data = json.dumps(ev, ensure_ascii=False)
-                try:
-                    self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
-                    self.wfile.flush()
-                except Exception:
+                if not self._write_sse_event(ev, event_id=getattr(ev, "event_id", 0)):
                     break
         finally:
             STATE.unsubscribe(q)
+
+    def _write_sse_event(self, event: dict, *, event_id: int = 0) -> bool:
+        data = json.dumps(dict(event), ensure_ascii=False)
+        prefix = f"id: {event_id}\n" if event_id > 0 else ""
+        try:
+            self.wfile.write(f"{prefix}data: {data}\n\n".encode("utf-8"))
+            self.wfile.flush()
+            return True
+        except Exception:
+            return False
 
 
 def _wait_for_manual_browser(url: str, exc: Exception) -> None:

@@ -51,7 +51,9 @@ Boundaries:
 
 from __future__ import annotations
 
+import hashlib
 import re
+import shutil
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -230,9 +232,17 @@ def _strict_text(value: object, *, field: str, limit: int, allow_empty: bool = F
     return text
 
 
-def _strict_count(value: object, *, field: str, minimum: int = 0) -> int:
+def _strict_count(
+    value: object,
+    *,
+    field: str,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise RunOperationTransitionError(f"{field} must be an int of at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise RunOperationTransitionError(f"{field} must be at most {maximum}")
     return value
 
 
@@ -283,6 +293,13 @@ def _int_field(payload: dict, key: str) -> int:
     # bool is an int subclass; True must never pass as 1.
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise _SchemaError(f"{key} must be a non-negative int")
+    return value
+
+
+def _bounded_int_field(payload: dict, key: str, *, maximum: int | None = None) -> int:
+    value = _int_field(payload, key)
+    if maximum is not None and value > maximum:
+        raise _SchemaError(f"{key} must be at most {maximum}")
     return value
 
 
@@ -474,6 +491,7 @@ class RunOperationState:
             )
             if not _valid_project_ref(project_ref):
                 raise _SchemaError("project_ref must be empty or a project:<key> ref")
+            turn_budget = _int_field(payload, "turn_budget")
             max_repair_rounds = _int_field(payload, "max_repair_rounds")
             repair_rounds = _int_field(payload, "repair_rounds")
             if repair_rounds > max_repair_rounds:
@@ -486,7 +504,7 @@ class RunOperationState:
             writer_attempt = _int_field(payload, "writer_attempt")
             if writer_attempt < 1:
                 raise _SchemaError("writer_attempt must be at least 1")
-            turns_used = _int_field(payload, "turns_used")
+            turns_used = _bounded_int_field(payload, "turns_used", maximum=turn_budget)
             stop_reason = _text_field(
                 payload, "stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
             )
@@ -574,6 +592,10 @@ class RunOperationState:
                 terminal = RunOperationTerminal.from_payload(payload.get("terminal"))
                 if terminal is None:
                     raise _SchemaError("terminal phase requires a valid terminal payload")
+                if terminal.max_turns != turn_budget:
+                    raise _SchemaError("terminal max_turns must match the run turn budget")
+                if terminal.turns > terminal.max_turns:
+                    raise _SchemaError("terminal turns exceeds max_turns")
                 if blocked_reason != terminal.blocked_reason:
                     raise _SchemaError("terminal snapshot must carry the state's blocked reason")
             elif "terminal" in payload:
@@ -583,7 +605,7 @@ class RunOperationState:
                 run_id=run_id,
                 project_ref=project_ref,
                 provider_id=_text_field(payload, "provider_id", limit=MAX_TEXT_CHARS),
-                turn_budget=_int_field(payload, "turn_budget"),
+                turn_budget=turn_budget,
                 max_repair_rounds=max_repair_rounds,
                 phase=phase,
                 started_at=_text_field(payload, "started_at", limit=40),
@@ -656,7 +678,7 @@ def mark_writer_settled(
         state,
         PHASE_WRITER_SETTLED,
         provider_id=_strict_text(provider_id, field="provider_id", limit=MAX_TEXT_CHARS),
-        turns_used=_strict_count(turns_used, field="turns_used"),
+        turns_used=_strict_count(turns_used, field="turns_used", maximum=state.turn_budget),
         stop_reason=_strict_text(
             stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
         ),
@@ -744,7 +766,9 @@ def mark_repair_settled(
         ),
         blocked_reason=verdict,
         turns_used=(
-            state.turns_used if turns_used is None else _strict_count(turns_used, field="turns_used")
+            state.turns_used
+            if turns_used is None
+            else _strict_count(turns_used, field="turns_used", maximum=state.turn_budget)
         ),
     )
 
@@ -805,12 +829,14 @@ def mark_terminal(
             stop_reason, field="stop_reason", limit=MAX_TEXT_CHARS, allow_empty=True
         ),
         summary_chars=_strict_count(summary_chars, field="summary_chars"),
-        turns=_strict_count(turns, field="turns"),
+        turns=_strict_count(turns, field="turns", maximum=state.turn_budget),
         max_turns=_strict_count(max_turns, field="max_turns"),
         provider=_strict_text(provider, field="provider", limit=MAX_TEXT_CHARS, allow_empty=True),
         blocked_reason=verdict,
         finished_at=_now(),
     )
+    if terminal.max_turns != state.turn_budget:
+        raise RunOperationTransitionError("terminal max_turns must match the run turn budget")
     if state.phase == PHASE_TERMINAL:
         if state.terminal is not None and state.terminal.identity() == terminal.identity():
             return state
@@ -824,8 +850,10 @@ def mark_terminal(
 
 
 def _safe_file_stem(value: str) -> str:
-    text = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip())[:120].strip("._")
-    return text or "run"
+    raw = str(value or "").strip()
+    prefix = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw)[:80].strip("._") or "run"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}-{digest}"
 
 
 class RunOperationStore:
@@ -946,12 +974,21 @@ class RunOperationStore:
         return next_state
 
     def delete_session(self, session_id: str) -> None:
+        root = self.root_dir().resolve()
         bucket = self.session_dir(session_id)
         try:
-            for path in bucket.glob("*.json"):
-                path.unlink(missing_ok=True)
+            if bucket.parent.resolve() != root:
+                return
+            if bucket.is_symlink():
+                return
+        except (OSError, RuntimeError, ValueError):
+            return
+        try:
+            shutil.rmtree(bucket)
+        except FileNotFoundError:
+            return
         except OSError:
-            pass
+            return
 
 
 __all__ = [

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -590,6 +591,31 @@ class StrictReaderTests(unittest.TestCase):
             payload["terminal"][key] = value
             with self.subTest(field=key):
                 self.assertIsNone(RunOperationState.from_payload(payload))
+
+    def test_count_relationships_fail_closed(self) -> None:
+        payload = _fresh_state(
+            PHASE_WRITER_SETTLED,
+            turns_used=9,
+            stop_reason="done",
+        ).to_payload()
+        self.assertIsNone(RunOperationState.from_payload(payload))
+
+        state = mark_terminal(
+            mark_writer_running(_fresh_state(PHASE_ACCEPTED), provider_id="deepseek"),
+            stop_reason="done",
+            summary_chars=3,
+            turns=2,
+            max_turns=8,
+            provider="deepseek",
+        )
+
+        terminal_turns = json.loads(json.dumps(state.to_payload()))
+        terminal_turns["terminal"]["turns"] = 9
+        self.assertIsNone(RunOperationState.from_payload(terminal_turns))
+
+        terminal_budget = json.loads(json.dumps(state.to_payload()))
+        terminal_budget["terminal"]["max_turns"] = 7
+        self.assertIsNone(RunOperationState.from_payload(terminal_budget))
 
     def test_terminal_snapshot_unknown_keys_fail_closed(self) -> None:
         # The terminal snapshot is part of the closed schema: an extension
@@ -1551,6 +1577,37 @@ class StrictWriterTests(unittest.TestCase):
                 with self.assertRaises(RunOperationTransitionError):
                     fn(state, **kwargs)
 
+    def test_writer_helpers_refuse_counts_above_turn_budget(self) -> None:
+        accepted = _fresh_state(PHASE_ACCEPTED, turn_budget=2)
+        running = mark_writer_running(accepted, provider_id="deepseek")
+        with self.assertRaises(RunOperationTransitionError):
+            mark_writer_settled(
+                running,
+                provider_id="deepseek",
+                turns_used=3,
+                stop_reason="done",
+            )
+
+        with self.assertRaises(RunOperationTransitionError):
+            mark_terminal(
+                running,
+                stop_reason="done",
+                summary_chars=3,
+                turns=3,
+                max_turns=2,
+                provider="deepseek",
+            )
+
+        with self.assertRaises(RunOperationTransitionError):
+            mark_terminal(
+                running,
+                stop_reason="done",
+                summary_chars=3,
+                turns=2,
+                max_turns=3,
+                provider="deepseek",
+            )
+
     def test_over_length_facts_are_refused_never_clipped(self) -> None:
         accepted = _fresh_state(PHASE_ACCEPTED)
         with self.assertRaises(RunOperationTransitionError):
@@ -2074,18 +2131,19 @@ class PayloadHygieneTests(unittest.TestCase):
 def _fresh_state(phase: str, **overrides: object) -> RunOperationState:
     """A pure in-memory state; the mark_* functions need no store."""
 
-    return RunOperationState(
-        session_id=SESSION,
-        run_id=RUN,
-        project_ref="",
-        provider_id="deepseek",
-        turn_budget=8,
-        max_repair_rounds=1,
-        phase=phase,
-        started_at="2026-01-01T00:00:00Z",
-        updated_at="2026-01-01T00:00:00Z",
-        **overrides,  # type: ignore[arg-type]
-    )
+    fields = {
+        "session_id": SESSION,
+        "run_id": RUN,
+        "project_ref": "",
+        "provider_id": "deepseek",
+        "turn_budget": 8,
+        "max_repair_rounds": 1,
+        "phase": phase,
+        "started_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        **overrides,
+    }
+    return RunOperationState(**fields)  # type: ignore[arg-type]
 
 
 class RecoveryTextTests(unittest.TestCase):
@@ -2132,6 +2190,34 @@ class RecoveryTextTests(unittest.TestCase):
 
 
 class StoreLifecycleTests(unittest.TestCase):
+    def test_long_run_ids_use_digest_stems_without_colliding(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = _store(Path(td))
+            prefix = "run-" + "a" * 160
+            first = prefix + "x"
+            second = prefix + "y"
+
+            self.assertNotEqual(store.path_for(SESSION, first), store.path_for(SESSION, second))
+            self.assertIsNotNone(store.start(
+                session_id=SESSION,
+                run_id=first,
+                project="",
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            ))
+            self.assertIsNotNone(store.start(
+                session_id=SESSION,
+                run_id=second,
+                project="",
+                provider_id="deepseek",
+                turn_budget=8,
+                max_repair_rounds=1,
+            ))
+
+            self.assertIsNotNone(store.load(SESSION, first))
+            self.assertIsNotNone(store.load(SESSION, second))
+
     def test_delete_session_removes_only_that_bucket(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = _store(Path(td))
@@ -2150,6 +2236,26 @@ class StoreLifecycleTests(unittest.TestCase):
 
             self.assertIsNone(store.load(SESSION, RUN))
             self.assertIsNotNone(store.load("session-other", RUN))
+
+    def test_delete_session_does_not_follow_symlink_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            store = _store(root)
+            target = root / "outside-target"
+            target.mkdir()
+            sentinel = target / "keep.json"
+            sentinel.write_text("keep", encoding="utf-8")
+            bucket = store.session_dir(SESSION)
+            bucket.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.symlink(target, bucket, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                raise unittest.SkipTest(f"symlink creation unavailable: {exc}") from exc
+
+            store.delete_session(SESSION)
+
+            self.assertTrue(sentinel.exists())
+            self.assertTrue(bucket.is_symlink())
 
     def test_commit_on_missing_state_is_none_without_write(self) -> None:
         with tempfile.TemporaryDirectory() as td:

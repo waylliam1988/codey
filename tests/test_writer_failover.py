@@ -69,6 +69,7 @@ class _Harness:
         self.log: list[tuple[str, str]] = []
         self.closed: list[object] = []
         self.switched: list[str] = []
+        self.excluded_snapshots: list[set[str]] = []
         self.refreshed = 0
         self.view = CheckpointView(
             prompt="refreshed",
@@ -79,6 +80,7 @@ class _Harness:
         self.script: list = []
 
     def select_next(self, excluded):
+        self.excluded_snapshots.append(set(excluded))
         for pid in self.order:
             if pid not in excluded:
                 return pid
@@ -214,6 +216,23 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         self.assertEqual(h.specs[1].handoff, "")
         self.assertTrue(h.specs[1].fresh_chat)
         self.assertEqual(h.specs[1].checkpoint, h.view)
+
+    def test_mid_attempt_failure_excludes_just_failed_provider(self) -> None:
+        h = _Harness(order=["p1", "p2"])
+        h.script = [_fail(turn=1), _succeed()]
+        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1", tried=())
+
+        runner.run(
+            task="t",
+            turn_budget=5,
+            fresh=True,
+            handoff="H",
+            checkpoint=CheckpointView(prompt="init"),
+        )
+
+        self.assertIn("p1", h.excluded_snapshots[0])
+        self.assertEqual(h.switched, ["p2"])
+        self.assertEqual(runner.provider_id, "p2")
 
     def test_stop_takes_priority_over_sibling(self) -> None:
         h = _Harness(order=["p1", "p2"], stopped=True)

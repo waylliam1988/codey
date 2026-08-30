@@ -188,6 +188,7 @@ class ConsensusResult:
     answer: str
     advisor_count: int
     degraded: bool = False
+    degraded_reasons: tuple[str, ...] = ()
 
 
 def _clip(value: object, limit: int) -> str:
@@ -224,6 +225,21 @@ def _provider_send_ref(kind: str, provider_id: str = "") -> str:
 def _safe_ref_part(value: object) -> str:
     text = str(value or "").strip().lower()
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+
+
+def _degraded_reason(provider_id: str, reason_code: str) -> str:
+    suffix = _safe_ref_part(provider_id) or "unknown"
+    return f"{reason_code}:{suffix}"
+
+
+def _trace_warning(trace_recorder: object | None, reason_code: str, provider_id: str) -> None:
+    warn = getattr(trace_recorder, "warn", None)
+    if not callable(warn):
+        return
+    try:
+        warn(_degraded_reason(provider_id, reason_code))
+    except Exception:
+        return
 
 
 def advisor_ids(
@@ -852,6 +868,7 @@ def run_project_audit(
         except cancellation.TaskCancelled:
             raise
         except Exception:
+            _trace_warning(trace_recorder, "project_audit_advisor_failed", advisor_id)
             continue
         finally:
             if advisor is not None:
@@ -918,6 +935,7 @@ def run_consensus(
             raise RuntimeError("consensus draft was empty")
 
     advices: list[ConsensusAdvice] = []
+    degraded_reasons: list[str] = []
     for advisor_id in candidates:
         cancellation.check()
         advisor = None
@@ -948,9 +966,14 @@ def run_consensus(
                     provider_labels.get(advisor_id, advisor_id),
                     clipped,
                 ))
+            else:
+                degraded_reasons.append(_degraded_reason(advisor_id, "advisor_empty"))
+                _trace_warning(trace_recorder, "advisor_empty", advisor_id)
         except cancellation.TaskCancelled:
             raise
         except Exception:
+            degraded_reasons.append(_degraded_reason(advisor_id, "advisor_failed"))
+            _trace_warning(trace_recorder, "advisor_failed", advisor_id)
             continue
         finally:
             if advisor is not None:
@@ -961,7 +984,12 @@ def run_consensus(
 
     if not advices:
         if draft_first and owner_draft:
-            return ConsensusResult(answer=owner_draft, advisor_count=0, degraded=True)
+            return ConsensusResult(
+                answer=owner_draft,
+                advisor_count=0,
+                degraded=True,
+                degraded_reasons=tuple(degraded_reasons) or ("advisors_unavailable",),
+            )
         return None
 
     prompt = render_aggregator_prompt(
@@ -989,6 +1017,9 @@ def run_consensus(
                 answer=owner_draft,
                 advisor_count=len(advices),
                 degraded=True,
+                degraded_reasons=tuple(
+                    [*degraded_reasons, "aggregate_failed"]
+                ),
             )
         raise
     answer = _clip(answer, 12_000)
@@ -998,6 +1029,14 @@ def run_consensus(
                 answer=owner_draft,
                 advisor_count=len(advices),
                 degraded=True,
+                degraded_reasons=tuple(
+                    [*degraded_reasons, "aggregate_empty"]
+                ),
             )
         raise RuntimeError("consensus answer was empty")
-    return ConsensusResult(answer=answer, advisor_count=len(advices))
+    return ConsensusResult(
+        answer=answer,
+        advisor_count=len(advices),
+        degraded=bool(degraded_reasons),
+        degraded_reasons=tuple(degraded_reasons),
+    )

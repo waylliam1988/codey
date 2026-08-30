@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import socket
 import shutil
 import subprocess
 import sys
@@ -2058,6 +2059,36 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertGreaterEqual(marker["dropped"], 2)
         self.assertEqual(last["seq"], 4)
 
+    def test_replay_events_after_cursor_returns_missed_events(self) -> None:
+        state = server.State()
+        state.emit({"type": "info", "seq": 1})
+        state.emit({"type": "info", "seq": 2})
+        sub = state.subscribe()
+        try:
+            state.emit({"type": "info", "seq": 3})
+
+            replay = state.replay_events_after(1, max_event_id=sub.replay_cutoff)
+            live = sub.get_nowait()
+        finally:
+            state.unsubscribe(sub)
+
+        self.assertEqual([(event_id, item["seq"]) for event_id, item in replay], [(2, 2)])
+        self.assertEqual(live["seq"], 3)
+
+    def test_replay_events_after_expired_cursor_requests_resync(self) -> None:
+        with mock.patch.object(server, "SSE_REPLAY_LIMIT", 2):
+            state = server.State()
+        state.emit({"type": "info", "seq": 1})
+        state.emit({"type": "info", "seq": 2})
+        state.emit({"type": "info", "seq": 3})
+
+        replay = state.replay_events_after(1)
+
+        self.assertEqual(replay[0][0], 0)
+        self.assertEqual(replay[0][1]["type"], "resync_required")
+        self.assertEqual(replay[0][1]["reason"], "sse_replay_window_expired")
+        self.assertEqual([item["seq"] for _, item in replay[1:]], [2, 3])
+
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
 
@@ -2681,6 +2712,95 @@ class RunSnapshotTests(unittest.TestCase):
         submit.assert_not_called()
         self.assertGreaterEqual(flipping.calls, 2)
 
+    def test_oversized_post_body_is_rejected_before_dispatch(self) -> None:
+        state = server.State()
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server, "MAX_POST_BODY_BYTES", 8),
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/new_chat",
+                    body=b"x" * 9,
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 413)
+        self.assertEqual(payload["error"], "request body too large")
+
+    def test_shell_approval_continuation_uses_current_active_provider(self) -> None:
+        state = server.State()
+        run = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="request shell",
+            provider_id="deepseek",
+        )
+        assert run is not None
+        self.assertTrue(state.start_run(run.run_id))
+        self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
+        state.pending_shell["shell-1"] = {
+            "id": "shell-1",
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "command": "pytest",
+            "cwd": ".",
+            "project": run.project,
+            "continue_after": True,
+            "max_turns": 8,
+            "provider": "deepseek",
+            "risk_label": "generic",
+        }
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(server, "execute_approved_shell", return_value={
+                    "ok": True,
+                    "exit_code": 0,
+                    "output": "ok",
+                }),
+                mock.patch.object(
+                    server,
+                    "_submit_task_after_slot_release",
+                    return_value="run-next",
+                ) as submit,
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/shell_approval",
+                    body=json.dumps({"id": "shell-1", "approved": True}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["continued"])
+        self.assertEqual(submit.call_args.args[5], "qwen")
+
 
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -2690,8 +2810,21 @@ class SessionThreadingTests(unittest.TestCase):
         self.project_audit_mock = self.project_audit_patch.start()
         self.research_advisors_patch = mock.patch.object(server, "_run_research_advisors", return_value=None)
         self.research_advisors_mock = self.research_advisors_patch.start()
+        self._real_getaddrinfo = socket.getaddrinfo
+
+        def fixture_dns(host, *args, **kwargs):
+            if str(host).lower() in {"127.0.0.1", "::1", "localhost"}:
+                return self._real_getaddrinfo(host, *args, **kwargs)
+            return [(2, 1, 6, "", ("93.184.216.34", 443))]
+
+        self.dns_patch = mock.patch(
+            "socket.getaddrinfo",
+            side_effect=fixture_dns,
+        )
+        self.dns_patch.start()
 
     def tearDown(self) -> None:
+        self.dns_patch.stop()
         self.research_advisors_patch.stop()
         self.project_audit_patch.stop()
         self.consensus_patch.stop()
@@ -6174,6 +6307,10 @@ class SessionThreadingTests(unittest.TestCase):
         provider.location = "https://chat.qwen.ai/"
         state.set_provider_session("qwen", "session-1")
 
+        def cancelled_agent(*_args, **kwargs):
+            kwargs["on_event"](RunEvent.turn_started(3, "partial reply"))
+            raise cancellation.TaskCancelled("task stopped")
+
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
@@ -6181,7 +6318,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                side_effect=cancellation.TaskCancelled("task stopped"),
+                side_effect=cancelled_agent,
             ),
         ):
             server._run_task("session-1", td, "hello", 8, False, "qwen")
@@ -6191,6 +6328,8 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["stop_reason"], "stopped")
+        self.assertEqual(task_done["turns"], 3)
+        self.assertEqual(task_done["max_turns"], 8)
         self.assertIsNone(task_done["provider_failure"])
         self.assertTrue(state.provider_session_changed("qwen", "session-1"))
         for name in provider_controls._TASK_CONTEXT_FIELDS:

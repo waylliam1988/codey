@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
@@ -9,6 +10,13 @@ from codey.research.context import ResearchPipelineConfig
 from codey.research.plan_executor import PlanExecutor
 from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools
+
+
+def _allow_http_url(url: str, *args, **kwargs) -> str | None:
+    del args, kwargs
+    if url.startswith(("http://", "https://")):
+        return None
+    return "only http(s) URLs are allowed"
 
 
 class _SearchBackend:
@@ -85,14 +93,16 @@ def test_plan_executor_bounds_queries_sources_and_url_guard() -> None:
                 max_sources=3,
             )
 
-            result = PlanExecutor(
-                config=ResearchPipelineConfig(
-                    max_queries_per_round=2,
-                    max_sources_per_query=2,
-                    max_total_sources=2,
-                    max_source_preview_chars=120,
-                )
-            ).execute(plan, tools)
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=2,
+                            max_sources_per_query=2,
+                            max_total_sources=2,
+                            max_source_preview_chars=120,
+                        )
+                    ).execute(plan, tools)
 
             assert result.queries_executed == ("alpha evidence", "beta evidence")
             assert len(result.opened_sources) == 2
@@ -165,13 +175,15 @@ def test_plan_executor_stops_before_search_when_total_source_budget_is_full() ->
                 max_sources=2,
             )
 
-            result = PlanExecutor(
-                config=ResearchPipelineConfig(
-                    max_queries_per_round=2,
-                    max_sources_per_query=2,
-                    max_total_sources=2,
-                )
-            ).execute(plan, tools)
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=2,
+                            max_sources_per_query=2,
+                            max_total_sources=2,
+                        )
+                    ).execute(plan, tools)
 
             assert result.stop_reason == "max_sources"
             assert result.queries_executed == ("alpha evidence",)
@@ -210,13 +222,15 @@ def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None
                 max_sources=2,
             )
 
-            result = PlanExecutor(
-                config=ResearchPipelineConfig(
-                    max_queries_per_round=1,
-                    max_sources_per_query=2,
-                    max_total_sources=2,
-                )
-            ).execute(plan, tools)
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=1,
+                            max_sources_per_query=2,
+                            max_total_sources=2,
+                        )
+                    ).execute(plan, tools)
 
             assert result.queries_executed == ("alpha evidence",)
             assert result.fresh_source_urls == ()
@@ -280,13 +294,15 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
                 max_sources=4,
             )
 
-            result = PlanExecutor(
-                config=ResearchPipelineConfig(
-                    max_queries_per_round=2,
-                    max_sources_per_query=4,
-                    max_total_sources=4,
-                )
-            ).execute(plan, tools)
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=2,
+                            max_sources_per_query=4,
+                            max_total_sources=4,
+                        )
+                    ).execute(plan, tools)
 
             assert result.fresh_source_urls == ("https://example.com/target",)
             assert result.fresh_source_count == 1

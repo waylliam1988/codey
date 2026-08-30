@@ -1198,6 +1198,98 @@ def test_staged_knowledge_store_read_through() -> None:
         assert read_staged.title == "Staged Title"
 
 
+def test_knowledge_write_update_merges_existing_provenance_and_scope() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(store.root)
+        tools = ResearchTools(
+            search=_PipelineSearch(),
+            store=store,
+            changes=changes,
+            session_id="session-a",
+            project="project-a",
+        )
+        source = "https://example.com/source"
+        tools.sources_read.add(source)
+        created = tools.knowledge_write({
+            "id": "fact-a",
+            "type": "fact",
+            "title": "Original fact",
+            "body": "Original body.",
+            "tags": ["original"],
+            "sources": [source],
+            "relations": [{"src": "alpha", "dst": "beta", "kind": "affects"}],
+            "aliases": ["Alpha"],
+            "confidence": 0.7,
+        })
+        note_id = tools.created_ids[0]
+        original = store.read_note(note_id)
+        assert original is not None
+
+        updated = tools.knowledge_write({
+            "id": note_id,
+            "title": "Updated fact",
+            "body": "Updated body.",
+        })
+        note = store.read_note(note_id)
+        assert note is not None
+
+        assert created.startswith("saved fact note")
+        assert updated.startswith("saved fact note")
+        assert note.title == "Updated fact"
+        assert note.body == "Updated body."
+        assert note.type == "fact"
+        assert note.sources == [source]
+        assert note.relations == [{"src": "alpha", "dst": "beta", "kind": "affects"}]
+        assert note.aliases == ["Alpha"]
+        assert note.confidence == 0.7
+        assert note.session_id == "session-a"
+        assert note.project == "project-a"
+        assert note.created == original.created
+
+
+def test_knowledge_write_update_rejects_cross_session_owner() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        first = ResearchTools(
+            search=_PipelineSearch(),
+            store=store,
+            changes=KnowledgeChanges(store.root),
+            session_id="session-a",
+            project="project-a",
+        )
+        source = "https://example.com/source"
+        first.sources_read.add(source)
+        first.knowledge_write({
+            "id": "fact-a",
+            "type": "fact",
+            "title": "Original fact",
+            "body": "Original body.",
+            "sources": [source],
+        })
+        note_id = first.created_ids[0]
+        second = ResearchTools(
+            search=_PipelineSearch(),
+            store=store,
+            changes=KnowledgeChanges(store.root),
+            session_id="session-b",
+            project="project-a",
+        )
+
+        result = second.knowledge_write({
+            "id": note_id,
+            "title": "Rewrite",
+            "body": "Wrong owner.",
+        })
+
+        assert result == "ERROR: note belongs to another session"
+        note = store.read_note(note_id)
+        assert note is not None
+        assert note.title == "Original fact"
+
+
 def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

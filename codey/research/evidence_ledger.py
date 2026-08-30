@@ -58,6 +58,11 @@ _TOP_LEVEL_KEYS = frozenset({
     "relations",
     "warnings",
 })
+_LEDGER_WARNING_CODES = frozenset({
+    "records_pruned_for_ledger_closure",
+    "ledger_rotated_unavailable",
+    "ledger_rotated_full",
+})
 _RECORD_KEYS = frozenset({
     "record_id",
     "record_digest",
@@ -237,18 +242,26 @@ class EvidenceLedgerStore:
             # silently vanish from the ledger.
             with with_file_lock(path):
                 loaded = self._load_payload(path)
+                rotated_unavailable = False
                 if loaded is None:
-                    return EvidenceLedgerWriteResult(
-                        skipped=True,
-                        reason_code="ledger_unavailable",
-                        record_id=str(record_payload.get("record_id") or ""),
-                    )
+                    if not self._rotate_active_ledger(path, "unavailable"):
+                        return EvidenceLedgerWriteResult(
+                            skipped=True,
+                            reason_code="ledger_unavailable",
+                            record_id=str(record_payload.get("record_id") or ""),
+                        )
+                    loaded = {}
+                    rotated_unavailable = True
                 payload = loaded or self._new_payload(session_id=session_id, project=project)
                 previous_counts = _counts(loaded) if loaded else {}
                 previous_ledger_ref = str(loaded.get("ledger_ref") or "") if loaded else ""
                 previous_warnings = tuple(
                     str(item) for item in (loaded or {}).get("warnings", ())[:MAX_WARNINGS]
                 )
+                if rotated_unavailable:
+                    payload["warnings"] = list(
+                        dict.fromkeys([*previous_warnings, "ledger_rotated_unavailable"])
+                    )
                 record_id = str(record_payload.get("record_id") or "")
                 record_digest = str(record_payload.get("record_digest") or "")
                 if _has_record(payload, record_id, record_digest):
@@ -296,7 +309,39 @@ class EvidenceLedgerStore:
                         warnings=previous_warnings,
                     )
                 payload = candidate
-                write_json_atomic(path, payload, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
+                try:
+                    write_json_atomic(path, payload, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
+                except ValueError:
+                    if not self._rotate_active_ledger(path, "full"):
+                        raise
+                    payload = self._new_payload(session_id=session_id, project=project)
+                    payload["warnings"] = ["ledger_rotated_full"]
+                    appended = _append_payload(
+                        payload,
+                        record_payload,
+                        run_id=run_id,
+                        session_id=session_id,
+                        project=project,
+                    )
+                    if not appended or not _has_record(payload, record_id, record_digest):
+                        return EvidenceLedgerWriteResult(
+                            skipped=True,
+                            reason_code="record_pruned_for_ledger_closure",
+                            ledger_ref=previous_ledger_ref,
+                            record_id=record_id,
+                            counts=previous_counts,
+                            warnings=previous_warnings,
+                        )
+                    if not _canonical_ledger_payload(payload):
+                        return EvidenceLedgerWriteResult(
+                            skipped=True,
+                            reason_code="invalid_record",
+                            ledger_ref=previous_ledger_ref,
+                            record_id=record_id,
+                            counts=previous_counts,
+                            warnings=previous_warnings,
+                        )
+                    write_json_atomic(path, payload, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
         except (OSError, RuntimeError, TypeError, ValueError):
             return EvidenceLedgerWriteResult(
                 skipped=True,
@@ -347,6 +392,23 @@ class EvidenceLedgerStore:
         if not _records_integrity_ok(payload):
             return None
         return dict(payload)
+
+    def _rotate_active_ledger(self, path: Path, reason: str) -> bool:
+        if not path.exists():
+            return True
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            stem = path.stem
+            suffix = path.suffix or ".json"
+            reason_part = identifier(reason, 32) or "rotated"
+            for index in range(1, 1000):
+                candidate = path.with_name(f"{stem}-{reason_part}-{index}{suffix}")
+                if not candidate.exists():
+                    path.replace(candidate)
+                    return True
+        except OSError:
+            return False
+        return False
 
     def _new_payload(self, *, session_id: str, project: str | Path | None) -> dict[str, object]:
         scope = {
@@ -982,7 +1044,7 @@ def _record_counts_match(record: Mapping[str, object]) -> bool:
 def _warnings_schema_ok(value: object) -> bool:
     if not isinstance(value, list) or len(value) > MAX_WARNINGS:
         return False
-    return all(item == "records_pruned_for_ledger_closure" for item in value)
+    return all(item in _LEDGER_WARNING_CODES for item in value)
 
 
 def _digest_schema_ok(value: object) -> bool:

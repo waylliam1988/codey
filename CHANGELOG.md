@@ -6,6 +6,37 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- Cold-start audit hardening:
+  - Terminal `task_done` events now use one helper and report observed turns on
+    user stop/error paths instead of hard-coded zeroes. Repair exhaustion also
+    persists its `max_repair_rounds` verdict into the durable run-operation
+    register.
+  - Edit-integrity diff parsing now treats every `---` / `+++` boundary as a
+    file boundary, so headerless untracked-file diffs cannot inherit the
+    previous tracked path. Git change collection disables quoted paths for CJK
+    filenames and gives synthesized untracked diffs a `diff --git` header.
+  - Research provenance is stricter: synthesis merging no longer fabricates
+    conclusion or counter-evidence lines; research record construction can bind
+    citations from the persisted Sources section; and `knowledge_write` updates
+    merge with the existing note while preserving creation time, scope,
+    sources, relations, tags, and aliases unless explicitly changed.
+  - Evidence ledgers now rotate out unavailable or full active files with
+    observable warning reason codes instead of leaving a session permanently
+    unable to satisfy the completion gate.
+  - Runtime guardrails and observability improved: DNS fake-IP compatibility is
+    opt-in, consensus advisor failures are surfaced as degraded reasons,
+    JSON-tool parsing strips `<think>` blocks and de-duplicates identical calls,
+    writer failover records the failed provider before selecting the next one,
+    and shell-approval continuation uses the currently active provider.
+  - The web server now caps POST bodies, SSE streams carry bounded replay IDs
+    for reconnects, stopped runs render a terminal status row, provider status
+    refreshes on boot, localStorage writes are quota-safe, and the real Edge
+    browser E2E is opt-in instead of part of the default unit suite.
+  - Removed runtime injection of the metadata-only capability registry and
+    small stale shims (`DOC_SUFFIXES`, `_query_bool`, protocol JSON alias, and
+    an unreachable browser-search raise). Larger audit-only modules remain for
+    a separate architecture cleanup so this bugfix commit stays behaviorally
+    reviewable.
 - Added `codey/run_operation.py`: a minimal durable program counter for one
   coding run's completion/repair lifecycle, borrowed from pi's core principle
   that operation state is the *total current state* overwritten at every

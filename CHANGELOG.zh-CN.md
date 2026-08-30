@@ -6,6 +6,33 @@
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- 冷启动审计加固：
+  - terminal `task_done` 事件统一走一个 helper，用户 Stop / error 路径改用
+    已观测到的真实轮数，不再硬编码为 0。repair 轮耗尽时也把
+    `max_repair_rounds` verdict 持久化进 run-operation 寄存器。
+  - edit-integrity diff 解析把每个 `---` / `+++` 都视作文件边界，
+    headerless 的 untracked diff 不会再继承前一个 tracked 文件路径。
+    Git change collection 对 CJK 文件名关闭 quoted path，并给合成的
+    untracked diff 补 `diff --git` 头。
+  - research provenance 收紧：synthesis merge 不再编造 conclusion 或
+    counter-evidence 行；research record 构造可以从持久化 Sources 区绑定
+    citation；`knowledge_write` 更新已有 note 时做 merge，除非显式覆盖，
+    否则保留 created、session/project、sources、relations、tags、aliases。
+  - Evidence ledger 遇到 active 文件不可读或写满时会轮转并写入可观测的
+    warning reason code，不再让该 session 永久无法满足 completion gate。
+  - 运行时 guardrail 与可观测性加固：DNS fake-IP 兼容改为 opt-in；
+    consensus advisor 失败会进入 degraded reasons；JSON-tool codec 会剥掉
+    `<think>` 块并对相同 tool call 去重；writer failover 在选择下一个
+    provider 前先记录刚失败的 provider；shell 审批续跑使用审批时刻的
+    active provider。
+  - Web server 增加 POST body 上限，SSE 事件带有界 replay id 以支持重连，
+    stopped run 会渲染 terminal status row，启动时刷新 provider status，
+    localStorage 写入捕获 quota 异常，真实 Edge 浏览器 E2E 改为显式 opt-in，
+    不再进入默认单元套件。
+  - 移除 metadata-only capability registry 的运行时注入和若干小型旧壳
+    （`DOC_SUFFIXES`、`_query_bool`、protocol JSON alias、browser-search 的
+    不可达 raise）。更大的 audit-only 模块留到单独架构清理，避免这个 bugfix
+    提交变成难审的大迁移。
 - 新增 `codey/run_operation.py`：一次 coding run 的 completion/repair 生命
   周期最小 durable program counter，借鉴 pi 的核心原则——operation state 是
   每次转移都整体覆写的"当前总状态"，不是事件历史，更不能从事件缺失反推。

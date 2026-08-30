@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping
 import uuid
 
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
+from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
 from codey.storage.event_state import reset_event_backed_state
@@ -137,8 +138,8 @@ class GhostContinuityItem:
         text = _clean_context_text(payload.get("text"))
         if not item_id or not text:
             return None
-        weight = _coerce_unit_float(payload.get("weight"))
-        confidence = _coerce_unit_float(payload.get("confidence"))
+        weight = coerce_unit_float(payload.get("weight"))
+        confidence = coerce_unit_float(payload.get("confidence"))
         if weight is None or confidence is None:
             return None
         return cls(
@@ -941,8 +942,8 @@ def _item(
         text=cleaned,
         source=source,
         source_ref=clip_signal_text(source_ref, 160),
-        weight=_bounded_unit(weight),
-        confidence=_bounded_unit(confidence),
+        weight=coerce_unit_float(weight) or 0.0,
+        confidence=coerce_unit_float(confidence) or 0.0,
         created_at=clip_signal_text(created_at, 80) or now,
         updated_at=clip_signal_text(updated_at, 80) or now,
         expires_at=expires_at,
@@ -1243,18 +1244,6 @@ def _project_display_name(value: object) -> str:
 def _looks_like_question(value: object) -> bool:
     text = str(value or "").strip()
     return "?" in text or "？" in text
-
-
-def _coerce_unit_float(value: object) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return _bounded_unit(number)
-
-
-def _bounded_unit(value: float) -> float:
-    return max(0.0, min(1.0, float(value or 0.0)))
 
 
 def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

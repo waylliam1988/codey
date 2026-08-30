@@ -184,9 +184,6 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-_extract_json_objects = extract_json_objects
-
-
 def exact_json_object(text: str) -> tuple[dict[str, Any], str, str]:
     stripped = str(text or "").strip()
     if not stripped:

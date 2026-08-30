@@ -23,11 +23,6 @@ from codey.toolchain.runtime import _is_allowed_run_command
 MAX_SCAN_DIRS = 160
 MAX_SCAN_ENTRIES = 2_000
 MAX_MANIFEST_BYTES = 256 * 1024
-DOC_SUFFIXES = frozenset({".md", ".rst", ".txt"})
-# ``is_document_path`` now lives in the shared edit-scope leaf so the
-# completion proof and the edit-integrity monitor share one definition of
-# a prose path; the local alias below is kept for the doc-suffix constant.
-_DOC_SUFFIXES = DOC_SUFFIXES
 EXCLUDED_DIRS = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "node_modules",
     "__pycache__", "dist", "build", ".next", "target",

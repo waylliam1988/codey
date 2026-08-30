@@ -239,11 +239,11 @@ class CleanRunTerminalTests(unittest.TestCase):
 
 
 class NonBoolSatisfiedWiringTests(unittest.TestCase):
-    def test_fake_proof_with_int_satisfied_never_commits_the_proof_phase(self) -> None:
+    def test_fake_proof_with_int_satisfied_records_terminal_error(self) -> None:
         # TaskRunner passes the proof's facts through uncoerced: the strict
-        # helper validates them, so a proof carrying satisfied=1 (an int)
-        # fails its commit instead of being forced into a bool, and the
-        # counter stays at the last honest phase.
+        # helper validates them. A proof carrying satisfied=1 (an int)
+        # must not be swallowed by the operation writer; the run reaches a
+        # visible terminal error instead of leaving the register silently stale.
         writer = ObservingWriter(
             ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
         )
@@ -264,7 +264,11 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
                 event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
-            self.assertEqual(operation.phase, PHASE_WRITER_SETTLED)
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("proof_satisfied must be a bool", str(event["summary"]))
+            self.assertEqual(operation.phase, PHASE_TERMINAL)
+            assert operation.terminal is not None
+            self.assertEqual(operation.terminal.stop_reason, "error")
             self.assertIsNone(operation.completion_proof_satisfied)
 
 

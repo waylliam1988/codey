@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -322,6 +323,23 @@ class SlowProvider(FakeProvider):
 
 
 class ResearchBoundaryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._real_getaddrinfo = socket.getaddrinfo
+
+        def fixture_dns(host, *args, **kwargs):
+            if str(host).lower() in {"127.0.0.1", "::1", "localhost"}:
+                return self._real_getaddrinfo(host, *args, **kwargs)
+            return [(2, 1, 6, "", ("93.184.216.34", 443))]
+
+        self._dns_patch = mock.patch(
+            "socket.getaddrinfo",
+            side_effect=fixture_dns,
+        )
+        self._dns_patch.start()
+
+    def tearDown(self) -> None:
+        self._dns_patch.stop()
+
     def test_research_package_exports_quality_gate_not_legacy_evidence_review(self) -> None:
         import codey.research as research
 
@@ -4117,12 +4135,13 @@ class NetworkPolicyTests(unittest.TestCase):
         provider._fetch_page = mock_page
 
         with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page):
-            with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
-                with self.assertRaises(cancellation.TaskCancelled):
-                    provider._fetch_on_browser_thread("https://example.com/item")
+            with unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
+                with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
+                    with self.assertRaises(cancellation.TaskCancelled):
+                        provider._fetch_on_browser_thread("https://example.com/item")
 
-                discard_mock.assert_called_once_with(mock_page)
-                self.assertIsNone(provider._fetch_page)
+                    discard_mock.assert_called_once_with(mock_page)
+                    self.assertIsNone(provider._fetch_page)
 
     def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
         from codey.research.browser_search import BrowserSearchProvider
@@ -4160,11 +4179,13 @@ class NetworkPolicyTests(unittest.TestCase):
 
         with cancellation.scope(cancel_event):
             with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page):
-                with self.assertRaises(cancellation.TaskCancelled):
-                    provider._fetch_on_browser_thread("https://example.com/item")
+                with unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
+                    with self.assertRaises(cancellation.TaskCancelled):
+                        provider._fetch_on_browser_thread("https://example.com/item")
 
-                self.assertTrue(page.closed)
-                self.assertIsNone(provider._fetch_page)
+                    self.assertTrue(page.closed)
+                    self.assertIsNone(provider._fetch_page)
+
 
     def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:
         from codey.research.connector_search import _read_url_text
@@ -4320,19 +4341,22 @@ class NetworkPolicyTests(unittest.TestCase):
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
 
-            # Default policy treats DNS-resolved fake IP as policy-allowed for
-            # TUN/transparent proxy environments; it is not a public-IP proof.
-            self.assertIsNone(DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True))
+            self.assertEqual(
+                DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True),
+                "refusing to open a non-public address",
+            )
             self.assertEqual(
                 DEFAULT_NETWORK_POLICY.evaluate_url("https://example.com/api", resolve=True).status,
-                NetworkStatus.POLICY_ALLOWED,
+                NetworkStatus.BLOCKED_PRIVATE,
             )
 
-            # Strict policy with allow_dns_fake_ip=False rejects it
-            strict_policy = NetworkPolicy(allow_dns_fake_ip=False)
+            # TUN/transparent proxy environments must opt into fake-IP
+            # compatibility; it is never the cold-start default.
+            explicit_policy = NetworkPolicy(allow_dns_fake_ip=True)
+            self.assertIsNone(explicit_policy.check_url("https://example.com/api", resolve=True))
             self.assertEqual(
-                strict_policy.check_url("https://example.com/api", resolve=True),
-                "refusing to open a non-public address",
+                explicit_policy.evaluate_url("https://example.com/api", resolve=True).status,
+                NetworkStatus.POLICY_ALLOWED,
             )
 
 

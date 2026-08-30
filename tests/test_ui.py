@@ -613,6 +613,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const answerKey = runId ? `terminal:${runId}:answer` : '';", reply_block)
         self.assertIn("type: 'asst', text: data.text, runId, eventKey: answerKey", reply_block)
 
+    def test_stopped_terminal_event_renders_status_row(self) -> None:
+        done_start = HTML.index("if (data.type === 'task_done')")
+        done_end = HTML.index("if (data.type === 'shell_request')", done_start)
+        done_block = HTML[done_start:done_end]
+
+        self.assertIn("reason === 'stopped'", done_block)
+        self.assertIn("Stopped after ${turns} turn", done_block)
+        self.assertIn("type: 'pause', text: label", done_block)
+
     def test_consensus_has_no_visible_ui_mode(self) -> None:
         self.assertNotIn("MoA", HTML)
         self.assertNotIn("Consensus", HTML)
@@ -688,8 +697,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const LS_SESSIONS = 'codey:sessions';", HTML)
         self.assertIn("messages: Array.isArray(s.messages) ? s.messages : []", HTML)
         self.assertIn("title: s.title || 'New chat'", HTML)
+        self.assertIn("function safeLocalSet(key, value)", HTML)
         self.assertIn("function saveSessions(arr)", HTML)
-        self.assertIn("localStorage.setItem(LS_SESSIONS, JSON.stringify(arr))", HTML)
+        self.assertIn("safeLocalSet(LS_SESSIONS, JSON.stringify(arr))", HTML)
+        self.assertIn("try { localStorage.setItem(key, value); } catch {}", HTML)
+        self.assertNotIn("LS_LEGACY_PROJECT", HTML)
         self.assertIn("s.title = m.text.slice(0, 28)", HTML)
         self.assertIn("s.title = title.slice(0, 80)", HTML)
 
@@ -710,6 +722,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("navigator.sendBeacon('/api/ui_state'", HTML)
         self.assertIn("function connectEvents()", HTML)
         self.assertIn("await restoreUiStateFromServer();", HTML)
+        boot_start = HTML.index("async function boot()")
+        boot_block = HTML[boot_start:HTML.index("boot();", boot_start)]
+        self.assertIn("refreshProviderStatus();", boot_block)
         self.assertIn("connectEvents();", HTML)
         self.assertLess(HTML.index("await restoreUiStateFromServer();"), HTML.index("connectEvents();"))
         self.assertIn("persistActive();", HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")])

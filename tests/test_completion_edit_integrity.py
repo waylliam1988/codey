@@ -143,6 +143,32 @@ class AssertionAndSkipTests(unittest.TestCase):
         self.assertEqual(observation.severity, SEVERITY_HIGH)
         self.assertIn(REASON_TEST_SKIP_ADDED, observation.reason_codes)
 
+    def test_headerless_following_file_does_not_inherit_previous_path(self) -> None:
+        tracked = _diff("VALUE = 1\n", "VALUE = 2\n", path="pytest.ini")
+        untracked = "".join(difflib.unified_diff(
+            [],
+            [
+                "import pytest\n",
+                "@pytest.mark.skip(reason='narrow')\n",
+                "def test_value():\n",
+                "    assert True\n",
+            ],
+            fromfile="/dev/null",
+            tofile="b/tests/test_new.py",
+        ))
+        observation = _observe(
+            diff=tracked + untracked,
+            paths=("pytest.ini", "tests/test_new.py"),
+        )
+
+        skip_findings = [
+            finding
+            for finding in observation.findings
+            if finding.reason_code == REASON_TEST_SKIP_ADDED
+        ]
+        self.assertEqual(len(skip_findings), 1)
+        self.assertEqual(skip_findings[0].paths, ("tests/test_new.py",))
+
 
 class ConfigIntegrityTests(unittest.TestCase):
     def test_added_narrowing_flags_are_suspicious(self) -> None:

@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import codey.research.evidence_ledger as evidence_ledger_module
 from codey.research.evidence_ledger import (
     EVIDENCE_LEDGER_KIND,
     EVIDENCE_LEDGER_SCHEMA_VERSION,
@@ -763,12 +764,22 @@ def test_load_rejects_existing_ledger_with_dangling_record_refs() -> None:
         )
 
         snapshot = store.load(session_id="session-ledger")
-        append_result = store.append_record(_record(), session_id="session-ledger")
+        append_record = _record(
+            url="https://example.com/secure/path?case=dangling",
+            run_id="run-ledger-dangling",
+        )
+        append_result = store.append_record(append_record, session_id="session-ledger")
+        recovered = store.load(session_id="session-ledger")
+        archives = list(path.parent.glob(f"{path.stem}-unavailable-*.json"))
 
     assert snapshot.available is False
     assert snapshot.reason_code == "ledger_unavailable"
-    assert append_result.skipped is True
-    assert append_result.reason_code == "ledger_unavailable"
+    assert append_result.ok is True
+    assert "ledger_rotated_unavailable" in append_result.warnings
+    assert recovered.available is True
+    assert recovered.payload is not None
+    assert recovered.payload["records"][0]["record_id"] == append_record.record_id
+    assert archives
 
 
 def test_load_rejects_closed_ledger_with_unknown_raw_fields() -> None:
@@ -789,12 +800,20 @@ def test_load_rejects_closed_ledger_with_unknown_raw_fields() -> None:
         path.write_text(json.dumps(payload), encoding="utf-8")
 
         snapshot = store.load(session_id="session-ledger")
-        append_result = store.append_record(_record(), session_id="session-ledger")
+        append_record = _record(
+            url="https://example.com/secure/path?case=unknown-fields",
+            run_id="run-ledger-unknown-fields",
+        )
+        append_result = store.append_record(append_record, session_id="session-ledger")
+        recovered = store.load(session_id="session-ledger")
 
     assert snapshot.available is False
     assert snapshot.reason_code == "ledger_unavailable"
-    assert append_result.skipped is True
-    assert append_result.reason_code == "ledger_unavailable"
+    assert append_result.ok is True
+    assert "ledger_rotated_unavailable" in append_result.warnings
+    assert recovered.available is True
+    assert recovered.payload is not None
+    assert recovered.payload["records"][0]["record_id"] == append_record.record_id
 
 
 def test_load_rejects_orphan_map_entries() -> None:
@@ -1230,7 +1249,7 @@ def test_malformed_typed_record_to_json_failure_returns_invalid_record() -> None
     assert not path.exists()
 
 
-def test_bad_or_oversized_ledger_is_unavailable_and_append_fails_open() -> None:
+def test_bad_or_oversized_ledger_is_unavailable_and_append_rotates_bad_active_file() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = EvidenceLedgerStore(Path(td) / "state")
         record = _record()
@@ -1240,17 +1259,60 @@ def test_bad_or_oversized_ledger_is_unavailable_and_append_fails_open() -> None:
 
         snapshot = store.load(session_id="session-ledger")
         result = store.append_record(record, session_id="session-ledger")
+        recovered = store.load(session_id="session-ledger")
+        archives = list(path.parent.glob(f"{path.stem}-unavailable-*.json"))
 
         path.write_text("x" * (MAX_EVIDENCE_LEDGER_BYTES + 1), encoding="utf-8")
         oversized = store.load(session_id="session-ledger")
 
     assert snapshot.available is False
     assert snapshot.reason_code == "ledger_unavailable"
-    assert result.skipped is True
-    assert result.reason_code == "ledger_unavailable"
+    assert result.ok is True
+    assert "ledger_rotated_unavailable" in result.warnings
     assert result.record_id == record.record_id
+    assert recovered.available is True
+    assert archives
     assert oversized.available is False
     assert oversized.reason_code == "ledger_unavailable"
+
+
+def test_append_rotates_full_ledger_and_preserves_current_record() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        path = store.path_for("session-ledger", None)
+        first = _record(
+            url="https://example.com/secure/path?case=full-before",
+            run_id="run-ledger-full-before",
+        )
+        second = _record(
+            url="https://example.com/secure/path?case=full-after",
+            run_id="run-ledger-full-after",
+        )
+        assert store.append_record(first, session_id="session-ledger").ok is True
+        real_write = evidence_ledger_module.write_json_atomic
+        calls = 0
+
+        def flaky_write(path_arg, payload, *, max_bytes):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ValueError("json payload exceeds max_bytes")
+            return real_write(path_arg, payload, max_bytes=max_bytes)
+
+        with mock.patch(
+            "codey.research.evidence_ledger.write_json_atomic",
+            side_effect=flaky_write,
+        ):
+            result = store.append_record(second, session_id="session-ledger")
+        snapshot = store.load(session_id="session-ledger")
+        archives = list(path.parent.glob(f"{path.stem}-full-*.json"))
+
+    assert result.ok is True
+    assert "ledger_rotated_full" in result.warnings
+    assert snapshot.available is True
+    assert snapshot.payload is not None
+    assert snapshot.payload["records"][0]["record_id"] == second.record_id
+    assert archives
 
 
 def test_write_failure_returns_skipped_without_raising() -> None:

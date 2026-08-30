@@ -108,10 +108,10 @@ def merge_evidence_patch(
 
     opened_list = [item.to_dict() for item in ledger.opened_sources]
     evidence_list = [item.to_dict() for item in ledger.evidence_items]
-    citation_map = [
-        item.to_dict()
-        for item in (getattr(quality_review, "citation_map", ()) or ())
-    ]
+    citations = tuple(getattr(quality_review, "citation_map", ()) or ())
+    if not citations:
+        citations = tuple(parse_citation_rows(merged_sections.get("sources", ""), ledger))
+    citation_map = [item.to_dict() for item in citations]
     coverage = ledger.coverage_payload()
     warnings = list(getattr(quality_review, "warnings", ()) or ())
 
@@ -407,15 +407,6 @@ def _inject_new_evidence_into_sections(
                 continue
             c_num, c_text = match.groups()
             conclusion_lines.append(f"- {c_text} [{c_num}]")
-        if not conclusion_lines:
-            c_num = next(iter(url_to_num.values()), 1)
-            conclusion_lines.append(f"- 基于已验证来源的研究结论。 [{c_num}]")
-    elif not conclusion_lines and url_to_num:
-        c_num = next(iter(url_to_num.values()), 1)
-        conclusion_lines.append(f"- 基于已验证来源的研究结论。 [{c_num}]")
-
-    if not counter_lines:
-        counter_lines.append("- 未找到强反证；当前有界补搜未发现与已保存证据直接冲突的来源。")
 
     conclusion_refs = _citation_numbers(conclusion_lines)
     evidence_refs = _citation_numbers(evidence_lines)

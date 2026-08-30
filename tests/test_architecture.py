@@ -202,13 +202,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
-    def test_task_runner_does_not_use_capability_registry_for_decisions(self) -> None:
+    def test_task_runner_does_not_carry_capability_registry_for_decisions(self) -> None:
         source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
 
-        self.assertIn("self.capabilities = capabilities", source)
-        self.assertEqual(source.count("self.capabilities"), 1)
+        self.assertNotIn("CapabilityRegistry", source)
+        self.assertNotIn("self.capabilities", source)
         self.assertNotIn("if capabilities", source)
-        self.assertNotIn("if self.capabilities", source)
 
     def test_builtin_profiles_module_is_gone(self) -> None:
         # The metadata-only catalog never influenced any decision and was

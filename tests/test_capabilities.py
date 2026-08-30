@@ -508,23 +508,21 @@ class CapabilityRegistryTests(unittest.TestCase):
             ("completion_contract", "research_object_model", "research_review_finding"),
         )
 
-    def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
+    def test_state_and_task_runner_do_not_carry_registry_without_dispatch(self) -> None:
         from codey.app import server
         from codey.app.task_runner import TaskRunner
 
         state = server.State()
-        registry = state.capabilities
         runner = TaskRunner(
             state,
             agent_run=lambda **_kwargs: None,
             collect_changes=lambda *_args, **_kwargs: {},
             run_review=lambda **_kwargs: None,
             capture_provider_failure=lambda *_args, **_kwargs: None,
-            capabilities=registry,
         )
 
-        self.assertEqual(registry.ids(), EXPECTED_BUILTIN_IDS)
-        self.assertIs(runner.capabilities, registry)
+        self.assertFalse(hasattr(state, "capabilities"))
+        self.assertFalse(hasattr(runner, "capabilities"))
 
     def test_builtin_capabilities_do_not_load_third_party_or_override_users(self) -> None:
         registry = builtin_capability_registry()

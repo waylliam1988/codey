@@ -822,14 +822,21 @@ def _diff_file_sections(diff: object) -> list[_DiffSection]:
             in_hunk = False
             saturated = False
             continue
+        if line.startswith(("+++ ", "--- ")):
+            flush()
+            in_hunk = False
+            saturated = False
+            if line.startswith("+++ b/"):
+                current_path = line[len("+++ b/"):]
+            elif line.startswith("--- a/") and not current_path:
+                current_path = line[len("--- a/"):]
+            continue
         if line.startswith("@@"):
             in_hunk = True
             continue
         if not in_hunk:
-            if line.startswith("+++ b/"):
-                current_path = line[len("+++ b/"):]
             continue
-        if line.startswith(("+++", "---")) or line.startswith("\\"):
+        if line.startswith("\\"):
             continue
         if line.startswith(("+", "-")):
             if len(current) >= MAX_SECTION_LINES:

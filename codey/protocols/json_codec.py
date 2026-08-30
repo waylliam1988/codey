@@ -23,6 +23,33 @@ PROTOCOL_NESTED_TOOL_IN_DONE = "nested_tool_in_done"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 
+def _strip_think_blocks(text: str) -> str:
+    source = str(text or "")
+    lowered = source.lower()
+    while True:
+        start = lowered.find("<think")
+        if start < 0:
+            return source
+        tag_end = lowered.find(">", start)
+        if tag_end < 0:
+            return source[:start]
+        end = lowered.find("</think>", tag_end + 1)
+        if end < 0:
+            return source[:start]
+        source = source[:start] + source[end + len("</think>") :]
+        lowered = source.lower()
+
+
+def _tool_call_key(call: ToolCall) -> tuple[str, str]:
+    args = json.dumps(
+        call.args,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return call.name, args
+
+
 def _system_prompt(tool_contract: str) -> str:
     return """\
 You are a careful local coding agent. You cannot access the filesystem
@@ -173,6 +200,7 @@ def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> 
 
 def _balanced_json_objects(text: str) -> list[dict[str, Any]]:
     """Extract JSON objects from raw web replies without accepting prose."""
+    text = _strip_think_blocks(text)
     objects: list[dict[str, Any]] = []
     in_string = False
     escaped = False
@@ -339,9 +367,10 @@ class JsonToolCodec:
 
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
+        seen_calls: set[tuple[str, str]] = set()
         objects = _balanced_json_objects(text)
         if not objects:
-            kind, message = _classify_no_json_reply(text)
+            kind, message = _classify_no_json_reply(_strip_think_blocks(text))
             return ToolPlan(
                 calls=[],
                 control=None,
@@ -362,7 +391,12 @@ class JsonToolCodec:
             if plan.protocol_error:
                 return plan
             if plan.calls:
-                calls.extend(plan.calls)
+                for call in plan.calls:
+                    key = _tool_call_key(call)
+                    if key in seen_calls:
+                        continue
+                    seen_calls.add(key)
+                    calls.append(call)
                 if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
                     calls = calls[: tool_defs.MAX_ACCIDENTAL_TOOL_CALLS]
                     break

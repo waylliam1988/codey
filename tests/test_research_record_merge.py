@@ -689,3 +689,90 @@ def test_merge_evidence_patch_rebuilds_when_pruning_leaves_no_supported_body_lin
             assert merged.research_record.unsupported_claim_count == 0
         finally:
             store.index.close()
+
+
+def test_merge_evidence_patch_does_not_fabricate_counterclaim_or_conclusion() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-no-auto",
+                project="project-no-auto",
+            )
+            initial_url = "https://example.com/initial-auto"
+            followup_url = "https://example.com/followup-auto"
+            tools.sources_read.add(initial_url)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=initial_url,
+                final_url=initial_url,
+                title="Initial Auto Source",
+                text="Initial source verified fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Initial Auto Fact",
+                "body": "Initial source verified fact.",
+                "sources": [initial_url],
+                "evidence": [{
+                    "source_url": initial_url,
+                    "excerpt": "Initial source verified fact.",
+                    "claim": "Initial source verified fact.",
+                }],
+            })
+            initial_summary = (
+                "## 结论\n\n"
+                "## 关键证据\n"
+                "- [1] Initial source verified fact.\n\n"
+                "## 反证与限制\n\n"
+                "## 来源\n"
+                f"[1] Initial Auto Source - {initial_url}"
+            )
+            initial_record = build_research_record(
+                summary=initial_summary,
+                question="What facts are supported?",
+                session_id="session-no-auto",
+                project="project-no-auto",
+                run_id="run-no-auto",
+                ledger=tools.ledger,
+                stop_reason="done",
+            )
+            initial_result = ResearchRunResult(
+                question="What facts are supported?",
+                summary=initial_summary,
+                stop_reason="done",
+                turns=2,
+                research_record=initial_record,
+            )
+
+            tools.sources_read.add(followup_url)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=followup_url,
+                final_url=followup_url,
+                title="Followup Auto Source",
+                text="Followup source verified fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Followup Auto Fact",
+                "body": "Followup source verified fact.",
+                "sources": [followup_url],
+                "evidence": [{
+                    "source_url": followup_url,
+                    "excerpt": "Followup source verified fact.",
+                    "claim": "Followup source verified fact.",
+                }],
+            })
+            material = PlanExecutionResult(fresh_source_urls=(followup_url,))
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+
+            assert "Initial source verified fact" in merged.summary
+            assert "Followup source verified fact" in merged.summary
+            assert "基于已验证来源的研究结论" not in merged.summary
+            assert "未找到强反证" not in merged.summary
+        finally:
+            store.index.close()

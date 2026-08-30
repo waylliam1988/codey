@@ -35,7 +35,11 @@ from codey.research.identity import (
     sanitize_research_url_ref,
 )
 from codey.reviews.report_sections import parse_sections
-from codey.research.report_quality import ReportQualityReview, citation_ref_items
+from codey.research.report_quality import (
+    ReportQualityReview,
+    citation_ref_items,
+    parse_citation_rows,
+)
 
 
 MAX_RECORD_SOURCES = 24
@@ -301,6 +305,8 @@ def build_research_record(
     evidence_by_source = _evidence_by_source(evidence)
     sections = parse_sections(summary)
     citations = tuple(getattr(review, "citation_map", ()) or ())
+    if not citations:
+        citations = tuple(parse_citation_rows(sections.get("sources", ""), ledger))
     citation_urls = {int(item.number): str(item.url or "") for item in citations}
     claims, assumptions, relations, unsupported = extract_claim_candidates(
         sections=sections,

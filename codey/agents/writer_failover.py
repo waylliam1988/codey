@@ -145,6 +145,7 @@ class WriterFailoverRunner:
                 self.record_failure(self.provider_id, exc.failure)
                 self.clear_session(self.provider_id)
                 self._close_current()
+                self.tried.add(self.provider_id)
                 if self.switches >= self.max_switches or turns_used >= turn_budget:
                     raise
                 cur_checkpoint = self._activate_next(exc)
@@ -176,6 +177,7 @@ class WriterFailoverRunner:
             failure = self.capture_failure(self.provider_id, "connect", connect_error)
             self.record_failure(self.provider_id, failure)
             self.clear_session(self.provider_id)
+            self.tried.add(self.provider_id)
             error = ProviderActionError(failure)
             if self.switches >= self.max_switches:
                 raise error from connect_error

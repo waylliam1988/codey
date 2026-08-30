@@ -199,7 +199,6 @@ const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_UI_UPDATED = 'codey:ui-updated';
 const LS_UI_REVISION = 'codey:ui-revision';
-const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
 const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
@@ -208,8 +207,11 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; }
 }
-function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); }
-function saveProjects(arr) { localStorage.setItem(LS_PROJECTS, JSON.stringify(arr)); }
+function safeLocalSet(key, value) {
+  try { localStorage.setItem(key, value); } catch {}
+}
+function saveSessions(arr) { safeLocalSet(LS_SESSIONS, JSON.stringify(arr)); }
+function saveProjects(arr) { safeLocalSet(LS_PROJECTS, JSON.stringify(arr)); }
 function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) {
   return { id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider, research: false };
 }
@@ -289,9 +291,9 @@ function currentUiState() {
 function cacheUiState() {
   saveSessions(sessions);
   saveProjects(projects);
-  localStorage.setItem(LS_ACTIVE, activeId);
-  localStorage.setItem(LS_UI_UPDATED, String(uiStateUpdatedAt));
-  localStorage.setItem(LS_UI_REVISION, String(uiStateRevision));
+  safeLocalSet(LS_ACTIVE, activeId);
+  safeLocalSet(LS_UI_UPDATED, String(uiStateUpdatedAt));
+  safeLocalSet(LS_UI_REVISION, String(uiStateRevision));
 }
 function cachedUiState() {
   return {
@@ -370,17 +372,6 @@ let uiStateDirtySinceBoot = false;
 const bootCachedState = cachedUiState();
 const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
 applyUiState(bootCachedState);
-const legacyProject = (localStorage.getItem(LS_LEGACY_PROJECT) || '').trim();
-if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProject))) {
-  projects.unshift({
-    id: uid(),
-    name: pathName(legacyProject),
-    path: legacyProject,
-    expanded: true,
-    createdAt: Date.now(),
-  });
-}
-localStorage.removeItem(LS_LEGACY_PROJECT);
 cacheUiState();
 
 // ============================ helpers ============================
@@ -1353,6 +1344,10 @@ function handleServerEvent(data) {
       addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'approval') {
       // shell approval card is emitted separately
+    } else if (reason === 'stopped') {
+      const turns = data.turns || 0;
+      const label = turns ? `Stopped after ${turns} turn${turns === 1 ? '' : 's'}` : 'Stopped';
+      addToSession(sid, { type: 'pause', text: label, sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'done') {
       if (data.mode === 'research') {
         if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
@@ -2134,6 +2129,7 @@ async function boot() {
   resizeTask();
   updateSend();
   syncProviderUI(currentProviderId());
+  refreshProviderStatus();
   $('provider-button').disabled = false;
   syncResearchUI();
   setStatus('', 'ok');

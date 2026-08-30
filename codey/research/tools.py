@@ -293,20 +293,50 @@ class ResearchTools:
         return note.to_markdown()
 
     def knowledge_write(self, args: dict) -> str:
-        note_type = str(args.get("type") or "note").strip().lower()
+        existing_id = str(args.get("id") or "").strip()
+        if existing_id and not is_safe_id(existing_id):
+            return "ERROR: invalid note id"
+        existing_note = self.store.read_note(existing_id) if existing_id else None
+        updating = existing_note is not None
+        if existing_id and not updating:
+            existing_id = ""
+
+        note_type = str(
+            args.get("type") or (existing_note.type if existing_note is not None else "note")
+        ).strip().lower()
         if note_type not in NOTE_TYPES:
             return f"ERROR: unknown note type '{note_type}'; use one of {', '.join(NOTE_TYPES)}"
         title = str(args.get("title") or "").strip()
         body = str(args.get("body") or "").strip()
         if not title or not body:
             return "ERROR: knowledge_write needs both a title and a body"
-        sources = _as_str_list(args.get("sources"))
+
+        if existing_note is not None:
+            if existing_note.session_id and self.session_id and existing_note.session_id != self.session_id:
+                return "ERROR: note belongs to another session"
+            if existing_note.project and self.project and existing_note.project != self.project:
+                return "ERROR: note belongs to another project"
+
+        sources = (
+            _as_str_list(args.get("sources"))
+            if "sources" in args
+            else list(existing_note.sources if existing_note is not None else [])
+        )
+        validating_sources = not updating or "sources" in args
         if note_type == "source":
-            problem = self._source_problem(sources)
+            problem = (
+                self._source_problem(sources)
+                if validating_sources
+                else (None if sources else "a source note must cite the url of a page you opened")
+            )
             if problem:
                 return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
         elif note_type in _CITED_TYPES:
-            problem = self._provenance_problem(note_type, sources)
+            problem = (
+                self._provenance_problem(note_type, sources)
+                if validating_sources
+                else (None if sources else f"a {note_type} note must cite at least one opened source URL")
+            )
             if problem:
                 return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
         evidence_preparation = self.ledger.prepare_evidence_items(
@@ -318,32 +348,62 @@ class ResearchTools:
         )
         if evidence_preparation.error:
             return f"ERROR: {evidence_preparation.error}"
-        relations, relation_warnings = clean_relations(args.get("relations"))
-        status = str(args.get("status") or "active").strip().lower()
+        if "relations" in args:
+            relations, relation_warnings = clean_relations(args.get("relations"))
+        else:
+            relations, relation_warnings = (
+                list(existing_note.relations if existing_note is not None else []),
+                [],
+            )
+        status = str(
+            args.get("status")
+            if "status" in args
+            else (existing_note.status if existing_note is not None else "active")
+        ).strip().lower()
         if status not in NOTE_STATUSES:
             status = "active"
-        existing_id = str(args.get("id") or "").strip()
-        if existing_id and not is_safe_id(existing_id):
-            return "ERROR: invalid note id"
-        updating = bool(existing_id and self.store.exists(existing_id))
-        if existing_id and not updating:
-            existing_id = ""
+        tags = (
+            _as_str_list(args.get("tags"))
+            if "tags" in args
+            else list(existing_note.tags if existing_note is not None else [])
+        )
         note = KnowledgeNote.create(
             type=note_type,
             title=title,
             body=body,
             id=existing_id or None,
-            tags=_merge_relation_tags(_as_str_list(args.get("tags")), relations),
+            tags=_merge_relation_tags(tags, relations),
             sources=sources,
-            aliases=_as_str_list(args.get("aliases")),
+            aliases=(
+                _as_str_list(args.get("aliases"))
+                if "aliases" in args
+                else list(existing_note.aliases if existing_note is not None else [])
+            ),
             relations=relations,
-            open_questions=_as_str_list(args.get("open_questions")),
-            confidence=_as_float(args.get("confidence")),
+            open_questions=(
+                _as_str_list(args.get("open_questions"))
+                if "open_questions" in args
+                else list(existing_note.open_questions if existing_note is not None else [])
+            ),
+            confidence=(
+                _as_float(args.get("confidence"))
+                if "confidence" in args
+                else (existing_note.confidence if existing_note is not None else None)
+            ),
             status=status,
-            retrieved_at=_as_opt_str(args.get("retrieved_at")),
-            valid_until=_as_opt_str(args.get("valid_until")),
-            session_id=self.session_id,
-            project=self.project,
+            retrieved_at=(
+                _as_opt_str(args.get("retrieved_at"))
+                if "retrieved_at" in args
+                else (existing_note.retrieved_at if existing_note is not None else None)
+            ),
+            valid_until=(
+                _as_opt_str(args.get("valid_until"))
+                if "valid_until" in args
+                else (existing_note.valid_until if existing_note is not None else None)
+            ),
+            session_id=existing_note.session_id if existing_note is not None else self.session_id,
+            project=existing_note.project if existing_note is not None else self.project,
+            created=existing_note.created if existing_note is not None else "",
         )
         rel = self.store.write_note(note, changes=self.changes)
         if note_type == "source":

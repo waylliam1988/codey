@@ -90,6 +90,15 @@ class GhostContinuityTests(unittest.TestCase):
             self.assertEqual(continuity.text, "")
             self.assertFalse(store.projection_path.exists())
 
+    def test_non_finite_weight_and_confidence_are_rejected(self) -> None:
+        payload = _item().to_payload()
+
+        for field in ("weight", "confidence"):
+            with self.subTest(field=field):
+                corrupted = dict(payload)
+                corrupted[field] = float("nan")
+                self.assertIsNone(GhostContinuityItem.from_payload(corrupted))
+
     def test_sync_from_accepted_typed_hebbian_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)

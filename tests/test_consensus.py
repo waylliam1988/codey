@@ -41,9 +41,13 @@ class FakeProvider:
 class TraceRecorder:
     def __init__(self) -> None:
         self.sections: list[dict[str, object]] = []
+        self.warnings: list[str] = []
 
     def record_prompt_section(self, name, text, **kwargs) -> None:
         self.sections.append({"name": name, "text": text, **kwargs})
+
+    def warn(self, reason_code: str) -> None:
+        self.warnings.append(reason_code)
 
 
 class ConsensusTests(unittest.TestCase):
@@ -139,7 +143,31 @@ class ConsensusTests(unittest.TestCase):
         assert result is not None
         self.assertEqual(result.answer, "final")
         self.assertEqual(result.advisor_count, 1)
+        self.assertTrue(result.degraded)
+        self.assertEqual(result.degraded_reasons, ("advisor_failed:qwen",))
         self.assertIn("glm advice", selected.sent[0])
+
+    def test_advisor_failure_is_visible_in_trace(self) -> None:
+        selected = FakeProvider(["final"])
+        trace = TraceRecorder()
+        providers = {
+            "qwen": FakeProvider(fail=True),
+            "glm": FakeProvider(["glm advice"]),
+        }
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="Compare two approaches",
+            provider_ids=("deepseek", "qwen", "glm"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen", "glm": "GLM"},
+            availability=lambda: {"qwen": True, "glm": True},
+            connect_existing=lambda provider_id: providers[provider_id],
+            trace_recorder=trace,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("advisor_failed:qwen", trace.warnings)
 
     def test_draft_first_consensus_uses_owner_draft_before_advisors(self) -> None:
         selected = FakeProvider(["owner draft", "final answer"])
@@ -310,6 +338,7 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(result.answer, "owner draft")
         self.assertEqual(result.advisor_count, 0)
         self.assertTrue(result.degraded)
+        self.assertEqual(result.degraded_reasons, ("advisor_failed:qwen",))
         self.assertEqual(len(selected.sent), 1)
 
     def test_draft_first_consensus_returns_draft_when_final_synthesis_fails(self) -> None:
@@ -332,6 +361,7 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(result.answer, "owner draft")
         self.assertEqual(result.advisor_count, 1)
         self.assertTrue(result.degraded)
+        self.assertEqual(result.degraded_reasons, ("aggregate_failed",))
         self.assertEqual(len(selected.sent), 2)
 
     def test_project_context_removes_local_project_path(self) -> None:
