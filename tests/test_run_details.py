@@ -413,6 +413,47 @@ class RunDetailsTests(unittest.TestCase):
         self.assertEqual(rows["Progress"]["value"], "Writing was interrupted")
         self.assertEqual(rows["Progress"]["tone"], "warning")
 
+    def test_runtime_only_terminal_operation_makes_details_available_without_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td)
+            store = RuntimeOperationStore(RuntimeSessionLog(state))
+            started = store.start(
+                session_id="session-runtime-terminal",
+                run_id="run-runtime-terminal",
+                project="",
+                provider_id="deepseek",
+                turn_budget=6,
+                max_repair_rounds=1,
+                task_kind="research",
+            )
+            self.assertIsNotNone(started)
+            store.commit(
+                "session-runtime-terminal",
+                "run-runtime-terminal",
+                lambda s: mark_terminal(
+                    s,
+                    stop_reason="done",
+                    summary_chars=7,
+                    turns=1,
+                    max_turns=6,
+                    provider="deepseek",
+                ),
+            )
+
+            summary = load_run_details(
+                run_ledgers=RunLedgerStore(state),
+                run_traces=RunTraceStore(state),
+                runtime_operations=store,
+                session_id="session-runtime-terminal",
+                run_id="run-runtime-terminal",
+            )
+            rows = {row["label"]: row for row in summary.to_jsonable()["rows"]}
+
+        self.assertTrue(summary.available)
+        self.assertEqual(rows["Work"]["value"], "Research")
+        self.assertEqual(rows["Model"]["value"], "DeepSeek")
+        self.assertNotIn("Progress", rows)
+
     def test_trace_read_is_bounded_and_schema_checked(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)

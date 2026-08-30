@@ -68,6 +68,7 @@ from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
+from codey.operations import research_flow as research_flow_module
 from codey.app import server
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -317,27 +318,23 @@ def _run_case(
             ghost_router_provider_factory=None,
         )
 
-        original_admission = runner._build_research_topic_continuity
+        original_admission = research_flow_module.build_research_topic_continuity
 
-        def spy_admission(**kwargs):
-            result = original_admission(**kwargs)
+        def spy_admission(deps, **kwargs):
+            result = original_admission(deps, **kwargs)
             admission_results.append(result)
             return result
 
-        runner._build_research_topic_continuity = spy_admission
+        original_build_context = research_flow_module.build_research_context
 
-        original_build_context = runner._build_research_context
-
-        def spy_build_context(frame, request, **kwargs):
-            context = original_build_context(frame, request, **kwargs)
+        def spy_build_context(deps, frame, **kwargs):
+            context = original_build_context(deps, frame, **kwargs)
             research_contexts.append(context)
             return context
 
-        runner._build_research_context = spy_build_context
-
         if not live:
 
-            def research_task(**kwargs):
+            def research_task(*_args, **kwargs):
                 question = str(kwargs.get("task") or "research")
                 record = _proof_record(question, run_id=str(kwargs.get("run_id") or ""))
                 return ResearchIterationRun(
@@ -352,7 +349,6 @@ def _run_case(
                     )
                 )
 
-            runner._run_research_iteration = research_task
         try:
             if provider_factory is not None:
                 raw_provider = provider_factory(session_id)
@@ -371,17 +367,30 @@ def _run_case(
             )
             with ExitStack() as stack:
                 stack.enter_context(mock.patch.object(state, "get_provider", return_value=tracing_provider))
+                stack.enter_context(mock.patch(
+                    "codey.operations.research_flow.build_research_topic_continuity",
+                    side_effect=spy_admission,
+                ))
+                stack.enter_context(mock.patch(
+                    "codey.operations.research_flow.build_research_context",
+                    side_effect=spy_build_context,
+                ))
+                if not live:
+                    stack.enter_context(mock.patch(
+                        "codey.operations.research_flow.run_research_iteration",
+                        side_effect=research_task,
+                    ))
                 if not live and seeded_interest_candidates:
                     stack.enter_context(
                         mock.patch(
-                            "codey.operations.task_flow.build_research_interest_candidates",
+                            "codey.operations.research_flow.build_research_interest_candidates",
                             return_value=seeded_interest_candidates,
                         )
                     )
                 if not gate_open:
                     stack.enter_context(
                         mock.patch(
-                            "codey.operations.task_flow.allows_context_source",
+                            "codey.operations.research_flow.allows_context_source",
                             return_value=False,
                         )
                     )

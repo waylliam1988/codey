@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from codey.runtime.effects import lane_for_run, operation_id_for_run
 from codey.runtime.operation import OperationContext, OperationIntent
 from codey.runtime.outcome import OperationOutcome
 from codey.runtime.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
 from codey.runtime.scheduler import OperationScheduler
 from codey.runtime.session_log import RuntimeSessionLog
+from codey.task.kind import resolve_task_kind
 from codey.task.model import TaskSubmission
 
 
@@ -64,9 +66,9 @@ class TaskRuntime:
         operation = _SubmittedTaskOperation(
             request=request,
             executor=self.executor,
-            operation_id=f"runtime:{run_id}",
-            kind="task",
-            lane=f"runtime:{run_id}",
+            operation_id=operation_id_for_run(run_id),
+            kind=resolve_task_kind(request),
+            lane=lane_for_run(run_id),
             intent=OperationIntent(f"task:{run_id}"),
         )
         try:
@@ -75,6 +77,5 @@ class TaskRuntime:
             if not operation.entered and self.on_unstarted_failure is not None:
                 self.on_unstarted_failure(request)
             raise
-
 
 __all__ = ["TaskRuntime"]

@@ -19,6 +19,8 @@ from codey.operations import task_flow as task_flow_module
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
 
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+
 
 class _Provider:
     name = "DeepSeek Web"
@@ -72,12 +74,14 @@ def _runner(
         state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes
-        or mock.Mock(return_value={
-            "ok": True,
-            "changed_count": 0,
-            "files": [],
-            "diff": "",
-        }),
+        or mock.Mock(
+            return_value={
+                "ok": True,
+                "changed_count": 0,
+                "files": [],
+                "diff": "",
+            }
+        ),
         run_review=run_review or mock.Mock(return_value=None),
         capture_provider_failure=server.capture_provider_failure,
         run_consensus=run_consensus,
@@ -119,11 +123,16 @@ def _research_record(project: Path | None = None) -> ResearchRecord:
         f"[1] Helium article - {url}"
     )
     ledger = ResearchLedger()
-    ledger.record_search("helium", [{
-        "title": "Helium article",
-        "url": url,
-        "snippet": "Helium supply.",
-    }])
+    ledger.record_search(
+        "helium",
+        [
+            {
+                "title": "Helium article",
+                "url": url,
+                "snippet": "Helium supply.",
+            }
+        ],
+    )
     ledger.record_open(
         requested_url=url,
         final_url=url,
@@ -131,12 +140,14 @@ def _research_record(project: Path | None = None) -> ResearchRecord:
         text="Helium is separated from natural gas streams.",
     )
     prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": "Helium supply depends on gas processing.",
-            "source_url": url,
-            "excerpt": "Helium is separated from natural gas streams.",
-            "stance": "supports",
-        }],
+        [
+            {
+                "claim": "Helium supply depends on gas processing.",
+                "source_url": url,
+                "excerpt": "Helium is separated from natural gas streams.",
+                "stance": "supports",
+            }
+        ],
         fallback_sources=[url],
         fallback_claim="Helium supply depends on gas processing.",
         fallback_body="Helium is separated from natural gas streams.",
@@ -179,26 +190,32 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
             trace.record_prompt_section("fake_prompt", secret_prompt)
             trace.record_provider_failure(
                 "deepseek",
-                type("Failure", (), {
-                    "action": "send",
-                    "kind": "response_missing",
-                    "stage": "completion",
-                    "message": "RAW_PROVIDER_ERROR_SHOULD_NOT_BE_SAVED",
-                })(),
+                type(
+                    "Failure",
+                    (),
+                    {
+                        "action": "send",
+                        "kind": "response_missing",
+                        "stage": "completion",
+                        "message": "RAW_PROVIDER_ERROR_SHOULD_NOT_BE_SAVED",
+                    },
+                )(),
             )
             return RunResult("done", "done", 1)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=fake_agent)
-            runner.run(TaskSubmission(
-                "session-trace",
-                str(project),
-                "Build the feature",
-                4,
-                False,
-                "deepseek",
-                intent="project",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-trace",
+                    str(project),
+                    "Build the feature",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="project",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
@@ -233,11 +250,13 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
             notes_created=["note-created"],
             notes_updated=["note-updated"],
             synthesis_id="synth-1",
-            opened_sources=[{
-                "requested_url": "https://example.com/request",
-                "final_url": "https://example.com/final",
-                "title": "Example Source",
-            }],
+            opened_sources=[
+                {
+                    "requested_url": "https://example.com/request",
+                    "final_url": "https://example.com/final",
+                    "title": "Example Source",
+                }
+            ],
             research_record={
                 "record_id": "research_record:" + "b" * 16,
                 "answer_status": "partial",
@@ -256,17 +275,20 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             runner = _runner(state, router_provider_factory=router_factory)
-            runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
-            runner.run(TaskSubmission(
-                "session-research-trace",
-                None,
-                "查一下最新 storage 方案",
-                4,
-                False,
-                "deepseek",
-                intent="auto",
-            ))
-            state.wait_for_ghost_sleep(timeout=2)
+            research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
+            with mock.patch(RESEARCH_ITERATION, research_iteration):
+                runner.run(
+                    TaskSubmission(
+                        "session-research-trace",
+                        None,
+                        "查一下最新 storage 方案",
+                        4,
+                        False,
+                        "deepseek",
+                        intent="auto",
+                    )
+                )
+                state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, "session-research-trace", run_id)
@@ -283,16 +305,18 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert payload["research_source_refs"][0]["host"] == "example.com"
         assert payload["research_pipeline_runs"]
         assert payload["research_pipeline_runs"][-1]["followup_applied"] is False
-        assert payload["research_records"] == [{
-            "record_id": "research_record:" + "b" * 16,
-            "answer_status": "partial",
-            "source_count": 1,
-            "evidence_count": 2,
-            "claim_count": 3,
-            "assumption_count": 1,
-            "unsupported_claim_count": 1,
-            "record_digest": "sha256:" + "b" * 64,
-        }]
+        assert payload["research_records"] == [
+            {
+                "record_id": "research_record:" + "b" * 16,
+                "answer_status": "partial",
+                "source_count": 1,
+                "evidence_count": 2,
+                "claim_count": 3,
+                "assumption_count": 1,
+                "unsupported_claim_count": 1,
+                "record_digest": "sha256:" + "b" * 64,
+            }
+        ]
         assert "https://example.com/request" not in serialized
         assert "https://example.com/final" not in serialized
         assert "Example Source" not in serialized
@@ -316,26 +340,33 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             stop_reason="done",
             turns=1,
             synthesis_id="synth-1",
-            opened_sources=[{
-                "requested_url": "https://example.com/helium?token=SECRET_TOKEN",
-                "final_url": "https://example.com/helium?token=SECRET_TOKEN",
-                "title": "Helium article",
-            }],
+            opened_sources=[
+                {
+                    "requested_url": "https://example.com/helium?token=SECRET_TOKEN",
+                    "final_url": "https://example.com/helium?token=SECRET_TOKEN",
+                    "title": "Helium article",
+                }
+            ],
             research_record=record,
         )
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner = _runner(state)
-            runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
-            runner.run(TaskSubmission(
-                "session-evidence-ledger",
-                str(project),
-                "Research helium",
-                4,
-                False,
-                "deepseek",
-                intent="research",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-evidence-ledger",
+                    str(project),
+                    "Research helium",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="research",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         assert state.evidence_ledgers is not None
@@ -350,21 +381,23 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
 
         assert snapshot.available is True
         assert len(snapshot.payload["records"]) == 1
-        assert trace_payload["research_evidence_ledgers"] == [{
-            "ok": True,
-            "skipped": False,
-            "reason_code": "",
-            "ledger_ref": snapshot.payload["ledger_ref"],
-            "record_id": record.record_id,
-            "counts": {
-                "records": 1,
-                "sources": 1,
-                "evidence": 1,
-                "claims": 3,
-                "assumptions": 1,
-                "relations": 3,
-            },
-        }]
+        assert trace_payload["research_evidence_ledgers"] == [
+            {
+                "ok": True,
+                "skipped": False,
+                "reason_code": "",
+                "ledger_ref": snapshot.payload["ledger_ref"],
+                "record_id": record.record_id,
+                "counts": {
+                    "records": 1,
+                    "sources": 1,
+                    "evidence": 1,
+                    "claims": 3,
+                    "assumptions": 1,
+                    "relations": 3,
+                },
+            }
+        ]
         assert trace_payload["research_records"][0]["record_id"] == record.record_id
         proof_reviews = trace_payload["research_proof_reviews"]
         assert len(proof_reviews) == 1
@@ -373,19 +406,19 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         assert len(research_plans) == 1
         research_plan = research_plans[0]
         pipeline_runs = trace_payload["research_pipeline_runs"]
-        assert pipeline_runs == [{
-            "followup_applied": False,
-            "followup_rounds": 0,
-            "stop_reason": "done",
-            "planner_stop_reason": "proof_ok_no_required_followup",
-            "fresh_source_count": 0,
-            "new_evidence_count": 0,
-            "final_evidence_count": 1,
-            "attempted_fresh_source_count": 0,
-            "attempted_new_evidence_count": 0,
-        }]
-
-
+        assert pipeline_runs == [
+            {
+                "followup_applied": False,
+                "followup_rounds": 0,
+                "stop_reason": "done",
+                "planner_stop_reason": "proof_ok_no_required_followup",
+                "fresh_source_count": 0,
+                "new_evidence_count": 0,
+                "final_evidence_count": 1,
+                "attempted_fresh_source_count": 0,
+                "attempted_new_evidence_count": 0,
+            }
+        ]
 
         assert proof_review["proof_ref"].startswith("research_proof:")
         assert proof_review["record_id"] == record.record_id
@@ -431,7 +464,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=fake_agent)
 
-            def fake_research_task(**kwargs):
+            def fake_research_task(*_args, **kwargs):
                 trace = kwargs["trace_recorder"]
                 trace.record_permission_profile("research", phase="research")
                 trace.record_tool_contract_hash("sha256:" + "r" * 64, phase="research")
@@ -439,25 +472,30 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                     "research_outbound_prompt",
                     "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED",
                 )
-                return ResearchIterationRun(result=ResearchRunResult(
-                    question="Research first",
-                    summary="research done",
-                    stop_reason="done",
-                    turns=1,
-                    synthesis_id="synth-hybrid",
-                ))
+                return ResearchIterationRun(
+                    result=ResearchRunResult(
+                        question="Research first",
+                        summary="research done",
+                        stop_reason="done",
+                        turns=1,
+                        synthesis_id="synth-hybrid",
+                    )
+                )
 
-            runner._run_research_iteration = mock.Mock(side_effect=fake_research_task)
-            runner.run(TaskSubmission(
-                "session-hybrid-trace",
-                str(project),
-                "Research then edit",
-                4,
-                False,
-                "deepseek",
-                intent="hybrid",
-            ))
-            state.wait_for_ghost_sleep(timeout=2)
+            research_iteration = mock.Mock(side_effect=fake_research_task)
+            with mock.patch(RESEARCH_ITERATION, research_iteration):
+                runner.run(
+                    TaskSubmission(
+                        "session-hybrid-trace",
+                        str(project),
+                        "Research then edit",
+                        4,
+                        False,
+                        "deepseek",
+                        intent="hybrid",
+                    )
+                )
+                state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, "session-hybrid-trace", run_id)
@@ -506,7 +544,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         with (
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(
-                "codey.operations.task_flow.safe_review_impact_map",
+                "codey.operations.project_completion_flow.safe_review_impact_map",
                 return_value="SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED",
             ) as impact_map,
         ):
@@ -516,15 +554,17 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                 collect_changes=mock.Mock(return_value=changes),
                 run_review=run_review,
             )
-            runner.run(TaskSubmission(
-                "session-secondary-trace",
-                str(project),
-                "Build the feature",
-                4,
-                False,
-                "deepseek",
-                intent="project",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-secondary-trace",
+                    str(project),
+                    "Build the feature",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="project",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
@@ -558,15 +598,17 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(TaskSubmission(
-                "session-consensus-trace",
-                None,
-                secret_task,
-                4,
-                False,
-                "deepseek",
-                intent="chat",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-consensus-trace",
+                    None,
+                    secret_task,
+                    4,
+                    False,
+                    "deepseek",
+                    intent="chat",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
@@ -592,24 +634,22 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            runner.run(TaskSubmission(
-                "session-chat-provenance",
-                None,
-                "plain question",
-                4,
-                False,
-                "deepseek",
-                intent="chat",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-chat-provenance",
+                    None,
+                    "plain question",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="chat",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, "session-chat-provenance", run_id)
-        outbound = next(
-            item
-            for item in payload["prompt_sections"]
-            if item["name"] == "chat_outbound_prompt"
-        )
+        outbound = next(item for item in payload["prompt_sections"] if item["name"] == "chat_outbound_prompt")
 
         assert outbound["freshness"] == "provider_send"
         assert outbound["capability_id"] == "chat_runner"
@@ -636,23 +676,23 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=provider):
             runner = _runner(state, run_consensus=mock.Mock(return_value=None))
-            runner.run(TaskSubmission(
-                session_id,
-                None,
-                "continue with the plan",
-                4,
-                False,
-                "deepseek",
-                intent="chat",
-            ))
+            runner.run(
+                TaskSubmission(
+                    session_id,
+                    None,
+                    "continue with the plan",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="chat",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, session_id, run_id)
         handoff = next(
-            item
-            for item in payload["prompt_sections"]
-            if item["name"] == "conversation_handoff_summary_prompt"
+            item for item in payload["prompt_sections"] if item["name"] == "conversation_handoff_summary_prompt"
         )
 
         assert provider.prompts[0] == render_summary_prompt(snapshot)
@@ -680,24 +720,22 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_project_audit=project_audit)
-            runner.run(TaskSubmission(
-                "session-project-audit-prepared",
-                str(project),
-                secret_task,
-                4,
-                False,
-                "deepseek",
-                intent="project",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-project-audit-prepared",
+                    str(project),
+                    secret_task,
+                    4,
+                    False,
+                    "deepseek",
+                    intent="project",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, "session-project-audit-prepared", run_id)
-        audit_task = next(
-            item
-            for item in payload["prompt_sections"]
-            if item["name"] == "project_audit_task"
-        )
+        audit_task = next(item for item in payload["prompt_sections"] if item["name"] == "project_audit_task")
         serialized = json.dumps(payload, ensure_ascii=False)
 
         project_audit.assert_called_once()
@@ -716,15 +754,17 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
-            runner.run(TaskSubmission(
-                "session-fallback-trace",
-                str(project),
-                "Build the feature",
-                4,
-                False,
-                "deepseek",
-                intent="project",
-            ))
+            runner.run(
+                TaskSubmission(
+                    "session-fallback-trace",
+                    str(project),
+                    "Build the feature",
+                    4,
+                    False,
+                    "deepseek",
+                    intent="project",
+                )
+            )
             state.wait_for_ghost_sleep(timeout=2)
 
         run_id = state.last_terminal_event["run_id"]
@@ -732,12 +772,14 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
         assert payload["provider_initial"] == "deepseek"
         assert payload["provider_final"] == "qwen"
-        assert payload["fallbacks"] == [{
-            "from_provider": "deepseek",
-            "to_provider": "qwen",
-            "phase": "preflight",
-            "reason_code": "unavailable",
-        }]
+        assert payload["fallbacks"] == [
+            {
+                "from_provider": "deepseek",
+                "to_provider": "qwen",
+                "phase": "preflight",
+                "reason_code": "unavailable",
+            }
+        ]
         assert len(payload["policy_decisions"]) == 1
         assert payload["policy_decisions"][0]["subject_ref"].startswith("action:")
         assert payload["policy_decisions"][0] == {
@@ -776,15 +818,17 @@ def _run_project_task(state: server.State, project: Path, session_id: str, task:
             state,
             collect_changes=mock.Mock(return_value=changes),
         )
-        runner.run(TaskSubmission(
-            session_id,
-            str(project),
-            task,
-            4,
-            False,
-            "deepseek",
-            intent="project",
-        ))
+        runner.run(
+            TaskSubmission(
+                session_id,
+                str(project),
+                task,
+                4,
+                False,
+                "deepseek",
+                intent="project",
+            )
+        )
         state.wait_for_ghost_sleep(timeout=2)
     run_id = state.last_terminal_event["run_id"]
     return _trace_payload(state, session_id, run_id)
@@ -818,11 +862,13 @@ def test_done_project_run_records_shadow_completion_proof_for_code_change() -> N
         # observed locally: the honest shadow status is blocked.
         assert proof["status"] == "blocked"
         assert proof["satisfied"] is False
-        assert proof["checks"] == [{
-            "check_id": "relevant_verification",
-            "status": "not_run",
-            "reason_code": "no_matching_verification_command",
-        }]
+        assert proof["checks"] == [
+            {
+                "check_id": "relevant_verification",
+                "status": "not_run",
+                "reason_code": "no_matching_verification_command",
+            }
+        ]
         assert any(ref.startswith("ledger:") for ref in proof["external_refs"])
         assert any(ref.startswith("receipt:") for ref in proof["external_refs"])
         assert proof["analysis_run_refs"] == []
@@ -857,11 +903,13 @@ def test_docs_only_done_run_completes_with_limitations() -> None:
         assert proof["status"] == "complete_with_limitations"
         assert proof["satisfied"] is False
         assert proof["limitation_refs"] == ["docs_only_change"]
-        assert proof["checks"] == [{
-            "check_id": "relevant_verification",
-            "status": "not_applicable",
-            "reason_code": "docs_only_change",
-        }]
+        assert proof["checks"] == [
+            {
+                "check_id": "relevant_verification",
+                "status": "not_applicable",
+                "reason_code": "docs_only_change",
+            }
+        ]
 
 
 def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:

@@ -149,6 +149,7 @@ class RunRegistry:
         project: str | None,
         task: str,
         provider_id: str,
+        run_id: str = "",
         abort_if_stopped: bool = False,
     ) -> RunSnapshot | None:
         with self._lock:
@@ -158,7 +159,7 @@ class RunRegistry:
                 return None
             self.stop_flag.clear()
             run = RunSnapshot(
-                run_id="run_" + uuid.uuid4().hex,
+                run_id=run_id or "run_" + uuid.uuid4().hex,
                 session_id=session_id,
                 project=project,
                 task=task,

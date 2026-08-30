@@ -180,7 +180,7 @@ def _load_operation_state(
         operation = runtime_operations.load(session_id, run_id)
     except Exception:
         return None
-    if operation is None or operation.phase == PHASE_TERMINAL:
+    if operation is None:
         return None
     return operation
 
@@ -191,7 +191,11 @@ def _operation_progress_row(
 ) -> str:
     # A non-terminal snapshot next to a finished ledger is stale: the run
     # completed, so the interrupted-position line would be a lie.
-    if operation is None or (projection is not None and projection.has_run_finished):
+    if (
+        operation is None
+        or operation.phase == PHASE_TERMINAL
+        or (projection is not None and projection.has_run_finished)
+    ):
         return ""
     return operation_progress_text(operation)
 

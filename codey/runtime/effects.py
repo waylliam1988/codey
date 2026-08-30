@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from codey.runtime.outcome import OperationOutcome
+from codey.runtime.reducer import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import project_key, session_key
 
@@ -455,17 +456,13 @@ class RuntimeOperationStore:
                 updated_at=now,
                 task_kind=_text(task_kind, "task_kind"),
             )
+            entries = self.session_log.read(session)
+            existing = _existing_open_phase(entries, state)
+            if existing is not None:
+                return existing
             self.session_log.append_many(
                 session,
-                (
-                    {
-                        "lane": state.lane,
-                        "operation_id": state.operation_id,
-                        "kind": "operation_started",
-                        "payload": {"operation_kind": state.task_kind},
-                    },
-                    _phase_entry(state),
-                ),
+                _start_entries(entries, state),
             )
         except Exception:
             return None
@@ -506,6 +503,8 @@ class RuntimeOperationStore:
             return current
         try:
             next_state = transition(current)
+            if next_state == current:
+                return current
             canonical = RuntimeOperationState.from_payload(next_state.to_payload())
             if (
                 canonical != next_state
@@ -566,11 +565,19 @@ def mark_writer_running(
     provider_id: str,
     writer_attempt: int = 1,
 ) -> RuntimeOperationState:
+    provider = _text(provider_id, "provider_id")
+    attempt = _count(writer_attempt, "writer_attempt", minimum=1)
+    if (
+        state.phase == PHASE_WRITER_RUNNING
+        and state.provider_id == provider
+        and state.writer_attempt == attempt
+    ):
+        return state
     return _transition(
         state,
         PHASE_WRITER_RUNNING,
-        provider_id=_text(provider_id, "provider_id"),
-        writer_attempt=_count(writer_attempt, "writer_attempt", minimum=1),
+        provider_id=provider,
+        writer_attempt=attempt,
     )
 
 
@@ -744,6 +751,56 @@ def _phase_entry(state: RuntimeOperationState) -> dict[str, object]:
             "state": state.to_payload(),
         },
     }
+
+
+def _operation_started_entry(state: RuntimeOperationState) -> dict[str, object]:
+    return {
+        "lane": state.lane,
+        "operation_id": state.operation_id,
+        "kind": "operation_started",
+        "payload": {"operation_kind": state.task_kind},
+    }
+
+
+def _start_entries(
+    entries: tuple[object, ...],
+    state: RuntimeOperationState,
+) -> tuple[dict[str, object], ...]:
+    projection = reduce_session(entries)
+    existing = projection.operations.get(state.operation_id)
+    if existing is None:
+        return (_operation_started_entry(state), _phase_entry(state))
+    if existing.lane != state.lane or existing.status != "open":
+        raise RuntimeOperationTransitionError("task operation is not open")
+    return (_phase_entry(state),)
+
+
+def _existing_open_phase(
+    entries: tuple[object, ...],
+    state: RuntimeOperationState,
+) -> RuntimeOperationState | None:
+    projection = reduce_session(entries)
+    existing = projection.operations.get(state.operation_id)
+    if existing is None:
+        return None
+    if existing.lane != state.lane or existing.status != "open":
+        raise RuntimeOperationTransitionError("task operation is not open")
+    latest: RuntimeOperationState | None = None
+    for entry in entries:
+        if entry.operation_id != state.operation_id or entry.kind != "operation_effect":
+            continue
+        if entry.payload.get("effect_kind") != "run_phase":
+            continue
+        phase = RuntimeOperationState.from_payload(entry.payload.get("state"))
+        if (
+            phase is not None
+            and phase.session_id == state.session_id
+            and phase.run_id == state.run_id
+            and phase.operation_id == state.operation_id
+            and phase.lane == state.lane
+        ):
+            latest = phase
+    return latest
 
 
 def _outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:

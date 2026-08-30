@@ -16,6 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -37,6 +38,8 @@ from tests.manual.ghost_router_ab import (
     route_error_cost,
     summarize_rows,
 )
+
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
 
 class _MainProvider:
@@ -158,16 +161,18 @@ def _run_case(
             ghost_router_provider_factory=router_provider_factory,
         )
 
-        def research_task(**_kwargs):
+        def research_task(*_args, **_kwargs):
             nonlocal research_calls
             research_calls += 1
             return ResearchIterationRun(
                 result=ResearchRunResult("q", "stub research done", "done", 1)
             )
 
-        runner._run_research_iteration = research_task  # production dispatch, safe body
         try:
-            with _patched_provider(state):
+            with (
+                _patched_provider(state),
+                mock.patch(RESEARCH_ITERATION, side_effect=research_task),
+            ):
                 runner.run(TaskSubmission(
                     session_id=f"{arm}-{case.name}",
                     project=str(project) if case.project else None,

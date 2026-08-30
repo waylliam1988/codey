@@ -9,18 +9,18 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
-from codey.operations import task_flow as task_flow_module
+from codey.operations import project_completion_flow as project_completion_module
 from codey.agents.runner import RunResult
 from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
-from codey.operations.task_flow import _blocked_result
+from codey.operations.project_completion_flow import (
+    COMPLETION_REPAIR_FOLLOWUP,
+    blocked_result,
+)
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import (
-    COMPLETION_REPAIR_FOLLOWUP,
-    TaskFlow,
-)
+from codey.operations.task_flow import TaskFlow
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
 
@@ -278,7 +278,11 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
         )
-        with mock.patch.object(task_flow_module, "safe_verification_candidates", candidates):
+        with mock.patch.object(
+            project_completion_module,
+            "safe_verification_candidates",
+            candidates,
+        ):
             event = _run(runner, state, project)
 
         assert len(writer.calls) == 2
@@ -655,6 +659,6 @@ def test_blocked_note_vocabulary_is_closed() -> None:
     }
     assert set(COMPLETION_BLOCKED_NOTES) == expected
     for reason in sorted(expected):
-        result = _blocked_result(RunResult("claimed done", "done", 1), reason)
+        result = blocked_result(RunResult("claimed done", "done", 1), reason)
         assert result.stop_reason == "blocked"
         assert "[Completion blocked:" in result.summary

@@ -16,6 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
+from unittest import mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -34,6 +35,8 @@ from codey.reviews.core import ReviewResult
 from codey.app import server
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
+
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -194,7 +197,7 @@ def _run_case(
             ghost_router_provider_factory=None,
         )
 
-        def research_task(**_kwargs):
+        def research_task(*_args, **_kwargs):
             nonlocal research_calls
             research_calls += 1
             if case.research_proof:
@@ -215,10 +218,12 @@ def _run_case(
                 result=ResearchRunResult("q", "stub research without proof", "done", 1)
             )
 
-        runner._run_research_iteration = research_task
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
-            with _patched_provider(state, provider):
+            with (
+                _patched_provider(state, provider),
+                mock.patch(RESEARCH_ITERATION, side_effect=research_task),
+            ):
                 runner.run(TaskSubmission(
                     session_id=session_id,
                     project=None,

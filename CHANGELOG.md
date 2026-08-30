@@ -20,6 +20,10 @@ This file records Codey's release history. The newest release appears first.
     moved the plain chat operation plus prompt/local-context tracing helpers
     out of `TaskFlow`. Chat prompt assembly, consensus handoff, provider
     session settlement, and reply emission now have an operation owner.
+  - Moved project completion execution into
+    `codey.operations.project_completion_flow`: writer failover, completion
+    proof evaluation, bounded repair admission, receipt/facts/memory writes,
+    and analysis-run projection no longer live on `TaskFlow`.
   - Split the task package boundary from the operation flow: `codey.task` is a
     model-only submission boundary, while `codey.operations.task_flow` owns the
     task operation flow.
@@ -36,18 +40,19 @@ This file records Codey's release history. The newest release appears first.
   - Moved terminal `task_done` event construction and terminal turn accounting
     into `codey.runtime.terminalizer`, so stop/error/done paths share one
     terminal projection.
-  - Aligned runtime submission identity: TaskRuntime now schedules the same
-    reserved `run_*` id that the detailed phase projection and terminal event
-    use, instead of creating a separate submit-local operation id.
+  - Aligned runtime submission identity: TaskRuntime, RuntimeOperationStore,
+    terminal settlement, and Run Details now share one
+    `task:<hash(run_id)>` operation/lane for each reserved `run_*` id. The
+    previous outer `runtime:<run_id>` operation semantics were removed before
+    release, so one task has one runtime operation.
   - Runtime operation tracking stays explanatory and fail-open: if strict phase
     fact validation rejects a malformed proof projection, the user-visible task
     result is preserved and the operation projection stops at its last valid
     phase.
-  - TaskRuntime's outer `runtime:<run_id>` operation now settles from the
-    user-visible terminal event: `done` is completed, `stopped` is aborted,
-    `approval` is suspended, and every other stop reason is failed. A task that
-    returns without a terminal outcome is recorded as failed instead of
-    completed.
+  - TaskRuntime's single task operation now settles from the user-visible
+    terminal event: `done` is completed, `stopped` is aborted, `approval` is
+    suspended, and every other stop reason is failed. A task that returns
+    without a terminal outcome is recorded as failed instead of completed.
   - If runtime scheduling fails before the task executor is entered, the
     reserved app run slot is released. A broken first runtime-log append can no
     longer leave the UI permanently busy.
@@ -56,7 +61,9 @@ This file records Codey's release history. The newest release appears first.
     so a crash mid-batch cannot leave a permanent open lane.
   - Run Details now reads runtime operation state before ledger/trace checks, so
     an interrupted run can still show its quiet `Progress` row even if the
-    ledger or trace was never written or has been cleaned up.
+    ledger or trace was never written or has been cleaned up. Terminal runtime
+    state can also provide minimal Work/Model details without showing a stale
+    Progress row.
   - RunRegistry builds `/api/state` snapshots without invoking approval
     callbacks under its internal lock.
   - Research and hybrid terminal events now keep the original task turn budget
@@ -73,6 +80,10 @@ This file records Codey's release history. The newest release appears first.
     DeepSeek and StepFun onto it. Both drivers now use
     `ProviderSendContext.record_response()` instead of mutating `ctx.last`,
     keeping stable-response accounting centralized.
+  - Project completion tests now target the operation module directly for
+    analysis-run projection, repair constants, verification candidate
+    selection, and writer failover ranking. Production no longer preserves
+    `TaskFlow` private methods only as test patch points.
 - Post-review cold-start cleanup:
   - A/B harness git-state capture now reads Git output as bytes, so untracked
     CJK filenames cannot trip Windows locale decoding before a full pytest run.
@@ -136,6 +147,10 @@ This file records Codey's release history. The newest release appears first.
     one `run_phase` effect and, at terminal, one matching
     `operation_settled` outcome. There is no parallel JSON register,
     migration path, or legacy lookup.
+  - Starting an already-open run resumes the latest phase on the same
+    operation instead of appending a second start or rewinding to `accepted`.
+    The manual crash/resume smoke now hard-kills at `writer_running`, then
+    continues the same `run_id` to terminal and verifies the lane is closed.
   - The phase contract stays closed:
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
@@ -171,6 +186,13 @@ This file records Codey's release history. The newest release appears first.
   `RepairContextProjection | None`, and the blocked-reason ternary chain moved
   into the pure `completion_blocked_reason()` projection in
   `codey/completion/decision.py` with its closed vocabulary locked by tests.
+- Split stable TaskFlow boundaries without adding managers:
+  `provider_preflight.py`, `conversation_plan.py`, `research_flow.py`, and
+  `project_completion_flow.py` now own provider startup, handoff planning,
+  Research/Hybrid orchestration, and completion helper projections. The
+  test-only Research iteration field was removed from `TaskFlow`; tests and
+  manual harnesses patch `codey.operations.research_flow.run_research_iteration`
+  directly.
 - Registered the `runtime_operation.state` event-matrix row on
   `runtime_session_log`. `State.forget_conversation()` now deletes the
   session's runtime log bucket. No manager classes, no provider/tool replay,

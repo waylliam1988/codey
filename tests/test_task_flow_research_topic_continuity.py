@@ -7,15 +7,21 @@ from unittest import mock
 
 from codey.app import server
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
+from codey.ghost.continuity import build_ghost_continuity
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.research_flow import (
+    ResearchFlowDeps,
+    build_research_context,
+    build_research_topic_continuity,
+    prior_claim_refs,
+)
 from codey.operations.context import RunFrame
 from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import TaskFlow
 
 _QUESTION = "Should provider recovery be re-checked against fresh sources?"
 
@@ -48,22 +54,20 @@ def _make_frame(project_text: str) -> RunFrame:
     )
 
 
-def _runner(state: server.State) -> TaskFlow:
-    return TaskFlow(
-        state,
-        agent_run=mock.Mock(),
-        collect_changes=lambda *_args, **_kwargs: {},
-        run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
-        project_facts=state.project_facts,
-        work_checkpoints=state.work_checkpoints,
-        run_ledgers=state.run_ledgers,
-        run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
-        managed_outputs=state.managed_outputs,
+def _deps(state: server.State) -> ResearchFlowDeps:
+    def ghost_continuity(*, project: str = "", session_id: str = ""):
+        store = getattr(state, "ghost_continuity", None)
+        if store is None:
+            return build_ghost_continuity(None)
+        return build_ghost_continuity(store, project=project, session_id=session_id)
+
+    return ResearchFlowDeps(
+        state=state,
         knowledge_store=state.knowledge_store,
-        is_git_repository=lambda _project: True,
-        ghost_router_provider_factory=None,
+        evidence_ledgers=state.evidence_ledgers,
+        search_factory=lambda: object(),
+        run_research_advisors=None,
+        ghost_continuity=ghost_continuity,
     )
 
 
@@ -164,9 +168,8 @@ def test_topic_continuity_admission_is_bounded_refs_and_hint_text() -> None:
                 session_id="s1",
                 run_id="run-seed",
             )
-        runner = _runner(state)
-
-        text, payload = runner._build_research_topic_continuity(
+        text, payload = build_research_topic_continuity(
+            _deps(state),
             session_id="s1",
             project=str(root / "project"),
         )
@@ -287,10 +290,11 @@ def test_prior_claim_overflow_reports_truncated_honestly() -> None:
             project=project,
             count=MAX_TOPIC_CLAIM_REFS + 2,
         )
-        runner = _runner(state)
+        deps = _deps(state)
 
-        refs = runner._prior_claim_refs(session_id="s1", project=project)
-        _text, payload = runner._build_research_topic_continuity(
+        refs = prior_claim_refs(state.evidence_ledgers, session_id="s1", project=project)
+        _text, payload = build_research_topic_continuity(
+            deps,
             session_id="s1",
             project=project,
         )
@@ -312,9 +316,8 @@ def test_prior_claims_enter_as_stale_refs_never_evidence() -> None:
         state = server.State(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_prior_claim(state, session_id="s1", project=project)
-        runner = _runner(state)
-
-        text, payload = runner._build_research_topic_continuity(
+        text, payload = build_research_topic_continuity(
+            _deps(state),
             session_id="s1",
             project=project,
         )
@@ -337,13 +340,12 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
         state = server.State(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
-        runner = _runner(state)
-
         with mock.patch(
-            "codey.operations.task_flow.allows_context_source",
+            "codey.operations.research_flow.allows_context_source",
             return_value=False,
         ):
-            text, payload = runner._build_research_topic_continuity(
+            text, payload = build_research_topic_continuity(
+                _deps(state),
                 session_id="s1",
                 project=str(root / "project"),
             )
@@ -362,24 +364,23 @@ def test_cancellation_is_never_swallowed_by_the_builder() -> None:
         state = server.State(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
         _seed_open_question_note(state.knowledge_store, session_id="s1")
-        runner = _runner(state)
         trace_calls: list[tuple] = []
 
-        with mock.patch.object(
-            runner,
-            "_prior_claim_refs",
+        cancelled_claim_refs = mock.Mock(
             side_effect=cancellation.TaskCancelled("task stopped"),
-        ):
-            try:
-                runner._build_research_topic_continuity(
-                    session_id="s1",
-                    project=str(root / "project"),
-                    trace=lambda *a, **k: trace_calls.append((a, k)),
-                )
-            except cancellation.TaskCancelled:
-                pass
-            else:
-                raise AssertionError("TaskCancelled was swallowed by the builder")
+        )
+        try:
+            build_research_topic_continuity(
+                _deps(state),
+                session_id="s1",
+                project=str(root / "project"),
+                trace=lambda *a, **k: trace_calls.append((a, k)),
+                prior_claim_refs=cancelled_claim_refs,
+            )
+        except cancellation.TaskCancelled:
+            pass
+        else:
+            raise AssertionError("TaskCancelled was swallowed by the builder")
 
     assert trace_calls == []  # no warn row: this is a stop, not a failure
 
@@ -389,9 +390,8 @@ def test_empty_local_state_admits_nothing() -> None:
         root = Path(td)
         state = server.State(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
-        runner = _runner(state)
-
-        text, payload = runner._build_research_topic_continuity(
+        text, payload = build_research_topic_continuity(
+            _deps(state),
             session_id="s1",
             project=str(root / "project"),
         )
@@ -415,12 +415,11 @@ def test_build_research_context_carries_bounded_continuity() -> None:
                 session_id="s1",
                 run_id="run-seed-context",
             )
-        runner = _runner(state)
         frame = _make_frame(project_text=project)
 
-        context = runner._build_research_context(
+        context = build_research_context(
+            _deps(state),
             frame,
-            frame.request,
             proof_question="proof",
             max_turns=8,
         )
@@ -438,12 +437,11 @@ def test_build_research_context_baseline_without_seeds() -> None:
         root = Path(td)
         state = server.State(root / "state")
         state.knowledge_store = KnowledgeStore(root / "knowledge")
-        runner = _runner(state)
         frame = _make_frame(project_text=str(root / "project"))
 
-        context = runner._build_research_context(
+        context = build_research_context(
+            _deps(state),
             frame,
-            frame.request,
             proof_question="",
             max_turns=6,
         )

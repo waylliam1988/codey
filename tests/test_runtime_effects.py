@@ -26,6 +26,7 @@ from codey.runtime.effects import (
     mark_terminal,
     mark_writer_running,
     mark_writer_settled,
+    operation_id_for_run,
     operation_progress_text,
 )
 from codey.runtime.reducer import reduce_session
@@ -106,6 +107,58 @@ class RuntimeOperationStoreTests(unittest.TestCase):
         self.assertEqual(loaded.phase, PHASE_COMPLETION_PROOF_RECORDED)
         self.assertEqual(loaded.turns_used, 2)
         self.assertEqual(operation_progress_text(loaded), "Finishing was interrupted")
+
+    def test_start_returns_existing_open_phase_without_rewinding_resume_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            store = RuntimeOperationStore(log)
+            state = store.start(
+                session_id="s1",
+                run_id="run-1",
+                project=".",
+                provider_id="deepseek",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            assert state is not None
+            state = store.commit(
+                "s1",
+                "run-1",
+                lambda item: mark_writer_running(item, provider_id="deepseek"),
+            )
+            assert state is not None
+
+            resumed = store.start(
+                session_id="s1",
+                run_id="run-1",
+                project=".",
+                provider_id="deepseek",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            entries = log.read("s1")
+
+        assert resumed is not None
+        self.assertEqual(resumed.phase, PHASE_WRITER_RUNNING)
+        self.assertEqual(resumed.operation_id, operation_id_for_run("run-1"))
+        self.assertEqual(
+            [
+                entry.payload["ref"]
+                for entry in entries
+                if entry.operation_id == resumed.operation_id
+                and entry.kind == "operation_effect"
+                and entry.payload.get("effect_kind") == "run_phase"
+            ],
+            ["run_phase:accepted", "run_phase:writer_running"],
+        )
+        self.assertEqual(
+            [entry.kind for entry in entries if entry.operation_id == resumed.operation_id].count(
+                "operation_started"
+            ),
+            1,
+        )
 
     def test_terminal_commit_settles_runtime_operation_atomically(self) -> None:
         with tempfile.TemporaryDirectory() as td:

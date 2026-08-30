@@ -16,6 +16,8 @@ from codey.app import server
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
 
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+
 
 class _Provider:
     name = "DeepSeek Web"
@@ -206,7 +208,7 @@ def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
             state,
             router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
-        runner._run_research_iteration = mock.Mock(
+        research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult(
                     "Research alpha provider recovery",
@@ -220,12 +222,15 @@ def test_task_flow_uses_affinity_to_order_strict_continue_work_items() -> None:
             )
         )
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner.run(TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
     assert items[favored.id].status == "done"
     assert items[baseline_top.id].status == "queued"
 

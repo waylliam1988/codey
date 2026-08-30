@@ -9,6 +9,85 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)
+
+Scope:
+
+```text
+production: removed the duplicate outer runtime:<run_id> operation semantics;
+            TaskRuntime, RuntimeOperationStore, runtime details, and terminal
+            settlement now share the single task:<hash(run_id)> operation/lane.
+            RuntimeOperationStore.start() resumes the latest open phase for
+            the same run instead of rewinding to accepted, and terminal commit
+            closes the same operation. TaskFlow shed the test-only research
+            iteration injection point; tests/manual harnesses now patch the
+            research_flow iteration primitive directly. Run Details can now use
+            runtime terminal state as a minimal fact source when ledger/trace
+            are absent, while terminal operations remain silent for Progress.
+            Provider preflight, conversation planning, research flow, and
+            project completion are split into operation modules; writer
+            failover, completion proof, bounded repair, receipt/facts/memory,
+            and analysis-run projection now live in
+            codey.operations.project_completion_flow. codey.task is model-only.
+harness:    deterministic same-run resume test, scheduler resume test,
+            operation-store no-rewind test, runtime-only terminal Details test,
+            architecture checks for the new research and project-completion
+            boundaries, and manual crash/resume smoke that hard-kills at
+            writer_running and then resumes the same run_id to terminal.
+mode:       focused gates and manual self-tests first; full local pytest only
+            after code was stable; no release, no GitHub push.
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -m compileall -q codey tests
+ok
+
+python -m ruff check codey tests
+All checks passed
+
+python -m pytest tests/test_architecture.py tests/test_task_flow_analysis_run.py \
+  tests/test_task_flow_edit_integrity.py tests/test_task_flow_completion_enforcement.py \
+  tests/test_task_flow_run_trace.py tests/test_task_flow_operation_state.py \
+  tests/test_runtime_effects.py tests/test_runtime_session_log.py \
+  tests/test_run_details.py -q
+163 passed, 306 subtests passed in 39.64s
+
+python -m pytest tests/test_task_flow_provider_preference.py \
+  tests/test_task_flow_router.py tests/test_task_flow_affinity.py \
+  tests/test_task_flow_work_queue.py tests/test_task_flow_research_topic_continuity.py \
+  tests/test_work_checkpoint_flow.py tests/test_research.py tests/test_server.py \
+  tests/test_run_registry.py tests/test_approval_registry.py -q
+385 passed, 1 skipped, 7 subtests passed in 55.31s
+
+python -B tests/manual/completion_operation_resume_smoke.py --self-test
+ok: crash resume reports the last committed phase and resumes the same run
+
+python -B tests/manual/ghost_router_production_ab.py --self-test
+self-test ok
+
+python -B tests/manual/ghost_work_queue_production_ab.py --self-test
+self-test ok
+
+python -B tests/manual/ghost_affinity_ab.py --self-test
+self-test ok; baseline 5/5 and affinity 5/5
+
+python -B tests/manual/ghost_research_interest_queue_production_ab.py --self-test
+self-test ok
+
+python -B tests/manual/ghost_research_continuity_ab.py --self-test
+self-test ok
+```
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after code was
+stable and before updating this report):
+
+```text
+python -m pytest
+3252 passed, 16 skipped in 308.13s (0:05:08)
+```
+
 ## 0.5.1 Runtime Fact-source Completion (2026-08-30)
 
 Scope:

@@ -39,6 +39,8 @@ from codey.runtime.effects import (
     mark_terminal,
     mark_writer_running,
     mark_writer_settled,
+    lane_for_run,
+    operation_id_for_run,
 )
 from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
@@ -49,14 +51,13 @@ from codey.runtime.session_log import RuntimeSessionLog
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
-from codey.operations.task_flow import (
-    COMPLETION_REPAIR_FOLLOWUP,
-    TaskFlow,
-)
+from codey.operations.project_completion_flow import COMPLETION_REPAIR_FOLLOWUP
+from codey.operations.task_flow import TaskFlow
 from codey.toolchain.runtime import ToolOutcome
 
 
 SESSION = "s-opstate"
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
 
 class _Provider:
@@ -167,7 +168,14 @@ def _runner(state: server.State, writer: ObservingWriter) -> TaskFlow:
     )
 
 
-def _run(runner: TaskFlow, state: server.State, project: Path, writer: ObservingWriter) -> dict:
+def _run(
+    runner: TaskFlow,
+    state: server.State,
+    project: Path,
+    writer: ObservingWriter,
+    *,
+    run_id: str = "",
+) -> dict:
     def observed_agent_run(provider, project_path, task, **kwargs):
         return writer(provider, project_path, task, state_ref=state, **kwargs)
 
@@ -182,6 +190,7 @@ def _run(runner: TaskFlow, state: server.State, project: Path, writer: Observing
                 False,
                 "deepseek",
                 intent="project",
+                run_id=run_id,
             )
         )
     return dict(state.last_terminal_event)
@@ -208,7 +217,7 @@ def _ledger_run_finished(state: server.State, run_id: str) -> dict:
 def _runtime_outcome(state: server.State, run_id: str) -> str:
     assert state.runtime_log is not None
     projection = reduce_session(state.runtime_log.read(SESSION))
-    return projection.operations[f"runtime:{run_id}"].outcome
+    return projection.operations[operation_id_for_run(run_id)].outcome
 
 
 class CleanRunTerminalTests(unittest.TestCase):
@@ -250,13 +259,111 @@ class CleanRunTerminalTests(unittest.TestCase):
                 entry
                 for entry in state.runtime_log.read(SESSION)
                 if entry.kind == "operation_started"
-                and entry.operation_id.startswith("runtime:")
+                and entry.operation_id == operation_id_for_run(run_id)
             ]
             self.assertEqual(
                 [entry.operation_id for entry in runtime_starts],
-                [f"runtime:{run_id}"],
+                [operation_id_for_run(run_id)],
+            )
+            self.assertFalse(
+                [
+                    entry.operation_id
+                    for entry in state.runtime_log.read(SESSION)
+                    if entry.operation_id.startswith("runtime:")
+                ]
+            )
+            projection = reduce_session(state.runtime_log.read(SESSION))
+            self.assertEqual(
+                projection.lanes[lane_for_run(run_id)].open_operation_id,
+                "",
             )
             self.assertEqual(_runtime_outcome(state, run_id), "completed")
+
+    def test_resume_same_run_continues_existing_task_operation(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(True)], RunResult("resumed", "done", 2)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            root = Path(td)
+            project = _pytest_project(root)
+            state_home = root / "state"
+            run_id = "resume-run-1"
+
+            crashed_state = server.State(state_home)
+            reserved = crashed_state.reserve_run(
+                session_id=SESSION,
+                project=str(project),
+                task="Change the module and verify",
+                provider_id="deepseek",
+            )
+            assert reserved is not None
+            self.assertTrue(
+                crashed_state.replace_reserved_run(
+                    reserved.run_id,
+                    replace(reserved, run_id=run_id),
+                )
+            )
+            assert crashed_state.runtime_operations is not None
+            started = crashed_state.runtime_operations.start(
+                session_id=SESSION,
+                run_id=run_id,
+                project=str(project),
+                provider_id="deepseek",
+                turn_budget=6,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            assert started is not None
+            crashed_state.runtime_operations.commit(
+                SESSION,
+                run_id,
+                lambda item: mark_writer_running(item, provider_id="deepseek"),
+            )
+            crashed_state.release_run(run_id)
+
+            resumed_state = server.State(state_home)
+            event = _run(
+                _runner(resumed_state, writer),
+                resumed_state,
+                project,
+                writer,
+                run_id=run_id,
+            )
+
+            assert resumed_state.runtime_log is not None
+            entries = resumed_state.runtime_log.read(SESSION)
+            op_id = operation_id_for_run(run_id)
+            self.assertEqual(
+                [
+                    entry.payload["ref"]
+                    for entry in entries
+                    if entry.operation_id == op_id
+                    and entry.kind == "operation_effect"
+                    and entry.payload.get("effect_kind") == "run_phase"
+                ],
+                [
+                    "run_phase:accepted",
+                    "run_phase:writer_running",
+                    "run_phase:writer_settled",
+                    "run_phase:completion_proof_recorded",
+                    "run_phase:terminal",
+                ],
+            )
+            self.assertEqual(
+                [entry.kind for entry in entries if entry.operation_id == op_id].count(
+                    "operation_started"
+                ),
+                1,
+            )
+            self.assertEqual(
+                [entry.kind for entry in entries if entry.operation_id == op_id].count(
+                    "operation_settled"
+                ),
+                1,
+            )
+            self.assertEqual(writer.observed_phases, [PHASE_WRITER_RUNNING])
+            self.assertEqual(event["stop_reason"], "done")
+            self.assertEqual(_operation(resumed_state, run_id).phase, PHASE_TERMINAL)
 
 
 class RuntimeEnvelopeTests(unittest.TestCase):
@@ -305,13 +412,12 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 max_turns_used=1,
             )
 
+            research_iteration = mock.Mock(
+                return_value=ResearchIterationRun(result=result),
+            )
             with (
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
-                mock.patch.object(
-                    runner,
-                    "_run_research_iteration",
-                    return_value=ResearchIterationRun(result=result),
-                ),
+                mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
                 runner.run(
                     TaskSubmission(
@@ -350,13 +456,12 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 max_turns_used=1,
             )
 
+            research_iteration = mock.Mock(
+                return_value=ResearchIterationRun(result=result),
+            )
             with (
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
-                mock.patch.object(
-                    runner,
-                    "_run_research_iteration",
-                    return_value=ResearchIterationRun(result=result),
-                ),
+                mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
                 runner.run(
                     TaskSubmission(

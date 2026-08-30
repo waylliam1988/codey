@@ -146,6 +146,14 @@ Scheduler
 
 TaskFlow 只应该是 task submission 到 runtime operation 的 adapter；runtime scheduler 和 operation log 才是生命周期事实源。
 
+当前 0.5.1 已经完成第一段收束：`RuntimeSessionLog` 是 durable fact source，
+`TaskRuntime` 和 `RuntimeOperationStore` 共用单条 `task:<hash(run_id)>`
+operation/lane，外层 `runtime:<run_id>` 语义已删除。`TaskFlow` 仍是 production
+envelope，负责 reserve/start/finish、mode dispatch、provider/session/trace 清理和
+Ghost post-turn sync；但 project completion 的真实复杂度已经迁出到
+`codey.operations.project_completion_flow`，包括 writer failover、completion proof、
+bounded repair、receipt/facts/memory 和 analysis-run projection。
+
 ---
 
 ## 2.3 学习 Pi 的 Lane / Queue 语义
@@ -1193,7 +1201,11 @@ AgentOperation
 
 ## Phase 3：薄化 TaskFlow
 
-逐步让 TaskFlow 只负责 task submission、task lifecycle adapter 和面向 UI 的薄投影；`codey.task` 保持 model-only 边界。
+已完成：`codey.task` 是 model-only 边界；`codey/task/service.py` facade 已删除；
+provider preflight、conversation plan、research flow 和 project completion flow 已迁出。
+
+未完成：TaskFlow 仍负责 Ghost post-turn sync、review-only 和 planning-readonly 的外层
+编排。下一步继续拆这些真实边界，不为测试保留私有 wrapper 或兼容 alias。
 
 ## Phase 4：统一 Workspace Epoch
 

@@ -8,6 +8,7 @@ safe stubs so this probe does not edit files or run shell commands.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from dataclasses import dataclass
 import json
 import os
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import time
 from typing import Callable
+from unittest import mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -36,6 +38,8 @@ from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
 from codey.storage.local_store import write_json_atomic
+
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
 
 RESULTS_DIR = Path(__file__).with_name("results")
@@ -135,8 +139,9 @@ def _run_case(
         try:
             runner = _runner(state)
             _seed_case(state, case, arm=arm)
+            research_task = None
             if case.kind in {"work", "research", "permission"}:
-                def research_task(**_kwargs):
+                def research_task(*_args, **_kwargs):
                     question = _research_question_from_task(str(_kwargs.get("task") or ""))
                     record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
                     return ResearchIterationRun(
@@ -151,8 +156,10 @@ def _run_case(
                         )
                     )
 
-                runner._run_research_iteration = research_task
-            with _patch_provider(state, provider):
+            with ExitStack() as stack:
+                stack.enter_context(_patch_provider(state, provider))
+                if research_task is not None:
+                    stack.enter_context(mock.patch(RESEARCH_ITERATION, side_effect=research_task))
                 intent = "chat" if case.kind == "explicit" else "auto"
                 runner.run(TaskSubmission("s1", None, case.prompt, 8, False, provider_id, intent=intent))
                 state.wait_for_ghost_sleep(timeout=2)

@@ -15,6 +15,8 @@ from codey.app import server
 from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
 
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+
 
 class _Provider:
     name = "DeepSeek Web"
@@ -121,13 +123,16 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
             return main_provider
 
         runner = _runner(state, router_provider_factory=router_factory)
-        runner._run_research_iteration = mock.Mock(
+        research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult("q", "researched", "done", 1)
             )
         )
 
-        with mock.patch.object(state, "get_provider", side_effect=get_provider):
+        with (
+            mock.patch.object(state, "get_provider", side_effect=get_provider),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
@@ -143,7 +148,7 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
     assert order[:2] == ["router", "main"]
     assert start["mode"] == "research"
     assert done["mode"] == "research"
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
     assert route_provider.new_chat_called
     assert route_provider.new_chat_timeout == 8.0
     assert route_provider.send_timeout == 12.0
@@ -267,13 +272,16 @@ def test_manual_intent_bypasses_router() -> None:
         state = server.State(td)
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":1}'))
         runner = _runner(state, router_provider_factory=router_factory)
-        runner._run_research_iteration = mock.Mock(
+        research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult("q", "manual research", "done", 1)
             )
         )
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             _run_and_wait_for_local_maintenance(
                 runner,
                 state,
@@ -290,7 +298,7 @@ def test_manual_intent_bypasses_router() -> None:
 
     router_factory.assert_not_called()
     assert state.last_terminal_event["mode"] == "research"
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
 
 
 def test_router_failure_falls_back_to_existing_baseline() -> None:

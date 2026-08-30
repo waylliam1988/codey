@@ -8,9 +8,9 @@ store -- recovery must switch on the log projection, never on missing events.
 
     --self-test   deterministic and offline: the parent waits until the run's
                   runtime phase reaches the writer_running phase, hard-kills the
-                  process the way a crash would, then checks the recovered
-                  register and the honest Run Details progress line. This is
-                  the release gate.
+                  process the way a crash would, checks the recovered register,
+                  then resumes the same run_id to terminal. This is the release
+                  gate.
     --child       internal: run one headless task against the given state
                   home. Used by --self-test; not meant to be invoked by hand.
 
@@ -34,7 +34,10 @@ if __package__ in (None, ""):
 from codey.runtime.effects import (
     PHASE_WRITER_RUNNING,
     RuntimeOperationStore,
+    lane_for_run,
+    operation_id_for_run,
 )
+from codey.runtime.reducer import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runs.details import load_run_details
 
@@ -65,6 +68,12 @@ def _scripted_writer(_provider, _project, _task, **kwargs):
     kwargs["on_event"](_writer_event())
     time.sleep(WRITER_SLEEP_SECONDS)
     raise AssertionError("the smoke process must be killed before this line")
+
+
+def _resuming_writer(_provider, _project, _task, **_kwargs):
+    from codey.agents.runner import RunResult
+
+    return RunResult("resumed to terminal", "done", 1)
 
 
 def _writer_event():
@@ -183,8 +192,66 @@ def _self_test() -> int:
         if str(project) in json.dumps(recovered.to_payload()):
             print("FAIL: raw project path leaked into the register")
             return 1
-        print("ok: crash resume reports the last committed phase honestly")
+        resumed = _resume_same_run(state_home, project)
+        if resumed != 0:
+            return resumed
+        print("ok: crash resume reports the last committed phase and resumes the same run")
         return 0
+
+
+def _resume_same_run(state_home: Path, project: Path) -> int:
+    from codey.app.headless_runner import HeadlessRequest, run_headless
+
+    rows: list[dict[str, object]] = []
+    result = run_headless(
+        HeadlessRequest(
+            project=project,
+            task="smoke: resume the interrupted run",
+            provider_id="deepseek",
+            max_turns=4,
+            session_id=SESSION,
+            run_id=RUN,
+            state_home=state_home,
+        ),
+        emit_jsonl=rows.append,
+        agent_run=_resuming_writer,
+        collect_changes=lambda *_args, **_kwargs: {
+            "ok": True,
+            "changed_count": 0,
+            "files": [],
+            "diff": "",
+        },
+        connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+    )
+    if result.stop_reason != "done":
+        print(f"FAIL: resumed run did not finish cleanly: {result.stop_reason}")
+        return 1
+    store = RuntimeOperationStore(RuntimeSessionLog(state_home))
+    terminal = store.load(SESSION, RUN)
+    if terminal is None or terminal.phase != "terminal":
+        phase = None if terminal is None else terminal.phase
+        print(f"FAIL: resumed register is not terminal: {phase}")
+        return 1
+    projection = reduce_session(RuntimeSessionLog(state_home).read(SESSION))
+    op_id = operation_id_for_run(RUN)
+    operation = projection.operations.get(op_id)
+    if operation is None or operation.status != "settled" or operation.outcome != "completed":
+        print("FAIL: resumed runtime operation did not settle as completed")
+        return 1
+    if projection.lanes.get(lane_for_run(RUN)) is None:
+        print("FAIL: resumed runtime lane is missing")
+        return 1
+    if projection.lanes[lane_for_run(RUN)].open_operation_id:
+        print("FAIL: resumed runtime lane is still open")
+        return 1
+    started = [
+        entry for entry in RuntimeSessionLog(state_home).read(SESSION)
+        if entry.operation_id == op_id and entry.kind == "operation_started"
+    ]
+    if len(started) != 1:
+        print(f"FAIL: expected one operation_started row, got {len(started)}")
+        return 1
+    return 0
 
 
 def main() -> int:

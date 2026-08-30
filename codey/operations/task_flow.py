@@ -2,52 +2,51 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import replace
 import uuid
 from pathlib import Path
 from typing import Any, Callable
 
 from codey.task.model import TaskContract, TaskSubmission
+from codey.operations.conversation_plan import build_conversation_plan
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.chat import run_chat_mode
+from codey.operations.project_completion_flow import (
+    MAX_COMPLETION_REPAIR_ROUNDS,
+    ProjectCompletionDeps,
+    handle_project_tool_event,
+    record_completion_proof_trace as _record_completion_proof_trace,
+    record_review_input_prepared_trace,
+    run_project_mode,
+)
+from codey.operations.provider_preflight import (
+    connect_provider_with_preflight,
+)
 from codey.operations.prompting import (
     record_local_context_trace as _record_local_context_trace,
-    record_secondary_input_prepared_trace as _record_secondary_input_prepared_trace,
+)
+from codey.operations.research_flow import (
+    ResearchFlowDeps,
+    default_research_search_provider as _default_research_search_provider,
+    record_evidence_ledger_write,
+    record_research_plan_trace as _record_research_plan_trace,
+    record_research_proof_review_trace as _record_research_proof_review_trace,
+    research_queue_item_title as _research_queue_item_title,
+    run_hybrid_mode,
+    run_research_mode,
+    run_research_pipeline,
 )
 from codey.operations.result import ModeOutcome
+from codey.task.kind import (
+    resolve_task_kind as _resolve_task_kind,
+    startup_failover_mode as _startup_failover_mode,
+    trace_mode as _trace_mode,
+    ui_mode as _ui_mode,
+)
 from codey.runtime import cancellation
 from codey.runtime.task_runtime import TaskRuntime
 from codey.providers import controls as provider_controls, flow as provider_flow
-from codey.policies.action import ActionSubject, evaluate_action
-from codey.agents.runner import RunResult, task_forbids_verification
-from codey.agents.tools import AgentToolFns
-from codey.workspace.change_brief import (
-    ChangeBrief,
-    new_project_change_brief,
-    project_audit_change_brief,
-)
-from codey.agents.consensus import (
-    render_project_context,
-)
-from codey.completion.contract import (
-    completion_proof_trace_payload,
-)
-from codey.completion.engine import CompletionEngine, blocked_note
-from codey.completion.edit_integrity import (
-    EditIntegrityObservation,
-)
 from codey.completion.edit_scope import changed_paths_from_changes
-from codey.completion.repair_context import (
-    RepairContextProjection,
-    project_repair_context,
-    repair_candidate,
-)
-from codey.completion.verification import (
-    STANCE_FRESH_PASS,
-    STANCE_INHERITED_PASS,
-    decisive_failure_fact,
-)
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.runtime.outcome import OperationOutcome
@@ -77,397 +76,51 @@ from codey.ghost.work_queue import (
     is_strict_work_continuation,
     proof_refs_from_task_event,
 )
-from codey.agents.handoff import (
-    ConversationSnapshot,
-    render_handoff,
-    render_recovered_handoff,
-)
-from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import (
     apply_research_affinity_hints,
     build_research_interest_candidates,
-    candidate_to_topic_hint,
 )
-from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.knowledge.store import KnowledgeStore
-from codey.knowledge.brief import KnowledgeBriefBuilder
-from codey.storage.managed_outputs import (
-    ManagedOutputStore,
-    run_command_with_managed_output,
-)
+from codey.storage.managed_outputs import ManagedOutputStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.config import (
     ProjectConfigLoadResult,
     load_project_config,
     preferred_provider_for,
 )
-from codey.workspace.task_context import (
-    ProjectTaskContextBuilder,
-    safe_project_map,
-    safe_verification_candidates,
-)
+from codey.workspace.task_context import ProjectTaskContextBuilder
 from codey.providers import PROVIDER_LABELS
 from codey.providers.capabilities import rank_providers
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
-from codey.providers.supervisor import run_half_open_canary
 from codey.runtime.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelopeSection,
-    record_provider_send_prompt,
 )
-from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
 from codey.runs.ledger import RunLedgerStore, RunLedgerWriter
 from codey.runs.ledger_projection import (
     build_task_receipt_from_projection,
     load_run_projection,
 )
-from codey.runs.trace import (
-    MAX_ANALYSIS_RUNS,
-    MAX_ARTIFACT_REFS,
-    RunTraceStore,
-)
-from codey.research.analysis_run import analysis_run_record
-from codey.research.artifact_lineage import artifact_ref_from_managed_output
+from codey.runs.trace import RunTraceStore
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
-from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.context import ResearchContext, RunTraceResearchSink
-from codey.research.evidence_followup import run_evidence_followup
-from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
-from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, ResearchPipelineConfig
-from codey.research.proof_quality import proof_review_trace_payload
-from codey.research.query_planner import build_research_plan, research_plan_trace_payload
-from codey.research.reproducibility import build_reproducibility_capsule
-from codey.research.topic_continuity import (
-    CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY,
-    MAX_TOPIC_CLAIM_REFS,
-    project_topic_continuity,
-)
-from codey.research.browser_search import BrowserSearchProvider
-from codey.research.runner import ResearchRunner
+from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.reviews.core import has_reviewable_changes
-from codey.reviews.coordinator import ReviewCoordinator, change_state
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.policies.shell_risk import classify_shell_risk
-from codey.completion.verification_map import render_verification_map
-from codey.completion.verification_policy import (
-    select_verification_candidate,
-    selected_verification_candidate_lines,
-    verification_candidate_lines,
-)
 from codey.runs.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
 )
 from codey.runtime.effects import (
-    PHASE_COMPLETION_PROOF_RECORDED,
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
-    mark_completion_blocked,
-    mark_completion_proof_recorded,
-    mark_repair_context_admitted,
-    mark_repair_running,
-    mark_repair_settled,
     mark_terminal,
-    mark_writer_running,
-    mark_writer_settled,
-)
-from codey.agents.writer_failover import (
-    CheckpointView,
-    WriterAttempt,
-    WriterFailoverRunner,
 )
 
 
 PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
 PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0
 PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
-
-
-def _record_review_input_prepared_trace(
-    trace: Any | None,
-    *,
-    task: str,
-    writer_summary: str,
-    changes: dict,
-    recent_log: str,
-    change_brief: str,
-    project_map: str,
-    verification_map: str,
-    review_impact_map: str,
-    execution_evidence: str,
-) -> None:
-    if trace is None:
-        return
-    _record_secondary_input_prepared_trace(
-        trace,
-        "review",
-        task=task,
-        writer_summary=writer_summary,
-        diff=(changes or {}).get("diff", "") if isinstance(changes, dict) else "",
-        recent_log=recent_log,
-        change_brief=change_brief,
-        project_map=project_map,
-        verification_map=verification_map,
-        review_impact_map=review_impact_map,
-        execution_evidence=execution_evidence,
-    )
-
-
-def _record_research_result_trace(trace: Any | None, result: Any) -> None:
-    if trace is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call("record_permission_profile", "research", phase="research")
-    sink.call(
-        "record_research_notes",
-        [
-            *getattr(result, "notes_created", ()),
-            *getattr(result, "notes_updated", ()),
-            getattr(result, "synthesis_id", ""),
-        ],
-    )
-    sink.call("record_research_sources", getattr(result, "opened_sources", ()))
-    record = getattr(result, "research_record", None)
-    if record is None:
-        return
-    summary = None
-    to_summary_payload = getattr(record, "to_summary_payload", None)
-    if callable(to_summary_payload):
-        summary = to_summary_payload()
-    elif isinstance(record, dict):
-        summary = record
-    if summary is not None:
-        sink.call("record_research_record_summary", summary)
-
-
-def _record_evidence_ledger_write_trace(trace: Any | None, result: Any) -> None:
-    if trace is None or result is None:
-        return
-    to_trace_payload = getattr(result, "to_trace_payload", None)
-    if not callable(to_trace_payload):
-        return
-    FailOpenPromptTrace(trace).call("record_evidence_ledger_write", to_trace_payload())
-
-
-def _record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
-    if trace is None or review is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call(
-        "record_research_proof_review",
-        proof_review_trace_payload(review),
-    )
-    sink.call("flush")
-
-
-def _record_research_plan_trace(
-    trace: Any | None,
-    review: Any,
-    *,
-    question: str = "",
-) -> None:
-    if trace is None or review is None:
-        return
-    try:
-        plan = build_research_plan(review, question=question)
-        payload = research_plan_trace_payload(plan)
-    except Exception:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call("record_research_plan", payload)
-    sink.call("flush")
-
-
-def _default_research_search_provider() -> ConnectorAwareSearchProvider:
-    return ConnectorAwareSearchProvider(BrowserSearchProvider(isolated=False))
-
-
-def _research_queue_item_title(item: GhostWorkItem | None) -> str:
-    if item is None:
-        return ""
-    if str(getattr(item, "kind", "") or "") not in RESEARCH_QUEUE_KINDS:
-        return ""
-    return str(getattr(item, "title", "") or "").strip()
-
-
-# One bounded repair round is the whole of 0.4.13: enough to prove the
-# repair-context loop works, small enough that a model stuck in a wrong
-# local optimum cannot turn Codey into a self-consuming machine.
-MAX_COMPLETION_REPAIR_ROUNDS = 1
-
-COMPLETION_REPAIR_FOLLOWUP = (
-    "Continue with the established project and JSON tool protocol.\n\n"
-    "Your previous completion claim did not pass local verification. The "
-    "completion repair context section of this message lists the observed "
-    "failure facts. Decide and perform the next local step yourself."
-)
-
-def _record_completion_proof_trace(
-    trace: Any | None,
-    proof: object,
-) -> None:
-    if proof is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call("record_completion_proof", completion_proof_trace_payload(proof))
-    sink.call("flush")
-
-
-def _record_edit_integrity_trace(
-    trace: Any | None,
-    observation: EditIntegrityObservation | None,
-) -> None:
-    if observation is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call("record_edit_integrity", observation.to_payload())
-    sink.call("flush")
-
-
-def _blocked_result(result: RunResult, reason: str) -> RunResult:
-    """Turn a claimed-done result into an honest blocked stop."""
-    note = blocked_note(reason)
-    summary = result.summary.strip()
-    return replace(
-        result,
-        stop_reason="blocked",
-        summary=f"{summary}\n\n[{note}]" if summary else f"[{note}]",
-    )
-
-
-def _provider_fallback_policy_decision(
-    *,
-    from_provider: str,
-    to_provider: str,
-    phase: str,
-):
-    return evaluate_action(ActionSubject(
-        kind="provider_fallback",
-        phase=phase,
-        from_provider=from_provider,
-        to_provider=to_provider,
-    ))
-
-
-NEW_PROJECT_IGNORED_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".codey",
-    ".idea",
-    ".vscode",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "node_modules",
-    ".next",
-    "dist",
-    "build",
-}
-NEW_PROJECT_IGNORED_FILES = {
-    ".DS_Store",
-    "Thumbs.db",
-    ".gitignore",
-    ".gitattributes",
-    ".gitkeep",
-}
-
-
-def _project_has_user_files(project: str | Path) -> bool:
-    """Return true when a project has real user files worth inspecting first."""
-
-    stack = [Path(project).expanduser()]
-    while stack:
-        current = stack.pop()
-        try:
-            entries = tuple(current.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            name = entry.name
-            if name in NEW_PROJECT_IGNORED_DIRS:
-                continue
-            try:
-                if entry.is_dir() and not entry.is_symlink():
-                    stack.append(entry)
-                elif entry.is_file() and name not in NEW_PROJECT_IGNORED_FILES:
-                    return True
-            except OSError:
-                continue
-    return False
-
-
-def _safe_verification_map(
-    project: str | Path,
-    changes: dict,
-    checks: tuple[object, ...],
-    project_map: str,
-    recommended_commands: tuple[str, ...] = (),
-) -> str:
-    try:
-        return render_verification_map(
-            project,
-            changes,
-            checks_after_last_change=checks,
-            project_map=project_map,
-            recommended_commands=recommended_commands,
-        )
-    except Exception:
-        return ""
-
-
-def _resolve_task_kind(request: TaskSubmission) -> str:
-    intent = (request.intent or "auto").strip().lower()
-    if intent in {"planning", "planning_readonly", "readonly"}:
-        return "planning_readonly" if request.project else "chat"
-    if intent in {"research", "project", "hybrid", "chat", "review"}:
-        if intent == "hybrid" and not request.project:
-            return "research"
-        if intent == "project" and not request.project:
-            return "chat"
-        if intent == "review" and not request.project:
-            return "chat"
-        return intent
-    return "project" if request.project else "chat"
-
-
-def _startup_failover_mode(task_kind: str) -> str:
-    return "research" if task_kind == "hybrid" else task_kind
-
-
-def _writer_failover_mode(task_kind: str) -> str:
-    return "project" if task_kind == "hybrid" else task_kind
-
-
-def _ui_mode(kind: str, project: str | None) -> str:
-    if kind == "chat":
-        return "chat"
-    if kind == "research":
-        return "research"
-    if kind == "hybrid":
-        return "hybrid"
-    if kind == "planning_readonly":
-        return "planning"
-    if kind == "review":
-        return "review"
-    return "agent" if project else "chat"
-
-
-def _trace_mode(kind: str, project: str | None) -> str:
-    if kind == "planning_readonly":
-        return "planning"
-    if kind in {"chat", "research", "project", "hybrid", "review"}:
-        if kind in {"project", "hybrid"} and not project:
-            return "chat"
-        return kind
-    return "project" if project else "chat"
-
-
-def _bullet_lines(values: tuple[str, ...]) -> str:
-    if not values:
-        return "- (none)"
-    return "\n".join(f"- {item}" for item in values)
 
 
 def _render_review_only_summary(review: object) -> str:
@@ -489,44 +142,6 @@ def _render_review_only_summary(review: object) -> str:
             text += f" Suggested fix: {fix}"
         lines.append(prefix + text)
     return "\n".join(lines)
-
-
-def _research_payload(result, *, pipeline_result: Any | None = None) -> dict:
-    payload = {
-        "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
-        "synthesis_id": result.synthesis_id,
-        "notes_created": result.notes_created,
-        "notes_updated": result.notes_updated,
-        "sources_read": result.sources_read,
-        "source_urls": result.source_urls,
-        "queries": result.queries,
-        "search_results": result.search_results,
-        "opened_sources": result.opened_sources,
-        "coverage": result.coverage,
-        "citation_map": result.citation_map,
-        "evidence_items": result.evidence_items,
-        "counterpoints": result.counterpoints,
-        "quality_warnings": result.quality_warnings,
-    }
-    if pipeline_result is not None:
-        to_payload = getattr(pipeline_result, "to_payload", None)
-        metadata = to_payload() if callable(to_payload) else {}
-        if isinstance(metadata, dict):
-            payload.update({
-                "followup_applied": bool(metadata.get("followup_applied")),
-                "followup_rounds": max(0, min(3, int(metadata.get("followup_rounds") or 0))),
-                "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
-                "planner_stop_reason": str(metadata.get("planner_stop_reason") or ""),
-                "fresh_source_count": max(0, int(metadata.get("fresh_source_count") or 0)),
-                "new_evidence_count": max(0, int(metadata.get("new_evidence_count") or 0)),
-                "final_evidence_count": max(0, int(metadata.get("final_evidence_count") or 0)),
-                "attempted_fresh_source_count": max(0, int(metadata.get("attempted_fresh_source_count") or 0)),
-                "attempted_new_evidence_count": max(0, int(metadata.get("attempted_new_evidence_count") or 0)),
-            })
-    return payload
-
-
-
 
 
 class TaskFlow:
@@ -597,11 +212,31 @@ class TaskFlow:
             else None
         )
 
+    def _research_deps(self) -> ResearchFlowDeps:
+        return ResearchFlowDeps(
+            state=self.state,
+            knowledge_store=self.knowledge_store,
+            evidence_ledgers=self.evidence_ledgers,
+            search_factory=self.search_factory,
+            run_research_advisors=self.run_research_advisors,
+            ghost_continuity=self._ghost_continuity,
+        )
+
     def _prepare_runtime_submission(
         self,
         request: TaskSubmission,
     ) -> TaskSubmission | None:
         if request.run_id:
+            active = self.state.current_run()
+            if active is None:
+                reserved = self.state.reserve_run(
+                    session_id=request.session_id,
+                    project=request.project,
+                    task=request.task,
+                    provider_id=request.provider_id,
+                    run_id=request.run_id,
+                )
+                return request if reserved is not None else None
             return request
         reserved = self.state.reserve_run(
             session_id=request.session_id,
@@ -667,45 +302,17 @@ class TaskFlow:
         if work.operation is None:
             return
         max_turns = int(event.get("max_turns") or 0)
-        self._commit_run_operation(work, lambda state: mark_terminal(
-            state,
-            stop_reason=str(event.get("stop_reason") or ""),
-            summary_chars=len(str(event.get("summary") or "")),
-            turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
-            max_turns=max_turns,
-            provider=str(event.get("provider") or ""),
-        ))
-
-    def _managed_tool_fns(
-        self,
-        *,
-        session_id: str,
-        run_id: str,
-    ) -> AgentToolFns | None:
-        if self.managed_outputs is None:
-            return None
-
-        def run_command(
-            root: Path,
-            rel: str,
-            command: str,
-            tool_id: str,
-            _permission_profile: str,
-            _phase: str,
-        ):
-            return run_command_with_managed_output(
-                root,
-                rel,
-                command,
-                permission_profile=_permission_profile,
-                phase=_phase,
-                store=self.managed_outputs,
-                session_id=session_id,
-                run_id=run_id,
-                tool_id=tool_id,
-            )
-
-        return AgentToolFns(run_command_with_context=run_command)
+        self._commit_run_operation(
+            work,
+            lambda state: mark_terminal(
+                state,
+                stop_reason=str(event.get("stop_reason") or ""),
+                summary_chars=len(str(event.get("summary") or "")),
+                turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
+                max_turns=max_turns,
+                provider=str(event.get("provider") or ""),
+            ),
+        )
 
     def _ghost_directive(
         self,
@@ -805,10 +412,12 @@ class TaskFlow:
                 timeout=DEFAULT_GHOST_LEARNING_TIMEOUT,
                 new_chat_timeout=DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
             )
-            self.state.emit(result.to_event(
-                run_id=frame.run_id,
-                session_id=frame.request.session_id,
-            ))
+            self.state.emit(
+                result.to_event(
+                    run_id=frame.run_id,
+                    session_id=frame.request.session_id,
+                )
+            )
         except Exception:
             return
 
@@ -828,16 +437,18 @@ class TaskFlow:
         inbox_store = getattr(self.state, "ghost_inbox", None)
         if inbox_store is not None and not inbox_store.learning_enabled():
             try:
-                self.state.emit({
-                    "type": "ghost_continuity_done",
-                    "run_id": frame.run_id,
-                    "session_id": frame.request.session_id,
-                    "ok": True,
-                    "skipped_reason": "learning_disabled",
-                    "items_changed": 0,
-                    "total_items": 0,
-                    "warnings": [],
-                })
+                self.state.emit(
+                    {
+                        "type": "ghost_continuity_done",
+                        "run_id": frame.run_id,
+                        "session_id": frame.request.session_id,
+                        "ok": True,
+                        "skipped_reason": "learning_disabled",
+                        "items_changed": 0,
+                        "total_items": 0,
+                        "warnings": [],
+                    }
+                )
             except Exception:
                 pass
             return
@@ -857,10 +468,12 @@ class TaskFlow:
                 project=frame.project_text if mode != "chat" else "",
                 mode=mode,
             )
-            self.state.emit(result.to_event(
-                run_id=frame.run_id,
-                session_id=frame.request.session_id,
-            ))
+            self.state.emit(
+                result.to_event(
+                    run_id=frame.run_id,
+                    session_id=frame.request.session_id,
+                )
+            )
         except Exception:
             return
 
@@ -1298,9 +911,7 @@ class TaskFlow:
 
         # One config read per run: failover ranking and the project context
         # builder share this load instead of each re-reading .codey/config.json.
-        project_config_result = (
-            load_project_config(project) if project else ProjectConfigLoadResult()
-        )
+        project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
 
         def finish_trace(event: dict[str, object]) -> None:
             status = str(event.get("stop_reason") or "done")
@@ -1313,9 +924,7 @@ class TaskFlow:
 
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
-        provider_flow.set_recovery_handler(
-            getattr(state, "handle_flow_recovery", None)
-        )
+        provider_flow.set_recovery_handler(getattr(state, "handle_flow_recovery", None))
         provider_controls.begin_task_context(session_id)
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)
@@ -1405,11 +1014,7 @@ class TaskFlow:
         elif route_result is not None:
             route_source = "auto_router"
             route_selected_mode = route_result.selected_mode or route_result.final_mode or task_kind
-            route_reason = (
-                "accepted"
-                if route_result.accepted
-                else (route_result.skipped_reason or "baseline_kept")
-            )
+            route_reason = "accepted" if route_result.accepted else (route_result.skipped_reason or "baseline_kept")
         trace_sink.call(
             "record_router",
             baseline_mode=_trace_mode(baseline_task_kind, project),
@@ -1419,24 +1024,43 @@ class TaskFlow:
             reason_code=route_reason,
             overridden_by_user=(route_source == "explicit_user_choice"),
         )
-        state.emit({
-            "type": "task_start",
-            "run_id": run_id,
-            "session_id": session_id,
-            "project": project,
-            "task": task,
-            "mode": _ui_mode(task_kind, project),
-            "max_turns": max_turns,
-            "continue_task": continue_task,
-            "provider": provider_id,
-            "intent": request.intent,
-        })
+        state.emit(
+            {
+                "type": "task_start",
+                "run_id": run_id,
+                "session_id": session_id,
+                "project": project,
+                "task": task,
+                "mode": _ui_mode(task_kind, project),
+                "max_turns": max_turns,
+                "continue_task": continue_task,
+                "provider": provider_id,
+                "intent": request.intent,
+            }
+        )
 
         work = RunWork(
             recent_events=[],
             evidence=ExecutionEvidence(),
             claimed_work_item=claimed_work_item,
             trace=trace,
+        )
+        project_completion_deps = ProjectCompletionDeps(
+            state=state,
+            agent_run=self.agent_run,
+            collect_changes=self.collect_changes,
+            run_review=self.run_review,
+            capture_provider_failure=self.capture_provider_failure,
+            commit_run_operation=self._commit_run_operation,
+            run_consensus=self.run_consensus,
+            run_project_audit=self.run_project_audit,
+            project_facts=self.project_facts,
+            work_checkpoints=self.work_checkpoints,
+            managed_outputs=self.managed_outputs,
+            knowledge_store=self.knowledge_store,
+            is_git_repository=self.is_git_repository,
+            review_fix_turns=self.review_fix_turns,
+            review_log_lines=self.review_log_lines,
         )
         self._start_run_operation(
             work,
@@ -1448,7 +1072,11 @@ class TaskFlow:
             max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
             task_kind=task_kind,
         )
-        if project and task_kind in {"project", "hybrid", "planning_readonly", "review"} and self.run_ledgers is not None:
+        if (
+            project
+            and task_kind in {"project", "hybrid", "planning_readonly", "review"}
+            and self.run_ledgers is not None
+        ):
             try:
                 work.ledger = self.run_ledgers.open(
                     run_id=run_id,
@@ -1483,9 +1111,7 @@ class TaskFlow:
             if key in logged_provider_failures:
                 return
             logged_provider_failures.add(key)
-            append_ledger(
-                lambda ledger: ledger.append_provider_failure(pid, failure)
-            )
+            append_ledger(lambda ledger: ledger.append_provider_failure(pid, failure))
 
         def current_provider_id() -> str:
             return frame.provider_id if frame is not None else provider_id
@@ -1522,14 +1148,10 @@ class TaskFlow:
             message = render_run_event(event)
             work.recent_events.append(message)
             if len(work.recent_events) > self.review_log_lines * 2:
-                del work.recent_events[:self.review_log_lines]
-            if (
-                project
-                and event.kind == "tool"
-                and event.call is not None
-                and event.outcome is not None
-            ):
-                self._handle_project_tool_event(
+                del work.recent_events[: self.review_log_lines]
+            if project and event.kind == "tool" and event.call is not None and event.outcome is not None:
+                handle_project_tool_event(
+                    project_completion_deps,
                     event=event,
                     project=project,
                     work=work,
@@ -1649,237 +1271,35 @@ class TaskFlow:
                 self._maybe_kick_ghost_sleep(frame, event)
                 return operation_outcome_from_task_done_event(event)
 
-            preflight_tried: set[str] = set()
-            preflight_switches = 0
-            if supervisor is not None:
-                supervisor.prepare_user_selected(provider_id)
-            if supervisor is not None and not supervisor.is_available(provider_id):
-                replacement_id = supervisor.select(
-                    "",
-                    ranked_failover_order(),
-                    excluded=(provider_id,),
-                )
-                if replacement_id is not None:
-                    previous_provider_id = provider_id
-                    provider_id = replacement_id
-                    state.switch_run_provider(run_id, provider_id)
-                    append_ledger(
-                        lambda ledger: ledger.append(
-                            "provider_switched",
-                            from_provider=previous_provider_id,
-                            to_provider=provider_id,
-                            phase="preflight",
-                            reason="unavailable",
-                        )
-                    )
-                    trace_sink.call(
-                        "record_fallback",
-                        from_provider=previous_provider_id,
-                        to_provider=provider_id,
-                        phase="preflight",
-                        reason_code="unavailable",
-                    )
-                    trace_sink.call(
-                        "record_policy_decision",
-                        _provider_fallback_policy_decision(
-                            from_provider=previous_provider_id,
-                            to_provider=provider_id,
-                            phase="preflight",
-                        ),
-                    )
-                    preflight_switches = 1
-                else:
-                    raise RuntimeError("selected provider is unavailable")
-            while True:
-                preflight_tried.add(provider_id)
-                try:
-                    provider = state.get_provider(provider_id)
-                except cancellation.TaskCancelled:
-                    raise
-                except Exception as connect_error:
-                    failure = self.capture_provider_failure(
-                        model=PROVIDER_LABELS.get(provider_id, provider_id),
-                        action="connect",
-                        page=None,
-                        error=connect_error,
-                    )
-                    record_provider_failure(provider_id, failure)
-                    if preflight_switches >= 2:
-                        raise ProviderActionError(failure) from connect_error
-                    replacement_id = (
-                        supervisor.select(
-                            "",
-                            ranked_failover_order(),
-                            excluded=preflight_tried,
-                        )
-                        if supervisor is not None
-                        else next(
-                            (
-                                item
-                                for item in ranked_failover_order()
-                                if item not in preflight_tried
-                            ),
-                            None,
-                        )
-                    )
-                    if replacement_id is None:
-                        raise ProviderActionError(failure) from connect_error
-                    previous_provider_id = provider_id
-                    provider_id = replacement_id
-                    preflight_switches += 1
-                    state.switch_run_provider(run_id, provider_id)
-                    append_ledger(
-                        lambda ledger: ledger.append(
-                            "provider_switched",
-                            from_provider=previous_provider_id,
-                            to_provider=provider_id,
-                            phase="connect",
-                            reason="provider_failure",
-                        )
-                    )
-                    trace_sink.call(
-                        "record_fallback",
-                        from_provider=previous_provider_id,
-                        to_provider=provider_id,
-                        phase="connect",
-                        reason_code="provider_failure",
-                    )
-                    trace_sink.call(
-                        "record_policy_decision",
-                        _provider_fallback_policy_decision(
-                            from_provider=previous_provider_id,
-                            to_provider=provider_id,
-                            phase="connect",
-                        ),
-                    )
-                    continue
-                if (
-                    supervisor is None
-                    or not supervisor.needs_canary(provider_id)
-                    or run_half_open_canary(provider_id, provider, supervisor)
-                ):
-                    break
-                try:
-                    provider.close()
-                except Exception:
-                    pass
-                if preflight_switches >= 2:
-                    raise RuntimeError("no healthy provider available after canary failure")
-                replacement_id = supervisor.select(
-                    "",
-                    ranked_failover_order(),
-                    excluded=preflight_tried,
-                )
-                if replacement_id is None:
-                    raise RuntimeError("no healthy provider available after canary failure")
-                previous_provider_id = provider_id
-                provider_id = replacement_id
-                preflight_switches += 1
-                state.switch_run_provider(run_id, provider_id)
-                append_ledger(
-                    lambda ledger: ledger.append(
-                        "provider_switched",
-                        from_provider=previous_provider_id,
-                        to_provider=provider_id,
-                        phase="canary",
-                        reason="provider_failure",
-                    )
-                )
-                trace_sink.call(
-                    "record_fallback",
-                    from_provider=previous_provider_id,
-                    to_provider=provider_id,
-                    phase="canary",
-                    reason_code="provider_failure",
-                )
-                trace_sink.call(
-                    "record_policy_decision",
-                    _provider_fallback_policy_decision(
-                        from_provider=previous_provider_id,
-                        to_provider=provider_id,
-                        phase="canary",
-                    ),
-                )
-            if task_kind == "research":
-                mode = "research"
-            elif task_kind == "planning_readonly":
-                mode = "planning"
-            elif task_kind in {"project", "hybrid"}:
-                mode = "project" if project else "chat"
-            else:
-                mode = "chat"
-            project_text = str(Path(project).expanduser().resolve()) if project else ""
-            conversation = state.conversation_for(session_id)
-            provider_session_changed = state.provider_session_changed(
-                provider_id,
-                session_id,
-            )
-            can_summarize_current_chat = (
-                conversation.initialized
-                and provider_id == conversation.provider_id
-                and not provider_session_changed
-            )
-            fresh_chat, handoff = conversation.plan_request(
+            preflight = connect_provider_with_preflight(
+                state=state,
+                run_id=run_id,
                 provider_id=provider_id,
-                mode=mode,
-                project=project_text,
-                force_rollover=continue_task or provider_session_changed,
-                next_prompt=task,
+                supervisor=supervisor,
+                ranked_failover_order=ranked_failover_order,
+                capture_provider_failure=self.capture_provider_failure,
+                record_provider_failure=record_provider_failure,
+                append_ledger=append_ledger,
+                trace_sink=trace_sink,
             )
-            if fresh_chat and can_summarize_current_chat:
-                def send_handoff_summary(summary_prompt: str) -> str:
-                    record_provider_send_prompt(
-                        trace,
-                        name="conversation_handoff_summary_prompt",
-                        text=summary_prompt,
-                        purpose="conversation handoff summary prompt sent to provider",
-                        source_ref="provider_send:conversation_handoff_summary",
-                        capability_id="conversation_handoff",
-                    )
-                    return provider.send(summary_prompt)
-
-                handoff = conversation.prepare_model_handoff(send_handoff_summary)
-            prior_snapshot = conversation.snapshot
-            recovered_owner_prompt = ""
-            visible_excerpt = ""
-            if fresh_chat or task_kind in {"research", "hybrid"}:
-                try:
-                    visible_excerpt = state.visible_session_excerpt(
-                        session_id,
-                        current_request=task,
-                    )
-                except Exception:
-                    visible_excerpt = ""
-            research_handoff = ""
-            if task_kind in {"research", "hybrid"}:
-                if handoff or visible_excerpt:
-                    research_handoff = render_recovered_handoff(
-                        prior_snapshot,
-                        visible_excerpt,
-                    )
-                elif prior_snapshot.to_payload():
-                    research_handoff = render_handoff(prior_snapshot)
-            conversation.update_snapshot(ConversationSnapshot(
-                mode=mode,
-                goal=prior_snapshot.goal or task,
-                project=project_text,
-                provider_id=prior_snapshot.provider_id,
-                changed_files=prior_snapshot.changed_files,
-                checks_passed=prior_snapshot.checks_passed,
-                summary=prior_snapshot.summary,
-                blocker=prior_snapshot.blocker,
-                latest_user=task if mode == "chat" else "",
-                latest_reply=prior_snapshot.latest_reply if mode == "chat" else "",
-                conversation_summary=prior_snapshot.conversation_summary,
-            ))
-            if fresh_chat:
-                if handoff or visible_excerpt:
-                    handoff = render_recovered_handoff(
-                        prior_snapshot,
-                        visible_excerpt,
-                    )
-                if visible_excerpt:
-                    recovered_owner_prompt = handoff
+            provider = preflight.provider
+            provider_id = preflight.provider_id
+            preflight_tried = preflight.tried
+            preflight_switches = preflight.switches
+            conversation = state.conversation_for(session_id)
+            conversation_plan = build_conversation_plan(
+                state=state,
+                session_id=session_id,
+                provider_id=provider_id,
+                provider=provider,
+                conversation=conversation,
+                task_kind=task_kind,
+                project=project,
+                task=task,
+                continue_task=continue_task,
+                trace=trace,
+            )
+            project_text = str(Path(project).expanduser().resolve()) if project else ""
             frame = RunFrame(
                 request=request,
                 run_id=run_id,
@@ -1887,13 +1307,13 @@ class TaskFlow:
                 provider=provider,
                 provider_id=provider_id,
                 project_text=project_text,
-                conversation=conversation,
-                fresh_chat=fresh_chat,
-                handoff=handoff,
-                research_handoff=research_handoff,
-                prior_snapshot=prior_snapshot,
-                recovered_owner_prompt=recovered_owner_prompt,
-                provider_session_changed=provider_session_changed,
+                conversation=conversation_plan.conversation,
+                fresh_chat=conversation_plan.fresh_chat,
+                handoff=conversation_plan.handoff,
+                research_handoff=conversation_plan.research_handoff,
+                prior_snapshot=conversation_plan.prior_snapshot,
+                recovered_owner_prompt=conversation_plan.recovered_owner_prompt,
+                provider_session_changed=conversation_plan.provider_session_changed,
                 preflight_tried=preflight_tried,
                 preflight_switches=preflight_switches,
                 trace=trace,
@@ -1908,18 +1328,50 @@ class TaskFlow:
                 supervisor=supervisor,
                 trace=trace,
             )
+
+            def run_project_operation(
+                active_frame: RunFrame,
+                active_work: RunWork,
+                active_hooks: RunHooks,
+                **kwargs,
+            ) -> ModeOutcome:
+                return run_project_mode(
+                    project_completion_deps,
+                    active_frame,
+                    active_work,
+                    active_hooks,
+                    **kwargs,
+                )
+
             if task_kind == "research":
-                outcome = self._run_research_mode(
+                outcome = run_research_mode(
+                    self._research_deps(),
                     frame,
                     hooks,
                     proof_question=_research_queue_item_title(work.claimed_work_item),
+                    run_pipeline=lambda active_frame, active_hooks, **kwargs: run_research_pipeline(
+                        self._research_deps(),
+                        active_frame,
+                        active_hooks,
+                        record_ledger_write=record_evidence_ledger_write,
+                        **kwargs,
+                    ),
                 )
             elif task_kind == "hybrid":
-                outcome = self._run_hybrid_mode(
+                outcome = run_hybrid_mode(
+                    self._research_deps(),
                     frame,
                     work,
                     hooks,
                     config_result=project_config_result,
+                    run_project=run_project_operation,
+                    run_pipeline=lambda active_frame, active_hooks, **kwargs: run_research_pipeline(
+                        self._research_deps(),
+                        active_frame,
+                        active_hooks,
+                        record_ledger_write=record_evidence_ledger_write,
+                        **kwargs,
+                    ),
                 )
             elif task_kind == "planning_readonly":
                 outcome = self._run_planning_readonly_mode(
@@ -1928,7 +1380,7 @@ class TaskFlow:
                     config_result=project_config_result,
                 )
             elif task_kind == "project":
-                outcome = self._run_project_mode(
+                outcome = run_project_operation(
                     frame,
                     work,
                     hooks,
@@ -1959,20 +1411,18 @@ class TaskFlow:
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)
-            update_checkpoint(
-                lambda store, item: store.set_status(item, "interrupted", "stopped")
-            )
+            update_checkpoint(lambda store, item: store.set_status(item, "interrupted", "stopped"))
             current_conversation = (
-                frame.conversation
-                if frame is not None
-                else (conversation if "conversation" in locals() else None)
+                frame.conversation if frame is not None else (conversation if "conversation" in locals() else None)
             )
             if current_conversation is not None:
-                current_conversation.update_snapshot(replace(
-                    current_conversation.snapshot,
-                    provider_id=current_id,
-                    blocker="stopped",
-                ))
+                current_conversation.update_snapshot(
+                    replace(
+                        current_conversation.snapshot,
+                        provider_id=current_id,
+                        blocker="stopped",
+                    )
+                )
             stopped_event = task_done_event(
                 run_id=run_id,
                 session_id=session_id,
@@ -2001,20 +1451,18 @@ class TaskFlow:
         except Exception as exc:
             current_id = current_provider_id()
             current_item = current_provider()
-            update_checkpoint(
-                lambda store, item: store.set_status(item, "interrupted", "error")
-            )
+            update_checkpoint(lambda store, item: store.set_status(item, "interrupted", "error"))
             current_conversation = (
-                frame.conversation
-                if frame is not None
-                else (conversation if "conversation" in locals() else None)
+                frame.conversation if frame is not None else (conversation if "conversation" in locals() else None)
             )
             if current_conversation is not None:
-                current_conversation.update_snapshot(replace(
-                    current_conversation.snapshot,
-                    provider_id=current_id,
-                    blocker=str(exc),
-                ))
+                current_conversation.update_snapshot(
+                    replace(
+                        current_conversation.snapshot,
+                        provider_id=current_id,
+                        blocker=str(exc),
+                    )
+                )
             failure = (
                 exc.failure
                 if isinstance(exc, ProviderActionError)
@@ -2072,123 +1520,6 @@ class TaskFlow:
                     current_item.close()
             except Exception:
                 pass
-
-    def _run_research_mode(
-        self,
-        frame: RunFrame,
-        hooks: RunHooks,
-        *,
-        proof_question: str = "",
-    ) -> ModeOutcome:
-        state = self.state
-        request = frame.request
-        if frame.provider is None:
-            raise RuntimeError("provider is not connected")
-        pipeline_result = self._run_research_pipeline(
-            frame,
-            hooks,
-            max_turns=request.max_turns,
-            proof_question=proof_question,
-        )
-        result = pipeline_result.final_result
-        state.set_provider_session(
-            frame.provider_id,
-            None if result.stop_reason == "stopped" else request.session_id,
-        )
-        frame.conversation.begin_window(
-            frame.provider_id,
-            "research",
-            frame.project_text,
-        )
-        frame.conversation.record_exchange(
-            request.task,
-            result.summary,
-            replace(
-                frame.conversation.snapshot,
-                mode="research",
-                goal=request.task,
-                project=frame.project_text,
-                provider_id=frame.provider_id,
-                blocker="" if result.stop_reason == "done" else result.summary,
-                latest_user=request.task,
-                latest_reply=result.summary,
-                summary=result.summary,
-            ),
-        )
-        receipt = {
-            "display": {"summary": result.receipt},
-            "work": {
-                "created": result.notes_created,
-                "updated": result.notes_updated,
-                "synthesis_id": result.synthesis_id,
-            },
-        }
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "research",
-            "receipt": receipt,
-            "research": _research_payload(result, pipeline_result=pipeline_result),
-        }, research_result=result, research_pipeline_result=pipeline_result)
-
-    def _run_hybrid_mode(
-        self,
-        frame: RunFrame,
-        work: RunWork,
-        hooks: RunHooks,
-        *,
-        config_result: ProjectConfigLoadResult | None = None,
-    ) -> ModeOutcome:
-        request = frame.request
-        if frame.provider is None:
-            raise RuntimeError("provider is not connected")
-        pipeline_result = self._run_research_pipeline(
-            frame,
-            hooks,
-            max_turns=max(1, min(request.max_turns, 18)),
-        )
-        research_result = pipeline_result.final_result
-        if research_result.stop_reason != "done":
-            return ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "summary": research_result.summary,
-                "stop_reason": research_result.stop_reason,
-                "turns": research_result.turns,
-                "max_turns": request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "research",
-                "receipt": {"display": {"summary": research_result.receipt}},
-                "research": _research_payload(research_result, pipeline_result=pipeline_result),
-            }, research_result=research_result, research_pipeline_result=pipeline_result)
-        frame.fresh_chat = True
-        frame.handoff = ""
-        frame.conversation.update_snapshot(replace(
-            frame.conversation.snapshot,
-            mode="research",
-            goal=request.task,
-            project=frame.project_text,
-            provider_id=frame.provider_id,
-            summary=research_result.summary,
-            blocker="",
-            latest_user=request.task,
-            latest_reply=research_result.summary,
-        ))
-        return self._run_project_mode(
-            frame,
-            work,
-            hooks,
-            config_result=config_result,
-            research_result=research_result,
-            research_pipeline_result=pipeline_result,
-        )
 
     def _run_chat_mode(self, frame: RunFrame) -> ModeOutcome:
         return run_chat_mode(
@@ -2265,25 +1596,29 @@ class TaskFlow:
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
         )
-        frame.conversation.update_snapshot(replace(
-            frame.conversation.snapshot,
-            provider_id=frame.provider_id,
-            checks_passed=False,
-            summary=result.summary,
-            blocker="" if result.stop_reason == "done" else result.summary,
-        ))
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "planning",
-            "changed": False,
-        })
+        frame.conversation.update_snapshot(
+            replace(
+                frame.conversation.snapshot,
+                provider_id=frame.provider_id,
+                checks_passed=False,
+                summary=result.summary,
+                blocker="" if result.stop_reason == "done" else result.summary,
+            )
+        )
+        return ModeOutcome(
+            {
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": result.summary,
+                "stop_reason": result.stop_reason,
+                "turns": result.turns,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": "planning",
+                "changed": False,
+            }
+        )
 
     def _run_review_mode(self, frame: RunFrame) -> ModeOutcome:
         state = self.state
@@ -2291,84 +1626,100 @@ class TaskFlow:
         project = request.project
         trace = FailOpenPromptTrace(frame.trace)
         trace.call("record_permission_profile", "reviewer", phase="review")
-        trace.record_section(PromptEnvelopeSection(
-            name="review_request",
-            text=request.task,
-            purpose="review request from the user",
-            freshness="run_start",
-            source_refs=("request:review",),
-        ))
+        trace.record_section(
+            PromptEnvelopeSection(
+                name="review_request",
+                text=request.task,
+                purpose="review request from the user",
+                freshness="run_start",
+                source_refs=("request:review",),
+            )
+        )
         if project is None:
             summary = "No attached project is available to review."
-            state.emit({
-                "type": "review",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "text": summary,
-            })
-            return ModeOutcome(task_done_event(
-                run_id=frame.run_id,
-                session_id=request.session_id,
-                summary=summary,
-                stop_reason="done",
-                turns=0,
-                max_turns=request.max_turns,
-                provider=frame.provider_id,
-                mode="review",
-                changed=False,
-            ))
+            state.emit(
+                {
+                    "type": "review",
+                    "run_id": frame.run_id,
+                    "session_id": request.session_id,
+                    "text": summary,
+                }
+            )
+            return ModeOutcome(
+                task_done_event(
+                    run_id=frame.run_id,
+                    session_id=request.session_id,
+                    summary=summary,
+                    stop_reason="done",
+                    turns=0,
+                    max_turns=request.max_turns,
+                    provider=frame.provider_id,
+                    mode="review",
+                    changed=False,
+                )
+            )
         changes = self._collect_review_changes(project)
-        trace.record_section(PromptEnvelopeSection(
-            name="review_changes",
-            text=changes.get("diff", "") if isinstance(changes, dict) else "",
-            purpose="bounded local diff prepared for review",
-            freshness="run_start",
-            source_refs=("local_diff:review",),
-        ))
+        trace.record_section(
+            PromptEnvelopeSection(
+                name="review_changes",
+                text=changes.get("diff", "") if isinstance(changes, dict) else "",
+                purpose="bounded local diff prepared for review",
+                freshness="run_start",
+                source_refs=("local_diff:review",),
+            )
+        )
         if not isinstance(changes, dict) or changes.get("ok") is not True:
             summary = "Could not collect a local diff to review."
-            state.emit({
-                "type": "review",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "text": summary,
-            })
-            return ModeOutcome(task_done_event(
-                run_id=frame.run_id,
-                session_id=request.session_id,
-                summary=summary,
-                stop_reason="done",
-                turns=0,
-                max_turns=request.max_turns,
-                provider=frame.provider_id,
-                mode="review",
-                changed=False,
-            ))
+            state.emit(
+                {
+                    "type": "review",
+                    "run_id": frame.run_id,
+                    "session_id": request.session_id,
+                    "text": summary,
+                }
+            )
+            return ModeOutcome(
+                task_done_event(
+                    run_id=frame.run_id,
+                    session_id=request.session_id,
+                    summary=summary,
+                    stop_reason="done",
+                    turns=0,
+                    max_turns=request.max_turns,
+                    provider=frame.provider_id,
+                    mode="review",
+                    changed=False,
+                )
+            )
         if not has_reviewable_changes(changes):
             summary = "No reviewable local diff was found."
-            state.emit({
-                "type": "review",
-                "run_id": frame.run_id,
-                "session_id": request.session_id,
-                "text": summary,
-            })
-            return ModeOutcome(task_done_event(
-                run_id=frame.run_id,
-                session_id=request.session_id,
-                summary=summary,
-                stop_reason="done",
-                turns=0,
-                max_turns=request.max_turns,
-                provider=frame.provider_id,
-                mode="review",
-                changed=False,
-                changes={
-                    "changed_count": changes.get("changed_count", 0),
-                    "files": changes.get("files", [])[:3],
-                    "mode": changes.get("mode"),
-                    "project": project,
-                },
-            ))
+            state.emit(
+                {
+                    "type": "review",
+                    "run_id": frame.run_id,
+                    "session_id": request.session_id,
+                    "text": summary,
+                }
+            )
+            return ModeOutcome(
+                task_done_event(
+                    run_id=frame.run_id,
+                    session_id=request.session_id,
+                    summary=summary,
+                    stop_reason="done",
+                    turns=0,
+                    max_turns=request.max_turns,
+                    provider=frame.provider_id,
+                    mode="review",
+                    changed=False,
+                    changes={
+                        "changed_count": changes.get("changed_count", 0),
+                        "files": changes.get("files", [])[:3],
+                        "mode": changes.get("mode"),
+                        "project": project,
+                    },
+                )
+            )
         try:
             try:
                 review_impact_map = safe_review_impact_map(project, changes)
@@ -2376,7 +1727,7 @@ class TaskFlow:
                 raise
             except Exception:
                 review_impact_map = ""
-            _record_review_input_prepared_trace(
+            record_review_input_prepared_trace(
                 frame.trace,
                 task=request.task,
                 writer_summary="Review-only mode did not run a writer.",
@@ -2413,43 +1764,49 @@ class TaskFlow:
             _reviewer_id, review = reviewed
             summary = _render_review_only_summary(review)
         state.set_provider_session(frame.provider_id, None)
-        frame.conversation.update_snapshot(replace(
-            frame.conversation.snapshot,
-            mode="review",
-            goal=request.task,
-            project=frame.project_text,
-            provider_id=frame.provider_id,
-            changed_files=changed_paths_from_changes(changes),
-            checks_passed=False,
-            summary=summary,
-            blocker="",
-            latest_user=request.task,
-            latest_reply=summary,
-        ))
-        state.emit({
-            "type": "review",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": summary,
-        })
-        return ModeOutcome({
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": summary,
-            "stop_reason": "done",
-            "turns": 1 if reviewed is not None else 0,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "review",
-            "changed": False,
-            "changes": {
-                "changed_count": changes.get("changed_count", 0),
-                "files": changes.get("files", [])[:3],
-                "mode": changes.get("mode"),
-                "project": project,
-            },
-        })
+        frame.conversation.update_snapshot(
+            replace(
+                frame.conversation.snapshot,
+                mode="review",
+                goal=request.task,
+                project=frame.project_text,
+                provider_id=frame.provider_id,
+                changed_files=changed_paths_from_changes(changes),
+                checks_passed=False,
+                summary=summary,
+                blocker="",
+                latest_user=request.task,
+                latest_reply=summary,
+            )
+        )
+        state.emit(
+            {
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            }
+        )
+        return ModeOutcome(
+            {
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": summary,
+                "stop_reason": "done",
+                "turns": 1 if reviewed is not None else 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": "review",
+                "changed": False,
+                "changes": {
+                    "changed_count": changes.get("changed_count", 0),
+                    "files": changes.get("files", [])[:3],
+                    "mode": changes.get("mode"),
+                    "project": project,
+                },
+            }
+        )
 
     def _planning_event(
         self,
@@ -2471,1438 +1828,4 @@ class TaskFlow:
         message = render_run_event(event)
         work.recent_events.append(message)
         if len(work.recent_events) > self.review_log_lines * 2:
-            del work.recent_events[:self.review_log_lines]
-
-    def _run_project_mode(
-        self,
-        frame: RunFrame,
-        work: RunWork,
-        hooks: RunHooks,
-        *,
-        config_result: ProjectConfigLoadResult | None = None,
-        research_result=None,
-        research_pipeline_result=None,
-    ) -> ModeOutcome:
-        state = self.state
-        request = frame.request
-        project = request.project
-        if project is None:
-            raise RuntimeError("project mode requires a project")
-        if work.ledger is not None:
-            work.record_agent_events_in_ledger = True
-        context_builder = ProjectTaskContextBuilder(
-            project_facts=self.project_facts,
-            work_checkpoints=self.work_checkpoints,
-            knowledge_store=self.knowledge_store,
-            config_result=config_result,
-        )
-        project_context = context_builder.build(
-            project=project,
-            task=request.task,
-            session_id=request.session_id,
-            run_id=frame.run_id,
-            continue_task=request.continue_task,
-            provider_session_changed=frame.provider_session_changed,
-        )
-        verified_facts = project_context.verified_facts
-        verification_verified_commands = (
-            project_context.verification_verified_commands
-        )
-        verification_candidates = project_context.verification_candidates
-        resumed_verification_commands = (
-            project_context.resumed_verification_commands
-        )
-        configured_verification_commands = (
-            project_context.configured_verification_commands
-        )
-        configured_ignored_paths = project_context.configured_ignored_paths
-        project_map_chars = project_context.project_map_chars
-        project_map = project_context.project_map
-        work.work_checkpoint = project_context.checkpoint.item
-        checkpoint_prompt = project_context.checkpoint.prompt
-        resumed_changed_files = project_context.checkpoint.changed_files
-        resumed_successful_checks = project_context.checkpoint.successful_checks
-        work.evidence.seed_checks(project_context.checkpoint.seed_checks)
-        agent_task = request.task
-        change_brief: ChangeBrief | None = None
-        agent_fresh_chat = frame.fresh_chat
-        has_user_files = _project_has_user_files(project)
-        used_project_audit = False
-        if self.run_consensus is not None and not has_user_files:
-            context = render_project_context(
-                frame.conversation.snapshot,
-                verified_facts,
-                project_map=project_map,
-            )
-            try:
-                _record_secondary_input_prepared_trace(
-                    frame.trace,
-                    "consensus",
-                    task=request.task,
-                    context=context,
-                )
-                planned = self.run_consensus(
-                    selected_provider=frame.provider,
-                    selected_provider_id=frame.provider_id,
-                    task=request.task,
-                    context=context,
-                    plan=True,
-                    draft_first=True,
-                    trace_recorder=frame.trace,
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                state.set_provider_session(frame.provider_id, None)
-                agent_fresh_chat = True
-                planned = None
-            if planned is not None:
-                change_brief = new_project_change_brief(request.task, planned.answer)
-                agent_task = change_brief.apply_to_task(request.task)
-                agent_fresh_chat = True
-        elif self.run_project_audit is not None and has_user_files:
-            context = render_project_context(
-                frame.conversation.snapshot,
-                verified_facts,
-                project_map=project_map,
-            )
-            try:
-                _record_secondary_input_prepared_trace(
-                    frame.trace,
-                    "project_audit",
-                    task=request.task,
-                    context=context,
-                )
-                reports = self.run_project_audit(
-                    project=project,
-                    selected_provider=frame.provider,
-                    selected_provider_id=frame.provider_id,
-                    task=request.task,
-                    context=context,
-                    trace_recorder=frame.trace,
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                reports = ()
-            if reports:
-                change_brief = project_audit_change_brief(request.task, reports)
-                agent_task = change_brief.apply_to_task(request.task)
-                used_project_audit = True
-        key = str(Path(project).expanduser().resolve())
-        tracker = state.change_tracker_for(
-            key,
-            persistent=not self.is_git_repository(key),
-        )
-        tried_writers = set(frame.preflight_tried)
-        # One-shot holder for the repair phase: run_one_writer_attempt passes
-        # the admitted projection into agent.run(), whose ContextSource
-        # machinery renders it and binds the admission row to the outbound
-        # send epoch. It is empty for every normal writer attempt.
-        repair_projection: RepairContextProjection | None = None
-        def refresh_checkpoint_view() -> CheckpointView:
-            nonlocal checkpoint_prompt
-            nonlocal resumed_changed_files
-            nonlocal resumed_successful_checks
-            refreshed = context_builder.refresh_checkpoint(work.work_checkpoint)
-            if refreshed.item is None:
-                checkpoint_prompt = ""
-                resumed_changed_files = ()
-                resumed_successful_checks = ()
-            else:
-                work.work_checkpoint = refreshed.item
-                checkpoint_prompt = refreshed.prompt
-                resumed_changed_files = refreshed.changed_files
-                resumed_successful_checks = refreshed.successful_checks
-            if refreshed.workspace_changed:
-                work.evidence.invalidate_checks()
-            return CheckpointView(
-                prompt=checkpoint_prompt,
-                changed_files=resumed_changed_files,
-                successful_checks=resumed_successful_checks,
-            )
-
-        def run_one_writer_attempt(
-            spec: WriterAttempt,
-            note_turn: Callable[[int], None],
-        ) -> RunResult:
-            def on_writer_event(event: RunEvent) -> None:
-                note_turn(event.turn)
-                hooks.on_event(event)
-
-            return self.agent_run(
-                spec.provider,
-                Path(project),
-                spec.task,
-                max_turns=spec.remaining_turns,
-                on_event=on_writer_event,
-                on_shell_request=hooks.on_shell_request,
-                stop_flag=state.stop_flag,
-                fresh_chat=spec.fresh_chat,
-                strict_fresh_chat=spec.strict_fresh_chat,
-                change_tracker=tracker,
-                conversation=frame.conversation,
-                provider_id=spec.provider_id,
-                handoff=spec.handoff,
-                project_facts=verified_facts,
-                research_context=project_context.research_context,
-                project_map=project_map,
-                project_config_warnings=project_context.project_config_warnings,
-                work_checkpoint=spec.checkpoint.prompt,
-                verification_candidates=verification_candidates,
-                verification_candidate_loader=lambda: (
-                    safe_verification_candidates(
-                        project,
-                        verification_verified_commands,
-                        resumed_verification_commands,
-                        configured_verification_commands,
-                        configured_ignored_paths,
-                    )
-                ),
-                verification_changed_files=spec.checkpoint.changed_files,
-                verification_successful_checks=(
-                    spec.checkpoint.successful_checks
-                ),
-                ghost_directive="",
-                ghost_continuity="",
-                completion_repair_context=(
-                    repair_projection.prompt_text
-                    if repair_projection is not None
-                    else ""
-                ),
-                completion_repair_context_payload=(
-                    repair_projection.to_payload()
-                    if repair_projection is not None
-                    else None
-                ),
-                permission_profile="coding_writer",
-                tool_fns=self._managed_tool_fns(
-                    session_id=request.session_id,
-                    run_id=frame.run_id,
-                ),
-                trace_recorder=frame.trace,
-            )
-
-        def select_next_writer(excluded: set[str]) -> str | None:
-            mode = _writer_failover_mode(frame.task_kind)
-            preference = (
-                preferred_provider_for(config_result.config, mode)
-                if config_result is not None
-                else ""
-            )
-            ranked_order = rank_providers(
-                hooks.provider_failover_order(),
-                mode=mode,
-                preferred=preference,
-            )
-            if hooks.supervisor is not None:
-                return hooks.supervisor.select(
-                    "",
-                    ranked_order,
-                    excluded=excluded,
-                )
-            return next(
-                (
-                    item
-                    for item in ranked_order
-                    if item not in excluded
-                ),
-                None,
-            )
-
-        def capture_writer_failure(
-            pid: str,
-            action: str,
-            error: BaseException,
-        ) -> ProviderFailure:
-            return self.capture_provider_failure(
-                model=PROVIDER_LABELS.get(pid, pid),
-                action=action,
-                page=None,
-                error=error,
-            )
-
-        def on_writer_switch(next_provider_id: str) -> None:
-            previous_provider_id = frame.provider_id
-            state.switch_run_provider(frame.run_id, next_provider_id)
-            hooks.append_ledger(
-                lambda ledger: ledger.append(
-                    "provider_switched",
-                    from_provider=previous_provider_id,
-                    to_provider=next_provider_id,
-                    phase="writer_failover",
-                    reason="provider_failure",
-                )
-            )
-            FailOpenPromptTrace(hooks.trace).call(
-                "record_fallback",
-                from_provider=previous_provider_id,
-                to_provider=next_provider_id,
-                phase="writer_failover",
-                reason_code="provider_failure",
-            )
-            FailOpenPromptTrace(hooks.trace).call(
-                "record_policy_decision",
-                _provider_fallback_policy_decision(
-                    from_provider=previous_provider_id,
-                    to_provider=next_provider_id,
-                    phase="writer_failover",
-                ),
-            )
-            frame.conversation.update_snapshot(replace(
-                frame.conversation.snapshot,
-                provider_id=next_provider_id,
-                blocker="",
-            ))
-
-        failover = WriterFailoverRunner(
-            provider=frame.provider,
-            provider_id=frame.provider_id,
-            switches=frame.preflight_switches,
-            tried=tried_writers,
-            attempt=run_one_writer_attempt,
-            select_next=select_next_writer,
-            connect=state.get_provider,
-            close=lambda item: item.close(),
-            needs_canary=(
-                hooks.supervisor.needs_canary
-                if hooks.supervisor is not None
-                else (lambda _pid: False)
-            ),
-            run_canary=(
-                lambda pid, item: run_half_open_canary(pid, item, hooks.supervisor)
-            ),
-            capture_failure=capture_writer_failure,
-            record_failure=hooks.record_provider_failure,
-            record_success=(
-                hooks.supervisor.record_success
-                if hooks.supervisor is not None
-                else (lambda _pid: None)
-            ),
-            clear_session=lambda pid: state.set_provider_session(pid, None),
-            on_switch=on_writer_switch,
-            refresh_checkpoint=refresh_checkpoint_view,
-            stopped=state.stop_flag.is_set,
-        )
-
-        self._commit_run_operation(
-            work,
-            lambda state: mark_writer_running(state, provider_id=frame.provider_id),
-        )
-
-        try:
-            result = failover.run(
-                task=agent_task,
-                turn_budget=request.max_turns,
-                fresh=agent_fresh_chat,
-                handoff=frame.handoff,
-                checkpoint=CheckpointView(
-                    prompt=checkpoint_prompt,
-                    changed_files=resumed_changed_files,
-                    successful_checks=resumed_successful_checks,
-                ),
-            )
-        finally:
-            frame.provider = failover.provider
-            frame.provider_id = failover.provider_id
-            frame.preflight_switches = failover.switches
-        self._commit_run_operation(
-            work,
-            lambda state: mark_writer_settled(
-                state,
-                provider_id=frame.provider_id,
-                turns_used=result.turns,
-                stop_reason=result.stop_reason,
-            ),
-        )
-        # Narrow checkpoint-resume green inheritance: the workspace did not
-        # change and nothing new ran, so prior green checks still cover it.
-        # The receipt stays green, but the completion proof now records this
-        # explicitly as stance=inherited_pass / source=checkpoint -- never as
-        # this round's clean verification fact (0.4.13 provenance debt).
-        inherited_green = bool(
-            project_context.checkpoint.resumed
-            and work.work_checkpoint is not None
-            and not result.changed
-            and not result.checks_ran
-            and work.evidence.has_successful_checks
-        )
-        if inherited_green:
-            result = replace(result, checks_passed=True)
-        checkpoint_changed = bool(
-            work.work_checkpoint is not None and work.work_checkpoint.changed_files
-        )
-        task_changed = result.changed or checkpoint_changed
-        task_changes = self.collect_changes(project, tracker)
-        collected_changed = change_state(task_changes)
-        task_changes_dirty = collected_changed is None
-        if collected_changed is not None:
-            task_changed = collected_changed
-        if result.stop_reason == "done":
-            hooks.update_checkpoint(
-                lambda store, item: store.set_status(item, "ready_for_review")
-            )
-        state.set_provider_session(
-            frame.provider_id,
-            None if result.stop_reason == "stopped" else request.session_id,
-        )
-        if (
-            self.run_consensus is not None
-            and not used_project_audit
-            and result.stop_reason == "done"
-            and not result.changed
-            and not state.stop_flag.is_set()
-        ):
-            context = render_project_context(
-                frame.conversation.snapshot,
-                verified_facts,
-                draft=result.summary,
-                project_map=project_map,
-            )
-            try:
-                _record_secondary_input_prepared_trace(
-                    frame.trace,
-                    "consensus",
-                    task=request.task,
-                    context=context,
-                    draft=result.summary,
-                )
-                consulted = self.run_consensus(
-                    selected_provider=frame.provider,
-                    selected_provider_id=frame.provider_id,
-                    task=request.task,
-                    context=context,
-                    draft=result.summary,
-                    trace_recorder=frame.trace,
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                state.set_provider_session(frame.provider_id, None)
-                consulted = None
-            if consulted is not None:
-                if consulted.degraded:
-                    state.set_provider_session(frame.provider_id, None)
-                result = replace(result, summary=consulted.answer)
-        review_coordinator = ReviewCoordinator(self.collect_changes)
-
-        def render_review_change_brief() -> str:
-            return (
-                change_brief.render(audience="reviewer")
-                if change_brief is not None
-                else ""
-            )
-
-        def refresh_review_project_map() -> str:
-            nonlocal verified_facts
-            nonlocal project_map
-            nonlocal verification_candidates
-            verified_facts = (
-                self.project_facts.render(project)
-                if self.project_facts is not None
-                else ""
-            )
-            verification_candidates = safe_verification_candidates(
-                project,
-                verification_verified_commands,
-                resumed_verification_commands,
-                configured_verification_commands,
-                configured_ignored_paths,
-            )
-            project_map = safe_project_map(
-                project,
-                verified_facts,
-                request.task,
-                verification_candidate_lines(verification_candidates),
-                ignored_paths=configured_ignored_paths,
-                max_chars=project_map_chars,
-            )
-            return project_map
-
-        def close_writer_for_review() -> None:
-            if frame.provider is not None:
-                try:
-                    frame.provider.close()
-                except Exception:
-                    pass
-            frame.provider = None
-            failover.provider = None
-
-        def repair_writer(
-            followup: str,
-            checkpoint: CheckpointView,
-        ) -> RunResult:
-            try:
-                return failover.run(
-                    task=followup,
-                    turn_budget=min(request.max_turns, self.review_fix_turns),
-                    fresh=False,
-                    handoff="",
-                    checkpoint=checkpoint,
-                )
-            finally:
-                frame.provider = failover.provider
-                frame.provider_id = failover.provider_id
-                frame.preflight_switches = failover.switches
-
-        def set_checkpoint_status(status: str) -> None:
-            hooks.update_checkpoint(
-                lambda store, item: store.set_status(
-                    item,
-                    status,
-                )
-            )
-
-        def emit_review_unavailable() -> None:
-            state.emit({
-                "type": "review",
-                "session_id": request.session_id,
-                "text": "Unavailable. Continued with one model.",
-            })
-
-        def run_review_with_trace(**kwargs):
-            try:
-                review_impact_map = safe_review_impact_map(
-                    kwargs.get("project") or project,
-                    kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                review_impact_map = ""
-            _record_review_input_prepared_trace(
-                frame.trace,
-                task=str(kwargs.get("task") or ""),
-                writer_summary=str(kwargs.get("writer_summary") or ""),
-                changes=kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
-                recent_log=str(kwargs.get("recent_log") or ""),
-                change_brief=str(kwargs.get("change_brief") or ""),
-                project_map=str(kwargs.get("project_map") or ""),
-                verification_map=str(kwargs.get("verification_map") or ""),
-                review_impact_map=review_impact_map,
-                execution_evidence=str(kwargs.get("execution_evidence") or ""),
-            )
-            kwargs["review_impact_map"] = review_impact_map
-            kwargs["trace_recorder"] = frame.trace
-            return self.run_review(**kwargs)
-
-        review_cycle = review_coordinator.run_cycle(
-            project=project,
-            tracker=tracker,
-            session_id=request.session_id,
-            task=request.task,
-            result=result,
-            task_changed=task_changed,
-            changes=task_changes,
-            changes_dirty=task_changes_dirty,
-            writer_id=frame.provider_id,
-            recent_log="\n".join(work.recent_events[-self.review_log_lines:]),
-            render_change_brief=render_review_change_brief,
-            execution_evidence=work.evidence.render_for_review(),
-            successful_checks=work.evidence.successful_checks,
-            checkpoint_prompt=checkpoint_prompt,
-            checks_before_review_followup=(
-                work.evidence.has_successful_checks
-                or (
-                    not work.evidence.observed_tool_events
-                    and result.checks_passed
-                )
-            ),
-            stop_requested=state.stop_flag.is_set,
-            refresh_project_map=refresh_review_project_map,
-            build_verification_map=lambda changes, current_project_map: (
-                _safe_verification_map(
-                    project,
-                    changes,
-                    work.evidence.successful_checks,
-                    current_project_map,
-                    selected_verification_candidate_lines(
-                        verification_candidates,
-                        changed_paths_from_changes(changes),
-                    ),
-                )
-            ),
-            run_review=run_review_with_trace,
-            close_writer_for_review=close_writer_for_review,
-            repair_writer=repair_writer,
-            set_checkpoint_status=set_checkpoint_status,
-            emit_review_unavailable=emit_review_unavailable,
-        )
-        result = review_cycle.result
-        task_changed = review_cycle.task_changed
-        task_changes = review_cycle.changes
-        task_changes_dirty = review_cycle.changes_dirty
-        if task_changes is None or task_changes_dirty:
-            task_changes = self.collect_changes(project, tracker)
-        collected_changed = change_state(task_changes)
-        if collected_changed is not None:
-            task_changed = collected_changed
-
-        def enforcement_scope(
-            changes: dict | None,
-            changed: bool,
-        ) -> tuple[bool, tuple[str, ...]]:
-            files = tuple(
-                str(item.get("path") or "")
-                for item in ((changes or {}).get("files") or [])
-                if item.get("path")
-            )
-            if (
-                not files
-                and change_state(changes) is None
-                and work.evidence.changed_files
-            ):
-                # Changes collection produced no usable verdict while real
-                # edits were observed locally: scope enforcement from the
-                # observed edits instead of letting an edited run slip past
-                # enforcement as "unchanged". A measured net-empty diff --
-                # the model reverted its own edit -- is a verdict, so it
-                # keeps the run out of scope with an honest unchanged
-                # receipt.
-                return True, tuple(work.evidence.changed_files)
-            return changed, files
-
-        task_changed, files = enforcement_scope(task_changes, task_changed)
-        verification_candidates = safe_verification_candidates(
-            project,
-            verification_verified_commands,
-            resumed_verification_commands,
-            configured_verification_commands,
-            configured_ignored_paths,
-        )
-        # --- Verified Completion Enforcement (0.4.13) --------------------
-        # The first decision point where local facts constrain done: build
-        # the completion proof, admit at most one bounded repair context for
-        # an observed product failure, then let the FINAL proof drive
-        # receipt, ledger, project facts, and the user-visible event.
-        selected_check = (
-            select_verification_candidate(verification_candidates, files)
-            if result.stop_reason == "done" and task_changed and files
-            else None
-        )
-        checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
-        verification_forbidden = task_forbids_verification(request.task)
-
-        # The decision inputs are passed explicitly at every call site: the
-        # repair round re-collects changes and re-selects the candidate, and
-        # the integrity observation must read the exact same snapshot of
-        # changes/files/check as the decision it qualifies -- never a diff
-        # captured before the repair.
-        completion_engine = CompletionEngine()
-
-        def completion_evidence(
-            *,
-            changes: object,
-            changed: bool,
-            scope_files: tuple[str, ...],
-            check: object,
-            stop: str,
-        ) -> tuple[object, EditIntegrityObservation]:
-            evidence = completion_engine.evaluate(
-                run_id=frame.run_id,
-                task=request.task,
-                changes=changes,
-                stop_reason=stop,
-                task_changed=changed,
-                scope_files=scope_files,
-                selected_check=check,
-                evidence=work.evidence,
-                analysis_run_payloads=work.analysis_run_payloads,
-                project=project,
-                checkpoint_green=checkpoint_green,
-                verification_forbidden=verification_forbidden,
-            )
-            return evidence.decision, evidence.integrity
-
-        def commit_operation_proof(proof: object) -> None:
-            # Refs/status only; the proof body stays in the run trace. The
-            # facts pass through uncoerced: the strict helper validates them
-            # and refuses anything it cannot record honestly.
-            if proof is None:
-                return
-            self._commit_run_operation(
-                work,
-                lambda state: mark_completion_proof_recorded(
-                    state,
-                    proof_ref=getattr(proof, "proof_id", ""),
-                    proof_status=getattr(proof, "status", ""),
-                    proof_satisfied=getattr(proof, "satisfied", None),
-                ),
-            )
-
-        decision, integrity = completion_evidence(
-            changes=task_changes,
-            changed=task_changed,
-            scope_files=files,
-            check=selected_check,
-            stop=result.stop_reason,
-        )
-        proof = decision.proof
-        _record_completion_proof_trace(frame.trace, proof)
-        _record_edit_integrity_trace(frame.trace, integrity)
-        commit_operation_proof(proof)
-
-        blocked_reason = ""
-        repaired_once = False
-        remaining_turns = request.max_turns - result.turns
-        if (
-            proof is not None
-            and not proof.satisfied
-            and not state.stop_flag.is_set()
-            and remaining_turns > 0
-            and repair_candidate(
-                proof.status,
-                decision.failure_class,
-                max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
-            )
-        ):
-            projection = project_repair_context(
-                proof=proof.to_payload(),
-                failure_class=decision.failure_class,
-                decisive_checks=(
-                    decisive_failure_fact(
-                        selected_check,
-                        work.evidence,
-                        files,
-                        root=project,
-                    ),
-                ),
-                changed_files=files,
-                analysis_run_refs=decision.analysis_run_refs,
-            )
-            if not projection.admitted:
-                blocked_reason = "repair_context_unavailable"
-            else:
-                repair_projection = projection
-                self._commit_run_operation(
-                    work,
-                    lambda state: mark_repair_context_admitted(
-                        state,
-                        context_ref=str(projection.to_payload().get("digest") or ""),
-                    ),
-                )
-                hooks.on_event(RunEvent.status(
-                    "[runner] completion proof did not pass; running one bounded repair round."
-                ))
-                self._commit_run_operation(
-                    work,
-                    lambda state: mark_repair_running(
-                        state,
-                        provider_id=frame.provider_id,
-                    ),
-                )
-                try:
-                    repair_result = failover.run(
-                        task=COMPLETION_REPAIR_FOLLOWUP,
-                        turn_budget=remaining_turns,
-                        fresh=False,
-                        handoff="",
-                        checkpoint=refresh_checkpoint_view(),
-                    )
-                except cancellation.TaskCancelled:
-                    raise
-                except ProviderActionError:
-                    blocked_reason = "provider_failure"
-                    self._commit_run_operation(
-                        work,
-                        lambda state: mark_repair_settled(
-                            state,
-                            provider_id=frame.provider_id,
-                            stop_reason="",
-                            blocked_reason="provider_failure",
-                        ),
-                    )
-                else:
-                    repair_blocked_reason = ""
-                    if repair_result.stop_reason not in {"done", "approval", "stopped"}:
-                        repair_remaining_turns = (
-                            request.max_turns - result.turns - repair_result.turns
-                        )
-                        repair_blocked_reason = completion_engine.blocked_reason(
-                            proof_status=proof.status,
-                            failure_class=decision.failure_class,
-                            remaining_turns=repair_remaining_turns,
-                            repair_rounds=1,
-                        )
-                    self._commit_run_operation(
-                        work,
-                        lambda state: mark_repair_settled(
-                            state,
-                            provider_id=frame.provider_id,
-                            stop_reason=repair_result.stop_reason,
-                            turns_used=result.turns + repair_result.turns,
-                            blocked_reason=repair_blocked_reason,
-                        ),
-                    )
-                    if repair_blocked_reason:
-                        blocked_reason = repair_blocked_reason
-                finally:
-                    repair_projection = None
-                repaired_once = not blocked_reason
-                if repaired_once:
-                    # The repair is bounded by the shared remaining turn
-                    # budget, so the sum can never exceed max_turns.
-                    turns = result.turns + repair_result.turns
-                    if repair_result.stop_reason == "stopped":
-                        result = replace(repair_result, turns=turns)
-                    elif repair_result.stop_reason == "done":
-                        # Re-collect post-repair facts; the new proof decides.
-                        task_changes = self.collect_changes(project, tracker)
-                        collected = change_state(task_changes)
-                        if collected is not None:
-                            task_changed = collected
-                        task_changed, files = enforcement_scope(
-                            task_changes,
-                            task_changed,
-                        )
-                        verification_candidates = safe_verification_candidates(
-                            project,
-                            verification_verified_commands,
-                            resumed_verification_commands,
-                            configured_verification_commands,
-                            configured_ignored_paths,
-                        )
-                        selected_check = (
-                            select_verification_candidate(verification_candidates, files)
-                            if files
-                            else None
-                        )
-                        result = RunResult(
-                            summary=repair_result.summary,
-                            stop_reason="done",
-                            turns=turns,
-                            checks_passed=False,
-                            changed=result.changed or repair_result.changed,
-                            checks_ran=result.checks_ran or repair_result.checks_ran,
-                        )
-                        decision, integrity = completion_evidence(
-                            changes=task_changes,
-                            changed=task_changed,
-                            scope_files=files,
-                            check=selected_check,
-                            stop=result.stop_reason,
-                        )
-                        proof = decision.proof
-                        _record_completion_proof_trace(frame.trace, proof)
-                        _record_edit_integrity_trace(frame.trace, integrity)
-                        commit_operation_proof(proof)
-                    else:
-                        result = replace(repair_result, turns=turns)
-
-        if (
-            not blocked_reason
-            and result.stop_reason == "done"
-            and proof is not None
-            and proof.status in ("failed", "blocked")
-        ):
-            # A done claim backed by a failed or unverifiable proof must
-            # never pass as done. complete_with_limitations (docs-only,
-            # inherited green) stays an allowed -- but honest -- done. The
-            # repair_rounds fact comes from this run's operation state
-            # position: a round actually ran only when the repair arm
-            # settled without a provider failure.
-            blocked_reason = completion_engine.blocked_reason(
-                proof_status=proof.status,
-                failure_class=decision.failure_class,
-                remaining_turns=request.max_turns - result.turns,
-                repair_rounds=1 if repaired_once else 0,
-            )
-        if (
-            blocked_reason
-            and work.operation is not None
-            and work.operation.phase == PHASE_COMPLETION_PROOF_RECORDED
-        ):
-            # The verdict lands on the durable counter at the decision
-            # point; provider-failure and stop verdicts are already
-            # carried by their own settled phases.
-            self._commit_run_operation(
-                work,
-                lambda state: mark_completion_blocked(state, reason=blocked_reason),
-            )
-
-        verified = False
-        if blocked_reason and result.stop_reason in (
-            "done",
-            "max_turns",
-            "no_progress",
-            "protocol",
-        ):
-            # Explicit stop conditions win; everything else becomes an
-            # honest blocked result instead of a claimed done.
-            result = _blocked_result(result, blocked_reason)
-        elif result.stop_reason == "done":
-            if proof is not None:
-                verified = decision.provenance.stance in (
-                    STANCE_FRESH_PASS,
-                    STANCE_INHERITED_PASS,
-                )
-            else:
-                # Out of enforcement scope (no changed files): keep the
-                # pre-enforcement flag semantics.
-                verified = bool(result.checks_passed)
-        result = replace(result, checks_passed=verified)
-
-        receipt = build_task_receipt(
-            task_changes,
-            decision=decision,
-            integrity=integrity,
-            checks_passed=result.checks_passed,
-        )
-        hooks.append_ledger(
-            lambda ledger: ledger.append_changes_collected(
-                task_changes,
-                checks_passed=result.checks_passed,
-                receipt=receipt.to_dict(),
-            )
-        )
-        facts_write_required = (
-            self.project_facts is not None
-            and result.stop_reason == "done"
-            and task_changed
-            and result.checks_passed
-            and receipt.verification.trust == VERIFICATION_TRUST_TRUSTED
-            and work.evidence.has_successful_checks
-            and files
-        )
-        facts_write_succeeded = not facts_write_required
-        if facts_write_required:
-            try:
-                fact_task = (
-                    work.work_checkpoint.original_task
-                    if project_context.checkpoint.resumed
-                    and work.work_checkpoint is not None
-                    else request.task
-                )
-                facts_write_succeeded = (
-                    self.project_facts.record_successful_change(
-                        project,
-                        task=fact_task,
-                        files=files,
-                        checks=work.evidence.successful_checks,
-                        receipt=receipt.display.summary,
-                    )
-                )
-            except (OSError, ValueError):
-                facts_write_succeeded = False
-        if facts_write_succeeded and facts_write_required:
-            self._record_project_memory(
-                project=project,
-                session_id=request.session_id,
-                task=request.task,
-                files=files,
-                receipt=receipt.display.summary,
-                checks=work.evidence.successful_checks,
-            )
-        if self.work_checkpoints is not None and work.work_checkpoint is not None:
-            if result.stop_reason == "done" and facts_write_succeeded:
-                try:
-                    self.work_checkpoints.delete(request.session_id)
-                    work.work_checkpoint = None
-                except OSError:
-                    pass
-            elif result.stop_reason != "done":
-                hooks.update_checkpoint(
-                    lambda store, item: store.set_status(
-                        item,
-                        "interrupted",
-                        result.stop_reason,
-                    )
-                )
-        # Terminal state for this run: now -- and only now -- drop snapshot
-        # baselines whose files are back to their original content. UI
-        # polling during a run never prunes.
-        try:
-            tracker.prune_clean()
-        except Exception:
-            pass
-        frame.conversation.update_snapshot(replace(
-            frame.conversation.snapshot,
-            provider_id=frame.provider_id,
-            changed_files=files,
-            checks_passed=result.checks_passed,
-            summary=result.summary,
-            blocker="" if result.stop_reason == "done" else result.summary,
-        ))
-        changes_payload = None
-        if task_changed and task_changes and task_changes.get("ok"):
-            changes_payload = {
-                "changed_count": task_changes.get("changed_count", 0),
-                "files": task_changes.get("files", [])[:3],
-                "mode": task_changes.get("mode"),
-                "project": project,
-            }
-        research_payload = None
-        if research_result is not None:
-            research_payload = _research_payload(
-                research_result,
-                pipeline_result=research_pipeline_result,
-            )
-        event = task_done_event(
-            run_id=frame.run_id,
-            session_id=request.session_id,
-            summary=result.summary,
-            stop_reason=result.stop_reason,
-            turns=result.turns,
-            max_turns=request.max_turns,
-            provider=frame.provider_id,
-            mode="hybrid" if research_result is not None else "agent",
-            work=work,
-            changed=task_changed,
-            receipt=receipt.to_dict(),
-            changes=changes_payload,
-            research=research_payload,
-        )
-        return ModeOutcome(
-            event,
-            research_result=research_result,
-            research_pipeline_result=research_pipeline_result,
-        )
-
-    def _run_research_iteration(
-        self,
-        *,
-        provider,
-        session_id: str,
-        project: str,
-        task: str,
-        max_turns: int,
-        on_event: Callable[[RunEvent], None],
-        stop_flag,
-        provider_id: str,
-        run_id: str,
-        chat_handoff: str,
-        trace_recorder,
-        search,
-        tools=None,
-        iteration_context: str = "",
-        topic_continuity_context: str = "",
-        topic_continuity_payload: dict[str, object] | None = None,
-    ) -> ResearchIterationRun:
-        if self.knowledge_store is None:
-            raise RuntimeError("Research is not configured")
-        runner = ResearchRunner(
-            provider,
-            search,
-            self.knowledge_store,
-            max_turns=max_turns,
-            should_stop=stop_flag.is_set if stop_flag is not None else None,
-            session_id=session_id,
-            project=project,
-            chat_handoff=chat_handoff,
-            permission_profile="research",
-            trace_recorder=trace_recorder,
-            run_id=run_id,
-            review_advisors=(
-                (lambda pack: self.run_research_advisors(
-                    selected_provider=provider,
-                    selected_provider_id=provider_id,
-                    pack=pack,
-                ))
-                if self.run_research_advisors is not None
-                else None
-            ),
-            tools=tools,
-            iteration_context=iteration_context,
-            topic_continuity_context=topic_continuity_context,
-            topic_continuity_payload=topic_continuity_payload,
-        )
-        for event in runner.run(task):
-            on_event(event)
-        if runner.result is None:
-            raise RuntimeError("research finished without a result")
-        return ResearchIterationRun(result=runner.result, tools=runner.tools)
-
-    def _build_research_topic_continuity(
-        self,
-        *,
-        session_id: str,
-        project: str,
-        trace: Any | None = None,
-    ) -> tuple[str, dict[str, object] | None]:
-        """Admit bounded Ghost-to-Research topic continuity.
-
-        Single wiring point for the 0.4.12 admission chain: profile gate ->
-        research interests + bounded Ghost continuity + prior evidence-ledger
-        claim refs -> pure projection. Fail-open by contract: any error or a
-        closed gate returns the empty baseline so Research behavior is
-        unchanged; failures leave one bounded ``warn`` reason code in the run
-        trace instead of disappearing silently. The returned payload is
-        digest-only and never contains raw hint text.
-        """
-        try:
-            profile = profile_for_name("research")
-            if not allows_context_source(profile, TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY):
-                return "", None
-            interest_hints = [
-                candidate_to_topic_hint(candidate)
-                for candidate in build_research_interest_candidates(
-                    self.knowledge_store,
-                    session_id=session_id,
-                    project=project,
-                )
-            ]
-            continuity = self._ghost_continuity(project=project, session_id=session_id)
-            projection = project_topic_continuity(
-                interest_hints=interest_hints,
-                continuity_hints=tuple(getattr(continuity, "selected_items", ()) or ()),
-                claim_refs=self._prior_claim_refs(session_id=session_id, project=project),
-            )
-        except cancellation.TaskCancelled:
-            raise
-        except cancellation.DeadlineExceeded:
-            raise
-        except Exception:
-            FailOpenPromptTrace(trace).call(
-                "warn",
-                "research_topic_continuity_projection_failed",
-            )
-            return "", None
-        payload = projection.to_payload()
-        if not projection.admitted:
-            return "", payload
-        return projection.prompt_text, payload
-
-    def _prior_claim_refs(
-        self,
-        *,
-        session_id: str,
-        project: str,
-    ) -> tuple[dict[str, object], ...]:
-        """Bounded claim refs from the durable evidence ledger (refs only).
-
-        Collects up to ``MAX_TOPIC_CLAIM_REFS + 1`` refs: the extra entry is
-        the overflow signal the projection needs to report ``truncated``
-        honestly, without ever carrying claim text.
-        """
-        ledgers = self.evidence_ledgers
-        if ledgers is None:
-            return ()
-        try:
-            snapshot = ledgers.load(session_id=session_id, project=project)
-        except Exception:
-            return ()
-        payload = getattr(snapshot, "payload", None)
-        if not getattr(snapshot, "available", False) or not isinstance(payload, Mapping):
-            return ()
-        refs: list[dict[str, object]] = []
-        for record in list(payload.get("records") or ())[-4:]:
-            for claim_ref in record.get("claim_refs") or ():
-                text = str(claim_ref or "").strip()
-                if not text:
-                    continue
-                refs.append({"ref": f"prior_claim:{text}"})
-                if len(refs) > MAX_TOPIC_CLAIM_REFS:
-                    break
-            if len(refs) > MAX_TOPIC_CLAIM_REFS:
-                break
-        return tuple(refs)
-
-    def _build_research_context(
-        self,
-        frame: RunFrame,
-        request: TaskSubmission,
-        *,
-        proof_question: str,
-        max_turns: int,
-    ) -> ResearchContext:
-        """Assemble the ResearchContext, including continuity admission."""
-        continuity_text, continuity_payload = self._build_research_topic_continuity(
-            session_id=request.session_id,
-            project=frame.project_text,
-            trace=frame.trace,
-        )
-        return ResearchContext(
-            question=request.task,
-            session_id=request.session_id,
-            run_id=frame.run_id,
-            project=frame.project_text,
-            provider_id=frame.provider_id,
-            proof_question=proof_question,
-            permission_profile="research",
-            max_turns=max_turns,
-            chat_handoff=frame.research_handoff,
-            should_stop=self.state.stop_flag.is_set,
-            trace=RunTraceResearchSink(frame.trace),
-            topic_continuity_context=continuity_text,
-            topic_continuity_payload=continuity_payload,
-        )
-
-    def _run_research_pipeline(
-        self,
-        frame: RunFrame,
-        hooks: RunHooks,
-        *,
-        max_turns: int,
-        proof_question: str = "",
-    ):
-        request = frame.request
-        if frame.provider is None:
-            raise RuntimeError("provider is not connected")
-
-        def run_iteration(
-            *,
-            task: str,
-            max_turns: int,
-            chat_handoff: str,
-            search: object,
-            tools=None,
-            iteration_context: str = "",
-            topic_continuity_context: str = "",
-            topic_continuity_payload=None,
-        ):
-            return self._run_research_iteration(
-                provider=frame.provider,
-                session_id=request.session_id,
-                project=frame.project_text,
-                task=task,
-                max_turns=max_turns,
-                on_event=hooks.on_event,
-                stop_flag=self.state.stop_flag,
-                provider_id=frame.provider_id,
-                run_id=frame.run_id,
-                chat_handoff=chat_handoff,
-                trace_recorder=frame.trace,
-                search=search,
-                tools=tools,
-                iteration_context=iteration_context,
-                topic_continuity_context=topic_continuity_context,
-                topic_continuity_payload=topic_continuity_payload,
-            )
-
-        def run_followup(
-            *,
-            tools,
-            plan,
-            material,
-            question: str,
-            initial_summary: str = "",
-            max_context_chars: int = 8000,
-            should_stop=None,
-        ):
-            return run_evidence_followup(
-                provider=frame.provider,
-                tools=tools,
-                plan=plan,
-                material=material,
-                question=question,
-                initial_summary=initial_summary,
-                max_context_chars=max_context_chars,
-                should_stop=should_stop,
-            )
-
-        recorder = getattr(self.state, "record_research_changes", None)
-        changes_sink = recorder if callable(recorder) else None
-        context = self._build_research_context(
-            frame,
-            request,
-            proof_question=proof_question,
-            max_turns=max_turns,
-        )
-        pipeline = ResearchPipeline(
-            context=context,
-            run_iteration=run_iteration,
-            search_factory=self.search_factory,
-            evidence_followup_runner=run_followup,
-            evidence_ledgers=self.evidence_ledgers,
-            config=ResearchPipelineConfig(),
-            ledger_event_sink=lambda result: self._record_evidence_ledger_write(hooks, result),
-            research_changes_sink=changes_sink,
-        )
-        return pipeline.run()
-
-    def _record_evidence_ledger_write(
-        self,
-        hooks: RunHooks,
-        result: EvidenceLedgerWriteResult,
-    ) -> None:
-        payload = result.to_trace_payload()
-        hooks.append_ledger(
-            lambda ledger: ledger.append(
-                "evidence_ledger_write",
-                ok=payload.get("ok"),
-                skipped=payload.get("skipped"),
-                reason_code=payload.get("reason_code"),
-                ledger_ref=payload.get("ledger_ref"),
-                record_id=payload.get("record_id"),
-                counts=payload.get("counts"),
-            )
-        )
-
-    def _handle_project_tool_event(
-        self,
-        *,
-        event: RunEvent,
-        project: str,
-        work: RunWork,
-        run_id: str,
-        update_checkpoint: Callable[
-            [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
-            None,
-        ],
-    ) -> None:
-        call = event.call
-        outcome = event.outcome
-        if call is None or outcome is None:
-            return
-        name = str(call.name or "")
-        if name == "run":
-            command = str(call.args.get("command") or "")
-            cwd = str(call.args.get("path") or ".")
-            ok = bool(outcome.ok and outcome.exit_code == 0)
-            try:
-                tool_index = int(event.metadata.get("tool_index") or 0)
-            except (TypeError, ValueError):
-                tool_index = 0
-            tool_id = f"{event.turn}:{max(0, tool_index)}"
-            if ok and self.project_facts is not None:
-                try:
-                    self.project_facts.record_success(project, cwd, command)
-                except (OSError, ValueError):
-                    pass
-            update_checkpoint(
-                lambda store, item: store.record_run(
-                    item,
-                    command=command,
-                    cwd=cwd,
-                    ok=ok,
-                )
-            )
-            self._record_analysis_run(
-                work=work,
-                project=project,
-                run_id=run_id,
-                tool_id=tool_id,
-                tool_name=name,
-                command=command,
-                cwd=cwd,
-                ok=ok,
-                outcome=outcome,
-            )
-        elif name == "edit" and outcome.ok and outcome.changed:
-            rel = str(call.args.get("path") or "")
-            update_checkpoint(lambda store, item: store.record_edit(item, rel))
-
-    def _record_analysis_run(
-        self,
-        *,
-        work: RunWork,
-        project: str,
-        run_id: str,
-        tool_id: str,
-        tool_name: str,
-        command: str,
-        cwd: str,
-        ok: bool,
-        outcome: Any,
-    ) -> None:
-        """Project one audited run-command execution into the run trace.
-
-        Fail-open by contract: projection or trace failures never affect the
-        running task, its receipt, or the model-visible tool result.
-        """
-
-        trace = work.trace
-        if trace is None or not command:
-            return
-        try:
-            audit = outcome.audit if isinstance(outcome.audit, Mapping) else {}
-            # Only real executions become AnalysisRun records. Policy denials,
-            # invalid cwd, and command-not-found outcomes carry no timing and
-            # must stay out of the execution audit (roadmap: record existing
-            # executions, not attempts).
-            if not audit.get("command_started_at"):
-                return
-            managed = outcome.managed_output()
-            record = analysis_run_record({
-                "run_id": run_id,
-                "tool_id": tool_id,
-                "tool_name": tool_name,
-                "command": command,
-                "cwd": cwd,
-                "project": project,
-                "exit_code": outcome.exit_code,
-                "ok": ok,
-                "started_at": audit.get("command_started_at"),
-                "finished_at": audit.get("command_finished_at"),
-                "duration_ms": audit.get("command_duration_ms"),
-                "managed_output": dict(managed) if managed else {},
-            })
-            if record is None:
-                return
-            record_payload = record.to_payload()
-            trace.record_analysis_run(record_payload)
-            work.analysis_run_payloads.append(record_payload)
-            if len(work.analysis_run_payloads) > MAX_ANALYSIS_RUNS:
-                del work.analysis_run_payloads[:-MAX_ANALYSIS_RUNS]
-
-            artifact_payload: dict[str, object] | None = None
-            if managed:
-                artifact = artifact_ref_from_managed_output({
-                    **managed,
-                    "origin_run_id": run_id,
-                    "produced_by": record.analysis_run_id,
-                })
-                if artifact is not None:
-                    artifact_payload = artifact.to_payload()
-                    trace.record_artifact_refs([artifact_payload])
-                    work.artifact_payloads.append(artifact_payload)
-                    if len(work.artifact_payloads) > MAX_ARTIFACT_REFS:
-                        del work.artifact_payloads[:-MAX_ARTIFACT_REFS]
-
-            capsule = build_reproducibility_capsule(
-                run_id=run_id,
-                analysis_runs=work.analysis_run_payloads,
-                artifacts=work.artifact_payloads,
-            )
-            if capsule is not None:
-                trace.record_reproducibility_capsule(capsule.to_payload())
-        except Exception:
-            return
-
-    def _record_project_memory(
-        self,
-        *,
-        project: str,
-        session_id: str,
-        task: str,
-        files: tuple[str, ...],
-        receipt: str,
-        checks: tuple[object, ...],
-    ) -> None:
-        if self.knowledge_store is None:
-            return
-        try:
-            brief = KnowledgeBriefBuilder(self.knowledge_store).build_for_session(session_id)
-            sources = [brief.synthesis_id] if brief.synthesis_id else []
-            impl = KnowledgeNote.create(
-                type="implementation",
-                title=task[:120] or "Project implementation",
-                body=(
-                    "Implemented project task.\n\n"
-                    f"Files changed:\n{_bullet_lines(files)}\n\n"
-                    f"Receipt:\n{receipt}"
-                ),
-                tags=["project", "implementation", f"session:{session_id}"],
-                sources=sources,
-                session_id=session_id,
-                project=str(Path(project).expanduser().resolve()),
-            )
-            self.knowledge_store.write_note(impl)
-            if checks:
-                verification = KnowledgeNote.create(
-                    type="verification",
-                    title=f"Verification for {task[:80] or 'project task'}",
-                    body="Successful checks:\n" + _bullet_lines(
-                        tuple(f"{item.command} (cwd {item.cwd})" for item in checks)
-                    ),
-                    tags=["project", "verification", f"session:{session_id}"],
-                    sources=[impl.id],
-                    session_id=session_id,
-                    project=str(Path(project).expanduser().resolve()),
-                )
-                self.knowledge_store.write_note(verification)
-                self.knowledge_store.link(impl.id, verification.id, "verifies")
-            if brief.synthesis_id:
-                self.knowledge_store.link(brief.synthesis_id, impl.id, "implements")
-        except (OSError, ValueError):
-            return
+            del work.recent_events[: self.review_log_lines]

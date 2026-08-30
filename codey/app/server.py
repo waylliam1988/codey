@@ -901,6 +901,7 @@ class State:
         project: str | None,
         task: str,
         provider_id: str,
+        run_id: str = "",
         abort_if_stopped: bool = False,
     ) -> RunSnapshot | None:
         """Atomically reserve the single browser task slot.
@@ -916,6 +917,7 @@ class State:
             project=project,
             task=task,
             provider_id=provider_id,
+            run_id=run_id,
             abort_if_stopped=abort_if_stopped,
         )
 

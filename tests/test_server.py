@@ -33,8 +33,7 @@ from codey.providers.local_openai import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
-from codey.operations.task_flow import _project_has_user_files
-from codey.operations.task_flow import TaskFlow
+from codey.operations.project_completion_flow import project_has_user_files
 from codey.toolchain.runtime import ToolOutcome
 from codey.completion.verification_policy import VerificationCandidate
 
@@ -3647,9 +3646,8 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
-            mock.patch.object(
-                TaskFlow,
-                "_run_research_iteration",
+            mock.patch(
+                "codey.operations.research_flow.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
@@ -3763,9 +3761,8 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
-            mock.patch.object(
-                TaskFlow,
-                "_run_research_iteration",
+            mock.patch(
+                "codey.operations.research_flow.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
@@ -3808,9 +3805,8 @@ class SessionThreadingTests(unittest.TestCase):
                 "get_provider",
                 side_effect=[RuntimeError("tab unavailable"), provider],
             ) as get_provider,
-            mock.patch.object(
-                TaskFlow,
-                "_run_research_iteration",
+            mock.patch(
+                "codey.operations.research_flow.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
@@ -3845,9 +3841,8 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
-            mock.patch.object(
-                TaskFlow,
-                "_run_research_iteration",
+            mock.patch(
+                "codey.operations.research_flow.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
@@ -3906,7 +3901,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.operations.task_flow.rank_providers",
+                "codey.operations.project_completion_flow.rank_providers",
                 return_value=("glm", "stepfun"),
             ) as rank,
         ):
@@ -3955,9 +3950,8 @@ class SessionThreadingTests(unittest.TestCase):
                 "get_provider",
                 side_effect=[first, second],
             ) as get_provider,
-            mock.patch.object(
-                TaskFlow,
-                "_run_research_iteration",
+            mock.patch(
+                "codey.operations.research_flow.run_research_iteration",
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
@@ -3972,7 +3966,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.operations.task_flow.rank_providers",
+                "codey.operations.project_completion_flow.rank_providers",
                 return_value=("stepfun", "mimo"),
             ) as rank,
         ):
@@ -4128,7 +4122,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -4254,7 +4248,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
                 mock.patch.dict(
                     sys.modules,
@@ -4387,7 +4381,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.operations.task_flow.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -4478,9 +4472,8 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(
-                    TaskFlow,
-                    "_run_research_iteration",
+                mock.patch(
+                    "codey.operations.research_flow.run_research_iteration",
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
                 mock.patch.object(server, "agent_run") as agent_run,
@@ -4539,9 +4532,8 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(
-                    TaskFlow,
-                    "_run_research_iteration",
+                mock.patch(
+                    "codey.operations.research_flow.run_research_iteration",
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
                 mock.patch.object(
@@ -6230,7 +6222,7 @@ class SessionThreadingTests(unittest.TestCase):
             except OSError as exc:
                 self.skipTest(f"directory symlink unavailable: {exc}")
 
-            self.assertFalse(_project_has_user_files(root_td))
+            self.assertFalse(project_has_user_files(root_td))
 
     def test_run_task_emits_provider_failure_diagnostic_on_error(self) -> None:
         state = server.State()

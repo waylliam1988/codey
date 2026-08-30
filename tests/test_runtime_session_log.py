@@ -348,6 +348,43 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual(operation.seen_context.run_id, "run-1")
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
 
+    def test_scheduler_resumes_existing_open_operation_without_second_start(self) -> None:
+        @dataclass
+        class ResumedOperation:
+            operation_id: str = "op-1"
+            kind: str = "agent"
+            lane: str = "current"
+            intent: OperationIntent = field(
+                default_factory=lambda: OperationIntent("task:1")
+            )
+
+            def run(self, context: OperationContext) -> OperationOutcome:
+                self.seen_context = context
+                return OperationOutcome.aborted(reason="stopped")
+
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            operation = ResumedOperation()
+
+            outcome = OperationScheduler(log).run("s1", "run-1", operation)
+            entries = log.read("s1")
+            projection = reduce_session(entries)
+
+        self.assertEqual(outcome.status, "aborted")
+        self.assertEqual(operation.seen_context.run_id, "run-1")
+        self.assertEqual(
+            [entry.kind for entry in entries if entry.operation_id == "op-1"],
+            ["operation_started", "operation_settled"],
+        )
+        self.assertEqual(projection.operations["op-1"].outcome, "aborted")
+
     def test_scheduler_settles_failed_operation_before_reraising(self) -> None:
         @dataclass
         class FailingOperation:

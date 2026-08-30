@@ -21,6 +21,8 @@ from codey.task.model import TaskSubmission
 from codey.operations.task_flow import TaskFlow
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
+RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
+
 
 class _Provider:
     name = "DeepSeek Web"
@@ -247,7 +249,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
         runner = _runner(state, router_provider_factory=router_factory)
         record = _research_record()
-        runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(
+        research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
                 wrapped_question,
                 "researched",
@@ -259,14 +261,17 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
             ),
         ))
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
     assert state.last_terminal_event["mode"] == "research"
     assert item.id == item_id
     assert item.status == "done"
@@ -288,7 +293,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
         item_id = _seed_research_item(state)
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
         runner = _runner(state, router_provider_factory=router_factory)
-        runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(
+        research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
                 "Should we keep tracking provider recovery?",
                 "researched",
@@ -299,14 +304,17 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
             ),
         ))
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
     assert state.last_terminal_event["mode"] == "research"
     assert item.id == item_id
     assert item.status == "blocked"
@@ -347,7 +355,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
         runner = _runner(state, router_provider_factory=router_factory)
         record = replace(_research_record(), answer_status="partial")
-        runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(
+        research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
                 wrapped_question,
                 "researched",
@@ -359,14 +367,17 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
             ),
         ))
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        with (
+            mock.patch.object(state, "get_provider", return_value=_Provider()),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
-    assert runner._run_research_iteration.call_count == 1
+    assert research_iteration.call_count == 1
     assert state.last_terminal_event["mode"] == "research"
     assert item.id == item_id
     assert item.status == "blocked"
@@ -597,9 +608,12 @@ def test_claimed_item_is_released_on_stop() -> None:
         _seed_research_item(state)
         provider = _Provider()
         runner = _runner(state)
-        runner._run_research_iteration = mock.Mock(side_effect=server.cancellation.TaskCancelled("stop"))
+        research_iteration = mock.Mock(side_effect=server.cancellation.TaskCancelled("stop"))
 
-        with mock.patch.object(state, "get_provider", return_value=provider):
+        with (
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch(RESEARCH_ITERATION, research_iteration),
+        ):
             runner.run(TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]

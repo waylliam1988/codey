@@ -211,9 +211,8 @@ class TamperedFixtureRunTests(unittest.TestCase):
             (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             state = server.State(Path(td) / "state")
             runner = _runner(state, writer, files=("tests/test_mod.py",))
-            with mock.patch.object(
-                TaskFlow,
-                "_record_project_memory",
+            with mock.patch(
+                "codey.operations.project_completion_flow.record_project_memory",
                 autospec=True,
             ) as memory:
                 _run(

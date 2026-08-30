@@ -3248,47 +3248,31 @@ delete/degrade:
   删除生产接线，最多保留 manual harness scorer。
 ```
 
-## 0.5.1 - Run Operation State + Completion Repair Durability v1
+## 0.5.1 - Runtime Session Log Operation State + TaskFlow Decomposition
 
-状态：已落地（2026-08-29，deterministic gate + kill/resume smoke + 全量 pytest
-完成，review 加固后无需 live A/B；changelog 条目在 Unreleased 下，随 release
-commit 再改为正式版本号）。目标是把 0.4.13 的 verified completion / bounded repair 从
-`_run_project_mode` 的函数栈状态，收成一个最小 durable program counter。第一版只覆盖
-coding writer 收尾、CompletionProof、repair admission 和 terminal outcome，不碰
-Research lanes、hooks 或多并发。
+状态：已落地（2026-08-30，focused gates、same-run crash/resume smoke、Ghost deterministic self-tests 和全量 pytest 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，而是把 run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
-### 做什么
-
-新增：
+### 已落地的核心形态
 
 ```text
-codey/run_operation.py
-tests/test_run_operation.py
-tests/test_task_runner_operation_state.py
+TaskSubmission
+  -> TaskRuntime
+  -> OperationScheduler
+  -> RuntimeSessionLog operation_started/effect/settled
+  -> RuntimeOperationStore phase projection
+  -> Run Details / ledger / terminal event
 ```
 
-核心对象：
+operation identity 只保留一条：
 
 ```text
-RunOperationState(
-  schema_version
-  run_id
-  session_id
-  project_ref
-  phase
-  writer_attempt
-  provider_id
-  turn_budget
-  turns_used
-  completion_proof_ref
-  repair_rounds
-  repair_context_ref
-  blocked_reason
-  terminal
-)
+operation_id = task:<hash(run_id)>
+lane         = task:<hash(run_id)>
 ```
 
-第一版 phase 控制在少数几类：
+发布前已删除外层 `runtime:<run_id>` 语义；`TaskRuntime`、`RuntimeOperationStore`、terminal settlement 和 Run Details 共用同一条 task operation。这个选择是有意的，不是 parent/child 过渡结构：一次用户任务只有一条 durable operation，phase effect 与最终 outcome 都挂在同一条 operation 上。
+
+### Phase 事实
 
 ```text
 accepted
@@ -3301,58 +3285,65 @@ repair_settled
 terminal
 ```
 
-落盘方式统一使用 `storage.file_lock.with_file_lock()` 包住 read/compute/write，并通过
-`write_json_atomic()` 写入；纯一次性快照仍可用 atomic write。路径限定在：
+`RuntimeOperationStore.start()` 会恢复同一个 open operation 的最新 phase，不会把 resume 重新写回 `accepted`；相同 phase commit 幂等返回当前 projection，不制造重复 effect。scheduler 负责 open operation 一定 settle：正常返回、stop/cancel、业务异常和未知异常都会先写 settlement，再按调用策略返回或 re-raise。
+
+### TaskFlow 拆分
+
+0.5.1 不追求为了行数漂亮而新建 Manager，而是拆稳定事实边界：
 
 ```text
-state/run_operations/<session_key>/<run_id>.json
+codey.operations.provider_preflight      provider connect / canary / startup failover
+codey.operations.conversation_plan       fresh-chat / handoff / recovered owner prompt
+codey.operations.research_flow           research/hybrid research pipeline handoff
+codey.operations.project_completion_flow coding writer / review cycle / completion proof / repair / receipt
+codey.runtime.terminalizer               terminal task_done event + turn accounting
+codey.task.model                         TaskSubmission / TaskContract model-only boundary
 ```
 
-收益必须在本版直接体现：
+`codey/task/service.py` 已删除；`codey.task` 不导出 `TaskFlow`。`TaskFlow` 现在仍是生产 task envelope：reserve/start/finish、runtime scheduling、mode dispatch、provider/session/trace cleanup、Ghost post-turn sync 仍在这里。project completion 的真实复杂度已经迁出：writer failover、completion proof、edit-integrity、bounded repair、receipt/facts/memory、analysis-run projection 都由 `project_completion_flow.py` 拥有。下一轮如果继续拆，应优先看 Ghost post-turn sync 和 review/planning operation，而不是把已经拆出的 project completion 再包一层。
+
+### Crash / Resume
+
+0.5.1 的 smoke 不再只是“kill 后读最后 phase”。manual self-test 会：
 
 ```text
-crash / stop / provider failure 后能看到最后一个 committed phase
-repair round 不再只能靠局部变量推断是否跑过
-blocked reason、turn budget、proof ref 和 repair admission ref 绑定到同一个 run state
-用户恢复或查看 run details 时能解释“停在 writer、proof、repair 还是 terminal”
+1. 启动真实 headless child run
+2. 等到同一条 task operation 到 writer_running
+3. hard kill child
+4. fresh State / fresh RuntimeOperationStore 读回 writer_running
+5. 用同一个 run_id 重新提交
+6. 验证只有一条 operation_started、同一 lane terminal settled、Details 不显示 stale Progress
 ```
 
-### 边界
+`RuntimeSessionLog.append_many()` 带 batch metadata；reader 忽略不完整尾 batch，下一次 append 会先修剪坏尾，避免 crash mid-batch 留下永久 open lane。
 
-- 不新增 CompletionManager / RepairManager。
-- 不恢复 provider stream。
-- 不重放工具。
-- 不改变 0.4.13 的 prompt、tool result、receipt、SSE 或 UI。
-- 不保存 raw prompt、raw reply、raw stdout/stderr、raw diff 或 source body。
-- terminal 后可以保留一个 bounded terminal snapshot；不要把 operation state 变成长历史。
-
-### 顺手架构优化
+### 冷启动删除项
 
 ```text
-把 completion enforcement 中的 repaired_once / blocked_reason / remaining_turns
-  收成 RunOperationState writer 方法
-TaskRunner 只在 phase 边界调用 state.commit(...)
-_record_completion_proof_trace() 继续是 trace 写入；RunOperationState 只存 proof ref / status
-RunLedger 的 run_finished 和 RunOperationState terminal 必须一致
+删除 codey/task/service.py compatibility facade
+删除独立 codey/run_operation.py JSON register 方案
+删除外层 runtime:<run_id> operation
+删除 TaskFlow.research_iteration_runner 测试注入字段
+删除 TaskFlow._run_project_mode / _handle_project_tool_event / _record_project_memory 私有测试入口
 ```
+
+测试必须迁就新架构：research harness patch `codey.operations.research_flow.run_research_iteration`；project completion 测试 patch `codey.operations.project_completion_flow` 的公开 operation/helper，而不是要求生产类保留旧私有方法。
 
 ### 验证
 
 ```text
-每个 phase 都能 round-trip
-bad schema / wrong run_id / oversize state fail closed
-completion proof failed 后必须先进入 repair_context_admitted 才能 repair_running
-repair_rounds 不能超过 MAX_COMPLETION_REPAIR_ROUNDS
-terminal state 和 final event stop_reason 一致
-crash 在 writer_settled / completion_proof_recorded / repair_running 后重启时能给出诚实恢复摘要
-state payload 不含 raw prompt / reply / stdout / diff / source body
-RunOperationState 不 import agent/provider/tool_runtime/server/ghost
+compileall + ruff 全过
+runtime/effects/session-log/details/operation-state focused tests 通过
+TaskFlow project completion / edit-integrity / completion-enforcement / analysis-run focused tests 通过
+server / run-registry / approval-registry / research / Ghost 相邻测试通过
+manual completion_operation_resume_smoke.py --self-test 通过
+Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
+全量 pytest 3252 passed, 16 skipped in 308.13s
 ```
 
 ### A/B
 
-不需要 live provider A/B。它不改变模型可见内容或工具语义。需要做 deterministic
-crash-position tests 和一条手工 stop/resume smoke。
+不需要 live provider A/B。0.5.1 改的是 runtime fact source、phase projection 和内部 operation 边界；不改变模型可见 prompt、tool schema、provider routing 策略或 repair admission 语义。需要的是 deterministic replay/fixture、same-run resume smoke 和一次全量本地 pytest，这些已经完成。
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 
@@ -3362,12 +3353,13 @@ provider send、tool run、completion repair round。每个真实外部效果前
 
 ### 做什么
 
-新增：
+扩展现有 runtime fact source：
 
 ```text
-codey/effect_log.py
-codey/replay_policy.py
-tests/test_effect_log.py
+codey/runtime/session_log.py
+codey/runtime/effects.py
+codey/runtime/replay_policy.py
+tests/test_runtime_effects.py
 tests/test_tool_replay_policy.py
 tests/test_agent_effect_sandwich.py
 ```
@@ -3431,7 +3423,8 @@ Agent tool loop 的 emit(tool_started) 前先写 tool_call_intent
 record_tool_outcome() 后写 tool_call_settlement
 provider.send(prompt) 前写 provider_send_intent，返回后写 provider_send_settlement
 completion repair failover.run(...) 前后写 repair_round intent/settlement
-RunLedger 的 tool_started/tool_finished 继续服务事实流；EffectLog 服务恢复语义
+RunLedger 的 tool_started/tool_finished 继续服务用户可见事实流；
+RuntimeSessionLog 服务恢复语义，不新增第二套 durable effect log
 ```
 
 ### 验证
@@ -4558,13 +4551,14 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 
 ```text
 1. repair/provider/tool 显式 operation phase
-   -> 新增 codey/run_operation.py
-   -> TaskRunner._run_project_mode 在 writer start/settle、proof record、
-      repair admission/start/settle、terminal 处 commit phase
-   -> state 只存 refs/status/counts/reason，不存 raw 文本
+   -> 已落地到 RuntimeSessionLog + codey.runtime.effects
+   -> TaskRuntime / RuntimeOperationStore 共用单条 task:<hash(run_id)> operation
+   -> project_completion_flow 在 writer start/settle、proof record、
+      repair admission/start/settle、terminal 处 commit phase effect
+   -> effect payload 只存 refs/status/counts/reason，不存 raw 文本
 
 2. provider/tool intent -> effect -> settlement
-   -> 新增 codey/effect_log.py
+   -> 继续沿用 RuntimeSessionLog，不新增第二套 effect_log
    -> provider.send(prompt) 前 commit provider_send_intent，返回后 commit settlement
    -> agent tool loop 在真实 tool 执行前 commit tool_call_intent，结果后 commit settlement
    -> repair failover.run(...) 前后 commit repair_round_intent/settlement

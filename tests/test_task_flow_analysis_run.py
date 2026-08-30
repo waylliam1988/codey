@@ -5,13 +5,15 @@ import unittest
 from unittest import mock
 
 from codey.app import server
-from codey.agents.runner import RunResult
 from codey.operations.context import RunWork
+from codey.operations.project_completion_flow import (
+    ProjectCompletionDeps,
+    handle_project_tool_event,
+)
 from codey.runtime.events import RunEvent
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
-from codey.operations.task_flow import TaskFlow
 
 
 def _outcome(
@@ -48,7 +50,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_successful_run_projects_analysis_artifact_and_capsule(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
             recorder = state.run_traces.open(
                 run_id="run-analysis",
                 session_id="session-analysis",
@@ -59,14 +60,19 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
 
-            runner._handle_project_tool_event(
-                event=_run_event(_outcome(managed_output={
-                    "handle": "out_0001_abc123def456",
-                    "original_bytes": 90000,
-                    "stored_bytes": 40000,
-                    "sha256": "a" * 64,
-                    "stored_truncated": True,
-                })),
+            self._handle_project_event(
+                state,
+                event=_run_event(
+                    _outcome(
+                        managed_output={
+                            "handle": "out_0001_abc123def456",
+                            "original_bytes": 90000,
+                            "stored_bytes": 40000,
+                            "sha256": "a" * 64,
+                            "stored_truncated": True,
+                        }
+                    )
+                ),
                 project=str(td),
                 work=work,
                 run_id="run-analysis",
@@ -104,7 +110,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_failed_run_records_failure_and_skips_project_facts(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
             recorder = state.run_traces.open(
                 run_id="run-failed",
                 session_id="session-analysis",
@@ -115,7 +120,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
             checkpoints: list[tuple[str, str, str, bool]] = []
 
-            runner._handle_project_tool_event(
+            self._handle_project_event(
+                state,
                 event=_run_event(_outcome(ok=False, exit_code=2)),
                 project=str(td),
                 work=work,
@@ -135,7 +141,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_edit_event_keeps_checkpoint_branch_without_analysis_run(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
             recorder = state.run_traces.open(
                 run_id="run-edit",
                 session_id="session-analysis",
@@ -147,7 +152,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             checkpoints: list[tuple[str, str, str, bool]] = []
             outcome = ToolOutcome("saved", True, changed=True)
 
-            runner._handle_project_tool_event(
+            self._handle_project_event(
+                state,
                 event=RunEvent.tool_finished(
                     turn=1,
                     call=ToolCall(name="edit", args={"path": "snake.py"}),
@@ -171,7 +177,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
             recorder = state.run_traces.open(
                 run_id="run-denied",
                 session_id="session-analysis",
@@ -188,7 +193,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 audit={"error_code": "policy_denied"},
                 error_code="policy_denied",
             )
-            runner._handle_project_tool_event(
+            self._handle_project_event(
+                state,
                 event=_run_event(denied),
                 project=str(td),
                 work=work,
@@ -207,7 +213,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_timed_out_execution_is_recorded_as_failed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
             recorder = state.run_traces.open(
                 run_id="run-timeout",
                 session_id="session-analysis",
@@ -228,7 +233,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 },
                 error_code="timeout",
             )
-            runner._handle_project_tool_event(
+            self._handle_project_event(
+                state,
                 event=_run_event(timed_out),
                 project=str(td),
                 work=work,
@@ -247,7 +253,6 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     def test_trace_failures_fail_open(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
-            runner = self._runner(state)
 
             class _ExplodingTrace:
                 def record_analysis_run(self, _payload):
@@ -255,7 +260,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
             work = RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=_ExplodingTrace())
 
-            runner._handle_project_tool_event(
+            self._handle_project_event(
+                state,
                 event=_run_event(_outcome()),
                 project=str(td),
                 work=work,
@@ -280,27 +286,21 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
         return update_checkpoint
 
-    def _runner(self, state: server.State) -> TaskFlow:
-        return TaskFlow(
-            state,
-            agent_run=mock.Mock(return_value=RunResult("done", "done", 1)),
-            collect_changes=mock.Mock(return_value={
-                "ok": True,
-                "changed_count": 0,
-                "files": [],
-                "diff": "",
-            }),
-            run_review=mock.Mock(return_value=None),
+    def _handle_project_event(
+        self,
+        state: server.State,
+        **kwargs,
+    ) -> None:
+        deps = ProjectCompletionDeps(
+            state=state,
+            agent_run=mock.Mock(),
+            collect_changes=mock.Mock(),
+            run_review=mock.Mock(),
             capture_provider_failure=server.capture_provider_failure,
+            commit_run_operation=mock.Mock(),
             project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            is_git_repository=lambda _project: True,
         )
+        handle_project_tool_event(deps, **kwargs)
 
 
 if __name__ == "__main__":

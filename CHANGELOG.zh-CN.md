@@ -19,6 +19,10 @@
     chat operation 和 prompt/local-context trace helper 也从 `TaskFlow`
     迁出。chat prompt 组装、consensus handoff、provider session 收束和 reply
     emission 现在有明确 operation owner。
+  - project completion 执行迁入
+    `codey.operations.project_completion_flow`：writer failover、completion
+    proof evaluation、bounded repair admission、receipt/facts/memory 写入和
+    analysis-run projection 不再落在 `TaskFlow` 上。
   - task 包边界与 operation flow 分开：`codey.task` 只保留 submission model，
     `codey.operations.task_flow` 是任务 operation flow 的所有者。
   - 新增 Pi 风格 runtime kernel：typed operation outcome、operation
@@ -31,16 +35,18 @@
     engine 输出，不再内联重建这条决策链。
   - terminal `task_done` 事件构造和 terminal turn 计数移入
     `codey.runtime.terminalizer`，stop/error/done 共用同一个终态投影。
-  - runtime submission identity 对齐：TaskRuntime 现在调度与详细 phase
-    projection、terminal event 相同的已 reserve `run_*` id，不再生成另一条
-    submit-local operation id。
+  - runtime submission identity 对齐：TaskRuntime、RuntimeOperationStore、
+    terminal settlement 和 Run Details 现在为每个已 reserve 的 `run_*` id
+    共用一条 `task:<hash(run_id)>` operation/lane。发布前删除了外层
+    `runtime:<run_id>` operation 语义，所以一个 task 只有一个 runtime
+    operation。
   - runtime operation tracking 保持解释性、fail-open：如果严格 phase fact
     校验拒绝了 malformed proof projection，用户可见任务结果不受影响，
     operation projection 停在最后一个合法 phase。
-  - TaskRuntime 外层 `runtime:<run_id>` operation 现在由用户可见 terminal
-    event 决定 outcome：`done` 是 completed，`stopped` 是 aborted，
-    `approval` 是 suspended，其他 stop reason 都是 failed。任务函数如果返回
-    但没有 terminal outcome，会记录为 failed，而不是 completed。
+  - TaskRuntime 的单条 task operation 现在由用户可见 terminal event 决定
+    outcome：`done` 是 completed，`stopped` 是 aborted，`approval` 是
+    suspended，其他 stop reason 都是 failed。任务函数如果返回但没有
+    terminal outcome，会记录为 failed，而不是 completed。
   - runtime scheduling 如果在 task executor 进入前失败，会释放已 reserve 的
     app run slot。首次 runtime-log append 失败不会再让 UI 永久 busy。
   - Runtime log 的 `append_many()` 行现在带 batch metadata。reader 会忽略
@@ -48,7 +54,8 @@
     中途不会留下永久 open lane。
   - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
     存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
-    `Progress` 行。
+    `Progress` 行。terminal runtime state 也能在没有 ledger/trace 时提供最小
+    Work/Model 解释，但不会显示过期的 Progress。
   - RunRegistry 构建 `/api/state` snapshot 时不再在内部锁里调用 approval
     callback。
   - Research 和 hybrid terminal event 现在把原始任务 turn budget 写入
@@ -61,6 +68,10 @@
   - 新增共享 browser-provider stable-completion loop，并迁移 DeepSeek 与
     StepFun。两个 driver 都改用 `ProviderSendContext.record_response()`，
     不再手写 `ctx.last`，stable-response 计数集中到一处。
+  - project completion 测试现在直接面向 operation module：analysis-run
+    projection、repair 常量、verification candidate selection 和 writer
+    failover ranking 的 patch 点都已迁移。生产代码不再为了测试保留
+    `TaskFlow` 私有方法入口。
 - 审查后的冷启动清理：
   - A/B harness 的 git-state 读取改成 bytes 路径，未跟踪的中文文件名不会再在
     Windows locale 解码阶段把全量 pytest 打红。
@@ -115,6 +126,10 @@
     原子追加到 runtime log；后续 phase commit 只追加一个 `run_phase`
     effect，terminal 时再追加一个匹配的 `operation_settled` outcome。
     不存在第二套 JSON 寄存器、迁移路径或旧格式 lookup。
+  - 对已经 open 的同一个 run 再次 start，会恢复同一条 operation 的最新
+    phase，不会追加第二个 start，也不会倒回 `accepted`。manual crash/resume
+    smoke 现在会在 `writer_running` 硬 kill，然后用同一个 `run_id` 继续到
+    terminal，并验证 lane 已关闭。
   - phase 合同仍然封闭：
     `accepted -> writer_running -> writer_settled -> completion_proof_recorded
     -> (repair_context_admitted -> repair_running -> repair_settled)* ->
@@ -144,6 +159,12 @@
   类型化的 `RepairContextProjection | None`；blocked reason 的长三元链移入
   `codey/completion/decision.py` 的纯函数 `completion_blocked_reason()`，
   封闭词表由测试锁住。
+- 按稳定边界继续拆 TaskFlow，但不新增 Manager：
+  `provider_preflight.py`、`conversation_plan.py`、`research_flow.py` 和
+  `project_completion_flow.py` 分别承接 provider 启动、handoff 规划、
+  Research/Hybrid 编排与 completion helper 投影。`TaskFlow` 上测试专用的
+  Research iteration 字段已删除；测试和 manual harness 直接 patch
+  `codey.operations.research_flow.run_research_iteration`。
 - event matrix 注册 `runtime_operation.state` 行，durable state 是
   `runtime_session_log`。`State.forget_conversation()` 现在会删除该 session
   的 runtime log bucket。不加 Manager 类，不做 provider/tool replay，不改
