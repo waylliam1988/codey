@@ -9,6 +9,66 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.1 Post-review Cold-start Cleanup (2026-08-30)
+
+Scope:
+
+```text
+production: JSON tool codec think-block parsing; SSE replay cursor trigger;
+            completion repair blocked-reason derivation; removal of production
+            completion-enforcement old arms; removal of production
+            capability_registry; relocation of the research benchmark scorer
+            from codey.research to tools/research_benchmark
+harness:    CJK-safe A/B git-state capture; current-arm-only completion
+            benchmark execution; event-matrix scanner coverage; research
+            benchmark scorer imports
+mode:       deterministic local gate + full local pytest; no release, no GitHub push
+```
+
+Focused and related gates before the final full run:
+
+```text
+python -B -m pytest -q tests/test_json_codec.py tests/test_manual_ab_harness_common.py \
+  tests/test_task_runner_completion_enforcement.py tests/test_task_runner_operation_state.py
+58 passed, 6 subtests passed in 9.98s
+
+python -B -m pytest -q tests/test_server.py -k "replay_events_after or sse_"
+5 passed, 180 deselected in 1.30s
+
+python -B -m pytest -q tests/test_completion_enforcement_ab.py
+14 passed in 3.59s
+
+python -B -m pytest -q tests/test_event_matrix.py tests/test_architecture.py \
+  tests/test_research_benchmark_scorer.py tests/test_research_benchmark_suite.py \
+  tests/test_longitudinal_research_harness_ab.py tests/test_research_comparison_benchmark_ab.py
+106 passed, 444 subtests passed in 9.51s
+
+python -B -m pytest -q tests/test_json_codec.py tests/test_manual_ab_harness_common.py \
+  tests/test_completion_enforcement_ab.py tests/test_server.py \
+  tests/test_task_runner_completion_enforcement.py tests/test_task_runner_operation_state.py \
+  tests/test_event_matrix.py tests/test_architecture.py tests/test_research_benchmark_scorer.py \
+  tests/test_research_benchmark_suite.py tests/test_longitudinal_research_harness_ab.py \
+  tests/test_research_comparison_benchmark_ab.py
+362 passed, 1 skipped, 450 subtests passed in 47.61s
+
+python -B -m ruff check codey tests tools
+All checks passed
+
+python -B -m compileall -q codey tests tools
+passed
+
+git diff --check
+passed; Git emitted CRLF/LF normalization warnings only
+```
+
+Final full local pytest (Windows, Python 3.12, 2026-08-30, after updating
+TEST_REPORT only once the full run had passed):
+
+```text
+python -B -m pytest -q
+3262 passed, 17 skipped, 1263 subtests passed in 287.86s (0:04:47)
+```
+
 ## 0.5.1 Cold-start Audit Hardening (2026-08-30)
 
 Scope:

@@ -174,6 +174,11 @@ def _parse_sse_event_id(value: object) -> int:
     return max(0, parsed)
 
 
+def _sse_replay_cursor(value: object) -> int | None:
+    parsed = _parse_sse_event_id(value)
+    return parsed if value is not None and parsed > 0 else None
+
+
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
     supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
@@ -2373,17 +2378,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        last_event_id = _parse_sse_event_id(self.headers.get("Last-Event-ID"))
+        replay_cursor = _sse_replay_cursor(self.headers.get("Last-Event-ID"))
         q = STATE.subscribe()
         try:
             if not self._write_sse_event({"type": "hello", "status": STATE.status}):
                 return
-            for event_id, replay in STATE.replay_events_after(
-                last_event_id,
-                max_event_id=q.replay_cutoff,
-            ):
-                if not self._write_sse_event(replay, event_id=event_id):
-                    return
+            if replay_cursor is not None:
+                for event_id, replay in STATE.replay_events_after(
+                    replay_cursor,
+                    max_event_id=q.replay_cutoff,
+                ):
+                    if not self._write_sse_event(replay, event_id=event_id):
+                        return
             while True:
                 try:
                     ev = q.get(timeout=15)

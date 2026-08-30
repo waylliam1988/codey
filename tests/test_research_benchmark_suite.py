@@ -36,7 +36,7 @@ def test_development_helper_never_returns_held_out_cases(
 def test_every_case_pins_at_least_one_boolean_gate_observable(
     suite: validator.BenchmarkSuite,
 ) -> None:
-    from codey.research.regression_gate import OBSERVABLE_NAMES
+    from tools.research_benchmark.scorer import OBSERVABLE_NAMES
 
     for case_id in suite.cases:
         expectations = suite.case_expectations(case_id)

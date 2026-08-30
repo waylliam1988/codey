@@ -2089,6 +2089,46 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(replay[0][1]["reason"], "sse_replay_window_expired")
         self.assertEqual([item["seq"] for _, item in replay[1:]], [2, 3])
 
+    def test_sse_replay_cursor_requires_positive_header(self) -> None:
+        self.assertIsNone(server._sse_replay_cursor(None))
+        self.assertIsNone(server._sse_replay_cursor(""))
+        self.assertIsNone(server._sse_replay_cursor("0"))
+        self.assertIsNone(server._sse_replay_cursor("-1"))
+        self.assertIsNone(server._sse_replay_cursor("not-an-id"))
+        self.assertEqual(server._sse_replay_cursor("7"), 7)
+
+    def test_sse_initial_connect_does_not_replay_history(self) -> None:
+        state = server.State()
+        state.emit({"type": "info", "seq": 1})
+        original_replay = state.replay_events_after
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/events")
+                response = conn.getresponse()
+                lines: list[str] = []
+                while True:
+                    line = response.fp.readline().decode("utf-8", "replace")
+                    if not line.strip():
+                        break
+                    lines.append(line)
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(any('"type": "hello"' in line for line in lines), lines)
+        replay.assert_not_called()
+
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
 

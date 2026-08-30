@@ -23,7 +23,7 @@ from typing import Any, Mapping
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.research.regression_gate import (
+from tools.research_benchmark.scorer import (
     CRITERION_NAMES,
     METRIC_NAMES,
     OBSERVABLE_NAMES,

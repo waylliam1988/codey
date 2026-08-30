@@ -1,7 +1,7 @@
 {
   "suite": "research_benchmark",
   "version": 1,
-  "description": "Frozen longitudinal research benchmark v1: six fixed cases across the roadmap topic categories, split into development and held-out. Expected observables use the shared codey.research.regression_gate vocabulary.",
+  "description": "Frozen longitudinal research benchmark v1: six fixed cases across the roadmap topic categories, split into development and held-out. Expected observables use the shared tools.research_benchmark.scorer vocabulary.",
   "development_cases": [
     "stale_claim_refresh",
     "conflicting_evidence_gap",

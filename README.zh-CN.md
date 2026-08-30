@@ -809,7 +809,7 @@ codey/
     context.py              狭窄的 ResearchPipeline context/config 和 trace sink
     pipeline.py             Research 生命周期 owner 和 bounded follow-up 编排
     topic_continuity.py     有界、非证据的 continuity 和 topic candidate 投影
-    regression_gate.py      确定性的评测脊柱 regression read model
+    tools/research_benchmark/scorer.py  确定性的评测脊柱 regression read model
     http_redirects.py       connector 和 PDF fetch 共用的 no-redirect HTTP helper
     plan_executor.py        有界 fresh-material ResearchPlan 执行器
     evidence_followup.py    单轮 knowledge_write-only evidence 提取

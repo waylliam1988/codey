@@ -40,7 +40,7 @@ from typing import Any, Mapping, Sequence
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.research.regression_gate import ResearchRegressionReport
+from tools.research_benchmark.scorer import ResearchRegressionReport
 from tests.manual.ab_harness_common import write_json_atomic
 from tests.manual.longitudinal_research_harness_ab import (
     QUESTION,

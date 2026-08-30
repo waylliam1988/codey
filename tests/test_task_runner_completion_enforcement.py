@@ -9,10 +9,11 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_runner as task_runner_module
 from codey.agents.runner import RunResult
+from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
-from codey.app import task_runner as task_runner_module
 from codey.app.task_runner import (
     COMPLETION_REPAIR_FOLLOWUP,
     _COMPLETION_BLOCKED_NOTE,
@@ -132,6 +133,7 @@ def _runner(state: server.State, writer: ScriptedWriter) -> TaskRunner:
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
+        run_operations=state.run_operations,
         evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
@@ -345,7 +347,7 @@ def test_unobserved_verification_blocks_without_any_repair() -> None:
         assert manifest["completion_repair_context"] == []
 
 
-def test_forbidden_verification_allows_limited_done_in_block_mode() -> None:
+def test_forbidden_verification_allows_limited_done() -> None:
     writer = ScriptedWriter(([_edit_event()], RunResult("changed", "done", 2)))
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -353,17 +355,16 @@ def test_forbidden_verification_allows_limited_done_in_block_mode() -> None:
         state = server.State(Path(td) / "state")
         runner = _runner(state, writer)
 
-        with mock.patch.object(task_runner_module, "COMPLETION_ENFORCEMENT_MODE", "block"):
-            with mock.patch.object(state, "get_provider", return_value=_Provider()):
-                runner.run(TaskRequest(
-                    "s-enforce",
-                    str(project),
-                    "In src/mod.py change VALUE from 1 to 2. Do not run any commands; report done once edited.",
-                    6,
-                    False,
-                    "deepseek",
-                    intent="project",
-                ))
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner.run(TaskRequest(
+                "s-enforce",
+                str(project),
+                "In src/mod.py change VALUE from 1 to 2. Do not run any commands; report done once edited.",
+                6,
+                False,
+                "deepseek",
+                intent="project",
+            ))
 
         event = dict(state.last_terminal_event)
 
@@ -620,6 +621,12 @@ def test_repair_phase_ending_in_max_turns_becomes_blocked() -> None:
 
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "blocked"
+        assert "no turn budget remains" in str(event["summary"])
+        assert state.run_operations is not None
+        operation = state.run_operations.load("s-enforce", event["run_id"])
+        assert operation is not None
+        assert operation.terminal is not None
+        assert operation.terminal.blocked_reason == BLOCKED_TURN_BUDGET_EXHAUSTED
 
 
 def test_user_stop_during_repair_stays_stopped_not_fake_done() -> None:
@@ -635,55 +642,6 @@ def test_user_stop_during_repair_stays_stopped_not_fake_done() -> None:
         assert len(writer.calls) == 2
         assert event["stop_reason"] == "stopped"
         assert "[Completion blocked:" not in event["summary"]
-
-
-def test_off_mode_reproduces_0_4_12_control_semantics() -> None:
-    # Control arm of the A/B: shadow proof stays trace-only and the old
-    # receipt semantics hold -- with no verification candidate at all, the
-    # claimed green survives into the receipt (exactly what enforcement
-    # removes under "repair").
-    writer = ScriptedWriter((
-        [_edit_event()],
-        RunResult("trust me", "done", 2, checks_passed=True),
-    ))
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        project = Path(td) / "project"
-        (project / "src").mkdir(parents=True)
-        state = server.State(Path(td) / "state")
-        with mock.patch.object(task_runner_module, "COMPLETION_ENFORCEMENT_MODE", "off"):
-            event = _run(_runner(state, writer), state, project)
-
-        assert len(writer.calls) == 1
-        assert event["stop_reason"] == "done"
-        assert "[Completion blocked:" not in str(event["summary"])
-        # Legacy control semantics: the claim survives when no candidate
-        # exists to override it -- this is exactly what enforcement removes.
-        assert event["receipt"]["verification"]["checks_passed"] is True
-        # The shadow proof is still recorded for measurement.
-        manifest = _trace_payload(state)
-        assert manifest["completion_proofs"][0]["status"] == "blocked"
-        assert manifest["completion_repair_context"] == []
-
-
-def test_block_arm_names_repair_not_admitted_not_max_repair_rounds() -> None:
-    # The proof_only_block arm never runs a repair round, so its blocked
-    # note must not borrow the repair-budget vocabulary: A/B interpretation
-    # reads these notes.
-    writer = ScriptedWriter((
-        [_edit_event(), _run_event(False)],
-        RunResult("trust me", "done", 2),
-    ))
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        project = _pytest_project(Path(td))
-        state = server.State(Path(td) / "state")
-        with mock.patch.object(task_runner_module, "COMPLETION_ENFORCEMENT_MODE", "block"):
-            event = _run(_runner(state, writer), state, project)
-
-        assert len(writer.calls) == 1
-        assert event["stop_reason"] == "blocked"
-        summary = str(event["summary"])
-        assert "admits no repair round" in summary
-        assert "after the repair round" not in summary
 
 
 def test_blocked_note_vocabulary_is_closed() -> None:

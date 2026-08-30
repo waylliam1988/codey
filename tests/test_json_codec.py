@@ -22,3 +22,16 @@ def test_parse_deduplicates_repeated_tool_calls() -> None:
     assert [call.name for call in plan.calls] == ["read"]
     assert plan.control is not None
     assert plan.control.kind == "continue"
+
+
+def test_parse_preserves_literal_think_tags_inside_json_strings() -> None:
+    plan = JsonToolCodec().parse(
+        '{"tool":"edit","args":{"path":"docs/<think>x</think>.md",'
+        '"old_string":"old","new_string":"<think>keep</think>"}}'
+    )
+
+    assert [call.name for call in plan.calls] == ["edit"]
+    assert plan.calls[0].args == {
+        "path": "docs/<think>x</think>.md",
+        "replacements": [{"search": "old", "replace": "<think>keep</think>"}],
+    }

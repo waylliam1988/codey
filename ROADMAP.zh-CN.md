@@ -2288,7 +2288,7 @@ smoke；影响模型输出时做小型 A/B。
 ## 0.4.11 - Longitudinal Research Harness + Comparison Benchmark v1
 
 状态：已完成（deterministic v1；未宣称现实正确性证明）。0.4.11 落地的是评测
-脊柱：固定 fixture 套件、纯 read-model 回归门（`codey/research/regression_gate.py`）、
+脊柱：固定 fixture 套件、纯 read-model 回归门（`tools/research_benchmark/scorer.py`）、
 纵向研究 harness、comparison benchmark、manual A/B 共用层。它只证明 Codey
 观察到了什么、验证了什么、哪些指标没有回退；"surpassed OpenScience" 措辞由
 代码门禁控制，必须存在真实 head-to-head artifact 才允许出现。

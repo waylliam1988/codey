@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -488,6 +490,38 @@ def test_arm_manifest_accepts_provider_failure_class(tmp_path: Path) -> None:
     )
 
     assert manifest["provider_error_class"] == common.PROVIDER_FAILURE_NATIVE_SEARCH_STALL
+
+
+def test_git_state_handles_untracked_cjk_paths(tmp_path: Path) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+    (tmp_path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, capture_output=True, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "user.name=Codey Test",
+            "commit",
+            "-m",
+            "init",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=True,
+    )
+    cjk_path = tmp_path / "docs" / "中文.md"
+    cjk_path.parent.mkdir()
+    cjk_path.write_text("untracked\n", encoding="utf-8")
+
+    state = common.git_state(tmp_path)
+
+    assert len(state["git_commit"]) >= 7
+    assert state["git_dirty"] is True
 
 
 def test_open_journal_for_output_records_resume_attempt(tmp_path: Path) -> None:

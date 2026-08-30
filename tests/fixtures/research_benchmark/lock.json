@@ -12,6 +12,6 @@
     "files/local_report.pdf": "sha256:4277d21dc9c59835af8ad4a38042a338c9dca89cc579526a2a4eab13cf2e2aa6",
     "files/local_table.csv": "sha256:f900c54ef590345942e5f295ffe4221cd241ae0353f349bc61537346edb19527",
     "rubric.json": "sha256:e83f95eb8bb4033c3b81fe46fe3d5389daa1b02282c975c2b73139231011d8b5",
-    "suite.json": "sha256:b079c43191e53c0291fa69e974db27cc30e3db09a6584f56fbee077ac4b9e27d"
+    "suite.json": "sha256:bf6f1020c3f7af369a5ce4d47b4bd3093759b989f5a9047e96af50773ebb77ff"
   }
 }

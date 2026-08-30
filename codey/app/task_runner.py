@@ -141,7 +141,6 @@ from codey.reviews.impact_map import safe_review_impact_map
 from codey.policies.shell_risk import classify_shell_risk
 from codey.completion.verification_map import render_verification_map
 from codey.completion.verification_policy import (
-    check_covers_selected_candidate,
     select_verification_candidate,
     selected_verification_candidate_lines,
     verification_candidate_lines,
@@ -419,16 +418,6 @@ def _research_queue_item_title(item: GhostWorkItem | None) -> str:
 # repair-context loop works, small enough that a model stuck in a wrong
 # local optimum cannot turn Codey into a self-consuming machine.
 MAX_COMPLETION_REPAIR_ROUNDS = 1
-
-# Verified Completion Enforcement stage (A/B treatment definition):
-#   "off"    -> 0.4.12 control: shadow proof is trace-only, done unchanged;
-#   "block"  -> proof blocks unverifiable done, no repair context admitted;
-#   "repair" -> full v1: one bounded repair-context round for product failures.
-# Production ships "repair"; the A/B harness overrides the constant per arm.
-ENFORCEMENT_OFF = "off"
-ENFORCEMENT_BLOCK = "block"
-ENFORCEMENT_REPAIR = "repair"
-COMPLETION_ENFORCEMENT_MODE = ENFORCEMENT_REPAIR
 
 COMPLETION_REPAIR_FOLLOWUP = (
     "Continue with the established project and JSON tool protocol.\n\n"
@@ -3309,8 +3298,7 @@ class TaskRunner:
                 if item.get("path")
             )
             if (
-                COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
-                and not files
+                not files
                 and change_state(changes) is None
                 and work.evidence.changed_files
             ):
@@ -3445,8 +3433,7 @@ class TaskRunner:
         repaired_once = False
         remaining_turns = request.max_turns - result.turns
         if (
-            COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
-            and proof is not None
+            proof is not None
             and not proof.satisfied
             and not state.stop_flag.is_set()
             and remaining_turns > 0
@@ -3456,163 +3443,140 @@ class TaskRunner:
                 max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
             )
         ):
-            if COMPLETION_ENFORCEMENT_MODE == ENFORCEMENT_BLOCK:
-                # Treatment arm without repair admission: the failed proof
-                # blocks done below, but no failure facts go back to the
-                # model and no extra writer turn runs.
-                repaired_once = False
-            else:
-                projection = project_repair_context(
-                    proof=proof.to_payload(),
-                    failure_class=decision.failure_class,
-                    decisive_checks=(
-                        decisive_failure_fact(
-                            selected_check,
-                            work.evidence,
-                            files,
-                            root=project,
-                        ),
-                    ),
-                    changed_files=files,
-                    analysis_run_refs=decision.analysis_run_refs,
-                )
-                if not projection.admitted:
-                    blocked_reason = "repair_context_unavailable"
-                else:
-                    repair_projection = projection
-                    self._commit_run_operation(
-                        work,
-                        lambda state: mark_repair_context_admitted(
-                            state,
-                            context_ref=str(projection.to_payload().get("digest") or ""),
-                        ),
-                    )
-                    hooks.on_event(RunEvent.status(
-                        "[runner] completion proof did not pass; running one bounded repair round."
-                    ))
-                    self._commit_run_operation(
-                        work,
-                        lambda state: mark_repair_running(
-                            state,
-                            provider_id=frame.provider_id,
-                        ),
-                    )
-                    try:
-                        repair_result = failover.run(
-                            task=COMPLETION_REPAIR_FOLLOWUP,
-                            turn_budget=remaining_turns,
-                            fresh=False,
-                            handoff="",
-                            checkpoint=refresh_checkpoint_view(),
-                        )
-                    except cancellation.TaskCancelled:
-                        raise
-                    except ProviderActionError:
-                        blocked_reason = "provider_failure"
-                        self._commit_run_operation(
-                            work,
-                            lambda state: mark_repair_settled(
-                                state,
-                                provider_id=frame.provider_id,
-                                stop_reason="",
-                                blocked_reason="provider_failure",
-                            ),
-                        )
-                    else:
-                        repair_blocked_reason = (
-                            ""
-                            if repair_result.stop_reason in {"done", "approval", "stopped"}
-                            else "max_repair_rounds"
-                        )
-                        self._commit_run_operation(
-                            work,
-                            lambda state: mark_repair_settled(
-                                state,
-                                provider_id=frame.provider_id,
-                                stop_reason=repair_result.stop_reason,
-                                turns_used=result.turns + repair_result.turns,
-                                blocked_reason=repair_blocked_reason,
-                            ),
-                        )
-                        if repair_blocked_reason:
-                            blocked_reason = repair_blocked_reason
-                    finally:
-                        repair_projection = None
-                    repaired_once = not blocked_reason
-                    if repaired_once:
-                        # The repair is bounded by the shared remaining turn
-                        # budget, so the sum can never exceed max_turns.
-                        turns = result.turns + repair_result.turns
-                        if repair_result.stop_reason == "stopped":
-                            result = replace(repair_result, turns=turns)
-                        elif repair_result.stop_reason == "done":
-                            # Re-collect post-repair facts; the new proof decides.
-                            task_changes = self.collect_changes(project, tracker)
-                            collected = change_state(task_changes)
-                            if collected is not None:
-                                task_changed = collected
-                            task_changed, files = enforcement_scope(
-                                task_changes,
-                                task_changed,
-                            )
-                            verification_candidates = safe_verification_candidates(
-                                project,
-                                verification_verified_commands,
-                                resumed_verification_commands,
-                                configured_verification_commands,
-                                configured_ignored_paths,
-                            )
-                            selected_check = (
-                                select_verification_candidate(verification_candidates, files)
-                                if files
-                                else None
-                            )
-                            result = RunResult(
-                                summary=repair_result.summary,
-                                stop_reason="done",
-                                turns=turns,
-                                checks_passed=False,
-                                changed=result.changed or repair_result.changed,
-                                checks_ran=result.checks_ran or repair_result.checks_ran,
-                            )
-                            decision, integrity = completion_evidence(
-                                changes=task_changes,
-                                changed=task_changed,
-                                scope_files=files,
-                                check=selected_check,
-                                stop=result.stop_reason,
-                            )
-                            proof = decision.proof
-                            _record_completion_proof_trace(frame.trace, proof)
-                            _record_edit_integrity_trace(frame.trace, integrity)
-                            commit_operation_proof(proof)
-                        else:
-                            result = replace(repair_result, turns=turns)
-
-        if COMPLETION_ENFORCEMENT_MODE == ENFORCEMENT_OFF:
-            # 0.4.12 control semantics: the shadow proof stays trace-only and
-            # the narrow local-green override decides the receipt, exactly as
-            # before enforcement existed.
-            legacy_green = bool(
-                selected_check is not None
-                and work.evidence.observed_tool_events
-                and any(
-                    check_covers_selected_candidate(
+            projection = project_repair_context(
+                proof=proof.to_payload(),
+                failure_class=decision.failure_class,
+                decisive_checks=(
+                    decisive_failure_fact(
                         selected_check,
-                        item.command,
-                        item.cwd,
+                        work.evidence,
                         files,
                         root=project,
-                    )
-                    for item in work.evidence.successful_checks
-                )
+                    ),
+                ),
+                changed_files=files,
+                analysis_run_refs=decision.analysis_run_refs,
             )
-            if selected_check is not None and work.evidence.observed_tool_events:
-                result = replace(result, checks_passed=legacy_green)
-            # Control keeps the pre-enforcement receipt flag untouched
-            # (override when a decisive local green existed, else the
-            # model-reported value): nothing else may contaminate the arm.
-        elif (
+            if not projection.admitted:
+                blocked_reason = "repair_context_unavailable"
+            else:
+                repair_projection = projection
+                self._commit_run_operation(
+                    work,
+                    lambda state: mark_repair_context_admitted(
+                        state,
+                        context_ref=str(projection.to_payload().get("digest") or ""),
+                    ),
+                )
+                hooks.on_event(RunEvent.status(
+                    "[runner] completion proof did not pass; running one bounded repair round."
+                ))
+                self._commit_run_operation(
+                    work,
+                    lambda state: mark_repair_running(
+                        state,
+                        provider_id=frame.provider_id,
+                    ),
+                )
+                try:
+                    repair_result = failover.run(
+                        task=COMPLETION_REPAIR_FOLLOWUP,
+                        turn_budget=remaining_turns,
+                        fresh=False,
+                        handoff="",
+                        checkpoint=refresh_checkpoint_view(),
+                    )
+                except cancellation.TaskCancelled:
+                    raise
+                except ProviderActionError:
+                    blocked_reason = "provider_failure"
+                    self._commit_run_operation(
+                        work,
+                        lambda state: mark_repair_settled(
+                            state,
+                            provider_id=frame.provider_id,
+                            stop_reason="",
+                            blocked_reason="provider_failure",
+                        ),
+                    )
+                else:
+                    repair_blocked_reason = ""
+                    if repair_result.stop_reason not in {"done", "approval", "stopped"}:
+                        repair_remaining_turns = (
+                            request.max_turns - result.turns - repair_result.turns
+                        )
+                        repair_blocked_reason = completion_blocked_reason(
+                            proof_status=proof.status,
+                            failure_class=decision.failure_class,
+                            remaining_turns=repair_remaining_turns,
+                            repair_rounds=1,
+                        )
+                    self._commit_run_operation(
+                        work,
+                        lambda state: mark_repair_settled(
+                            state,
+                            provider_id=frame.provider_id,
+                            stop_reason=repair_result.stop_reason,
+                            turns_used=result.turns + repair_result.turns,
+                            blocked_reason=repair_blocked_reason,
+                        ),
+                    )
+                    if repair_blocked_reason:
+                        blocked_reason = repair_blocked_reason
+                finally:
+                    repair_projection = None
+                repaired_once = not blocked_reason
+                if repaired_once:
+                    # The repair is bounded by the shared remaining turn
+                    # budget, so the sum can never exceed max_turns.
+                    turns = result.turns + repair_result.turns
+                    if repair_result.stop_reason == "stopped":
+                        result = replace(repair_result, turns=turns)
+                    elif repair_result.stop_reason == "done":
+                        # Re-collect post-repair facts; the new proof decides.
+                        task_changes = self.collect_changes(project, tracker)
+                        collected = change_state(task_changes)
+                        if collected is not None:
+                            task_changed = collected
+                        task_changed, files = enforcement_scope(
+                            task_changes,
+                            task_changed,
+                        )
+                        verification_candidates = safe_verification_candidates(
+                            project,
+                            verification_verified_commands,
+                            resumed_verification_commands,
+                            configured_verification_commands,
+                            configured_ignored_paths,
+                        )
+                        selected_check = (
+                            select_verification_candidate(verification_candidates, files)
+                            if files
+                            else None
+                        )
+                        result = RunResult(
+                            summary=repair_result.summary,
+                            stop_reason="done",
+                            turns=turns,
+                            checks_passed=False,
+                            changed=result.changed or repair_result.changed,
+                            checks_ran=result.checks_ran or repair_result.checks_ran,
+                        )
+                        decision, integrity = completion_evidence(
+                            changes=task_changes,
+                            changed=task_changed,
+                            scope_files=files,
+                            check=selected_check,
+                            stop=result.stop_reason,
+                        )
+                        proof = decision.proof
+                        _record_completion_proof_trace(frame.trace, proof)
+                        _record_edit_integrity_trace(frame.trace, integrity)
+                        commit_operation_proof(proof)
+                    else:
+                        result = replace(repair_result, turns=turns)
+
+        if (
             not blocked_reason
             and result.stop_reason == "done"
             and proof is not None
@@ -3643,28 +3607,27 @@ class TaskRunner:
                 lambda state: mark_completion_blocked(state, reason=blocked_reason),
             )
 
-        if COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF:
-            verified = False
-            if blocked_reason and result.stop_reason in (
-                "done",
-                "max_turns",
-                "no_progress",
-                "protocol",
-            ):
-                # Explicit stop conditions win; everything else becomes an
-                # honest blocked result instead of a claimed done.
-                result = _blocked_result(result, blocked_reason)
-            elif result.stop_reason == "done":
-                if proof is not None:
-                    verified = decision.provenance.stance in (
-                        STANCE_FRESH_PASS,
-                        STANCE_INHERITED_PASS,
-                    )
-                else:
-                    # Out of enforcement scope (no changed files): keep the
-                    # pre-enforcement flag semantics.
-                    verified = bool(result.checks_passed)
-            result = replace(result, checks_passed=verified)
+        verified = False
+        if blocked_reason and result.stop_reason in (
+            "done",
+            "max_turns",
+            "no_progress",
+            "protocol",
+        ):
+            # Explicit stop conditions win; everything else becomes an
+            # honest blocked result instead of a claimed done.
+            result = _blocked_result(result, blocked_reason)
+        elif result.stop_reason == "done":
+            if proof is not None:
+                verified = decision.provenance.stance in (
+                    STANCE_FRESH_PASS,
+                    STANCE_INHERITED_PASS,
+                )
+            else:
+                # Out of enforcement scope (no changed files): keep the
+                # pre-enforcement flag semantics.
+                verified = bool(result.checks_passed)
+        result = replace(result, checks_passed=verified)
 
         receipt = build_task_receipt(
             task_changes,

@@ -26,18 +26,39 @@ PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 def _strip_think_blocks(text: str) -> str:
     source = str(text or "")
     lowered = source.lower()
-    while True:
-        start = lowered.find("<think")
-        if start < 0:
-            return source
-        tag_end = lowered.find(">", start)
-        if tag_end < 0:
-            return source[:start]
-        end = lowered.find("</think>", tag_end + 1)
-        if end < 0:
-            return source[:start]
-        source = source[:start] + source[end + len("</think>") :]
-        lowered = source.lower()
+    output: list[str] = []
+    index = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    while index < len(source):
+        if depth == 0 and lowered.startswith("<think", index):
+            tag_end = lowered.find(">", index)
+            if tag_end < 0:
+                break
+            end = lowered.find("</think>", tag_end + 1)
+            if end < 0:
+                break
+            index = end + len("</think>")
+            continue
+
+        char = source[index]
+        output.append(char)
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == "{":
+            depth += 1
+        elif char == "}" and depth:
+            depth -= 1
+        elif char == '"' and depth:
+            in_string = True
+        index += 1
+    return "".join(output)
 
 
 def _tool_call_key(call: ToolCall) -> tuple[str, str]:

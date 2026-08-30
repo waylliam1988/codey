@@ -957,7 +957,7 @@ codey/
     context.py              narrow ResearchPipeline context/config and trace sink
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
     topic_continuity.py     bounded non-evidence continuity and topic-candidate projection
-    regression_gate.py      deterministic evaluation-spine regression read model
+    tools/research_benchmark/scorer.py  deterministic evaluation-spine regression read model
     http_redirects.py       shared no-redirect HTTP helpers for connector and PDF fetch paths
     plan_executor.py        bounded fresh-material ResearchPlan execution
     evidence_followup.py    single-turn knowledge_write-only evidence extraction

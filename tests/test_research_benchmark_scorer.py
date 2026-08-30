@@ -15,7 +15,7 @@ from codey.research.brief_projection import (
 )
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
 from codey.research.proof_quality import ResearchProofReview
-from codey.research.regression_gate import (
+from tools.research_benchmark.scorer import (
     OBSERVABLE_NAMES,
     ResearchRegressionInput,
     build_regression_report,

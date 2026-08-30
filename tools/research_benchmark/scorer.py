@@ -1,6 +1,6 @@
-"""Research regression gate: one bounded read model over the evidence stack.
+"""Research benchmark scorer: one bounded read model over the evidence stack.
 
-This module is the 0.4.11 evaluation spine's pure core. It consumes facts that
+This tool is the 0.4.11 evaluation spine's pure core. It consumes facts that
 already exist elsewhere -- Evidence Runtime snapshots, proof reviews, brief
 projections, impact contracts, review findings, planner gaps, reproducibility
 capsules, completion proofs, and pipeline summaries -- and projects them into
@@ -16,8 +16,8 @@ Hard rules:
 - Observables state what was observed; expectations compare against those
   observations. Unknown expectation keys fail closed instead of being ignored.
 - A false completion is recorded as a metric, never enforced here. Blocking a
-  model-visible ``done`` stays with the coding completion enforcement layer
-  (0.4.13's `task_runner` decision point); this gate keeps reporting.
+  model-visible ``done`` stays with the coding completion enforcement layer;
+  this scorer keeps reporting.
 """
 
 from __future__ import annotations

@@ -20,7 +20,7 @@ def test_live_resume_skips_completed_rows_without_opening_provider(
     output = tmp_path / "completion_enforcement_ab-deepseek.json"
     row = {
         "case": "premature_done_no_test",
-        "arm": "control_done",
+        "arm": "repair_context",
         "stop_reason": "done",
         "false_completion": True,
     }
@@ -30,7 +30,7 @@ def test_live_resume_skips_completed_rows_without_opening_provider(
                 "probe": "completion_enforcement_ab",
                 "provider": "deepseek",
                 "cases": ["premature_done_no_test"],
-                "arms": ["control_done"],
+                "arms": ["repair_context"],
                 "complete": False,
                 "rows": [row],
                 "summary": {},
@@ -48,7 +48,7 @@ def test_live_resume_skips_completed_rows_without_opening_provider(
         "deepseek",
         9222,
         ("premature_done_no_test",),
-        ("control_done",),
+        ("repair_context",),
         3,
         output=output,
         transcript_mode="digest-only",
@@ -71,7 +71,7 @@ def test_completion_enforcement_journal_identity_is_stable_for_fixed_output(
         transcript_mode="digest-only",
         max_turns=4,
         case_names=("premature_done_no_test",),
-        arms=("control_done",),
+        arms=("repair_context",),
     )
     assert first is not None
     try:
@@ -86,7 +86,7 @@ def test_completion_enforcement_journal_identity_is_stable_for_fixed_output(
         transcript_mode="digest-only",
         max_turns=4,
         case_names=("premature_done_no_test",),
-        arms=("control_done",),
+        arms=("repair_context",),
     )
     assert second is not None
     try:
@@ -102,7 +102,7 @@ def test_live_rerun_failed_keeps_old_error_when_provider_connect_fails(
     output = tmp_path / "completion_enforcement_ab-deepseek.json"
     old_error = {
         "case": "premature_done_no_test",
-        "arm": "control_done",
+        "arm": "repair_context",
         "error": "TimeoutError: send",
         "stop_reason": "error",
     }
@@ -112,7 +112,7 @@ def test_live_rerun_failed_keeps_old_error_when_provider_connect_fails(
                 "probe": "completion_enforcement_ab",
                 "provider": "deepseek",
                 "cases": ["premature_done_no_test"],
-                "arms": ["control_done"],
+                "arms": ["repair_context"],
                 "complete": False,
                 "rows": [old_error],
                 "summary": {},
@@ -131,7 +131,7 @@ def test_live_rerun_failed_keeps_old_error_when_provider_connect_fails(
             "deepseek",
             9222,
             ("premature_done_no_test",),
-            ("control_done",),
+            ("repair_context",),
             3,
             output=output,
             transcript_mode="digest-only",
@@ -150,7 +150,7 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
     output = tmp_path / "completion_enforcement_ab-deepseek.json"
     old_error = {
         "case": "premature_done_no_test",
-        "arm": "control_done",
+        "arm": "repair_context",
         "error": "TimeoutError: send",
         "stop_reason": "error",
     }
@@ -160,7 +160,7 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
                 "probe": "completion_enforcement_ab",
                 "provider": "deepseek",
                 "cases": ["premature_done_no_test"],
-                "arms": ["control_done"],
+                "arms": ["repair_context"],
                 "complete": False,
                 "rows": [old_error],
                 "summary": {},
@@ -185,7 +185,7 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
         "deepseek",
         9222,
         ("premature_done_no_test",),
-        ("control_done",),
+        ("repair_context",),
         3,
         output=output,
         transcript_mode="digest-only",
@@ -193,7 +193,7 @@ def test_rerun_failed_replaces_old_error_row_only_after_new_row(
     )
 
     matching = [
-        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
+        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "repair_context"
     ]
     assert len(matching) == 1
     assert matching[0]["error"] == "RuntimeError: fixture failed before row"
@@ -208,13 +208,13 @@ def test_rerun_failed_replaces_old_error_row(
     output = tmp_path / "completion_enforcement_ab-deepseek.json"
     old_error = {
         "case": "premature_done_no_test",
-        "arm": "control_done",
+        "arm": "repair_context",
         "error": "TimeoutError: send",
         "stop_reason": "error",
     }
     untouched_error = {
         "case": "fresh_failing_test_after_edit",
-        "arm": "control_done",
+        "arm": "repair_context",
         "error": "TimeoutError: send",
         "stop_reason": "error",
     }
@@ -224,7 +224,7 @@ def test_rerun_failed_replaces_old_error_row(
                 "probe": "completion_enforcement_ab",
                 "provider": "deepseek",
                 "cases": ["premature_done_no_test", "fresh_failing_test_after_edit"],
-                "arms": ["control_done"],
+                "arms": ["repair_context"],
                 "complete": False,
                 "rows": [old_error, untouched_error],
                 "summary": {},
@@ -274,7 +274,7 @@ def test_rerun_failed_replaces_old_error_row(
         "deepseek",
         9222,
         ("premature_done_no_test",),
-        ("control_done",),
+        ("repair_context",),
         3,
         output=output,
         transcript_mode="digest-only",
@@ -282,7 +282,7 @@ def test_rerun_failed_replaces_old_error_row(
     )
 
     matching = [
-        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "control_done"
+        row for row in report["rows"] if row["case"] == "premature_done_no_test" and row["arm"] == "repair_context"
     ]
     assert len(matching) == 1
     assert "error" not in matching[0]
@@ -336,7 +336,7 @@ def test_live_terminal_error_row_fails_report_and_journal(
         "deepseek",
         9222,
         ("premature_done_no_test",),
-        ("control_done",),
+        ("repair_context",),
         3,
         output=output,
         transcript_mode="digest-only",
@@ -404,7 +404,7 @@ def test_live_false_completion_row_fails_report_and_journal(
         "qwen",
         9222,
         ("dependency_missing_env_failure",),
-        ("control_done",),
+        ("repair_context",),
         3,
         output=output,
         transcript_mode="digest-only",
@@ -436,7 +436,7 @@ def test_finish_row_preserves_terminal_error_summary(tmp_path: Path) -> None:
 
     row = harness._finish_row(
         case_name="premature_done_no_test",
-        arm="control_done",
+        arm="repair_context",
         state=FakeState(),  # type: ignore[arg-type]
         session_suffix="unit",
         project=tmp_path,
@@ -497,7 +497,7 @@ def test_finish_row_rejects_live_test_fixture_mutation(tmp_path: Path) -> None:
 
     row = harness._finish_row(
         case_name="dependency_missing_env_failure",
-        arm="control_done",
+        arm="repair_context",
         state=FakeState(),  # type: ignore[arg-type]
         session_suffix="unit",
         project=project,
@@ -533,7 +533,7 @@ def test_finish_row_accepts_live_source_change_with_intact_fixture(tmp_path: Pat
 
     row = harness._finish_row(
         case_name="fresh_failing_test_after_edit",
-        arm="control_done",
+        arm="repair_context",
         state=FakeState(),  # type: ignore[arg-type]
         session_suffix="unit",
         project=project,
@@ -576,7 +576,7 @@ def test_finish_row_rejects_live_docs_only_source_mutation(tmp_path: Path) -> No
 
     row = harness._finish_row(
         case_name="docs_only_change_with_limitations",
-        arm="control_done",
+        arm="repair_context",
         state=FakeState(),  # type: ignore[arg-type]
         session_suffix="unit",
         project=project,
@@ -603,7 +603,7 @@ def test_terminal_provider_no_reply_is_classified() -> None:
 
     row = {
         "case": "dependency_missing_env_failure",
-        "arm": "control_done",
+        "arm": "repair_context",
         "stop_reason": "error",
         "error": "ERROR: DeepSeek Web new_chat failed (transient)",
     }

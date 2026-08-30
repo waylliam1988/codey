@@ -6,6 +6,25 @@
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- 审查后的冷启动清理：
+  - A/B harness 的 git-state 读取改成 bytes 路径，未跟踪的中文文件名不会再在
+    Windows locale 解码阶段把全量 pytest 打红。
+  - JSON-tool 解析只忽略 JSON 对象外的 `<think>...</think>`，合法 tool
+    参数、路径和 replacement 字符串里的 `<think>` 文本会原样保留。
+  - SSE 历史 replay 现在有精确触发条件：只有携带正数 `Last-Event-ID` 的
+    重连才重放 buffer。首次连接只靠 `/api/state` reconcile，不会重复旧聊天行。
+  - repair 耗尽后的 blocked reason 统一从 `completion_blocked_reason()` 推导，
+    并计入 repair turn；耗尽最后一轮预算时记录 `turn_budget_exhausted`，不再
+    借用 `max_repair_rounds`。
+  - 删除生产 `COMPLETION_ENFORCEMENT_MODE` 控制臂；现在唯一生产路径是
+    proof -> bounded repair context -> final proof verdict。manual completion
+    benchmark 也只执行这条路径。
+  - 删除生产 metadata-only capability registry 及其 fingerprint 测试。
+    capability boundary 改由 `docs/codey_event_matrix.md` 记录，并由 scanner
+    测试核对生产代码里的 `capability_id` stamp。
+  - deterministic research regression scorer 从
+    `codey.research.regression_gate` 搬到 `tools/research_benchmark/scorer.py`；
+    架构测试保证生产代码不能 import 这个 tooling 包。
 - 冷启动审计加固：
   - terminal `task_done` 事件统一走一个 helper，用户 Stop / error 路径改用
     已观测到的真实轮数，不再硬编码为 0。repair 轮耗尽时也把

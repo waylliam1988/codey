@@ -3,8 +3,6 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.policies.capability_registry import KNOWN_DURABLE_STATES, KNOWN_UI_SURFACES, builtin_capability_registry
-
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
@@ -62,6 +60,27 @@ def _event_matrix_rows() -> list[dict[str, str]]:
     return rows
 
 
+def _vocabulary(label: str) -> set[str]:
+    lines = MATRIX_PATH.read_text(encoding="utf-8").splitlines()
+    try:
+        start = lines.index(label) + 1
+    except ValueError as exc:
+        raise AssertionError(f"missing event matrix vocabulary: {label}") from exc
+    values: set[str] = set()
+    for line in lines[start:]:
+        stripped = line.strip()
+        if values and (stripped.startswith("## ") or stripped.endswith(":")):
+            break
+        if not stripped:
+            continue
+        if not line.startswith("- `"):
+            continue
+        values.add(line.split("`", 2)[1])
+    if not values:
+        raise AssertionError(f"empty event matrix vocabulary: {label}")
+    return values
+
+
 class EventMatrixTests(unittest.TestCase):
     def test_event_ids_are_unique_and_core_fields_are_present(self) -> None:
         rows = _event_matrix_rows()
@@ -77,8 +96,8 @@ class EventMatrixTests(unittest.TestCase):
 
     def test_capabilities_and_durable_state_use_known_names(self) -> None:
         rows = _event_matrix_rows()
-        known_capabilities = set(builtin_capability_registry().ids()) | {"none"}
-        known_states = set(KNOWN_DURABLE_STATES) | {"none"}
+        known_capabilities = _vocabulary("## Capability Vocabulary") | {"none"}
+        known_states = _vocabulary("Durable state vocabulary:") | {"none"}
 
         for row in rows:
             with self.subTest(event_id=row["event_id"]):
@@ -87,16 +106,13 @@ class EventMatrixTests(unittest.TestCase):
                     self.assertIn(state, known_states)
 
     def test_visibility_policy_and_trace_requirements_are_declared(self) -> None:
-        capabilities = {
-            spec.id: spec for spec in builtin_capability_registry().all()
-        }
+        policy_gated = _vocabulary("Policy-gated capabilities:")
         for row in _event_matrix_rows():
             combined = " ".join((
                 row["consumers"],
                 row["capability"],
                 row["privacy_boundary"],
             ))
-            capability = capabilities.get(row["capability"])
             with self.subTest(event_id=row["event_id"]):
                 if row["model_visible"] == "true":
                     self.assertIn("prompt_envelope", row["consumers"])
@@ -105,14 +121,14 @@ class EventMatrixTests(unittest.TestCase):
                     self.assertTrue(
                         "policy_guard" in combined
                         or "action_policy" in combined
-                        or (capability is not None and capability.requires_policy),
+                        or row["capability"] in policy_gated,
                         f"{row['event_id']} must declare action policy or policy guard",
                     )
                 if row["trace_required"] == "true":
                     self.assertIn("run_trace", row["consumers"])
 
     def test_ui_visible_rows_declare_known_surface_or_sse(self) -> None:
-        surfaces = set(KNOWN_UI_SURFACES) - {"none"}
+        surfaces = _vocabulary("UI surface vocabulary:")
 
         for row in _event_matrix_rows():
             with self.subTest(event_id=row["event_id"]):

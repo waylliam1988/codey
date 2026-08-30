@@ -1,17 +1,8 @@
-"""Manual A/B for Verified Completion Enforcement + Repair Context (0.4.13).
+"""Manual benchmark for Verified Completion Enforcement + Repair Context.
 
-The release question is not "does repair ever succeed" but "does the
-treatment beat control net of cost":
-
-    control_done          0.4.12 semantics: shadow proof trace-only.
-    proof_only_block      proof blocks unverifiable done, no repair context.
-    repair_context        full v1: one bounded repair round, full detail.
-    repair_context_minimal same round, deliberately under-specified facts.
-
-Arms are implemented by overriding the single production constant
-``codey.app.task_runner.COMPLETION_ENFORCEMENT_MODE`` ("off"/"block") or by
-wrapping ``project_repair_context`` for the minimal-detail arm. Production
-ships "repair"; nothing here is importable from production code.
+The retired 0.4 A/B arms live only in historical reports. Current runs execute
+the single production repair-context path: proof blocks unverifiable done, then
+admits at most one bounded repair round for product failures.
 
 Metrics follow the roadmap: false completion rate, task success, honest
 blocks, unnecessary-repair rate, repair rounds/success, context size,
@@ -69,17 +60,8 @@ from tests.manual.ab_journal import ABJournalWriter
 dataclass = dataclasses.dataclass
 
 ARMS = (
-    "control_done",
-    "proof_only_block",
     "repair_context",
-    "repair_context_minimal",
 )
-ARM_MODES = {
-    "control_done": "off",
-    "proof_only_block": "block",
-    "repair_context": "repair",
-    "repair_context_minimal": "repair",
-}
 DOCS_ONLY_MODULE_BODY = '"""Tiny module documented by the README live case."""\n\nVALUE = 1\n'
 
 
@@ -199,26 +181,11 @@ SELF_TEST_CASES: dict[str, ScriptedCase] = {
 
 SELF_TEST_MATRIX: dict[tuple[str, str], tuple[str, bool, int]] = {
     # (case, arm) -> (stop_reason, false_completion, repair_rounds)
-    ("premature_done_no_test", "control_done"): ("done", True, 0),
-    ("premature_done_no_test", "proof_only_block"): ("blocked", False, 0),
     ("premature_done_no_test", "repair_context"): ("blocked", False, 0),
-    ("premature_done_no_test", "repair_context_minimal"): ("blocked", False, 0),
-    ("fresh_failing_test_after_edit", "control_done"): ("done", True, 0),
-    ("fresh_failing_test_after_edit", "proof_only_block"): ("blocked", False, 0),
     ("fresh_failing_test_after_edit", "repair_context"): ("done", False, 1),
-    ("fresh_failing_test_after_edit", "repair_context_minimal"): ("done", False, 1),
-    ("max_repair_round_reached", "control_done"): ("done", True, 0),
-    ("max_repair_round_reached", "proof_only_block"): ("blocked", False, 0),
     ("max_repair_round_reached", "repair_context"): ("blocked", False, 1),
-    ("max_repair_round_reached", "repair_context_minimal"): ("blocked", False, 1),
-    ("environment_failure", "control_done"): ("done", True, 0),
-    ("environment_failure", "proof_only_block"): ("blocked", False, 0),
     ("environment_failure", "repair_context"): ("blocked", False, 0),
-    ("environment_failure", "repair_context_minimal"): ("blocked", False, 0),
-    ("docs_only_change_with_limitations", "control_done"): ("done", False, 0),
-    ("docs_only_change_with_limitations", "proof_only_block"): ("done", False, 0),
     ("docs_only_change_with_limitations", "repair_context"): ("done", False, 0),
-    ("docs_only_change_with_limitations", "repair_context_minimal"): ("done", False, 0),
 }
 
 
@@ -244,31 +211,10 @@ class _Provider:
         pass
 
 
-def _minimal_detail_wrapper(original):
-    """Same fact vocabulary, intentionally under-specified render."""
-
-    def wrapped(**kwargs):
-        kwargs["detail"] = "minimal"
-        return original(**kwargs)
-
-    return wrapped
-
-
 def _start_arm_patches(arm: str) -> list:
-    from codey.app import task_runner as tr
-
-    patches = [
-        mock.patch.object(tr, "COMPLETION_ENFORCEMENT_MODE", ARM_MODES[arm]),
-    ]
-    if arm == "repair_context_minimal":
-        patches.append(
-            mock.patch.object(
-                tr,
-                "project_repair_context",
-                _minimal_detail_wrapper(tr.project_repair_context),
-            )
-        )
-    return patches
+    if arm not in ARMS:
+        raise ValueError(f"archived completion arm cannot run against current runtime: {arm}")
+    return []
 
 
 def _pytest_project(root: Path, *, docs_only: bool = False) -> Path:
@@ -608,9 +554,7 @@ def run_self_test() -> None:
                     tool_calls=None,
                     turns=None,
                     elapsed_s=time.monotonic() - started,
-                    # Control runs only the first scripted phase, so its
-                    # ground truth is that phase's workspace state.
-                    independent_ok=case.phase_ok[0 if arm == "control_done" else len(case.phase_ok) - 1],
+                    independent_ok=case.phase_ok[-1],
                 )
             expected = SELF_TEST_MATRIX[(case_name, arm)]
             assert row["stop_reason"] == expected[0], (case_name, arm, row)

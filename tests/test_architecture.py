@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -20,6 +21,24 @@ def imported_modules(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
     return modules
+
+
+def event_matrix_capability_ids() -> set[str]:
+    lines = EVENT_MATRIX_PATH.read_text(encoding="utf-8").splitlines()
+    try:
+        start = lines.index("## Capability Vocabulary") + 1
+    except ValueError as exc:
+        raise AssertionError("missing capability vocabulary in event matrix") from exc
+    ids: set[str] = set()
+    for line in lines[start:]:
+        stripped = line.strip()
+        if ids and (stripped.startswith("## ") or stripped.endswith(":")):
+            break
+        if line.startswith("- `"):
+            ids.add(line.split("`", 2)[1])
+    if not ids:
+        raise AssertionError("empty capability vocabulary in event matrix")
+    return ids
 
 
 class ArchitectureBoundaryTests(unittest.TestCase):
@@ -165,42 +184,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
-    def test_capability_registry_is_metadata_only(self) -> None:
-        path = ROOT / "codey" / "policies" / "capability_registry.py"
-        imports = imported_modules(path)
-        source = path.read_text(encoding="utf-8")
-        forbidden_imports = {
-            "codey.automation.browser",
-            "codey.providers.web_drivers.deepseek",
-            "codey.providers.web_drivers.qwen",
-            "codey.providers.web_drivers.stepfun",
-            "codey.providers.web_drivers.glm",
-            "codey.providers",
-            "codey.providers.controls",
-            "codey.toolchain.runtime",
-            "codey.research.runner",
-            "codey.app.server",
-            "codey.app.task_runner",
-            "importlib",
-            "pkgutil",
-        }
-        forbidden_source = (
-            "entry_points",
-            "load_plugin",
-            "register_runtime",
-            "dispatch(",
-            "execute(",
-            "eval(",
-            "exec(",
-        )
-
-        self.assertTrue(
-            forbidden_imports.isdisjoint(imports),
-            sorted(forbidden_imports & imports),
-        )
-        for token in forbidden_source:
-            with self.subTest(token=token):
-                self.assertNotIn(token, source)
+    def test_capability_registry_production_module_is_gone(self) -> None:
+        self.assertFalse((ROOT / "codey" / "policies" / "capability_registry.py").exists())
+        offenders: list[str] = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            imports = imported_modules(path)
+            if "codey.policies.capability_registry" in imports:
+                offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(offenders, [])
 
     def test_task_runner_does_not_carry_capability_registry_for_decisions(self) -> None:
         source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
@@ -655,12 +646,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 for token in forbidden_source:
                     self.assertNotIn(token, source)
 
-    def test_regression_gate_is_projection_only(self) -> None:
-        # The 0.4.11 regression gate is the evaluation spine's pure core: it
-        # consumes existing projection payloads and emits bounded metrics,
-        # observables, and verdicts. It must never reach execution layers,
-        # providers, the A/B journal, or perform any I/O of its own.
-        path = ROOT / "codey" / "research" / "regression_gate.py"
+    def test_research_benchmark_scorer_is_tooling_only(self) -> None:
+        # The 0.4.11 scorer is the evaluation spine's pure core: it consumes
+        # existing projection payloads and emits bounded metrics, observables,
+        # and verdicts. It must never reach execution layers, providers, the
+        # A/B journal, or perform any I/O of its own.
+        path = ROOT / "tools" / "research_benchmark" / "scorer.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
 
@@ -706,9 +697,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for token in forbidden_source:
             self.assertNotIn(token, source)
 
-    def test_regression_gate_is_not_exported_from_research_package_init(self) -> None:
-        # The gate stays a lazy sub-module import so importing the research
-        # package surface does not eagerly load the evaluation spine.
+    def test_research_regression_gate_production_module_is_gone(self) -> None:
+        self.assertFalse((ROOT / "codey" / "research" / "regression_gate.py").exists())
         source = (ROOT / "codey" / "research" / "__init__.py").read_text(encoding="utf-8")
         self.assertNotIn("regression_gate", source)
 
@@ -722,6 +712,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 name
                 for name in imports
                 if name.startswith("tests.")
+                or name.startswith("tools.research_benchmark")
                 or name == "ab_journal"
                 or name == "ab_harness_common"
                 or name.endswith(".ab_journal")
@@ -947,10 +938,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_stamped_capability_ids_are_registered_boundaries(self) -> None:
         # Every capability_id literal stamped onto a prompt section or context
-        # source in production code must name a registered capability.
-        from codey.policies.capability_registry import builtin_capability_registry
-
-        registered = set(builtin_capability_registry().ids())
+        # source in production code must name a documented boundary.
+        registered = event_matrix_capability_ids()
         stamped: dict[str, set[str]] = {}
 
         for path in sorted((ROOT / "codey").rglob("*.py")):

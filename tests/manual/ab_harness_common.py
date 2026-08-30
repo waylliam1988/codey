@@ -672,26 +672,26 @@ def git_state(repo: Path | None = None) -> dict[str, Any]:
 
     state: dict[str, Any] = {"git_commit": "", "git_dirty": None}
     try:
-        commit = subprocess.run(
+        commit_proc = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=str(repo) if repo else None,
             capture_output=True,
-            text=True,
+            text=False,
             timeout=10,
             check=True,
-        ).stdout.strip()
-        status = subprocess.run(
+        )
+        status_proc = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=str(repo) if repo else None,
             capture_output=True,
-            text=True,
+            text=False,
             timeout=10,
             check=True,
-        ).stdout
+        )
     except (OSError, subprocess.SubprocessError):
         return state
-    state["git_commit"] = commit
-    state["git_dirty"] = bool(status.strip())
+    state["git_commit"] = bytes(commit_proc.stdout or b"").decode("ascii", "replace").strip()
+    state["git_dirty"] = bool(bytes(status_proc.stdout or b"").strip())
     return state
 
 

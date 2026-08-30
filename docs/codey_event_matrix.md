@@ -27,6 +27,80 @@ privacy_boundary says whether the content is data, hint, proof, or UI only
 no row can turn Ghost / World Model / transcript / source body into evidence
 ```
 
+## Capability Vocabulary
+
+Valid `capability_id` stamps are documentation-owned architecture boundaries,
+not runtime dispatch objects.
+
+- `agent_runner`
+- `changes_presenter`
+- `chat_runner`
+- `completion_contract`
+- `completion_repair_context`
+- `consensus_advisors`
+- `context_epoch`
+- `conversation_handoff`
+- `domain_evidence_profiles`
+- `local_context`
+- `permission_profile_catalog`
+- `policy_guard`
+- `prompt_envelope`
+- `provider_capability_registry`
+- `provider_factory`
+- `research_brief_projection`
+- `research_connector_search`
+- `research_evidence_ledger`
+- `research_evidence_runtime`
+- `research_object_model`
+- `research_proof_quality`
+- `research_query_planner`
+- `research_review_finding`
+- `research_runner`
+- `research_source_connectors`
+- `research_source_trust`
+- `research_topic_continuity`
+- `review_runner`
+- `run_details`
+- `run_ledger`
+- `run_operation`
+- `run_trace`
+- `tool_runtime`
+
+Policy-gated capabilities:
+
+- `agent_runner`
+- `local_context`
+- `provider_factory`
+- `research_connector_search`
+- `research_runner`
+- `research_source_connectors`
+- `review_runner`
+- `tool_runtime`
+
+Durable state vocabulary:
+
+- `change_snapshots`
+- `local_context`
+- `managed_outputs`
+- `project_facts`
+- `provider_controls`
+- `provider_health`
+- `research_evidence_ledger`
+- `research_notes`
+- `research_provenance`
+- `run_ledger`
+- `run_operations`
+- `run_trace`
+- `work_checkpoints`
+
+UI surface vocabulary:
+
+- `changes_drawer`
+- `chat_stream`
+- `composer`
+- `local_context_drawer`
+- `research_drawer`
+
 | event_id | producer | consumers | capability | durable_state | model_visible | ui_visible | policy_required | trace_required | privacy_boundary |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | run_event.turn | codey.runtime.events.RunEvent.turn_started | task_runner, run_ledger, sse:chat_stream | agent_runner | run_ledger | false | sse:chat_stream | false | false | UI/SSE and ledger projection only; Review model-visible recent log is declared separately |

@@ -42,7 +42,7 @@ from codey.research.evidence_runtime import (
     snapshot_from_research_record,
 )
 from codey.research.proof_quality import review_research_proof
-from codey.research.regression_gate import build_regression_report
+from tools.research_benchmark.scorer import build_regression_report
 from codey.research.reproducibility import build_reproducibility_capsule
 from codey.research.review_finding import (
     findings_from_proof_review,

@@ -6,6 +6,29 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased (0.5.1) - Run Operation State + Completion Repair Durability v1
 
+- Post-review cold-start cleanup:
+  - A/B harness git-state capture now reads Git output as bytes, so untracked
+    CJK filenames cannot trip Windows locale decoding before a full pytest run.
+  - JSON-tool parsing now ignores `<think>...</think>` only outside JSON
+    objects, preserving literal `<think>` text inside valid tool arguments,
+    paths, and replacements.
+  - SSE history replay now has a precise trigger: only reconnects carrying a
+    positive `Last-Event-ID` replay buffered events. First connects rely on
+    `/api/state` reconciliation and cannot duplicate old chat rows.
+  - Repair exhaustion now derives its blocked reason through
+    `completion_blocked_reason()` after counting repair turns, so a run that
+    consumes the last turn records `turn_budget_exhausted` instead of borrowing
+    `max_repair_rounds`.
+  - Removed the production `COMPLETION_ENFORCEMENT_MODE` control arms; the
+    single production path is proof -> bounded repair context -> final proof
+    verdict. The manual completion benchmark now executes only that path.
+  - Deleted the production metadata-only capability registry and its
+    fingerprint tests. Capability boundaries are now documented in
+    `docs/codey_event_matrix.md` and checked by scanner tests against
+    production `capability_id` stamps.
+  - Moved the deterministic research regression scorer from
+    `codey.research.regression_gate` to `tools/research_benchmark/scorer.py`;
+    production code is tested not to import the tooling package.
 - Cold-start audit hardening:
   - Terminal `task_done` events now use one helper and report observed turns on
     user stop/error paths instead of hard-coded zeroes. Repair exhaustion also
