@@ -331,12 +331,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 _finish_run_operation(deps, work, error_event)
             finish_trace(error_event)
             state.finish_run(run_id, error_event)
-            release_work_item(
-                ghost_deps,
-                work.claimed_work_item if work is not None else claimed_work_item,
-                run_id=run_id,
-                reason="error",
-            )
             run_ghost_post_turn(
                 ghost_deps,
                 None,
@@ -985,6 +979,8 @@ def _start_run_operation(
             max_repair_rounds=max_repair_rounds,
             task_kind=task_kind,
         )
+        if work.operation is None:
+            return False
         return _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id)
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None

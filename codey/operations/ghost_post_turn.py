@@ -406,19 +406,23 @@ def complete_or_block_work_item(
     if store is None:
         return
     try:
-        run_id = str(event.get("run_id") or getattr(item, "started_run_id", "") or "")
+        raw_item = getattr(item, "item", item)
+        item_id = getattr(raw_item, "id", None) or getattr(item, "id", None)
+        if not item_id:
+            return
+        run_id = str(event.get("run_id") or getattr(raw_item, "started_run_id", "") or getattr(item, "started_run_id", "") or "")
         if frame is None:
             if str(event.get("stop_reason") or "") != "done":
                 store.block_item(
-                    item.id,
+                    item_id,
                     run_id=run_id,
                     blocked_reason=str(event.get("stop_reason") or "run_not_done"),
                 )
             return
         if str(event.get("stop_reason") or "") == "done":
-            if str(getattr(item, "kind", "") or "") in RESEARCH_QUEUE_KINDS:
+            if str(getattr(raw_item, "kind", "") or getattr(item, "kind", "") or "") in RESEARCH_QUEUE_KINDS:
                 decision = ResearchCompletionGate(deps.evidence_ledgers).evaluate(
-                    item=item,
+                    item=raw_item,
                     event=event,
                     research_result=research_result,
                     session_id=frame.request.session_id,
@@ -428,7 +432,7 @@ def complete_or_block_work_item(
                     deps.record_completion_proof_trace(frame.trace, decision.proof)
                 if decision.complete:
                     store.complete_item(
-                        item.id,
+                        item_id,
                         run_id=frame.run_id,
                         proof_refs=decision.proof_refs,
                     )
@@ -437,26 +441,26 @@ def complete_or_block_work_item(
                     record_research_plan_trace(
                         frame.trace,
                         decision.review,
-                        question=research_queue_item_title(item) or frame.request.task,
+                        question=research_queue_item_title(raw_item) or frame.request.task,
                     )
                     store.block_item(
-                        item.id,
+                        item_id,
                         run_id=frame.run_id,
                         blocked_reason=decision.blocked_reason or "research_proof_failed",
                     )
             else:
                 store.complete_item(
-                    item.id,
+                    item_id,
                     run_id=frame.run_id,
                     proof_refs=proof_refs_from_task_event(
-                        item,
+                        raw_item,
                         event,
                         run_projection=run_projection,
                     ),
                 )
         else:
             store.block_item(
-                item.id,
+                item_id,
                 run_id=frame.run_id,
                 blocked_reason=str(event.get("stop_reason") or "run_not_done"),
             )

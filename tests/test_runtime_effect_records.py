@@ -393,6 +393,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "run_id": "r1",
             "lane": self.lane,
             "operation_id": self.op_id,
+            "turn": 1,
+            "tool_index": 0,
             "replay_class": "safe",
         }
         # Missing replay_class
@@ -401,9 +403,26 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectIntent.from_payload(p)
 
+        # Unhashable list for replay_class raises RuntimeEffectError
+        p = dict(base_intent_payload, replay_class=["safe"])
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
         # Missing effect_category
         p = dict(base_intent_payload)
         del p["effect_category"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        # Missing turn
+        p = dict(base_intent_payload)
+        del p["turn"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        # Missing tool_index
+        p = dict(base_intent_payload)
+        del p["tool_index"]
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectIntent.from_payload(p)
 
@@ -430,6 +449,11 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         # Missing status
         p = dict(base_settlement_payload)
         del p["status"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+        # Dict for status raises RuntimeEffectError
+        p = dict(base_settlement_payload, status={"status": "ok"})
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectSettlement.from_payload(p)
 
@@ -496,6 +520,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "run_id": self.run_id,
             "lane": self.lane,
             "operation_id": self.op_id,
+            "turn": 1,
+            "tool_index": 0,
             "replay_class": "safe",
         }
         self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload)
@@ -541,6 +567,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "run_id": self.run_id,
             "lane": self.lane,
             "operation_id": self.op_id,
+            "turn": 1,
+            "tool_index": 0,
             "replay_class": "unsafe",
         }
         settlement1 = {

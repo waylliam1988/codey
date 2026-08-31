@@ -106,6 +106,14 @@ def _require_nonnegative_int(val: Any, name: str) -> int:
     return val
 
 
+def _require_enum_str(val: Any, name: str, allowed: frozenset[str] | tuple[str, ...]) -> str:
+    if not isinstance(val, str) or not val:
+        raise RuntimeEffectError(f"missing or invalid {name}: {val}")
+    if val not in allowed:
+        raise RuntimeEffectError(f"unknown {name}: {val}")
+    return val
+
+
 @dataclass(frozen=True)
 class RuntimeEffectIntent:
     effect_id: str
@@ -143,12 +151,10 @@ class RuntimeEffectIntent:
         _require_bounded_str(self.display_ref, "display_ref", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.turn, "turn")
         _require_nonnegative_int(self.tool_index, "tool_index")
-        if self.effect_category not in EFFECT_CATEGORIES:
-            raise RuntimeEffectError(f"unknown effect_category: {self.effect_category}")
+        _require_enum_str(self.effect_category, "effect_category", EFFECT_CATEGORIES)
         if self.record_kind != RECORD_KIND_INTENT:
             raise RuntimeEffectError("record_kind must be 'intent'")
-        if self.replay_class not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
-            raise RuntimeEffectError("invalid replay_class")
+        _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -183,27 +189,23 @@ class RuntimeEffectIntent:
         version = payload.get("schema_version")
         if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
-        if "replay_class" not in payload or payload["replay_class"] not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
-            raise RuntimeEffectError("missing or invalid replay_class in intent payload")
-        if "effect_category" not in payload or payload["effect_category"] not in EFFECT_CATEGORIES:
-            raise RuntimeEffectError("missing or invalid effect_category in intent payload")
 
         return cls(
             effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
-            effect_category=payload["effect_category"],
+            effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
             lane=_require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS),
             operation_id=_require_bounded_str(payload.get("operation_id"), "operation_id", MAX_REF_CHARS),
             phase=_require_bounded_str(payload.get("phase") or "", "phase", MAX_TEXT_CHARS, allow_empty=True),
             provider_id=_require_bounded_str(payload.get("provider_id") or "", "provider_id", MAX_TEXT_CHARS, allow_empty=True),
-            turn=_require_nonnegative_int(payload.get("turn") if payload.get("turn") is not None else 0, "turn"),
-            tool_index=_require_nonnegative_int(payload.get("tool_index") if payload.get("tool_index") is not None else 0, "tool_index"),
+            turn=_require_nonnegative_int(payload.get("turn"), "turn"),
+            tool_index=_require_nonnegative_int(payload.get("tool_index"), "tool_index"),
             tool_name=_require_bounded_str(payload.get("tool_name") or "", "tool_name", MAX_TEXT_CHARS, allow_empty=True),
             tool_id=_require_bounded_str(payload.get("tool_id") or "", "tool_id", MAX_TEXT_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
-            replay_class=payload["replay_class"],
+            replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_INTENT,
             schema_version=SCHEMA_VERSION,
@@ -235,16 +237,12 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.lane, "lane", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.operation_id, "operation_id", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.error_code, "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True)
-        if self.effect_category not in EFFECT_CATEGORIES:
-            raise RuntimeEffectError(f"unknown effect_category: {self.effect_category}")
+        _require_enum_str(self.effect_category, "effect_category", EFFECT_CATEGORIES)
         if self.record_kind != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("record_kind must be 'settlement'")
-        if self.status not in SETTLEMENT_STATUSES:
-            raise RuntimeEffectError(f"unknown settlement status: {self.status}")
-        if self.sent_state not in SENT_STATES:
-            raise RuntimeEffectError(f"unknown sent_state: {self.sent_state}")
-        if self.replay_class not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
-            raise RuntimeEffectError("invalid replay_class")
+        _require_enum_str(self.status, "status", SETTLEMENT_STATUSES)
+        _require_enum_str(self.sent_state, "sent_state", SENT_STATES)
+        _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -274,26 +272,18 @@ class RuntimeEffectSettlement:
         version = payload.get("schema_version")
         if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
-        if "status" not in payload or payload["status"] not in SETTLEMENT_STATUSES:
-            raise RuntimeEffectError("missing or invalid status in settlement payload")
-        if "sent_state" not in payload or payload["sent_state"] not in SENT_STATES:
-            raise RuntimeEffectError("missing or invalid sent_state in settlement payload")
-        if "effect_category" not in payload or payload["effect_category"] not in EFFECT_CATEGORIES:
-            raise RuntimeEffectError("missing or invalid effect_category in settlement payload")
-        if "replay_class" not in payload or payload["replay_class"] not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
-            raise RuntimeEffectError("missing or invalid replay_class in settlement payload")
 
         return cls(
             effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
-            effect_category=payload["effect_category"],
+            effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
-            status=payload["status"],
+            status=_require_enum_str(payload.get("status"), "status", SETTLEMENT_STATUSES),
             lane=_require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS),
             operation_id=_require_bounded_str(payload.get("operation_id"), "operation_id", MAX_REF_CHARS),
             error_code=_require_bounded_str(payload.get("error_code") or "", "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True),
-            sent_state=payload["sent_state"],
-            replay_class=payload["replay_class"],
+            sent_state=_require_enum_str(payload.get("sent_state"), "sent_state", SENT_STATES),
+            replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,

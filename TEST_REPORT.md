@@ -32,10 +32,11 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             Session log compaction (_compact_entries) explicitly retains pending intents
             and recovery-relevant settlements (interrupted/error/maybe_sent) for open operations.
             On resume, pending unconfirmed effects are projected and synthesized as interrupted.
-            Resume recovery fails closed on corrupted logs or synthesis failure, completing full
-            lifecycle cleanup (standard task_done event, state.finish_run, release_work_item,
-            run_ghost_post_turn) and blocking external execution immediately.
-            Effect payloads strictly require lane and operation_id fields matching the run boundary.
+            Resume recovery and operation start fail closed immediately on store/recovery failure,
+            completing full lifecycle cleanup (standard task_done event, state.finish_run,
+            run_ghost_post_turn without redundant work item release) and blocking external execution.
+            Effect payloads strictly require lane, operation_id, turn, and tool_index fields; enum fields
+            (effect_category, replay_class, status, sent_state) enforce strict string type before membership.
             load_effects() parses entries in strict chronological order: rejects duplicate intents,
             rejects orphan settlements without preceding intents, and strictly validates duplicate
             settlement idempotence or conflict.
@@ -52,7 +53,7 @@ runs/app:   updated load_run_details and API endpoints to project quiet Recovery
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
             "Read action can be retried") only for settled interrupted effects, ignoring
             in-flight pending effects and normal provider errors to avoid false recovery warnings.
-test suite: 3320 passed, 4 skipped in 298.75s (0:04:58). All architecture, server,
+test suite: 3322 passed, 4 skipped in 292.91s (0:04:52). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
 ```
 
