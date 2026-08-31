@@ -95,8 +95,8 @@ This file records Codey's release history. The newest release appears first.
   - Runtime session-log validation now keeps a process-local entries +
     projection cache. `append_many()` still fails closed through the reducer,
     but hot phase commits load their current state from cached entries when the
-    file size has not changed; external writers, compaction, and deletion
-    invalidate or rebuild the cache.
+    file size and `mtime_ns` stamp have not changed; same-size external
+    rewrites, compaction, and deletion invalidate or rebuild the cache.
   - Run Details now reads runtime operation state before ledger/trace checks, so
     an interrupted run can still show its quiet `Progress` row even if the
     ledger or trace was never written or has been cleaned up. Terminal runtime
@@ -108,11 +108,17 @@ This file records Codey's release history. The newest release appears first.
     runtime-session log, operation store, and workspace revision store, so tests
     and transient callers use the same runtime path without writing to the
     user's durable state home.
-  - Workspace revision tracking now binds verification freshness to the project
-    filesystem state. This is intentionally separate from
+  - Workspace state tracking now binds verification freshness to the project
+    filesystem state with `WorkspaceState(revision, fingerprint)`. Missing
+    revision files start at the initial revision, but corrupt, invalid, or
+    oversized revision state fails closed instead of rolling the monotonic
+    identity back. Verification observations, checkpoint green checks, and
+    completion proofs require both the current revision and the current bounded
+    workspace fingerprint, so out-of-band edits to unrecorded files cannot
+    silently reuse stale green checks. This is intentionally separate from
     `workspace/context_epoch.py`: context epochs identify prompt-source
-    provenance, while workspace revisions identify the file state a
-    verification observation can support.
+    provenance, while workspace state identifies the file state a verification
+    observation can support.
   - Research and hybrid terminal events now keep the original task turn budget
     in the runtime terminal snapshot, even when the research engine used fewer
     turns internally.

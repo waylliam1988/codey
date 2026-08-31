@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from dataclasses import dataclass, field
@@ -190,6 +191,33 @@ class RuntimeSessionLogTests(unittest.TestCase):
             projection = log.projection("s1")
 
         self.assertEqual(projection.operations["op-1"].status, "settled")
+        self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
+
+    def test_projection_cache_replays_after_same_size_external_rewrite(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            log.append(
+                "s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            )
+            self.assertEqual(
+                log.projection("s1").lanes["current"].open_operation_id,
+                "op-1",
+            )
+            path = log.path_for("s1")
+            raw = path.read_text(encoding="utf-8")
+            rewritten = raw.replace("op-1", "op-2")
+            self.assertEqual(len(raw), len(rewritten))
+            path.write_text(rewritten, encoding="utf-8")
+            stat = path.stat()
+            os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+            projection = log.projection("s1")
+
+        self.assertNotIn("op-1", projection.operations)
         self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
 
     def test_failed_append_validation_does_not_pollute_projection_cache(self) -> None:

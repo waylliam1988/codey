@@ -428,6 +428,7 @@ VerificationObservation
     command: pytest tests/
     observed_at: ...
     workspace_revision: 42
+    workspace_fingerprint: sha256:...
 }
 ```
 
@@ -437,6 +438,7 @@ Evidence 应尽量包含：
 id
 operation_id
 workspace_revision
+workspace_fingerprint
 kind
 source
 observation
@@ -445,13 +447,13 @@ timestamp
 
 ---
 
-# 5. Verification Revision 应成为核心 invariant
+# 5. Workspace State 应成为核心 invariant
 
 设：
 
 ```text
-W = current workspace revision
-V = verification observation revision
+W = current workspace state (revision + fingerprint)
+V = verification observation workspace state (revision + fingerprint)
 ```
 
 只有：
@@ -486,7 +488,9 @@ run #2 -> PASS
 fresh_pass
 ```
 
-这个 invariant 应该同时在 runtime、verification、completion 和 tests 中保护。
+单调 revision 防止 Codey 自己的 edit 复用旧验证；bounded fingerprint 防止
+外部编辑一个 checkpoint 未记录的文件后仍复用旧验证。这个 invariant 应该同时在
+runtime、verification、completion 和 tests 中保护。
 
 ---
 
@@ -635,14 +639,14 @@ Workspace
  ├── git
  ├── project facts
  ├── artifacts
- └── revision
+ └── state (revision + fingerprint)
 ```
 
 不要让 Workspace 变成一个巨大的 service locator。
 
 ---
 
-# 11. Workspace Revision 与 Context Epoch
+# 11. Workspace State 与 Context Epoch
 
 所有影响 verification 的 mutation：
 
@@ -662,13 +666,15 @@ reset
 workspace_revision += 1
 ```
 
-Evidence 绑定 workspace revision：
+Evidence 绑定 workspace state：
 
 ```text
 Evidence.workspace_revision = 17
+Evidence.workspace_fingerprint = sha256:...
 ```
 
-当前 Workspace 已经是 18 时，这个 evidence 自动被视为 stale。
+当前 Workspace 已经是 revision 18，或 fingerprint 与观察时不同，这个 evidence
+自动被视为 stale。
 
 这是非常强的设计。
 
@@ -676,12 +682,12 @@ Evidence.workspace_revision = 17
 
 ```text
 context epoch       = prompt 内容出处，回答“模型当轮看见了哪些 sources”
-workspace revision  = 项目文件状态，回答“这条 verification 针对哪个文件状态”
+workspace state     = 项目文件 revision + fingerprint，回答“这条 verification 针对哪个文件状态”
 ```
 
 二者都可以进入 completion proof provenance，但语义互补，不能合并成一个
-`epoch` 字段。`ctx_epoch_ref` 证明模型输入的来源；`workspace_revision` 证明验证观察
-没有被后续 edit / external change 变旧。
+`epoch` 字段。`ctx_epoch_ref` 证明模型输入的来源；`workspace_revision` 与
+`workspace_fingerprint` 证明验证观察没有被后续 edit / external change 变旧。
 
 ---
 
@@ -710,6 +716,7 @@ stale
 
 ```text
 workspace_revision
+workspace_fingerprint
 command
 exit_code
 stdout
@@ -731,6 +738,7 @@ Evidence
     id
     operation_id
     workspace_revision
+    workspace_fingerprint
     kind
     source
     observation
@@ -1202,8 +1210,9 @@ codey/
 
 0.5.1 的实现刻意没有保留未接线的 `runtime/lane.py`、`runtime/suspension.py`
 或 `TaskRuntimePort` 脚手架；它们只在有真实生产写入方和恢复语义时再引入。
-这里的 `workspace/revision.py` 表示项目文件状态版本，不能和
-`workspace/context_epoch.py` 的 prompt-source provenance 混为一个概念。
+这里的 `workspace/revision.py` 表示项目文件状态：单调 revision 加 bounded
+fingerprint，不能和 `workspace/context_epoch.py` 的 prompt-source provenance
+混为一个概念。
 
 ---
 
@@ -1250,7 +1259,7 @@ mode dispatch、research、review、planning、Ghost post-turn 和 project compl
 尤其是把 provider/session/trace cleanup、receipt projection 和 Ghost terminal
 projection 进一步事件化；仍然不为测试保留私有 wrapper 或兼容 alias。
 
-## Phase 4：统一 Workspace Revision
+## Phase 4：统一 Workspace State
 
 所有 mutation：
 
@@ -1258,7 +1267,9 @@ projection 进一步事件化；仍然不为测试保留私有 wrapper 或兼容
 -> workspace_revision++
 ```
 
-Verification 绑定 workspace revision；context epoch 仍只表示 prompt source provenance。
+Verification 绑定 workspace revision + workspace fingerprint；context epoch 仍只表示
+prompt source provenance。缺失 revision 可以从初始值开始；腐坏、非法或超限的
+revision 状态必须 fail closed，不能让 verification identity 回退。
 
 ## Phase 5：Completion Proof 独立
 
@@ -1308,7 +1319,7 @@ context overflow
 ## Workspace
 
 ```text
-workspace revision increment
+workspace state advances on mutation
 mutation tracking
 git state
 artifact tracking

@@ -197,6 +197,31 @@ def test_fresh_pass_allows_done_with_verified_receipt() -> None:
         assert manifest["completion_repair_context"] == []
 
 
+def test_external_edit_after_green_check_blocks_completion_proof() -> None:
+    def writer_call(request: AgentRequest) -> RunResult:
+        project = request.project
+        (project / "src" / "mod.py").write_text("VALUE = 2\n", encoding="utf-8")
+        request.on_event(_edit_event())
+        request.on_event(_run_event(True))
+        (project / "src" / "other.py").write_text("SIDE = 2\n", encoding="utf-8")
+        return RunResult("implemented", "done", 3, changed=True, checks_passed=True)
+
+    writer = mock.Mock(side_effect=writer_call)
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        (project / "src" / "other.py").write_text("SIDE = 1\n", encoding="utf-8")
+        state = server.AppContext(Path(td) / "state")
+        event = _run(_runner(state, writer), state, project)
+
+        assert writer.call_count == 1
+        assert event["stop_reason"] == "blocked"
+        assert event["receipt"]["verification"]["checks_passed"] is False
+        manifest = _trace_payload(state)
+        proof = manifest["completion_proofs"][0]
+        assert proof["status"] == "blocked"
+        assert proof["blocked_reason"] == "verification_not_locally_observed"
+
+
 def test_fresh_fail_runs_one_repair_round_then_completes() -> None:
     writer = ScriptedWriter(
         ([_edit_event(), _run_event(False)], RunResult("done?", "done", 4)),

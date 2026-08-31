@@ -50,7 +50,11 @@ from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.completion.verification_policy import (
     check_covers_selected_candidate,
 )
-from codey.workspace.revision import workspace_revision_ref
+from codey.workspace.revision import (
+    valid_workspace_fingerprint,
+    workspace_fingerprint_ref,
+    workspace_revision_ref,
+)
 
 
 CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
@@ -324,23 +328,40 @@ def coding_verification_state(
 
 
 def _current_successful_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
-    current = getattr(evidence, "workspace_revision", 0)
     return tuple(
         item
         for item in getattr(evidence, "successful_checks", ())
-        if getattr(item, "workspace_revision", 0) == current
+        if _check_matches_current_workspace(evidence, item)
     )
 
 
 def _current_failed_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
-    current = getattr(evidence, "workspace_revision", 0)
     rows = getattr(evidence, "failed_checks", None)
     if rows is not None:
-        return tuple(rows)
+        return tuple(
+            item
+            for item in rows
+            if _check_matches_current_workspace(evidence, item)
+        )
     return tuple(
         item
         for item in getattr(evidence, "failed_checks_after_edit", ())
-        if getattr(item, "workspace_revision", 0) == current
+        if _check_matches_current_workspace(evidence, item)
+    )
+
+
+def _check_matches_current_workspace(
+    evidence: ExecutionEvidence,
+    item: CheckEvidence,
+) -> bool:
+    current_revision = getattr(evidence, "workspace_revision", 0)
+    current_fingerprint = valid_workspace_fingerprint(
+        getattr(evidence, "workspace_fingerprint", "")
+    )
+    return (
+        getattr(item, "workspace_revision", 0) == current_revision
+        and bool(current_fingerprint)
+        and getattr(item, "workspace_fingerprint", "") == current_fingerprint
     )
 
 
@@ -549,6 +570,7 @@ def build_coding_completion_proof(
     verification_forbidden: bool = False,
     diagnostic_refs: tuple[str, ...] = (),
     workspace_revision: int = 0,
+    workspace_fingerprint: str = "",
     project: str | Path | None = None,
 ) -> CompletionProof | None:
     """Project one coding run into its completion proof (or None)."""
@@ -566,6 +588,7 @@ def build_coding_completion_proof(
         )
     run_ref = safe_run_ref(run_id)
     revision_ref = workspace_revision_ref(project or "", workspace_revision)
+    fingerprint_ref = workspace_fingerprint_ref(project or "", workspace_fingerprint)
     external_refs: tuple[str, ...]
     if run_ref:
         external_refs = (
@@ -577,6 +600,8 @@ def build_coding_completion_proof(
         external_refs = ()
     if revision_ref:
         external_refs = (*external_refs, revision_ref)
+    if fingerprint_ref:
+        external_refs = (*external_refs, fingerprint_ref)
     contract = build_completion_contract(
         domain=DOMAIN_CODING,
         subject_ref=f"run:{run_ref}" if run_ref else DOMAIN_CODING,

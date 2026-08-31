@@ -84,7 +84,7 @@ from codey.workspace.config import (
     load_project_config,
     preferred_provider_for,
 )
-from codey.workspace.revision import INITIAL_WORKSPACE_REVISION
+from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
 
 
 @dataclass(frozen=True)
@@ -279,15 +279,18 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             "intent": request.intent,
         })
 
+        workspace_state = _current_workspace_state(deps, project, project_config_result.config.ignored_paths)
         work = RunWork(
             recent_events=[],
             evidence=ExecutionEvidence(
-                workspace_revision=_current_workspace_revision(deps, project),
+                workspace_revision=workspace_state.revision,
+                workspace_fingerprint=workspace_state.fingerprint,
             ),
             claimed_work_item=claimed_work_item,
             trace=trace,
+            workspace_revision=workspace_state.revision,
+            workspace_fingerprint=workspace_state.fingerprint,
         )
-        work.workspace_revision = work.evidence.workspace_revision
         project_completion_deps = _project_completion_deps(
             deps,
             lambda active_work, transition: _commit_run_operation_with_store(
@@ -357,7 +360,11 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             if event.kind == "tool_start":
                 return
             if project and _workspace_edit_event(event):
-                work.advance_workspace_revision(deps.workspace_revisions, project)
+                work.advance_workspace_revision(
+                    deps.workspace_revisions,
+                    project,
+                    ignored_paths=project_config_result.config.ignored_paths,
+                )
             work.evidence.record(event)
             message = render_run_event(event)
             work.recent_events.append(message)
@@ -706,11 +713,15 @@ def _open_trace(
         return None
 
 
-def _current_workspace_revision(deps: TaskRunDeps, project: str | None) -> int:
+def _current_workspace_state(
+    deps: TaskRunDeps,
+    project: str | None,
+    ignored_paths: tuple[str, ...],
+) -> WorkspaceState:
     store = deps.workspace_revisions
     if not project:
-        return INITIAL_WORKSPACE_REVISION
-    return store.current(project)
+        return WorkspaceState(INITIAL_WORKSPACE_REVISION, "")
+    return store.current_state(project, ignored_paths=ignored_paths)
 
 
 def _workspace_edit_event(event: RunEvent) -> bool:

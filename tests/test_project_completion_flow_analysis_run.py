@@ -276,8 +276,17 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
 
         def update_checkpoint(fn) -> None:
             class _Store:
-                def record_run(self, item, *, command, cwd, ok, workspace_revision):
-                    del workspace_revision
+                def record_run(
+                    self,
+                    item,
+                    *,
+                    command,
+                    cwd,
+                    ok,
+                    workspace_revision,
+                    workspace_fingerprint,
+                ):
+                    del workspace_revision, workspace_fingerprint
                     record("run", (command, cwd, ok))
 
                 def record_edit(self, item, rel):

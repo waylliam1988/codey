@@ -135,7 +135,12 @@ class VerificationMapTests(unittest.TestCase):
                 td,
                 _changes("app.py"),
                 checks_after_last_change=(
-                    CheckpointCheck("python -m pytest tests/test_app.py", "."),
+                    CheckpointCheck(
+                        "python -m pytest tests/test_app.py",
+                        ".",
+                        1,
+                        "sha256:" + ("1" * 64),
+                    ),
                 ),
                 project_map=(
                     "Project Map:\n"

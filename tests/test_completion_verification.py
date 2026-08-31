@@ -50,9 +50,14 @@ from codey.completion.verification import (
 )
 
 
+FINGERPRINT = "sha256:" + ("1" * 64)
+OTHER_FINGERPRINT = "sha256:" + ("2" * 64)
+
+
 def _check(command: str, cwd: str = ".", **extra):
     from codey.runtime.execution_evidence import CheckEvidence
 
+    extra.setdefault("workspace_fingerprint", FINGERPRINT)
     return CheckEvidence(command, cwd, **extra)
 
 
@@ -77,11 +82,13 @@ class _StubEvidence:
         failed=(),
         observed_tool_events: int = 0,
         workspace_revision: int = 1,
+        workspace_fingerprint: str = FINGERPRINT,
     ) -> None:
         self.successful_checks = list(successful)
         self.failed_checks_after_edit = list(failed)
         self.observed_tool_events = observed_tool_events
         self.workspace_revision = workspace_revision
+        self.workspace_fingerprint = workspace_fingerprint
 
 
 class TriStateTests(unittest.TestCase):
@@ -160,6 +167,47 @@ class TriStateTests(unittest.TestCase):
             selected_check_present=True,
             provenance=provenance,
             workspace_revision=evidence.workspace_revision,
+            project=_ROOT,
+        )
+
+        self.assertEqual(local_state, VERIFICATION_UNOBSERVED)
+        self.assertIsNotNone(proof)
+        assert proof is not None
+        self.assertEqual(proof.status, COMPLETION_BLOCKED)
+        self.assertEqual(
+            proof.blocked_reason,
+            LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
+        )
+
+    def test_stale_workspace_fingerprint_green_cannot_back_current_proof(self) -> None:
+        selected = _selected()
+        files = ("src/mod.py",)
+        evidence = _StubEvidence(
+            successful=[_check("pytest -q", workspace_fingerprint=FINGERPRINT)],
+            workspace_revision=1,
+            workspace_fingerprint=OTHER_FINGERPRINT,
+            observed_tool_events=1,
+        )
+
+        local_state = coding_verification_state(
+            selected,
+            evidence,
+            files,
+            root=_ROOT,
+        )
+        provenance = verification_provenance(
+            local_state=local_state,
+            checkpoint_green=False,
+        )
+        proof = build_coding_completion_proof(
+            run_id="run-stale-fingerprint",
+            stop_reason="done",
+            task_changed=True,
+            files=files,
+            selected_check_present=True,
+            provenance=provenance,
+            workspace_revision=evidence.workspace_revision,
+            workspace_fingerprint=evidence.workspace_fingerprint,
             project=_ROOT,
         )
 
@@ -434,13 +482,21 @@ class ProofTests(unittest.TestCase):
             selected_check_present=True,
             provenance=provenance,
             workspace_revision=3,
+            workspace_fingerprint=FINGERPRINT,
             project=_ROOT,
         )
 
         self.assertIsNotNone(proof)
         assert proof is not None
-        self.assertIn("workspace_revision:", proof.external_refs[-1])
-        self.assertTrue(proof.external_refs[-1].endswith(":3"))
+        self.assertTrue(
+            any(ref.startswith("workspace_revision:") for ref in proof.external_refs)
+        )
+        self.assertTrue(
+            any(ref.endswith(":3") for ref in proof.external_refs)
+        )
+        self.assertTrue(
+            any(ref.startswith("workspace_fingerprint:") for ref in proof.external_refs)
+        )
 
     def test_docs_only_change_stays_complete_with_limitations(self) -> None:
         provenance = verification_provenance(

@@ -3251,7 +3251,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3264 passed, 16 skipped in 291.62s (0:04:51)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3273 passed, 16 skipped in 281.56s (0:04:41)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 
@@ -3290,9 +3290,9 @@ terminal
 `RuntimeOperationStore.start()` 会恢复同一个 open operation 的最新 phase，不会把 resume 重新写回 `accepted`；相同 phase commit 幂等返回当前 projection，不制造重复 effect。scheduler 负责 open operation 一定 settle：正常返回、stop/cancel、业务异常和未知异常都会先写 settlement，再按调用策略返回或 re-raise。
 
 `RuntimeSessionLog` 维护进程内 entries + projection cache。append 仍通过 reducer
-做增量 fail-closed 校验；`RuntimeOperationStore.load()` 在文件大小未变化时从缓存
-entries 扫描当前 run phase，不再让每次 phase commit 都全量读盘。外部写入、
-compaction 和 delete session 会触发缓存重建或失效。
+做增量 fail-closed 校验；`RuntimeOperationStore.load()` 在文件大小和 `mtime_ns`
+stamp 都未变化时从缓存 entries 扫描当前 run phase，不再让每次 phase commit 都
+全量读盘。同尺寸外部改写、compaction 和 delete session 会触发缓存重建或失效。
 
 ### AgentRunner 拆分
 
@@ -3382,20 +3382,24 @@ runtime log 还会在同一把文件锁下做 replay 等价 compaction，只保�
 
 测试必须迁就新架构：research harness patch `codey.operations.research_flow.run_research_iteration`；project completion 测试 patch `codey.operations.project_completion_flow` 的公开 operation/helper，而不是要求生产类保留旧私有方法。
 
-### Workspace Revision，不是 Context Epoch
+### Workspace State，不是 Context Epoch
 
-0.5.1 落地的是 workspace revision：项目文件状态的递增版本，用来判断 verification
-observation 是否还能支撑 completion proof。它和 0.4.14 已有的
+0.5.1 落地的是 workspace state：项目文件状态的递增 revision 加有界
+fingerprint，用来判断 verification observation 是否还能支撑 completion proof。
+缺失的 revision 文件可以从初始 revision 开始；腐坏、非法或超限的 revision 状态
+会 fail closed，避免 verification freshness 的单调身份回退。它和 0.4.14 已有的
 `workspace/context_epoch.py` 不是同一个概念：
 
 ```text
 context epoch       = prompt 看见了哪些 source refs / digest，服务溯源审计
-workspace revision  = 项目文件状态第几版，服务 verification freshness
+workspace state     = 项目文件 revision + fingerprint，服务 verification freshness
 ```
 
 因此 proof provenance 里两者互补：`ctx_epoch_ref` 证明模型当时看见了什么；
-`workspace_revision` 证明验证观察针对的是哪一个项目状态。冷启动不做旧 checkpoint
-兼容：没有 revision 的 seed check 不能继承 green，宁可多跑一次验证。
+`workspace_revision` + `workspace_fingerprint` 证明验证观察针对的是哪一个项目状态。
+冷启动不做旧 checkpoint 兼容：没有 revision 或 fingerprint 的 seed check 不能继承
+green，宁可多跑一次验证；未记录文件的外部编辑会因 fingerprint 不匹配而使旧 green
+失效。
 
 ### 验证
 
@@ -3406,7 +3410,7 @@ task_entry / project_completion / edit-integrity / completion-enforcement / anal
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
 manual completion_operation_resume_smoke.py --self-test 通过
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
-全量 pytest 3264 passed, 16 skipped in 291.62s (0:04:51)
+全量 pytest 3273 passed, 16 skipped in 281.56s (0:04:41)
 ```
 
 ### A/B

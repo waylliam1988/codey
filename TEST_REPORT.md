@@ -39,17 +39,25 @@ production: deleted codey/operations/task_flow.py as a production concept.
             RuntimeSessionLog remains the single durable fact source and now
             compacts under file lock before the 4 MB guard can brick a session.
             Runtime read() also uses the file lock, and append validation now
-            keeps an entries+projection cache so phase commit loads do not
-            replay the whole JSONL file on the hot path. Future-only runtime
-            scaffolding was removed: lane queues, suspension, TaskRuntimePort,
-            tool invocation log entries, TaskContract, TaskState, and the
-            OperationKind literal. ControlTeachCancelled now inherits
-            TaskCancelled; stop_reason->OperationOutcome mapping has one
-            implementation. AppContext without state_home uses an ephemeral
-            runtime log/store and WorkspaceRevisionStore so tests and headless
-            paths still exercise the production runtime path.
-            WorkspaceRevisionStore records project-state revisions for
-            verification freshness; it is intentionally separate from
+            keeps an entries+projection cache keyed by file size and mtime_ns
+            so phase commit loads do not replay the whole JSONL file on the hot
+            path and same-size external rewrites still invalidate cached
+            projections. Future-only runtime scaffolding was removed: lane
+            queues, suspension, TaskRuntimePort, tool invocation log entries,
+            TaskContract, TaskState, and the OperationKind literal.
+            ControlTeachCancelled now inherits TaskCancelled;
+            stop_reason->OperationOutcome mapping has one implementation.
+            AppContext without state_home uses an ephemeral runtime log/store
+            and WorkspaceRevisionStore so tests and headless paths still
+            exercise the production runtime path.
+            WorkspaceRevisionStore now records a WorkspaceState(revision,
+            fingerprint) for verification freshness. Missing revision state can
+            start at the initial revision, but corrupt/invalid/oversized stored
+            state fails closed instead of rolling identity back. Verification
+            observations, checkpoint green checks, and completion proofs now
+            require both matching revision and matching bounded workspace
+            fingerprint, so an unrecorded external file edit cannot inherit an
+            old green check. This is intentionally separate from
             workspace/context_epoch.py, which remains prompt-source provenance.
             Ghost inbox, continuity, work queue, affinity, and Hebbian stores
             now use the shared GhostEventLog IO layer with policy-specific bad
@@ -77,6 +85,15 @@ ok
 
 python -m ruff check codey tests
 All checks passed
+
+python -m pytest tests/test_runtime_session_log.py tests/test_workspace_revision.py \
+  tests/test_completion_verification.py tests/test_project_task_context.py -q
+72 passed, 33 subtests passed in 2.19s
+
+python -m pytest tests/test_headless_runner.py tests/test_task_entry_run_trace.py \
+  tests/test_task_entry_operation_state.py \
+  tests/test_project_completion_flow_enforcement.py -q
+57 passed, 6 subtests passed in 27.10s
 
 python -B tests/manual/completion_operation_resume_smoke.py --self-test
 ok: crash resume reports the last committed phase and resumes the same run
@@ -108,17 +125,17 @@ git diff --check
 no whitespace errors; Git reported only CRLF normalization warnings
 ```
 
-The first full run after the app-services split exposed stale tests that still
-patched removed server-private service names. They were migrated to
-`codey.app.services` / `codey.app.api`, then the focused set and full suite
-were rerun.
+Earlier full runs in this cold-start sequence exposed stale server-private
+patch points and one headless shell-denial regression where the stop flag
+overrode the explicit `approval` terminal result. Both were fixed before the
+final full run.
 
 Final full local pytest (Windows, Python 3.12, 2026-08-31, after code was
 stable and before updating this report):
 
 ```text
 python -m pytest
-3264 passed, 16 skipped in 291.62s (0:04:51)
+3273 passed, 16 skipped in 281.56s (0:04:41)
 ```
 
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)

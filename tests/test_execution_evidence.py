@@ -8,6 +8,8 @@ from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 from codey.runs.work_checkpoint import CheckpointCheck
 
+FINGERPRINT = "sha256:" + ("1" * 64)
+
 
 def event(name: str, args: dict, outcome: ToolOutcome, turn: int = 1) -> RunEvent:
     return RunEvent.tool_finished(turn, ToolCall(name, args), outcome)
@@ -43,8 +45,8 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertIn("Truncated tool results during task: read src/auth.py:20", rendered)
 
     def test_edit_advances_epoch_and_invalidates_green_checks(self) -> None:
-        evidence = ExecutionEvidence()
-        evidence.seed_checks((CheckpointCheck("python -m pytest", "."),))
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
+        evidence.seed_checks((CheckpointCheck("python -m pytest", ".", 1, FINGERPRINT),))
         evidence.record(event(
             "edit",
             {"path": "src/auth.py"},
@@ -56,7 +58,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.successful_checks, ())
 
     def test_failed_run_clears_green_checks_and_success_resolves_same_failure(self) -> None:
-        evidence = ExecutionEvidence()
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
         args = {"path": ".", "command": "python -m pytest"}
         evidence.record(event("run", args, ToolOutcome("ok", True, exit_code=0)))
         evidence.record(event("run", args, ToolOutcome("failed", False, exit_code=1)))
@@ -70,8 +72,8 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.failed_checks_after_edit, [])
 
     def test_workspace_drift_invalidates_all_check_evidence(self) -> None:
-        evidence = ExecutionEvidence()
-        evidence.seed_checks((CheckpointCheck("python -m pytest", "."),))
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
+        evidence.seed_checks((CheckpointCheck("python -m pytest", ".", 1, FINGERPRINT),))
         evidence.failed_checks_after_edit.append(
             evidence.successful_checks[0]
         )

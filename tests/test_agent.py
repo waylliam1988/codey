@@ -831,7 +831,12 @@ class RunLoopTests(unittest.TestCase):
             for index in range(32)
         )
         checks = tuple(
-            CheckpointCheck("python -m pytest " + ("x" * 260), ".")
+            CheckpointCheck(
+                "python -m pytest " + ("x" * 260),
+                ".",
+                1,
+                "sha256:" + ("1" * 64),
+            )
             for _index in range(8)
         )
         checkpoint = WorkCheckpoint(

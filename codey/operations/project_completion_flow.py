@@ -413,7 +413,11 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
     ctx.resumed_successful_checks = ctx.project_context.checkpoint.successful_checks
     ctx.work.evidence.seed_checks(ctx.project_context.checkpoint.seed_checks)
     if ctx.project_context.checkpoint.workspace_changed:
-        ctx.work.advance_workspace_revision(ctx.deps.workspace_revisions, ctx.project)
+        ctx.work.advance_workspace_revision(
+            ctx.deps.workspace_revisions,
+            ctx.project,
+            ignored_paths=ctx.configured_ignored_paths,
+        )
     ctx.agent_task = ctx.request.task
     ctx.agent_fresh_chat = ctx.frame.fresh_chat
     _prepare_new_project_context(ctx)
@@ -503,7 +507,11 @@ def _refresh_checkpoint_view(ctx: _ProjectRun) -> CheckpointView:
         ctx.resumed_changed_files = refreshed.changed_files
         ctx.resumed_successful_checks = refreshed.successful_checks
     if refreshed.workspace_changed:
-        ctx.work.advance_workspace_revision(ctx.deps.workspace_revisions, ctx.project)
+        ctx.work.advance_workspace_revision(
+            ctx.deps.workspace_revisions,
+            ctx.project,
+            ignored_paths=ctx.configured_ignored_paths,
+        )
     return CheckpointView(
         prompt=ctx.checkpoint_prompt,
         changed_files=ctx.resumed_changed_files,
@@ -1027,6 +1035,12 @@ def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
 
 def _record_completion_evidence(ctx: _ProjectRun) -> None:
     assert ctx.result is not None
+    if ctx.result.stop_reason == "done" and ctx.task_changed and ctx.files:
+        ctx.work.refresh_workspace_state(
+            ctx.deps.workspace_revisions,
+            ctx.project,
+            ignored_paths=ctx.configured_ignored_paths,
+        )
     ctx.decision, ctx.integrity = _completion_evidence(
         ctx,
         changes=ctx.task_changes,
@@ -1450,6 +1464,7 @@ def handle_project_tool_event(
                 cwd=cwd,
                 ok=ok,
                 workspace_revision=work.workspace_revision,
+                workspace_fingerprint=work.workspace_fingerprint,
             )
         )
         record_analysis_run(

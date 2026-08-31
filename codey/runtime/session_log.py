@@ -75,8 +75,14 @@ class RuntimeLogWriteError(RuntimeLogError):
 
 
 @dataclass(frozen=True)
-class _ProjectionCache:
+class _FileStamp:
     file_size: int
+    mtime_ns: int
+
+
+@dataclass(frozen=True)
+class _ProjectionCache:
+    stamp: _FileStamp
     entries: tuple["RuntimeLogEntry", ...]
     projection: Any
 
@@ -265,16 +271,16 @@ class RuntimeSessionLog:
 
     def _cache_for_session_unlocked(self, session_id: str) -> _ProjectionCache:
         path = self.path_for(session_id)
-        current_size = _file_size(path)
+        current_stamp = _file_stamp(path)
         cached = self._projection_cache.get(session_id)
-        if cached is not None and cached.file_size == current_size:
+        if cached is not None and cached.stamp == current_stamp:
             return cached
 
         entries = self._read_unlocked(session_id, repair_tail=True)
         from codey.runtime.reducer import reduce_session
 
         cache = _ProjectionCache(
-            file_size=_file_size(path),
+            stamp=_file_stamp(path),
             entries=entries,
             projection=reduce_session(entries),
         )
@@ -383,14 +389,16 @@ class RuntimeSessionLog:
         with with_file_lock(path):
             from codey.runtime.reducer import apply_entries, reduce_session
 
-            current_size = _file_size(path)
+            current_stamp = _file_stamp(path)
+            current_size = current_stamp.file_size
             cached = self._projection_cache.get(session_id)
-            if cached is not None and cached.file_size == current_size:
+            if cached is not None and cached.stamp == current_stamp:
                 base_entries = cached.entries
                 base_projection = cached.projection
             else:
                 base_entries = self._read_unlocked(session_id, repair_tail=True)
-                current_size = _file_size(path)
+                current_stamp = _file_stamp(path)
+                current_size = current_stamp.file_size
 
                 base_projection = reduce_session(base_entries)
 
@@ -409,7 +417,7 @@ class RuntimeSessionLog:
                     raise RuntimeLogWriteError("runtime log exceeds size limit")
                 write_bytes_atomic(path, b"".join(encoded_compacted))
                 self._projection_cache[session_id] = _ProjectionCache(
-                    file_size=sum(len(encoded) for encoded in encoded_compacted),
+                    stamp=_file_stamp(path),
                     entries=compacted,
                     projection=compacted_projection,
                 )
@@ -418,18 +426,19 @@ class RuntimeSessionLog:
                 for encoded in encoded_rows:
                     handle.write(encoded)
             self._projection_cache[session_id] = _ProjectionCache(
-                file_size=current_size + total_new_bytes,
+                stamp=_file_stamp(path),
                 entries=(*base_entries, *rows),
                 projection=candidate_projection,
             )
         return rows
 
 
-def _file_size(path: Path) -> int:
+def _file_stamp(path: Path) -> _FileStamp:
     try:
-        return path.stat().st_size
+        stat = path.stat()
     except FileNotFoundError:
-        return 0
+        return _FileStamp(file_size=0, mtime_ns=0)
+    return _FileStamp(file_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
 
 
 def _complete_batch_prefix(

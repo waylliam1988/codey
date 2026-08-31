@@ -60,6 +60,7 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
                 cwd=str(event.call.args.get("path") or "."),
                 ok=event.outcome.ok and event.outcome.exit_code == 0,
                 workspace_revision=1,
+                workspace_fingerprint="sha256:" + ("0" * 64),
             )
 
     try:

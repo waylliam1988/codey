@@ -99,6 +99,7 @@ class ProjectTaskContextBuilder:
             run_id=run_id,
             continue_task=continue_task,
             provider_session_changed=provider_session_changed,
+            ignored_paths=config.ignored_paths,
         )
         verification_candidates = safe_verification_candidates(
             project,
@@ -137,7 +138,12 @@ class ProjectTaskContextBuilder:
             return CheckpointContext()
         try:
             return _checkpoint_context(
-                self.work_checkpoints.reconcile(item),
+                self.work_checkpoints.reconcile(
+                    item,
+                    ignored_paths=self.config_result.config.ignored_paths
+                    if self.config_result is not None
+                    else (),
+                ),
                 resumed=False,
             )
         except (OSError, ValueError):
@@ -176,6 +182,7 @@ class ProjectTaskContextBuilder:
         run_id: str,
         continue_task: bool,
         provider_session_changed: bool,
+        ignored_paths: tuple[str, ...],
     ) -> CheckpointContext:
         if self.work_checkpoints is None:
             return CheckpointContext()
@@ -187,7 +194,10 @@ class ProjectTaskContextBuilder:
             same_task = previous is not None and previous.original_task.strip() == task.strip()
             if same_project and resume_requested and (continue_task or same_task):
                 return _checkpoint_context(
-                    self.work_checkpoints.reconcile(previous),
+                    self.work_checkpoints.reconcile(
+                        previous,
+                        ignored_paths=ignored_paths,
+                    ),
                     resumed=True,
                 )
             return CheckpointContext(

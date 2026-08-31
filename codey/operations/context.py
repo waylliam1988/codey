@@ -51,10 +51,31 @@ class RunWork:
     operation: RuntimeOperationState | None = None
     turns_observed: int = 0
     workspace_revision: int = INITIAL_WORKSPACE_REVISION
+    workspace_fingerprint: str = ""
 
-    def advance_workspace_revision(self, store: Any, project: str) -> None:
-        self.workspace_revision = store.bump(project)
-        self.evidence.set_workspace_revision(self.workspace_revision)
+    def refresh_workspace_state(
+        self,
+        store: Any,
+        project: str,
+        *,
+        ignored_paths: tuple[str, ...] = (),
+    ) -> None:
+        state = store.current_state(project, ignored_paths=ignored_paths)
+        self.workspace_revision = state.revision
+        self.workspace_fingerprint = state.fingerprint
+        self.evidence.set_workspace_state(state.revision, state.fingerprint)
+
+    def advance_workspace_revision(
+        self,
+        store: Any,
+        project: str,
+        *,
+        ignored_paths: tuple[str, ...] = (),
+    ) -> None:
+        state = store.bump_state(project, ignored_paths=ignored_paths)
+        self.workspace_revision = state.revision
+        self.workspace_fingerprint = state.fingerprint
+        self.evidence.set_workspace_state(state.revision, state.fingerprint)
 
 
 @dataclass(frozen=True)

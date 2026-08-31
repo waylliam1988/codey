@@ -80,9 +80,9 @@
     `operation_started`、最新 `run_phase` effect，以及存在时的 terminal
     `operation_settled`。
   - Runtime session-log 校验现在维护进程内 entries + projection 缓存。
-    `append_many()` 仍然通过 reducer fail closed，但文件大小未变化时，热路径
-    phase commit 直接从缓存 entries 读取当前状态；外部写入、compaction 和删除会
-    触发缓存重建或失效。
+    `append_many()` 仍然通过 reducer fail closed，但文件大小和 `mtime_ns`
+    stamp 都未变化时，热路径 phase commit 直接从缓存 entries 读取当前状态；
+    同尺寸外部改写、compaction 和删除都会触发缓存重建或失效。
   - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
     存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
     `Progress` 行。terminal runtime state 也能在没有 ledger/trace 时提供最小
@@ -92,10 +92,14 @@
   - 无参 `AppContext()` 现在也有 ephemeral runtime-session log、operation store
     和 workspace revision store，测试/临时调用走同一 runtime path，但不会写入
     用户真实 durable state home。
-  - 新增 workspace revision 跟踪，把 verification freshness 绑定到项目文件状态。
-    它刻意不同于 `workspace/context_epoch.py`：context epoch 标识 prompt source
-    provenance，workspace revision 标识某条 verification observation 针对的文件
-    状态。
+  - 新增 workspace state 跟踪，用 `WorkspaceState(revision, fingerprint)` 把
+    verification freshness 绑定到项目文件状态。缺失的 revision 文件可以从初始
+    revision 开始，但腐坏、非法或超限的 revision 状态会 fail closed，不再把
+    单调身份回退到 1。Verification observation、checkpoint green check 和
+    completion proof 现在都要求 revision 与有界 workspace fingerprint 同时匹配，
+    所以未记录文件的外部编辑不能静默复用旧 green check。它刻意不同于
+    `workspace/context_epoch.py`：context epoch 标识 prompt source provenance，
+    workspace state 标识某条 verification observation 针对的文件状态。
   - Research 和 hybrid terminal event 现在把原始任务 turn budget 写入
     runtime terminal snapshot，即使 research engine 内部只用了更少轮数。
   - SSE subscriber queue、replay id、overflow marker、replay-window 检查移入

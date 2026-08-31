@@ -21,6 +21,8 @@ from codey.runs.work_checkpoint import (
     render_work_checkpoint,
 )
 
+FINGERPRINT = "sha256:" + ("1" * 64)
+
 
 def _max_len_rel_path(index: int) -> str:
     prefix = f"src/{index:02d}/"
@@ -44,6 +46,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
             self.assertEqual(len(item.successful_checks_after_last_change), 1)
 
@@ -111,6 +114,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             item = store.record_edit(item, "sub/../app.py")
@@ -124,6 +128,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
             item = store.record_edit(item, str(target.resolve()))
 
@@ -142,6 +147,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             item = store.record_edit(item, "../outside.py")
@@ -162,6 +168,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             item = store.record_edit(item, "a" * 241)
@@ -183,6 +190,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd="tests",
                 ok=False,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             self.assertEqual(item.successful_checks_after_last_change, ())
@@ -202,6 +210,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             item = store.record_run(
@@ -210,6 +219,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=False,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             self.assertEqual(item.successful_checks_after_last_change, ())
@@ -231,6 +241,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
             target.write_text("two", encoding="utf-8")
 
@@ -315,6 +326,7 @@ class WorkCheckpointStoreTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=FINGERPRINT,
             )
 
             rendered = render_work_checkpoint(item)
@@ -331,7 +343,12 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             for index in range(MAX_CHANGED_FILES)
         )
         checks = tuple(
-            CheckpointCheck("x" * MAX_COMMAND_CHARS, _max_len_rel_path(index))
+            CheckpointCheck(
+                "x" * MAX_COMMAND_CHARS,
+                _max_len_rel_path(index),
+                1,
+                FINGERPRINT,
+            )
             for index in range(MAX_SUCCESSFUL_CHECKS)
         )
         item = WorkCheckpoint(

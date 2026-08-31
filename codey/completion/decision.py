@@ -101,6 +101,7 @@ def build_completion_decision(
         verification_forbidden=verification_forbidden,
         diagnostic_refs=diagnostic_refs,
         workspace_revision=getattr(evidence, "workspace_revision", 0),
+        workspace_fingerprint=getattr(evidence, "workspace_fingerprint", ""),
         project=project,
     )
     failure_class = ""

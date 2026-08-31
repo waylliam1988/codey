@@ -20,7 +20,9 @@ from codey.storage.local_store import (
 )
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
+    valid_workspace_fingerprint,
     valid_workspace_revision,
+    workspace_fingerprint,
 )
 
 
@@ -106,6 +108,7 @@ class CheckpointCheck:
     command: str
     cwd: str = "."
     workspace_revision: int = INITIAL_WORKSPACE_REVISION
+    workspace_fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -195,8 +198,11 @@ class WorkCheckpointStore:
                 command = _text(item.get("command"), MAX_COMMAND_CHARS)
                 cwd = _rel_path(item.get("cwd") or ".")
                 revision = valid_workspace_revision(item.get("workspace_revision"))
-                if command and cwd and revision:
-                    checks.append(CheckpointCheck(command, cwd, revision))
+                fingerprint = valid_workspace_fingerprint(
+                    item.get("workspace_fingerprint")
+                )
+                if command and cwd and revision and fingerprint:
+                    checks.append(CheckpointCheck(command, cwd, revision, fingerprint))
                 if len(checks) >= MAX_SUCCESSFUL_CHECKS:
                     break
             action_value = payload.get("last_action")
@@ -284,14 +290,20 @@ class WorkCheckpointStore:
         cwd: str,
         ok: bool,
         workspace_revision: int,
+        workspace_fingerprint: str,
     ) -> WorkCheckpoint:
         safe_command = _text(command, MAX_COMMAND_CHARS)
         safe_cwd = _rel_path(cwd or ".") or "."
         revision = valid_workspace_revision(workspace_revision)
+        fingerprint = valid_workspace_fingerprint(workspace_fingerprint)
         checks = list(checkpoint.successful_checks_after_last_change)
-        if ok and safe_command and revision:
-            check = CheckpointCheck(safe_command, safe_cwd, revision)
-            checks = [item for item in checks if item != check]
+        if ok and safe_command and revision and fingerprint:
+            check = CheckpointCheck(safe_command, safe_cwd, revision, fingerprint)
+            checks = [
+                item
+                for item in checks
+                if (item.command, item.cwd) != (safe_command, safe_cwd)
+            ]
             checks.append(check)
         elif not ok:
             checks.clear()
@@ -316,12 +328,23 @@ class WorkCheckpointStore:
         self.save(updated)
         return updated
 
-    def reconcile(self, checkpoint: WorkCheckpoint) -> WorkCheckpoint:
+    def reconcile(
+        self,
+        checkpoint: WorkCheckpoint,
+        *,
+        ignored_paths: tuple[str, ...] = (),
+    ) -> WorkCheckpoint:
         root = Path(checkpoint.project).resolve()
         changed = any(_file_hash(root, item.path) != item.after_hash for item in checkpoint.changed_files)
         # A file whose hash was never captured cannot prove it is unchanged,
         # so the checkpoint stays conservatively marked workspace-changed.
         changed = changed or bool(checkpoint.hash_unavailable_files)
+        if checkpoint.successful_checks_after_last_change:
+            current_fingerprint = workspace_fingerprint(root, ignored_paths=ignored_paths)
+            changed = changed or not current_fingerprint or any(
+                item.workspace_fingerprint != current_fingerprint
+                for item in checkpoint.successful_checks_after_last_change
+            )
         if not changed:
             return checkpoint
         updated = replace(

@@ -8,6 +8,7 @@ from codey.runtime.events import RunEvent
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
+    valid_workspace_fingerprint,
     valid_workspace_revision,
 )
 
@@ -68,6 +69,7 @@ class CheckEvidence:
     result_summary: str = ""
     managed_output_handle: str = ""
     workspace_revision: int = INITIAL_WORKSPACE_REVISION
+    workspace_fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -100,11 +102,17 @@ class TruncatedEvidence:
 class ExecutionEvidence:
     """Aggregate local tool facts without persisting source or tool output."""
 
-    def __init__(self, *, workspace_revision: int = INITIAL_WORKSPACE_REVISION) -> None:
+    def __init__(
+        self,
+        *,
+        workspace_revision: int = INITIAL_WORKSPACE_REVISION,
+        workspace_fingerprint: str = "",
+    ) -> None:
         self.workspace_revision = (
             valid_workspace_revision(workspace_revision)
             or INITIAL_WORKSPACE_REVISION
         )
+        self.workspace_fingerprint = valid_workspace_fingerprint(workspace_fingerprint)
         self.edit_epoch = 0
         self.changed_files: list[str] = []
         self.reads: list[ReadEvidence] = []
@@ -123,16 +131,30 @@ class ExecutionEvidence:
             revision = valid_workspace_revision(
                 getattr(item, "workspace_revision", 0)
             )
-            if command and revision:
+            fingerprint = valid_workspace_fingerprint(
+                getattr(item, "workspace_fingerprint", "")
+            )
+            if command and revision and fingerprint:
                 self._append_check(
                     self.checks_after_edit,
-                    CheckEvidence(command, cwd, workspace_revision=revision),
+                    CheckEvidence(
+                        command,
+                        cwd,
+                        workspace_revision=revision,
+                        workspace_fingerprint=fingerprint,
+                    ),
                 )
 
     def set_workspace_revision(self, revision: object) -> None:
         number = valid_workspace_revision(revision)
         if number:
             self.workspace_revision = number
+
+    def set_workspace_state(self, revision: object, fingerprint: object) -> None:
+        number = valid_workspace_revision(revision)
+        if number:
+            self.workspace_revision = number
+        self.workspace_fingerprint = valid_workspace_fingerprint(fingerprint)
 
     def record(self, event: RunEvent) -> None:
         if event.kind != "tool" or event.call is None or event.outcome is None:
@@ -185,7 +207,7 @@ class ExecutionEvidence:
         return tuple(
             item
             for item in self.checks_after_edit
-            if item.workspace_revision == self.workspace_revision
+            if self._check_matches_workspace(item)
         )
 
     @property
@@ -193,12 +215,12 @@ class ExecutionEvidence:
         return tuple(
             item
             for item in self.failed_checks_after_edit
-            if item.workspace_revision == self.workspace_revision
+            if self._check_matches_workspace(item)
         )
 
     @property
     def has_successful_checks(self) -> bool:
-        return bool(self.checks_after_edit)
+        return bool(self.successful_checks)
 
     def invalidate_checks(self) -> None:
         """Drop check facts after an out-of-band workspace change."""
@@ -279,6 +301,7 @@ class ExecutionEvidence:
             result_summary="" if ok else check_failure_summary(outcome),
             managed_output_handle=handle,
             workspace_revision=self.workspace_revision,
+            workspace_fingerprint=self.workspace_fingerprint,
         )
         if ok:
             self.failed_checks_after_edit[:] = [
@@ -316,6 +339,13 @@ class ExecutionEvidence:
         ]
         values.append(item)
         del values[:-limit]
+
+    def _check_matches_workspace(self, item: CheckEvidence) -> bool:
+        return (
+            item.workspace_revision == self.workspace_revision
+            and bool(self.workspace_fingerprint)
+            and item.workspace_fingerprint == self.workspace_fingerprint
+        )
 
     @staticmethod
     def _integer(value: object, default: int) -> int:

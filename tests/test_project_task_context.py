@@ -10,6 +10,7 @@ from unittest import mock
 from codey.workspace import task_context as project_task_context
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.revision import workspace_fingerprint
 from codey.workspace.task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
@@ -93,6 +94,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=workspace_fingerprint(root),
             )
 
             context = ProjectTaskContextBuilder(work_checkpoints=store).build(
@@ -157,8 +159,42 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
                 cwd=".",
                 ok=True,
                 workspace_revision=1,
+                workspace_fingerprint=workspace_fingerprint(root),
             )
             path.write_text("VALUE = 2\n", encoding="utf-8")
+
+            context = ProjectTaskContextBuilder(work_checkpoints=store).build(
+                project=root,
+                task="fix",
+                session_id="s",
+                run_id="new",
+                continue_task=True,
+                provider_session_changed=False,
+            )
+
+        self.assertTrue(context.checkpoint.workspace_changed)
+        self.assertEqual(context.checkpoint.seed_checks, ())
+        self.assertEqual(context.checkpoint.resumed_verification_commands, ())
+
+    def test_unrecorded_external_file_drift_invalidates_checkpoint_green(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td, "project")
+            root.mkdir()
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            other = root / "other.py"
+            other.write_text("SIDE = 1\n", encoding="utf-8")
+            store = WorkCheckpointStore(Path(td, "state"))
+            checkpoint = store.start(run_id="old", session_id="s", project=root, task="fix")
+            checkpoint = store.record_edit(checkpoint, "app.py")
+            store.record_run(
+                checkpoint,
+                command="python -m pytest",
+                cwd=".",
+                ok=True,
+                workspace_revision=1,
+                workspace_fingerprint=workspace_fingerprint(root),
+            )
+            other.write_text("SIDE = 2\n", encoding="utf-8")
 
             context = ProjectTaskContextBuilder(work_checkpoints=store).build(
                 project=root,
