@@ -2737,10 +2737,10 @@ NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 
 ```text
 Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
-Research untrusted source wrapper -> 0.5.4 prompt-surface / injection hardening
+Research untrusted source wrapper -> 0.5.5 prompt-surface / injection hardening
 TaskRunner convergence point -> 0.5 横向架构线，按真实 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
-Provider/protocol outcome learning -> 0.5.5，不回流 evidence / permission / completion verdict
+Provider/protocol outcome learning -> 0.5.6，不回流 evidence / permission / completion verdict
 ```
 
 剩余 review finding 的版本归属固定如下，避免后续把架构债混进 A/B 修复：
@@ -2748,11 +2748,11 @@ Provider/protocol outcome learning -> 0.5.5，不回流 evidence / permission / 
 | finding | 0.5 归属 | 文档原则 |
 | --- | --- | --- |
 | Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
-| Research source content 进入模型后的 prompt-injection 边界 | 0.5.4 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
+| Research source content 进入模型后的 prompt-injection 边界 | 0.5.5 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
 | TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
-| Provider / protocol outcome 学习 | 0.5.5 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
-| World Model | 0.5.8 / 0.5.9 | belief / prediction / calibration 都不是 truth confidence |
+| Provider / protocol outcome 学习 | 0.5.6 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
+| World Model | 0.5.9 / 0.5.10 | belief / prediction / calibration 都不是 truth confidence |
 | 本地 read-modify-write 状态并发写保护 | 0.5.1 / 0.5.2 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
 | command/action 语义 IR | 0.5.3 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
 | NetworkPolicy allow 语义 | 0.4.19 已收口，0.5 只维护 regression | policy allowed 不是 public-internet proof；调用方判断允许访问用 `decision.allowed` |
@@ -3610,7 +3610,107 @@ unsafe_action_count
 false_completion_rate
 ```
 
-## 0.5.4 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
+## 0.5.4 - Safe Tool Replay v1
+
+状态：计划。目标是在 0.5.2 的 effect intent / settlement 和 0.5.3 的
+canonical tool args 之后，把 safe read/search 的恢复闭环补上：进程在 safe tool
+执行中途被杀掉时，恢复路径可以按 persisted canonical args 自动重跑，并把结果作为
+同一个 tool call 的恢复结果继续进入 agent loop。直接收益是读文件、搜索、列目录这类
+无副作用动作中断后无需再打一轮 provider，也不会把可恢复读失败显示成含糊状态。
+
+### 做什么
+
+新增：
+
+```text
+codey/runtime/safe_tool_replay.py
+tests/test_safe_tool_replay.py
+tests/manual/safe_tool_replay_smoke.py
+```
+
+扩展：
+
+```text
+codey/runtime/effect_records.py
+codey/runtime/replay_policy.py
+codey/agents/tool_execution.py
+codey/operations/task_run.py
+codey/runs/details.py
+```
+
+落地：
+
+```text
+safe intent 持久化 canonical replay_args，unsafe intent 仍只存 digest / bounded display
+恢复 gate 在任何 provider/router/ghost side effect 前运行
+pending safe effect 先重新过 schema / lane / project-boundary / runtime validator
+通过校验后走现有 execute_tool_call 路径，不写第二套 read/search 实现
+tool result 以 bounded recovered result 回到同一条 agent loop
+原 effect 写 replayed settlement，并记录 replayed_from_effect_id / replay_count
+Run Details 只显示 quiet recovery row，不显示 effect_id / replay class / raw args
+```
+
+v1 safe 范围：
+
+```text
+read
+ls / list
+search / references
+project_facts / project_map projection
+```
+
+`search` 只指本地项目搜索或已存在的本地 projection 查询，不包括联网 Research search、
+浏览器操作、provider call 或任何可能产生外部状态变化的 connector。
+
+直接收益：
+
+```text
+safe read/search 中断后可以自动恢复，不需要模型重新决定同一个工具调用
+unsafe edit/write/run/shell 仍然永不自动重复执行
+Run Details 能区分 replayed safe read 和 interrupted unsafe effect
+为后续更细的 protocol portability 提供真实恢复消费者，不留下空 telemetry
+```
+
+### 边界
+
+- 不自动 replay provider send。
+- 不自动 replay edit / write / shell / run / knowledge_write / unknown tool。
+- 不保存 unsafe tool 的 raw args；safe replay_args 也必须是 canonical、bounded、可重新校验的最小字段。
+- 不保存 prompt、reply、stdout、stderr、diff、source body、完整搜索结果。
+- 不为旧的无 replay_args effect 猜参数；缺字段、坏 schema、路径逃逸、未知 tool 都 fail closed。
+- 不新增 SafeReplayManager；`safe_tool_replay.py` 只做恢复编排和验证胶水。
+- 不把 replay 当后台任务；只在显式 resume gate 内运行。
+
+### 顺手架构优化
+
+```text
+safe replay 消费 0.5.3 normalize 后的 ToolCall，不再让 task_run.py 自己理解 provider 方言
+tool_execution.py 暴露 replay-safe 的 execute boundary，正常执行和恢复执行共用一条 runtime guard
+Run Details recovery row 从 RuntimeEffectStore projection 读取，不扫 raw log payload
+```
+
+### 验证
+
+```text
+before intent 崩溃：无 replay
+after safe intent 崩溃：按 persisted canonical args replay 一次
+during safe replay 崩溃：仍只允许 safe replay，不产生 unsafe action
+after settlement 崩溃：不 replay
+unsafe pending 恢复 replay count 必须为 0
+safe replay result 进入 transcript / run trace exactly once
+legacy/missing replay_args 不猜参数，生成 quiet recovery explanation
+path escape / oversize args / malformed args fail closed
+clean path prompt/tool/result parity 不变
+```
+
+### A/B
+
+不需要 clean-path 质量 A/B。需要 deterministic fault-injection、同一 run resume smoke、
+以及至少一条 live resume smoke，因为 replay result 只在 crash/resume 路径进入模型可见
+tool result。若本版额外改变正常路径 tool prompt、tool schema、provider routing 或
+非恢复路径 transcript，必须升级为小型 live A/B。
+
+## 0.5.5 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
 
 状态：计划。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
 生成，并用 hash/parity tests 防止 prompt 描述、parser 接受范围和 runtime 语义漂移。
@@ -3696,7 +3796,7 @@ research open_url / knowledge_write 不被改名成 read / write
 Research untrusted source wrapper 的生产默认渲染，必须先走
 `tests/manual/tool_protocol_portability_ab.py` 或专用 Research source-rendering A/B。
 
-## 0.5.5 - Provider / Protocol Affinity + Repair Outcome Learning v1
+## 0.5.6 - Provider / Protocol Affinity + Repair Outcome Learning v1
 
 状态：计划。目标是让 Ghost 学会“哪个 provider 常在哪类协议摩擦上失败、哪类
 repair prompt 更有效”，但只影响 repair strategy 和诊断，不自动换 provider、不授权工具。
@@ -3787,7 +3887,7 @@ false_completion_rate
 provider_failure_rate
 ```
 
-## 0.5.6 - Project Verification Habit Projection v1
+## 0.5.7 - Project Verification Habit Projection v1
 
 状态：计划。目标是让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，
 但不自动执行，也不把习惯当 completion proof。
@@ -3869,7 +3969,7 @@ task_success
 sent_chars
 ```
 
-## 0.5.7 - Ghost Explain v0 + Provenance-Safe Inspector
+## 0.5.8 - Ghost Explain v0 + Provenance-Safe Inspector
 
 状态：计划。目标是让用户和开发者能解释“这次 Ghost 为什么选了这些 hint”，但不让
 Ghost 成为独立说话者，也不改主 UI。第一版只做 deterministic renderer 和 CLI/JSON。
@@ -3947,7 +4047,7 @@ ghost/explain.py 不 import provider/browser/tool_runtime/task_runner
 
 不需要。它不改变默认模型行为。需要 CLI smoke。
 
-## 0.5.8 - World Model Event Log + Prediction Review v0
+## 0.5.9 - World Model Event Log + Prediction Review v0
 
 状态：计划。目标是落地最小 World Model 合同：记录项目/研究/环境状态预测，并用已有
 runtime evidence、proof 或用户纠正复盘命中/失败。第一版不进入 prompt，先用于
@@ -4028,9 +4128,9 @@ world_model 不 import provider/browser/tool_runtime/task_runner
 
 不需要 live A/B。它不进入 prompt。需要 deterministic prediction/review replay tests。
 
-## 0.5.9 - World Model ContextSource + Shadow Strategy Ranker v1
+## 0.5.10 - World Model ContextSource + Shadow Strategy Ranker v1
 
-状态：计划。目标是把 0.5.8 的 state estimate 变成可选、受限、可 A/B 的
+状态：计划。目标是把 0.5.9 的 state estimate 变成可选、受限、可 A/B 的
 ContextSource：只提示模型“哪里需要复查”，不告诉模型“什么是真的”。同时增加 shadow
 strategy ranker，用历史 review 评估 verification-first / source-refresh / repair-short
 等策略，但默认不接管执行。
@@ -4102,7 +4202,7 @@ sent_chars
 UI interruption count
 ```
 
-## 0.5.10 - Protocol Adapter Dataset Export + Shadow Normalizer v1
+## 0.5.11 - Protocol Adapter Dataset Export + Shadow Normalizer v1
 
 状态：计划。目标是把 protocol telemetry、tool args repair、repair prompts 和最终
 ToolCall/CompletionProof outcome 导出成可选本地数据集，并同时跑一个 shadow normalizer
@@ -4169,9 +4269,9 @@ dataset schema 稳定且可 prune/delete
 
 本版新增 manual A/B harness，但不改变生产行为，不需要 release-blocking live A/B。
 
-## 0.5.11 - Local Protocol Classifier + Repair Strategy Selector v1
+## 0.5.12 - Local Protocol Classifier + Repair Strategy Selector v1
 
-状态：计划。目标是把 0.5.10 的数据和 0.5.5 的 affinity 用起来：训练或规则化一个小型
+状态：计划。目标是把 0.5.11 的数据和 0.5.6 的 affinity 用起来：训练或规则化一个小型
 本地 classifier，选择已有 repair prompt strategy、tool-args repair strictness 和
 protocol hint 长度。它不训练主模型，也不改变安全语义。
 
@@ -4244,7 +4344,7 @@ native_search_leak_count
 completion_proof_status
 ```
 
-## 0.5.12 - Conditional Tool Projection + One Proven Dialect v1
+## 0.5.13 - Conditional Tool Projection + One Proven Dialect v1
 
 状态：计划。目标是只在 A/B 证明收益后，为一个 provider/model family 启用一个
 替代模型可见工具面，并 lower 到 Codey canonical ToolCall。这个版本不能提前预设赢家；
@@ -4322,7 +4422,7 @@ verification_success 不降
 research evidence bypass = 0
 ```
 
-## 0.5.13 - Native Structured Provider Path v1
+## 0.5.14 - Native Structured Provider Path v1
 
 状态：计划。目标是给真正支持原生 tool/function calling 的 API provider 一个可选
 structured path，避免正文 JSON 的协议摩擦。网页 provider 仍走现有 prompt/reply。
@@ -4391,7 +4491,7 @@ latency
 token usage
 ```
 
-## 0.5.14 - Local Training Export + Optional Tiny Adapter v0
+## 0.5.15 - Local Training Export + Optional Tiny Adapter v0
 
 状态：计划。目标是把 0.5 的 telemetry 和 dataset 用于可选的小适配层训练：protocol
 error classifier、tool-call normalizer、repair prompt selector、claim-gap classifier。
@@ -4457,9 +4557,9 @@ adapter 不 import tool_runtime/provider/task_runner
 ### A/B
 
 不作为默认生产路径时不需要 release-blocking A/B。若某 adapter 要默认启用，必须回到
-0.5.11/0.5.12 的 provider live A/B gate。
+0.5.12/0.5.13 的 provider live A/B gate。
 
-## 0.5.15 - Ghost / World Model Maintenance Hardening v1
+## 0.5.16 - Ghost / World Model Maintenance Hardening v1
 
 状态：计划。目标是把 0.5 新增的 Ghost protocol affinity、project habits、World Model
 projection、dataset refs 做成可衰减、可删除、可重建、可导出的本地状态。它给用户
@@ -4586,7 +4686,7 @@ World Model 自动决策
 
 ## 0.5 插件开放边界
 
-0.5 完成前仍不做有限插件化。即使 0.5.13 引入 structured provider path，
+0.5 完成前仍不做有限插件化。即使 0.5.14 引入 structured provider path，
 它也只是 provider capability，不是插件系统。真正的开放顺序仍然应放到 0.5 稳定后：
 
 ```text
@@ -4894,18 +4994,19 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.5.1 RunOperationState（durability-only，不需要 live A/B）
 0.5.2 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
 0.5.3 Tool Args Repair（parser 接受范围变宽，需要 A/B）
-0.5.4 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
-0.5.5 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
-0.5.6 Project Verification Habit（改变 writer context，需要 A/B）
-0.5.7 Ghost Explain（默认不进 prompt，不需要 A/B）
-0.5.8 World Model Event Log（不进 prompt，不需要 A/B）
-0.5.9 World Model ContextSource（改变 context，需要 A/B）
-0.5.10 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
-0.5.11 Local Protocol Classifier（改变 repair prompt，需要 A/B）
-0.5.12 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
-0.5.13 Native Structured Provider Path（API/local provider 需要 A/B）
-0.5.14 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
-0.5.15 Maintenance Hardening（不进 prompt，不需要 A/B）
+0.5.4 Safe Tool Replay（resume-only；fault-injection + live resume smoke，不需要 clean-path 质量 A/B）
+0.5.5 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
+0.5.6 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
+0.5.7 Project Verification Habit（改变 writer context，需要 A/B）
+0.5.8 Ghost Explain（默认不进 prompt，不需要 A/B）
+0.5.9 World Model Event Log（不进 prompt，不需要 A/B）
+0.5.10 World Model ContextSource（改变 context，需要 A/B）
+0.5.11 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
+0.5.12 Local Protocol Classifier（改变 repair prompt，需要 A/B）
+0.5.13 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
+0.5.14 Native Structured Provider Path（API/local provider 需要 A/B）
+0.5.15 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
+0.5.16 Maintenance Hardening（不进 prompt，不需要 A/B）
 ```
 
 0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、
@@ -4982,6 +5083,7 @@ Ghost continuity 不能被当成 evidence
 extractor failure 必须 fail closed / no_signal
 operation resume 不能伪造 done
 unsafe tool replay count 必须为 0
+safe tool replay result 不能重复注入 transcript
 protocol args repair 不能提高 unsafe_action_count
 project habit 不能降低 fresh verification rate
 World Model context 不能产生 citation/evidence refs
