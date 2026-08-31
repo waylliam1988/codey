@@ -2738,9 +2738,10 @@ NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 ```text
 Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
 Research untrusted source wrapper -> 0.5.5 prompt-surface / injection hardening
+Research bounded follow-up / source_connector_done 收口 -> 0.5.6，A/B 证明后推广，否则删除或留在 manual harness
 TaskRunner convergence point -> 0.5 横向架构线，按真实 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
-Provider/protocol outcome learning -> 0.5.6，不回流 evidence / permission / completion verdict
+Provider/protocol outcome learning -> 0.5.7，不回流 evidence / permission / completion verdict
 ```
 
 剩余 review finding 的版本归属固定如下，避免后续把架构债混进 A/B 修复：
@@ -2749,10 +2750,11 @@ Provider/protocol outcome learning -> 0.5.6，不回流 evidence / permission / 
 | --- | --- | --- |
 | Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
 | Research source content 进入模型后的 prompt-injection 边界 | 0.5.5 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
+| Research bounded follow-up / source_connector_done 0.4 实验收口 | 0.5.6 Research Follow-up Quality Closure | production path 必须有 release gate 消费者；无消费者的 arm 删除或留在 manual harness |
 | TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
-| Provider / protocol outcome 学习 | 0.5.6 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
-| World Model | 0.5.9 / 0.5.10 | belief / prediction / calibration 都不是 truth confidence |
+| Provider / protocol outcome 学习 | 0.5.7 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
+| World Model | 0.5.10 / 0.5.11 | belief / prediction / calibration 都不是 truth confidence |
 | 本地 read-modify-write 状态并发写保护 | 0.5.1 / 0.5.2 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
 | command/action 语义 IR | 0.5.3 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
 | NetworkPolicy allow 语义 | 0.4.19 已收口，0.5 只维护 regression | policy allowed 不是 public-internet proof；调用方判断允许访问用 `decision.allowed` |
@@ -3801,7 +3803,112 @@ research open_url / knowledge_write 不被改名成 read / write
 Research untrusted source wrapper 的生产默认渲染，必须先走
 `tests/manual/tool_protocol_portability_ab.py` 或专用 Research source-rendering A/B。
 
-## 0.5.6 - Provider / Protocol Affinity + Repair Outcome Learning v1
+## 0.5.6 - Research Follow-up Quality Closure + Source Finalizer A/B v1
+
+状态：计划。目标是把 0.4 的 bounded Research follow-up 和
+`source_connector_done` batch/checklist 实验收成明确结论：有可测净收益的部分进入
+默认 Research finalizer；没有消费者或收益不稳的 arm 删除，或继续停留在 manual
+harness，不进入 production path。
+
+### 做什么
+
+新增或扩展：
+
+```text
+codey/research/followup_quality.py
+codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer）
+tests/test_research_followup_quality.py
+tests/test_source_connector_done_scorer.py
+tests/manual/research_followup_quality_ab.py
+tests/manual/source_connector_done_ab.py
+```
+
+闭环对象：
+
+```text
+Research bounded follow-up：
+  继续保持 evidence-only / fresh URL / bounded rounds 边界
+  用 scorer + journal 证明 proof quality、source coverage、completion honesty 没有变差
+  只根据真实失败样本调整 planner / material selection / merge selection
+
+source_connector_done batch/checklist：
+  不直接推广旧 arm
+  先用 deterministic scorer 和 live A/B 比较 done quality / citation quality / provider stalls
+  胜出才收成窄的 source finalizer；不胜出就删除生产接线，只保留 manual 复盘材料
+```
+
+真实消费者：
+
+```text
+ResearchPipeline 读取 followup quality decision，不自己解释 A/B 原始字段
+release gate 消费 scorer 输出，不靠手读 transcript 决定推广
+manual A/B journal 继续保存对照结果，但不能被 production RunTrace import
+```
+
+直接收益：
+
+```text
+Research follow-up 不再只是“安全可跑”，而是有 proof-quality 结论
+0.4 的 source_connector_done 实验要么变成窄而有证据的默认 finalizer，要么退出生产路线
+减少 manual harness / production path 之间的重复指标和悬空接线
+```
+
+### 边界
+
+- 不新增 Research 模型工具。
+- 不做后台递归 Research。
+- 不让 batch/checklist 未经 A/B 进入默认 finalizer。
+- 不改变 EvidenceLedger、citation contract 或 completion gate，除非 treatment 胜出且有 release gate。
+- 不把 provider-specific prompt 当通用 Research 策略。
+- 不把 raw webpage body、raw transcript、prompt、reply 写入生产 trace。
+
+### 顺手架构优化
+
+```text
+ResearchPipeline 只调用 choose_followup_materials() / evaluate_source_finalizer_candidate()
+followup_quality.py 只做纯 scorer / selection，不调用 provider/browser/tool runtime
+source_connector_done manual arm 与 release gate 共用 scorer，避免重复指标
+Research finalizer 只消费结构化 decision，不扫 A/B journal 原文
+```
+
+### 验证
+
+```text
+bounded follow-up 仍只能使用允许的 Research tools
+fresh URL whitelist / max rounds / max sources 边界保持
+scorer deterministic 且不依赖 provider
+source_connector_done treatment 不能降低 citation locator 命中率
+source_connector_done treatment 不能增加 unsupported claims
+provider stalls / extra provider sends 必须计入 gate
+未通过 A/B 的 arm 不得被 production ResearchPipeline import
+```
+
+### A/B
+
+需要。它决定 Research 默认 finalizer / material selection 是否改变。指标：
+
+```text
+proof_ok
+evidence quality
+citation quality
+source coverage
+completion honesty
+unsupported_claim_rate
+provider_stall_count
+extra_provider_send_count
+latency
+sent_chars
+```
+
+发布判断：
+
+```text
+如果 bounded follow-up 质量收益稳定：保留默认 evidence-only follow-up，并只调整证明有收益的 selection/merge 点
+如果 source_connector_done batch/checklist 胜出：收成最窄 production finalizer，旧 batch/checklist harness 退到 manual
+如果 source_connector_done 没胜出：删除或继续 manual-only，不留下 production 接线
+```
+
+## 0.5.7 - Provider / Protocol Affinity + Repair Outcome Learning v1
 
 状态：计划。目标是让 Ghost 学会“哪个 provider 常在哪类协议摩擦上失败、哪类
 repair prompt 更有效”，但只影响 repair strategy 和诊断，不自动换 provider、不授权工具。
@@ -3892,7 +3999,7 @@ false_completion_rate
 provider_failure_rate
 ```
 
-## 0.5.7 - Project Verification Habit Projection v1
+## 0.5.8 - Project Verification Habit Projection v1
 
 状态：计划。目标是让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，
 但不自动执行，也不把习惯当 completion proof。
@@ -3974,7 +4081,7 @@ task_success
 sent_chars
 ```
 
-## 0.5.8 - Ghost Explain v0 + Provenance-Safe Inspector
+## 0.5.9 - Ghost Explain v0 + Provenance-Safe Inspector
 
 状态：计划。目标是让用户和开发者能解释“这次 Ghost 为什么选了这些 hint”，但不让
 Ghost 成为独立说话者，也不改主 UI。第一版只做 deterministic renderer 和 CLI/JSON。
@@ -4052,7 +4159,7 @@ ghost/explain.py 不 import provider/browser/tool_runtime/task_runner
 
 不需要。它不改变默认模型行为。需要 CLI smoke。
 
-## 0.5.9 - World Model Event Log + Prediction Review v0
+## 0.5.10 - World Model Event Log + Prediction Review v0
 
 状态：计划。目标是落地最小 World Model 合同：记录项目/研究/环境状态预测，并用已有
 runtime evidence、proof 或用户纠正复盘命中/失败。第一版不进入 prompt，先用于
@@ -4133,9 +4240,9 @@ world_model 不 import provider/browser/tool_runtime/task_runner
 
 不需要 live A/B。它不进入 prompt。需要 deterministic prediction/review replay tests。
 
-## 0.5.10 - World Model ContextSource + Shadow Strategy Ranker v1
+## 0.5.11 - World Model ContextSource + Shadow Strategy Ranker v1
 
-状态：计划。目标是把 0.5.9 的 state estimate 变成可选、受限、可 A/B 的
+状态：计划。目标是把 0.5.10 的 state estimate 变成可选、受限、可 A/B 的
 ContextSource：只提示模型“哪里需要复查”，不告诉模型“什么是真的”。同时增加 shadow
 strategy ranker，用历史 review 评估 verification-first / source-refresh / repair-short
 等策略，但默认不接管执行。
@@ -4207,7 +4314,7 @@ sent_chars
 UI interruption count
 ```
 
-## 0.5.11 - Protocol Adapter Dataset Export + Shadow Normalizer v1
+## 0.5.12 - Protocol Adapter Dataset Export + Shadow Normalizer v1
 
 状态：计划。目标是把 protocol telemetry、tool args repair、repair prompts 和最终
 ToolCall/CompletionProof outcome 导出成可选本地数据集，并同时跑一个 shadow normalizer
@@ -4274,9 +4381,9 @@ dataset schema 稳定且可 prune/delete
 
 本版新增 manual A/B harness，但不改变生产行为，不需要 release-blocking live A/B。
 
-## 0.5.12 - Local Protocol Classifier + Repair Strategy Selector v1
+## 0.5.13 - Local Protocol Classifier + Repair Strategy Selector v1
 
-状态：计划。目标是把 0.5.11 的数据和 0.5.6 的 affinity 用起来：训练或规则化一个小型
+状态：计划。目标是把 0.5.12 的数据和 0.5.7 的 affinity 用起来：训练或规则化一个小型
 本地 classifier，选择已有 repair prompt strategy、tool-args repair strictness 和
 protocol hint 长度。它不训练主模型，也不改变安全语义。
 
@@ -4349,7 +4456,7 @@ native_search_leak_count
 completion_proof_status
 ```
 
-## 0.5.13 - Conditional Tool Projection + One Proven Dialect v1
+## 0.5.14 - Conditional Tool Projection + One Proven Dialect v1
 
 状态：计划。目标是只在 A/B 证明收益后，为一个 provider/model family 启用一个
 替代模型可见工具面，并 lower 到 Codey canonical ToolCall。这个版本不能提前预设赢家；
@@ -4427,7 +4534,7 @@ verification_success 不降
 research evidence bypass = 0
 ```
 
-## 0.5.14 - Native Structured Provider Path v1
+## 0.5.15 - Native Structured Provider Path v1
 
 状态：计划。目标是给真正支持原生 tool/function calling 的 API provider 一个可选
 structured path，避免正文 JSON 的协议摩擦。网页 provider 仍走现有 prompt/reply。
@@ -4496,7 +4603,7 @@ latency
 token usage
 ```
 
-## 0.5.15 - Local Training Export + Optional Tiny Adapter v0
+## 0.5.16 - Local Training Export + Optional Tiny Adapter v0
 
 状态：计划。目标是把 0.5 的 telemetry 和 dataset 用于可选的小适配层训练：protocol
 error classifier、tool-call normalizer、repair prompt selector、claim-gap classifier。
@@ -4562,9 +4669,9 @@ adapter 不 import tool_runtime/provider/task_runner
 ### A/B
 
 不作为默认生产路径时不需要 release-blocking A/B。若某 adapter 要默认启用，必须回到
-0.5.12/0.5.13 的 provider live A/B gate。
+0.5.13/0.5.14 的 provider live A/B gate。
 
-## 0.5.16 - Ghost / World Model Maintenance Hardening v1
+## 0.5.17 - Ghost / World Model Maintenance Hardening v1
 
 状态：计划。目标是把 0.5 新增的 Ghost protocol affinity、project habits、World Model
 projection、dataset refs 做成可衰减、可删除、可重建、可导出的本地状态。它给用户
@@ -4648,6 +4755,9 @@ TaskRunner 不再继续吸收新生命周期状态
 CompletionProof / Evidence / Verification 的 source of truth 明确
 Ghost / World Model / Protocol affinity 没有污染 evidence / permission / completion
 Research untrusted source wrapper 只有 A/B 通过后才默认启用
+Research bounded follow-up 已经有 proof-quality 结论，source_connector_done batch/checklist 已按 A/B 结果推广或退出 production path
+Protocol telemetry / contract hash 已被 0.5.3 / 0.5.5 / 0.5.7 的 release gate 消费，或删除无消费者字段
+Safe read/search replay 已实现，unsafe replay count 始终为 0
 至少两个 provider 完成 coding + research + ghost 核心 A/B
 所有 A/B 失败都能通过 JSON / journal / transcript 复盘
 ```
@@ -4691,7 +4801,7 @@ World Model 自动决策
 
 ## 0.5 插件开放边界
 
-0.5 完成前仍不做有限插件化。即使 0.5.14 引入 structured provider path，
+0.5 完成前仍不做有限插件化。即使 0.5.15 引入 structured provider path，
 它也只是 provider capability，不是插件系统。真正的开放顺序仍然应放到 0.5 稳定后：
 
 ```text
@@ -4770,37 +4880,38 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 0.5.2：让 provider/tool effects 有 intent/settlement 和 replay policy
 ```
 
-## 0.4 遗留想法的闭环清单
+## 0.4 遗留想法的版本化闭环清单
 
 这部分不是新功能接线，而是防止 0.4 A/B / shadow / telemetry 成果被忘掉。每一项
 必须在对应版本交付真实消费者；如果没有消费者，就删除或继续停留在 manual harness，
 不能以“以后会用”为理由进入 production path。
 
 ```text
-Research bounded follow-up：
+Research bounded follow-up -> 0.5.6：
   当前状态：已接入生产 ResearchPipeline，安全闭环成立。
   未闭环：多 provider proof-quality 净收益还没稳定证明。
-  收口方式：保留 evidence-only 边界；后续只根据 A/B/journal 暴露的真实问题改 planner /
-    material selection / merge selection，不推广 batch/checklist 方案。
+  收口方式：0.5.6 用 scorer + journal + live A/B 给出质量结论；保留 evidence-only 边界，
+    只根据真实失败样本改 planner / material selection / merge selection。
 
-source_connector_done batch/checklist：
+source_connector_done batch/checklist -> 0.5.6：
   当前状态：manual A/B 结论不推广；不是默认生产 completion 能力。
-  收口方式：若要复活，先写 deterministic scorer 和 live A/B arm，证明 done quality /
-    citation quality / completion honesty 提升，且不增加 provider stalls，再改生产 finalizer。
+  收口方式：0.5.6 先写 deterministic scorer 和 live A/B arm，证明 done quality /
+    citation quality / completion honesty 提升，且不增加 provider stalls，再收成窄 finalizer；
+    否则删除或继续 manual-only。
 
-Protocol telemetry / contract hash：
+Protocol telemetry / contract hash -> 0.5.3 / 0.5.5 / 0.5.7：
   当前状态：RunTrace 已记录，可用于审计和 A/B。
-  未闭环：必须被 0.5.3 tool args repair、0.5.5 contract drift guard、0.5.6 affinity
+  未闭环：必须被 0.5.3 tool args repair、0.5.5 contract drift guard、0.5.7 affinity
     learning 消费；否则会变成只写不用的 telemetry。
   收口方式：每个字段都要有 deterministic test 或 release gate 消费者；长期无消费者的
     telemetry 字段删除。
 
-Safe read/search replay：
+Safe read/search replay -> 0.5.4：
   当前状态：0.5.2 只记录 retryable recovery projection，不自动重跑。
   收口方式：0.5.4 在 0.5.3 canonical args 后按 persisted safe replay_args 自动 replay；
     unsafe replay count 必须始终为 0。
 
-Research untrusted source wrapper：
+Research untrusted source wrapper -> 0.5.5：
   当前状态：计划项，不默认生产渲染。
   收口方式：0.5.5 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
     evidence quality / source coverage / completion honesty，才改默认 source rendering。
@@ -4917,8 +5028,11 @@ tests/test_effect_log.py
 tests/test_tool_replay_policy.py
 tests/test_agent_effect_sandwich.py
 tests/test_tool_args_repair.py
+tests/test_safe_tool_replay.py
 tests/test_tool_prompt.py
 tests/test_tool_contract_drift.py
+tests/test_research_followup_quality.py
+tests/test_source_connector_done_scorer.py
 tests/test_ghost_protocol_affinity.py
 tests/test_provider_protocol_learning.py
 tests/test_project_verification_habits.py
@@ -4975,6 +5089,8 @@ Citation locator 必须能回到 opened source
 Answer Coverage 不能只看 citation presence
 ResearchPlan dry-run 不能执行 search/fetch
 Bounded Research Planner 必须受 max rounds / queries / sources 限制
+Research bounded follow-up scorer 不能调用 provider/browser/tool runtime
+source_connector_done batch/checklist 未经 A/B gate 不得进入默认 finalizer
 AnalysisRun 必须走 ActionPolicy / ToolRuntime
 Reproducibility Capsule 不保存 raw stdout/stderr
 Source Connector Registry 不加载第三方代码
@@ -4989,6 +5105,7 @@ RuntimeEffectStore 不能保存 raw prompt/reply/stdout/diff/source body
 外部 provider/tool/repair effect 启动前必须已有 intent
 unsafe tool effect_pending 恢复不能重复执行
 ReplayPolicy 未知工具默认 unsafe
+Safe replay args 必须 canonical、bounded，并重新过 runtime validator
 Tool args repair shim 不能 import tool_runtime/provider/task_runner
 Tool prompt renderer 不能改变默认 prompt parity，除非对应 A/B 更新
 Protocol adapter 不能绕过 canonical ToolCall validation
@@ -5037,17 +5154,18 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.5.3 Tool Args Repair（parser 接受范围变宽，需要 A/B）
 0.5.4 Safe Tool Replay（resume-only；fault-injection + live resume smoke，不需要 clean-path 质量 A/B）
 0.5.5 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
-0.5.6 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
-0.5.7 Project Verification Habit（改变 writer context，需要 A/B）
-0.5.8 Ghost Explain（默认不进 prompt，不需要 A/B）
-0.5.9 World Model Event Log（不进 prompt，不需要 A/B）
-0.5.10 World Model ContextSource（改变 context，需要 A/B）
-0.5.11 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
-0.5.12 Local Protocol Classifier（改变 repair prompt，需要 A/B）
-0.5.13 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
-0.5.14 Native Structured Provider Path（API/local provider 需要 A/B）
-0.5.15 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
-0.5.16 Maintenance Hardening（不进 prompt，不需要 A/B）
+0.5.6 Research Follow-up Quality Closure（改变 Research finalizer/material selection，需要 A/B）
+0.5.7 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
+0.5.8 Project Verification Habit（改变 writer context，需要 A/B）
+0.5.9 Ghost Explain（默认不进 prompt，不需要 A/B）
+0.5.10 World Model Event Log（不进 prompt，不需要 A/B）
+0.5.11 World Model ContextSource（改变 context，需要 A/B）
+0.5.12 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
+0.5.13 Local Protocol Classifier（改变 repair prompt，需要 A/B）
+0.5.14 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
+0.5.15 Native Structured Provider Path（API/local provider 需要 A/B）
+0.5.16 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
+0.5.17 Maintenance Hardening（不进 prompt，不需要 A/B）
 ```
 
 0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、
