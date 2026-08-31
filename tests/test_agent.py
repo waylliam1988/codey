@@ -3032,6 +3032,44 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertIn("print('hello')", provider.sent[1])
         self.assertIn("Please remember to include a <continue> or <done>", provider.sent[1])
 
+    def test_agent_run_records_tool_argument_repair_telemetry(self) -> None:
+        read = '{"tool":"grep","args":{"pattern":"test_needle","path":"src/sub"}}'
+        done = '{"tool":"done","args":{"summary":"finished searching"}}'
+        provider = FakeProvider(read, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src" / "sub").mkdir(parents=True)
+            (root / "src" / "sub" / "app.py").write_text("test_needle = 123\n", encoding="utf-8")
+
+            store = RunTraceStore(root / "state")
+            trace = store.open(
+                run_id="run-telemetry",
+                session_id="session-telemetry",
+                project=root,
+                mode_initial="project",
+                provider_initial="fake",
+            )
+            result = run_agent(
+                provider,
+                root,
+                "find needle",
+                fresh_chat=False,
+                trace_recorder=trace,
+            )
+            trace.finish(status=result.stop_reason)
+
+            payload = json.loads(
+                store.path_for("session-telemetry", "run-telemetry").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        writer_telemetry = payload["protocol_telemetry"]["phases"]["writer"]
+        self.assertGreater(writer_telemetry.get("alias_rewrite_count", 0), 0)
+        self.assertIn("search_field_alias", writer_telemetry.get("arg_repair_counts", {}))
+
 
 if __name__ == "__main__":
     unittest.main()

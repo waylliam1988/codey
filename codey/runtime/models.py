@@ -215,6 +215,8 @@ class ToolPlan:
     protocol_error: str = ""
     protocol_error_kind: str = ""
     protocol_tool_name: str = ""
+    alias_rewrite_count: int = 0
+    arg_repair_counts: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

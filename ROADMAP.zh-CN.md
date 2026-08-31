@@ -3541,9 +3541,8 @@ tool args digest 稳定且不含 raw secret
 
 ## 0.5.3 - Shared Tool Argument Repair + Protocol Friction Reduction v1
 
-状态：计划。目标是把 coding `JsonToolCodec` 里散落的参数别名、编辑参数宽容和
-常见 provider 方言误差，收成所有 coding codec 共用的薄 repair shim。这个版本会直接
-降低 unknown/invalid args repair 次数。
+状态：已完成（2026-08-31，compileall、ruff、focused tests、manual A/B harness 和全量 pytest `3351 passed, 4 skipped in 313.80s (0:05:13)` 完成）。
+目标是把 coding `JsonToolCodec` 里散落的参数别名、编辑参数宽容和常见 provider 方言误差，收成所有 coding codec 共用的纯函数 `codey/tool_args_repair.py`。这个版本直接降低了 unknown/invalid args repair 次数，同时 `write/write_file/create_file` 严格保持 unknown tool，不引入隐藏修改别名。
 
 ### 做什么
 
@@ -3552,7 +3551,6 @@ tool args digest 稳定且不含 raw secret
 ```text
 codey/tool_args_repair.py
 tests/test_tool_args_repair.py
-tests/test_protocols.py
 tests/manual/tool_args_repair_ab.py
 ```
 
@@ -3560,12 +3558,12 @@ tests/manual/tool_args_repair_ab.py
 
 ```text
 search / old / before -> old_string
-replace / replacement / after -> new_string
+replace / replacement / after / new -> new_string
 single replacement object -> replacements[...]
-write_file / create_file + content -> edit content for new file
 JSON string replacements -> parsed replacements, invalid JSON fail closed
 numeric string offset/limit -> bounded int
 path normalization -> project-relative only, escape fail closed
+write / write_file / create_file -> 严格保持 unknown tool，不引入隐藏修改别名
 ```
 
 直接收益：

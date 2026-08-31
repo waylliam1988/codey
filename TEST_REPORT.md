@@ -9,6 +9,50 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-08-31)
+
+Scope:
+
+```text
+tools:       introduced codey.tool_args_repair with pure functions for lexical path normalization,
+             bounded positive int parsing, and equivalent field alias rewriting across canonical
+             runtime tools (edit, read, ls, search, references, run, shell).
+             Strictly enforces project-relative paths, rejecting absolute drive letters (C:\),
+             UNC paths (//share), root prefixes (/), and parent traversal escape (../).
+             Supports equivalent parameter aliases:
+             - edit: old / search / before -> old_string; replace / replacement / after / new -> new_string
+             - edit: single replacement object wrapped to replacements list
+             - edit: JSON string replacements parsed safely; invalid JSON fails closed
+             - read: numeric string offset/limit coerced to bounded integers; bool/float/invalid rejected
+             - search: pattern -> query
+             - references: name -> symbol
+             - run/shell: cmd -> command (does not guess command contents)
+             write / write_file / create_file remain strictly unknown tools without hidden mutation aliases.
+codec:       streamlined codey.protocols.json_codec by delegating parameter parsing and repair to
+             normalize_tool_args(), removing duplicated validation loops from _tool_call().
+             read_files and parallel batching reuse the same canonical normalizer.
+telemetry:   ToolPlan records bounded alias_rewrite_count and arg_repair_counts.
+             Agent loop forwards repair telemetry to RunTrace via record_protocol_valid_turn.
+             RunTrace safely tracks bounded repair counts (max 999) and sanitizes/drops sensitive
+             or raw keys, ensuring zero raw prompt, argument, or path leakage.
+harness:     added tests/manual/tool_args_repair_ab.py comparing parser behavior across model dialects.
+```
+
+Verification:
+
+- Unit & Protocol tests:
+  - `python -m unittest tests/test_tool_args_repair.py` (16 tests passed)
+  - `python -m unittest tests/test_protocols.py` (52 tests passed)
+  - `python -m unittest tests/test_run_trace.py` (63 tests passed)
+  - `python -m unittest tests/test_architecture.py` (71 tests passed)
+  - `python -m unittest tests/test_agent.py` (124 tests passed)
+  - `python tests/manual/tool_args_repair_ab.py` (15 test cases, 100% expected outcome)
+- Code Quality:
+  - `python -m compileall codey tests` (passed)
+  - `ruff check codey tests` (passed)
+- Full regression suite:
+  - `pytest` (`3351 passed, 4 skipped in 313.80s (0:05:13)`)
+
 ## 0.5.2 Effect Intent / Settlement + Tool Replay Policy v1 (2026-08-31)
 
 Scope:

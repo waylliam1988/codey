@@ -6,11 +6,23 @@ from typing import Any
 from codey.toolchain import definition as tool_defs
 from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
 from codey.runtime.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.tool_args_repair import (
+    ToolArgLimits,
+    ToolArgsRepairError,
+    ToolArgsRepairResult,
+    normalize_tool_args,
+)
 from codey.toolchain.runtime import (
     MAX_REPLACEMENTS,
     READ_DEFAULT_LINES,
     READ_MAX_LINES,
-    bounded_positive_int,
+)
+
+
+_DEFAULT_TOOL_ARG_LIMITS = ToolArgLimits(
+    max_replacements=MAX_REPLACEMENTS,
+    read_default_lines=READ_DEFAULT_LINES,
+    read_max_lines=READ_MAX_LINES,
 )
 
 
@@ -309,18 +321,6 @@ class ProtocolValidationError(ValueError):
         self.tool_name = tool_name
 
 
-def _positive_int_arg(
-    args: dict[str, Any],
-    name: str,
-    default: int,
-    maximum: int | None = None,
-) -> int:
-    try:
-        return bounded_positive_int(args.get(name, default), name, maximum)
-    except ValueError as exc:
-        raise ProtocolValidationError(str(exc)) from exc
-
-
 _DIRECT_ANSWER_MARKERS = (
     "i checked",
     "i have completed",
@@ -389,6 +389,8 @@ class JsonToolCodec:
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
         seen_calls: set[tuple[str, str]] = set()
+        total_rewrites = 0
+        merged_repair_counts: dict[str, int] = {}
         objects = _balanced_json_objects(text)
         if not objects:
             kind, message = _classify_no_json_reply(_strip_think_blocks(text))
@@ -411,6 +413,9 @@ class JsonToolCodec:
                 )
             if plan.protocol_error:
                 return plan
+            total_rewrites += plan.alias_rewrite_count
+            for k, v in plan.arg_repair_counts.items():
+                merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
             if plan.calls:
                 for call in plan.calls:
                     key = _tool_call_key(call)
@@ -425,11 +430,26 @@ class JsonToolCodec:
             if calls:
                 continue
             if plan.control is not None:
-                return plan
+                return ToolPlan(
+                    calls=[],
+                    control=plan.control,
+                    alias_rewrite_count=total_rewrites,
+                    arg_repair_counts=merged_repair_counts,
+                )
         if calls:
             body = "Need tool result" if len(calls) == 1 else "Need tool results"
-            return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
-        return ToolPlan(calls=[], control=None)
+            return ToolPlan(
+                calls=calls,
+                control=Control(kind="continue", body=body),
+                alias_rewrite_count=total_rewrites,
+                arg_repair_counts=merged_repair_counts,
+            )
+        return ToolPlan(
+            calls=[],
+            control=None,
+            alias_rewrite_count=total_rewrites,
+            arg_repair_counts=merged_repair_counts,
+        )
 
     def format_results(self, results: list[ToolResult]) -> str:
         if not results:
@@ -492,14 +512,24 @@ class JsonToolCodec:
             return ToolPlan(calls=[], control=Control(kind="continue", body=_summary_from_args(args)))
         if normalized == "read_files":
             self._require_allowed(normalized)
-            calls = self._read_files(args)
+            calls, rewrites, repair_counts = self._read_files(args)
             control = Control(kind="continue", body="Need file contents") if calls else None
-            return ToolPlan(calls=calls, control=control)
+            return ToolPlan(
+                calls=calls,
+                control=control,
+                alias_rewrite_count=rewrites,
+                arg_repair_counts=repair_counts,
+            )
         if normalized == "parallel":
             self._require_allowed(normalized)
-            calls = self._parallel(args)
+            calls, rewrites, repair_counts = self._parallel(args)
             control = Control(kind="continue", body="Need tool results") if calls else None
-            return ToolPlan(calls=calls, control=control)
+            return ToolPlan(
+                calls=calls,
+                control=control,
+                alias_rewrite_count=rewrites,
+                arg_repair_counts=repair_counts,
+            )
 
         if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
             if normalized in {"write", "write_file"} and self._is_allowed("edit"):
@@ -517,12 +547,17 @@ class JsonToolCodec:
         if normalized:
             self._require_allowed(normalized)
 
-        call = self._tool_call(tool, args)
+        call, repair = self._tool_call(tool, args)
         if call is None:
             return ToolPlan(calls=[], control=None)
-        return ToolPlan(calls=[call], control=Control(kind="continue", body="Need tool result"))
+        return ToolPlan(
+            calls=[call],
+            control=Control(kind="continue", body="Need tool result"),
+            alias_rewrite_count=repair.alias_rewrite_count,
+            arg_repair_counts=repair.arg_repair_counts,
+        )
 
-    def _read_files(self, args: dict[str, Any]) -> list[ToolCall]:
+    def _read_files(self, args: dict[str, Any]) -> tuple[list[ToolCall], int, dict[str, int]]:
         paths = args.get("paths")
         if isinstance(paths, str):
             paths = [paths]
@@ -532,14 +567,27 @@ class JsonToolCodec:
             raise ProtocolValidationError(
                 f"read_files accepts at most {tool_defs.MAX_ACCIDENTAL_TOOL_CALLS} paths"
             )
-        calls = []
-        for path in paths:
-            if not path:
+        calls: list[ToolCall] = []
+        total_rewrites = 0
+        merged_counts: dict[str, int] = {}
+        for raw_path in paths:
+            if not raw_path:
                 raise ProtocolValidationError("read_files paths cannot be empty")
-            calls.append(ToolCall(name="read", args={"path": str(path)}))
-        return calls
+            try:
+                repair = normalize_tool_args(
+                    "read",
+                    {"path": raw_path},
+                    limits=_DEFAULT_TOOL_ARG_LIMITS,
+                )
+            except ToolArgsRepairError as exc:
+                raise ProtocolValidationError(str(exc), kind=exc.repair_kind, tool_name="read") from exc
+            calls.append(ToolCall(name="read", args=repair.args))
+            total_rewrites += repair.alias_rewrite_count
+            for k, v in repair.arg_repair_counts.items():
+                merged_counts[k] = merged_counts.get(k, 0) + v
+        return calls, total_rewrites, merged_counts
 
-    def _parallel(self, args: dict[str, Any]) -> list[ToolCall]:
+    def _parallel(self, args: dict[str, Any]) -> tuple[list[ToolCall], int, dict[str, int]]:
         raw_calls = args.get("calls")
         if not isinstance(raw_calls, list) or not raw_calls:
             raise ProtocolValidationError("parallel requires a non-empty calls list")
@@ -561,117 +609,42 @@ class JsonToolCodec:
             validated.append((tool, _object_args(raw)))
 
         calls: list[ToolCall] = []
+        total_rewrites = 0
+        merged_counts: dict[str, int] = {}
         for tool, raw_args in validated:
-            call = self._tool_call(tool, raw_args)
+            call, repair = self._tool_call(tool, raw_args)
             if call is None:
                 raise ProtocolValidationError(f"invalid {tool} call inside parallel")
             calls.append(call)
-        return calls
+            total_rewrites += repair.alias_rewrite_count
+            for k, v in repair.arg_repair_counts.items():
+                merged_counts[k] = merged_counts.get(k, 0) + v
+        return calls, total_rewrites, merged_counts
 
-    def _tool_call(self, tool: str, args: dict[str, Any]) -> ToolCall | None:
+    def _tool_call(
+        self,
+        tool: str,
+        args: dict[str, Any],
+    ) -> tuple[ToolCall | None, ToolArgsRepairResult]:
         spec = self._tool_by_name.get(tool.lower().strip())
         if spec is None or spec.runtime_name is None:
-            return None
+            return None, ToolArgsRepairResult(args={})
         normalized = spec.runtime_name
 
-        path = _text(args.get("path") or args.get("cwd"), ".").strip() or "."
-        call_args: dict[str, Any] = {"path": path}
-
-        if normalized == "edit":
-            if "path" not in args and "cwd" not in args:
-                raise ProtocolValidationError(
-                    "edit requires a top-level path and can only edit one file"
-                )
-            has_content = "content" in args
-            has_replacements = "replacements" in args
-            has_single = any(
-                name in args
-                for name in ("old_string", "new_string", "search", "replace", "replacement")
+        try:
+            repair = normalize_tool_args(
+                normalized,
+                args,
+                limits=_DEFAULT_TOOL_ARG_LIMITS,
             )
-            if sum((has_content, has_replacements, has_single)) != 1:
-                raise ProtocolValidationError(
-                    "edit requires exactly one mode: content, old_string/new_string, "
-                    "or replacements"
-                )
-            if has_content:
-                call_args["content"] = _text(args.get("content"))
-            elif has_replacements:
-                replacements = args.get("replacements")
-                if not isinstance(replacements, list) or not replacements:
-                    raise ProtocolValidationError(
-                        "edit replacements must be a non-empty list"
-                    )
-                if len(replacements) > MAX_REPLACEMENTS:
-                    raise ProtocolValidationError(
-                        f"edit supports at most {MAX_REPLACEMENTS} replacements"
-                    )
-                normalized_replacements: list[dict[str, str]] = []
-                for item in replacements:
-                    if not isinstance(item, dict):
-                        raise ProtocolValidationError(
-                            "every edit replacement must be an object"
-                        )
-                    if "path" in item or "cwd" in item:
-                        raise ProtocolValidationError(
-                            "edit replacements apply to the top-level path only; "
-                            "use separate edit calls for different files"
-                        )
-                    old = item.get("old_string", item.get("search"))
-                    if "new_string" in item:
-                        new = item.get("new_string")
-                    elif "replace" in item:
-                        new = item.get("replace")
-                    else:
-                        new = item.get("replacement")
-                    if old is None or new is None or not str(old):
-                        raise ProtocolValidationError(
-                            "every edit replacement requires non-empty old_string "
-                            "and a new_string"
-                        )
-                    normalized_replacements.append({
-                        "search": _text(old),
-                        "replace": _text(new),
-                    })
-                call_args["replacements"] = normalized_replacements
-            else:
-                old = args.get("old_string")
-                new = args.get("new_string")
-                if old is None:
-                    old = args.get("search")
-                if new is None:
-                    new = args.get("replace", args.get("replacement"))
-                if old is None or new is None or not str(old):
-                    raise ProtocolValidationError(
-                        "edit requires non-empty old_string and a new_string"
-                    )
-                call_args["replacements"] = [{"search": _text(old), "replace": _text(new)}]
-        elif normalized == "read":
-            if "offset" in args:
-                call_args["offset"] = _positive_int_arg(args, "offset", 1)
-            if "limit" in args:
-                call_args["limit"] = _positive_int_arg(
-                    args,
-                    "limit",
-                    READ_DEFAULT_LINES,
-                    READ_MAX_LINES,
-                )
-        elif normalized == "search":
-            query = args.get("query", args.get("pattern"))
-            if not query:
-                raise ProtocolValidationError("grep requires a query")
-            call_args["query"] = _text(query)
-        elif normalized == "references":
-            symbol = args.get("symbol", args.get("name"))
-            if not symbol:
-                raise ProtocolValidationError("find_references requires a symbol")
-            call_args["symbol"] = _text(symbol).strip()
-        elif normalized in {"run", "shell"}:
-            command = args.get("command", args.get("cmd"))
-            if not command:
-                raise ProtocolValidationError(f"{spec.name} requires a command")
-            call_args["command"] = _text(command)
+        except ToolArgsRepairError as exc:
+            raise ProtocolValidationError(
+                str(exc),
+                kind=exc.repair_kind,
+                tool_name=normalized,
+            ) from exc
 
-        return ToolCall(name=normalized, args=call_args)
+        return ToolCall(name=normalized, args=repair.args), repair
 
     @staticmethod
     def _tool_definition_index(

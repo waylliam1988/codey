@@ -2655,3 +2655,40 @@ class ProtocolTelemetryTests(unittest.TestCase):
             )["protocol_telemetry"]
 
             self.assertEqual(telemetry, {"phases": {}})
+
+    def test_protocol_telemetry_records_and_bounds_arg_repairs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_protocol_codec("json", phase="writer")
+            recorder.record_protocol_valid_turn(
+                1,
+                phase="writer",
+                alias_rewrite_count=2,
+                arg_repair_counts={
+                    "edit_field_alias": 1,
+                    "path_normalized": 1,
+                    "RAW_PATH_SECRET_SHOULD_BE_DROPPED/foo.py": 1,
+                },
+            )
+            recorder.record_protocol_valid_turn(
+                2,
+                phase="writer",
+                alias_rewrite_count=1,
+                arg_repair_counts={"edit_field_alias": 2},
+            )
+            recorder.finish(status="done")
+
+            serialized = json.dumps(
+                self._payload(store.path_for("session-protocol", "run-protocol")),
+                ensure_ascii=False,
+            )
+            self.assertNotIn("RAW_PATH_SECRET_SHOULD_BE_DROPPED", serialized)
+            phases = json.loads(serialized)["protocol_telemetry"]["phases"]
+            writer = phases["writer"]
+            self.assertEqual(writer["alias_rewrite_count"], 3)
+            self.assertEqual(writer["arg_repair_counts"], {
+                "edit_field_alias": 3,
+                "path_normalized": 1,
+            })

@@ -270,7 +270,13 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
         calls = plan.calls
         control = plan.control
         if calls or control is not None:
-            session.trace.call("record_protocol_valid_turn", turn, phase="writer")
+            session.trace.call(
+                "record_protocol_valid_turn",
+                turn,
+                phase="writer",
+                alias_rewrite_count=plan.alias_rewrite_count,
+                arg_repair_counts=plan.arg_repair_counts,
+            )
 
         turn_state = TurnState()
         for tool_index, call in enumerate(calls):

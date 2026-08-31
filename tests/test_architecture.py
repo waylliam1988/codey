@@ -1492,6 +1492,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIsNone(research_plan.control)
         self.assertEqual(research_plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
 
+    def test_tool_args_repair_module_is_pure_and_has_no_codey_imports(self) -> None:
+        path = ROOT / "codey" / "tool_args_repair.py"
+        modules = imported_modules(path)
+        forbidden = [name for name in modules if name.startswith("codey")]
+        self.assertEqual(
+            forbidden,
+            [],
+            f"codey/tool_args_repair.py must be pure and have no codey imports: {forbidden}",
+        )
+
+    def test_tool_definitions_do_not_contain_write_file_or_create_file(self) -> None:
+        from codey.toolchain.definition import TOOL_DEFINITIONS, TOOL_DEFINITION_BY_NAME
+
+        all_names = {name for spec in TOOL_DEFINITIONS for name in (spec.name, *spec.aliases)}
+        self.assertNotIn("write_file", all_names)
+        self.assertNotIn("create_file", all_names)
+        self.assertNotIn("write", all_names)
+        self.assertNotIn("write_file", TOOL_DEFINITION_BY_NAME)
+        self.assertNotIn("create_file", TOOL_DEFINITION_BY_NAME)
+
 
 if __name__ == "__main__":
     unittest.main()

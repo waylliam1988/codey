@@ -1796,7 +1796,14 @@ class RunTraceRecorder:
         )
         self.checkpoint()
 
-    def record_protocol_valid_turn(self, turn: object, *, phase: str) -> None:
+    def record_protocol_valid_turn(
+        self,
+        turn: object,
+        *,
+        phase: str,
+        alias_rewrite_count: int = 0,
+        arg_repair_counts: Mapping[str, int] | None = None,
+    ) -> None:
         value = _nonnegative_int(turn)
         if not value:
             return
@@ -1806,10 +1813,29 @@ class RunTraceRecorder:
         turns = row.setdefault("valid_turns", [])
         if not isinstance(turns, list):
             turns = row["valid_turns"] = []
+        alias_rewrites = min(999, _nonnegative_int(alias_rewrite_count))
+        if alias_rewrites:
+            row["alias_rewrite_count"] = min(
+                999,
+                (_nonnegative_int(row.get("alias_rewrite_count")) or 0) + alias_rewrites,
+            )
+        if isinstance(arg_repair_counts, Mapping):
+            counts = row.setdefault("arg_repair_counts", {})
+            if isinstance(counts, dict):
+                for key, cnt in arg_repair_counts.items():
+                    code = _protocol_kind_code(key)
+                    if not code:
+                        continue
+                    counts[code] = min(
+                        999,
+                        (_nonnegative_int(counts.get(code)) or 0) + min(999, _nonnegative_int(cnt)),
+                    )
         if turns and turns[-1] == value:
+            self.checkpoint()
             return
         if len(turns) >= MAX_PROTOCOL_VALID_TURNS:
             row["valid_turns_truncated"] = True
+            self.checkpoint()
             return
         turns.append(value)
         self.checkpoint()
@@ -2014,6 +2040,12 @@ def _protocol_phase_payload(row: Mapping[str, object]) -> dict[str, object]:
     repair_counts = _bounded_protocol_count_row(row.get("repair_prompt_counts"))
     if repair_counts:
         payload["repair_prompt_counts"] = repair_counts
+    alias_count = min(999, _nonnegative_int(row.get("alias_rewrite_count")))
+    if alias_count:
+        payload["alias_rewrite_count"] = alias_count
+    arg_repair_counts = _bounded_protocol_count_row(row.get("arg_repair_counts"))
+    if arg_repair_counts:
+        payload["arg_repair_counts"] = arg_repair_counts
     total = _nonnegative_int(row.get("repair_prompt_count"))
     if total:
         payload["repair_prompt_count"] = total
