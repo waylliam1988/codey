@@ -136,8 +136,9 @@ def record_tool_call_intent(
         EFFECT_CATEGORY_TOOL_CALL,
         RuntimeEffectIntent,
         compute_args_digest,
+        new_effect_id,
     )
-    effect_id = f"tool_{session.run_id}_{turn}_{tool_index}_{call.name}"
+    effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.run_id)
     display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
     replay_class = getattr(replay_decision, "replay_class", "unsafe")
     intent = RuntimeEffectIntent(
@@ -173,6 +174,7 @@ def record_tool_call_settlement(
         RuntimeEffectSettlement,
         SETTLEMENT_STATUS_ERROR,
         SETTLEMENT_STATUS_OK,
+        record_settlement_safely,
     )
     status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
     error_code = str(outcome.error_code or ("" if outcome.ok else "error"))
@@ -186,7 +188,7 @@ def record_tool_call_settlement(
         error_code=error_code[:80],
         replay_class=replay_class,
     )
-    effects.record_settlement(session.session_id, session.run_id, settlement)
+    record_settlement_safely(effects, session.session_id, session.run_id, settlement)
 
 
 def emit_tool_started_after_intent(
@@ -206,23 +208,6 @@ def emit_tool_started_after_intent(
                 index=tool_index,
             ),
         )
-
-
-def begin_tool_call(
-    session: AgentLoopSession,
-    call: ToolCall,
-    *,
-    turn: int,
-    tool_index: int,
-) -> ActionPolicyDecision | None:
-    emit_tool_started_after_intent(session, call, turn=turn, tool_index=tool_index)
-    policy_decision, _ = evaluate_tool_call_policy(
-        session,
-        call,
-        turn=turn,
-        tool_index=tool_index,
-    )
-    return policy_decision
 
 
 def policy_denied(decision: ActionPolicyDecision | None) -> bool:
@@ -425,7 +410,6 @@ __all__ = [
     "INFORMATION_TOOL_NAMES",
     "SUPPORTED_TOOL_NAMES",
     "TurnState",
-    "begin_tool_call",
     "call_arg",
     "emit_tool_started_after_intent",
     "evaluate_tool_call_policy",

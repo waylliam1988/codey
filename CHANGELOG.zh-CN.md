@@ -8,10 +8,12 @@
 
 - 外部副作用 Intent / Settlement 闭环与 Replay Policy v1：
   - 新增 `codey.runtime.replay_policy`，实现 `ReplayClass`（safe/unsafe）与 `ReplayDecision`。只读安全工具（`read`、`ls`、`search`、`references`、`project_facts`、`project_map`）判定为 safe 且 retryable；修改类操作（`edit`、`write`、`shell`、`run`、`knowledge_write`）以及未知工具一律判定为 unsafe 且不可重放；`run` 命令内容不豁免，一律 unsafe；provider send 与 repair round 一律 unsafe。
-  - 新增 `codey.runtime.effect_records`，基于单一事实源 `RuntimeSessionLog` 实现 `RuntimeEffectStore`、`RuntimeEffectIntent`、`RuntimeEffectSettlement` 与 `RecoverySummary`。外部副作用（模型发送、工具调用、completion repair round）严格执行 `record intent -> execute real effect -> record settlement` 的 Effect Sandwich。
-  - 会话日志压缩保真：`_compact_entries()` 显式保留 open operation 的 pending intents 以及与恢复结算相关的 settlements（`interrupted` / `error` / `maybe_sent`），防止崩溃恢复所需事实被误裁减。
-  - 崩溃恢复投影：会话恢复时自动扫描未结算的 pending effects 并合成 `interrupted` 状态的 settlement（provider send 标记为 `maybe_sent`，unsafe tool 标记为不可重放），防止意外重复写入。
-  - 接入 Agent 循环与 App 层：`AgentLoopSession` 与 `TaskRunDeps` 接入 `RuntimeEffectStore`，工具执行前记录 intent 并发射 started 事件，执行后记录 settlement 并记账；`load_run_details` 和 UI 状态在存在未确认效果时安静展示 `Recovery` 说明行（如 `"Local write was interrupted and was not repeated"`、`"Provider response was not confirmed"`、`"Read action can be retried"`）。
+  - 新增 `codey.runtime.effect_records`，基于单一事实源 `RuntimeSessionLog` 实现 `RuntimeEffectStore`、`RuntimeEffectIntent`、`RuntimeEffectSettlement` 与 `RecoverySummary`。外部副作用严格执行 `record intent -> execute real effect -> record settlement` 的 Effect Sandwich。
+  - 效果唯一性与防碰撞：使用全局唯一的 `new_effect_id(category, run_id)`，消除 turn、tool call 与 resume 过程中的 id 碰撞，防止新 pending 被旧 settlement 覆盖。
+  - 结算前严格校验 intent 存在性，防止孤立 settlement（orphan settlement）；提供 `record_settlement_safely` 保证日志写失败绝不掩盖真实业务结果或异常。
+  - 调整工具执行与结算时序为 `execute_tool_call -> record_tool_outcome -> record_tool_call_settlement`，确保模型可见工具结果优先入账；删除废弃的 `begin_tool_call()`。
+  - 会话日志压缩保真：`_compact_entries()` 显式保留 open operation 的 pending intents 以及与恢复结算相关的 settlements（`interrupted` / `error` / `maybe_sent`）。
+  - 崩溃恢复投影与安静展示：会话恢复时自动扫描未结算 pending effects 并合成 `interrupted` 状态 settlement；`recovery_summary` 仅统计已结算的 interrupted 效果，忽略运行中的 in-flight pending，避免误报 Recovery。
   - 严格保持上下文纯净：本版本不把 safe replay 或 synthetic interrupted 注入模型上下文，不改变 prompt、tool schema、provider routing 与模型可见 transcript，不保存 raw prompt/diff/output payload。
 
 ## 0.5.1 - Task Runtime Finalization + Completion Repair Durability v1

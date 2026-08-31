@@ -1176,10 +1176,12 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             SETTLEMENT_STATUS_ERROR,
             SETTLEMENT_STATUS_OK,
             compute_args_digest,
+            new_effect_id,
+            record_settlement_safely,
         )
         from codey.runtime.replay_policy import repair_replay_policy
         replay_decision = repair_replay_policy()
-        effect_id = f"repair_{ctx.frame.run_id}_round_1"
+        effect_id = new_effect_id(EFFECT_CATEGORY_REPAIR_ROUND, ctx.frame.run_id)
         intent = RuntimeEffectIntent(
             effect_id=effect_id,
             effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
@@ -1204,27 +1206,35 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         )
     except cancellation.TaskCancelled:
         if effects is not None and effect_id:
-            settlement = RuntimeEffectSettlement(
-                effect_id=effect_id,
-                effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-                session_id=ctx.request.session_id,
-                run_id=ctx.frame.run_id,
-                status=SETTLEMENT_STATUS_ERROR,
-                error_code="task_cancelled",
+            record_settlement_safely(
+                effects,
+                ctx.request.session_id,
+                ctx.frame.run_id,
+                RuntimeEffectSettlement(
+                    effect_id=effect_id,
+                    effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
+                    session_id=ctx.request.session_id,
+                    run_id=ctx.frame.run_id,
+                    status=SETTLEMENT_STATUS_ERROR,
+                    error_code="task_cancelled",
+                ),
             )
-            effects.record_settlement(ctx.request.session_id, ctx.frame.run_id, settlement)
         raise
     except ProviderActionError:
         if effects is not None and effect_id:
-            settlement = RuntimeEffectSettlement(
-                effect_id=effect_id,
-                effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-                session_id=ctx.request.session_id,
-                run_id=ctx.frame.run_id,
-                status=SETTLEMENT_STATUS_ERROR,
-                error_code="provider_failure",
+            record_settlement_safely(
+                effects,
+                ctx.request.session_id,
+                ctx.frame.run_id,
+                RuntimeEffectSettlement(
+                    effect_id=effect_id,
+                    effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
+                    session_id=ctx.request.session_id,
+                    run_id=ctx.frame.run_id,
+                    status=SETTLEMENT_STATUS_ERROR,
+                    error_code="provider_failure",
+                ),
             )
-            effects.record_settlement(ctx.request.session_id, ctx.frame.run_id, settlement)
         ctx.blocked_reason = "provider_failure"
         ctx.deps.runtime.commit_run_operation(
             ctx.work,
@@ -1243,15 +1253,19 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
                 else SETTLEMENT_STATUS_ERROR
             )
             error_code = "" if repair_result.stop_reason == "done" else repair_result.stop_reason
-            settlement = RuntimeEffectSettlement(
-                effect_id=effect_id,
-                effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-                session_id=ctx.request.session_id,
-                run_id=ctx.frame.run_id,
-                status=status,
-                error_code=error_code[:80],
+            record_settlement_safely(
+                effects,
+                ctx.request.session_id,
+                ctx.frame.run_id,
+                RuntimeEffectSettlement(
+                    effect_id=effect_id,
+                    effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
+                    session_id=ctx.request.session_id,
+                    run_id=ctx.frame.run_id,
+                    status=status,
+                    error_code=error_code[:80],
+                ),
             )
-            effects.record_settlement(ctx.request.session_id, ctx.frame.run_id, settlement)
         repair_blocked_reason = ""
         if repair_result.stop_reason not in {"done", "approval", "stopped"}:
             repair_remaining_turns = (

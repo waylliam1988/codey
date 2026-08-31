@@ -216,7 +216,6 @@ def _send_provider_with_effect(
     effect_id = ""
     if effects is not None and session.session_id and session.run_id:
         session.provider_send_index += 1
-        effect_id = f"provider_send_{session.run_id}_{session.provider_send_index}"
         from codey.runtime.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
             RuntimeEffectIntent,
@@ -226,9 +225,12 @@ def _send_provider_with_effect(
             SENT_STATE_MAYBE_SENT,
             SENT_STATE_SETTLED,
             compute_args_digest,
+            new_effect_id,
+            record_settlement_safely,
         )
         from codey.runtime.replay_policy import provider_replay_policy
         replay_decision = provider_replay_policy(purpose)
+        effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.run_id)
         intent = RuntimeEffectIntent(
             effect_id=effect_id,
             effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
@@ -237,7 +239,7 @@ def _send_provider_with_effect(
             phase="writer",
             provider_id=session.active_provider_id,
             turn=session.provider_send_index,
-            display_ref=source_ref,
+            display_ref=source_ref[:120],
             args_digest=compute_args_digest(prompt[:200]),
             replay_class=replay_decision.replay_class,
         )
@@ -247,29 +249,36 @@ def _send_provider_with_effect(
         reply_text = session.provider.send(prompt)
     except Exception as exc:
         if effects is not None and effect_id:
-            settlement = RuntimeEffectSettlement(
+            record_settlement_safely(
+                effects,
+                session.session_id,
+                session.run_id,
+                RuntimeEffectSettlement(
+                    effect_id=effect_id,
+                    effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                    session_id=session.session_id,
+                    run_id=session.run_id,
+                    status=SETTLEMENT_STATUS_ERROR,
+                    error_code=type(exc).__name__[:80],
+                    sent_state=SENT_STATE_MAYBE_SENT,
+                ),
+            )
+        raise
+
+    if effects is not None and effect_id:
+        record_settlement_safely(
+            effects,
+            session.session_id,
+            session.run_id,
+            RuntimeEffectSettlement(
                 effect_id=effect_id,
                 effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
                 session_id=session.session_id,
                 run_id=session.run_id,
-                status=SETTLEMENT_STATUS_ERROR,
-                error_code=type(exc).__name__,
-                sent_state=SENT_STATE_MAYBE_SENT,
-            )
-            effects.record_settlement(session.session_id, session.run_id, settlement)
-        raise
-
-    if effects is not None and effect_id:
-        settlement = RuntimeEffectSettlement(
-            effect_id=effect_id,
-            effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-            session_id=session.session_id,
-            run_id=session.run_id,
-            status=SETTLEMENT_STATUS_OK,
-            sent_state=SENT_STATE_SETTLED,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state=SENT_STATE_SETTLED,
+            ),
         )
-        effects.record_settlement(session.session_id, session.run_id, settlement)
-
     return reply_text
 
 

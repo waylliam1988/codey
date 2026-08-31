@@ -24,18 +24,25 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             RuntimeEffectIntent, RuntimeEffectSettlement, RuntimeEffectProjection,
             and RecoverySummary. All external effects (provider send, tool execution,
             repair round) follow an explicit intent -> real effect -> settlement sandwich.
+            Effect id generation uses globally unique new_effect_id(category, run_id)
+            to eliminate collision across turns, tool calls, and resumes.
+            record_settlement() strictly verifies existence of matching intent.
+            Safe settlement helper record_settlement_safely() guarantees logging
+            failures never mask real business outcomes/errors.
             Session log compaction (_compact_entries) explicitly retains pending intents
             and recovery-relevant settlements (interrupted/error/maybe_sent) for open operations.
             On resume, pending unconfirmed effects are projected and synthesized as interrupted.
 agent:      wired provider send into _send_provider_with_effect, tool execution into
             evaluate_tool_call_policy -> record_tool_call_intent -> emit_tool_started ->
-            execute_tool_call -> record_tool_call_settlement -> record_tool_outcome,
-            and repair rounds into intent/settlement wrapping without changing prompt,
-            tool schema, provider routing, or model-visible transcript.
+            execute_tool_call -> record_tool_outcome -> record_tool_call_settlement,
+            ensuring model-visible tool outcome is recorded before settlement without
+            changing prompt, tool schema, provider routing, or model-visible transcript.
+            Deleted obsolete begin_tool_call() dead code.
 runs/app:   updated load_run_details and API endpoints to project quiet Recovery rows
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
-            "Read action can be retried") when unconfirmed effects exist.
-test suite: 3307 passed, 4 skipped in 300.34s (0:05:00). All architecture, server,
+            "Read action can be retried") only for settled interrupted effects, ignoring
+            in-flight pending effects to avoid false recovery warnings during execution.
+test suite: 3310 passed, 4 skipped in 303.14s (0:05:03). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
 ```
 

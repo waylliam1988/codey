@@ -26,6 +26,7 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
 )
+from codey.runtime.effects import RuntimeOperationStore
 from codey.runtime.models import ToolCall
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.session_log import RuntimeSessionLog
@@ -56,14 +57,16 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.session_id = "sess-sandwich-1"
         self.run_id = "run-sandwich-1"
         self.log = RuntimeSessionLog(self.project_dir / "state")
+        self.operations = RuntimeOperationStore(self.log)
         self.effects = RuntimeEffectStore(self.log)
-        from codey.storage.local_store import session_key
-        self.log.append(
-            self.session_id,
-            lane="task",
-            operation_id=f"task:{session_key(self.run_id)}",
-            kind="operation_started",
-            payload={"operation_kind": "task"},
+        self.operations.start(
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            provider_id="mock_provider",
+            turn_budget=10,
+            max_repair_rounds=1,
+            task_kind="project",
         )
 
     def tearDown(self) -> None:
@@ -187,7 +190,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
         self.assertFalse(policy_denied(policy_decision))
 
-        # Record intent
+        # 1. Record intent
         effect_id = record_tool_call_intent(
             session,
             call,
@@ -202,23 +205,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0].intent.tool_name, "read")
 
-        # Emit tool started
+        # 2. Emit tool started
         emit_tool_started_after_intent(session, call, turn=1, tool_index=0)
         self.assertIn("tool_start", events)
 
-        # Execute tool
+        # 3. Execute tool
         outcome = execute_tool_call(session, call, turn=1, tool_index=0)
         self.assertTrue(outcome.ok)
 
-        # Settle
-        record_tool_call_settlement(
-            session,
-            effect_id,
-            outcome=outcome,
-            replay_decision=replay_decision,
-        )
-
-        # Record tool outcome
+        # 4. Record tool outcome first
         turn_state = TurnState()
         record_tool_outcome(
             session,
@@ -227,6 +222,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
             call=call,
             outcome=outcome,
             tool_index=0,
+        )
+        self.assertEqual(len(turn_state.results), 1)
+
+        # 5. Settle after outcome
+        record_tool_call_settlement(
+            session,
+            effect_id,
+            outcome=outcome,
+            replay_decision=replay_decision,
         )
 
         # Verify no pending effects

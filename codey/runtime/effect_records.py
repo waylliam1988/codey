@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from typing import Any
+import uuid
 
+from codey.runtime.effects import lane_for_run, operation_id_for_run
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import session_key
@@ -37,26 +39,24 @@ EFFECT_CATEGORIES = frozenset({
 SETTLEMENT_STATUS_OK = "ok"
 SETTLEMENT_STATUS_ERROR = "error"
 SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
-SETTLEMENT_STATUS_DENIED = "denied"
 SETTLEMENT_STATUSES = frozenset({
     SETTLEMENT_STATUS_OK,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_INTERRUPTED,
-    SETTLEMENT_STATUS_DENIED,
 })
 
-SENT_STATE_NEVER_SENT = "never_sent"
 SENT_STATE_MAYBE_SENT = "maybe_sent"
 SENT_STATE_SETTLED = "settled"
 SENT_STATES = frozenset({
-    SENT_STATE_NEVER_SENT,
     SENT_STATE_MAYBE_SENT,
     SENT_STATE_SETTLED,
 })
 
-MAX_EFFECT_ID_CHARS = 100
+MAX_EFFECT_ID_CHARS = 128
 MAX_TEXT_CHARS = 120
 MAX_REF_CHARS = 160
+MAX_ERROR_CODE_CHARS = 80
+MAX_ARGS_DIGEST_CHARS = 64
 
 
 class RuntimeEffectError(Exception):
@@ -65,6 +65,13 @@ class RuntimeEffectError(Exception):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def new_effect_id(category: str, run_id: str) -> str:
+    """Generate a globally unique effect id for each distinct execution attempt."""
+    short_cat = (category or "eff")[:12]
+    safe_run = session_key(run_id) or "run"
+    return f"eff_{short_cat}_{safe_run}_{uuid.uuid4().hex[:12]}"
 
 
 def compute_args_digest(args: Any) -> str:
@@ -87,7 +94,7 @@ class RuntimeEffectIntent:
     effect_category: str
     session_id: str
     run_id: str
-    lane: str = "task"
+    lane: str = ""
     operation_id: str = ""
     phase: str = ""
     provider_id: str = ""
@@ -103,14 +110,22 @@ class RuntimeEffectIntent:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if not self.effect_id or not isinstance(self.effect_id, str):
-            raise RuntimeEffectError("effect_id must be a non-empty string")
+        if self.schema_version != SCHEMA_VERSION:
+            raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
+        if not self.effect_id or not isinstance(self.effect_id, str) or len(self.effect_id) > MAX_EFFECT_ID_CHARS:
+            raise RuntimeEffectError("effect_id must be a non-empty bounded string")
+        if not self.session_id or not isinstance(self.session_id, str) or len(self.session_id) > MAX_REF_CHARS:
+            raise RuntimeEffectError("session_id must be a non-empty bounded string")
+        if not self.run_id or not isinstance(self.run_id, str) or len(self.run_id) > MAX_REF_CHARS:
+            raise RuntimeEffectError("run_id must be a non-empty bounded string")
         if self.effect_category not in EFFECT_CATEGORIES:
             raise RuntimeEffectError(f"unknown effect_category: {self.effect_category}")
         if self.record_kind != RECORD_KIND_INTENT:
             raise RuntimeEffectError("record_kind must be 'intent'")
         if self.replay_class not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
             raise RuntimeEffectError("invalid replay_class")
+        if self.turn < 0 or self.tool_index < 0:
+            raise RuntimeEffectError("turn and tool_index must be non-negative")
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -124,14 +139,14 @@ class RuntimeEffectIntent:
             "run_id": self.run_id,
             "lane": self.lane,
             "operation_id": self.operation_id,
-            "phase": self.phase,
-            "provider_id": self.provider_id,
+            "phase": self.phase[:MAX_TEXT_CHARS],
+            "provider_id": self.provider_id[:MAX_TEXT_CHARS],
             "turn": self.turn,
             "tool_index": self.tool_index,
-            "tool_name": self.tool_name,
-            "tool_id": self.tool_id,
-            "args_digest": self.args_digest,
-            "display_ref": self.display_ref,
+            "tool_name": self.tool_name[:MAX_TEXT_CHARS],
+            "tool_id": self.tool_id[:MAX_TEXT_CHARS],
+            "args_digest": self.args_digest[:MAX_ARGS_DIGEST_CHARS],
+            "display_ref": self.display_ref[:MAX_TEXT_CHARS],
             "replay_class": self.replay_class,
             "created_at": self.created_at,
         }
@@ -140,25 +155,28 @@ class RuntimeEffectIntent:
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectIntent:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload for RuntimeEffectIntent")
+        version = payload.get("schema_version")
+        if version != SCHEMA_VERSION:
+            raise RuntimeEffectError(f"unsupported schema version: {version}")
         return cls(
             effect_id=str(payload.get("effect_id") or ""),
             effect_category=str(payload.get("effect_category") or ""),
             session_id=str(payload.get("session_id") or ""),
             run_id=str(payload.get("run_id") or ""),
-            lane=str(payload.get("lane") or "task"),
+            lane=str(payload.get("lane") or ""),
             operation_id=str(payload.get("operation_id") or ""),
-            phase=str(payload.get("phase") or ""),
-            provider_id=str(payload.get("provider_id") or ""),
+            phase=str(payload.get("phase") or "")[:MAX_TEXT_CHARS],
+            provider_id=str(payload.get("provider_id") or "")[:MAX_TEXT_CHARS],
             turn=int(payload.get("turn") or 0),
             tool_index=int(payload.get("tool_index") or 0),
-            tool_name=str(payload.get("tool_name") or ""),
-            tool_id=str(payload.get("tool_id") or ""),
-            args_digest=str(payload.get("args_digest") or ""),
-            display_ref=str(payload.get("display_ref") or ""),
+            tool_name=str(payload.get("tool_name") or "")[:MAX_TEXT_CHARS],
+            tool_id=str(payload.get("tool_id") or "")[:MAX_TEXT_CHARS],
+            args_digest=str(payload.get("args_digest") or "")[:MAX_ARGS_DIGEST_CHARS],
+            display_ref=str(payload.get("display_ref") or "")[:MAX_TEXT_CHARS],
             replay_class=str(payload.get("replay_class") or ReplayClass.UNSAFE),
             created_at=str(payload.get("created_at") or ""),
             record_kind=RECORD_KIND_INTENT,
-            schema_version=int(payload.get("schema_version") or SCHEMA_VERSION),
+            schema_version=SCHEMA_VERSION,
         )
 
 
@@ -169,7 +187,7 @@ class RuntimeEffectSettlement:
     session_id: str
     run_id: str
     status: str = SETTLEMENT_STATUS_OK
-    lane: str = "task"
+    lane: str = ""
     operation_id: str = ""
     error_code: str = ""
     sent_state: str = SENT_STATE_SETTLED
@@ -179,8 +197,14 @@ class RuntimeEffectSettlement:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if not self.effect_id or not isinstance(self.effect_id, str):
-            raise RuntimeEffectError("effect_id must be a non-empty string")
+        if self.schema_version != SCHEMA_VERSION:
+            raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
+        if not self.effect_id or not isinstance(self.effect_id, str) or len(self.effect_id) > MAX_EFFECT_ID_CHARS:
+            raise RuntimeEffectError("effect_id must be a non-empty bounded string")
+        if not self.session_id or not isinstance(self.session_id, str) or len(self.session_id) > MAX_REF_CHARS:
+            raise RuntimeEffectError("session_id must be a non-empty bounded string")
+        if not self.run_id or not isinstance(self.run_id, str) or len(self.run_id) > MAX_REF_CHARS:
+            raise RuntimeEffectError("run_id must be a non-empty bounded string")
         if self.effect_category not in EFFECT_CATEGORIES:
             raise RuntimeEffectError(f"unknown effect_category: {self.effect_category}")
         if self.record_kind != RECORD_KIND_SETTLEMENT:
@@ -203,7 +227,7 @@ class RuntimeEffectSettlement:
             "lane": self.lane,
             "operation_id": self.operation_id,
             "status": self.status,
-            "error_code": self.error_code,
+            "error_code": self.error_code[:MAX_ERROR_CODE_CHARS],
             "sent_state": self.sent_state,
             "replay_class": self.replay_class,
             "created_at": self.created_at,
@@ -213,20 +237,23 @@ class RuntimeEffectSettlement:
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectSettlement:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("invalid payload for RuntimeEffectSettlement")
+        version = payload.get("schema_version")
+        if version != SCHEMA_VERSION:
+            raise RuntimeEffectError(f"unsupported schema version: {version}")
         return cls(
             effect_id=str(payload.get("effect_id") or ""),
             effect_category=str(payload.get("effect_category") or ""),
             session_id=str(payload.get("session_id") or ""),
             run_id=str(payload.get("run_id") or ""),
             status=str(payload.get("status") or SETTLEMENT_STATUS_OK),
-            lane=str(payload.get("lane") or "task"),
+            lane=str(payload.get("lane") or ""),
             operation_id=str(payload.get("operation_id") or ""),
-            error_code=str(payload.get("error_code") or ""),
+            error_code=str(payload.get("error_code") or "")[:MAX_ERROR_CODE_CHARS],
             sent_state=str(payload.get("sent_state") or SENT_STATE_SETTLED),
             replay_class=str(payload.get("replay_class") or ReplayClass.UNSAFE),
             created_at=str(payload.get("created_at") or ""),
             record_kind=RECORD_KIND_SETTLEMENT,
-            schema_version=int(payload.get("schema_version") or SCHEMA_VERSION),
+            schema_version=SCHEMA_VERSION,
         )
 
 
@@ -253,14 +280,26 @@ class RecoverySummary:
     explanation_lines: tuple[str, ...] = ()
 
 
+def record_settlement_safely(
+    store: Any,
+    session_id: str,
+    run_id: str,
+    settlement: RuntimeEffectSettlement,
+) -> RuntimeEffectSettlement | None:
+    """Safely record settlement without masking real business outcomes/errors."""
+    if store is None or not session_id or not run_id or not settlement.effect_id:
+        return None
+    try:
+        return store.record_settlement(session_id, run_id, settlement)
+    except Exception:
+        return None
+
+
 class RuntimeEffectStore:
     """Store and recovery projection for external effect intents and settlements."""
 
     def __init__(self, session_log: RuntimeSessionLog) -> None:
         self.session_log = session_log
-
-    def _default_operation_id(self, run_id: str) -> str:
-        return f"task:{session_key(run_id)}"
 
     def record_intent(
         self,
@@ -269,14 +308,15 @@ class RuntimeEffectStore:
         intent: RuntimeEffectIntent,
     ) -> RuntimeEffectIntent:
         """Record an intent before executing a real effect."""
-        op_id = intent.operation_id or self._default_operation_id(run_id)
+        lane = intent.lane or lane_for_run(run_id)
+        op_id = intent.operation_id or operation_id_for_run(run_id)
         created_at = intent.created_at or _now()
         prepared = RuntimeEffectIntent(
             effect_id=intent.effect_id,
             effect_category=intent.effect_category,
             session_id=session_id,
             run_id=run_id,
-            lane=intent.lane,
+            lane=lane,
             operation_id=op_id,
             phase=intent.phase,
             provider_id=intent.provider_id,
@@ -305,7 +345,13 @@ class RuntimeEffectStore:
         settlement: RuntimeEffectSettlement,
     ) -> RuntimeEffectSettlement:
         """Record a settlement after an effect has completed or failed."""
-        op_id = settlement.operation_id or self._default_operation_id(run_id)
+        effects = self.load_effects(session_id, run_id)
+        matching = next((p for p in effects if p.intent.effect_id == settlement.effect_id), None)
+        if matching is None:
+            raise RuntimeEffectError(f"cannot record settlement for unknown intent: {settlement.effect_id}")
+
+        lane = settlement.lane or matching.intent.lane or lane_for_run(run_id)
+        op_id = settlement.operation_id or matching.intent.operation_id or operation_id_for_run(run_id)
         created_at = settlement.created_at or _now()
         prepared = RuntimeEffectSettlement(
             effect_id=settlement.effect_id,
@@ -313,7 +359,7 @@ class RuntimeEffectStore:
             session_id=session_id,
             run_id=run_id,
             status=settlement.status,
-            lane=settlement.lane,
+            lane=lane,
             operation_id=op_id,
             error_code=settlement.error_code,
             sent_state=settlement.sent_state,
@@ -431,10 +477,13 @@ class RuntimeEffectStore:
         for proj in effects:
             intent = proj.intent
             settlement = proj.settlement
-            status = settlement.status if settlement else SETTLEMENT_STATUS_INTERRUPTED
+            # Only count settled effects with interrupted status (e.g. synthetic crash recovery)
+            if settlement is None:
+                continue
+            status = settlement.status
 
             if intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND:
-                if status == SETTLEMENT_STATUS_INTERRUPTED or (settlement and settlement.sent_state == SENT_STATE_MAYBE_SENT):
+                if status == SETTLEMENT_STATUS_INTERRUPTED or settlement.sent_state == SENT_STATE_MAYBE_SENT:
                     unconfirmed_provider_calls += 1
             elif intent.effect_category == EFFECT_CATEGORY_REPAIR_ROUND:
                 if status == SETTLEMENT_STATUS_INTERRUPTED:
@@ -482,12 +531,12 @@ __all__ = [
     "RuntimeEffectStore",
     "SENT_STATES",
     "SENT_STATE_MAYBE_SENT",
-    "SENT_STATE_NEVER_SENT",
     "SENT_STATE_SETTLED",
     "SETTLEMENT_STATUSES",
-    "SETTLEMENT_STATUS_DENIED",
     "SETTLEMENT_STATUS_ERROR",
     "SETTLEMENT_STATUS_INTERRUPTED",
     "SETTLEMENT_STATUS_OK",
     "compute_args_digest",
+    "new_effect_id",
+    "record_settlement_safely",
 ]

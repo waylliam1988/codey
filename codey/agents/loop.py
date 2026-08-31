@@ -342,14 +342,6 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
                     raise
                 except Exception as exc:
                     outcome = tool_error_outcome(exc)
-
-                if effect_id:
-                    record_tool_call_settlement(
-                        session,
-                        effect_id,
-                        outcome=outcome,
-                        replay_decision=replay_decision,
-                    )
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
@@ -363,6 +355,14 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
                 outcome=outcome,
                 tool_index=tool_index,
             )
+
+            if effect_id:
+                record_tool_call_settlement(
+                    session,
+                    effect_id,
+                    outcome=outcome,
+                    replay_decision=replay_decision,
+                )
 
         if session.conversation is not None:
             session.conversation.update_snapshot(
