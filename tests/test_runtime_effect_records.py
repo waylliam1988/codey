@@ -596,6 +596,29 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             self.store.load_effects(self.session_id, self.run_id)
         self.assertIn("conflicting duplicate settlement in session log", str(ctx.exception))
 
+    def test_direct_log_mismatched_session_id_raises(self) -> None:
+        eff_id = "eff_mismatched_session"
+        intent_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "intent",
+            "ref": f"effect:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": "other_session_id",
+            "run_id": self.run_id,
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "turn": 1,
+            "tool_index": 0,
+            "replay_class": "safe",
+        }
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload)
+
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("payload session_id 'other_session_id' does not match expected session_id", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

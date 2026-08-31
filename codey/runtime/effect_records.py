@@ -445,7 +445,7 @@ class RuntimeEffectStore:
             if payload.get("effect_kind") != EFFECT_KIND or payload.get("run_id") != run_id:
                 continue
 
-            # Strict validation against run operation lane and operation_id boundary
+            # Strict validation against run operation lane, operation_id, and session_id boundary
             if entry.lane != expected_lane:
                 raise RuntimeEffectError(
                     f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
@@ -453,6 +453,11 @@ class RuntimeEffectStore:
             if entry.operation_id != expected_op:
                 raise RuntimeEffectError(
                     f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+                )
+            payload_session_id = payload.get("session_id")
+            if not payload_session_id or payload_session_id != session_id:
+                raise RuntimeEffectError(
+                    f"payload session_id '{payload_session_id}' does not match expected session_id '{session_id}' for run {run_id}"
                 )
             payload_lane = payload.get("lane")
             if not payload_lane or payload_lane != expected_lane:

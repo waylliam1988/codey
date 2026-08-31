@@ -423,7 +423,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
     def test_recovery_failure_single_work_item_transition(self) -> None:
-        from types import SimpleNamespace
+        from codey.ghost.work_queue import GhostWorkClaimResult, GhostWorkItem
 
         state = server.AppContext(state_home=self.temp_dir.name)
         mock_work_queue = Mock()
@@ -432,7 +432,26 @@ class AgentEffectSandwichTests(unittest.TestCase):
         broken_effects = Mock()
         broken_effects.pending_effects.side_effect = RuntimeError("disk corrupt")
 
-        claimed_item = SimpleNamespace(ok=True, item=SimpleNamespace(id="item-123", kind="project"))
+        claimed_work_item = GhostWorkItem(
+            id="item-123",
+            kind="project",
+            status="running",
+            scope="project",
+            scope_ref="",
+            title="test task",
+            why_now="recovery",
+            priority=1.0,
+            confidence=1.0,
+            source="manual",
+            source_ref="",
+            started_run_id="run-transition-1",
+        )
+        claim_result = GhostWorkClaimResult(
+            ok=True,
+            item=claimed_work_item,
+            mode="project",
+            task="task to run",
+        )
         deps = TaskRunDeps(
             state=state,
             agent_run=Mock(),
@@ -452,7 +471,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.maybe_claim_work_item", return_value=claimed_item):
+             patch("codey.operations.task_run.maybe_claim_work_item", return_value=claim_result):
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -467,6 +486,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
+        # Recovery must have been attempted and failed
+        broken_effects.pending_effects.assert_called_once()
         # Should block the item on error, not call release_item
         mock_work_queue.block_item.assert_called_once_with("item-123", run_id="run-transition-1", blocked_reason="error")
         mock_work_queue.release_item.assert_not_called()

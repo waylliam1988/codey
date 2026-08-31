@@ -35,11 +35,12 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             Resume recovery and operation start fail closed immediately on store/recovery failure,
             completing full lifecycle cleanup (standard task_done event, state.finish_run,
             run_ghost_post_turn without redundant work item release) and blocking external execution.
-            Effect payloads strictly require lane, operation_id, turn, and tool_index fields; enum fields
-            (effect_category, replay_class, status, sent_state) enforce strict string type before membership.
-            load_effects() parses entries in strict chronological order: rejects duplicate intents,
-            rejects orphan settlements without preceding intents, and strictly validates duplicate
-            settlement idempotence or conflict.
+            Effect payloads strictly require session_id, lane, operation_id, turn, and tool_index fields;
+            enum fields (effect_category, replay_class, status, sent_state) enforce strict string type
+            before membership.
+            load_effects() parses entries in strict chronological order: validates session_id consistency,
+            rejects duplicate intents, rejects orphan settlements without preceding intents, and
+            strictly validates duplicate settlement idempotence or conflict.
 agent:      wired provider send into _send_provider_with_effect, tool execution into
             evaluate_tool_call_policy -> record_tool_call_intent -> emit_tool_started ->
             execute_tool_call -> record_tool_outcome -> record_tool_call_settlement,
@@ -53,7 +54,7 @@ runs/app:   updated load_run_details and API endpoints to project quiet Recovery
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
             "Read action can be retried") only for settled interrupted effects, ignoring
             in-flight pending effects and normal provider errors to avoid false recovery warnings.
-test suite: 3322 passed, 4 skipped in 292.91s (0:04:52). All architecture, server,
+test suite: 3323 passed, 4 skipped in 290.25s (0:04:50). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
 ```
 
