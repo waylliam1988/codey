@@ -217,7 +217,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         summary_text: str,
         *,
         current_work: RunWork | None = None,
-        work_item_to_block: GhostWorkItem | None = None,
     ) -> OperationOutcome:
         error_event = task_done_event(
             run_id=run_id,
@@ -237,7 +236,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             ghost_deps,
             None,
             error_event,
-            current_work.claimed_work_item if current_work is not None else work_item_to_block,
+            current_work.claimed_work_item if current_work is not None else claimed_work_item,
             project_text=str(project or ""),
         )
         return operation_outcome_from_task_done_event(error_event)

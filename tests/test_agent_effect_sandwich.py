@@ -494,19 +494,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
         broken_effects = Mock()
         broken_effects.pending_effects.side_effect = RuntimeError("recovery failed")
 
-        router_factory_called = False
-        provider_send_called = False
-
-        class RouterMockProvider:
-            def send(self, *args: Any, **kwargs: Any) -> Any:
-                nonlocal provider_send_called
-                provider_send_called = True
-                return Mock(content="auto route output", tool_calls=[])
-
-        def fake_router_factory() -> Any:
-            nonlocal router_factory_called
-            router_factory_called = True
-            return RouterMockProvider()
+        router_provider = Mock()
+        router_provider.send = Mock(return_value=Mock(content="auto route output", tool_calls=[]))
+        router_factory = Mock(return_value=router_provider)
 
         deps = TaskRunDeps(
             state=state,
@@ -523,7 +513,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             runtime_effects=broken_effects,
-            ghost_router_provider_factory=fake_router_factory,
+            ghost_router_provider_factory=router_factory,
             is_git_repository=lambda _project: True,
         )
 
@@ -547,14 +537,77 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         # Pre-gate recovery failed: router provider factory and provider.send must NEVER have been called
         broken_effects.pending_effects.assert_called_once()
-        self.assertFalse(router_factory_called)
-        self.assertFalse(provider_send_called)
+        router_factory.assert_not_called()
+        router_provider.send.assert_not_called()
         # Registry must NOT be busy
         self.assertFalse(state.run_registry.is_busy())
         # Terminal event must be stop_reason="error"
         done_events = [e for e in emitted_events if e.get("type") == "task_done"]
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0].get("stop_reason"), "error")
+
+    def test_pre_gate_recovery_failure_leaves_no_detailed_operation_in_store(self) -> None:
+        from codey.runs.details import load_run_details
+
+        state = server.AppContext(state_home=self.temp_dir.name)
+        broken_effects = Mock()
+        broken_effects.pending_effects.side_effect = RuntimeError("disk corrupt")
+        broken_effects.recovery_summary.return_value = None
+
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=Mock(),
+            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
+            run_review=Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            runtime_effects=broken_effects,
+            is_git_repository=lambda _project: True,
+        )
+
+        emitted_events: list[dict] = []
+        state.emit = lambda event: emitted_events.append(event)
+        run_id = "run-pregate-store-isolation-1"
+
+        run_task_submission(
+            deps,
+            TaskSubmission(
+                self.session_id,
+                str(self.project_dir),
+                "task to run",
+                5,
+                False,
+                "mock_provider",
+                intent="project",
+                run_id=run_id,
+            ),
+        )
+
+        # Pre-gate failure happens before RuntimeOperationStore.start(), so load() is None
+        self.assertIsNone(state.runtime_operations.load(self.session_id, run_id))
+        # Registry must NOT be busy
+        self.assertFalse(state.run_registry.is_busy())
+        # Terminal event is emitted with stop_reason="error"
+        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
+        self.assertEqual(len(done_events), 1)
+        self.assertEqual(done_events[0].get("stop_reason"), "error")
+        # Run details resolves cleanly via trace and error event
+        details = load_run_details(
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            session_id=self.session_id,
+            run_id=run_id,
+            runtime_operations=state.runtime_operations,
+            runtime_effects=broken_effects,
+        )
+        self.assertTrue(details.available)
 
 
 if __name__ == "__main__":

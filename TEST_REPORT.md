@@ -57,7 +57,7 @@ runs/app:   updated load_run_details and API endpoints to project quiet Recovery
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
             "Read action can be retried") only for settled interrupted effects, ignoring
             in-flight pending effects and normal provider errors to avoid false recovery warnings.
-test suite: 3326 passed, 4 skipped in 291.84s (0:04:51). All architecture, server,
+test suite: 3327 passed, 4 skipped in 290.35s (0:04:50). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
 ```
 
