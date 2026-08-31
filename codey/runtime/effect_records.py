@@ -341,8 +341,26 @@ class RuntimeEffectStore:
         intent: RuntimeEffectIntent,
     ) -> RuntimeEffectIntent:
         """Record an intent before executing a real effect."""
-        lane = intent.lane or lane_for_run(run_id)
-        op_id = intent.operation_id or operation_id_for_run(run_id)
+        if intent.session_id != session_id:
+            raise RuntimeEffectError(
+                f"intent session_id '{intent.session_id}' does not match expected session_id '{session_id}'"
+            )
+        if intent.run_id != run_id:
+            raise RuntimeEffectError(
+                f"intent run_id '{intent.run_id}' does not match expected run_id '{run_id}'"
+            )
+        expected_lane = lane_for_run(run_id)
+        expected_op = operation_id_for_run(run_id)
+        if intent.lane and intent.lane != expected_lane:
+            raise RuntimeEffectError(
+                f"intent lane '{intent.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+            )
+        if intent.operation_id and intent.operation_id != expected_op:
+            raise RuntimeEffectError(
+                f"intent operation_id '{intent.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+            )
+        lane = intent.lane or expected_lane
+        op_id = intent.operation_id or expected_op
         created_at = intent.created_at or _now()
         prepared = RuntimeEffectIntent(
             effect_id=intent.effect_id,
@@ -378,6 +396,25 @@ class RuntimeEffectStore:
         settlement: RuntimeEffectSettlement,
     ) -> RuntimeEffectSettlement:
         """Record a settlement after an effect has completed or failed."""
+        if settlement.session_id != session_id:
+            raise RuntimeEffectError(
+                f"settlement session_id '{settlement.session_id}' does not match expected session_id '{session_id}'"
+            )
+        if settlement.run_id != run_id:
+            raise RuntimeEffectError(
+                f"settlement run_id '{settlement.run_id}' does not match expected run_id '{run_id}'"
+            )
+        expected_lane = lane_for_run(run_id)
+        expected_op = operation_id_for_run(run_id)
+        if settlement.lane and settlement.lane != expected_lane:
+            raise RuntimeEffectError(
+                f"settlement lane '{settlement.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+            )
+        if settlement.operation_id and settlement.operation_id != expected_op:
+            raise RuntimeEffectError(
+                f"settlement operation_id '{settlement.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+            )
+
         effects = self.load_effects(session_id, run_id)
         matching = next((p for p in effects if p.intent.effect_id == settlement.effect_id), None)
         if matching is None:
@@ -398,8 +435,8 @@ class RuntimeEffectStore:
                 return matching.settlement
             raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
 
-        lane = settlement.lane or matching.intent.lane or lane_for_run(run_id)
-        op_id = settlement.operation_id or matching.intent.operation_id or operation_id_for_run(run_id)
+        lane = settlement.lane or matching.intent.lane or expected_lane
+        op_id = settlement.operation_id or matching.intent.operation_id or expected_op
         created_at = settlement.created_at or _now()
         prepared = RuntimeEffectSettlement(
             effect_id=settlement.effect_id,
@@ -442,10 +479,15 @@ class RuntimeEffectStore:
             payload = entry.payload
             if not isinstance(payload, dict):
                 continue
-            if payload.get("effect_kind") != EFFECT_KIND or payload.get("run_id") != run_id:
+            if payload.get("effect_kind") != EFFECT_KIND:
                 continue
 
             # Strict validation against run operation lane, operation_id, and session_id boundary
+            is_current_operation = (entry.lane == expected_lane or entry.operation_id == expected_op)
+            is_current_run = (payload.get("run_id") == run_id)
+            if not is_current_operation and not is_current_run:
+                continue
+
             if entry.lane != expected_lane:
                 raise RuntimeEffectError(
                     f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
@@ -458,6 +500,11 @@ class RuntimeEffectStore:
             if not payload_session_id or payload_session_id != session_id:
                 raise RuntimeEffectError(
                     f"payload session_id '{payload_session_id}' does not match expected session_id '{session_id}' for run {run_id}"
+                )
+            payload_run_id = payload.get("run_id")
+            if not payload_run_id or payload_run_id != run_id:
+                raise RuntimeEffectError(
+                    f"payload run_id '{payload_run_id}' does not match expected run_id '{run_id}'"
                 )
             payload_lane = payload.get("lane")
             if not payload_lane or payload_lane != expected_lane:

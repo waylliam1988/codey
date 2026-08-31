@@ -429,9 +429,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         mock_work_queue = Mock()
         state.ghost_work_queue = mock_work_queue
 
-        broken_effects = Mock()
-        broken_effects.pending_effects.side_effect = RuntimeError("disk corrupt")
-
+        # Pre-gate recovery succeeds, but operation start fails
         claimed_work_item = GhostWorkItem(
             id="item-123",
             kind="project",
@@ -466,12 +464,13 @@ class AgentEffectSandwichTests(unittest.TestCase):
             evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
-            runtime_effects=broken_effects,
+            runtime_effects=self.effects,
             is_git_repository=lambda _project: True,
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.maybe_claim_work_item", return_value=claim_result):
+             patch("codey.operations.task_run.maybe_claim_work_item", return_value=claim_result), \
+             patch.object(state.runtime_operations, "start", return_value=None):
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -486,11 +485,76 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        # Recovery must have been attempted and failed
-        broken_effects.pending_effects.assert_called_once()
         # Should block the item on error, not call release_item
         mock_work_queue.block_item.assert_called_once_with("item-123", run_id="run-transition-1", blocked_reason="error")
         mock_work_queue.release_item.assert_not_called()
+
+    def test_recovery_fails_before_ghost_router_provider_send(self) -> None:
+        state = server.AppContext(state_home=self.temp_dir.name)
+        broken_effects = Mock()
+        broken_effects.pending_effects.side_effect = RuntimeError("recovery failed")
+
+        router_factory_called = False
+        provider_send_called = False
+
+        class RouterMockProvider:
+            def send(self, *args: Any, **kwargs: Any) -> Any:
+                nonlocal provider_send_called
+                provider_send_called = True
+                return Mock(content="auto route output", tool_calls=[])
+
+        def fake_router_factory() -> Any:
+            nonlocal router_factory_called
+            router_factory_called = True
+            return RouterMockProvider()
+
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=Mock(),
+            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
+            run_review=Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            runtime_effects=broken_effects,
+            ghost_router_provider_factory=fake_router_factory,
+            is_git_repository=lambda _project: True,
+        )
+
+        emitted_events: list[dict] = []
+        state.emit = lambda event: emitted_events.append(event)
+
+        with patch("codey.operations.ghost_post_turn._ghost_learning_enabled", return_value=True):
+            run_task_submission(
+                deps,
+                TaskSubmission(
+                    self.session_id,
+                    str(self.project_dir),
+                    "task to run",
+                    5,
+                    False,
+                    "mock_provider",
+                    intent="auto",
+                    run_id="run-auto-router-gate-1",
+                ),
+            )
+
+        # Pre-gate recovery failed: router provider factory and provider.send must NEVER have been called
+        broken_effects.pending_effects.assert_called_once()
+        self.assertFalse(router_factory_called)
+        self.assertFalse(provider_send_called)
+        # Registry must NOT be busy
+        self.assertFalse(state.run_registry.is_busy())
+        # Terminal event must be stop_reason="error"
+        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
+        self.assertEqual(len(done_events), 1)
+        self.assertEqual(done_events[0].get("stop_reason"), "error")
 
 
 if __name__ == "__main__":

@@ -619,6 +619,75 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             self.store.load_effects(self.session_id, self.run_id)
         self.assertIn("payload session_id 'other_session_id' does not match expected session_id", str(ctx.exception))
 
+    def test_direct_log_missing_or_wrong_run_id_in_current_lane_raises(self) -> None:
+        eff_id = "eff_wrong_run"
+        intent_payload_wrong = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "intent",
+            "ref": f"effect:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": self.session_id,
+            "run_id": "wrong_run_id",
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "turn": 1,
+            "tool_index": 0,
+            "replay_class": "safe",
+        }
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload_wrong)
+
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("payload run_id 'wrong_run_id' does not match expected run_id", str(ctx.exception))
+
+    def test_record_intent_and_settlement_mismatched_boundary_raises(self) -> None:
+        valid_intent = RuntimeEffectIntent(
+            effect_id="eff_boundary_test",
+            effect_category="tool_call",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            lane=self.lane,
+            operation_id=self.op_id,
+            turn=1,
+            tool_index=0,
+            replay_class="safe",
+        )
+        # Mismatched session_id in record_intent
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_intent("other_session", self.run_id, valid_intent)
+        self.assertIn("does not match expected session_id", str(ctx.exception))
+
+        # Mismatched run_id in record_intent
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_intent(self.session_id, "other_run", valid_intent)
+        self.assertIn("does not match expected run_id", str(ctx.exception))
+
+        # Valid record_intent succeeds
+        self.store.record_intent(self.session_id, self.run_id, valid_intent)
+
+        valid_settlement = RuntimeEffectSettlement(
+            effect_id="eff_boundary_test",
+            effect_category="tool_call",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            lane=self.lane,
+            operation_id=self.op_id,
+            status="ok",
+            sent_state="settled",
+            replay_class="safe",
+        )
+        # Mismatched session_id in record_settlement
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_settlement("other_session", self.run_id, valid_settlement)
+        self.assertIn("does not match expected session_id", str(ctx.exception))
+
+        # Mismatched run_id in record_settlement
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_settlement(self.session_id, "other_run", valid_settlement)
+        self.assertIn("does not match expected run_id", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

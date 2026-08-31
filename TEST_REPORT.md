@@ -32,15 +32,18 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             Session log compaction (_compact_entries) explicitly retains pending intents
             and recovery-relevant settlements (interrupted/error/maybe_sent) for open operations.
             On resume, pending unconfirmed effects are projected and synthesized as interrupted.
-            Resume recovery and operation start fail closed immediately on store/recovery failure,
-            completing full lifecycle cleanup (standard task_done event, state.finish_run,
-            run_ghost_post_turn without redundant work item release) and blocking external execution.
+            Resume recovery pre-gates any external provider/route/claim side effects and fails closed
+            immediately on store/recovery failure, completing full lifecycle cleanup (standard task_done
+            event, state.finish_run, run_ghost_post_turn) and blocking external execution.
             Effect payloads strictly require session_id, lane, operation_id, turn, and tool_index fields;
             enum fields (effect_category, replay_class, status, sent_state) enforce strict string type
             before membership.
-            load_effects() parses entries in strict chronological order: validates session_id consistency,
-            rejects duplicate intents, rejects orphan settlements without preceding intents, and
-            strictly validates duplicate settlement idempotence or conflict.
+            record_intent() and record_settlement() strictly validate session_id, run_id, lane, and operation_id
+            consistency against the target run boundary.
+            load_effects() parses entries in strict chronological order: validates boundary consistency
+            for all entries matching current operation or run, rejects duplicate intents, rejects orphan
+            settlements without preceding intents, and strictly validates duplicate settlement idempotence
+            or conflict.
 agent:      wired provider send into _send_provider_with_effect, tool execution into
             evaluate_tool_call_policy -> record_tool_call_intent -> emit_tool_started ->
             execute_tool_call -> record_tool_outcome -> record_tool_call_settlement,
@@ -54,7 +57,7 @@ runs/app:   updated load_run_details and API endpoints to project quiet Recovery
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
             "Read action can be retried") only for settled interrupted effects, ignoring
             in-flight pending effects and normal provider errors to avoid false recovery warnings.
-test suite: 3323 passed, 4 skipped in 290.25s (0:04:50). All architecture, server,
+test suite: 3326 passed, 4 skipped in 291.84s (0:04:51). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
 ```
 

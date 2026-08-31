@@ -212,7 +212,40 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
     review_deps = _review_deps(deps)
     ghost_deps = _ghost_deps(deps, review_deps)
     route_result = None
+
+    def _fail_early(
+        summary_text: str,
+        *,
+        current_work: RunWork | None = None,
+        work_item_to_block: GhostWorkItem | None = None,
+    ) -> OperationOutcome:
+        error_event = task_done_event(
+            run_id=run_id,
+            session_id=session_id,
+            summary=summary_text,
+            stop_reason="error",
+            max_turns=max_turns,
+            provider=provider_id,
+            mode=ui_mode(task_kind, project),
+            work=current_work,
+        )
+        if current_work is not None:
+            _finish_run_operation(deps, current_work, error_event)
+        finish_trace(error_event)
+        state.finish_run(run_id, error_event)
+        run_ghost_post_turn(
+            ghost_deps,
+            None,
+            error_event,
+            current_work.claimed_work_item if current_work is not None else work_item_to_block,
+            project_text=str(project or ""),
+        )
+        return operation_outcome_from_task_done_event(error_event)
+
     try:
+        if not _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id):
+            return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
+
         try:
             claim_result = maybe_claim_work_item(ghost_deps, request, run_id=run_id)
             if claim_result is not None:
@@ -317,28 +350,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             task_kind=task_kind,
         )
         if not started_ok:
-            error_event = task_done_event(
-                run_id=run_id,
-                session_id=session_id,
-                summary="ERROR: Runtime recovery failed to settle unconfirmed effects.",
-                stop_reason="error",
-                max_turns=max_turns,
-                provider=provider_id,
-                mode=ui_mode(task_kind, project),
-                work=work,
-            )
-            if work is not None:
-                _finish_run_operation(deps, work, error_event)
-            finish_trace(error_event)
-            state.finish_run(run_id, error_event)
-            run_ghost_post_turn(
-                ghost_deps,
-                None,
-                error_event,
-                work.claimed_work_item if work is not None else claimed_work_item,
-                project_text=str(project or ""),
-            )
-            return operation_outcome_from_task_done_event(error_event)
+            return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.", current_work=work)
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         logged_provider_failures: set[tuple[str, str, str, str]] = set()
