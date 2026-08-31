@@ -61,3 +61,6 @@ class AgentRequest:
     permission_profile: str = "coding_writer"
     tool_fns: AgentToolFns | None = None
     trace_recorder: Any = None
+    session_id: str = ""
+    run_id: str = ""
+    runtime_effects: Any = None

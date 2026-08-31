@@ -91,6 +91,7 @@ from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
+from codey.runtime.effect_records import RuntimeEffectStore
 from codey.runtime.effects import RuntimeOperationStore
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -192,6 +193,7 @@ class AppContext:
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
+        self.runtime_effects = RuntimeEffectStore(self.runtime_log)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
@@ -857,6 +859,7 @@ def _run_task(
         review_log_lines=REVIEW_LOG_LINES,
         ghost_learning_provider_factory=STATE.providers.ghost_learning_provider_factory,
         ghost_router_provider_factory=STATE.providers.ghost_router_provider_factory,
+        runtime_effects=STATE.runtime_effects,
     )
     try:
         run_task_submission(

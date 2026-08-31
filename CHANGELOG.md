@@ -4,6 +4,16 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
+
+- Effect Intent / Settlement Sandwich and Replay Policy v1:
+  - Added `codey.runtime.replay_policy` introducing `ReplayClass` (safe/unsafe) and `ReplayDecision`. Read-only tools (`read`, `ls`, `search`, `references`, `project_facts`, `project_map`) are classified as safe and retryable; mutating actions (`edit`, `write`, `shell`, `run`, `knowledge_write`) and unknown tools are classified as unsafe and non-retryable; `run` command content is unconditionally classified as unsafe; provider sends and repair rounds are unsafe.
+  - Added `codey.runtime.effect_records` backed by the single durable fact source `RuntimeSessionLog`, introducing `RuntimeEffectStore`, `RuntimeEffectIntent`, `RuntimeEffectSettlement`, and `RecoverySummary`. External effects follow an explicit `record intent -> execute real effect -> record settlement` sandwich.
+  - Log compaction retention: `_compact_entries()` explicitly retains open-operation pending intents and recovery-relevant settlements (`interrupted` / `error` / `maybe_sent`) to guarantee crash-recovery fidelity.
+  - Crash recovery projection: on session resume, unconfirmed pending effects are projected and settled with synthetic `interrupted` records (`maybe_sent` for provider sends; unsafe tools prevented from duplicate execution).
+  - Agent and App integration: `AgentLoopSession` and `TaskRunDeps` wire `RuntimeEffectStore`, recording intents before execution and settlements after outcome accounting; `load_run_details` and UI state project quiet `Recovery` explanation rows when unconfirmed effects exist.
+  - Strict context hygiene: safe replay and synthetic interrupted states are not injected into model context; prompt, tool schema, provider routing, and model transcripts remain unchanged; raw payload bodies are never persisted.
+
 ## 0.5.1 - Task Runtime Finalization + Completion Repair Durability v1
 
 - Runtime cold-start refactor:

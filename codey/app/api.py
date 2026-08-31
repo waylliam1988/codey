@@ -181,6 +181,7 @@ def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, di
         run_ledgers=ctx.run_ledgers,
         run_traces=ctx.run_traces,
         runtime_operations=ctx.runtime_operations,
+        runtime_effects=getattr(ctx, "runtime_effects", None),
         session_id=session_id,
         run_id=run_id,
     )

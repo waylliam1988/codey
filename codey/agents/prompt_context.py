@@ -195,19 +195,96 @@ def discard_pending_context_rows(session: AgentLoopSession) -> None:
     session.pending_repair_sections.clear()
 
 
+def _send_provider_with_effect(
+    session: AgentLoopSession,
+    prompt: str,
+    *,
+    purpose: str,
+    source_ref: str,
+    capability_id: str = "agent_runner",
+    name: str = "coding_outbound_prompt",
+) -> str:
+    record_provider_send_prompt(
+        session.trace_recorder,
+        name=name,
+        text=prompt,
+        purpose=purpose,
+        source_ref=source_ref,
+        capability_id=capability_id,
+    )
+    effects = session.runtime_effects
+    effect_id = ""
+    if effects is not None and session.session_id and session.run_id:
+        session.provider_send_index += 1
+        effect_id = f"provider_send_{session.run_id}_{session.provider_send_index}"
+        from codey.runtime.effect_records import (
+            EFFECT_CATEGORY_PROVIDER_SEND,
+            RuntimeEffectIntent,
+            RuntimeEffectSettlement,
+            SETTLEMENT_STATUS_ERROR,
+            SETTLEMENT_STATUS_OK,
+            SENT_STATE_MAYBE_SENT,
+            SENT_STATE_SETTLED,
+            compute_args_digest,
+        )
+        from codey.runtime.replay_policy import provider_replay_policy
+        replay_decision = provider_replay_policy(purpose)
+        intent = RuntimeEffectIntent(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+            session_id=session.session_id,
+            run_id=session.run_id,
+            phase="writer",
+            provider_id=session.active_provider_id,
+            turn=session.provider_send_index,
+            display_ref=source_ref,
+            args_digest=compute_args_digest(prompt[:200]),
+            replay_class=replay_decision.replay_class,
+        )
+        effects.record_intent(session.session_id, session.run_id, intent)
+
+    try:
+        reply_text = session.provider.send(prompt)
+    except Exception as exc:
+        if effects is not None and effect_id:
+            settlement = RuntimeEffectSettlement(
+                effect_id=effect_id,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=session.session_id,
+                run_id=session.run_id,
+                status=SETTLEMENT_STATUS_ERROR,
+                error_code=type(exc).__name__,
+                sent_state=SENT_STATE_MAYBE_SENT,
+            )
+            effects.record_settlement(session.session_id, session.run_id, settlement)
+        raise
+
+    if effects is not None and effect_id:
+        settlement = RuntimeEffectSettlement(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+            session_id=session.session_id,
+            run_id=session.run_id,
+            status=SETTLEMENT_STATUS_OK,
+            sent_state=SENT_STATE_SETTLED,
+        )
+        effects.record_settlement(session.session_id, session.run_id, settlement)
+
+    return reply_text
+
+
 def send_handoff_summary(
     session: AgentLoopSession,
     summary_prompt: str,
 ) -> str:
-    record_provider_send_prompt(
-        session.trace_recorder,
-        name="conversation_handoff_summary_prompt",
-        text=summary_prompt,
+    return _send_provider_with_effect(
+        session,
+        summary_prompt,
         purpose="conversation handoff summary prompt sent to provider",
         source_ref="provider_send:conversation_handoff_summary",
         capability_id="conversation_handoff",
+        name="conversation_handoff_summary_prompt",
     )
-    return session.provider.send(summary_prompt)
 
 
 def send_prompt(
@@ -240,15 +317,14 @@ def send_prompt(
             opened_fresh_chat = True
     if not opened_fresh_chat:
         bind_pending_context_rows(session, prompt)
-    record_provider_send_prompt(
-        session.trace_recorder,
-        name="coding_outbound_prompt",
-        text=prompt,
+    reply_text = _send_provider_with_effect(
+        session,
+        prompt,
         purpose="coding prompt sent to provider",
         source_ref="provider_send:coding",
         capability_id="agent_runner",
+        name="coding_outbound_prompt",
     )
-    reply_text = session.provider.send(prompt)
     if session.conversation is not None:
         if opened_fresh_chat:
             session.conversation.begin_window(
@@ -303,15 +379,14 @@ def initial_reply(session: AgentLoopSession) -> str:
     if session.fresh_chat:
         opened_fresh_chat = open_fresh_chat(session)
         intro = project_intro(session, session.user_task, session.handoff)
-        record_provider_send_prompt(
-            session.trace_recorder,
-            name="coding_outbound_prompt",
-            text=intro,
+        reply = _send_provider_with_effect(
+            session,
+            intro,
             purpose="coding prompt sent to provider",
             source_ref="provider_send:coding",
             capability_id="agent_runner",
+            name="coding_outbound_prompt",
         )
-        reply = session.provider.send(intro)
         if session.conversation is not None:
             if opened_fresh_chat:
                 session.conversation.begin_window(
@@ -332,15 +407,14 @@ def initial_reply(session: AgentLoopSession) -> str:
             restart_request=session.user_task,
         )
     intro = project_intro(session, session.user_task)
-    record_provider_send_prompt(
-        session.trace_recorder,
-        name="coding_outbound_prompt",
-        text=intro,
+    return _send_provider_with_effect(
+        session,
+        intro,
         purpose="coding prompt sent to provider",
         source_ref="provider_send:coding",
         capability_id="agent_runner",
+        name="coding_outbound_prompt",
     )
-    return session.provider.send(intro)
 
 
 __all__ = [

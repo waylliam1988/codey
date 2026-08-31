@@ -473,11 +473,13 @@ def _complete_batch_prefix(
 def _compact_entries(
     entries: tuple[RuntimeLogEntry, ...],
 ) -> tuple[RuntimeLogEntry, ...]:
-    """Keep the replay-equivalent task-operation spine."""
+    """Keep the replay-equivalent task-operation spine and recovery facts."""
     ordered_operations: list[str] = []
     started: dict[str, RuntimeLogEntry] = {}
     latest_phase: dict[str, RuntimeLogEntry] = {}
     settled: dict[str, RuntimeLogEntry] = {}
+    operation_effects: dict[str, list[RuntimeLogEntry]] = {}
+
     for entry in entries:
         if entry.kind == "operation_started":
             if entry.operation_id not in started:
@@ -485,8 +487,11 @@ def _compact_entries(
             started[entry.operation_id] = entry
             continue
         if entry.kind == "operation_effect":
-            if entry.payload.get("effect_kind") == "run_phase":
+            effect_kind = entry.payload.get("effect_kind")
+            if effect_kind == "run_phase":
                 latest_phase[entry.operation_id] = entry
+            elif effect_kind == "runtime_effect":
+                operation_effects.setdefault(entry.operation_id, []).append(entry)
             continue
         if entry.kind == "operation_settled":
             settled[entry.operation_id] = entry
@@ -499,6 +504,42 @@ def _compact_entries(
         phase = latest_phase.get(operation_id)
         if phase is not None:
             compacted.append(phase)
+
+        is_open = operation_id not in settled
+        raw_effects = operation_effects.get(operation_id, [])
+        intents: dict[str, RuntimeLogEntry] = {}
+        settlements: dict[str, RuntimeLogEntry] = {}
+        ordered_effect_ids: list[str] = []
+
+        for eff in raw_effects:
+            eid = str(eff.payload.get("effect_id") or "")
+            rkind = eff.payload.get("record_kind")
+            if not eid:
+                continue
+            if rkind == "intent":
+                if eid not in intents:
+                    ordered_effect_ids.append(eid)
+                intents[eid] = eff
+            elif rkind == "settlement":
+                settlements[eid] = eff
+
+        for eid in ordered_effect_ids:
+            intent_entry = intents.get(eid)
+            settlement_entry = settlements.get(eid)
+            if intent_entry is None:
+                continue
+            if is_open:
+                compacted.append(intent_entry)
+                if settlement_entry is not None:
+                    compacted.append(settlement_entry)
+            else:
+                if settlement_entry is not None:
+                    status = settlement_entry.payload.get("status")
+                    sent_state = settlement_entry.payload.get("sent_state")
+                    if status in {"interrupted", "error"} or sent_state == "maybe_sent":
+                        compacted.append(intent_entry)
+                        compacted.append(settlement_entry)
+
         finish = settled.get(operation_id)
         if finish is not None:
             compacted.append(finish)

@@ -86,6 +86,7 @@ def load_run_details(
     session_id: str,
     run_id: str,
     runtime_operations: Any = None,
+    runtime_effects: Any = None,
 ) -> RunDetailsSummary:
     """Build a short UI-ready explanation for one run."""
 
@@ -97,10 +98,11 @@ def load_run_details(
     operation = _load_operation_state(runtime_operations, session, run)
     projection = load_run_projection(run_ledgers, session, run)
     trace = _load_trace_payload(run_traces, session, run)
-    if projection is None and trace is None and operation is None:
+    recovery = _load_recovery_summary(runtime_effects, session, run)
+    if projection is None and trace is None and operation is None and not (recovery and recovery.explanation_lines):
         return unavailable_summary()
 
-    rows = _summary_rows(projection, trace or {}, operation)
+    rows = _summary_rows(projection, trace or {}, operation, recovery)
     warnings = _summary_warnings(projection, trace or {})
     return RunDetailsSummary(
         available=bool(rows),
@@ -116,10 +118,20 @@ def unavailable_summary() -> RunDetailsSummary:
     )
 
 
+def _load_recovery_summary(runtime_effects: Any, session_id: str, run_id: str) -> Any | None:
+    if runtime_effects is None:
+        return None
+    try:
+        return runtime_effects.recovery_summary(session_id, run_id)
+    except Exception:
+        return None
+
+
 def _summary_rows(
     projection: RunLedgerProjection | None,
     trace: Mapping[str, object],
     operation: RuntimeOperationState | None = None,
+    recovery: Any = None,
 ) -> list[RunDetailsRow]:
     rows: list[RunDetailsRow] = []
     work = _work_label(
@@ -142,6 +154,10 @@ def _summary_rows(
     progress = _operation_progress_row(projection, operation)
     if progress:
         rows.append(RunDetailsRow("Progress", progress, "warning"))
+
+    if recovery is not None and getattr(recovery, "explanation_lines", ()):
+        for line in recovery.explanation_lines:
+            rows.append(RunDetailsRow("Recovery", line, "warning"))
 
     context = _context_summary(projection, trace)
     if context:

@@ -98,6 +98,10 @@ class AgentLoopSession:
     project_instructions: list[ProjectInstruction]
     pending_context_rows: list[RenderedContextSource] = field(default_factory=list)
     pending_repair_sections: list[RenderedPromptSection] = field(default_factory=list)
+    session_id: str = ""
+    run_id: str = ""
+    runtime_effects: Any = None
+    provider_send_index: int = 0
 
 
 def emit(session: AgentLoopSession, event: RunEvent) -> None:

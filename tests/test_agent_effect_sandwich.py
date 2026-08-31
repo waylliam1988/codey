@@ -1,0 +1,239 @@
+"""Deterministic tests for agent effect sandwich (intent -> real effect -> settlement)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import tempfile
+import unittest
+
+from codey.agents.prompt_context import _send_provider_with_effect
+from codey.agents.request import AgentRequest
+from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
+from codey.agents.tool_execution import (
+    TurnState,
+    emit_tool_started_after_intent,
+    evaluate_tool_call_policy,
+    execute_tool_call,
+    policy_denied,
+    record_tool_call_intent,
+    record_tool_call_settlement,
+    record_tool_outcome,
+)
+from codey.agents.tools import AgentToolFns
+from codey.policies.permissions import profile_for_name
+from codey.runtime.effect_records import (
+    RuntimeEffectStore,
+    SETTLEMENT_STATUS_ERROR,
+    SETTLEMENT_STATUS_OK,
+)
+from codey.runtime.models import ToolCall
+from codey.runtime.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.session_log import RuntimeSessionLog
+from codey.toolchain.runtime import ToolOutcome
+
+
+class MockProvider:
+    def __init__(self, reply: str = "mock reply", fail: bool = False) -> None:
+        self.reply = reply
+        self.fail = fail
+        self.send_history: list[str] = []
+
+    @property
+    def name(self) -> str:
+        return "mock_provider"
+
+    def send(self, prompt: str) -> str:
+        self.send_history.append(prompt)
+        if self.fail:
+            raise RuntimeError("provider communication error")
+        return self.reply
+
+
+class AgentEffectSandwichTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.project_dir = Path(self.temp_dir.name)
+        self.session_id = "sess-sandwich-1"
+        self.run_id = "run-sandwich-1"
+        self.log = RuntimeSessionLog(self.project_dir / "state")
+        self.effects = RuntimeEffectStore(self.log)
+        from codey.storage.local_store import session_key
+        self.log.append(
+            self.session_id,
+            lane="task",
+            operation_id=f"task:{session_key(self.run_id)}",
+            kind="operation_started",
+            payload={"operation_kind": "task"},
+        )
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def _create_session(self, provider: MockProvider) -> AgentLoopSession:
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="do something",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+        )
+        profile = profile_for_name("coding_writer")
+        return AgentLoopSession(
+            request=req,
+            provider=provider,
+            project=self.project_dir,
+            user_task="do something",
+            codec=None,
+            max_turns=10,
+            stagnant_turns=4,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock_provider",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=False,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            profile=profile,
+            tool_fns=AgentToolFns(
+                read_file=lambda *a, **kw: ToolOutcome("file text", True),
+                edit_file=lambda *a, **kw: ToolOutcome("edited", True, changed=True),
+                write_file=lambda *a, **kw: ToolOutcome("written", True, changed=True),
+                list_directory=lambda *a, **kw: ToolOutcome("dir listing", True),
+                search_files=lambda *a, **kw: ToolOutcome("search results", True),
+                find_references=lambda *a, **kw: ToolOutcome("refs", True),
+                run_command=lambda *a, **kw: ToolOutcome("command output", True),
+            ),
+            trace_recorder=None,
+            trace=FailOpenPromptTrace(None),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=False,
+            progress=LoopProgress(set(), set(), set()),
+            verification=LoopVerification(set(), 0, [], []),
+            stagnation=LoopStagnation(set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+        )
+
+    def test_provider_send_intent_and_settlement_on_success(self) -> None:
+        provider = MockProvider("hello model")
+        session = self._create_session(provider)
+
+        reply = _send_provider_with_effect(
+            session,
+            "user prompt",
+            purpose="test provider send",
+            source_ref="provider_send:test",
+        )
+        self.assertEqual(reply, "hello model")
+
+        effects = self.effects.load_effects(self.session_id, self.run_id)
+        self.assertEqual(len(effects), 1)
+        proj = effects[0]
+        self.assertEqual(proj.intent.effect_category, "provider_send")
+        self.assertTrue(proj.is_settled)
+        self.assertEqual(proj.settlement.status, SETTLEMENT_STATUS_OK)
+        self.assertEqual(proj.settlement.sent_state, "settled")
+
+    def test_provider_send_intent_and_settlement_on_error(self) -> None:
+        provider = MockProvider(fail=True)
+        session = self._create_session(provider)
+
+        with self.assertRaises(RuntimeError):
+            _send_provider_with_effect(
+                session,
+                "user prompt",
+                purpose="test provider send error",
+                source_ref="provider_send:test",
+            )
+
+        effects = self.effects.load_effects(self.session_id, self.run_id)
+        self.assertEqual(len(effects), 1)
+        proj = effects[0]
+        self.assertTrue(proj.is_settled)
+        self.assertEqual(proj.settlement.status, SETTLEMENT_STATUS_ERROR)
+        self.assertEqual(proj.settlement.sent_state, "maybe_sent")
+
+    def test_tool_call_effect_sandwich_sequence(self) -> None:
+        provider = MockProvider()
+        session = self._create_session(provider)
+        events: list[str] = []
+        session.on_event = lambda e: events.append(e.kind)
+
+        call = ToolCall(name="read", args={"path": "foo.py"})
+        policy_decision, replay_decision = evaluate_tool_call_policy(
+            session,
+            call,
+            turn=1,
+            tool_index=0,
+        )
+        self.assertFalse(policy_denied(policy_decision))
+
+        # Record intent
+        effect_id = record_tool_call_intent(
+            session,
+            call,
+            turn=1,
+            tool_index=0,
+            replay_decision=replay_decision,
+        )
+        self.assertTrue(bool(effect_id))
+
+        # Pending should now have 1 effect
+        pending = self.effects.pending_effects(self.session_id, self.run_id)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].intent.tool_name, "read")
+
+        # Emit tool started
+        emit_tool_started_after_intent(session, call, turn=1, tool_index=0)
+        self.assertIn("tool_start", events)
+
+        # Execute tool
+        outcome = execute_tool_call(session, call, turn=1, tool_index=0)
+        self.assertTrue(outcome.ok)
+
+        # Settle
+        record_tool_call_settlement(
+            session,
+            effect_id,
+            outcome=outcome,
+            replay_decision=replay_decision,
+        )
+
+        # Record tool outcome
+        turn_state = TurnState()
+        record_tool_outcome(
+            session,
+            turn_state,
+            turn=1,
+            call=call,
+            outcome=outcome,
+            tool_index=0,
+        )
+
+        # Verify no pending effects
+        self.assertEqual(len(self.effects.pending_effects(self.session_id, self.run_id)), 0)
+        settled_effects = self.effects.load_effects(self.session_id, self.run_id)
+        self.assertEqual(settled_effects[0].settlement.status, SETTLEMENT_STATUS_OK)
+
+
+if __name__ == "__main__":
+    unittest.main()

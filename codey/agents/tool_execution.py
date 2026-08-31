@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from codey.agents.protocol import (
     canonical_project_path,
@@ -87,23 +88,13 @@ def action_subject_for_call(
     )
 
 
-def begin_tool_call(
+def evaluate_tool_call_policy(
     session: AgentLoopSession,
     call: ToolCall,
     *,
     turn: int,
     tool_index: int,
-) -> ActionPolicyDecision | None:
-    if call.name != "shell":
-        emit(
-            session,
-            RunEvent.tool_started(
-                turn,
-                call,
-                render_tool_activity(call),
-                index=tool_index,
-            ),
-        )
+) -> tuple[ActionPolicyDecision | None, Any]:
     policy_subject = action_subject_for_call(
         call,
         project=session.project,
@@ -118,6 +109,119 @@ def begin_tool_call(
     )
     if policy_decision is not None:
         session.trace.call("record_policy_decision", policy_decision)
+
+    from codey.runtime.replay_policy import tool_replay_policy
+    is_denied = policy_denied(policy_decision)
+    is_approval = (call.name == "shell") and policy_asks_user(policy_decision)
+    replay_decision = tool_replay_policy(
+        call.name,
+        policy_denied=is_denied,
+        approval_required=is_approval,
+    )
+    return policy_decision, replay_decision
+
+
+def record_tool_call_intent(
+    session: AgentLoopSession,
+    call: ToolCall,
+    *,
+    turn: int,
+    tool_index: int,
+    replay_decision: Any,
+) -> str:
+    effects = session.runtime_effects
+    if effects is None or not session.session_id or not session.run_id:
+        return ""
+    from codey.runtime.effect_records import (
+        EFFECT_CATEGORY_TOOL_CALL,
+        RuntimeEffectIntent,
+        compute_args_digest,
+    )
+    effect_id = f"tool_{session.run_id}_{turn}_{tool_index}_{call.name}"
+    display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
+    replay_class = getattr(replay_decision, "replay_class", "unsafe")
+    intent = RuntimeEffectIntent(
+        effect_id=effect_id,
+        effect_category=EFFECT_CATEGORY_TOOL_CALL,
+        session_id=session.session_id,
+        run_id=session.run_id,
+        phase="writer",
+        turn=turn,
+        tool_index=tool_index,
+        tool_name=call.name,
+        tool_id=f"{turn}:{tool_index}",
+        display_ref=display_ref[:100],
+        args_digest=compute_args_digest(call.args),
+        replay_class=replay_class,
+    )
+    effects.record_intent(session.session_id, session.run_id, intent)
+    return effect_id
+
+
+def record_tool_call_settlement(
+    session: AgentLoopSession,
+    effect_id: str,
+    *,
+    outcome: ToolOutcome,
+    replay_decision: Any,
+) -> None:
+    effects = session.runtime_effects
+    if effects is None or not effect_id or not session.session_id or not session.run_id:
+        return
+    from codey.runtime.effect_records import (
+        EFFECT_CATEGORY_TOOL_CALL,
+        RuntimeEffectSettlement,
+        SETTLEMENT_STATUS_ERROR,
+        SETTLEMENT_STATUS_OK,
+    )
+    status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
+    error_code = str(outcome.error_code or ("" if outcome.ok else "error"))
+    replay_class = getattr(replay_decision, "replay_class", "unsafe")
+    settlement = RuntimeEffectSettlement(
+        effect_id=effect_id,
+        effect_category=EFFECT_CATEGORY_TOOL_CALL,
+        session_id=session.session_id,
+        run_id=session.run_id,
+        status=status,
+        error_code=error_code[:80],
+        replay_class=replay_class,
+    )
+    effects.record_settlement(session.session_id, session.run_id, settlement)
+
+
+def emit_tool_started_after_intent(
+    session: AgentLoopSession,
+    call: ToolCall,
+    *,
+    turn: int,
+    tool_index: int,
+) -> None:
+    if call.name != "shell":
+        emit(
+            session,
+            RunEvent.tool_started(
+                turn,
+                call,
+                render_tool_activity(call),
+                index=tool_index,
+            ),
+        )
+
+
+def begin_tool_call(
+    session: AgentLoopSession,
+    call: ToolCall,
+    *,
+    turn: int,
+    tool_index: int,
+) -> ActionPolicyDecision | None:
+    emit_tool_started_after_intent(session, call, turn=turn, tool_index=tool_index)
+    policy_decision, _ = evaluate_tool_call_policy(
+        session,
+        call,
+        turn=turn,
+        tool_index=tool_index,
+    )
     return policy_decision
 
 
@@ -323,13 +427,18 @@ __all__ = [
     "TurnState",
     "begin_tool_call",
     "call_arg",
+    "emit_tool_started_after_intent",
+    "evaluate_tool_call_policy",
     "execute_edit_call",
     "execute_run_call",
     "execute_tool_call",
     "mark_policy_denied_run",
+    "policy_asks_user",
     "policy_denied",
     "policy_error_outcome",
-    "policy_asks_user",
+    "record_tool_call_intent",
+    "record_tool_call_settlement",
+    "record_tool_outcome",
     "request_shell_approval",
     "tool_error_outcome",
 ]

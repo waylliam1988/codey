@@ -9,6 +9,36 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.2 Effect Intent / Settlement + Tool Replay Policy v1 (2026-08-31)
+
+Scope:
+
+```text
+runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe)
+            and ReplayDecision for tool, provider, and repair operations.
+            Safe read-only tools (read, ls, search, references, project_facts, project_map)
+            are classified as safe and retryable. Modifying actions (edit, write,
+            shell, run, knowledge_write) and unknown tools are classified as unsafe.
+            run is unconditionally classified as unsafe.
+            introduced codey.runtime.effect_records with RuntimeEffectStore,
+            RuntimeEffectIntent, RuntimeEffectSettlement, RuntimeEffectProjection,
+            and RecoverySummary. All external effects (provider send, tool execution,
+            repair round) follow an explicit intent -> real effect -> settlement sandwich.
+            Session log compaction (_compact_entries) explicitly retains pending intents
+            and recovery-relevant settlements (interrupted/error/maybe_sent) for open operations.
+            On resume, pending unconfirmed effects are projected and synthesized as interrupted.
+agent:      wired provider send into _send_provider_with_effect, tool execution into
+            evaluate_tool_call_policy -> record_tool_call_intent -> emit_tool_started ->
+            execute_tool_call -> record_tool_call_settlement -> record_tool_outcome,
+            and repair rounds into intent/settlement wrapping without changing prompt,
+            tool schema, provider routing, or model-visible transcript.
+runs/app:   updated load_run_details and API endpoints to project quiet Recovery rows
+            ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
+            "Read action can be retried") when unconfirmed effects exist.
+test suite: 3307 passed, 4 skipped in 300.34s (0:05:00). All architecture, server,
+            reducer, loop, effect, and replay tests pass cleanly with 0 failures.
+```
+
 ## 0.5.1 TaskFlow Deletion + Runtime/Agent/Ghost Finalization (2026-08-31)
 
 Scope:

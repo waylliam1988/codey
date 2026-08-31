@@ -117,6 +117,7 @@ class TaskRunDeps:
     ghost_learning_provider_factory: Callable[[str], Any] | None = None
     ghost_learning_modes: tuple[str, ...] = ("chat",)
     ghost_router_provider_factory: Callable[[str], Any] | None = None
+    runtime_effects: Any = None
 
 
 def prepare_submission(state: Any, request: TaskSubmission) -> TaskSubmission | None:
@@ -816,7 +817,10 @@ def _project_completion_deps(
             review_fix_turns=deps.review_fix_turns,
             review_log_lines=deps.review_log_lines,
         ),
-        runtime=RuntimeAccess(commit_run_operation=commit_run_operation),
+        runtime=RuntimeAccess(
+            commit_run_operation=commit_run_operation,
+            effects=deps.runtime_effects or getattr(deps.state, "runtime_effects", None),
+        ),
     )
 
 
@@ -952,8 +956,42 @@ def _start_run_operation(
             max_repair_rounds=max_repair_rounds,
             task_kind=task_kind,
         )
+        _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id)
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
+
+
+def _settle_pending_effects_for_resume(
+    deps: TaskRunDeps,
+    *,
+    session_id: str,
+    run_id: str,
+) -> None:
+    effects_store = deps.runtime_effects or getattr(deps.state, "runtime_effects", None)
+    if effects_store is None:
+        return
+    try:
+        pending = effects_store.pending_effects(session_id, run_id)
+    except Exception:
+        return
+    for proj in pending:
+        intent = proj.intent
+        try:
+            sent_state = (
+                "maybe_sent"
+                if intent.effect_category == "provider_send"
+                else "settled"
+            )
+            effects_store.synthesize_interrupted(
+                session_id=session_id,
+                run_id=run_id,
+                effect_id=intent.effect_id,
+                reason="interrupted_by_crash",
+                replay_class=intent.replay_class,
+                sent_state=sent_state,
+            )
+        except Exception:
+            pass
 
 
 def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, object]) -> None:

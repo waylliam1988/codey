@@ -3433,8 +3433,8 @@ agents 不 import operations，completion 不 import app/providers/operations，
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 
-状态：计划。目标是把 Pi 的 effect sandwich 落到 Codey 当前最危险的三个边界：
-provider send、tool run、completion repair round。每个真实外部效果前写 intent，
+状态：已完成。已把 Pi 的 effect sandwich 落到 Codey 当前最关键的三个边界：
+provider send、tool execution、completion repair round。每个真实外部效果前写 intent，
 效果后写 settlement；恢复时不从事件缺失推断，而是读取最后一个 committed state。
 
 ### 做什么

@@ -27,12 +27,15 @@ from codey.agents.tool_execution import (
     INFORMATION_TOOL_NAMES,
     SUPPORTED_TOOL_NAMES,
     TurnState,
-    begin_tool_call,
     call_arg,
+    emit_tool_started_after_intent,
+    evaluate_tool_call_policy,
     execute_tool_call,
     mark_policy_denied_run,
     policy_denied,
     policy_error_outcome,
+    record_tool_call_intent,
+    record_tool_call_settlement,
     record_tool_outcome,
     request_shell_approval,
     tool_error_outcome,
@@ -167,6 +170,9 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         verification=verification,
         stagnation=LoopStagnation(seen_info=set()),
         project_instructions=project_instructions,
+        session_id=request.session_id,
+        run_id=request.run_id,
+        runtime_effects=request.runtime_effects,
     )
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
@@ -270,7 +276,7 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
         for tool_index, call in enumerate(calls):
             path = call_arg(call, "path", ".")
             try:
-                policy_decision = begin_tool_call(
+                policy_decision, replay_decision = evaluate_tool_call_policy(
                     session,
                     call,
                     turn=turn,
@@ -304,16 +310,51 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
                         "approval",
                         turn,
                     )
-                outcome = execute_tool_call(
+
+                effect_id = record_tool_call_intent(
+                    session,
+                    call,
+                    turn=turn,
+                    tool_index=tool_index,
+                    replay_decision=replay_decision,
+                )
+                emit_tool_started_after_intent(
                     session,
                     call,
                     turn=turn,
                     tool_index=tool_index,
                 )
+                try:
+                    outcome = execute_tool_call(
+                        session,
+                        call,
+                        turn=turn,
+                        tool_index=tool_index,
+                    )
+                except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
+                    if effect_id:
+                        record_tool_call_settlement(
+                            session,
+                            effect_id,
+                            outcome=tool_error_outcome(exc),
+                            replay_decision=replay_decision,
+                        )
+                    raise
+                except Exception as exc:
+                    outcome = tool_error_outcome(exc)
+
+                if effect_id:
+                    record_tool_call_settlement(
+                        session,
+                        effect_id,
+                        outcome=outcome,
+                        replay_decision=replay_decision,
+                    )
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
                 outcome = tool_error_outcome(exc)
+
             record_tool_outcome(
                 session,
                 turn_state,
