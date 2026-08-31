@@ -305,7 +305,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 transition,
             ),
         )
-        _start_run_operation(
+        started_ok = _start_run_operation(
             deps,
             work,
             session_id=session_id,
@@ -316,6 +316,22 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
             task_kind=task_kind,
         )
+        if not started_ok:
+            state.emit({
+                "type": "status",
+                "status": "error",
+                "error": "runtime_recovery_failed",
+                "run_id": run_id,
+                "session_id": session_id,
+            })
+            _finish_run_operation(deps, work, {
+                "stop_reason": "error",
+                "summary": "Runtime recovery failed to settle unconfirmed effects.",
+                "turns": 0,
+                "max_turns": max_turns,
+                "provider": provider_id,
+            })
+            return
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         logged_provider_failures: set[tuple[str, str, str, str]] = set()
@@ -944,7 +960,7 @@ def _start_run_operation(
     turn_budget: int,
     max_repair_rounds: int,
     task_kind: str,
-) -> None:
+) -> bool:
     runtime_operations: RuntimeOperationStore = deps.state.runtime_operations
     try:
         work.operation = runtime_operations.start(
@@ -956,9 +972,10 @@ def _start_run_operation(
             max_repair_rounds=max_repair_rounds,
             task_kind=task_kind,
         )
-        _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id)
+        return _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id)
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
+        return False
 
 
 def _settle_pending_effects_for_resume(
@@ -966,14 +983,14 @@ def _settle_pending_effects_for_resume(
     *,
     session_id: str,
     run_id: str,
-) -> None:
+) -> bool:
     effects_store = deps.runtime_effects or getattr(deps.state, "runtime_effects", None)
     if effects_store is None:
-        return
+        return True
     try:
         pending = effects_store.pending_effects(session_id, run_id)
     except Exception:
-        return
+        return False
     for proj in pending:
         intent = proj.intent
         try:
@@ -991,7 +1008,8 @@ def _settle_pending_effects_for_resume(
                 sent_state=sent_state,
             )
         except Exception:
-            pass
+            return False
+    return True
 
 
 def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, object]) -> None:

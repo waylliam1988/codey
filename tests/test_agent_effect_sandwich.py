@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import MagicMock
 
 from codey.agents.prompt_context import _send_provider_with_effect
 from codey.agents.request import AgentRequest
@@ -20,6 +21,7 @@ from codey.agents.tool_execution import (
     record_tool_outcome,
 )
 from codey.agents.tools import AgentToolFns
+from codey.operations.task_run import _settle_pending_effects_for_resume, _start_run_operation
 from codey.policies.permissions import profile_for_name
 from codey.runtime.effect_records import (
     RuntimeEffectStore,
@@ -81,13 +83,14 @@ class AgentEffectSandwichTests(unittest.TestCase):
             run_id=self.run_id,
             runtime_effects=self.effects,
         )
+        from codey.protocols import JsonToolCodec
         profile = profile_for_name("coding_writer")
         return AgentLoopSession(
             request=req,
             provider=provider,
             project=self.project_dir,
             user_task="do something",
-            codec=None,
+            codec=JsonToolCodec(permission_profile=profile.name),
             max_turns=10,
             stagnant_turns=4,
             on_event=lambda e: None,
@@ -238,6 +241,70 @@ class AgentEffectSandwichTests(unittest.TestCase):
         settled_effects = self.effects.load_effects(self.session_id, self.run_id)
         self.assertEqual(settled_effects[0].settlement.status, SETTLEMENT_STATUS_OK)
 
+    def test_resume_recovery_failure_fails_closed(self) -> None:
+        # If pending effects cannot be loaded (corrupted log), _settle_pending_effects_for_resume returns False
+        broken_store = MagicMock()
+        broken_store.pending_effects.side_effect = RuntimeError("disk corrupt")
+
+        deps = MagicMock()
+        deps.runtime_effects = broken_store
+        result = _settle_pending_effects_for_resume(deps, session_id="s1", run_id="r1")
+        self.assertFalse(result)
+
+    def test_record_intent_failure_in_loop_does_not_execute_tool_or_settle(self) -> None:
+        from unittest.mock import patch
+        from codey.agents.loop import _run_loop
+
+        executed_tools: list[str] = []
+        provider = MockProvider()
+        session = self._create_session(provider)
+        custom_tools = AgentToolFns(
+            read_file=lambda *a, **kw: executed_tools.append("read") or ToolOutcome("ok", True),
+            edit_file=session.tool_fns.edit_file,
+            write_file=session.tool_fns.write_file,
+            list_directory=session.tool_fns.list_directory,
+            search_files=session.tool_fns.search_files,
+            find_references=session.tool_fns.find_references,
+            run_command=session.tool_fns.run_command,
+        )
+        object.__setattr__(session, "tool_fns", custom_tools)
+
+        reply_json = '```json\n{"calls": [{"name": "read", "args": {"path": "foo.py"}}], "control": {"action": "done", "body": "finished"}}\n```'
+        with patch("codey.agents.loop.record_tool_call_intent", side_effect=RuntimeError("intent write failed")):
+            _run_loop(session, reply_json)
+
+        # Tool should NOT have been executed
+        self.assertEqual(len(executed_tools), 0)
+        # No settlements should have been recorded
+        effects = self.effects.load_effects(self.session_id, self.run_id)
+        tool_settlements = [p for p in effects if p.intent.effect_category == "tool_call" and p.is_settled]
+        self.assertEqual(len(tool_settlements), 0)
+
+
+    def test_start_run_operation_fails_closed_when_recovery_fails(self) -> None:
+        broken_store = MagicMock()
+        broken_store.pending_effects.side_effect = RuntimeError("disk corrupt")
+
+        deps = MagicMock()
+        deps.runtime_effects = broken_store
+        deps.state.runtime_operations = self.operations
+        work = MagicMock()
+
+        ok = _start_run_operation(
+            deps,
+            work,
+            session_id=self.session_id,
+            run_id="run-recover-fail-1",
+            project=str(self.project_dir),
+            provider_id="mock",
+            turn_budget=5,
+            max_repair_rounds=1,
+            task_kind="project",
+        )
+        self.assertFalse(ok)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

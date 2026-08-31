@@ -6,11 +6,14 @@ import tempfile
 import unittest
 
 from codey.runtime.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
+    SENT_STATE_MAYBE_SENT,
+    SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
     compute_args_digest,
     new_effect_id,
@@ -91,6 +94,70 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             self.store.record_settlement(self.session_id, self.run_id, orphan)
         self.assertIn("unknown intent", str(ctx.exception))
 
+    def test_record_settlement_mismatched_category_raises(self) -> None:
+        effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=effect_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="edit",
+            ),
+        )
+        # Attempt to settle tool_call intent with provider_send category
+        mismatched = RuntimeEffectSettlement(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            status=SETTLEMENT_STATUS_OK,
+        )
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_settlement(self.session_id, self.run_id, mismatched)
+        self.assertIn("does not match intent category", str(ctx.exception))
+
+    def test_record_settlement_duplicate_idempotent_and_conflict(self) -> None:
+        effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=effect_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="edit",
+            ),
+        )
+        settlement1 = RuntimeEffectSettlement(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            status=SETTLEMENT_STATUS_OK,
+        )
+        s1 = self.store.record_settlement(self.session_id, self.run_id, settlement1)
+
+        # Identical settlement returns existing
+        s2 = self.store.record_settlement(self.session_id, self.run_id, settlement1)
+        self.assertEqual(s1.effect_id, s2.effect_id)
+
+        # Conflicting settlement raises
+        conflicting = RuntimeEffectSettlement(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            status=SETTLEMENT_STATUS_ERROR,
+            error_code="other_error",
+        )
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_settlement(self.session_id, self.run_id, conflicting)
+        self.assertIn("already settled", str(ctx.exception))
+
     def test_pending_effects_projection(self) -> None:
         eff1 = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         # Tool 1: settled
@@ -164,8 +231,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         # Now pending should be empty
         self.assertEqual(len(self.store.pending_effects(self.session_id, self.run_id)), 0)
 
-    def test_recovery_summary_ignores_in_flight_pending(self) -> None:
-        # A pending effect that is currently running (not settled yet)
+    def test_recovery_summary_ignores_in_flight_pending_and_normal_provider_error(self) -> None:
+        # 1. In-flight pending effect
         in_flight_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         self.store.record_intent(
             self.session_id,
@@ -179,10 +246,38 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                 replay_class=ReplayClass.UNSAFE,
             ),
         )
-        # Should NOT show recovery explanations while in flight
+
+        # 2. Normal provider error (status=error, maybe_sent)
+        prov_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=prov_id,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                provider_id="deepseek",
+            ),
+        )
+        self.store.record_settlement(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=prov_id,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_ERROR,
+                sent_state=SENT_STATE_MAYBE_SENT,
+            ),
+        )
+
+        # Neither should show recovery explanations
         summary_in_flight = self.store.recovery_summary(self.session_id, self.run_id)
         self.assertEqual(summary_in_flight.explanation_lines, ())
         self.assertEqual(summary_in_flight.interrupted_writes, 0)
+        self.assertEqual(summary_in_flight.unconfirmed_provider_calls, 0)
 
         # After synthetic crash recovery settlement, it should now explain
         self.store.synthesize_interrupted(self.session_id, self.run_id, in_flight_id)
@@ -191,7 +286,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.assertIn("Local write was interrupted and was not repeated", summary_after.explanation_lines)
 
     def test_unique_effect_id_prevents_resume_collision(self) -> None:
-        # Round 1: execute tool turn 1 index 0 and settle
         eff_turn1_attempt1 = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         self.store.record_intent(
             self.session_id,
@@ -218,7 +312,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             ),
         )
 
-        # Now resume / failover: same turn 1 index 0 executes again with new unique id
+        # Resume / failover
         eff_turn1_attempt2 = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         self.assertNotEqual(eff_turn1_attempt1, eff_turn1_attempt2)
 
@@ -236,7 +330,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             ),
         )
 
-        # The new attempt MUST be pending and NOT eaten by the old settlement
         pending = self.store.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0].intent.effect_id, eff_turn1_attempt2)
@@ -261,17 +354,26 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                 payload={"effect_kind": "runtime_effect", "raw_prompt": "hello secret"},
             )
 
-    def test_unknown_category_or_invalid_schema_raises(self) -> None:
+    def test_turn_tool_index_and_schema_validation(self) -> None:
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectIntent(
-                effect_id="bad_1",
-                effect_category="unknown_category",
+                effect_id="bad_turn_bool",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
                 session_id=self.session_id,
                 run_id=self.run_id,
+                turn=True,  # bool is forbidden
             )
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectIntent(
-                effect_id="bad_2",
+                effect_id="bad_turn_neg",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=-1,
+            )
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent(
+                effect_id="bad_schema",
                 effect_category=EFFECT_CATEGORY_TOOL_CALL,
                 session_id=self.session_id,
                 run_id=self.run_id,

@@ -275,6 +275,8 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
         turn_state = TurnState()
         for tool_index, call in enumerate(calls):
             path = call_arg(call, "path", ".")
+            effect_id = ""
+            replay_decision = None
             try:
                 policy_decision, replay_decision = evaluate_tool_call_policy(
                     session,
