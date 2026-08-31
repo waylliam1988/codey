@@ -30,8 +30,13 @@ from codey.operations.ghost_post_turn import (
 from codey.operations.mode_dispatch import ModeDispatchDeps, dispatch_task_mode
 from codey.operations.planning_flow import PlanningFlowDeps, run_planning_readonly_mode
 from codey.operations.project_completion_flow import (
+    AgentAccess,
     MAX_COMPLETION_REPAIR_ROUNDS,
+    PersistenceAccess,
     ProjectCompletionDeps,
+    ReviewAccess,
+    RuntimeAccess,
+    VerificationAccess,
     handle_project_tool_event,
     record_completion_proof_trace,
     run_project_mode,
@@ -789,21 +794,29 @@ def _project_completion_deps(
 ) -> ProjectCompletionDeps:
     return ProjectCompletionDeps(
         state=deps.state,
-        agent_run=deps.agent_run,
-        collect_changes=deps.collect_changes,
-        run_review=deps.run_review,
-        capture_provider_failure=deps.capture_provider_failure,
-        commit_run_operation=commit_run_operation,
-        run_consensus=deps.run_consensus,
-        run_project_audit=deps.run_project_audit,
-        project_facts=deps.project_facts,
-        work_checkpoints=deps.work_checkpoints,
-        workspace_revisions=deps.workspace_revisions,
-        managed_outputs=deps.managed_outputs,
-        knowledge_store=deps.knowledge_store,
-        is_git_repository=deps.is_git_repository or (lambda _project: False),
-        review_fix_turns=deps.review_fix_turns,
-        review_log_lines=deps.review_log_lines,
+        agent=AgentAccess(
+            run=deps.agent_run,
+            capture_provider_failure=deps.capture_provider_failure,
+            run_consensus=deps.run_consensus,
+            run_project_audit=deps.run_project_audit,
+            is_git_repository=deps.is_git_repository or (lambda _project: False),
+        ),
+        persistence=PersistenceAccess(
+            project_facts=deps.project_facts,
+            work_checkpoints=deps.work_checkpoints,
+            managed_outputs=deps.managed_outputs,
+            knowledge_store=deps.knowledge_store,
+        ),
+        verification=VerificationAccess(
+            collect_changes=deps.collect_changes,
+            workspace_revisions=deps.workspace_revisions,
+        ),
+        review=ReviewAccess(
+            run=deps.run_review,
+            review_fix_turns=deps.review_fix_turns,
+            review_log_lines=deps.review_log_lines,
+        ),
+        runtime=RuntimeAccess(commit_run_operation=commit_run_operation),
     )
 
 

@@ -3251,7 +3251,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3273 passed, 16 skipped in 281.56s (0:04:41)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3277 passed, 16 skipped in 285.32s (0:04:45)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 
@@ -3303,14 +3303,20 @@ tool 协议：
 codey.agents.protocol  JSON protocol repair / edit parsing / verification text helpers
 codey.agents.context   project instructions + prompt context assembly
 codey.agents.request   AgentRequest
-codey.agents.loop      AgentLoopSession / TurnState / tool execution / loop state
+codey.agents.state     AgentLoopSession / progress / verification / stagnation state
+codey.agents.prompt_context        provider-send prompt / context epoch / repair context admission
+codey.agents.verification_driver   verification candidate / freshness / reminder state
+codey.agents.tool_execution        policy / dispatch / tool-result accounting
+codey.agents.loop      turn loop / parse / visible continue-return control / finish
 codey.agents.runner    thin public run(AgentRequest) surface
 ```
 
 调用方不再传一长串关键字参数；server/headless/project completion/planning/task_run 都构造
 `AgentRequest`。循环内部的 progress、verification、stagnation 也变成显式 state
-object，工具执行从闭包和循环内联分支里迁到 `agents.loop`，避免继续在大函数
-locals 里长出隐式生命周期。
+object。prompt/context 组装、context epoch、repair context admission、verification
+freshness/reminder 和 tool execution 已经从 `agents.loop` 拆到各自 owner；
+`loop.py` 只保留 turn loop、parse、状态转移、可见的 `continue` / `return`
+控制流和 finish，避免继续在大函数 locals 里长出隐式生命周期。
 
 ### TaskFlow 删除后的 owner
 
@@ -3343,6 +3349,11 @@ finalize 分别拥有显式函数，`run_project_mode()` 只串联相位，不�
 `nonlocal` 状态。completion enforcement 已经成型为独立相位，但暂不迁到
 `completion/engine.py`；这一步只改变 owner，不改变 repair admission、TaskCancelled
 re-raise 或 fallback 语义。
+
+`ProjectCompletionDeps` 不再是平铺的大依赖面，而是按真实稳定边界分组为
+`AgentAccess`、`PersistenceAccess`、`VerificationAccess`、`ReviewAccess` 和
+`RuntimeAccess`。这一步只压缩 dependency surface，不新建 `CompletionManager`，
+也不按行数把 project completion 拆成互相 import 的小文件。
 
 ### AppContext 收敛
 
@@ -3410,7 +3421,10 @@ task_entry / project_completion / edit-integrity / completion-enforcement / anal
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
 manual completion_operation_resume_smoke.py --self-test 通过
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
-全量 pytest 3273 passed, 16 skipped in 281.56s (0:04:41)
+新增 architecture tests 包级扫描通过：runtime 不 import operations/agents/Ghost，
+agents 不 import operations，completion 不 import app/providers/operations，agents.loop
+不直接 import completion/toolchain/workspace context-source internals
+全量 pytest 3277 passed, 16 skipped in 285.32s (0:04:45)
 ```
 
 ### A/B

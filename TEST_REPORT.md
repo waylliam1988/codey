@@ -21,15 +21,22 @@ production: deleted codey/operations/task_flow.py as a production concept.
             non-business run lifecycle. mode_dispatch/review_flow/planning_flow
             and ghost_context/ghost_post_turn own their business boundaries.
             AgentRunner now accepts a single AgentRequest; codey.agents.runner
-            is a thin public surface, while codey.agents.loop owns the explicit
-            AgentLoopSession, TurnState, tool execution functions, and loop
-            progress/verification/stagnation state. Protocol repair helpers
-            and context assembly live in codey.agents.protocol and
-            codey.agents.context.
+            is a thin public surface. codey.agents.state owns AgentLoopSession
+            plus progress/verification/stagnation state, prompt_context owns
+            provider-send prompt assembly, context epoch binding, repair
+            context admission, and coding-current-context injection,
+            verification_driver owns candidate freshness/reminder state, and
+            tool_execution owns policy, dispatch, and tool-result accounting.
+            codey.agents.loop now keeps the turn loop, parse path, visible
+            continue/return control flow, state transitions, and finish.
+            Protocol repair helpers live in codey.agents.protocol and base
+            context rendering remains in codey.agents.context.
             Project completion is now a phase script rather than a closure
             cluster: prepare, writer failover, review cycle, completion
             enforcement, and finalize are explicit functions over _ProjectRun,
-            with no nonlocal state.
+            with no nonlocal state. ProjectCompletionDeps is grouped by stable
+            access surface: AgentAccess, PersistenceAccess, VerificationAccess,
+            ReviewAccess, and RuntimeAccess; no CompletionManager was added.
             HTTP server responsibilities are split: codey.app.http_plumbing
             owns Host/Origin checks, static assets, JSON, and SSE encoding;
             codey.app.api owns ordinary JSON endpoint payloads; codey.app.services
@@ -62,6 +69,11 @@ production: deleted codey/operations/task_flow.py as a production concept.
             Ghost inbox, continuity, work queue, affinity, and Hebbian stores
             now use the shared GhostEventLog IO layer with policy-specific bad
             row handling.
+            Architecture tests now scan the runtime, agents, and completion
+            package boundaries: runtime cannot import operations/agents/Ghost,
+            agents cannot import operations, completion cannot import app /
+            providers / operations, and loop.py cannot directly pull completion,
+            toolchain, or workspace context-source internals back into the loop.
 harness:    test_task_flow_* files were renamed by owner
             (task_entry/project_completion_flow/ghost_post_turn/research_flow/
             workspace_project_map). Pure component tests were corrected after a
@@ -121,6 +133,23 @@ python -m pytest tests/test_adapter_self_repair.py tests/test_conversation_store
   tests/test_work_checkpoint_flow.py -q
 310 passed, 4 skipped, 6 subtests passed in 64.52s (0:01:04)
 
+python -m pytest tests/test_agent.py tests/test_agent_completion_repair_context.py \
+  tests/test_agent_tools.py tests/test_coding_current_context_ab.py -q
+135 passed, 2 skipped in 5.86s
+
+python -m pytest tests/test_project_completion_flow_analysis_run.py \
+  tests/test_project_completion_flow_edit_integrity.py \
+  tests/test_project_completion_flow_enforcement.py -q
+31 passed in 10.34s
+
+python -m pytest tests/test_task_entry_operation_state.py \
+  tests/test_task_entry_run_trace.py tests/test_task_entry_provider_preference.py \
+  tests/test_headless_runner.py -q
+45 passed, 6 subtests passed in 26.00s
+
+python -m pytest tests/test_architecture.py -q
+69 passed, 274 subtests passed in 9.93s
+
 git diff --check
 no whitespace errors; Git reported only CRLF normalization warnings
 ```
@@ -135,7 +164,7 @@ stable and before updating this report):
 
 ```text
 python -m pytest
-3273 passed, 16 skipped in 281.56s (0:04:41)
+3277 passed, 16 skipped in 285.32s (0:04:45)
 ```
 
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)

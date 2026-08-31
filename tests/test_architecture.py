@@ -26,6 +26,18 @@ def imported_modules(path: Path) -> set[str]:
     return modules
 
 
+def codey_python_files(*parts: str) -> tuple[Path, ...]:
+    return tuple(sorted((ROOT / "codey" / Path(*parts)).glob("*.py")))
+
+
+def imports_with_forbidden_prefixes(path: Path, prefixes: set[str]) -> list[str]:
+    return sorted(
+        name
+        for name in imported_modules(path)
+        if name in prefixes or any(name.startswith(f"{item}.") for item in prefixes)
+    )
+
+
 def event_matrix_capability_ids() -> set[str]:
     lines = EVENT_MATRIX_PATH.read_text(encoding="utf-8").splitlines()
     try:
@@ -56,6 +68,51 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.providers.web_drivers.glm", imports)
         self.assertNotIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
+
+    def test_agent_loop_keeps_prompt_verification_and_tool_owners_at_the_boundary(self) -> None:
+        imports = imported_modules(ROOT / "codey" / "agents" / "loop.py")
+        forbidden = {
+            "codey.completion",
+            "codey.operations",
+            "codey.toolchain",
+            "codey.workspace.coding_context",
+            "codey.workspace.context_epoch",
+            "codey.workspace.context_source",
+        }
+
+        self.assertEqual(
+            imports_with_forbidden_prefixes(ROOT / "codey" / "agents" / "loop.py", forbidden),
+            [],
+        )
+        self.assertIn("codey.agents.prompt_context", imports)
+        self.assertIn("codey.agents.tool_execution", imports)
+        self.assertIn("codey.agents.verification_driver", imports)
+
+    def test_runtime_package_does_not_import_business_layers(self) -> None:
+        forbidden = {"codey.agents", "codey.ghost", "codey.operations"}
+        offenders: dict[str, list[str]] = {}
+        for path in codey_python_files("runtime"):
+            blocked = imports_with_forbidden_prefixes(path, forbidden)
+            if blocked:
+                offenders[path.relative_to(ROOT).as_posix()] = blocked
+        self.assertEqual(offenders, {})
+
+    def test_agents_package_does_not_import_operations(self) -> None:
+        offenders: dict[str, list[str]] = {}
+        for path in codey_python_files("agents"):
+            blocked = imports_with_forbidden_prefixes(path, {"codey.operations"})
+            if blocked:
+                offenders[path.relative_to(ROOT).as_posix()] = blocked
+        self.assertEqual(offenders, {})
+
+    def test_completion_package_does_not_import_app_provider_or_operations(self) -> None:
+        forbidden = {"codey.app", "codey.operations", "codey.providers"}
+        offenders: dict[str, list[str]] = {}
+        for path in codey_python_files("completion"):
+            blocked = imports_with_forbidden_prefixes(path, forbidden)
+            if blocked:
+                offenders[path.relative_to(ROOT).as_posix()] = blocked
+        self.assertEqual(offenders, {})
 
     def test_orchestrators_create_providers_instead_of_browser_sessions(self) -> None:
         paths = (

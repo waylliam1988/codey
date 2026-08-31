@@ -17,21 +17,29 @@ This file records Codey's release history. The newest release appears first.
     operation function, and review/planning/Ghost post-turn work live in their
     own operation modules.
   - Split `AgentRunner` without changing its protocol behavior: JSON protocol
-    repair helpers live in `codey.agents.protocol`, prompt/context assembly
-    lives in `codey.agents.context`, callers pass a single `AgentRequest`, and
-    loop progress/verification/stagnation state is explicit instead of spread
-    across a broad local-variable surface.
-  - Moved the agent loop implementation into `codey.agents.loop`. The
-    `codey.agents.runner` module is now only the public entry/re-export
-    surface, while `AgentLoopSession` and explicit tool-call execution helpers
-    own the former closure state. Policy-deny control flow stays visible in the
-    loop: tool execution returns a `ToolOutcome`, and the loop records or
-    continues.
+    repair helpers live in `codey.agents.protocol`, base prompt/context
+    rendering lives in `codey.agents.context`, callers pass a single
+    `AgentRequest`, and loop progress/verification/stagnation state is explicit
+    instead of spread across a broad local-variable surface.
+  - Split the agent loop by real owner boundaries. `codey.agents.runner` is the
+    public entry/re-export surface; `codey.agents.state` owns
+    `AgentLoopSession` and mutable loop state; `codey.agents.prompt_context`
+    owns provider-send prompt assembly, context epoch binding, repair context
+    admission, and coding-current-context injection;
+    `codey.agents.verification_driver` owns verification candidates,
+    freshness, reminders, and edit/run verification accounting; and
+    `codey.agents.tool_execution` owns tool policy, dispatch, and result
+    accounting. `codey.agents.loop` now keeps the turn loop, parse path, visible
+    `continue` / `return` control flow, state transitions, and finish.
   - Reworked `codey.operations.project_completion_flow.run_project_mode()` into
     an explicit phase script over `_ProjectRun`: project context preparation,
     writer failover, review cycle, completion enforcement, and final receipt /
     facts / terminal projection now have separate function owners without
     `nonlocal` closure state.
+  - Grouped `ProjectCompletionDeps` by stable access surface:
+    `AgentAccess`, `PersistenceAccess`, `VerificationAccess`, `ReviewAccess`,
+    and `RuntimeAccess`. This compresses the dependency surface without adding a
+    `CompletionManager` or splitting project completion by line count.
   - Split the local HTTP app boundary into `codey.app.http_plumbing`,
     `codey.app.api`, and `codey.app.services`. The Handler now validates
     origin, parses HTTP, dispatches ordinary JSON endpoints through route
@@ -97,6 +105,11 @@ This file records Codey's release history. The newest release appears first.
     but hot phase commits load their current state from cached entries when the
     file size and `mtime_ns` stamp have not changed; same-size external
     rewrites, compaction, and deletion invalidate or rebuild the cache.
+  - Added package-level architecture tests for the active runtime boundaries:
+    runtime cannot import operations, agents, or Ghost; agents cannot import
+    operations; completion cannot import app, providers, or operations; and
+    `agents.loop` cannot directly import completion, toolchain, or workspace
+    context-source internals that belong to owner modules.
   - Run Details now reads runtime operation state before ledger/trace checks, so
     an interrupted run can still show its quiet `Progress` row even if the
     ledger or trace was never written or has been cleaned up. Terminal runtime

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -101,23 +101,48 @@ def _default_is_git_repository(_project: str | Path) -> bool:
 
 
 @dataclass(frozen=True)
-class ProjectCompletionDeps:
-    state: Any
-    agent_run: Callable
-    collect_changes: Callable
-    run_review: Callable
+class AgentAccess:
+    run: Callable
     capture_provider_failure: Callable[..., ProviderFailure]
-    commit_run_operation: Callable[[RunWork, Callable], None]
-    workspace_revisions: Any
     run_consensus: Callable | None = None
     run_project_audit: Callable | None = None
+    is_git_repository: Callable[[str | Path], bool] = _default_is_git_repository
+
+
+@dataclass(frozen=True)
+class PersistenceAccess:
     project_facts: ProjectFactsStore | None = None
     work_checkpoints: WorkCheckpointStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     knowledge_store: KnowledgeStore | None = None
-    is_git_repository: Callable[[str | Path], bool] = _default_is_git_repository
+
+
+@dataclass(frozen=True)
+class VerificationAccess:
+    collect_changes: Callable
+    workspace_revisions: Any
+
+
+@dataclass(frozen=True)
+class ReviewAccess:
+    run: Callable
     review_fix_turns: int = 12
     review_log_lines: int = 80
+
+
+@dataclass(frozen=True)
+class RuntimeAccess:
+    commit_run_operation: Callable[[RunWork, Callable], None]
+
+
+@dataclass(frozen=True)
+class ProjectCompletionDeps:
+    state: Any
+    agent: AgentAccess
+    verification: VerificationAccess
+    review: ReviewAccess
+    runtime: RuntimeAccess
+    persistence: PersistenceAccess = field(default_factory=PersistenceAccess)
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -246,7 +271,7 @@ def managed_tool_fns(
     session_id: str,
     run_id: str,
 ) -> AgentToolFns | None:
-    if deps.managed_outputs is None:
+    if deps.persistence.managed_outputs is None:
         return None
 
     def run_command(
@@ -263,7 +288,7 @@ def managed_tool_fns(
             command,
             permission_profile=_permission_profile,
             phase=_phase,
-            store=deps.managed_outputs,
+            store=deps.persistence.managed_outputs,
             session_id=session_id,
             run_id=run_id,
             tool_id=tool_id,
@@ -303,9 +328,14 @@ def _bullet_lines(values: tuple[str, ...]) -> str:
 
 
 __all__ = [
+    "AgentAccess",
     "COMPLETION_REPAIR_FOLLOWUP",
     "MAX_COMPLETION_REPAIR_ROUNDS",
+    "PersistenceAccess",
     "ProjectCompletionDeps",
+    "ReviewAccess",
+    "RuntimeAccess",
+    "VerificationAccess",
     "blocked_result",
     "handle_project_tool_event",
     "managed_tool_fns",
@@ -380,9 +410,9 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
     if ctx.work.ledger is not None:
         ctx.work.record_agent_events_in_ledger = True
     ctx.context_builder = ProjectTaskContextBuilder(
-        project_facts=ctx.deps.project_facts,
-        work_checkpoints=ctx.deps.work_checkpoints,
-        knowledge_store=ctx.deps.knowledge_store,
+        project_facts=ctx.deps.persistence.project_facts,
+        work_checkpoints=ctx.deps.persistence.work_checkpoints,
+        knowledge_store=ctx.deps.persistence.knowledge_store,
         config_result=ctx.config_result,
     )
     ctx.project_context = ctx.context_builder.build(
@@ -414,7 +444,7 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
     ctx.work.evidence.seed_checks(ctx.project_context.checkpoint.seed_checks)
     if ctx.project_context.checkpoint.workspace_changed:
         ctx.work.advance_workspace_revision(
-            ctx.deps.workspace_revisions,
+            ctx.deps.verification.workspace_revisions,
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
@@ -424,14 +454,14 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
     key = str(Path(ctx.project).expanduser().resolve())
     ctx.tracker = ctx.state.change_tracker_for(
         key,
-        persistent=not ctx.deps.is_git_repository(key),
+        persistent=not ctx.deps.agent.is_git_repository(key),
     )
     ctx.tried_writers = set(ctx.frame.preflight_tried)
 
 
 def _prepare_new_project_context(ctx: _ProjectRun) -> None:
     ctx.has_user_files = project_has_user_files(ctx.project)
-    if ctx.deps.run_consensus is not None and not ctx.has_user_files:
+    if ctx.deps.agent.run_consensus is not None and not ctx.has_user_files:
         context = render_project_context(
             ctx.frame.conversation.snapshot,
             ctx.verified_facts,
@@ -444,7 +474,7 @@ def _prepare_new_project_context(ctx: _ProjectRun) -> None:
                 task=ctx.request.task,
                 context=context,
             )
-            planned = ctx.deps.run_consensus(
+            planned = ctx.deps.agent.run_consensus(
                 selected_provider=ctx.frame.provider,
                 selected_provider_id=ctx.frame.provider_id,
                 task=ctx.request.task,
@@ -463,7 +493,7 @@ def _prepare_new_project_context(ctx: _ProjectRun) -> None:
             ctx.change_brief = new_project_change_brief(ctx.request.task, planned.answer)
             ctx.agent_task = ctx.change_brief.apply_to_task(ctx.request.task)
             ctx.agent_fresh_chat = True
-    elif ctx.deps.run_project_audit is not None and ctx.has_user_files:
+    elif ctx.deps.agent.run_project_audit is not None and ctx.has_user_files:
         context = render_project_context(
             ctx.frame.conversation.snapshot,
             ctx.verified_facts,
@@ -476,7 +506,7 @@ def _prepare_new_project_context(ctx: _ProjectRun) -> None:
                 task=ctx.request.task,
                 context=context,
             )
-            reports = ctx.deps.run_project_audit(
+            reports = ctx.deps.agent.run_project_audit(
                 project=ctx.project,
                 selected_provider=ctx.frame.provider,
                 selected_provider_id=ctx.frame.provider_id,
@@ -508,7 +538,7 @@ def _refresh_checkpoint_view(ctx: _ProjectRun) -> CheckpointView:
         ctx.resumed_successful_checks = refreshed.successful_checks
     if refreshed.workspace_changed:
         ctx.work.advance_workspace_revision(
-            ctx.deps.workspace_revisions,
+            ctx.deps.verification.workspace_revisions,
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
@@ -543,7 +573,7 @@ def _run_one_writer_attempt(
     spec: WriterAttempt,
     note_turn: Callable[[int], None],
 ) -> RunResult:
-    return ctx.deps.agent_run(AgentRequest(
+    return ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
         task=spec.task,
@@ -611,7 +641,7 @@ def _capture_writer_failure(
     action: str,
     error: BaseException,
 ) -> ProviderFailure:
-    return ctx.deps.capture_provider_failure(
+    return ctx.deps.agent.capture_provider_failure(
         model=PROVIDER_LABELS.get(pid, pid),
         action=action,
         page=None,
@@ -715,7 +745,7 @@ def _sync_failover_frame(ctx: _ProjectRun) -> None:
 
 def _run_writer_phase(ctx: _ProjectRun) -> None:
     ctx.failover = _build_writer_failover(ctx)
-    ctx.deps.commit_run_operation(
+    ctx.deps.runtime.commit_run_operation(
         ctx.work,
         lambda state: mark_writer_running(state, provider_id=ctx.frame.provider_id),
     )
@@ -733,7 +763,7 @@ def _run_writer_phase(ctx: _ProjectRun) -> None:
         )
     finally:
         _sync_failover_frame(ctx)
-    ctx.deps.commit_run_operation(
+    ctx.deps.runtime.commit_run_operation(
         ctx.work,
         lambda state: mark_writer_settled(
             state,
@@ -756,7 +786,7 @@ def _run_writer_phase(ctx: _ProjectRun) -> None:
         and ctx.work.work_checkpoint.changed_files
     )
     ctx.task_changed = ctx.result.changed or checkpoint_changed
-    ctx.task_changes = ctx.deps.collect_changes(ctx.project, ctx.tracker)
+    ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)
     ctx.task_changes_dirty = collected_changed is None
     if collected_changed is not None:
@@ -775,7 +805,7 @@ def _run_writer_phase(ctx: _ProjectRun) -> None:
 def _maybe_consult_consensus_after_writer(ctx: _ProjectRun) -> None:
     assert ctx.result is not None
     if (
-        ctx.deps.run_consensus is None
+        ctx.deps.agent.run_consensus is None
         or ctx.used_project_audit
         or ctx.result.stop_reason != "done"
         or ctx.result.changed
@@ -796,7 +826,7 @@ def _maybe_consult_consensus_after_writer(ctx: _ProjectRun) -> None:
             context=context,
             draft=ctx.result.summary,
         )
-        consulted = ctx.deps.run_consensus(
+        consulted = ctx.deps.agent.run_consensus(
             selected_provider=ctx.frame.provider,
             selected_provider_id=ctx.frame.provider_id,
             task=ctx.request.task,
@@ -825,8 +855,8 @@ def _render_review_change_brief(ctx: _ProjectRun) -> str:
 
 def _refresh_review_project_map(ctx: _ProjectRun) -> str:
     ctx.verified_facts = (
-        ctx.deps.project_facts.render(ctx.project)
-        if ctx.deps.project_facts is not None
+        ctx.deps.persistence.project_facts.render(ctx.project)
+        if ctx.deps.persistence.project_facts is not None
         else ""
     )
     ctx.verification_candidates = safe_verification_candidates(
@@ -867,7 +897,7 @@ def _repair_writer(
     try:
         result = ctx.failover.run(
             task=followup,
-            turn_budget=min(ctx.request.max_turns, ctx.deps.review_fix_turns),
+            turn_budget=min(ctx.request.max_turns, ctx.deps.review.review_fix_turns),
             fresh=False,
             handoff="",
             checkpoint=checkpoint,
@@ -915,7 +945,7 @@ def _run_review_with_trace(ctx: _ProjectRun, **kwargs):
     )
     kwargs["review_impact_map"] = review_impact_map
     kwargs["trace_recorder"] = ctx.frame.trace
-    return ctx.deps.run_review(**kwargs)
+    return ctx.deps.review.run(**kwargs)
 
 
 def _build_review_verification_map(
@@ -937,7 +967,7 @@ def _build_review_verification_map(
 
 def _review_cycle_phase(ctx: _ProjectRun) -> None:
     assert ctx.result is not None
-    review_coordinator = ReviewCoordinator(ctx.deps.collect_changes)
+    review_coordinator = ReviewCoordinator(ctx.deps.verification.collect_changes)
     ctx.review_cycle = review_coordinator.run_cycle(
         project=ctx.project,
         tracker=ctx.tracker,
@@ -948,7 +978,7 @@ def _review_cycle_phase(ctx: _ProjectRun) -> None:
         changes=ctx.task_changes,
         changes_dirty=ctx.task_changes_dirty,
         writer_id=ctx.frame.provider_id,
-        recent_log="\n".join(ctx.work.recent_events[-ctx.deps.review_log_lines :]),
+        recent_log="\n".join(ctx.work.recent_events[-ctx.deps.review.review_log_lines :]),
         render_change_brief=partial(_render_review_change_brief, ctx),
         execution_evidence=ctx.work.evidence.render_for_review(),
         successful_checks=ctx.work.evidence.successful_checks,
@@ -971,7 +1001,7 @@ def _review_cycle_phase(ctx: _ProjectRun) -> None:
     ctx.task_changes = ctx.review_cycle.changes
     ctx.task_changes_dirty = ctx.review_cycle.changes_dirty
     if ctx.task_changes is None or ctx.task_changes_dirty:
-        ctx.task_changes = ctx.deps.collect_changes(ctx.project, ctx.tracker)
+        ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)
     if collected_changed is not None:
         ctx.task_changed = collected_changed
@@ -1022,7 +1052,7 @@ def _completion_evidence(
 def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
     if proof is None:
         return
-    ctx.deps.commit_run_operation(
+    ctx.deps.runtime.commit_run_operation(
         ctx.work,
         lambda state: mark_completion_proof_recorded(
             state,
@@ -1037,7 +1067,7 @@ def _record_completion_evidence(ctx: _ProjectRun) -> None:
     assert ctx.result is not None
     if ctx.result.stop_reason == "done" and ctx.task_changed and ctx.files:
         ctx.work.refresh_workspace_state(
-            ctx.deps.workspace_revisions,
+            ctx.deps.verification.workspace_revisions,
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
@@ -1116,7 +1146,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         return
 
     ctx.repair_projection = projection
-    ctx.deps.commit_run_operation(
+    ctx.deps.runtime.commit_run_operation(
         ctx.work,
         lambda state: mark_repair_context_admitted(
             state,
@@ -1128,7 +1158,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             "[runner] completion proof did not pass; running one bounded repair round."
         )
     )
-    ctx.deps.commit_run_operation(
+    ctx.deps.runtime.commit_run_operation(
         ctx.work,
         lambda state: mark_repair_running(state, provider_id=ctx.frame.provider_id),
     )
@@ -1144,7 +1174,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         raise
     except ProviderActionError:
         ctx.blocked_reason = "provider_failure"
-        ctx.deps.commit_run_operation(
+        ctx.deps.runtime.commit_run_operation(
             ctx.work,
             lambda state: mark_repair_settled(
                 state,
@@ -1165,7 +1195,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
                 remaining_turns=repair_remaining_turns,
                 repair_rounds=1,
             )
-        ctx.deps.commit_run_operation(
+        ctx.deps.runtime.commit_run_operation(
             ctx.work,
             lambda state: mark_repair_settled(
                 state,
@@ -1190,7 +1220,7 @@ def _apply_repair_result(ctx: _ProjectRun, repair_result: RunResult) -> None:
     if repair_result.stop_reason == "stopped":
         ctx.result = replace(repair_result, turns=turns)
     elif repair_result.stop_reason == "done":
-        ctx.task_changes = ctx.deps.collect_changes(ctx.project, ctx.tracker)
+        ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
         collected = change_state(ctx.task_changes)
         if collected is not None:
             ctx.task_changed = collected
@@ -1244,7 +1274,7 @@ def _settle_blocked_completion(ctx: _ProjectRun) -> None:
         and ctx.work.operation is not None
         and ctx.work.operation.phase == PHASE_COMPLETION_PROOF_RECORDED
     ):
-        ctx.deps.commit_run_operation(
+        ctx.deps.runtime.commit_run_operation(
             ctx.work,
             lambda state: mark_completion_blocked(state, reason=ctx.blocked_reason),
         )
@@ -1295,7 +1325,7 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
         )
     )
     facts_write_required = (
-        ctx.deps.project_facts is not None
+        ctx.deps.persistence.project_facts is not None
         and ctx.result.stop_reason == "done"
         and ctx.task_changed
         and ctx.result.checks_passed
@@ -1312,7 +1342,7 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
                 and ctx.work.work_checkpoint is not None
                 else ctx.request.task
             )
-            facts_write_succeeded = ctx.deps.project_facts.record_successful_change(
+            facts_write_succeeded = ctx.deps.persistence.project_facts.record_successful_change(
                 ctx.project,
                 task=fact_task,
                 files=ctx.files,
@@ -1331,10 +1361,10 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
             receipt=ctx.receipt.display.summary,
             checks=ctx.work.evidence.successful_checks,
         )
-    if ctx.deps.work_checkpoints is not None and ctx.work.work_checkpoint is not None:
+    if ctx.deps.persistence.work_checkpoints is not None and ctx.work.work_checkpoint is not None:
         if ctx.result.stop_reason == "done" and facts_write_succeeded:
             try:
-                ctx.deps.work_checkpoints.delete(ctx.request.session_id)
+                ctx.deps.persistence.work_checkpoints.delete(ctx.request.session_id)
                 ctx.work.work_checkpoint = None
             except OSError:
                 pass
@@ -1452,9 +1482,9 @@ def handle_project_tool_event(
         except (TypeError, ValueError):
             tool_index = 0
         tool_id = f"{event.turn}:{max(0, tool_index)}"
-        if ok and deps.project_facts is not None:
+        if ok and deps.persistence.project_facts is not None:
             try:
-                deps.project_facts.record_success(project, cwd, command)
+                deps.persistence.project_facts.record_success(project, cwd, command)
             except (OSError, ValueError):
                 pass
         update_checkpoint(
@@ -1574,10 +1604,10 @@ def record_project_memory(
     receipt: str,
     checks: tuple[object, ...],
 ) -> None:
-    if deps.knowledge_store is None:
+    if deps.persistence.knowledge_store is None:
         return
     try:
-        brief = KnowledgeBriefBuilder(deps.knowledge_store).build_for_session(session_id)
+        brief = KnowledgeBriefBuilder(deps.persistence.knowledge_store).build_for_session(session_id)
         sources = [brief.synthesis_id] if brief.synthesis_id else []
         impl = KnowledgeNote.create(
             type="implementation",
@@ -1588,7 +1618,7 @@ def record_project_memory(
             session_id=session_id,
             project=str(Path(project).expanduser().resolve()),
         )
-        deps.knowledge_store.write_note(impl)
+        deps.persistence.knowledge_store.write_note(impl)
         if checks:
             verification = KnowledgeNote.create(
                 type="verification",
@@ -1600,9 +1630,9 @@ def record_project_memory(
                 session_id=session_id,
                 project=str(Path(project).expanduser().resolve()),
             )
-            deps.knowledge_store.write_note(verification)
-            deps.knowledge_store.link(impl.id, verification.id, "verifies")
+            deps.persistence.knowledge_store.write_note(verification)
+            deps.persistence.knowledge_store.link(impl.id, verification.id, "verifies")
         if brief.synthesis_id:
-            deps.knowledge_store.link(brief.synthesis_id, impl.id, "implements")
+            deps.persistence.knowledge_store.link(brief.synthesis_id, impl.id, "implements")
     except (OSError, ValueError):
         return

@@ -7,7 +7,12 @@ from unittest import mock
 from codey.app import server
 from codey.operations.context import RunWork
 from codey.operations.project_completion_flow import (
+    AgentAccess,
+    PersistenceAccess,
     ProjectCompletionDeps,
+    ReviewAccess,
+    RuntimeAccess,
+    VerificationAccess,
     handle_project_tool_event,
 )
 from codey.runtime.events import RunEvent
@@ -303,13 +308,17 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
     ) -> None:
         deps = ProjectCompletionDeps(
             state=state,
-            agent_run=mock.Mock(),
-            collect_changes=mock.Mock(),
-            run_review=mock.Mock(),
-            capture_provider_failure=server.capture_provider_failure,
-            commit_run_operation=mock.Mock(),
-            project_facts=state.project_facts,
-            workspace_revisions=state.workspace_revisions,
+            agent=AgentAccess(
+                run=mock.Mock(),
+                capture_provider_failure=server.capture_provider_failure,
+            ),
+            verification=VerificationAccess(
+                collect_changes=mock.Mock(),
+                workspace_revisions=state.workspace_revisions,
+            ),
+            review=ReviewAccess(run=mock.Mock()),
+            runtime=RuntimeAccess(commit_run_operation=mock.Mock()),
+            persistence=PersistenceAccess(project_facts=state.project_facts),
         )
         handle_project_tool_event(deps, **kwargs)
 

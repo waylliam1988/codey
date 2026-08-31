@@ -168,6 +168,11 @@ reserve/start/finish、provider/session/trace cleanup、runtime phase projection
 terminal settlement 这些非业务外壳；review、planning、research、project
 completion、Ghost context/post-turn 都有自己的 owner。
 
+Project completion 目前不继续按文件行数拆。更重要的下一层边界是压缩依赖面：
+`ProjectCompletionDeps` 已分组成 `AgentAccess`、`PersistenceAccess`、
+`VerificationAccess`、`ReviewAccess` 和 `RuntimeAccess`，让业务相位看见的是稳定
+access surface，而不是重新建立一个 `CompletionManager`。
+
 ---
 
 ## 2.3 学习 Pi 的 Lane / Queue 语义
@@ -567,6 +572,22 @@ research orchestration
 workspace knowledge
 task contract
 ```
+
+0.5.1 已经按这个方向把 Agent Loop 的真实职责拆开：
+
+```text
+agents.runner              public run(AgentRequest) surface
+agents.loop                turn loop / parse / visible continue-return control / finish
+agents.state               AgentLoopSession + mutable progress/verification/stagnation state
+agents.prompt_context      prompt send / context epoch / repair context admission
+agents.verification_driver verification candidates / freshness / reminders
+agents.tool_execution      tool policy / dispatch / result accounting
+```
+
+`loop.py` 仍然能看见所有 `continue` / `return` 控制流；单个工具执行只返回
+tool outcome，由 loop 统一记录和决定下一步。Architecture tests 已锁住：
+agents 不能 import operations，`agents.loop` 不能直接 import completion、
+toolchain 或 workspace context-source internals。
 
 ---
 
@@ -1171,6 +1192,10 @@ codey/
 +-- agents/
 |   +-- runner.py
 |   +-- loop.py
+|   +-- state.py
+|   +-- prompt_context.py
+|   +-- verification_driver.py
+|   +-- tool_execution.py
 |   +-- context.py
 |   +-- protocol.py
 |   +-- request.py
@@ -1239,8 +1264,11 @@ AgentRequest
 ```
 
 JSON protocol repair helper、context assembly 和 loop state 已拆出 owner：
-`agents.runner` 只保留公共入口，`agents.loop` 拥有 `AgentLoopSession`、
-`TurnState`、工具执行函数和循环状态。
+`agents.runner` 只保留公共入口，`agents.state` 拥有 `AgentLoopSession` 和
+loop state，`agents.prompt_context` 拥有 prompt/context/context epoch/repair
+context admission，`agents.verification_driver` 拥有 verification freshness 和
+reminder 状态，`agents.tool_execution` 拥有 tool policy/dispatch/result
+accounting，`agents.loop` 只保留 turn loop、parse、状态转移和 finish。
 不引入一个会重新长大的 `AgentOperation` 大类；runtime lifecycle 仍由
 `TaskRuntime` / `OperationScheduler` 负责，agent 只是一种 operation function 的实现。
 

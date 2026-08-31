@@ -16,17 +16,26 @@
     `TaskRunDeps`，`mode_dispatch.py` 选择 operation function，review /
     planning / Ghost post-turn 进入各自 operation 模块。
   - `AgentRunner` 也按真实边界拆开，但不改变协议行为：JSON protocol repair
-    helper 进入 `codey.agents.protocol`，prompt/context 组装进入
+    helper 进入 `codey.agents.protocol`，基础 prompt/context 渲染进入
     `codey.agents.context`，调用方传单个 `AgentRequest`，loop progress /
     verification / stagnation 状态成为显式对象，不再散在一大片 locals 里。
-  - agent loop 实现迁入 `codey.agents.loop`。`codey.agents.runner` 现在只是
-    public entry/re-export surface；`AgentLoopSession` 和显式 tool-call
-    执行 helper 拥有原来的闭包状态。policy deny 的控制流仍留在 loop
-    本体可见：工具执行返回 `ToolOutcome`，由 loop 负责记录和 `continue`。
+  - agent loop 继续按 owner 拆开：`codey.agents.runner` 是 public
+    entry/re-export surface；`codey.agents.state` 拥有 `AgentLoopSession` 和
+    mutable loop state；`codey.agents.prompt_context` 拥有 provider-send prompt
+    组装、context epoch 绑定、repair context admission 和
+    coding-current-context 注入；`codey.agents.verification_driver` 拥有
+    verification candidate、freshness、reminder 以及 edit/run verification
+    账本；`codey.agents.tool_execution` 拥有 tool policy、dispatch 和 result
+    accounting。`codey.agents.loop` 只保留 turn loop、parse path、可见的
+    `continue` / `return` 控制流、状态转移和 finish。
   - `codey.operations.project_completion_flow.run_project_mode()` 改成基于
     `_ProjectRun` 的显式 phase script：project context prepare、writer
     failover、review cycle、completion enforcement、final receipt/facts/terminal
     projection 都有独立函数 owner，不再依赖 `nonlocal` 闭包状态。
+  - `ProjectCompletionDeps` 按稳定 access surface 分组为 `AgentAccess`、
+    `PersistenceAccess`、`VerificationAccess`、`ReviewAccess` 和
+    `RuntimeAccess`。这一步压缩依赖面，但不新增 `CompletionManager`，也不按
+    行数把 project completion 拆成一堆互相 import 的文件。
   - 本地 HTTP app 边界拆成 `codey.app.http_plumbing`、`codey.app.api` 和
     `codey.app.services`。Handler 只做 origin 校验、HTTP 解析、普通 JSON
     endpoint route-table dispatch，并把 SSE 保留为 streaming transport 例外；
@@ -83,6 +92,11 @@
     `append_many()` 仍然通过 reducer fail closed，但文件大小和 `mtime_ns`
     stamp 都未变化时，热路径 phase commit 直接从缓存 entries 读取当前状态；
     同尺寸外部改写、compaction 和删除都会触发缓存重建或失效。
+  - 新增包级 architecture tests 锁住当前 runtime 边界：runtime 不能 import
+    operations、agents 或 Ghost；agents 不能 import operations；completion
+    不能 import app、providers 或 operations；`agents.loop` 不能直接 import
+    completion、toolchain 或 workspace context-source 内部细节，必须通过
+    owner 模块触达。
   - Run Details 现在先读 runtime operation state，再判断 ledger/trace 是否
     存在；即使 ledger 或 trace 没写出来或被清理，中断 run 仍能显示安静的
     `Progress` 行。terminal runtime state 也能在没有 ledger/trace 时提供最小
