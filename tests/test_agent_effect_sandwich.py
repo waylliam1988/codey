@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from typing import Any
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 from codey.agents.prompt_context import _send_provider_with_effect
 from codey.agents.request import AgentRequest
-from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
+from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification, RunResult
 from codey.agents.tool_execution import (
     TurnState,
     emit_tool_started_after_intent,
@@ -21,8 +22,11 @@ from codey.agents.tool_execution import (
     record_tool_outcome,
 )
 from codey.agents.tools import AgentToolFns
-from codey.operations.task_run import _settle_pending_effects_for_resume, _start_run_operation
+from codey.app import server
+from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import TaskRunDeps, _settle_pending_effects_for_resume, _start_run_operation
 from codey.policies.permissions import profile_for_name
+from codey.protocols import JsonToolCodec
 from codey.runtime.effect_records import (
     RuntimeEffectStore,
     SETTLEMENT_STATUS_ERROR,
@@ -32,6 +36,7 @@ from codey.runtime.effects import RuntimeOperationStore
 from codey.runtime.models import ToolCall
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.session_log import RuntimeSessionLog
+from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -83,7 +88,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             run_id=self.run_id,
             runtime_effects=self.effects,
         )
-        from codey.protocols import JsonToolCodec
         profile = profile_for_name("coding_writer")
         return AgentLoopSession(
             request=req,
@@ -252,7 +256,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertFalse(result)
 
     def test_record_intent_failure_in_loop_does_not_execute_tool_or_settle(self) -> None:
-        from unittest.mock import patch
         from codey.agents.loop import _run_loop
 
         executed_tools: list[str] = []
@@ -280,7 +283,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         tool_settlements = [p for p in effects if p.intent.effect_category == "tool_call" and p.is_settled]
         self.assertEqual(len(tool_settlements), 0)
 
-
     def test_start_run_operation_fails_closed_when_recovery_fails(self) -> None:
         broken_store = MagicMock()
         broken_store.pending_effects.side_effect = RuntimeError("disk corrupt")
@@ -303,8 +305,63 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
         self.assertFalse(ok)
 
+    def test_execute_task_run_fails_closed_when_recovery_fails(self) -> None:
+        state = server.AppContext(state_home=self.temp_dir.name)
+        broken_effects = Mock()
+        broken_effects.pending_effects.side_effect = RuntimeError("disk corrupt")
+
+        agent_called = False
+
+        def fake_agent_run(req: Any) -> RunResult:
+            nonlocal agent_called
+            agent_called = True
+            return RunResult("ok", "done", 1, 0, (), ())
+
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=fake_agent_run,
+            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
+            run_review=Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            runtime_effects=broken_effects,
+            is_git_repository=lambda _project: True,
+        )
+
+        emitted_events: list[dict] = []
+        state.emit = lambda event: emitted_events.append(event)
+
+        with patch.object(state, "get_provider", return_value=MockProvider()):
+            run_task_submission(
+                deps,
+                TaskSubmission(
+                    self.session_id,
+                    str(self.project_dir),
+                    "task to run",
+                    5,
+                    False,
+                    "mock_provider",
+                    intent="project",
+                    run_id="run-fail-closed-1",
+                ),
+            )
+
+        # Agent / Provider should NEVER have been called
+        self.assertFalse(agent_called)
+        # Registry must NOT be busy
+        self.assertFalse(state.run_registry.is_busy())
+        # Terminal event must be stop_reason="error"
+        done_events = [e for e in emitted_events if e.get("type") == "task_done"]
+        self.assertEqual(len(done_events), 1)
+        self.assertEqual(done_events[0].get("stop_reason"), "error")
+
 
 if __name__ == "__main__":
     unittest.main()
-
-

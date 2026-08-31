@@ -19,7 +19,7 @@ from codey.runtime.effect_records import (
     new_effect_id,
     record_settlement_safely,
 )
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.effects import RuntimeOperationStore, lane_for_run, operation_id_for_run
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeLogWriteError, RuntimeSessionLog
 
@@ -379,6 +379,91 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                 run_id=self.run_id,
                 schema_version=2,
             )
+
+    def test_deserialization_missing_required_semantic_fields_raises(self) -> None:
+        base_intent_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "intent",
+            "effect_id": "eff_1",
+            "effect_category": "tool_call",
+            "session_id": "s1",
+            "run_id": "r1",
+            "replay_class": "safe",
+        }
+        # Missing replay_class
+        p = dict(base_intent_payload)
+        del p["replay_class"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        # Missing effect_category
+        p = dict(base_intent_payload)
+        del p["effect_category"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        base_settlement_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "settlement",
+            "effect_id": "eff_1",
+            "effect_category": "tool_call",
+            "session_id": "s1",
+            "run_id": "r1",
+            "status": "ok",
+            "sent_state": "settled",
+            "replay_class": "unsafe",
+        }
+        # Missing status
+        p = dict(base_settlement_payload)
+        del p["status"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+        # Missing sent_state
+        p = dict(base_settlement_payload)
+        del p["sent_state"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+    def test_load_effects_mismatched_lane_or_operation_raises(self) -> None:
+        # Start a second operation for run-2
+        run_2 = "run-2"
+        self.operations.start(
+            session_id=self.session_id,
+            run_id=run_2,
+            project="/tmp/test",
+            provider_id="deepseek",
+            turn_budget=5,
+            max_repair_rounds=1,
+            task_kind="project",
+        )
+        # Append an entry under run-2's lane, but claiming to be for self.run_id
+        lane_2 = lane_for_run(run_2)
+        op_2 = operation_id_for_run(run_2)
+        self.log.append(
+            self.session_id,
+            lane=lane_2,
+            operation_id=op_2,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "runtime_effect",
+                "record_kind": "intent",
+                "ref": "effect:eff_mismatched",
+                "effect_id": "eff_mismatched",
+                "effect_category": "tool_call",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": lane_2,
+                "operation_id": op_2,
+                "replay_class": "unsafe",
+            },
+        )
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("does not match expected lane", str(ctx.exception))
 
 
 if __name__ == "__main__":

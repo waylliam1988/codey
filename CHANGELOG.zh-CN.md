@@ -10,9 +10,10 @@
   - 新增 `codey.runtime.replay_policy`，实现 `ReplayClass`（safe/unsafe）与 `ReplayDecision`。只读安全工具（`read`、`ls`、`search`、`references`、`project_facts`、`project_map`）判定为 safe 且 retryable；修改类操作（`edit`、`write`、`shell`、`run`、`knowledge_write`）以及未知工具一律判定为 unsafe 且不可重放；`run` 命令内容不豁免，一律 unsafe；provider send 与 repair round 一律 unsafe。
   - 新增 `codey.runtime.effect_records`，基于单一事实源 `RuntimeSessionLog` 实现 `RuntimeEffectStore`、`RuntimeEffectIntent`、`RuntimeEffectSettlement` 与 `RecoverySummary`。外部副作用严格执行 `record intent -> execute real effect -> record settlement` 的 Effect Sandwich。
   - 效果唯一性与防碰撞：使用全局唯一的 `new_effect_id(category, run_id)`，消除 turn、tool call 与 resume 过程中的 id 碰撞，防止新 pending 被旧 settlement 覆盖。
-  - 严格 Schema 与 Fail-Closed：`from_payload()` 严格校验字段类型与长度，拒绝未知 record_kind 与 bool turn，消除隐式截断；`record_settlement()` 严格校验 category 一致性，对等价重复结算幂等返回，对冲突结算显式报错。
-  - 恢复失败绝对阻断：`_settle_pending_effects_for_resume()` 与 `_start_run_operation()` 在会话日志损坏或恢复合成失败时立即 fail-closed 终止，阻断后续所有外部调用。
+  - 严格 Schema 与 Fail-Closed：`from_payload()` 严格校验字段类型与长度，拒绝未知 record_kind、bool turn 与缺失语义字段，消除隐式截断；`record_settlement()` 严格校验 category 一致性，对等价重复结算幂等返回，对冲突结算显式报错；`load_effects()` 严格校验 entry 与 payload 的 lane 及 operation_id 边界。
+  - 恢复失败完整生命周期清理与阻断：`_settle_pending_effects_for_resume()` 与 `_start_run_operation()` 在会话日志损坏或恢复合成失败时立即 fail-closed 终止，派发标准 `task_done` 错误事件并清理 `RunRegistry` 状态与 work_item，阻断后续所有外部调用。
   - 循环迭代安全性：工具循环在每轮迭代开头重置 `effect_id = ""`，若 `record_tool_call_intent` 异常立即 fail-closed 记录错误结果，不执行工具、不结算旧 effect。
+  - 模型发送摘要完整性：Provider prompt 的 `args_digest` 对全量 prompt 进行 hash，消除前缀截断弱点。
   - 工具时序与安全写入：调整时序为 `execute_tool_call -> record_tool_outcome -> record_tool_call_settlement`；`record_settlement_safely` 保证日志写失败绝不掩盖真实业务结果或异常；删除废弃的 `begin_tool_call()`。
   - 崩溃恢复投影与安静展示：会话恢复时自动扫描未结算 pending effects 并合成 `interrupted` 状态 settlement；`recovery_summary` 仅统计已结算的 interrupted 效果，忽略运行中的 in-flight pending 与普通 provider 报错，避免误报 Recovery。
   - 严格保持上下文纯净：本版本不把 safe replay 或 synthetic interrupted 注入模型上下文，不改变 prompt、tool schema、provider routing 与模型可见 transcript，不保存 raw prompt/diff/output payload。

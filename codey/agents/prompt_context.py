@@ -240,7 +240,7 @@ def _send_provider_with_effect(
             provider_id=session.active_provider_id,
             turn=session.provider_send_index,
             display_ref=source_ref[:120],
-            args_digest=compute_args_digest(prompt[:200]),
+            args_digest=compute_args_digest(prompt),
             replay_class=replay_decision.replay_class,
         )
         effects.record_intent(session.session_id, session.run_id, intent)

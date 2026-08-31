@@ -317,21 +317,34 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             task_kind=task_kind,
         )
         if not started_ok:
-            state.emit({
-                "type": "status",
-                "status": "error",
-                "error": "runtime_recovery_failed",
-                "run_id": run_id,
-                "session_id": session_id,
-            })
-            _finish_run_operation(deps, work, {
-                "stop_reason": "error",
-                "summary": "Runtime recovery failed to settle unconfirmed effects.",
-                "turns": 0,
-                "max_turns": max_turns,
-                "provider": provider_id,
-            })
-            return
+            error_event = task_done_event(
+                run_id=run_id,
+                session_id=session_id,
+                summary="ERROR: Runtime recovery failed to settle unconfirmed effects.",
+                stop_reason="error",
+                max_turns=max_turns,
+                provider=provider_id,
+                mode=ui_mode(task_kind, project),
+                work=work,
+            )
+            if work is not None:
+                _finish_run_operation(deps, work, error_event)
+            finish_trace(error_event)
+            state.finish_run(run_id, error_event)
+            release_work_item(
+                ghost_deps,
+                work.claimed_work_item if work is not None else claimed_work_item,
+                run_id=run_id,
+                reason="error",
+            )
+            run_ghost_post_turn(
+                ghost_deps,
+                session_id=session_id,
+                run_id=run_id,
+                trigger="error",
+                work_item=work.claimed_work_item if work is not None else claimed_work_item,
+            )
+            return operation_outcome_from_task_done_event(error_event)
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         logged_provider_failures: set[tuple[str, str, str, str]] = set()

@@ -128,7 +128,7 @@ class RuntimeEffectIntent:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION:
+        if self.schema_version != SCHEMA_VERSION or isinstance(self.schema_version, bool):
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
@@ -181,11 +181,16 @@ class RuntimeEffectIntent:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectIntent")
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION:
+        if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
+        if "replay_class" not in payload or payload["replay_class"] not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
+            raise RuntimeEffectError("missing or invalid replay_class in intent payload")
+        if "effect_category" not in payload or payload["effect_category"] not in EFFECT_CATEGORIES:
+            raise RuntimeEffectError("missing or invalid effect_category in intent payload")
+
         return cls(
             effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
-            effect_category=_require_bounded_str(payload.get("effect_category"), "effect_category", MAX_TEXT_CHARS),
+            effect_category=payload["effect_category"],
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
             lane=_require_bounded_str(payload.get("lane") or "", "lane", MAX_REF_CHARS, allow_empty=True),
@@ -198,7 +203,7 @@ class RuntimeEffectIntent:
             tool_id=_require_bounded_str(payload.get("tool_id") or "", "tool_id", MAX_TEXT_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
-            replay_class=_require_bounded_str(payload.get("replay_class") or ReplayClass.UNSAFE, "replay_class", MAX_TEXT_CHARS),
+            replay_class=payload["replay_class"],
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_INTENT,
             schema_version=SCHEMA_VERSION,
@@ -222,7 +227,7 @@ class RuntimeEffectSettlement:
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION:
+        if self.schema_version != SCHEMA_VERSION or isinstance(self.schema_version, bool):
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
@@ -238,6 +243,8 @@ class RuntimeEffectSettlement:
             raise RuntimeEffectError(f"unknown settlement status: {self.status}")
         if self.sent_state not in SENT_STATES:
             raise RuntimeEffectError(f"unknown sent_state: {self.sent_state}")
+        if self.replay_class not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
+            raise RuntimeEffectError("invalid replay_class")
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -265,19 +272,28 @@ class RuntimeEffectSettlement:
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectSettlement")
         version = payload.get("schema_version")
-        if version != SCHEMA_VERSION:
+        if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
+        if "status" not in payload or payload["status"] not in SETTLEMENT_STATUSES:
+            raise RuntimeEffectError("missing or invalid status in settlement payload")
+        if "sent_state" not in payload or payload["sent_state"] not in SENT_STATES:
+            raise RuntimeEffectError("missing or invalid sent_state in settlement payload")
+        if "effect_category" not in payload or payload["effect_category"] not in EFFECT_CATEGORIES:
+            raise RuntimeEffectError("missing or invalid effect_category in settlement payload")
+        if "replay_class" not in payload or payload["replay_class"] not in (ReplayClass.SAFE, ReplayClass.UNSAFE):
+            raise RuntimeEffectError("missing or invalid replay_class in settlement payload")
+
         return cls(
             effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
-            effect_category=_require_bounded_str(payload.get("effect_category"), "effect_category", MAX_TEXT_CHARS),
+            effect_category=payload["effect_category"],
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
-            status=_require_bounded_str(payload.get("status") or SETTLEMENT_STATUS_OK, "status", MAX_TEXT_CHARS),
+            status=payload["status"],
             lane=_require_bounded_str(payload.get("lane") or "", "lane", MAX_REF_CHARS, allow_empty=True),
             operation_id=_require_bounded_str(payload.get("operation_id") or "", "operation_id", MAX_REF_CHARS, allow_empty=True),
             error_code=_require_bounded_str(payload.get("error_code") or "", "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True),
-            sent_state=_require_bounded_str(payload.get("sent_state") or SENT_STATE_SETTLED, "sent_state", MAX_TEXT_CHARS),
-            replay_class=_require_bounded_str(payload.get("replay_class") or ReplayClass.UNSAFE, "replay_class", MAX_TEXT_CHARS),
+            sent_state=payload["sent_state"],
+            replay_class=payload["replay_class"],
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,
@@ -424,6 +440,8 @@ class RuntimeEffectStore:
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Load and aggregate all effect intent/settlement pairs for a run."""
         entries = self.session_log.entries(session_id)
+        expected_lane = lane_for_run(run_id)
+        expected_op = operation_id_for_run(run_id)
         intents: dict[str, RuntimeEffectIntent] = {}
         settlements: dict[str, RuntimeEffectSettlement] = {}
         ordered_effect_ids: list[str] = []
@@ -436,10 +454,31 @@ class RuntimeEffectStore:
                 continue
             if payload.get("effect_kind") != EFFECT_KIND or payload.get("run_id") != run_id:
                 continue
+
+            # Strict validation against run operation lane and operation_id boundary
+            if entry.lane != expected_lane:
+                raise RuntimeEffectError(
+                    f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+                )
+            if entry.operation_id != expected_op:
+                raise RuntimeEffectError(
+                    f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+                )
+            payload_lane = payload.get("lane")
+            if payload_lane and payload_lane != expected_lane:
+                raise RuntimeEffectError(
+                    f"payload lane '{payload_lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+                )
+            payload_op = payload.get("operation_id")
+            if payload_op and payload_op != expected_op:
+                raise RuntimeEffectError(
+                    f"payload operation_id '{payload_op}' does not match expected operation_id '{expected_op}' for run {run_id}"
+                )
+
             record_kind = payload.get("record_kind")
             effect_id = str(payload.get("effect_id") or "")
             if not effect_id:
-                continue
+                raise RuntimeEffectError("missing effect_id in effect payload")
             if record_kind == RECORD_KIND_INTENT:
                 if effect_id not in intents:
                     ordered_effect_ids.append(effect_id)
