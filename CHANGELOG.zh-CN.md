@@ -4,9 +4,13 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased (0.5.1) - Task Runtime Finalization + Completion Repair Durability v1
+## 0.5.1 - Task Runtime Finalization + Completion Repair Durability v1
 
 - 运行时冷启动重构：
+  - release-gate cleanup 修复了 app/api 拆分后真实 HTTP queryless GET
+    JSON endpoint（`/api/ui_state` 和 `/api/providers`）的 dispatch
+    路径，并把 browser/MoA smoke harness 更新到当前 `app.services`
+    provider owner，不再 patch 旧 server re-export。
   - 删除生产 `TaskFlow` 概念并移除 `codey/operations/task_flow.py`。
     server、headless、manual harness 和测试现在都通过
     `codey.operations.task_entry.run_task_submission()` 接收

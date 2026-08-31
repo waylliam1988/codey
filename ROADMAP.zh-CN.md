@@ -3251,7 +3251,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已落地（2026-08-31，compileall、ruff、focused gates、same-run crash/resume smoke 和全量 pytest `3277 passed, 16 skipped in 285.32s (0:04:45)` 完成；changelog 条目在 Unreleased 下，未 release）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已发布（2026-08-31，compileall、ruff、focused gates、deterministic crash-position tests、same-run crash/resume smoke、headed clean UI smoke 和全量 pytest `3278 passed, 16 skipped in 283.92s (0:04:43)` 完成）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
 
 ### 已落地的核心形态
 

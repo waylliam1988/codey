@@ -1510,6 +1510,41 @@ class WebAssetTests(unittest.TestCase):
 
         self.assertEqual(statuses, {path: 404 for path in statuses})
 
+    def test_queryless_get_api_routes_dispatch_through_http(self) -> None:
+        state = server.AppContext()
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        payloads = {}
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    app_services,
+                    "provider_availability",
+                    return_value={"deepseek": True},
+                ),
+            ):
+                for path in ("/api/ui_state", "/api/providers"):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request("GET", path)
+                    response = conn.getresponse()
+                    payloads[path] = (
+                        response.status,
+                        json.loads(response.read().decode("utf-8")),
+                    )
+                    conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(payloads["/api/ui_state"][0], 200)
+        self.assertTrue(payloads["/api/ui_state"][1]["ok"])
+        self.assertEqual(payloads["/api/providers"][0], 200)
+        self.assertIn("providers", payloads["/api/providers"][1])
+
     def test_index_substitutes_version_placeholder(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1536,7 +1571,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.5.0")
+        self.assertEqual(__version__, "0.5.1")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

@@ -17,6 +17,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.providers import controls as provider_controls
+from codey.app import services as app_services
 from codey.app import server as codey_server
 from codey.workspace.changes import collect_changes, is_git_repository
 from codey.agents.consensus import run_project_audit_advisor
@@ -238,10 +239,10 @@ class TimedProvider:
 @contextmanager
 def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.AppContext]:
     state = codey_server.AppContext(state_home)
-    original_state = codey_server.AppContext
+    original_state = codey_server.STATE
     original_connect_provider = codey_server.connect_provider
-    original_connect_existing = codey_server.connect_existing_provider
-    original_borrow_open_provider = codey_server.borrow_open_provider
+    original_connect_existing = app_services.connect_existing_provider
+    original_borrow_open_provider = app_services.borrow_open_provider
 
     def wrap(provider, provider_id: str, role: str):
         if provider is None:
@@ -265,16 +266,16 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
     try:
         codey_server.STATE = state
         codey_server.connect_provider = timed_connect_provider
-        codey_server.connect_existing_provider = timed_connect_existing
-        codey_server.borrow_open_provider = timed_borrow_open_provider
+        app_services.connect_existing_provider = timed_connect_existing
+        app_services.borrow_open_provider = timed_borrow_open_provider
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(state.handle_profile_doctor)
         yield state
     finally:
         codey_server.STATE = original_state
         codey_server.connect_provider = original_connect_provider
-        codey_server.connect_existing_provider = original_connect_existing
-        codey_server.borrow_open_provider = original_borrow_open_provider
+        app_services.connect_existing_provider = original_connect_existing
+        app_services.borrow_open_provider = original_borrow_open_provider
         provider_controls.set_teach_handler(original_state.handle_control_teach)
         provider_controls.set_doctor_handler(original_state.handle_profile_doctor)
 
@@ -384,11 +385,18 @@ def read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def run_reviewer_matrix(project: Path, recorder: FlowRecorder) -> list[dict]:
-    changes = collect_changes(project, codey_server.AppContext.change_tracker_for(
-        str(project.resolve()),
-        persistent=not is_git_repository(project),
-    ))
+def run_reviewer_matrix(
+    state: codey_server.AppContext,
+    project: Path,
+    recorder: FlowRecorder,
+) -> list[dict]:
+    changes = collect_changes(
+        project,
+        state.change_tracker_for(
+            str(project.resolve()),
+            persistent=not is_git_repository(project),
+        ),
+    )
     results: list[dict] = []
     for provider_id in ADVISOR_IDS:
         reviewer = None
@@ -580,7 +588,7 @@ def run_flow(args: argparse.Namespace) -> dict:
                 raise RuntimeError("independent verification failed after create")
 
         with recorder.stage("explicit_diff_review_matrix"):
-            review_results = run_reviewer_matrix(project, recorder)
+            review_results = run_reviewer_matrix(state, project, recorder)
             if not any(item.get("ok") for item in review_results):
                 raise RuntimeError("all explicit diff reviewers failed")
 

@@ -4,9 +4,13 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## Unreleased (0.5.1) - Task Runtime Finalization + Completion Repair Durability v1
+## 0.5.1 - Task Runtime Finalization + Completion Repair Durability v1
 
 - Runtime cold-start refactor:
+  - Release-gate cleanup fixed the real HTTP dispatch path for queryless GET
+    JSON endpoints (`/api/ui_state` and `/api/providers`) after the app/api
+    split, and refreshed the browser/MoA smoke harnesses to patch the current
+    `app.services` provider owner instead of stale server re-exports.
   - Removed the production `TaskFlow` concept and deleted
     `codey/operations/task_flow.py`. Server, headless, manual harnesses, and
     tests now enter through `codey.operations.task_entry.run_task_submission()`

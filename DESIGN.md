@@ -237,10 +237,10 @@ One optional `Progress` row (0.5.1) explains where an interrupted run stopped,
 sourced from the run's durable operation state: it appears only when the
 operation state never reached terminal and the ledger has no `run_finished`
 row. The copy is fixed English -- `Writing was interrupted`,
-`Completion check was interrupted`, or `Stopped during repair` -- with warning
-tone and no internal phase names (`writer_running`, `RunOperationState`, ...).
-A finished run never shows the row, even if a stale non-terminal snapshot
-exists on disk.
+`Completion check was interrupted`, `Finishing was interrupted`, or
+`Stopped during repair` -- with warning tone and no internal phase names
+(`writer_running`, `RunOperationState`, ...). A finished run never shows the
+row, even if a stale non-terminal snapshot exists on disk.
 
 **Changes summary** (inline, not a pill):
 

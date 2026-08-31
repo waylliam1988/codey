@@ -986,8 +986,8 @@ def _shell_approval_route(ctx: AppContext, body: dict) -> tuple[int, dict]:
 
 _GET_ROUTES = {
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
-    "/api/ui_state": app_api.ui_state_response,
-    "/api/providers": app_api.providers_response,
+    "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
+    "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
     "/api/research/graph": app_api.research_graph_response,
     "/api/research/concept_graph": app_api.research_concept_graph_response,

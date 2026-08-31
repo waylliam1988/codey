@@ -86,7 +86,8 @@ harness:    test_task_flow_* files were renamed by owner
             instead of requiring server to re-export old private service names.
 mode:       compileall, ruff, focused gates, wider server/research/manual
             harness gates, same-run crash/resume self-test, then full pytest.
-            No release and no version bump.
+            Released as 0.5.1 after release-gate cleanup, headed UI smoke,
+            and final full pytest.
 ```
 
 Focused and related gates before the final full run:
@@ -154,17 +155,50 @@ git diff --check
 no whitespace errors; Git reported only CRLF normalization warnings
 ```
 
+Release review gates after fixing stale server-private patch points in the UI
+and MoA smoke harnesses, plus the real HTTP GET route dispatch regression:
+
+```text
+python -m ruff check codey tests tools
+All checks passed
+
+python -B -m pytest tests/test_task_entry_operation_state.py::CrashPositionTests -q
+3 passed, 6 subtests passed in 0.82s
+
+python -B tests/manual/completion_operation_resume_smoke.py --self-test
+ok: crash resume reports the last committed phase and resumes the same run
+
+python -B tools/ui_e2e.py --json --artifacts .tmp-ui-e2e-precheck
+ok: clean browser UI path, run details, SSE reconnect, shell approval, and responsive stop
+
+python -B tools/ui_e2e.py --headed --json --artifacts .tmp-ui-e2e-headed
+ok: headed clean browser UI path with the same checks
+
+python -B -m pytest tests/test_architecture.py tests/test_event_matrix.py -q
+76 passed, 479 subtests passed in 10.04s
+
+python -B -m pytest tests/test_project_completion_flow_enforcement.py \
+  tests/test_project_completion_flow_edit_integrity.py \
+  tests/test_completion_verification.py tests/test_completion_edit_integrity.py \
+  tests/test_completion_contract.py -q
+106 passed, 26 subtests passed in 9.10s
+
+python -B -m pytest tests/test_server.py tests/test_ui.py \
+  tests/test_ui_architecture.py tests/test_ui_browser_e2e.py -q
+257 passed, 2 skipped in 29.28s
+```
+
 Earlier full runs in this cold-start sequence exposed stale server-private
 patch points and one headless shell-denial regression where the stop flag
 overrode the explicit `approval` terminal result. Both were fixed before the
-final full run.
+final release run.
 
 Final full local pytest (Windows, Python 3.12, 2026-08-31, after code was
 stable and before updating this report):
 
 ```text
-python -m pytest
-3277 passed, 16 skipped in 285.32s (0:04:45)
+python -B -m pytest
+3278 passed, 16 skipped in 283.92s (0:04:43)
 ```
 
 ## 0.5.1 Single Task Operation + Project Completion Split (2026-08-30)

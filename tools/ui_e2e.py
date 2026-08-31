@@ -16,6 +16,7 @@ if __package__ in (None, ""):
 
 from codey.runtime import cancellation
 from codey.providers import controls as provider_controls
+from codey.app import services as app_services
 from codey.app import server as codey_server
 
 
@@ -472,23 +473,29 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
 
     original_state = codey_server.STATE
     original_connect_provider = codey_server.connect_provider
-    original_connect_existing = codey_server.connect_existing_provider
-    original_provider_availability = codey_server.provider_availability
+    original_connect_fresh_provider_tab = codey_server.connect_fresh_provider_tab
+    original_provider_tab_availability = codey_server.provider_tab_availability
+    original_service_connect_existing = app_services.connect_existing_provider
+    original_service_connect_fresh_provider_tab = app_services.connect_fresh_provider_tab
+    original_service_provider_tab_availability = app_services.provider_tab_availability
     original_pick_folder = codey_server.pick_folder
     writer = ScriptedWriter()
     httpd: codey_server.CodeyHTTPServer | None = None
     try:
-        codey_server.STATE = codey_server.State(temp_root / "state")
+        codey_server.STATE = codey_server.AppContext(temp_root / "state")
         provider_controls.set_teach_handler(codey_server.STATE.handle_control_teach)
         codey_server.connect_provider = lambda provider_id: writer
-        codey_server.connect_existing_provider = lambda provider_id: ScriptedReviewer()
-        codey_server.provider_availability = lambda: {
+        codey_server.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
+        codey_server.provider_tab_availability = lambda: {
             "deepseek": True,
             "mimo": True,
             "qwen": True,
             "stepfun": True,
             "glm": True,
         }
+        app_services.connect_existing_provider = lambda provider_id: ScriptedReviewer()
+        app_services.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
+        app_services.provider_tab_availability = codey_server.provider_tab_availability
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
 
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
@@ -521,8 +528,11 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             httpd.server_close()
         codey_server.STATE = original_state
         codey_server.connect_provider = original_connect_provider
-        codey_server.connect_existing_provider = original_connect_existing
-        codey_server.provider_availability = original_provider_availability
+        codey_server.connect_fresh_provider_tab = original_connect_fresh_provider_tab
+        codey_server.provider_tab_availability = original_provider_tab_availability
+        app_services.connect_existing_provider = original_service_connect_existing
+        app_services.connect_fresh_provider_tab = original_service_connect_fresh_provider_tab
+        app_services.provider_tab_availability = original_service_provider_tab_availability
         codey_server.pick_folder = original_pick_folder
         provider_controls.set_teach_handler(original_state.handle_control_teach)
         provider_controls.set_doctor_handler(original_state.handle_profile_doctor)
