@@ -110,12 +110,12 @@ ChatProvider
 ```text
 codey/protocols/base.py
 codey/protocols/json_codec.py
-codey/models.py
-codey/tool_definition.py
-codey/agent_tools.py
-codey/tool_runtime.py
-codey/agent.py
-codey/run_trace.py
+codey/runtime/models.py
+codey/toolchain/definition.py
+codey/agents/tools.py
+codey/toolchain/runtime.py
+codey/agents/loop.py
+codey/runs/trace.py
 ```
 
 Research 有独立但相似的协议边界：
@@ -135,7 +135,7 @@ codey/research/tool_contract.py
 codey/research/protocols.py
 codey/research/controller.py
 codey/research/runner.py
-codey/run_trace.py
+codey/runs/trace.py
 ```
 
 当前主要短板：
@@ -202,7 +202,7 @@ operand、`-c` config、`--rootdir`、`--confcutdir`、`--basetemp`，以及
 建议文件：
 
 ```text
-codey/run_trace.py
+codey/runs/trace.py
 tests/test_run_trace.py
 tests/test_agent.py
 tests/test_research.py
@@ -210,7 +210,7 @@ tests/test_research.py
 
 #### RunTrace 函数级修改
 
-在 `codey/run_trace.py`：
+在 `codey/runs/trace.py`：
 
 1. 新增常量：
 
@@ -340,7 +340,7 @@ def _protocol_bucket(manifest: RunTraceManifest, phase: str) -> dict[str, object
 
 #### Coding 接入点
 
-在 `codey/agent.py::run()`：
+在 `codey/agents/loop.py::run()`：
 
 1. `codec = codec or JsonToolCodec(...)` 后，记录 codec：
 
@@ -552,7 +552,7 @@ numeric strings for offset/limit -> bounded ints
 
 ```text
 codey/tool_prompt.py
-codey/tool_definition.py
+codey/toolchain/definition.py
 codey/research/tool_contract.py
 tests/test_tool_prompt.py
 tests/test_protocols.py

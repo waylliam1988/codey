@@ -2571,7 +2571,7 @@ proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把�
   `source = local_run / checkpoint / none`。inherited pass 保持 receipt 绿色
   但 proof 记录 limitation（`inherited_verification_not_fresh`），不再被当作
   本轮 clean verification fact；模型自报 pass 不再产生任何事实。
-- `codey/completion_repair_context.py`：纯 projection leaf，只消费已生成的
+- `codey/completion/repair_context.py`：纯 projection leaf，只消费已生成的
   CompletionProof payload（不 import completion_contract），admit 仅限
   failed + product_failure 且必须存在筛后幸存的 decisive check facts
   （否则以 `refused_no_safe_check_facts` 拒绝 admit）；输出 facts-only
@@ -3062,7 +3062,9 @@ schema-v1 receipt；Run Details / Headless / Web UI / ghost work queue 全部改
 Qwen/MiMo 篡改 signature 的 deterministic replay gate（17 例）+ 两条最小 live
 smoke 入口（DeepSeek clean、Qwen/MiMo dependency_missing）。按 A/B 规则本版
 clean path 不需要生产质量 A/B；deterministic gate 已通过，两条 live smoke 已
-补齐 manual evidence。Graduation / Delete Gate 评估推迟到 0.5.2 前。
+补齐 manual evidence。0.5.2 已选择继续保留 production receipt warning，不把
+high-confidence suspicious 升级成 hard block；block / repair-admission 升级必须另排
+A/B，证明低误伤且有净收益后再做。
 
 0.4 stabilization 的触发证据：
 
@@ -3237,12 +3239,15 @@ enforcement:
 
 ### Graduation / Delete Gate
 
-这个 monitor 不能长期停在“有代码但没产品价值”的状态。0.5.2 前必须二选一：
+这个 monitor 不能长期停在“有代码但没产品价值”的状态。0.5.2 的收口决策是：
+保留 production warning，因为它已经进入 receipt / trace / Run Details，并能让
+`modified_test_fixture` 类问题不再伪装成 clean verified completion；暂不升级为
+completion block 或 repair admission。
 
 ```text
-graduation:
+future graduation:
   high-confidence suspicious -> completion policy block 或 repair context admission
-  前提是 A/B 证明不会误杀用户授权的测试修改
+  前提是 A/B 证明不会误杀用户授权的测试修改，且能减少 false completion
 
 delete/degrade:
   如果误伤高、用户噪音高、或不能稳定复现 Qwen/MiMo failure mode，
@@ -4750,7 +4755,7 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
    -> repair failover.run(...) 前后 commit repair_round_intent/settlement
 
 3. tool replay policy
-   -> 新增 codey/replay_policy.py
+   -> 新增 codey/runtime/replay_policy.py
    -> read/ls/search/references/project_facts 标 safe
    -> edit/write/shell/run/knowledge_write/unknown 默认 unsafe
    -> unsafe effect_pending 恢复时 synthetic interrupted result，不重复执行
@@ -4763,6 +4768,42 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 0.5.0：让 edit/test integrity 进入 production completion path，并在高风险时给 receipt warning
 0.5.1：让 completion/repair 状态可恢复、可解释
 0.5.2：让 provider/tool effects 有 intent/settlement 和 replay policy
+```
+
+## 0.4 遗留想法的闭环清单
+
+这部分不是新功能接线，而是防止 0.4 A/B / shadow / telemetry 成果被忘掉。每一项
+必须在对应版本交付真实消费者；如果没有消费者，就删除或继续停留在 manual harness，
+不能以“以后会用”为理由进入 production path。
+
+```text
+Research bounded follow-up：
+  当前状态：已接入生产 ResearchPipeline，安全闭环成立。
+  未闭环：多 provider proof-quality 净收益还没稳定证明。
+  收口方式：保留 evidence-only 边界；后续只根据 A/B/journal 暴露的真实问题改 planner /
+    material selection / merge selection，不推广 batch/checklist 方案。
+
+source_connector_done batch/checklist：
+  当前状态：manual A/B 结论不推广；不是默认生产 completion 能力。
+  收口方式：若要复活，先写 deterministic scorer 和 live A/B arm，证明 done quality /
+    citation quality / completion honesty 提升，且不增加 provider stalls，再改生产 finalizer。
+
+Protocol telemetry / contract hash：
+  当前状态：RunTrace 已记录，可用于审计和 A/B。
+  未闭环：必须被 0.5.3 tool args repair、0.5.5 contract drift guard、0.5.6 affinity
+    learning 消费；否则会变成只写不用的 telemetry。
+  收口方式：每个字段都要有 deterministic test 或 release gate 消费者；长期无消费者的
+    telemetry 字段删除。
+
+Safe read/search replay：
+  当前状态：0.5.2 只记录 retryable recovery projection，不自动重跑。
+  收口方式：0.5.4 在 0.5.3 canonical args 后按 persisted safe replay_args 自动 replay；
+    unsafe replay count 必须始终为 0。
+
+Research untrusted source wrapper：
+  当前状态：计划项，不默认生产渲染。
+  收口方式：0.5.5 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
+    evidence quality / source coverage / completion honesty，才改默认 source rendering。
 ```
 
 ## Adapter 自修复 prompt 分层（后续）
