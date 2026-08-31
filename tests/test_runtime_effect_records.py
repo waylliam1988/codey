@@ -32,6 +32,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.store = RuntimeEffectStore(self.log)
         self.session_id = "sess-1"
         self.run_id = "run-1"
+        self.lane = lane_for_run(self.run_id)
+        self.op_id = operation_id_for_run(self.run_id)
         # Start a real operation via RuntimeOperationStore
         self.operations.start(
             session_id=self.session_id,
@@ -389,6 +391,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "effect_category": "tool_call",
             "session_id": "s1",
             "run_id": "r1",
+            "lane": self.lane,
+            "operation_id": self.op_id,
             "replay_class": "safe",
         }
         # Missing replay_class
@@ -403,6 +407,12 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectIntent.from_payload(p)
 
+        # Missing lane
+        p = dict(base_intent_payload)
+        del p["lane"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
         base_settlement_payload = {
             "schema_version": 1,
             "effect_kind": "runtime_effect",
@@ -411,6 +421,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "effect_category": "tool_call",
             "session_id": "s1",
             "run_id": "r1",
+            "lane": self.lane,
+            "operation_id": self.op_id,
             "status": "ok",
             "sent_state": "settled",
             "replay_class": "unsafe",
@@ -424,6 +436,12 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         # Missing sent_state
         p = dict(base_settlement_payload)
         del p["sent_state"]
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+        # Missing operation_id
+        p = dict(base_settlement_payload)
+        del p["operation_id"]
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectSettlement.from_payload(p)
 
@@ -464,6 +482,91 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         with self.assertRaises(RuntimeEffectError) as ctx:
             self.store.load_effects(self.session_id, self.run_id)
         self.assertIn("does not match expected lane", str(ctx.exception))
+
+    def test_direct_log_duplicate_intent_raises(self) -> None:
+        eff_id = "eff_dup_intent"
+        intent_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "intent",
+            "ref": f"effect:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "replay_class": "safe",
+        }
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload)
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload)
+
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("duplicate intent in session log", str(ctx.exception))
+
+    def test_direct_log_orphan_settlement_raises(self) -> None:
+        eff_id = "eff_orphan_settlement"
+        settlement_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "settlement",
+            "ref": f"effect_settlement:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "status": "ok",
+            "sent_state": "settled",
+            "replay_class": "unsafe",
+        }
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=settlement_payload)
+
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("orphan settlement without intent in session log", str(ctx.exception))
+
+    def test_direct_log_conflicting_settlement_raises(self) -> None:
+        eff_id = "eff_conflict_settlement"
+        intent_payload = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "intent",
+            "ref": f"effect:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "replay_class": "unsafe",
+        }
+        settlement1 = {
+            "schema_version": 1,
+            "effect_kind": "runtime_effect",
+            "record_kind": "settlement",
+            "ref": f"effect_settlement:{eff_id}",
+            "effect_id": eff_id,
+            "effect_category": "tool_call",
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "lane": self.lane,
+            "operation_id": self.op_id,
+            "status": "ok",
+            "sent_state": "settled",
+            "replay_class": "unsafe",
+        }
+        settlement2 = dict(settlement1, status="error", error_code="disk_full")
+
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=intent_payload)
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=settlement1)
+        self.log.append(self.session_id, lane=self.lane, operation_id=self.op_id, kind="operation_effect", payload=settlement2)
+
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.load_effects(self.session_id, self.run_id)
+        self.assertIn("conflicting duplicate settlement in session log", str(ctx.exception))
 
 
 if __name__ == "__main__":

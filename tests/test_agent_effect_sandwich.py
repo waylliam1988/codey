@@ -338,7 +338,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         emitted_events: list[dict] = []
         state.emit = lambda event: emitted_events.append(event)
 
-        with patch.object(state, "get_provider", return_value=MockProvider()):
+        with patch.object(state, "get_provider", return_value=MockProvider()), \
+             patch("codey.operations.task_run.run_ghost_post_turn", autospec=True) as mock_ghost:
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -357,6 +358,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertFalse(agent_called)
         # Registry must NOT be busy
         self.assertFalse(state.run_registry.is_busy())
+        # Not a provider failure
+        self.assertIsNone(state.run_registry.last_provider_failure())
+        # Ghost post-turn called cleanly
+        mock_ghost.assert_called_once()
         # Terminal event must be stop_reason="error"
         done_events = [e for e in emitted_events if e.get("type") == "task_done"]
         self.assertEqual(len(done_events), 1)

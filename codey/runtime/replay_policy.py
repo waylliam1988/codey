@@ -8,7 +8,7 @@ repair rounds, and unknown tools).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 SAFE_TOOL_NAMES = frozenset({
     "read",
@@ -44,16 +44,6 @@ class ReplayDecision:
     retryable: bool
     policy_denied: bool = False
     approval_required: bool = False
-
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "replay_class": self.replay_class,
-            "reason": self.reason,
-            "retryable": self.retryable,
-            "policy_denied": self.policy_denied,
-            "approval_required": self.approval_required,
-        }
 
 
 def tool_replay_policy(

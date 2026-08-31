@@ -339,10 +339,10 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             )
             run_ghost_post_turn(
                 ghost_deps,
-                session_id=session_id,
-                run_id=run_id,
-                trigger="error",
-                work_item=work.claimed_work_item if work is not None else claimed_work_item,
+                None,
+                error_event,
+                work.claimed_work_item if work is not None else claimed_work_item,
+                project_text=str(project or ""),
             )
             return operation_outcome_from_task_done_event(error_event)
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)

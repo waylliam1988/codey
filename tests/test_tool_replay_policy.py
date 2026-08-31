@@ -68,15 +68,6 @@ class ToolReplayPolicyTests(unittest.TestCase):
         self.assertEqual(r_decision.replay_class, ReplayClass.UNSAFE)
         self.assertFalse(r_decision.retryable)
 
-    def test_to_payload_contract(self) -> None:
-        decision = tool_replay_policy("read")
-        payload = decision.to_payload()
-        self.assertEqual(payload["name"], "read")
-        self.assertEqual(payload["replay_class"], "safe")
-        self.assertTrue(payload["retryable"])
-        self.assertFalse(payload["policy_denied"])
-        self.assertFalse(payload["approval_required"])
-
 
 if __name__ == "__main__":
     unittest.main()

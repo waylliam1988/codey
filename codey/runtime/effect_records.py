@@ -193,8 +193,8 @@ class RuntimeEffectIntent:
             effect_category=payload["effect_category"],
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
-            lane=_require_bounded_str(payload.get("lane") or "", "lane", MAX_REF_CHARS, allow_empty=True),
-            operation_id=_require_bounded_str(payload.get("operation_id") or "", "operation_id", MAX_REF_CHARS, allow_empty=True),
+            lane=_require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS),
+            operation_id=_require_bounded_str(payload.get("operation_id"), "operation_id", MAX_REF_CHARS),
             phase=_require_bounded_str(payload.get("phase") or "", "phase", MAX_TEXT_CHARS, allow_empty=True),
             provider_id=_require_bounded_str(payload.get("provider_id") or "", "provider_id", MAX_TEXT_CHARS, allow_empty=True),
             turn=_require_nonnegative_int(payload.get("turn") if payload.get("turn") is not None else 0, "turn"),
@@ -289,8 +289,8 @@ class RuntimeEffectSettlement:
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
             status=payload["status"],
-            lane=_require_bounded_str(payload.get("lane") or "", "lane", MAX_REF_CHARS, allow_empty=True),
-            operation_id=_require_bounded_str(payload.get("operation_id") or "", "operation_id", MAX_REF_CHARS, allow_empty=True),
+            lane=_require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS),
+            operation_id=_require_bounded_str(payload.get("operation_id"), "operation_id", MAX_REF_CHARS),
             error_code=_require_bounded_str(payload.get("error_code") or "", "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True),
             sent_state=payload["sent_state"],
             replay_class=payload["replay_class"],
@@ -438,7 +438,7 @@ class RuntimeEffectStore:
         session_id: str,
         run_id: str,
     ) -> tuple[RuntimeEffectProjection, ...]:
-        """Load and aggregate all effect intent/settlement pairs for a run."""
+        """Load and aggregate all effect intent/settlement pairs for a run in strict chronological order."""
         entries = self.session_log.entries(session_id)
         expected_lane = lane_for_run(run_id)
         expected_op = operation_id_for_run(run_id)
@@ -465,12 +465,12 @@ class RuntimeEffectStore:
                     f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
                 )
             payload_lane = payload.get("lane")
-            if payload_lane and payload_lane != expected_lane:
+            if not payload_lane or payload_lane != expected_lane:
                 raise RuntimeEffectError(
                     f"payload lane '{payload_lane}' does not match expected lane '{expected_lane}' for run {run_id}"
                 )
             payload_op = payload.get("operation_id")
-            if payload_op and payload_op != expected_op:
+            if not payload_op or payload_op != expected_op:
                 raise RuntimeEffectError(
                     f"payload operation_id '{payload_op}' does not match expected operation_id '{expected_op}' for run {run_id}"
                 )
@@ -479,12 +479,34 @@ class RuntimeEffectStore:
             effect_id = str(payload.get("effect_id") or "")
             if not effect_id:
                 raise RuntimeEffectError("missing effect_id in effect payload")
+
             if record_kind == RECORD_KIND_INTENT:
-                if effect_id not in intents:
-                    ordered_effect_ids.append(effect_id)
+                if effect_id in intents:
+                    raise RuntimeEffectError(f"duplicate intent in session log: {effect_id}")
+                ordered_effect_ids.append(effect_id)
                 intents[effect_id] = RuntimeEffectIntent.from_payload(payload)
+
             elif record_kind == RECORD_KIND_SETTLEMENT:
-                settlements[effect_id] = RuntimeEffectSettlement.from_payload(payload)
+                if effect_id not in intents:
+                    raise RuntimeEffectError(f"orphan settlement without intent in session log: {effect_id}")
+                new_settlement = RuntimeEffectSettlement.from_payload(payload)
+                if new_settlement.effect_category != intents[effect_id].effect_category:
+                    raise RuntimeEffectError(
+                        f"settlement category '{new_settlement.effect_category}' does not match intent category '{intents[effect_id].effect_category}'"
+                    )
+                if effect_id in settlements:
+                    existing = settlements[effect_id]
+                    if (
+                        existing.status == new_settlement.status
+                        and existing.error_code == new_settlement.error_code
+                        and existing.sent_state == new_settlement.sent_state
+                        and existing.effect_category == new_settlement.effect_category
+                        and existing.replay_class == new_settlement.replay_class
+                    ):
+                        continue
+                    raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")
+                settlements[effect_id] = new_settlement
+
             else:
                 raise RuntimeEffectError(f"unknown record_kind: {record_kind}")
 
