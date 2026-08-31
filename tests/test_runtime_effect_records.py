@@ -387,6 +387,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "schema_version": 1,
             "effect_kind": "runtime_effect",
             "record_kind": "intent",
+            "ref": "effect:eff_1",
             "effect_id": "eff_1",
             "effect_category": "tool_call",
             "session_id": "s1",
@@ -436,6 +437,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             "schema_version": 1,
             "effect_kind": "runtime_effect",
             "record_kind": "settlement",
+            "ref": "effect_settlement:eff_1",
             "effect_id": "eff_1",
             "effect_category": "tool_call",
             "session_id": "s1",
@@ -468,6 +470,42 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         del p["operation_id"]
         with self.assertRaises(RuntimeEffectError):
             RuntimeEffectSettlement.from_payload(p)
+
+        # Wrong refs and unknown keys are rejected instead of silently ignored.
+        p = dict(base_intent_payload, ref="effect:other")
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        p = dict(base_settlement_payload, ref="effect_settlement:other")
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+        p = dict(base_intent_payload, unused_future_field=True)
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent.from_payload(p)
+
+        p = dict(base_settlement_payload, unused_future_field=True)
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement.from_payload(p)
+
+        # Dataclass construction also keeps timestamp fields bounded.
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent(
+                effect_id="bad_created_at",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                created_at="x" * 121,
+            )
+
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectSettlement(
+                effect_id="bad_created_at_settlement",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                created_at="x" * 121,
+            )
 
     def test_load_effects_mismatched_lane_or_operation_raises(self) -> None:
         # Start a second operation for run-2

@@ -11,6 +11,14 @@ from codey.runtime.outcome import OperationOutcome
 from codey.runtime.reducer import reduce_session
 from codey.runtime.scheduler import OperationScheduler
 from codey.runtime import cancellation
+from codey.runtime.effect_records import (
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectIntent,
+    RuntimeEffectSettlement,
+    RuntimeEffectStore,
+)
+from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import (
     RuntimeLogCorruption,
     RuntimeLogEntry,
@@ -302,6 +310,84 @@ class RuntimeSessionLogTests(unittest.TestCase):
 
         self.assertEqual(projection.operations["op-1"].status, "settled")
         self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
+
+    def test_compaction_retains_open_runtime_effect_recovery_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td), max_log_bytes=16000)
+            operations = RuntimeOperationStore(log)
+            effects = RuntimeEffectStore(log)
+            started = operations.start(
+                session_id="s1",
+                run_id="run-1",
+                project="",
+                provider_id="deepseek",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            assert started is not None
+
+            read_id = "eff_read_compact"
+            effects.record_intent(
+                "s1",
+                "run-1",
+                RuntimeEffectIntent(
+                    effect_id=read_id,
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id="s1",
+                    run_id="run-1",
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_class=ReplayClass.SAFE,
+                ),
+            )
+            effects.record_settlement(
+                "s1",
+                "run-1",
+                RuntimeEffectSettlement(
+                    effect_id=read_id,
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id="s1",
+                    run_id="run-1",
+                    replay_class=ReplayClass.SAFE,
+                ),
+            )
+
+            edit_id = "eff_edit_compact"
+            effects.record_intent(
+                "s1",
+                "run-1",
+                RuntimeEffectIntent(
+                    effect_id=edit_id,
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id="s1",
+                    run_id="run-1",
+                    turn=1,
+                    tool_index=1,
+                    tool_name="edit",
+                    replay_class=ReplayClass.UNSAFE,
+                ),
+            )
+
+            for index in range(30):
+                log.append(
+                    "s1",
+                    lane=started.lane,
+                    operation_id=started.operation_id,
+                    kind="operation_effect",
+                    payload={
+                        "effect_kind": "run_phase",
+                        "ref": f"phase:{index}",
+                        "padding": "x" * 150,
+                    },
+                )
+
+            recovered = RuntimeEffectStore(log).load_effects("s1", "run-1")
+
+        by_id = {projection.intent.effect_id: projection for projection in recovered}
+        self.assertFalse(by_id[read_id].is_pending)
+        self.assertTrue(by_id[edit_id].is_pending)
 
     def test_rejects_second_open_operation_in_lane(self) -> None:
         with tempfile.TemporaryDirectory() as td:

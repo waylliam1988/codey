@@ -38,12 +38,8 @@ ReplayClassType = Literal["safe", "unsafe"]
 
 @dataclass(frozen=True)
 class ReplayDecision:
-    name: str
     replay_class: ReplayClassType
     reason: str
-    retryable: bool
-    policy_denied: bool = False
-    approval_required: bool = False
 
 
 def tool_replay_policy(
@@ -60,60 +56,43 @@ def tool_replay_policy(
     canonical_name = str(tool_name or "").strip()
     if policy_denied:
         return ReplayDecision(
-            name=canonical_name,
             replay_class=ReplayClass.UNSAFE,
             reason="policy_denied",
-            retryable=False,
-            policy_denied=True,
         )
     if approval_required or canonical_name == "shell":
         return ReplayDecision(
-            name=canonical_name,
             replay_class=ReplayClass.UNSAFE,
             reason="approval_required" if approval_required else "shell_command",
-            retryable=False,
-            approval_required=approval_required,
         )
     if canonical_name in SAFE_TOOL_NAMES:
         return ReplayDecision(
-            name=canonical_name,
             replay_class=ReplayClass.SAFE,
             reason="read_only_tool",
-            retryable=True,
         )
     if canonical_name in UNSAFE_TOOL_NAMES:
         return ReplayDecision(
-            name=canonical_name,
             replay_class=ReplayClass.UNSAFE,
             reason="mutating_or_executing_tool",
-            retryable=False,
         )
     return ReplayDecision(
-        name=canonical_name,
         replay_class=ReplayClass.UNSAFE,
         reason="unknown_tool",
-        retryable=False,
     )
 
 
 def provider_replay_policy(purpose: str = "") -> ReplayDecision:
     """Classify an outbound provider prompt send."""
-    canonical_purpose = str(purpose or "provider_send").strip()
     return ReplayDecision(
-        name=canonical_purpose,
         replay_class=ReplayClass.UNSAFE,
         reason="outbound_provider_call",
-        retryable=False,
     )
 
 
 def repair_replay_policy() -> ReplayDecision:
     """Classify a bounded completion repair round."""
     return ReplayDecision(
-        name="completion_repair",
         replay_class=ReplayClass.UNSAFE,
         reason="completion_repair_round",
-        retryable=False,
     )
 
 

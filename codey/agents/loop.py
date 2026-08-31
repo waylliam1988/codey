@@ -349,22 +349,23 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
             except Exception as exc:
                 outcome = tool_error_outcome(exc)
 
-            record_tool_outcome(
-                session,
-                turn_state,
-                turn=turn,
-                call=call,
-                outcome=outcome,
-                tool_index=tool_index,
-            )
-
-            if effect_id:
-                record_tool_call_settlement(
+            try:
+                record_tool_outcome(
                     session,
-                    effect_id,
+                    turn_state,
+                    turn=turn,
+                    call=call,
                     outcome=outcome,
-                    replay_decision=replay_decision,
+                    tool_index=tool_index,
                 )
+            finally:
+                if effect_id:
+                    record_tool_call_settlement(
+                        session,
+                        effect_id,
+                        outcome=outcome,
+                        replay_decision=replay_decision,
+                    )
 
         if session.conversation is not None:
             session.conversation.update_snapshot(

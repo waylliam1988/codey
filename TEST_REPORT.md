@@ -17,8 +17,9 @@ Scope:
 runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe)
             and ReplayDecision for tool, provider, and repair operations.
             Safe read-only tools (read, ls, search, references, project_facts, project_map)
-            are classified as safe and retryable. Modifying actions (edit, write,
-            shell, run, knowledge_write) and unknown tools are classified as unsafe.
+            are classified as safe and produce retryable recovery projections.
+            Modifying actions (edit, write, shell, run, knowledge_write) and unknown tools
+            are classified as unsafe.
             run is unconditionally classified as unsafe.
             introduced codey.runtime.effect_records with RuntimeEffectStore,
             RuntimeEffectIntent, RuntimeEffectSettlement, RuntimeEffectProjection,
@@ -29,14 +30,16 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             record_settlement() strictly verifies existence of matching intent.
             Safe settlement helper record_settlement_safely() guarantees logging
             failures never mask real business outcomes/errors.
-            Session log compaction (_compact_entries) explicitly retains pending intents
-            and recovery-relevant settlements (interrupted/error/maybe_sent) for open operations.
+            Session log compaction (_compact_entries) explicitly retains closed runtime effect
+            pairs plus pending intents for open operations, and recovery-relevant settlements
+            (interrupted/error/maybe_sent) for settled operations.
             On resume, pending unconfirmed effects are projected and synthesized as interrupted.
             Resume recovery pre-gates any external provider/route/claim side effects and fails closed
             immediately on store/recovery failure, completing full lifecycle cleanup (standard task_done
             event, state.finish_run, run_ghost_post_turn) and blocking external execution.
-            Effect payloads strictly require session_id, lane, operation_id, turn, and tool_index fields;
-            enum fields (effect_category, replay_class, status, sent_state) enforce strict string type
+            Effect payloads strictly require session_id, lane, operation_id, turn, tool_index,
+            and canonical ref fields; unknown effect payload keys are rejected; enum fields
+            (effect_category, replay_class, status, sent_state) enforce strict string type
             before membership.
             record_intent() and record_settlement() strictly validate session_id, run_id, lane, and operation_id
             consistency against the target run boundary.
@@ -44,6 +47,8 @@ runtime:    introduced codey.runtime.replay_policy with ReplayClass (safe/unsafe
             for all entries matching current operation or run, rejects duplicate intents, rejects orphan
             settlements without preceding intents, and strictly validates duplicate settlement idempotence
             or conflict.
+            Release review hardened RuntimeEffectIntent/RuntimeEffectSettlement payload parsing:
+            created_at is bounded, canonical ref is required, and unknown effect payload keys fail closed.
 agent:      wired provider send into _send_provider_with_effect, tool execution into
             evaluate_tool_call_policy -> record_tool_call_intent -> emit_tool_started ->
             execute_tool_call -> record_tool_outcome -> record_tool_call_settlement,
@@ -52,13 +57,53 @@ agent:      wired provider send into _send_provider_with_effect, tool execution 
             Tool iteration initializes effect_id per call to guarantee intent failures fail closed
             without executing tools or settling previous effect ids.
             Provider prompt args_digest hashes full prompt text without truncation.
-            Deleted obsolete begin_tool_call() and unused ReplayDecision.to_payload().
+            Tool settlement is attempted in a finally after tool outcome recording so event
+            callback failures do not leave completed effects permanently pending.
+            Deleted obsolete begin_tool_call() and future-only ReplayDecision payload/retry flags.
 runs/app:   updated load_run_details and API endpoints to project quiet Recovery rows
             ("Local write was interrupted and was not repeated", "Provider response was not confirmed",
             "Read action can be retried") only for settled interrupted effects, ignoring
             in-flight pending effects and normal provider errors to avoid false recovery warnings.
-test suite: 3327 passed, 4 skipped in 290.35s (0:04:50). All architecture, server,
+            Recovery is gated once before work-item claim, Ghost auto-router, and provider sends;
+            _start_run_operation() remains a single-purpose operation-state opener.
+test suite: 3316 passed, 16 skipped in 283.85s (0:04:43). All architecture, server,
             reducer, loop, effect, and replay tests pass cleanly with 0 failures.
+```
+
+Release review gates:
+
+```text
+python -m pytest tests/test_tool_replay_policy.py tests/test_runtime_effect_records.py \
+  tests/test_agent_effect_sandwich.py tests/test_runtime_session_log.py \
+  tests/test_task_entry_operation_state.py tests/test_run_details.py -q
+87 passed, 33 subtests passed in 5.31s
+
+python -m ruff check codey tests tools
+All checks passed
+
+python -m pytest tests/test_architecture.py tests/test_event_matrix.py \
+  tests/test_server.py tests/test_headless_runner.py \
+  tests/test_project_completion_flow_enforcement.py \
+  tests/test_project_completion_flow_edit_integrity.py -q
+294 passed, 1 skipped, 479 subtests passed in 45.37s
+
+python -m pytest tests/test_tool_replay_policy.py tests/test_runtime_effect_records.py \
+  tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py \
+  tests/test_server.py tests/test_headless_runner.py tests/test_run_details.py \
+  tests/test_architecture.py tests/test_event_matrix.py \
+  tests/test_project_completion_flow_enforcement.py \
+  tests/test_project_completion_flow_edit_integrity.py \
+  tests/test_task_entry_operation_state.py -q
+381 passed, 1 skipped, 512 subtests passed in 50.52s
+
+python -B tests/manual/completion_operation_resume_smoke.py --self-test
+ok: crash resume reports the last committed phase and resumes the same run
+
+git diff --check
+no whitespace errors; Git reported only CRLF normalization warnings
+
+python -B -m pytest
+3316 passed, 16 skipped in 283.85s (0:04:43)
 ```
 
 ## 0.5.1 TaskFlow Deletion + Runtime/Agent/Ghost Finalization (2026-08-31)

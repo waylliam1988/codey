@@ -2738,7 +2738,7 @@ NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 ```text
 Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
 Research untrusted source wrapper -> 0.5.4 prompt-surface / injection hardening
-TaskRunner convergence point -> 0.5 横向架构线，按真实 phase 抽 RunOperationState / EffectLog
+TaskRunner convergence point -> 0.5 横向架构线，按真实 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
 Provider/protocol outcome learning -> 0.5.5，不回流 evidence / permission / completion verdict
 ```
@@ -2749,7 +2749,7 @@ Provider/protocol outcome learning -> 0.5.5，不回流 evidence / permission / 
 | --- | --- | --- |
 | Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
 | Research source content 进入模型后的 prompt-injection 边界 | 0.5.4 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
-| TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase 抽 RunOperationState / EffectLog | 拆 state transition，不新增 Manager |
+| TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
 | Provider / protocol outcome 学习 | 0.5.5 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
 | World Model | 0.5.8 / 0.5.9 | belief / prediction / calibration 都不是 truth confidence |
@@ -2789,7 +2789,7 @@ Research untrusted source wrapper 的顺序必须是 A/B-first：
 
 ```text
 RunOperationState
-EffectLog
+RuntimeEffectStore
 ReplayPolicy
 World Model
 TaskRunner 大拆
@@ -3019,7 +3019,7 @@ claim-gap / verification strategy evaluation”，全部并入 0.5.xx。合并�
 ```text
 TaskRunner.run
   -> RunOperationState：只管当前 run 的 durable program counter
-  -> EffectLog：只管 provider/tool/repair intent + settlement
+  -> RuntimeEffectStore：只管 provider/tool/repair intent + settlement，仍写 RuntimeSessionLog
   -> ReplayPolicy：只管恢复时 safe / unsafe / interrupted
   -> ProtocolAdaptation：只管 ToolCall 参数和方言 lower，不碰 runtime 语义
   -> Ghost / WorldModel projections：只管 hints 和解释，不碰 evidence verdict
@@ -3486,10 +3486,10 @@ unsafe:
 直接收益：
 
 ```text
-provider send 失败能区分 never_sent / maybe_sent / settled
+provider send 失败能区分“没有 intent，因此没有发送事实” / maybe_sent / settled
 edit/run 崩溃后不会被自动重复执行
-unsafe tool 崩溃恢复时产生 synthetic interrupted result，让对话保持一 call 一 result
-safe read/search 崩溃恢复时可以按 persisted args 重新跑，减少“读到一半死掉”的丢失
+unsafe tool 崩溃恢复时产生 synthetic interrupted settlement，不重复执行危险动作
+safe read/search 崩溃恢复时标记为可重试事实，并由 Run Details 安静解释；v1 不把结果注入模型上下文
 RunTrace / RunLedger 可以解释一次 repair 是否真的发起、是否结算
 ```
 
@@ -3518,11 +3518,11 @@ RuntimeSessionLog 服务恢复语义，不新增第二套 durable effect log
 ```text
 任何 provider/tool/repair effect 开始前必须已有 intent
 settlement 只能引用已存在 intent
-safe tool effect_pending 恢复会重新执行
-unsafe tool effect_pending 恢复生成 interrupted result，不重复执行
+safe tool effect_pending 恢复生成 retryable recovery projection，不注入模型上下文
+unsafe tool effect_pending 恢复生成 interrupted settlement，不重复执行
 provider maybe_sent 恢复不会伪造 done
-RunOperationState phase 与 EffectLog 最新 settlement 一致
-policy denied tool 没有真实 effect，只能有 immediate settlement
+RunOperationState phase 与 RuntimeEffectStore 最新 settlement 一致
+policy denied tool 没有真实 external-effect record，只保留普通 tool outcome
 tool args digest 稳定且不含 raw secret
 未知工具默认 unsafe
 ```
@@ -4538,7 +4538,7 @@ Exit Gate：
 Edit Integrity Monitor 已经接入 production completion path，且 high suspicious 会产生 receipt warning
 Qwen/MiMo modified_test_fixture 原材料可被 deterministic replay 识别
 Monitor error / unobserved 不能被伪装成 clean
-RunOperationState / EffectLog / ReplayPolicy 已经稳定
+RunOperationState / RuntimeEffectStore / ReplayPolicy 已经稳定
 TaskRunner 不再继续吸收新生命周期状态
 CompletionProof / Evidence / Verification 的 source of truth 明确
 Ghost / World Model / Protocol affinity 没有污染 evidence / permission / completion
@@ -4844,7 +4844,7 @@ Research Contract Lite 不能是模型工具
 Safe Context Epoch 必须约束 Ghost continuity admission
 Research-to-Code impact 不能授权工具
 RunOperationState 不能 import agent/provider/tool_runtime/server/ghost
-EffectLog 不能保存 raw prompt/reply/stdout/diff/source body
+RuntimeEffectStore 不能保存 raw prompt/reply/stdout/diff/source body
 外部 provider/tool/repair effect 启动前必须已有 intent
 unsafe tool effect_pending 恢复不能重复执行
 ReplayPolicy 未知工具默认 unsafe
@@ -5030,7 +5030,7 @@ Protocol repair strategy live A/B smoke
 ## 架构债边界
 
 0.4 已经让 Research、Evidence、Review、Ghost、Provider fallback 和本地持久化在
-TaskRunner / Server 周围汇合。0.5 会继续增加 RunOperationState、EffectLog、
+TaskRunner / Server 周围汇合。0.5 会继续增加 RunOperationState、RuntimeEffectStore、
 ReplayPolicy、ProtocolAdaptation 和 World Model。这个压力是真实的，但不能为了
 “看起来架构更好”做 big-bang rewrite。
 
@@ -5047,7 +5047,7 @@ _RunFrame 已经包含 provider / conversation / trace / handoff / preflight / s
 
 ```text
 RunOperationState：先覆盖 completion/repair terminal，再扩到 provider/tool effects
-EffectLog：只在 provider/tool/repair 三个真实效果边界稳定后引入
+RuntimeEffectStore：只在 provider/tool/repair 三个真实效果边界稳定后引入，且不新增第二套 durable log
 ReplayPolicy：先保守 safe/unsafe，再谈自动恢复
 ResearchPipeline：只在 proof quality / evidence ledger / follow-up research 边界成熟后抽
 ProviderPipeline：只在 provider setup / preflight / fallback / canary 边界稳定后抽

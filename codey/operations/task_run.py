@@ -66,6 +66,11 @@ from codey.runtime.effects import (
     RuntimeOperationTransitionError,
     mark_terminal,
 )
+from codey.runtime.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    SENT_STATE_MAYBE_SENT,
+    SENT_STATE_SETTLED,
+)
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.runtime.outcome import OperationOutcome
@@ -349,7 +354,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             task_kind=task_kind,
         )
         if not started_ok:
-            return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.", current_work=work)
+            return _fail_early("ERROR: Runtime operation state unavailable.", current_work=work)
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         logged_provider_failures: set[tuple[str, str, str, str]] = set()
@@ -992,7 +997,7 @@ def _start_run_operation(
         )
         if work.operation is None:
             return False
-        return _settle_pending_effects_for_resume(deps, session_id=session_id, run_id=run_id)
+        return True
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
         return False
@@ -1015,9 +1020,9 @@ def _settle_pending_effects_for_resume(
         intent = proj.intent
         try:
             sent_state = (
-                "maybe_sent"
-                if intent.effect_category == "provider_send"
-                else "settled"
+                SENT_STATE_MAYBE_SENT
+                if intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+                else SENT_STATE_SETTLED
             )
             effects_store.synthesize_interrupted(
                 session_id=session_id,

@@ -283,7 +283,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         tool_settlements = [p for p in effects if p.intent.effect_category == "tool_call" and p.is_settled]
         self.assertEqual(len(tool_settlements), 0)
 
-    def test_start_run_operation_fails_closed_when_recovery_fails(self) -> None:
+    def test_start_run_operation_only_starts_operation(self) -> None:
         broken_store = MagicMock()
         broken_store.pending_effects.side_effect = RuntimeError("disk corrupt")
 
@@ -303,7 +303,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.assertFalse(ok)
+        self.assertTrue(ok)
+        broken_store.pending_effects.assert_not_called()
+        self.assertIsNotNone(work.operation)
 
     def test_execute_task_run_fails_closed_when_recovery_fails(self) -> None:
         state = server.AppContext(state_home=self.temp_dir.name)

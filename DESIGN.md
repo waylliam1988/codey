@@ -242,6 +242,13 @@ row. The copy is fixed English -- `Writing was interrupted`,
 (`writer_running`, `RunOperationState`, ...). A finished run never shows the
 row, even if a stale non-terminal snapshot exists on disk.
 
+Optional `Recovery` rows (0.5.2) explain settled interrupted external effects
+only after runtime recovery has written a synthetic settlement. Allowed copy:
+`Local write was interrupted and was not repeated`, `Provider response was not
+confirmed`, `Read action can be retried`, and `Repair round was interrupted`.
+Do not show pending in-flight effects, effect ids, provider ids, replay class,
+or runtime record names.
+
 **Changes summary** (inline, not a pill):
 
 ```

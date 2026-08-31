@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.5.1-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.2-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.5.1`
+版本：`0.5.2`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -33,6 +33,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **使用你已经登录的网页 AI**：支持 DeepSeek、MiMo、StepFun、Qwen 和 GLM。
 - **自动选对入口**：在自动模式下，Codey 会先判断该走普通聊天、只读规划、
   Research、Writer、Hybrid 还是 Review；手动选择和权限边界仍然优先。
+- **中断恢复更诚实**：如果 Codey 在发送模型消息、改文件、跑命令或启动
+  repair round 时被停止，Run Details 能说明停在哪一步，同时不会自动重复危险的
+  本地动作。
 - **记忆可控**：显式偏好和很短的 continuity context 会保存在本地有界文件里，
   可以预览、导出、删除、重置、禁用，并在任务结束后安静维护。
 - **Ghost 本地状态更严格**：Ghost affinity 和 work queue 的事件日志现在只接受

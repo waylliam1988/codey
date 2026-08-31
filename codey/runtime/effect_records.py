@@ -58,6 +58,46 @@ MAX_REF_CHARS = 160
 MAX_ERROR_CODE_CHARS = 80
 MAX_ARGS_DIGEST_CHARS = 64
 
+_INTENT_PAYLOAD_KEYS = frozenset({
+    "schema_version",
+    "effect_kind",
+    "record_kind",
+    "ref",
+    "effect_id",
+    "effect_category",
+    "session_id",
+    "run_id",
+    "lane",
+    "operation_id",
+    "phase",
+    "provider_id",
+    "turn",
+    "tool_index",
+    "tool_name",
+    "tool_id",
+    "args_digest",
+    "display_ref",
+    "replay_class",
+    "created_at",
+})
+_SETTLEMENT_PAYLOAD_KEYS = frozenset({
+    "schema_version",
+    "effect_kind",
+    "record_kind",
+    "ref",
+    "effect_id",
+    "effect_category",
+    "session_id",
+    "run_id",
+    "lane",
+    "operation_id",
+    "status",
+    "error_code",
+    "sent_state",
+    "replay_class",
+    "created_at",
+})
+
 
 class RuntimeEffectError(Exception):
     """Base error for runtime effect violations."""
@@ -114,6 +154,18 @@ def _require_enum_str(val: Any, name: str, allowed: frozenset[str] | tuple[str, 
     return val
 
 
+def _reject_unknown_payload_keys(payload: dict[str, Any], allowed: frozenset[str]) -> None:
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise RuntimeEffectError(f"unknown effect payload keys: {', '.join(unknown)}")
+
+
+def _require_ref(payload: dict[str, Any], expected: str) -> None:
+    actual = _require_bounded_str(payload.get("ref"), "ref", MAX_REF_CHARS)
+    if actual != expected:
+        raise RuntimeEffectError(f"effect ref '{actual}' does not match expected ref '{expected}'")
+
+
 @dataclass(frozen=True)
 class RuntimeEffectIntent:
     effect_id: str
@@ -149,6 +201,7 @@ class RuntimeEffectIntent:
         _require_bounded_str(self.tool_id, "tool_id", MAX_TEXT_CHARS, allow_empty=True)
         _require_bounded_str(self.args_digest, "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True)
         _require_bounded_str(self.display_ref, "display_ref", MAX_TEXT_CHARS, allow_empty=True)
+        _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_nonnegative_int(self.turn, "turn")
         _require_nonnegative_int(self.tool_index, "tool_index")
         _require_enum_str(self.effect_category, "effect_category", EFFECT_CATEGORIES)
@@ -184,14 +237,17 @@ class RuntimeEffectIntent:
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectIntent:
         if not isinstance(payload, dict):
             raise RuntimeEffectError("payload must be a dict")
+        _reject_unknown_payload_keys(payload, _INTENT_PAYLOAD_KEYS)
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectIntent")
         version = payload.get("schema_version")
         if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
+        effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
+        _require_ref(payload, f"effect:{effect_id}")
 
         return cls(
-            effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
+            effect_id=effect_id,
             effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
@@ -237,6 +293,7 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.lane, "lane", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.operation_id, "operation_id", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.error_code, "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True)
+        _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
         _require_enum_str(self.effect_category, "effect_category", EFFECT_CATEGORIES)
         if self.record_kind != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("record_kind must be 'settlement'")
@@ -267,14 +324,17 @@ class RuntimeEffectSettlement:
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectSettlement:
         if not isinstance(payload, dict):
             raise RuntimeEffectError("payload must be a dict")
+        _reject_unknown_payload_keys(payload, _SETTLEMENT_PAYLOAD_KEYS)
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectSettlement")
         version = payload.get("schema_version")
         if version != SCHEMA_VERSION or isinstance(version, bool):
             raise RuntimeEffectError(f"unsupported schema version: {version}")
+        effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
+        _require_ref(payload, f"effect_settlement:{effect_id}")
 
         return cls(
-            effect_id=_require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS),
+            effect_id=effect_id,
             effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
