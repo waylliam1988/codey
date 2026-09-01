@@ -800,15 +800,30 @@ python -B tests\manual\tool_args_repair_dialect_pressure_ab.py `
   --keep-open
 ```
 
-`safe_tool_replay_smoke.py` covers 0.5.4 Safe Tool Replay. The self-test uses
-deterministic crash/resume state: two replayable safe intents (`read`,
-`search`) are replayed exactly once, one unsafe intent is interrupted, the
-agent loop resumes at the next turn with recovered tool results, and Run
-Details shows quiet recovery rows. This is a resume-path gate, not a clean-path
-quality A/B.
+`safe_tool_replay_smoke.py` covers 0.5.4 Safe Tool Replay. The offline
+self-test uses deterministic crash/resume state: two replayable safe intents
+(`read`, `search`) are replayed exactly once, one unsafe intent is interrupted,
+the agent loop resumes at the next turn with recovered tool results, and Run
+Details shows quiet recovery rows. The same-run self-test covers the production
+continuation shape: one pending safe read is recovered in the same session/run,
+its tool result is injected exactly once, and the resumed loop completes
+`edit` + `run`.
+
+The bounded live resume smoke attaches to an already-open provider tab. It
+injects a crash after a real provider requests `read config.py`, replays the
+persisted canonical read args, resumes the same provider conversation with the
+recovered tool result, and writes a bounded JSON report containing only summary
+metrics. This is a resume-path gate, not a clean-path quality A/B.
 
 ```powershell
 python -B tests\manual\safe_tool_replay_smoke.py --self-test
+python -B tests\manual\safe_tool_replay_smoke.py --same-run-self-test
+python -B tests\manual\safe_tool_replay_smoke.py `
+  --provider deepseek `
+  --port 9222 `
+  --max-turns 8 `
+  --keep-open `
+  --output tests\manual\results\safe_tool_replay_live_resume-deepseek-20260901.json
 ```
 
 2026-07-28 live A/B now measures the production repair prompt directly. An

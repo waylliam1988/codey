@@ -35,7 +35,8 @@ operations: upgraded task_run.py resume recovery gate to _recover_effects_for_re
             Wired recovered_tool_outcomes into RunFrame and consumed/cleared it in _run_one_writer_attempt.
             Keeps unsafe, provider, repair, invalid, and non-writer effects fail-closed to synthetic interrupted settlements.
 details:    updated DESIGN.md and details projection documentation to permit "Read action was recovered" and "Search action was recovered".
-harness:    added tests/test_safe_tool_replay.py, added tests/manual/safe_tool_replay_smoke.py (--self-test),
+harness:    added tests/test_safe_tool_replay.py, added tests/manual/safe_tool_replay_smoke.py
+            (--self-test, --same-run-self-test, and bounded live resume smoke),
             updated tests/test_tool_replay_policy.py, tests/test_runtime_effect_records.py, tests/test_agent_effect_sandwich.py,
             and tests/test_runtime_session_log.py.
 ```
@@ -47,6 +48,8 @@ Verification:
   - `python -m pytest tests/test_run_details.py tests/test_task_entry_operation_state.py tests/test_task_entry_run_trace.py tests/test_run_trace.py tests/test_run_trace_completion_repair_context.py tests/test_run_ledger.py tests/test_run_ledger_projection.py tests/test_project_completion_flow_enforcement.py tests/test_project_completion_flow_edit_integrity.py tests/test_project_completion_flow_analysis_run.py -q` (165 passed, 6 subtests passed in 44.38s)
   - `python -m pytest tests/test_headless_runner.py tests/test_event_matrix.py -q` (15 passed, 205 subtests passed in 3.44s)
   - `python tests/manual/safe_tool_replay_smoke.py --self-test` (passed; 3 pending intents: 2 safe replayed with replay_count=1, 1 unsafe interrupted, agent loop resumed turn 2, details projected 3 recovery rows)
+  - `python tests/manual/safe_tool_replay_smoke.py --same-run-self-test` (passed; recovered one pending read in the same session/run, injected the recovered tool result exactly once, then completed `edit` + `run`)
+  - `python tests/manual/safe_tool_replay_smoke.py --provider deepseek --port 9222 --max-turns 8 --keep-open --output tests/manual/results/safe_tool_replay_live_resume-deepseek-20260901.json` (passed; injected read crash, recovered 1 read outcome, `replay_count=1`, same provider conversation continued in 4 sends with `read`/`edit`/`run`, `checks_passed=true`, `final_content_ok=true`)
   - `python -m compileall -q codey tests` (passed)
   - `ruff check codey tests` (passed)
   - `git diff --check` (passed)

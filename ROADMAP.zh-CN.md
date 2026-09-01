@@ -3655,8 +3655,9 @@ GLM 实机时暴露出启动深链问题：`main/alltoolsdetail` 入口可能触
 
 ## 0.5.4 - Safe Tool Replay v1
 
-状态：已完成（2026-09-01，focused replay/runtime gate、manual self-test、compileall、
-ruff、`git diff --check` 和全量 pytest `3383 passed, 16 skipped in 320.09s (0:05:20)`
+状态：已完成（2026-09-01，focused replay/runtime gate、manual self-test、same-run
+resume smoke、DeepSeek live resume smoke、compileall、ruff、`git diff --check` 和
+全量 pytest `3383 passed, 16 skipped in 320.09s (0:05:20)`
 完成）。在 0.5.2 的 effect intent / settlement 和 0.5.3 的
 canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程在 safe tool
 执行中途被杀掉时，恢复路径按 persisted canonical args 自动重跑，并把结果作为
@@ -3759,6 +3760,11 @@ clean path prompt/tool/result parity 不变
 以及至少一条 live resume smoke，因为 replay result 只在 crash/resume 路径进入模型可见
 tool result。若本版额外改变正常路径 tool prompt、tool schema、provider routing 或
 非恢复路径 transcript，必须升级为小型 live A/B。
+
+2026-09-01 已补齐 live-path 证据：`safe_tool_replay_smoke.py --same-run-self-test`
+通过；DeepSeek `--provider deepseek --port 9222 --max-turns 8 --keep-open` 通过，
+覆盖注入 read 崩溃、恢复 1 个 read outcome、同一 provider 会话继续到
+`read` / `edit` / `run`、`checks_passed=true` 与 `final_content_ok=true`。
 
 ## 0.5.5 - Safe Replay Result Delivery Receipt v1
 
