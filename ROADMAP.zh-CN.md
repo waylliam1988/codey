@@ -3541,7 +3541,7 @@ tool args digest 稳定且不含 raw secret
 
 ## 0.5.3 - Shared Tool Argument Repair + Protocol Friction Reduction v1
 
-状态：已完成（2026-08-31，compileall、ruff、focused tests、smoke harness、live A/B evaluation 和全量 pytest `3358 passed, 4 skipped in 315.52s (0:05:15)` 完成）。
+状态：已完成（2026-09-01，compileall、ruff、focused tests、smoke harness、deterministic A/B、DeepSeek/MiMo/GLM live provider A/B 和全量 pytest `3358 passed, 16 skipped in 296.26s (0:04:56)` 完成）。
 目标是把 coding `JsonToolCodec` 里散落的参数别名、编辑参数宽容和常见 provider 方言误差，收成所有 coding codec 共用的纯函数 `codey/tool_args_repair.py`。这个版本直接降低了 unknown/invalid args repair 次数，同时 `write/write_file/create_file` 严格保持 unknown tool，不引入隐藏修改别名。
 
 ### 做什么
@@ -3552,7 +3552,9 @@ tool args digest 稳定且不含 raw secret
 codey/tool_args_repair.py
 tests/test_tool_args_repair.py
 tests/manual/tool_args_repair_smoke.py
+tests/manual/tool_args_repair_simulated_ab.py
 tests/manual/tool_args_repair_live_ab.py
+tests/manual/tool_args_repair_dialect_pressure_ab.py
 ```
 
 支持的保守修复：
@@ -3562,8 +3564,11 @@ search / old / before -> old_string
 replace / replacement / after / new -> new_string
 single replacement object -> replacements[...]
 JSON string replacements -> parsed replacements, invalid JSON fail closed
+missing new_string -> fail closed；只有显式空字符串表示删除
 numeric string offset/limit -> bounded int
-path normalization -> project-relative only, escape fail closed
+explicit null offset/limit -> fail closed
+path normalization -> project-relative only, escape fail closed；optional path 仅缺失时默认 "."
+unknown argument fields -> fail closed
 write / write_file / create_file -> 严格保持 unknown tool，不引入隐藏修改别名
 ```
 
@@ -3571,7 +3576,7 @@ write / write_file / create_file -> 严格保持 unknown tool，不引入隐藏�
 
 ```text
 模型输出接近 Codey 工具语义但字段名稍偏时，少打一轮协议修复
-protocol_telemetry 记录 alias_rewrite_count / repair_kind
+protocol_telemetry 记录 alias_rewrite_count / arg_repair_counts
 invalid args 错误更稳定，方便 provider/protocol affinity 学习
 ```
 
@@ -3604,7 +3609,9 @@ shim 不 import tool_runtime/provider/task_runner
 
 ### A/B
 
-需要小型 live A/B，因为 parser 接受范围变宽。指标：
+需要小型 live provider A/B，因为 parser 接受范围变宽。0.5.3 已提供
+`tests/manual/tool_args_repair_live_ab.py`，它走生产 `AgentRequest` / agent loop；
+deterministic parser 对比保留在 `tests/manual/tool_args_repair_simulated_ab.py`。指标：
 
 ```text
 invalid_args_rate
@@ -3615,6 +3622,36 @@ verification_success
 unsafe_action_count
 false_completion_rate
 ```
+
+2026-09-01 自然 live provider 小样本结果：
+
+```text
+DeepSeek: baseline/candidate 均 2/2 done，expected_content_ok 2/2，turns 7 vs 7，protocol error / repair prompt / alias rewrite 均为 0
+MiMo: baseline/candidate 均 2/2 done，expected_content_ok 2/2，turns 7 vs 7，protocol error / repair prompt / alias rewrite 均为 0
+GLM: baseline/candidate 均 2/2 done，expected_content_ok 2/2，turns 7 vs 7，protocol error / repair prompt / alias rewrite 均为 0
+```
+
+结论：这组干净 schema 任务没有观测到 live 省 turn，因为三个 provider 都输出了
+canonical args；同时也没有观测到 unsafe / false completion 回归。deterministic dialect
+suite 仍作为“别名真的出现时可省 repair turn”的机制证据，结果是 5 个场景节省 8 个
+repair turns，turn reduction 36.36%。后续如果要让模型显式输出 `pattern`、`old/new`、
+`cmd`、数字字符串等，应新增单独的 dialect-pressure suite，不能混入自然 live A/B 作为
+生产收益结论。
+
+2026-09-01 MiMo dialect-pressure live 结果：
+
+```text
+MiMo pressure: baseline/candidate 均 2/2 done，expected_content_ok 2/2，turns 9 vs 8，protocol errors 2 vs 0，repair prompts 2 vs 0，candidate alias rewrites 2
+```
+
+结论：pressure 样本在 MiMo 上观测到真实生产 loop 收益，但只发生在模型实际输出偏差参数的
+case：`search_read_numeric_pressure` 通过 numeric-string coercion 省 1 turn、少 2 个 repair
+prompt；`edit_run_alias_pressure` 中 MiMo 仍输出 canonical args，因此本次没有实机覆盖
+`old/new` 或 `cmd`。这类结果只证明吸收能力，不作为自然生产省 turn 结论。
+
+GLM 实机时暴露出启动深链问题：`main/alltoolsdetail` 入口可能触发验证，根入口
+`https://chatglm.cn/` 不触发同类验证。因此 GLM browser start / new-chat URL 改为根入口，
+不保留旧深链 fallback。
 
 ## 0.5.4 - Safe Tool Replay v1
 
@@ -5198,7 +5235,10 @@ tests/manual/research_comparison_benchmark_ab.py
 tests/manual/edit_integrity_ab.py
 tests/manual/completion_operation_resume_smoke.py
 tests/manual/effect_sandwich_fault_smoke.py
-tests/manual/tool_args_repair_ab.py
+tests/manual/tool_args_repair_smoke.py
+tests/manual/tool_args_repair_simulated_ab.py
+tests/manual/tool_args_repair_live_ab.py
+tests/manual/tool_args_repair_dialect_pressure_ab.py
 tests/manual/tool_protocol_portability_ab.py
 tests/manual/project_habits_ab.py
 tests/manual/world_model_context_ab.py

@@ -19,7 +19,6 @@ class ToolArgsRepairTests(unittest.TestCase):
     def setUp(self) -> None:
         self.limits = ToolArgLimits(
             max_replacements=8,
-            read_default_lines=300,
             read_max_lines=600,
         )
 
@@ -100,6 +99,12 @@ class ToolArgsRepairTests(unittest.TestCase):
                 with self.assertRaises(ToolArgsRepairError):
                     normalize_tool_args("read", {"path": "app.py", "offset": invalid}, limits=self.limits)
 
+    def test_read_rejects_explicit_null_numbers(self) -> None:
+        for name in ("offset", "limit"):
+            with self.subTest(name=name):
+                with self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args("read", {"path": "app.py", name: None}, limits=self.limits)
+
     def test_read_rejects_limit_exceeding_max(self) -> None:
         with self.assertRaises(ToolArgsRepairError):
             normalize_tool_args("read", {"path": "app.py", "limit": self.limits.read_max_lines + 1}, limits=self.limits)
@@ -119,6 +124,29 @@ class ToolArgsRepairTests(unittest.TestCase):
                     [{"search": expected_search, "replace": expected_replace}],
                 )
                 self.assertGreater(res.alias_rewrite_count, 0)
+
+    def test_edit_missing_new_string_fails_closed(self) -> None:
+        cases = (
+            {"path": "a.py", "old_string": "x"},
+            {"path": "a.py", "replacements": [{"old_string": "x"}]},
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                with self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args("edit", args, limits=self.limits)
+
+    def test_edit_explicit_empty_new_string_aliases_are_deletions(self) -> None:
+        cases = (
+            {"path": "a.py", "old_string": "x", "new_string": ""},
+            {"path": "a.py", "old_string": "x", "replace": ""},
+            {"path": "a.py", "old_string": "x", "after": ""},
+            {"path": "a.py", "old_string": "x", "new": ""},
+            {"path": "a.py", "replacements": [{"old_string": "x", "new_string": ""}]},
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                res = normalize_tool_args("edit", args, limits=self.limits)
+                self.assertEqual(res.args["replacements"], [{"search": "x", "replace": ""}])
 
     def test_edit_json_string_replacements(self) -> None:
         raw_json = json.dumps([{"old_string": "foo", "new_string": "bar"}])
@@ -207,6 +235,15 @@ class ToolArgsRepairTests(unittest.TestCase):
                 with self.assertRaises(ToolArgsRepairError):
                     normalize_tool_args("run", {"command": inv, "path": "."}, limits=self.limits)
 
+    def test_text_args_preserve_explicit_non_blank_strings(self) -> None:
+        search = normalize_tool_args("search", {"query": " needle ", "path": "."}, limits=self.limits)
+        references = normalize_tool_args("references", {"symbol": " Thing ", "path": "."}, limits=self.limits)
+        run = normalize_tool_args("run", {"command": " python -m pytest -q ", "path": "."}, limits=self.limits)
+
+        self.assertEqual(search.args["query"], " needle ")
+        self.assertEqual(references.args["symbol"], " Thing ")
+        self.assertEqual(run.args["command"], " python -m pytest -q ")
+
     def test_conflicting_alias_fields_fail_closed(self) -> None:
         conflict_cases = (
             ("search", {"query": "foo", "pattern": "bar", "path": "."}),
@@ -221,6 +258,48 @@ class ToolArgsRepairTests(unittest.TestCase):
                 with self.assertRaises(ToolArgsRepairError) as ctx:
                     normalize_tool_args(tool, args, limits=self.limits)
                 self.assertIn("conflicting", str(ctx.exception))
+
+    def test_optional_paths_default_only_when_missing(self) -> None:
+        defaults = (
+            ("ls", {}),
+            ("search", {"query": "needle"}),
+            ("references", {"symbol": "Thing"}),
+            ("run", {"command": "python -m pytest -q"}),
+        )
+        for tool, args in defaults:
+            with self.subTest(tool=tool):
+                res = normalize_tool_args(tool, args, limits=self.limits)
+                self.assertEqual(res.args["path"], ".")
+
+        for tool, args in defaults:
+            for bad_path in ("", "   ", None):
+                with self.subTest(tool=tool, bad_path=bad_path):
+                    with self.assertRaises(ToolArgsRepairError):
+                        normalize_tool_args(tool, {**args, "path": bad_path}, limits=self.limits)
+
+    def test_unknown_argument_fields_fail_closed(self) -> None:
+        cases = (
+            ("read", {"path": "app.py", "extra": "ignored"}),
+            ("ls", {"path": ".", "extra": "ignored"}),
+            ("search", {"query": "needle", "path": ".", "extra": "ignored"}),
+            ("references", {"symbol": "Thing", "path": ".", "extra": "ignored"}),
+            ("run", {"command": "python -m pytest -q", "path": ".", "extra": "ignored"}),
+            ("edit", {"path": "a.py", "old_string": "x", "new_string": "y", "extra": "ignored"}),
+            (
+                "edit",
+                {
+                    "path": "a.py",
+                    "replacements": [
+                        {"old_string": "x", "new_string": "y", "extra": "ignored"}
+                    ],
+                },
+            ),
+        )
+        for tool, args in cases:
+            with self.subTest(tool=tool, args=args):
+                with self.assertRaises(ToolArgsRepairError) as ctx:
+                    normalize_tool_args(tool, args, limits=self.limits)
+                self.assertIn("unsupported fields", str(ctx.exception))
 
 
 if __name__ == "__main__":

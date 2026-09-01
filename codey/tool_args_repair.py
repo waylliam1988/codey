@@ -19,7 +19,6 @@ _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 @dataclass(frozen=True)
 class ToolArgLimits:
     max_replacements: int = 8
-    read_default_lines: int = 300
     read_max_lines: int = 600
 
 
@@ -42,28 +41,32 @@ def _record_repair(counts: dict[str, int], kind: str) -> None:
     counts[kind] = counts.get(kind, 0) + 1
 
 
+def _reject_unknown_args(
+    args: Mapping[str, Any],
+    allowed_keys: set[str],
+    *,
+    context: str,
+) -> None:
+    if any(not isinstance(key, str) or key not in allowed_keys for key in args):
+        raise ToolArgsRepairError(
+            f"{context} contains unsupported fields",
+            repair_kind="invalid_args",
+        )
+
+
 def _normalize_path(
     raw_value: object,
-    *,
-    allow_empty: bool = False,
 ) -> tuple[str, bool]:
     """Lexically normalize project-relative paths.
 
     Replaces backslashes, folds '.' and safe '..', and strictly rejects absolute
     paths, drive letters, UNC paths, and directory traversal escaping the root.
     """
-    if raw_value is None or raw_value == "":
-        if allow_empty:
-            return ".", False
-        raise ToolArgsRepairError("path cannot be empty", repair_kind="invalid_args")
-
     if not isinstance(raw_value, str):
         raise ToolArgsRepairError("path must be a string", repair_kind="invalid_args")
 
     raw_str = raw_value.strip()
     if not raw_str:
-        if allow_empty:
-            return ".", False
         raise ToolArgsRepairError("path cannot be empty", repair_kind="invalid_args")
 
     # Reject Windows drive paths (e.g. C:\foo or C:/foo)
@@ -102,14 +105,13 @@ def _normalize_path(
             stack.append(segment)
 
     result = "/".join(stack) or "."
-    repaired = (result != raw_str)
+    repaired = result != raw_value
     return result, repaired
 
 
 def _resolve_path_arg(
     args: Mapping[str, Any],
     *,
-    allow_empty: bool = False,
     default_path: str | None = None,
     missing_msg: str | None = None,
 ) -> tuple[str, int, dict[str, int]]:
@@ -127,8 +129,6 @@ def _resolve_path_arg(
     if not present:
         if default_path is not None:
             raw_path = default_path
-        elif allow_empty:
-            raw_path = "."
         else:
             msg = missing_msg or "path cannot be empty"
             raise ToolArgsRepairError(msg, repair_kind="invalid_args")
@@ -139,7 +139,7 @@ def _resolve_path_arg(
             _record_repair(counts, "path_alias")
             rewrites += 1
 
-    norm_path, path_changed = _normalize_path(raw_path, allow_empty=allow_empty)
+    norm_path, path_changed = _normalize_path(raw_path)
     if path_changed:
         _record_repair(counts, "path_normalized")
         rewrites += 1
@@ -153,7 +153,8 @@ def _require_text_arg(
     semantic_name: str,
     *,
     missing_msg: str | None = None,
-    allow_empty: bool = False,
+    allow_blank: bool = False,
+    allow_missing: bool = False,
 ) -> tuple[str, str | None]:
     """Extract a single string argument from mutually exclusive alias keys.
 
@@ -161,7 +162,8 @@ def _require_text_arg(
     Fails closed if:
     - Multiple keys from the semantic group are present (conflict)
     - Value is not a string
-    - Value is blank/empty (unless allow_empty=True)
+    - Value is missing (unless allow_missing=True)
+    - Value is blank/empty (unless allow_blank=True)
     """
     present = [k for k in keys if k in args]
     if len(present) > 1:
@@ -170,7 +172,7 @@ def _require_text_arg(
             repair_kind="invalid_args",
         )
     if not present:
-        if allow_empty:
+        if allow_missing:
             return "", None
         msg = missing_msg or f"{semantic_name} requires a value"
         raise ToolArgsRepairError(msg, repair_kind="invalid_args")
@@ -183,7 +185,7 @@ def _require_text_arg(
             repair_kind="invalid_args",
         )
 
-    if not allow_empty and not val.strip():
+    if not allow_blank and not val.strip():
         raise ToolArgsRepairError(
             f"{semantic_name} cannot be empty or whitespace",
             repair_kind="invalid_args",
@@ -196,12 +198,14 @@ def _require_text_arg(
 def _bounded_positive_int(
     value: object,
     name: str,
-    default: int,
     maximum: int | None = None,
 ) -> tuple[int, bool]:
     """Parse and bound positive integers, accepting numeric strings."""
     if value is None:
-        return default, False
+        raise ToolArgsRepairError(
+            f"{name} must be a positive integer",
+            repair_kind="invalid_args",
+        )
 
     if isinstance(value, bool):
         raise ToolArgsRepairError(
@@ -239,6 +243,13 @@ def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
+    single_old_keys = ("old_string", "search", "old", "before")
+    single_new_keys = ("new_string", "replace", "replacement", "after", "new")
+    _reject_unknown_args(
+        args,
+        {"path", "cwd", "content", "replacements", *single_old_keys, *single_new_keys},
+        context="edit",
+    )
     norm_path, rewrites, counts = _resolve_path_arg(
         args,
         missing_msg="edit requires a top-level path and can only edit one file",
@@ -248,8 +259,6 @@ def _normalize_edit(
     has_content = "content" in args
     has_replacements = "replacements" in args
 
-    single_old_keys = ("old_string", "search", "old", "before")
-    single_new_keys = ("new_string", "replace", "replacement", "after", "new")
     has_single = any(k in args for k in (*single_old_keys, *single_new_keys))
 
     if sum((has_content, has_replacements, has_single)) != 1:
@@ -317,12 +326,17 @@ def _normalize_edit(
                     "use separate edit calls for different files",
                     repair_kind="invalid_args",
                 )
+            _reject_unknown_args(
+                item,
+                {*single_old_keys, *single_new_keys},
+                context="edit replacement",
+            )
 
             old_val, old_alias = _require_text_arg(
                 item,
                 single_old_keys,
                 "old_string",
-                allow_empty=False,
+                allow_blank=False,
             )
             if old_alias:
                 _record_repair(counts, "edit_field_alias")
@@ -332,7 +346,7 @@ def _normalize_edit(
                 item,
                 single_new_keys,
                 "new_string",
-                allow_empty=True,
+                allow_blank=True,
             )
             if new_alias:
                 _record_repair(counts, "edit_field_alias")
@@ -355,7 +369,7 @@ def _normalize_edit(
         args,
         single_old_keys,
         "old_string",
-        allow_empty=False,
+        allow_blank=False,
     )
     if old_alias:
         _record_repair(counts, "edit_field_alias")
@@ -365,7 +379,7 @@ def _normalize_edit(
         args,
         single_new_keys,
         "new_string",
-        allow_empty=True,
+        allow_blank=True,
     )
     if new_alias:
         _record_repair(counts, "edit_field_alias")
@@ -383,6 +397,7 @@ def _normalize_read(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
+    _reject_unknown_args(args, {"path", "cwd", "offset", "limit"}, context="read")
     norm_path, rewrites, counts = _resolve_path_arg(
         args,
         missing_msg="read requires a path",
@@ -390,7 +405,7 @@ def _normalize_read(
     call_args: dict[str, Any] = {"path": norm_path}
 
     if "offset" in args:
-        offset, coerced = _bounded_positive_int(args.get("offset"), "offset", 1)
+        offset, coerced = _bounded_positive_int(args.get("offset"), "offset")
         if coerced:
             _record_repair(counts, "numeric_coerced")
             rewrites += 1
@@ -400,7 +415,6 @@ def _normalize_read(
         limit, coerced = _bounded_positive_int(
             args.get("limit"),
             "limit",
-            limits.read_default_lines,
             limits.read_max_lines,
         )
         if coerced:
@@ -416,7 +430,8 @@ def _normalize_read(
 
 
 def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
-    norm_path, rewrites, counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    _reject_unknown_args(args, {"path", "cwd"}, context="list_dir")
+    norm_path, rewrites, counts = _resolve_path_arg(args, default_path=".")
     return ToolArgsRepairResult(
         args={"path": norm_path},
         alias_rewrite_count=rewrites,
@@ -425,12 +440,13 @@ def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+    _reject_unknown_args(args, {"query", "pattern", "path", "cwd"}, context="grep")
     query_val, query_alias = _require_text_arg(
         args,
         ("query", "pattern"),
         "query",
         missing_msg="grep requires a query",
-        allow_empty=False,
+        allow_blank=False,
     )
     counts: dict[str, int] = {}
     rewrites = 0
@@ -438,7 +454,7 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
         _record_repair(counts, "search_field_alias")
         rewrites += 1
 
-    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, default_path=".")
     rewrites += path_rewrites
     for k, v in path_counts.items():
         counts[k] = counts.get(k, 0) + v
@@ -451,12 +467,13 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+    _reject_unknown_args(args, {"symbol", "name", "path", "cwd"}, context="find_references")
     symbol_val, symbol_alias = _require_text_arg(
         args,
         ("symbol", "name"),
         "symbol",
         missing_msg="find_references requires a symbol",
-        allow_empty=False,
+        allow_blank=False,
     )
     counts: dict[str, int] = {}
     rewrites = 0
@@ -464,13 +481,13 @@ def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
         _record_repair(counts, "references_field_alias")
         rewrites += 1
 
-    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, default_path=".")
     rewrites += path_rewrites
     for k, v in path_counts.items():
         counts[k] = counts.get(k, 0) + v
 
     return ToolArgsRepairResult(
-        args={"symbol": symbol_val.strip(), "path": norm_path},
+        args={"symbol": symbol_val, "path": norm_path},
         alias_rewrite_count=rewrites,
         arg_repair_counts=counts,
     )
@@ -480,12 +497,13 @@ def _normalize_run_shell(
     tool_name: str,
     args: Mapping[str, Any],
 ) -> ToolArgsRepairResult:
+    _reject_unknown_args(args, {"command", "cmd", "path", "cwd"}, context=tool_name)
     cmd_val, cmd_alias = _require_text_arg(
         args,
         ("command", "cmd"),
         "command",
         missing_msg=f"{tool_name} requires a command",
-        allow_empty=False,
+        allow_blank=False,
     )
     counts: dict[str, int] = {}
     rewrites = 0
@@ -493,7 +511,7 @@ def _normalize_run_shell(
         _record_repair(counts, "command_field_alias")
         rewrites += 1
 
-    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, default_path=".")
     rewrites += path_rewrites
     for k, v in path_counts.items():
         counts[k] = counts.get(k, 0) + v

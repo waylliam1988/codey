@@ -393,6 +393,41 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(too_many.protocol_error_kind, PROTOCOL_INVALID_ARGS)
         self.assertEqual(mixed.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
+    def test_edit_missing_new_string_is_protocol_error(self) -> None:
+        codec = JsonToolCodec()
+        single = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {"path": "app.py", "old_string": "old"},
+        }))
+        batch = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "replacements": [{"old_string": "old"}],
+            },
+        }))
+
+        self.assertEqual(single.calls, [])
+        self.assertEqual(batch.calls, [])
+        self.assertIn("new_string requires a value", single.protocol_error)
+        self.assertIn("new_string requires a value", batch.protocol_error)
+        self.assertEqual(single.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+        self.assertEqual(batch.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+
+    def test_explicit_empty_new_string_is_valid_delete(self) -> None:
+        for key in ("new_string", "replace", "after", "new"):
+            with self.subTest(key=key):
+                plan = JsonToolCodec().parse(json.dumps({
+                    "tool": "edit",
+                    "args": {"path": "app.py", "old_string": "old", key: ""},
+                }))
+
+                self.assertEqual(plan.protocol_error, "")
+                self.assertEqual(
+                    plan.calls[0].args["replacements"],
+                    [{"search": "old", "replace": ""}],
+                )
+
     def test_edit_requires_top_level_path_and_single_file_replacements(self) -> None:
         codec = JsonToolCodec()
         missing_path = codec.parse(json.dumps({
@@ -417,6 +452,68 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("top-level path only", cross_file.protocol_error)
         self.assertEqual(missing_path.protocol_error_kind, PROTOCOL_INVALID_ARGS)
         self.assertEqual(cross_file.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+
+    def test_parse_rejects_unknown_argument_fields(self) -> None:
+        cases = (
+            ("read_file", {"path": "app.py", "extra": "ignored"}),
+            ("list_dir", {"path": ".", "extra": "ignored"}),
+            ("grep", {"query": "needle", "path": ".", "extra": "ignored"}),
+            ("find_references", {"symbol": "Thing", "path": ".", "extra": "ignored"}),
+            ("run", {"command": "python -m unittest", "path": ".", "extra": "ignored"}),
+            ("edit", {"path": "app.py", "old_string": "old", "new_string": "new", "extra": "ignored"}),
+        )
+        for tool, args in cases:
+            with self.subTest(tool=tool):
+                plan = JsonToolCodec().parse(json.dumps({"tool": tool, "args": args}))
+
+                self.assertEqual(plan.calls, [])
+                self.assertIn("unsupported fields", plan.protocol_error)
+                self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+
+    def test_present_args_object_owns_argument_source(self) -> None:
+        top_level = JsonToolCodec().parse(json.dumps({
+            "tool": "read_file",
+            "path": "app.py",
+        }))
+        empty_args = JsonToolCodec().parse(json.dumps({
+            "tool": "read_file",
+            "args": {},
+            "path": "app.py",
+        }))
+        null_args = JsonToolCodec().parse(json.dumps({
+            "tool": "read_file",
+            "args": None,
+            "path": "app.py",
+        }))
+
+        self.assertEqual(top_level.protocol_error, "")
+        self.assertEqual(top_level.calls[0].args["path"], "app.py")
+        self.assertEqual(empty_args.calls, [])
+        self.assertIn("read requires a path", empty_args.protocol_error)
+        self.assertEqual(null_args.calls, [])
+        self.assertIn("read requires a path", null_args.protocol_error)
+
+    def test_parse_rejects_explicit_blank_or_null_optional_path(self) -> None:
+        cases = (
+            ("list_dir", {}),
+            ("grep", {"query": "needle"}),
+            ("find_references", {"symbol": "Thing"}),
+            ("run", {"command": "python -m unittest"}),
+        )
+        for tool, base_args in cases:
+            with self.subTest(tool=tool, path="missing"):
+                plan = JsonToolCodec().parse(json.dumps({"tool": tool, "args": base_args}))
+                self.assertEqual(plan.protocol_error, "")
+                self.assertEqual(plan.calls[0].args["path"], ".")
+
+            for bad_path in ("", None):
+                with self.subTest(tool=tool, path=bad_path):
+                    plan = JsonToolCodec().parse(json.dumps({
+                        "tool": tool,
+                        "args": {**base_args, "path": bad_path},
+                    }))
+                    self.assertEqual(plan.calls, [])
+                    self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_extracts_json_from_web_reply_noise(self) -> None:
         codec = JsonToolCodec()

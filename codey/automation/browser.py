@@ -27,7 +27,7 @@ DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 STEPFUN_URL = "https://chat.stepfun.com/chats/"
-GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
+GLM_URL = "https://chatglm.cn/"
 DEFAULT_PORT = 9222
 CDP_CONNECT_TIMEOUT_MS = 20_000
 CDP_PORT_WAIT_TIMEOUT = 20.0

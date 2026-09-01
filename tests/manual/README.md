@@ -766,6 +766,22 @@ python -B tests\manual\coding_repair_prompt_ab.py `
   --keep-open
 ```
 
+`tool_args_repair_dialect_pressure_ab.py` is a live provider pressure probe for
+0.5.3 tool argument repair. It runs the production coding agent loop, but the
+tasks deliberately ask the model to emit common provider-shaped argument
+variants (`pattern`, `old`/`new`, `cmd`, and numeric-string read offsets). Keep
+its results separate from natural live A/B: this harness proves absorption when
+dialect arguments appear, not natural production turn savings.
+
+```powershell
+python -B tests\manual\tool_args_repair_dialect_pressure_ab.py --self-test
+python -B tests\manual\tool_args_repair_dialect_pressure_ab.py `
+  --provider mimo `
+  --port 9222 `
+  --max-turns 8 `
+  --keep-open
+```
+
 2026-07-28 live A/B now measures the production repair prompt directly. An
 earlier prototype run showed the same direction but included ideal repaired
 shapes, so it is treated as over-strong directional evidence. The production

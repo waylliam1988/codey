@@ -6,22 +6,28 @@
 
 - Tool Argument Canonicalization & Protocol Friction Reduction v1:
   - Added `codey.tool_args_repair` providing pure functions for lexical path normalization, bounded positive integer parsing, and equivalent field alias rewriting for canonical runtime tools (`edit`, `read`, `ls`, `search`, `references`, `run`, `shell`).
-  - Path normalization strictly enforces project-relative paths, folding `.` and safe `..` while rejecting Windows drive letters (`C:\`), UNC paths (`//share`), root paths (`/`), and parent directory traversal escaping project root (`../`). Path segments preserve internal whitespace without stripping; unsupported runtime tools fail closed immediately.
+  - Path normalization strictly enforces project-relative paths, folding `.` and safe `..` while rejecting Windows drive letters (`C:\`), UNC paths (`//share`), root paths (`/`), and parent directory traversal escaping project root (`../`). Missing optional paths default to `.`, but explicit blank/null paths fail closed. Internal path whitespace is preserved; boundary whitespace is recorded as path normalization.
   - Conflicting alias keys within the same semantic group (e.g. `old_string` + `old`, `command` + `cmd`, `query` + `pattern`, `symbol` + `name`, `path` + `cwd`) fail closed immediately with `ToolArgsRepairError`.
+  - Unknown argument fields fail closed instead of being silently dropped, and unsupported runtime tools fail closed immediately.
   - Text arguments (`query`, `symbol`, `command`) strictly require non-blank string types; non-string and whitespace-only values fail closed.
   - Equivalent parameter aliases:
     - `edit`: `old` / `search` / `before` -> `old_string`; `replace` / `replacement` / `after` / `new` -> `new_string`.
+    - `edit`: missing `new_string` fails closed; only an explicit empty `new_string`/alias represents deletion.
     - `edit`: `content` strictly requires a string type, avoiding silent data loss on non-string inputs.
     - `edit`: wraps single replacement object directly passed in `replacements`.
     - `edit`: parses JSON string `replacements` safely; invalid JSON fails closed.
-    - `read`: coerces numeric string `offset` / `limit` to bounded positive integers; bool, float, and invalid values are strictly rejected.
+    - `read`: coerces numeric string `offset` / `limit` to bounded positive integers; bool, float, null, and invalid values are strictly rejected.
     - `search`: `pattern` -> `query`.
     - `references`: `name` -> `symbol`.
     - `run` / `shell`: `cmd` -> `command` (never guesses command content).
     - `write` / `write_file` / `create_file` remain strictly unknown tools without hidden mutation aliases.
-  - Slimmed `codey.protocols.json_codec`: `_tool_call()` delegates all parameter parsing and validation to `normalize_tool_args()`, eliminating over 100 lines of duplicated logic; `read_files` and `parallel` reuse the shared normalizer.
+  - Slimmed `codey.protocols.json_codec`: `_tool_call()` delegates all parameter parsing and validation to `normalize_tool_args()`, eliminating duplicated validation branches; `read_files` and `parallel` reuse the shared normalizer, and stale private `_parse_object()` / `_text()` helpers were removed.
   - Bounded telemetry: `ToolPlan` carries `alias_rewrite_count` and `arg_repair_counts` accumulated strictly per accepted call after deduplication; `AgentLoop` forwards telemetry to `RunTrace.record_protocol_valid_turn`; `RunTrace` records and sanitizes repair counts without persisting raw paths, commands, queries, or prompt text.
-  - Smoke and Live A/B harnesses: added `tests/manual/tool_args_repair_smoke.py` (dialect coverage) and `tests/manual/tool_args_repair_live_ab.py` (end-to-end multi-turn friction and repair turn reduction).
+  - Smoke, deterministic A/B, live-provider, and dialect-pressure harnesses: `tests/manual/tool_args_repair_smoke.py` covers dialect and fail-closed cases; `tests/manual/tool_args_repair_simulated_ab.py` runs the deterministic 0.5.2-vs-0.5.3 parser comparison; `tests/manual/tool_args_repair_live_ab.py` is the natural production-agent-loop provider probe; `tests/manual/tool_args_repair_dialect_pressure_ab.py` verifies production-loop absorption when prompts deliberately pressure provider-shaped argument variants.
+  - Natural live-provider A/B on DeepSeek, MiMo, and GLM completed with no observed turn savings in the tiny clean-schema sample: baseline and candidate both finished 2/2 cases per provider with 7 total turns, zero protocol errors, zero repair prompts, and zero alias rewrites. This confirms no regression for the sampled path; deterministic dialect coverage remains the evidence for savings when aliases actually appear.
+  - MiMo dialect-pressure live A/B completed 2/2 baseline and 2/2 candidate cases. Candidate reduced total turns from 9 to 8 and repair prompts from 2 to 0, with 2 numeric-string coercions recorded; the edit/run pressure case stayed canonical on MiMo and did not exercise `old`/`new` or `cmd`.
+- Provider reliability:
+  - GLM browser start and new-chat URLs now use the root `https://chatglm.cn/` entry instead of the `main/alltoolsdetail` deep link, which can trigger verification. No deep-link fallback was added.
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 

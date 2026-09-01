@@ -269,7 +269,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             {"type": "page", "url": "https://aistudio.xiaomimimo.com/#/c"},
             {"type": "page", "url": "https://chat.stepfun.com/chats/1"},
             {"type": "service_worker", "url": "https://chat.qwen.ai/sw.js"},
-            {"type": "page", "url": "https://chatglm.cn/main/alltoolsdetail?lang=zh"},
+            {"type": "page", "url": "https://chatglm.cn/"},
         ]
 
         with (

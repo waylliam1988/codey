@@ -6,22 +6,28 @@
 
 - 共享工具参数规范化与协议摩擦降低 v1：
   - 新增纯函数模块 `codey.tool_args_repair`，负责词法路径规范化、有界正整数转换以及标准运行工具（`edit`、`read`、`ls`、`search`、`references`、`run`、`shell`）的等价字段别名修复。
-  - 路径严格限制为项目相对路径：规范化斜杠并安全折叠 `.` 与 `..`，严格拒绝 Windows 盘符（`C:\`）、UNC 路径（`//share`）、根路径（`/`）以及逃逸项目根目录的父级遍历（`../`）；路径 segment 保留内部空格不作 strip 猜测；不支持的未知运行时工具严格 fail closed 抛出异常。
+  - 路径严格限制为项目相对路径：规范化斜杠并安全折叠 `.` 与 `..`，严格拒绝 Windows 盘符（`C:\`）、UNC 路径（`//share`）、根路径（`/`）以及逃逸项目根目录的父级遍历（`../`）；可省略的 path 缺失时才默认 `.`，显式空字符串/null path 严格 fail closed；路径内部空格保留，首尾空白按 path normalization 记录。
   - 同一语义组内的冲突别名键（例如 `old_string` + `old`、`command` + `cmd`、`query` + `pattern`、`symbol` + `name`、`path` + `cwd`）严格 fail closed 并抛出 `ToolArgsRepairError`。
+  - 未知参数字段严格 fail closed，不再静默丢弃；不支持的未知运行时工具也会立即 fail closed。
   - 文本参数（`query`、`symbol`、`command`）严格要求非空白字符串类型，非字符串与纯空白值严格拒绝。
   - 支持的等价参数别名：
     - `edit`: `old` / `search` / `before` -> `old_string`；`replace` / `replacement` / `after` / `new` -> `new_string`。
+    - `edit`: 缺失 `new_string` 严格 fail closed；只有显式空字符串 `new_string` 或等价别名才表示删除。
     - `edit`: `content` 严格要求字符串类型，杜绝非字符串值的静默数据丢失。
     - `edit`: 支持将 `replacements` 中传入的单字典对象自动包装为列表。
     - `edit`: 安全解析 JSON 字符串形式的 `replacements`；无效 JSON 严格 fail closed。
-    - `read`: 数字字符串 `offset` / `limit` 规整为有界正整数；bool、float 与非法值严格拒绝。
+    - `read`: 数字字符串 `offset` / `limit` 规整为有界正整数；bool、float、null 与非法值严格拒绝。
     - `search`: `pattern` -> `query`。
     - `references`: `name` -> `symbol`。
     - `run` / `shell`: `cmd` -> `command`（绝不猜测或篡改命令内容）。
     - `write` / `write_file` / `create_file` 保持 unknown tool，并在 repair prompt 中统一引导 `edit(content=...)`，不引入生产隐藏别名。
-  - 大幅瘦身 `codey.protocols.json_codec`：`_tool_call()` 仅负责确定运行时工具名并委托给 `normalize_tool_args()`，消除 100 多行重复冗余的解析分支；`read_files` 与 `parallel` 复用相同的规范化逻辑。
+  - 大幅瘦身 `codey.protocols.json_codec`：`_tool_call()` 仅负责确定运行时工具名并委托给 `normalize_tool_args()`，消除重复冗余的解析分支；`read_files` 与 `parallel` 复用相同的规范化逻辑，并删除无调用方的 private `_parse_object()` / `_text()` 残留。
   - 有界遥测与安全记录：`ToolPlan` 增加 `alias_rewrite_count` 与 `arg_repair_counts`，且严格在 call 去重采纳后进行精确累计；`AgentLoop` 将其转发至 `RunTrace.record_protocol_valid_turn`；`RunTrace` 仅安全记录合法枚举计数并设上限（999），严格过滤与丢弃敏感 key，绝不持久化任何原始路径、命令、查询或 prompt 文本。
-  - 烟雾与 Live A/B 测试：新增 `tests/manual/tool_args_repair_smoke.py`（静态方言覆盖）与 `tests/manual/tool_args_repair_live_ab.py`（端到端多轮交互与 repair turn 降低评估）。
+  - 烟雾、确定性 A/B、live provider 与 dialect-pressure 测试：`tests/manual/tool_args_repair_smoke.py` 覆盖方言和 fail-closed case；`tests/manual/tool_args_repair_simulated_ab.py` 负责确定性的 0.5.2-vs-0.5.3 parser 对比；`tests/manual/tool_args_repair_live_ab.py` 是自然生产 agent loop/provider 实机 probe；`tests/manual/tool_args_repair_dialect_pressure_ab.py` 用于在 prompt 明确施压 provider-shaped 参数时验证生产 loop 吸收能力。
+  - DeepSeek、MiMo、GLM 的自然 live provider A/B 已完成；这组干净 schema 小样本里没有观测到省 turn：每个 provider 的 baseline/candidate 都完成 2/2 case，总 turn 都是 7，protocol error、repair prompt、alias rewrite 都是 0。这说明采样路径无回归；真正“别名出现时省 repair turn”的证据仍来自 deterministic dialect suite。
+  - MiMo dialect-pressure live A/B 已完成：baseline 和 candidate 都完成 2/2 case；candidate 总 turns 从 9 降到 8，repair prompts 从 2 降到 0，并记录到 2 次 numeric-string coercion；edit/run pressure case 里 MiMo 仍输出 canonical 参数，没有实际触发 `old`/`new` 或 `cmd`。
+- Provider 稳定性：
+  - GLM browser start 和 new-chat URL 改用根入口 `https://chatglm.cn/`，不再使用容易触发验证的 `main/alltoolsdetail` 深链；没有加入深链 fallback。
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 

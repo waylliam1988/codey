@@ -14,14 +14,12 @@ from codey.tool_args_repair import (
 )
 from codey.toolchain.runtime import (
     MAX_REPLACEMENTS,
-    READ_DEFAULT_LINES,
     READ_MAX_LINES,
 )
 
 
 _DEFAULT_TOOL_ARG_LIMITS = ToolArgLimits(
     max_replacements=MAX_REPLACEMENTS,
-    read_default_lines=READ_DEFAULT_LINES,
     read_max_lines=READ_MAX_LINES,
 )
 
@@ -273,21 +271,11 @@ def _balanced_json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-def _as_args(value: object) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 def _object_args(obj: dict[str, Any]) -> dict[str, Any]:
-    args = _as_args(obj.get("args"))
-    if args:
-        return args
+    if "args" in obj:
+        args = obj.get("args")
+        return args if isinstance(args, dict) else {}
     return {key: value for key, value in obj.items() if key not in {"tool", "name"}}
-
-
-def _text(value: object, default: str = "") -> str:
-    if value is None:
-        return default
-    return str(value)
 
 
 def _summary_from_args(args: dict[str, Any]) -> str:
@@ -543,21 +531,6 @@ class JsonToolCodec:
         if call is None:
             return [], None
         return [(call, repair)], Control(kind="continue", body="Need tool result")
-
-    def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
-        pairs, control = self._parse_object_items(obj)
-        calls = [c for c, _ in pairs]
-        rewrites = sum(r.alias_rewrite_count for _, r in pairs)
-        counts: dict[str, int] = {}
-        for _, r in pairs:
-            for k, v in r.arg_repair_counts.items():
-                counts[k] = counts.get(k, 0) + v
-        return ToolPlan(
-            calls=calls,
-            control=control,
-            alias_rewrite_count=rewrites,
-            arg_repair_counts=counts,
-        )
 
     def _read_files(self, args: dict[str, Any]) -> list[tuple[ToolCall, ToolArgsRepairResult]]:
         paths = args.get("paths")

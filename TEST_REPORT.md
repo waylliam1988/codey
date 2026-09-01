@@ -9,7 +9,7 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
-## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-08-31)
+## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-09-01)
 
 Scope:
 
@@ -19,17 +19,20 @@ tools:       introduced codey.tool_args_repair with pure functions for lexical p
              runtime tools (edit, read, ls, search, references, run, shell).
              Strictly enforces project-relative paths, rejecting absolute drive letters (C:\),
              UNC paths (//share), root prefixes (/), and parent traversal escape (../).
-             Path segments preserve raw characters and internal whitespace without guessing or stripping.
+             Missing optional paths default to ".", while explicit blank/null path values fail closed.
+             Internal path whitespace is preserved; boundary whitespace is counted as path normalization.
              Conflicting alias keys within the same semantic group (e.g. old_string + old, cmd + command,
              query + pattern, symbol + name, path + cwd) fail closed immediately with ToolArgsRepairError.
+             Unknown argument fields fail closed instead of being silently dropped.
              Text arguments (query, symbol, command) require non-blank string types; non-string values fail closed.
              Unsupported runtime tools fail closed immediately with ToolArgsRepairError.
              Supports equivalent parameter aliases:
              - edit: old / search / before -> old_string; replace / replacement / after / new -> new_string
+             - edit: missing new_string fails closed; explicit empty new_string/alias is required for deletion
              - edit: content strictly requires string type, preventing silent data loss on non-string inputs
              - edit: single replacement object wrapped to replacements list
              - edit: JSON string replacements parsed safely; invalid JSON fails closed
-             - read: numeric string offset/limit coerced to bounded integers; bool/float/invalid rejected
+             - read: numeric string offset/limit coerced to bounded integers; bool/float/null/invalid rejected
              - search: pattern -> query
              - references: name -> symbol
              - run/shell: cmd -> command (does not guess command contents)
@@ -38,30 +41,52 @@ tools:       introduced codey.tool_args_repair with pure functions for lexical p
 codec:       streamlined codey.protocols.json_codec by delegating parameter parsing and repair to
              normalize_tool_args(), removing duplicated validation loops from _tool_call().
              read_files and parallel batching reuse the same canonical normalizer.
+             Removed stale private _parse_object() and _text() helpers so parse() remains the single
+             ToolPlan construction path with dedupe telemetry semantics.
              Telemetry accumulation occurs strictly per accepted call after deduplication.
              Prompt repair guidance includes {"write", "write_file", "create_file"}.
 telemetry:   ToolPlan records bounded alias_rewrite_count and arg_repair_counts.
              Agent loop forwards repair telemetry to RunTrace via record_protocol_valid_turn.
              RunTrace safely tracks bounded repair counts (max 999) and sanitizes/drops sensitive
              or raw keys, ensuring zero raw prompt, argument, or path leakage.
-harness:     added tests/manual/tool_args_repair_smoke.py and tests/manual/tool_args_repair_live_ab.py.
+harness:     added tests/manual/tool_args_repair_smoke.py, split deterministic parser A/B into
+             tests/manual/tool_args_repair_simulated_ab.py, added
+             tests/manual/tool_args_repair_live_ab.py for natural live provider/production
+             agent-loop A/B, and added tests/manual/tool_args_repair_dialect_pressure_ab.py
+             for forced-alias production-loop absorption checks.
+provider:    GLM browser start and new-chat URLs now use https://chatglm.cn/ instead of
+             the main/alltoolsdetail deep link, which can trigger verification. No deep-link
+             fallback was added.
+release:     package version remains 0.5.2; no release or push was performed.
 ```
 
 Verification:
 
-- Unit & Protocol tests:
-  - `python -m unittest tests/test_tool_args_repair.py` (21 tests passed)
-  - `python -m unittest tests/test_protocols.py` (54 tests passed)
-  - `python -m unittest tests/test_run_trace.py` (63 tests passed)
-  - `python -m unittest tests/test_architecture.py` (71 tests passed)
-  - `python -m unittest tests/test_agent.py` (124 tests passed)
-  - `python tests/manual/tool_args_repair_smoke.py` (16 test cases, 100% expected outcome)
-  - `python tests/manual/tool_args_repair_live_ab.py` (5 scenarios, 36.36% turn reduction, 8 repair turns saved)
+- Focused regression set before full pytest:
+  - `python -m pytest tests/test_browser.py tests/test_providers.py tests/test_glm.py tests/test_tool_args_repair.py tests/test_protocols.py tests/test_run_trace.py::ProtocolTelemetryTests tests/test_agent.py::ProtocolTelemetryTests tests/test_architecture.py -q` (284 passed, 421 subtests passed in 13.85s)
+  - `python tests/manual/tool_args_repair_smoke.py` (21 cases, 100% expected outcome; 12 valid / 9 invalid, 14 rewrites)
+  - `python tests/manual/tool_args_repair_simulated_ab.py` (5 scenarios, 36.36% turn reduction, 8 repair turns saved)
+  - `python tests/manual/tool_args_repair_live_ab.py --self-test` (passed; no provider/browser session opened)
+  - `python tests/manual/tool_args_repair_dialect_pressure_ab.py --self-test` (passed; baseline rejects representative alias payloads and candidate records the expected repair kind)
+- Live provider A/B:
+  - `python tests/manual/tool_args_repair_live_ab.py --provider deepseek --max-turns 8 --output tests/manual/results/tool_args_repair_live_ab-deepseek-20260901.json`
+    (baseline 2/2 done, candidate 2/2 done; expected_content_ok 2/2 vs 2/2; turns 7 vs 7; protocol errors 0 vs 0; repair prompts 0 vs 0; alias rewrites 0 vs 0)
+  - `python tests/manual/tool_args_repair_live_ab.py --provider mimo --max-turns 8 --output tests/manual/results/tool_args_repair_live_ab-mimo-20260901.json`
+    (baseline 2/2 done, candidate 2/2 done; expected_content_ok 2/2 vs 2/2; turns 7 vs 7; protocol errors 0 vs 0; repair prompts 0 vs 0; alias rewrites 0 vs 0)
+  - `python tests/manual/tool_args_repair_live_ab.py --provider glm --max-turns 8 --output tests/manual/results/tool_args_repair_live_ab-glm-20260901-root.json`
+    (baseline 2/2 done, candidate 2/2 done; expected_content_ok 2/2 vs 2/2; turns 7 vs 7; protocol errors 0 vs 0; repair prompts 0 vs 0; alias rewrites 0 vs 0)
+  - Interpretation: the natural live sample showed no observed turn savings because all three providers emitted canonical arguments in these clean-schema tasks. It also showed no safety or completion regression. The deterministic dialect suite remains the mechanism evidence for savings when `pattern`, `old`/`new`, `cmd`, numeric strings, JSON-string replacements, or wrapped replacements appear.
+  - A/B design note: keep natural live A/B separate from any future dialect-pressure suite. Forced-alias prompts can prove the production loop handles provider-shaped arguments, but they must not be reported as natural production turn savings.
+- Dialect-pressure live provider A/B:
+  - `python tests/manual/tool_args_repair_dialect_pressure_ab.py --provider mimo --max-turns 8 --output tests/manual/results/tool_args_repair_dialect_pressure_ab-mimo-20260901.json`
+    (baseline 2/2 done, candidate 2/2 done; expected_content_ok 2/2 vs 2/2; turns 9 vs 8; protocol errors 2 vs 0; repair prompts 2 vs 0; candidate alias rewrites 2; candidate arg_repair_counts: `numeric_coerced=2`)
+  - Interpretation: the pressure sample observed a real production-loop benefit on MiMo only where the model actually emitted dialect-shaped arguments. `search_read_numeric_pressure` saved 1 turn and removed 2 repair prompts through numeric-string coercion; `edit_run_alias_pressure` stayed canonical on both arms, so `old`/`new` and `cmd` were not exercised in this live run.
 - Code Quality:
-  - `python -m compileall codey tests` (passed)
+  - `python -m compileall -q codey tests` (passed)
   - `ruff check codey tests` (passed)
+  - `git -c core.excludesfile= diff --check` (passed)
 - Full regression suite:
-  - `pytest` (`3358 passed, 4 skipped in 315.52s (0:05:15)`)
+  - `python -m pytest` (`3358 passed, 16 skipped in 296.26s (0:04:56)`)
 
 ## 0.5.2 Effect Intent / Settlement + Tool Replay Policy v1 (2026-08-31)
 

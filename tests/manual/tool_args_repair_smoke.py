@@ -8,8 +8,13 @@ and invalid payloads).
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.protocols.json_codec import JsonToolCodec
 
@@ -106,6 +111,36 @@ SAMPLE_DATASET: list[TestCase] = [
         reply_text='{"tool":"edit","args":{"path":"app.py","replacements":"{bad json"}}',
         expected_valid=False,
         description="Corrupted JSON replacements fail closed.",
+    ),
+    TestCase(
+        name="invalid_missing_new_string",
+        reply_text='{"tool":"edit","args":{"path":"app.py","old_string":"old text"}}',
+        expected_valid=False,
+        description="Missing new_string fails closed; only explicit empty string deletes.",
+    ),
+    TestCase(
+        name="valid_explicit_empty_new_string",
+        reply_text='{"tool":"edit","args":{"path":"app.py","old_string":"old text","new_string":""}}',
+        expected_valid=True,
+        description="Explicit empty new_string is accepted as deletion.",
+    ),
+    TestCase(
+        name="invalid_null_read_offset",
+        reply_text='{"tool":"read_file","args":{"path":"app.py","offset":null}}',
+        expected_valid=False,
+        description="Explicit null numeric arguments fail closed.",
+    ),
+    TestCase(
+        name="invalid_null_optional_path",
+        reply_text='{"tool":"grep","args":{"query":"needle","path":null}}',
+        expected_valid=False,
+        description="Optional path defaults only when missing, not when null.",
+    ),
+    TestCase(
+        name="invalid_unknown_argument_field",
+        reply_text='{"tool":"read_file","args":{"path":"app.py","unused":"value"}}',
+        expected_valid=False,
+        description="Unknown argument fields fail closed instead of being dropped.",
     ),
     TestCase(
         name="unknown_write_file_stays_unknown",

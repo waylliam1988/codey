@@ -232,7 +232,7 @@ class GlmWebProviderTests(unittest.TestCase):
         )
 
     def test_delegates_operations_while_driver_owns_formatting_hint(self) -> None:
-        page = SimpleNamespace(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        page = SimpleNamespace(url="https://chatglm.cn/")
         page.title = mock.Mock(return_value="智谱清言")
         session = SimpleNamespace(page=page, close=mock.Mock())
         provider = GlmWebProvider(session)
@@ -253,7 +253,7 @@ class GlmWebProviderTests(unittest.TestCase):
         session.close.assert_called_once_with()
 
     def test_blank_message_is_rejected_before_provider_touches_page(self) -> None:
-        page = mock.Mock(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        page = mock.Mock(url="https://chatglm.cn/")
         page.title.return_value = "智谱清言"
         provider = GlmWebProvider(SimpleNamespace(page=page, close=mock.Mock()))
 
@@ -527,7 +527,7 @@ class ProviderRegistryTests(unittest.TestCase):
 
     def test_borrow_open_glm_provider_reuses_sibling_page(self) -> None:
         owner = SimpleNamespace(url="https://chat.deepseek.com/")
-        sibling = SimpleNamespace(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        sibling = SimpleNamespace(url="https://chatglm.cn/")
         owner.context = SimpleNamespace(pages=[owner, sibling])
 
         provider = registry.borrow_open_provider("glm", owner)

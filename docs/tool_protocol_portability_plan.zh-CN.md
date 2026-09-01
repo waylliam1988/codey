@@ -535,6 +535,9 @@ search/replace/replacement -> old_string/new_string
 single replacement object -> replacements[...]
 JSON string edits -> parsed replacements, fail closed on invalid JSON
 numeric strings for offset/limit -> bounded ints
+missing new_string -> fail closed；只有显式空字符串表示删除
+unknown argument fields -> fail closed，不静默丢弃
+optional path -> 仅缺失时默认 "."；显式空/null path fail closed
 write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引导 edit(content=...)，不做生产隐藏 alias
 ```
 
@@ -543,6 +546,11 @@ write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引�
 - P1 会改变 parser 接受范围，不进 0.4.13。
 - Research 已经有 `validate_tool_args()`，不要盲目合并进 coding shim。
 - Runtime 侧仍要重新校验 canonical args，不能信任 codec 已经校验过。
+- A/B 要拆成两类：自然 live provider A/B 衡量 provider 是否真实输出偏差；dialect-pressure
+  或 forced-alias 只能验证生产 loop 对 `pattern`、`old/new`、`cmd`、数字字符串等形态的
+  吸收能力，不能当作自然生产省 turn 结论。0.5.3 使用
+  `tests/manual/tool_args_repair_live_ab.py` 记录自然 live A/B，使用
+  `tests/manual/tool_args_repair_dialect_pressure_ab.py` 记录 pressure A/B。
 
 ### P2: Tool Prompt Decoupling
 

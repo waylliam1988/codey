@@ -1512,6 +1512,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("write_file", TOOL_DEFINITION_BY_NAME)
         self.assertNotIn("create_file", TOOL_DEFINITION_BY_NAME)
 
+    def test_json_codec_keeps_one_tool_plan_parse_path(self) -> None:
+        source = (ROOT / "codey" / "protocols" / "json_codec.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("def _parse_object(", source)
+        self.assertNotIn("def _text(", source)
+
 
 if __name__ == "__main__":
     unittest.main()

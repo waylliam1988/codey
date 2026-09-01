@@ -22,7 +22,7 @@ from codey.providers.submission import (
 
 PROVIDER_ID = "glm"
 PROFILE = get_profile(PROVIDER_ID)
-GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
+GLM_URL = "https://chatglm.cn/"
 FORMAT_HINT = (
     "GLM page formatting override: when your answer is a local-runner JSON "
     "command, return one raw JSON object with ASCII U+0022 double quotes. "
