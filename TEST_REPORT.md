@@ -57,13 +57,13 @@ harness:     added tests/manual/tool_args_repair_smoke.py, split deterministic p
 provider:    GLM browser start and new-chat URLs now use https://chatglm.cn/ instead of
              the main/alltoolsdetail deep link, which can trigger verification. No deep-link
              fallback was added.
-release:     package version remains 0.5.2; no release or push was performed.
+release:     package version bumped to 0.5.3 for the release commit.
 ```
 
 Verification:
 
 - Focused regression set before full pytest:
-  - `python -m pytest tests/test_browser.py tests/test_providers.py tests/test_glm.py tests/test_tool_args_repair.py tests/test_protocols.py tests/test_run_trace.py::ProtocolTelemetryTests tests/test_agent.py::ProtocolTelemetryTests tests/test_architecture.py -q` (284 passed, 421 subtests passed in 13.85s)
+  - `python -m pytest tests/test_browser.py tests/test_providers.py tests/test_glm.py tests/test_tool_args_repair.py tests/test_protocols.py tests/test_run_trace.py::ProtocolTelemetryTests tests/test_agent.py::ProtocolTelemetryTests tests/test_architecture.py tests/test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q` (285 passed, 421 subtests passed in 14.13s)
   - `python tests/manual/tool_args_repair_smoke.py` (21 cases, 100% expected outcome; 12 valid / 9 invalid, 14 rewrites)
   - `python tests/manual/tool_args_repair_simulated_ab.py` (5 scenarios, 36.36% turn reduction, 8 repair turns saved)
   - `python tests/manual/tool_args_repair_live_ab.py --self-test` (passed; no provider/browser session opened)
@@ -86,7 +86,7 @@ Verification:
   - `ruff check codey tests` (passed)
   - `git -c core.excludesfile= diff --check` (passed)
 - Full regression suite:
-  - `python -m pytest` (`3358 passed, 16 skipped in 296.26s (0:04:56)`)
+  - `python -m pytest` (`3358 passed, 16 skipped in 289.78s (0:04:49)`)
 
 ## 0.5.2 Effect Intent / Settlement + Tool Replay Policy v1 (2026-08-31)
 
@@ -6340,7 +6340,7 @@ Production changes:
   `no_json`, `unknown_tool`, `invalid_args`, `direct_answer`,
   `native_tool_denial`, and `nested_tool_in_done`.
 - `codey/agent.py` renders kind-specific repair prompts:
-  unknown `write_file`/`write` -> `edit(content=...)`; invalid edit modes ->
+  unknown `write_file`/`write` repair prompt -> `edit(content=...)`; invalid edit modes ->
   one edit mode only; invalid read offsets -> 1-based offsets; prose answers ->
   `done.summary`; website-native tool denial -> local-runner JSON; nested tool
   JSON inside `done.summary` -> call the tool directly. The repair prompt also

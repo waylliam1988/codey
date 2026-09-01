@@ -2770,7 +2770,8 @@
   `native_tool_denial`、`nested_tool_in_done`。这复用了 Research 已经验证过的
   `ToolPlan.protocol_error_kind` 字段。
 - Coding run loop 不再对所有协议错误都发同一段泛化 JSON 提醒，而是按错误类型给
-  具体 repair：`write_file` 会被纠正到 `edit(content=...)`；混用 edit 模式会说明
+  具体 repair：unknown `write_file` 通过 repair prompt 引导模型改用
+  `edit(content=...)`；混用 edit 模式会说明
   一次只能选一种模式；`read_file offset=0` 会说明 offset 是 1-based；直接 prose
   回答会被要求放进 `done.summary`；网页原生“工具不可用”提示会被纠正回本地 runner
   JSON；把工具 JSON 包在 `done.summary` 里会被要求直接调用那个工具。

@@ -766,11 +766,29 @@ python -B tests\manual\coding_repair_prompt_ab.py `
   --keep-open
 ```
 
-`tool_args_repair_dialect_pressure_ab.py` is a live provider pressure probe for
-0.5.3 tool argument repair. It runs the production coding agent loop, but the
-tasks deliberately ask the model to emit common provider-shaped argument
-variants (`pattern`, `old`/`new`, `cmd`, and numeric-string read offsets). Keep
-its results separate from natural live A/B: this harness proves absorption when
+`tool_args_repair_smoke.py`, `tool_args_repair_simulated_ab.py`, and
+`tool_args_repair_live_ab.py` cover 0.5.3 tool argument repair. The smoke
+harness is deterministic dialect/fail-closed coverage. The simulated A/B
+compares 0.5.2-shaped strict parsing with 0.5.3 canonicalization on recorded
+or synthetic model turns. The live A/B runs the production coding agent loop
+against a real provider on tiny temporary projects.
+
+```powershell
+python -B tests\manual\tool_args_repair_smoke.py
+python -B tests\manual\tool_args_repair_simulated_ab.py
+python -B tests\manual\tool_args_repair_live_ab.py --self-test
+python -B tests\manual\tool_args_repair_live_ab.py `
+  --provider mimo `
+  --port 9222 `
+  --max-turns 8 `
+  --keep-open
+```
+
+`tool_args_repair_dialect_pressure_ab.py` is the matching live provider
+pressure probe. It also runs the production coding agent loop, but the tasks
+deliberately ask the model to emit common provider-shaped argument variants
+(`pattern`, `old`/`new`, `cmd`, and numeric-string read offsets). Keep its
+results separate from natural live A/B: this harness proves absorption when
 dialect arguments appear, not natural production turn savings.
 
 ```powershell
