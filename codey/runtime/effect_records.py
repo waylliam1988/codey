@@ -16,7 +16,7 @@ from typing import Any
 import uuid
 
 from codey.runtime.effects import lane_for_run, operation_id_for_run
-from codey.runtime.replay_policy import ReplayClass
+from codey.runtime.replay_policy import ReplayClass, is_replayable_safe_tool
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import session_key
 
@@ -78,6 +78,7 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "args_digest",
     "display_ref",
     "replay_class",
+    "replay_args",
     "created_at",
 })
 _SETTLEMENT_PAYLOAD_KEYS = frozenset({
@@ -95,8 +96,11 @@ _SETTLEMENT_PAYLOAD_KEYS = frozenset({
     "error_code",
     "sent_state",
     "replay_class",
+    "replay_count",
+    "replayed_from_effect_id",
     "created_at",
 })
+
 
 
 class RuntimeEffectError(Exception):
@@ -183,6 +187,7 @@ class RuntimeEffectIntent:
     args_digest: str = ""
     display_ref: str = ""
     replay_class: str = ReplayClass.UNSAFE
+    replay_args: dict[str, object] | None = None
     created_at: str = ""
     record_kind: str = RECORD_KIND_INTENT
     schema_version: int = SCHEMA_VERSION
@@ -208,6 +213,20 @@ class RuntimeEffectIntent:
         if self.record_kind != RECORD_KIND_INTENT:
             raise RuntimeEffectError("record_kind must be 'intent'")
         _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
+        if self.replay_args is not None:
+            if not isinstance(self.replay_args, dict) or isinstance(self.replay_args, bool):
+                raise RuntimeEffectError("replay_args must be a dict or None")
+            if (
+                self.effect_category != EFFECT_CATEGORY_TOOL_CALL
+                or self.replay_class != ReplayClass.SAFE
+                or not is_replayable_safe_tool(self.tool_name)
+            ):
+                raise RuntimeEffectError("replay_args only permitted for replayable safe tool calls")
+            for k, v in self.replay_args.items():
+                if not isinstance(k, str) or not k:
+                    raise RuntimeEffectError(f"invalid replay_args key: {k}")
+                if not isinstance(v, (str, int, float, bool, type(None))):
+                    raise RuntimeEffectError(f"invalid replay_args value for key {k}: {type(v)}")
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -230,6 +249,7 @@ class RuntimeEffectIntent:
             "args_digest": self.args_digest,
             "display_ref": self.display_ref,
             "replay_class": self.replay_class,
+            "replay_args": self.replay_args,
             "created_at": self.created_at,
         }
 
@@ -245,6 +265,13 @@ class RuntimeEffectIntent:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect:{effect_id}")
+
+        raw_replay_args = payload.get("replay_args")
+        replay_args: dict[str, object] | None = None
+        if raw_replay_args is not None:
+            if not isinstance(raw_replay_args, dict) or isinstance(raw_replay_args, bool):
+                raise RuntimeEffectError("replay_args must be a dict or None")
+            replay_args = dict(raw_replay_args)
 
         return cls(
             effect_id=effect_id,
@@ -262,6 +289,7 @@ class RuntimeEffectIntent:
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
             replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
+            replay_args=replay_args,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_INTENT,
             schema_version=SCHEMA_VERSION,
@@ -280,6 +308,8 @@ class RuntimeEffectSettlement:
     error_code: str = ""
     sent_state: str = SENT_STATE_SETTLED
     replay_class: str = ReplayClass.UNSAFE
+    replay_count: int = 0
+    replayed_from_effect_id: str = ""
     created_at: str = ""
     record_kind: str = RECORD_KIND_SETTLEMENT
     schema_version: int = SCHEMA_VERSION
@@ -294,6 +324,12 @@ class RuntimeEffectSettlement:
         _require_bounded_str(self.operation_id, "operation_id", MAX_REF_CHARS, allow_empty=True)
         _require_bounded_str(self.error_code, "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True)
         _require_bounded_str(self.created_at, "created_at", MAX_TEXT_CHARS, allow_empty=True)
+        _require_nonnegative_int(self.replay_count, "replay_count")
+        _require_bounded_str(self.replayed_from_effect_id, "replayed_from_effect_id", MAX_EFFECT_ID_CHARS, allow_empty=True)
+        if self.replayed_from_effect_id and self.replayed_from_effect_id != self.effect_id:
+            raise RuntimeEffectError(
+                f"replayed_from_effect_id '{self.replayed_from_effect_id}' must match effect_id '{self.effect_id}'"
+            )
         _require_enum_str(self.effect_category, "effect_category", EFFECT_CATEGORIES)
         if self.record_kind != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("record_kind must be 'settlement'")
@@ -317,6 +353,8 @@ class RuntimeEffectSettlement:
             "error_code": self.error_code,
             "sent_state": self.sent_state,
             "replay_class": self.replay_class,
+            "replay_count": self.replay_count,
+            "replayed_from_effect_id": self.replayed_from_effect_id,
             "created_at": self.created_at,
         }
 
@@ -333,6 +371,14 @@ class RuntimeEffectSettlement:
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect_settlement:{effect_id}")
 
+        replay_count = _require_nonnegative_int(payload.get("replay_count", 0), "replay_count")
+        replayed_from_effect_id = _require_bounded_str(
+            payload.get("replayed_from_effect_id") or "",
+            "replayed_from_effect_id",
+            MAX_EFFECT_ID_CHARS,
+            allow_empty=True,
+        )
+
         return cls(
             effect_id=effect_id,
             effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
@@ -344,10 +390,13 @@ class RuntimeEffectSettlement:
             error_code=_require_bounded_str(payload.get("error_code") or "", "error_code", MAX_ERROR_CODE_CHARS, allow_empty=True),
             sent_state=_require_enum_str(payload.get("sent_state"), "sent_state", SENT_STATES),
             replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
+            replay_count=replay_count,
+            replayed_from_effect_id=replayed_from_effect_id,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,
         )
+
 
 
 @dataclass(frozen=True)
@@ -370,7 +419,10 @@ class RecoverySummary:
     unconfirmed_provider_calls: int = 0
     retryable_reads: int = 0
     interrupted_repairs: int = 0
+    replayed_reads: int = 0
+    replayed_searches: int = 0
     explanation_lines: tuple[str, ...] = ()
+
 
 
 def record_settlement_safely(
@@ -438,6 +490,7 @@ class RuntimeEffectStore:
             args_digest=intent.args_digest,
             display_ref=intent.display_ref,
             replay_class=intent.replay_class,
+            replay_args=intent.replay_args,
             created_at=created_at,
         )
         self.session_log.append(
@@ -491,6 +544,8 @@ class RuntimeEffectStore:
                 matching.settlement.status == settlement.status
                 and matching.settlement.error_code == settlement.error_code
                 and matching.settlement.sent_state == settlement.sent_state
+                and matching.settlement.replay_count == settlement.replay_count
+                and matching.settlement.replayed_from_effect_id == settlement.replayed_from_effect_id
             ):
                 return matching.settlement
             raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
@@ -509,6 +564,8 @@ class RuntimeEffectStore:
             error_code=settlement.error_code,
             sent_state=settlement.sent_state,
             replay_class=matching.intent.replay_class,
+            replay_count=settlement.replay_count,
+            replayed_from_effect_id=settlement.replayed_from_effect_id,
             created_at=created_at,
         )
         self.session_log.append(
@@ -604,6 +661,8 @@ class RuntimeEffectStore:
                         and existing.sent_state == new_settlement.sent_state
                         and existing.effect_category == new_settlement.effect_category
                         and existing.replay_class == new_settlement.replay_class
+                        and existing.replay_count == new_settlement.replay_count
+                        and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
                     ):
                         continue
                     raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")
@@ -682,13 +741,22 @@ class RuntimeEffectStore:
         unconfirmed_provider_calls = 0
         retryable_reads = 0
         interrupted_repairs = 0
+        replayed_reads = 0
+        replayed_searches = 0
 
         for proj in effects:
             intent = proj.intent
             settlement = proj.settlement
-            # Only count settled effects with interrupted status (e.g. synthetic crash recovery)
             if settlement is None:
                 continue
+
+            if settlement.replay_count > 0:
+                if intent.tool_name == "read":
+                    replayed_reads += 1
+                elif intent.tool_name in {"ls", "search", "references"}:
+                    replayed_searches += 1
+                continue
+
             if settlement.status != SETTLEMENT_STATUS_INTERRUPTED:
                 continue
 
@@ -703,12 +771,16 @@ class RuntimeEffectStore:
                     interrupted_writes += 1
 
         lines: list[str] = []
+        if replayed_reads > 0:
+            lines.append("Read action was recovered")
+        if replayed_searches > 0:
+            lines.append("Search action was recovered")
+        if retryable_reads > 0:
+            lines.append("Read action can be retried")
         if interrupted_writes > 0:
             lines.append("Local write was interrupted and was not repeated")
         if unconfirmed_provider_calls > 0:
             lines.append("Provider response was not confirmed")
-        if retryable_reads > 0:
-            lines.append("Read action can be retried")
         if interrupted_repairs > 0:
             lines.append("Repair round was interrupted")
 
@@ -717,8 +789,11 @@ class RuntimeEffectStore:
             unconfirmed_provider_calls=unconfirmed_provider_calls,
             retryable_reads=retryable_reads,
             interrupted_repairs=interrupted_repairs,
+            replayed_reads=replayed_reads,
+            replayed_searches=replayed_searches,
             explanation_lines=tuple(lines),
         )
+
 
 
 __all__ = [

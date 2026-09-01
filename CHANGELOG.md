@@ -2,7 +2,20 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## 0.5.4 - Safe Tool Replay v1
+
+- Safe Tool Replay & Resumption Recovery v1:
+  - Added `codey.runtime.safe_tool_replay`: pure data validation and candidate projection module without dependencies on execution runtime or agents layer. Defines candidate data structures and strict replay argument normalization (`validate_replay_args()`, `replay_args_for_tool_call()`, `candidate_from_effect()`), requiring zero alias rewrites and zero repairs.
+  - Narrow Replayable Whitelist: defined `REPLAYABLE_SAFE_TOOL_NAMES = frozenset({"read", "ls", "search", "references"})`. While `project_facts` and `project_map` remain classified as safe, they are not connected to production replay executor in 0.5.4; mutating actions (`edit`, `write`, `run`, `shell`, `knowledge_write`) and provider sends/repair rounds are strictly never replayed.
+  - Runtime Effect Records Extension: `RuntimeEffectIntent` records canonical `replay_args` strictly for replayable safe tools; `RuntimeEffectSettlement` records `replay_count` (int) and `replayed_from_effect_id` (str, must match `effect_id`). Duplicate settlement idempotency checking incorporates replay metadata.
+  - Recovery Summary Projection: `RecoverySummary` tracks `replayed_reads` and `replayed_searches` and renders user-facing rows (`Read action was recovered`, `Search action was recovered`) in run details. Session log compaction preserves replayed intents and settlements.
+  - Agent Execution Layer Refactoring: extracted `execute_information_tool_call()` and `evaluate_tool_call_policy_for()` in `tool_execution.py` for shared execution without duplicate code paths. Extracted `tool_result_from_outcome()` and updated `record_tool_call_intent()` to persist canonical `replay_args`.
+  - Seamless Resumption Loop: defined `RecoveredToolOutcome` in `codey.agents.request` and added `recovered_tool_outcomes` to `AgentRequest`. Updated `codey.agents.loop`: `_run_loop()` supports `start_turn: int = 1`; `run()` consumes recovered tool outcomes, updates session state, formats tool results for the model, and resumes conversational turn loop starting from `max(turn) + 1`.
+  - Operation Gate Upgrade: upgraded `_settle_pending_effects_for_resume()` to `_recover_effects_for_resume()` in `task_run.py`, validating project paths, writer context, and policy approval before replaying safe tool calls. Wired `recovered_tool_outcomes` through `RunFrame` and consumed/cleared in `_run_one_writer_attempt()`. Unsafe, provider, repair, or invalid effects fail-closed to synthetic `interrupted` settlements.
+  - Testing & Verification: added unit tests in `tests/test_safe_tool_replay.py`, smoke harness `tests/manual/safe_tool_replay_smoke.py` (`--self-test`), updated `test_tool_replay_policy.py`, `test_runtime_effect_records.py`, and `test_agent_effect_sandwich.py`. All 3,387 tests in the full pytest suite passed.
+
 ## 0.5.3 - Shared Tool Argument Repair + Protocol Friction Reduction v1
+
 
 - Tool Argument Canonicalization & Protocol Friction Reduction v1:
   - Added `codey.tool_args_repair` providing pure functions for lexical path normalization, bounded positive integer parsing, and equivalent field alias rewriting for canonical runtime tools (`edit`, `read`, `ls`, `search`, `references`, `run`, `shell`).

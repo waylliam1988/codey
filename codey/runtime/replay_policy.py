@@ -19,6 +19,19 @@ SAFE_TOOL_NAMES = frozenset({
     "project_map",
 })
 
+REPLAYABLE_SAFE_TOOL_NAMES = frozenset({
+    "read",
+    "ls",
+    "search",
+    "references",
+})
+
+
+def is_replayable_safe_tool(tool_name: str) -> bool:
+    """Return True if tool_name is in the replayable safe tools whitelist."""
+    return str(tool_name or "").strip() in REPLAYABLE_SAFE_TOOL_NAMES
+
+
 UNSAFE_TOOL_NAMES = frozenset({
     "edit",
     "write",
@@ -97,11 +110,13 @@ def repair_replay_policy() -> ReplayDecision:
 
 
 __all__ = [
+    "REPLAYABLE_SAFE_TOOL_NAMES",
     "ReplayClass",
     "ReplayClassType",
     "ReplayDecision",
     "SAFE_TOOL_NAMES",
     "UNSAFE_TOOL_NAMES",
+    "is_replayable_safe_tool",
     "provider_replay_policy",
     "repair_replay_policy",
     "tool_replay_policy",

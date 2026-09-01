@@ -45,6 +45,7 @@ class TurnState:
 
 
 def call_arg(call: ToolCall, name: str, default: str = "") -> str:
+
     value = call.args.get(name, default)
     if value is None:
         return default
@@ -88,28 +89,26 @@ def action_subject_for_call(
     )
 
 
-def evaluate_tool_call_policy(
-    session: AgentLoopSession,
+def evaluate_tool_call_policy_for(
     call: ToolCall,
     *,
-    turn: int,
-    tool_index: int,
+    project: Path,
+    permission_profile: str,
+    approval_available: bool = False,
+    phase: str = "writer",
 ) -> tuple[ActionPolicyDecision | None, Any]:
     policy_subject = action_subject_for_call(
         call,
-        project=session.project,
-        permission_profile=session.profile.name,
-        phase="writer",
-        approval_available=bool(session.on_shell_request),
+        project=project,
+        permission_profile=permission_profile,
+        phase=phase,
+        approval_available=approval_available,
     )
     policy_decision = (
         evaluate_action(policy_subject)
         if policy_subject is not None
         else None
     )
-    if policy_decision is not None:
-        session.trace.call("record_policy_decision", policy_decision)
-
     from codey.runtime.replay_policy import tool_replay_policy
     is_denied = policy_denied(policy_decision)
     is_approval = (call.name == "shell") and policy_asks_user(policy_decision)
@@ -118,6 +117,25 @@ def evaluate_tool_call_policy(
         policy_denied=is_denied,
         approval_required=is_approval,
     )
+    return policy_decision, replay_decision
+
+
+def evaluate_tool_call_policy(
+    session: AgentLoopSession,
+    call: ToolCall,
+    *,
+    turn: int,
+    tool_index: int,
+) -> tuple[ActionPolicyDecision | None, Any]:
+    policy_decision, replay_decision = evaluate_tool_call_policy_for(
+        call,
+        project=session.project,
+        permission_profile=session.profile.name,
+        phase="writer",
+        approval_available=bool(session.on_shell_request),
+    )
+    if policy_decision is not None:
+        session.trace.call("record_policy_decision", policy_decision)
     return policy_decision, replay_decision
 
 
@@ -138,9 +156,17 @@ def record_tool_call_intent(
         compute_args_digest,
         new_effect_id,
     )
+    from codey.runtime.replay_policy import ReplayClass, is_replayable_safe_tool
+    from codey.runtime.safe_tool_replay import replay_args_for_tool_call
+
     effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.run_id)
     display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
     replay_class = getattr(replay_decision, "replay_class", "unsafe")
+    replay_args = (
+        replay_args_for_tool_call(call)
+        if replay_class == ReplayClass.SAFE and is_replayable_safe_tool(call.name)
+        else None
+    )
     intent = RuntimeEffectIntent(
         effect_id=effect_id,
         effect_category=EFFECT_CATEGORY_TOOL_CALL,
@@ -154,9 +180,11 @@ def record_tool_call_intent(
         display_ref=display_ref[:100],
         args_digest=compute_args_digest(call.args),
         replay_class=replay_class,
+        replay_args=replay_args,
     )
     effects.record_intent(session.session_id, session.run_id, intent)
     return effect_id
+
 
 
 def record_tool_call_settlement(
@@ -265,6 +293,17 @@ def read_before_edit_outcome(
     return None
 
 
+def tool_result_from_outcome(call: ToolCall, outcome: ToolOutcome) -> ToolResult:
+    return ToolResult(
+        call=call,
+        model_text=outcome.model_text,
+        truncated=outcome.truncated,
+        presentation=outcome.presentation,
+        audit=outcome.audit,
+        canonical=outcome.canonical,
+    )
+
+
 def record_tool_outcome(
     session: AgentLoopSession,
     turn_state: TurnState,
@@ -277,16 +316,7 @@ def record_tool_outcome(
     path = call_arg(call, "path", ".")
     model_text = outcome.model_text
     emit(session, RunEvent.tool_finished(turn, call, outcome, index=tool_index))
-    turn_state.results.append(
-        ToolResult(
-            call=call,
-            model_text=model_text,
-            truncated=outcome.truncated,
-            presentation=outcome.presentation,
-            audit=outcome.audit,
-            canonical=outcome.canonical,
-        )
-    )
+    turn_state.results.append(tool_result_from_outcome(call, outcome))
     if call.name == "read" and outcome.ok:
         canonical = canonical_project_path(session.project, path)
         session.progress.read_file_paths.add(canonical)
@@ -370,6 +400,37 @@ def execute_run_call(
     return outcome
 
 
+def execute_information_tool_call(
+    project: Path,
+    tool_fns: Any,
+    call: ToolCall,
+) -> ToolOutcome:
+    """Execute a pure read/information tool call in a replay-safe manner."""
+    path = call_arg(call, "path", ".")
+    if call.name == "read":
+        read_options = {
+            name: call.args[name]
+            for name in ("offset", "limit")
+            if name in call.args
+        }
+        return tool_fns.read_file(project, path, **read_options)
+    if call.name == "ls":
+        return tool_fns.list_directory(project, path)
+    if call.name == "search":
+        return tool_fns.search_files(
+            project,
+            path,
+            call_arg(call, "query"),
+        )
+    if call.name == "references":
+        return tool_fns.find_references(
+            project,
+            path,
+            call_arg(call, "symbol"),
+        )
+    return ToolOutcome.error(f"unsupported information tool {call.name} (path={path})")
+
+
 def execute_tool_call(
     session: AgentLoopSession,
     call: ToolCall,
@@ -377,32 +438,13 @@ def execute_tool_call(
     turn: int,
     tool_index: int,
 ) -> ToolOutcome:
-    path = call_arg(call, "path", ".")
     if call.name == "edit":
         return execute_edit_call(session, call)
-    if call.name == "read":
-        read_options = {
-            name: call.args[name]
-            for name in ("offset", "limit")
-            if name in call.args
-        }
-        return session.tool_fns.read_file(session.project, path, **read_options)
-    if call.name == "ls":
-        return session.tool_fns.list_directory(session.project, path)
-    if call.name == "search":
-        return session.tool_fns.search_files(
-            session.project,
-            path,
-            call_arg(call, "query"),
-        )
-    if call.name == "references":
-        return session.tool_fns.find_references(
-            session.project,
-            path,
-            call_arg(call, "symbol"),
-        )
+    if call.name in ("read", "ls", "search", "references"):
+        return execute_information_tool_call(session.project, session.tool_fns, call)
     if call.name == "run":
         return execute_run_call(session, call, turn=turn, tool_index=tool_index)
+    path = call_arg(call, "path", ".")
     return ToolOutcome.error(f"malformed tool call {call.name} (path={path})")
 
 
@@ -413,7 +455,9 @@ __all__ = [
     "call_arg",
     "emit_tool_started_after_intent",
     "evaluate_tool_call_policy",
+    "evaluate_tool_call_policy_for",
     "execute_edit_call",
+    "execute_information_tool_call",
     "execute_run_call",
     "execute_tool_call",
     "mark_policy_denied_run",
@@ -425,4 +469,5 @@ __all__ = [
     "record_tool_outcome",
     "request_shell_approval",
     "tool_error_outcome",
+    "tool_result_from_outcome",
 ]

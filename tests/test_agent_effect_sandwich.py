@@ -611,6 +611,129 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
         self.assertTrue(details.available)
 
+    def test_tool_call_intent_persists_canonical_replay_args_for_safe_tools(self) -> None:
+        session = self._create_session(MockProvider())
+
+        # 1. Safe tool intent (read)
+        call_read = ToolCall(name="read", args={"path": "foo.py", "offset": 5})
+        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        eff_read = record_tool_call_intent(session, call_read, turn=1, tool_index=0, replay_decision=replay_read)
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj_read = next(p for p in loaded if p.intent.effect_id == eff_read)
+        self.assertEqual(proj_read.intent.replay_args, {"path": "foo.py", "offset": 5})
+
+        # 2. Unsafe tool intent (edit)
+        call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "hello"})
+        _, replay_edit = evaluate_tool_call_policy(session, call_edit, turn=1, tool_index=1)
+        eff_edit = record_tool_call_intent(session, call_edit, turn=1, tool_index=1, replay_decision=replay_edit)
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj_edit = next(p for p in loaded if p.intent.effect_id == eff_edit)
+        self.assertIsNone(proj_edit.intent.replay_args)
+
+    def test_resume_recovers_pending_safe_tool_and_settles_with_replay_count(self) -> None:
+        from codey.operations.task_run import _recover_effects_for_resume
+
+        # Write a dummy file to project_dir
+        test_file = self.project_dir / "target.txt"
+        test_file.write_text("file content to read", encoding="utf-8")
+
+        # Record a pending read intent (simulating crash before settlement)
+        session = self._create_session(MockProvider())
+        call_read = ToolCall(name="read", args={"path": "target.txt"})
+        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        eff_read = record_tool_call_intent(session, call_read, turn=1, tool_index=0, replay_decision=replay_read)
+
+        deps = Mock()
+        deps.runtime_effects = self.effects
+        deps.state = Mock()
+        deps.state.runtime_effects = self.effects
+
+        # Resume recovery
+        ok, recovered = _recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(len(recovered), 1)
+        rec = recovered[0]
+        self.assertEqual(rec.effect_id, eff_read)
+        self.assertEqual(rec.call.name, "read")
+        self.assertTrue(rec.outcome.ok)
+        self.assertIn("file content to read", rec.outcome.model_text)
+
+        # Check effect settlement on disk
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj = next(p for p in loaded if p.intent.effect_id == eff_read)
+        self.assertFalse(proj.is_pending)
+        assert proj.settlement is not None
+        self.assertEqual(proj.settlement.status, SETTLEMENT_STATUS_OK)
+        self.assertEqual(proj.settlement.replay_count, 1)
+        self.assertEqual(proj.settlement.replayed_from_effect_id, eff_read)
+
+    def test_resume_synthesizes_interrupted_for_pending_unsafe_tool(self) -> None:
+        from codey.operations.task_run import _recover_effects_for_resume
+
+        session = self._create_session(MockProvider())
+        call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "bar"})
+        _, replay_edit = evaluate_tool_call_policy(session, call_edit, turn=1, tool_index=0)
+        eff_edit = record_tool_call_intent(session, call_edit, turn=1, tool_index=0, replay_decision=replay_edit)
+
+        deps = Mock()
+        deps.runtime_effects = self.effects
+        deps.state = Mock()
+
+        ok, recovered = _recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(len(recovered), 0)  # Unsafe is NEVER replayed
+
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj = next(p for p in loaded if p.intent.effect_id == eff_edit)
+        self.assertFalse(proj.is_pending)
+        assert proj.settlement is not None
+        self.assertEqual(proj.settlement.status, "interrupted")
+        self.assertEqual(proj.settlement.replay_count, 0)
+
+    def test_agent_loop_with_recovered_tool_outcomes_resumes_cleanly(self) -> None:
+        from codey.agents.loop import run
+        from codey.agents.request import RecoveredToolOutcome
+
+        provider = MockProvider(
+            reply='{"tool": "done", "args": {"summary": "task finished after resume"}}'
+        )
+        recovered_outcome = RecoveredToolOutcome(
+            effect_id="eff_recovered_1",
+            call=ToolCall(name="read", args={"path": "foo.py"}),
+            outcome=ToolOutcome("dummy file content", True),
+            turn=1,
+            tool_index=0,
+        )
+
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="finish the task",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            recovered_tool_outcomes=(recovered_outcome,),
+        )
+
+        result = run(req)
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.turns, 2)  # Started from turn 2
+        # Provider should have received the formatted tool result instead of initial prompt
+        self.assertEqual(len(provider.send_history), 1)
+        self.assertIn("dummy file content", provider.send_history[0])
+
 
 if __name__ == "__main__":
     unittest.main()

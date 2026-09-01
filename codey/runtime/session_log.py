@@ -536,9 +536,11 @@ def _compact_entries(
                 if settlement_entry is not None:
                     status = settlement_entry.payload.get("status")
                     sent_state = settlement_entry.payload.get("sent_state")
-                    if status in {"interrupted", "error"} or sent_state == "maybe_sent":
+                    replay_count = int(settlement_entry.payload.get("replay_count") or 0)
+                    if status in {"interrupted", "error"} or sent_state == "maybe_sent" or replay_count > 0:
                         compacted.append(intent_entry)
                         compacted.append(settlement_entry)
+
 
         finish = settled.get(operation_id)
         if finish is not None:

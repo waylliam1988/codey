@@ -5,7 +5,10 @@ from __future__ import annotations
 import unittest
 
 from codey.runtime.replay_policy import (
+    REPLAYABLE_SAFE_TOOL_NAMES,
     ReplayClass,
+    UNSAFE_TOOL_NAMES,
+    is_replayable_safe_tool,
     provider_replay_policy,
     repair_replay_policy,
     tool_replay_policy,
@@ -20,6 +23,17 @@ class ToolReplayPolicyTests(unittest.TestCase):
                 decision = tool_replay_policy(tool_name)
                 self.assertEqual(decision.replay_class, ReplayClass.SAFE)
                 self.assertEqual(decision.reason, "read_only_tool")
+
+    def test_replayable_safe_tools_narrow_whitelist(self) -> None:
+        self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset({"read", "ls", "search", "references"}))
+        for tool in ("read", "ls", "search", "references"):
+            self.assertTrue(is_replayable_safe_tool(tool))
+        # project_facts and project_map are safe, but not replayable in 0.5.4
+        self.assertFalse(is_replayable_safe_tool("project_facts"))
+        self.assertFalse(is_replayable_safe_tool("project_map"))
+        # Unsafe tools are not replayable
+        for tool in UNSAFE_TOOL_NAMES:
+            self.assertFalse(is_replayable_safe_tool(tool))
 
     def test_unsafe_tools_are_classified_as_unsafe(self) -> None:
         unsafe_tools = ["edit", "write", "shell", "run", "knowledge_write"]

@@ -585,6 +585,8 @@ def _run_one_writer_attempt(
     spec: WriterAttempt,
     note_turn: Callable[[int], None],
 ) -> RunResult:
+    recovered_outcomes = ctx.frame.recovered_tool_outcomes
+    ctx.frame.recovered_tool_outcomes = ()
     return ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
@@ -630,7 +632,9 @@ def _run_one_writer_attempt(
         session_id=ctx.request.session_id,
         run_id=ctx.frame.run_id,
         runtime_effects=ctx.deps.runtime.effects,
+        recovered_tool_outcomes=recovered_outcomes,
     ))
+
 
 
 def _select_next_writer(ctx: _ProjectRun, excluded: set[str]) -> str | None:

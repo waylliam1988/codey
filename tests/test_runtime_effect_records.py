@@ -726,6 +726,181 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             self.store.record_settlement(self.session_id, "other_run", valid_settlement)
         self.assertIn("does not match expected run_id", str(ctx.exception))
 
+    def test_replay_args_round_trip_and_validation(self) -> None:
+        eff_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        intent = RuntimeEffectIntent(
+            effect_id=eff_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            tool_name="read",
+            turn=1,
+            tool_index=0,
+            replay_class=ReplayClass.SAFE,
+            replay_args={"path": "foo/bar.py", "offset": 10},
+        )
+        self.store.record_intent(self.session_id, self.run_id, intent)
+        loaded = self.store.load_effects(self.session_id, self.run_id)
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0].intent.replay_args, {"path": "foo/bar.py", "offset": 10})
+
+    def test_replay_args_forbidden_on_unsafe_or_non_replayable_intent(self) -> None:
+        # Unsafe tool_call
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            RuntimeEffectIntent(
+                effect_id="eff_unsafe_args",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="edit",
+                replay_class=ReplayClass.UNSAFE,
+                replay_args={"path": "foo.py"},
+            )
+        self.assertIn("replay_args only permitted for replayable safe tool calls", str(ctx.exception))
+
+        # Non-replayable safe tool (e.g. project_facts)
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            RuntimeEffectIntent(
+                effect_id="eff_facts_args",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="project_facts",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"foo": "bar"},
+            )
+        self.assertIn("replay_args only permitted for replayable safe tool calls", str(ctx.exception))
+
+    def test_replay_count_and_replayed_from_effect_id_validation(self) -> None:
+        eff_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "main.py"},
+            ),
+        )
+
+        # Settlement with matching replayed_from_effect_id and replay_count=1
+        settlement = RuntimeEffectSettlement(
+            effect_id=eff_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            status=SETTLEMENT_STATUS_OK,
+            replay_class=ReplayClass.SAFE,
+            replay_count=1,
+            replayed_from_effect_id=eff_id,
+        )
+        self.store.record_settlement(self.session_id, self.run_id, settlement)
+        loaded = self.store.load_effects(self.session_id, self.run_id)
+        assert loaded[0].settlement is not None
+        self.assertEqual(loaded[0].settlement.replay_count, 1)
+        self.assertEqual(loaded[0].settlement.replayed_from_effect_id, eff_id)
+
+        # Mismatched replayed_from_effect_id raises
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            RuntimeEffectSettlement(
+                effect_id=eff_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                replayed_from_effect_id="other_effect_id",
+            )
+        self.assertIn("must match effect_id", str(ctx.exception))
+
+    def test_recovery_summary_with_recovered_safe_tool_actions(self) -> None:
+        # 1. Recovered read
+        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_read,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "a.txt"},
+            ),
+        )
+        self.store.record_settlement(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=eff_read,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                replay_class=ReplayClass.SAFE,
+                replay_count=1,
+                replayed_from_effect_id=eff_read,
+            ),
+        )
+
+        # 2. Recovered search
+        eff_search = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_search,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="search",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": ".", "query": "hello"},
+            ),
+        )
+        self.store.record_settlement(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=eff_search,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                replay_class=ReplayClass.SAFE,
+                replay_count=1,
+                replayed_from_effect_id=eff_search,
+            ),
+        )
+
+        # 3. Interrupted edit (unsafe)
+        eff_edit = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.store.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_edit,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                tool_name="edit",
+                replay_class=ReplayClass.UNSAFE,
+            ),
+        )
+        self.store.synthesize_interrupted(self.session_id, self.run_id, eff_edit)
+
+        summary = self.store.recovery_summary(self.session_id, self.run_id)
+        self.assertEqual(summary.replayed_reads, 1)
+        self.assertEqual(summary.replayed_searches, 1)
+        self.assertEqual(summary.interrupted_writes, 1)
+        self.assertIn("Read action was recovered", summary.explanation_lines)
+        self.assertIn("Search action was recovered", summary.explanation_lines)
+        self.assertIn("Local write was interrupted and was not repeated", summary.explanation_lines)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -253,10 +253,16 @@ def _handle_protocol_error(
     return corrected
 
 
-def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
-    _report_reply(session, 1, reply)
-    for turn in range(1, session.max_turns + 1):
+def _run_loop(
+    session: AgentLoopSession,
+    reply: str,
+    *,
+    start_turn: int = 1,
+) -> RunResult:
+    _report_reply(session, start_turn, reply)
+    for turn in range(start_turn, session.max_turns + 1):
         if session.stop_flag is not None and session.stop_flag.is_set():
+
             emit(session, RunEvent.status("[agent] stopped by user."))
             return _finish(session, "stopped", "stopped", turn)
         plan = parse_reply(reply, session.codec)
@@ -606,7 +612,35 @@ def _run_loop(session: AgentLoopSession, reply: str) -> RunResult:
 
 def run(request: AgentRequest) -> RunResult:
     session = _setup_loop(request)
-    return _run_loop(session, initial_reply(session))
+    if not request.recovered_tool_outcomes:
+        return _run_loop(session, initial_reply(session), start_turn=1)
+
+    turn_state = TurnState()
+    for rec in request.recovered_tool_outcomes:
+        record_tool_outcome(
+            session,
+            turn_state,
+            turn=rec.turn,
+            call=rec.call,
+            outcome=rec.outcome,
+            tool_index=rec.tool_index,
+        )
+
+    next_prompt = append_coding_context(
+        session,
+        session.codec.format_results(turn_state.results),
+    )
+    start_turn = max((rec.turn for rec in request.recovered_tool_outcomes), default=1) + 1
+    reply = send_prompt(
+        session,
+        next_prompt,
+        restart_request=(
+            "Continue the unfinished task using the latest local tool results below.\n\n"
+            f"{next_prompt}"
+        ),
+    )
+    return _run_loop(session, reply, start_turn=start_turn)
+
 
 
 __all__ = [

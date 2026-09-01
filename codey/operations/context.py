@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
+from codey.agents.request import RecoveredToolOutcome
 from codey.ghost.work_queue import GhostWorkItem
+
 from codey.providers.diagnostics import ProviderFailure
 from codey.runtime.effects import RuntimeOperationState
 from codey.runs.ledger import RunLedgerWriter
@@ -35,6 +37,8 @@ class RunFrame:
     preflight_tried: set[str]
     preflight_switches: int
     trace: Any | None = None
+    recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+
 
 
 @dataclass

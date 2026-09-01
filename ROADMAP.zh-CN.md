@@ -3655,11 +3655,12 @@ GLM 实机时暴露出启动深链问题：`main/alltoolsdetail` 入口可能触
 
 ## 0.5.4 - Safe Tool Replay v1
 
-状态：计划。目标是在 0.5.2 的 effect intent / settlement 和 0.5.3 的
-canonical tool args 之后，把 safe read/search 的恢复闭环补上：进程在 safe tool
-执行中途被杀掉时，恢复路径可以按 persisted canonical args 自动重跑，并把结果作为
+状态：已完成。在 0.5.2 的 effect intent / settlement 和 0.5.3 的
+canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程在 safe tool
+执行中途被杀掉时，恢复路径按 persisted canonical args 自动重跑，并把结果作为
 同一个 tool call 的恢复结果继续进入 agent loop。直接收益是读文件、搜索、列目录这类
 无副作用动作中断后无需再打一轮 provider，也不会把可恢复读失败显示成含糊状态。
+
 
 ### 做什么
 

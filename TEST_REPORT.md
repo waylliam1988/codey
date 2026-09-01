@@ -9,7 +9,41 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
+## 0.5.4 Safe Tool Replay v1 (2026-09-01)
+
+Scope:
+
+```text
+runtime:    introduced codey.runtime.safe_tool_replay for pure data validation and candidate extraction.
+            Defined narrow replayable whitelist REPLAYABLE_SAFE_TOOL_NAMES = {"read", "ls", "search", "references"}.
+            Extended RuntimeEffectIntent with canonical replay_args (validated strictly with zero alias rewrites and zero repairs).
+            Extended RuntimeEffectSettlement with replay_count and replayed_from_effect_id.
+            Extended RecoverySummary to compute and render recovered safe actions ("Read action was recovered", "Search action was recovered").
+            Updated session log compaction to preserve replayed effect intents and settlements.
+agents:     extracted execute_information_tool_call() and evaluate_tool_call_policy_for() in tool_execution.py for clean replay reuse.
+            Extracted tool_result_from_outcome() and updated record_tool_call_intent() to record replay_args for replayable safe tools.
+            Defined RecoveredToolOutcome in request.py and added recovered_tool_outcomes to AgentRequest.
+            Updated loop.py _run_loop to accept start_turn: int = 1, and run() to consume recovered_tool_outcomes, format tool results,
+            and send continuation prompt starting from max(turn) + 1.
+operations: upgraded task_run.py _settle_pending_effects_for_resume to _recover_effects_for_resume with strict safety gates
+            (valid project directory, writer task candidate, policy approval check, and canonical replay execution).
+            Wired recovered_tool_outcomes into RunFrame and consumed/cleared it in _run_one_writer_attempt.
+            Maintained fail-closed fallback to synthetic interrupted settlements for unsafe, provider, repair, or invalid effects.
+details:    updated DESIGN.md and details projection documentation to permit "Read action was recovered" and "Search action was recovered".
+harness:    added tests/test_safe_tool_replay.py, added tests/manual/safe_tool_replay_smoke.py (--self-test),
+            updated tests/test_tool_replay_policy.py, tests/test_runtime_effect_records.py, and tests/test_agent_effect_sandwich.py.
+```
+
+Verification:
+
+- Focused regression set:
+  - `python -m unittest tests/test_safe_tool_replay.py tests/test_tool_replay_policy.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py tests/test_runtime_session_log.py tests/test_runtime_effects.py tests/test_run_details.py` (98 passed in 1.256s)
+  - `python tests/manual/safe_tool_replay_smoke.py --self-test` (passed; 3 pending intents: 2 safe replayed with replay_count=1, 1 unsafe interrupted, agent loop resumed turn 2, details projected 3 recovery rows)
+- Full regression suite:
+  - `pytest` (`3387 passed, 4 skipped in 298.10s (0:04:58)`)
+
 ## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-09-01)
+
 
 Scope:
 
