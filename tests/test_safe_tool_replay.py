@@ -67,23 +67,22 @@ class SafeToolReplayTests(unittest.TestCase):
         # 'cwd' is an alias for 'path' in read, triggers alias_rewrite_count > 0
         with self.assertRaises(RuntimeEffectError) as ctx:
             validate_replay_args("read", {"cwd": "foo/bar.py"})
-        self.assertIn("replay args must be strictly canonical", str(ctx.exception))
+        self.assertIn("invalid replay args", str(ctx.exception))
 
         # 'pattern' is an alias for 'query' in search
         with self.assertRaises(RuntimeEffectError) as ctx:
             validate_replay_args("search", {"path": ".", "pattern": "foo"})
-        self.assertIn("replay args must be strictly canonical", str(ctx.exception))
+        self.assertIn("invalid replay args", str(ctx.exception))
 
         # String coerced numeric offset triggers repair count
         with self.assertRaises(RuntimeEffectError) as ctx:
             validate_replay_args("read", {"path": "foo.py", "offset": "10"})
-        self.assertIn("replay args must be strictly canonical", str(ctx.exception))
+        self.assertIn("invalid replay args", str(ctx.exception))
 
         # Unsupported unknown fields fail closed with RuntimeEffectError
         with self.assertRaises(RuntimeEffectError) as ctx:
             validate_replay_args("read", {"file": "foo/bar.py"})
-        self.assertIn("failed to normalize replay args", str(ctx.exception))
-
+        self.assertIn("invalid replay args", str(ctx.exception))
 
     def test_validate_replay_args_rejects_unsafe_and_unknown_tools(self) -> None:
         with self.assertRaises(RuntimeEffectError) as ctx:

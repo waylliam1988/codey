@@ -616,7 +616,10 @@ def run(request: AgentRequest) -> RunResult:
         return _run_loop(session, initial_reply(session), start_turn=1)
 
     turn_state = TurnState()
-    for rec in request.recovered_tool_outcomes:
+    recovered_outcomes = tuple(
+        sorted(request.recovered_tool_outcomes, key=lambda rec: (rec.turn, rec.tool_index))
+    )
+    for rec in recovered_outcomes:
         record_tool_outcome(
             session,
             turn_state,
@@ -630,7 +633,18 @@ def run(request: AgentRequest) -> RunResult:
         session,
         session.codec.format_results(turn_state.results),
     )
-    start_turn = max((rec.turn for rec in request.recovered_tool_outcomes), default=1) + 1
+    start_turn = max((rec.turn for rec in recovered_outcomes), default=1) + 1
+    if start_turn > session.max_turns:
+        emit(
+            session,
+            RunEvent.status(f"[agent] hit max_turns={session.max_turns}, stopping."),
+        )
+        return _finish(
+            session,
+            f"hit max_turns={session.max_turns}",
+            "max_turns",
+            session.max_turns,
+        )
     reply = send_prompt(
         session,
         next_prompt,

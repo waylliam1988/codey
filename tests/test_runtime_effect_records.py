@@ -744,6 +744,29 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.assertEqual(len(loaded), 1)
         self.assertEqual(loaded[0].intent.replay_args, {"path": "foo/bar.py", "offset": 10})
 
+    def test_replay_args_reject_non_canonical_shape(self) -> None:
+        invalid_args = (
+            {"path": "foo.py", "extra": "x"},
+            {"path": "foo\\bar.py"},
+            {"path": "../foo.py"},
+            {"path": "foo.py", "offset": "10"},
+            {"path": "foo.py", "limit": True},
+            {"path": "foo.py", "limit": 601},
+            {"path": "x" * 1001},
+        )
+        for replay_args in invalid_args:
+            with self.subTest(replay_args=replay_args):
+                with self.assertRaises(RuntimeEffectError):
+                    RuntimeEffectIntent(
+                        effect_id=new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id),
+                        effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                        session_id=self.session_id,
+                        run_id=self.run_id,
+                        tool_name="read",
+                        replay_class=ReplayClass.SAFE,
+                        replay_args=dict(replay_args),
+                    )
+
     def test_replay_args_forbidden_on_unsafe_or_non_replayable_intent(self) -> None:
         # Unsafe tool_call
         with self.assertRaises(RuntimeEffectError) as ctx:

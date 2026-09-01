@@ -3668,6 +3668,7 @@ canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程
 
 ```text
 codey/runtime/safe_tool_replay.py
+codey/runtime/replay_args.py
 tests/test_safe_tool_replay.py
 tests/manual/safe_tool_replay_smoke.py
 ```
@@ -3698,13 +3699,14 @@ v1 safe 范围：
 
 ```text
 read
-ls / list
-search / references
-project_facts / project_map projection
+ls
+search
+references
 ```
 
-`search` 只指本地项目搜索或已存在的本地 projection 查询，不包括联网 Research search、
-浏览器操作、provider call 或任何可能产生外部状态变化的 connector。
+`project_facts` / `project_map` 仍然只是 safe 分类或 projection 概念，不接入 0.5.4
+生产 replay 执行器。`search` 只指本地项目搜索，不包括联网 Research search、浏览器操作、
+provider call 或任何可能产生外部状态变化的 connector。
 
 直接收益：
 
@@ -3723,6 +3725,7 @@ Run Details 能区分 replayed safe read 和 interrupted unsafe effect
 - 不保存 prompt、reply、stdout、stderr、diff、source body、完整搜索结果。
 - 不为旧的无 replay_args effect 猜参数；缺字段、坏 schema、路径逃逸、未知 tool 都 fail closed。
 - 不新增 SafeReplayManager；`safe_tool_replay.py` 只做恢复编排和验证胶水。
+- 不保留旧的 settlement-only 恢复 wrapper；生产只有 `_recover_effects_for_resume()` 一个入口。
 - 不把 replay 当后台任务；只在显式 resume gate 内运行。
 
 ### 顺手架构优化

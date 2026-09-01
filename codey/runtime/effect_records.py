@@ -16,7 +16,11 @@ from typing import Any
 import uuid
 
 from codey.runtime.effects import lane_for_run, operation_id_for_run
-from codey.runtime.replay_policy import ReplayClass, is_replayable_safe_tool
+from codey.runtime.replay_policy import (
+    ReplayClass,
+    is_replayable_safe_tool,
+)
+from codey.runtime.replay_args import validate_replay_args_shape
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.storage.local_store import session_key
 
@@ -222,14 +226,13 @@ class RuntimeEffectIntent:
                 or not is_replayable_safe_tool(self.tool_name)
             ):
                 raise RuntimeEffectError("replay_args only permitted for replayable safe tool calls")
-            for k, v in self.replay_args.items():
-                if not isinstance(k, str) or not k:
-                    raise RuntimeEffectError(f"invalid replay_args key: {k}")
-                if not isinstance(v, (str, int, float, bool, type(None))):
-                    raise RuntimeEffectError(f"invalid replay_args value for key {k}: {type(v)}")
+            try:
+                validate_replay_args_shape(self.tool_name, self.replay_args)
+            except ValueError as exc:
+                raise RuntimeEffectError(f"invalid replay_args: {exc}") from exc
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "effect_kind": EFFECT_KIND,
             "record_kind": self.record_kind,
@@ -249,9 +252,11 @@ class RuntimeEffectIntent:
             "args_digest": self.args_digest,
             "display_ref": self.display_ref,
             "replay_class": self.replay_class,
-            "replay_args": self.replay_args,
             "created_at": self.created_at,
         }
+        if self.replay_args is not None:
+            payload["replay_args"] = dict(self.replay_args)
+        return payload
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectIntent:
@@ -338,7 +343,7 @@ class RuntimeEffectSettlement:
         _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "effect_kind": EFFECT_KIND,
             "record_kind": self.record_kind,
@@ -353,10 +358,13 @@ class RuntimeEffectSettlement:
             "error_code": self.error_code,
             "sent_state": self.sent_state,
             "replay_class": self.replay_class,
-            "replay_count": self.replay_count,
-            "replayed_from_effect_id": self.replayed_from_effect_id,
             "created_at": self.created_at,
         }
+        if self.replay_count:
+            payload["replay_count"] = self.replay_count
+        if self.replayed_from_effect_id:
+            payload["replayed_from_effect_id"] = self.replayed_from_effect_id
+        return payload
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectSettlement:

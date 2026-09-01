@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+from codey.agents.request import RecoveredToolOutcome
+from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.chat import run_chat_mode
 from codey.operations.conversation_plan import build_conversation_plan
@@ -38,7 +40,6 @@ from codey.operations.project_completion_flow import (
     RuntimeAccess,
     VerificationAccess,
     handle_project_tool_event,
-    managed_tool_fns,
     record_completion_proof_trace,
     run_project_mode,
 )
@@ -248,7 +249,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         return operation_outcome_from_task_done_event(error_event)
 
-    recovered_tool_outcomes: tuple[Any, ...] = ()
+    recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     try:
         recover_ok, recovered_tool_outcomes = _recover_effects_for_resume(
             deps,
@@ -1021,9 +1022,9 @@ def _recover_effects_for_resume(
     *,
     session_id: str,
     run_id: str,
-    project: str = "",
-    task_kind: str = "",
-) -> tuple[bool, tuple[Any, ...]]:
+    project: str,
+    task_kind: str,
+) -> tuple[bool, tuple[RecoveredToolOutcome, ...]]:
     effects_store = deps.runtime_effects or getattr(deps.state, "runtime_effects", None)
     if effects_store is None:
         return True, ()
@@ -1036,17 +1037,13 @@ def _recover_effects_for_resume(
     is_writer_candidate = (
         project_path is not None
         and project_path.is_dir()
-        and task_kind not in {"chat", "research", "review"}
+        and task_kind in {"project", "hybrid"}
     )
 
     tool_fns = None
     if is_writer_candidate:
-        try:
-            tool_fns = managed_tool_fns(deps, session_id=session_id, run_id=run_id)
-        except Exception:
-            tool_fns = None
+        tool_fns = DEFAULT_TOOL_FNS
 
-    from codey.agents.request import RecoveredToolOutcome
     from codey.agents.tool_execution import (
         evaluate_tool_call_policy_for,
         execute_information_tool_call,
@@ -1105,6 +1102,8 @@ def _recover_effects_for_resume(
                         )
                     )
                     replayed = True
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
             except Exception:
                 replayed = False
 
@@ -1127,17 +1126,6 @@ def _recover_effects_for_resume(
                 return False, ()
 
     return True, tuple(recovered_outcomes)
-
-
-def _settle_pending_effects_for_resume(
-    deps: TaskRunDeps,
-    *,
-    session_id: str,
-    run_id: str,
-) -> bool:
-    ok, _ = _recover_effects_for_resume(deps, session_id=session_id, run_id=run_id)
-    return ok
-
 
 
 def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, object]) -> None:

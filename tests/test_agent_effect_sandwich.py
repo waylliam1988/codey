@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+import threading
+from types import SimpleNamespace
 from typing import Any
 import unittest
 from unittest.mock import MagicMock, Mock, patch
@@ -24,7 +26,7 @@ from codey.agents.tool_execution import (
 from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.operations.task_entry import run_task_submission
-from codey.operations.task_run import TaskRunDeps, _settle_pending_effects_for_resume, _start_run_operation
+from codey.operations.task_run import TaskRunDeps, _recover_effects_for_resume, _start_run_operation
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runtime.effect_records import (
@@ -32,6 +34,7 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
 )
+from codey.runtime import cancellation
 from codey.runtime.effects import RuntimeOperationStore
 from codey.runtime.models import ToolCall
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
@@ -246,14 +249,21 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(settled_effects[0].settlement.status, SETTLEMENT_STATUS_OK)
 
     def test_resume_recovery_failure_fails_closed(self) -> None:
-        # If pending effects cannot be loaded (corrupted log), _settle_pending_effects_for_resume returns False
+        # If pending effects cannot be loaded (corrupted log), recovery returns False.
         broken_store = MagicMock()
         broken_store.pending_effects.side_effect = RuntimeError("disk corrupt")
 
         deps = MagicMock()
         deps.runtime_effects = broken_store
-        result = _settle_pending_effects_for_resume(deps, session_id="s1", run_id="r1")
-        self.assertFalse(result)
+        ok, recovered = _recover_effects_for_resume(
+            deps,
+            session_id="s1",
+            run_id="r1",
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertFalse(ok)
+        self.assertEqual(recovered, ())
 
     def test_record_intent_failure_in_loop_does_not_execute_tool_or_settle(self) -> None:
         from codey.agents.loop import _run_loop
@@ -643,10 +653,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
         _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
         eff_read = record_tool_call_intent(session, call_read, turn=1, tool_index=0, replay_decision=replay_read)
 
-        deps = Mock()
-        deps.runtime_effects = self.effects
-        deps.state = Mock()
-        deps.state.runtime_effects = self.effects
+        deps = SimpleNamespace(
+            runtime_effects=self.effects,
+            state=SimpleNamespace(runtime_effects=self.effects),
+        )
 
         # Resume recovery
         ok, recovered = _recover_effects_for_resume(
@@ -672,6 +682,76 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.status, SETTLEMENT_STATUS_OK)
         self.assertEqual(proj.settlement.replay_count, 1)
         self.assertEqual(proj.settlement.replayed_from_effect_id, eff_read)
+
+    def test_resume_does_not_replay_planning_readonly_effects(self) -> None:
+        from codey.operations.task_run import _recover_effects_for_resume
+
+        test_file = self.project_dir / "target.txt"
+        test_file.write_text("file content to read", encoding="utf-8")
+
+        session = self._create_session(MockProvider())
+        call_read = ToolCall(name="read", args={"path": "target.txt"})
+        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        eff_read = record_tool_call_intent(
+            session,
+            call_read,
+            turn=1,
+            tool_index=0,
+            replay_decision=replay_read,
+        )
+
+        deps = SimpleNamespace(
+            runtime_effects=self.effects,
+            state=SimpleNamespace(runtime_effects=self.effects),
+        )
+
+        ok, recovered = _recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="planning_readonly",
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(recovered, ())
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj = next(p for p in loaded if p.intent.effect_id == eff_read)
+        self.assertFalse(proj.is_pending)
+        assert proj.settlement is not None
+        self.assertEqual(proj.settlement.status, "interrupted")
+        self.assertEqual(proj.settlement.replay_count, 0)
+
+    def test_resume_replay_propagates_cancellation(self) -> None:
+        from codey.operations.task_run import _recover_effects_for_resume
+
+        test_file = self.project_dir / "target.txt"
+        test_file.write_text("file content to read", encoding="utf-8")
+
+        session = self._create_session(MockProvider())
+        call_read = ToolCall(name="read", args={"path": "target.txt"})
+        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        eff_read = record_tool_call_intent(session, call_read, turn=1, tool_index=0, replay_decision=replay_read)
+
+        deps = SimpleNamespace(
+            runtime_effects=self.effects,
+            state=SimpleNamespace(runtime_effects=self.effects),
+        )
+        stop = threading.Event()
+        stop.set()
+
+        with cancellation.scope(stop), self.assertRaises(cancellation.TaskCancelled):
+            _recover_effects_for_resume(
+                deps,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                project=str(self.project_dir),
+                task_kind="project",
+            )
+
+        pending = self.effects.pending_effects(self.session_id, self.run_id)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].intent.effect_id, eff_read)
 
     def test_resume_synthesizes_interrupted_for_pending_unsafe_tool(self) -> None:
         from codey.operations.task_run import _recover_effects_for_resume
@@ -733,6 +813,37 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # Provider should have received the formatted tool result instead of initial prompt
         self.assertEqual(len(provider.send_history), 1)
         self.assertIn("dummy file content", provider.send_history[0])
+
+    def test_agent_loop_with_recovered_tool_outcomes_respects_turn_budget(self) -> None:
+        from codey.agents.loop import run
+        from codey.agents.request import RecoveredToolOutcome
+
+        provider = MockProvider(
+            reply='{"tool": "done", "args": {"summary": "should not be sent"}}'
+        )
+        recovered_outcome = RecoveredToolOutcome(
+            effect_id="eff_recovered_1",
+            call=ToolCall(name="read", args={"path": "foo.py"}),
+            outcome=ToolOutcome("dummy file content", True),
+            turn=1,
+            tool_index=0,
+        )
+
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="finish the task",
+            max_turns=1,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            recovered_tool_outcomes=(recovered_outcome,),
+        )
+
+        result = run(req)
+        self.assertEqual(result.stop_reason, "max_turns")
+        self.assertEqual(result.turns, 1)
+        self.assertEqual(provider.send_history, [])
 
 
 if __name__ == "__main__":

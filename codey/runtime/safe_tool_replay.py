@@ -1,6 +1,6 @@
 """Safe tool replay candidate extraction and canonical arguments validation.
 
-Provides validation and candidate projection for pending safe read/search tool
+Provides validation and candidate projection for pending safe information tool
 intents during crash recovery. Strictly adheres to canonical-only args without
 alias rewrites or repair fallbacks.
 
@@ -18,6 +18,7 @@ from codey.runtime.effect_records import (
     RuntimeEffectProjection,
 )
 from codey.runtime.models import ToolCall
+from codey.runtime.replay_args import validate_replay_args_shape
 from codey.runtime.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
@@ -49,7 +50,12 @@ def validate_replay_args(
         raise RuntimeEffectError("replay args must be a mapping")
 
     try:
-        repair_result = normalize_tool_args(canonical_name, args)
+        shaped_args = validate_replay_args_shape(canonical_name, args)
+    except ValueError as exc:
+        raise RuntimeEffectError(f"invalid replay args: {exc}") from exc
+
+    try:
+        repair_result = normalize_tool_args(canonical_name, shaped_args)
     except Exception as exc:
         raise RuntimeEffectError(f"failed to normalize replay args: {exc}") from exc
 
