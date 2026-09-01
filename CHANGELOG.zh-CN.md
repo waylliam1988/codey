@@ -7,6 +7,8 @@
 - 共享工具参数规范化与协议摩擦降低 v1：
   - 新增纯函数模块 `codey.tool_args_repair`，负责词法路径规范化、有界正整数转换以及标准运行工具（`edit`、`read`、`ls`、`search`、`references`、`run`、`shell`）的等价字段别名修复。
   - 路径严格限制为项目相对路径：规范化斜杠并安全折叠 `.` 与 `..`，严格拒绝 Windows 盘符（`C:\`）、UNC 路径（`//share`）、根路径（`/`）以及逃逸项目根目录的父级遍历（`../`）；路径 segment 保留内部空格不作 strip 猜测；不支持的未知运行时工具严格 fail closed 抛出异常。
+  - 同一语义组内的冲突别名键（例如 `old_string` + `old`、`command` + `cmd`、`query` + `pattern`、`symbol` + `name`、`path` + `cwd`）严格 fail closed 并抛出 `ToolArgsRepairError`。
+  - 文本参数（`query`、`symbol`、`command`）严格要求非空白字符串类型，非字符串与纯空白值严格拒绝。
   - 支持的等价参数别名：
     - `edit`: `old` / `search` / `before` -> `old_string`；`replace` / `replacement` / `after` / `new` -> `new_string`。
     - `edit`: `content` 严格要求字符串类型，杜绝非字符串值的静默数据丢失。
@@ -18,8 +20,8 @@
     - `run` / `shell`: `cmd` -> `command`（绝不猜测或篡改命令内容）。
     - `write` / `write_file` / `create_file` 保持 unknown tool，并在 repair prompt 中统一引导 `edit(content=...)`，不引入生产隐藏别名。
   - 大幅瘦身 `codey.protocols.json_codec`：`_tool_call()` 仅负责确定运行时工具名并委托给 `normalize_tool_args()`，消除 100 多行重复冗余的解析分支；`read_files` 与 `parallel` 复用相同的规范化逻辑。
-  - 有界遥测与安全记录：`ToolPlan` 增加 `alias_rewrite_count` 与 `arg_repair_counts`，且仅在 call 去重采纳后进行累计；`AgentLoop` 将其转发至 `RunTrace.record_protocol_valid_turn`；`RunTrace` 仅安全记录合法枚举计数并设上限（999），严格过滤与丢弃敏感 key，绝不持久化任何原始路径、命令、查询或 prompt 文本。
-  - 方言烟雾测试：新增 `tests/manual/tool_args_repair_smoke.py`，用于跨模型方言验证协议摩擦降低效果与安全边界。
+  - 有界遥测与安全记录：`ToolPlan` 增加 `alias_rewrite_count` 与 `arg_repair_counts`，且严格在 call 去重采纳后进行精确累计；`AgentLoop` 将其转发至 `RunTrace.record_protocol_valid_turn`；`RunTrace` 仅安全记录合法枚举计数并设上限（999），严格过滤与丢弃敏感 key，绝不持久化任何原始路径、命令、查询或 prompt 文本。
+  - 烟雾与 Live A/B 测试：新增 `tests/manual/tool_args_repair_smoke.py`（静态方言覆盖）与 `tests/manual/tool_args_repair_live_ab.py`（端到端多轮交互与 repair turn 降低评估）。
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 

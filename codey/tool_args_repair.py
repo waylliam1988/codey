@@ -106,6 +106,93 @@ def _normalize_path(
     return result, repaired
 
 
+def _resolve_path_arg(
+    args: Mapping[str, Any],
+    *,
+    allow_empty: bool = False,
+    default_path: str | None = None,
+    missing_msg: str | None = None,
+) -> tuple[str, int, dict[str, int]]:
+    """Resolve and normalize path from args, checking for path/cwd conflicts."""
+    present = [k for k in ("path", "cwd") if k in args]
+    if len(present) > 1:
+        raise ToolArgsRepairError(
+            f"conflicting path fields: {', '.join(present)}",
+            repair_kind="invalid_args",
+        )
+
+    counts: dict[str, int] = {}
+    rewrites = 0
+
+    if not present:
+        if default_path is not None:
+            raw_path = default_path
+        elif allow_empty:
+            raw_path = "."
+        else:
+            msg = missing_msg or "path cannot be empty"
+            raise ToolArgsRepairError(msg, repair_kind="invalid_args")
+    else:
+        key = present[0]
+        raw_path = args[key]
+        if key == "cwd":
+            _record_repair(counts, "path_alias")
+            rewrites += 1
+
+    norm_path, path_changed = _normalize_path(raw_path, allow_empty=allow_empty)
+    if path_changed:
+        _record_repair(counts, "path_normalized")
+        rewrites += 1
+
+    return norm_path, rewrites, counts
+
+
+def _require_text_arg(
+    args: Mapping[str, Any],
+    keys: tuple[str, ...],
+    semantic_name: str,
+    *,
+    missing_msg: str | None = None,
+    allow_empty: bool = False,
+) -> tuple[str, str | None]:
+    """Extract a single string argument from mutually exclusive alias keys.
+
+    Returns (value, alias_key_used_if_not_primary).
+    Fails closed if:
+    - Multiple keys from the semantic group are present (conflict)
+    - Value is not a string
+    - Value is blank/empty (unless allow_empty=True)
+    """
+    present = [k for k in keys if k in args]
+    if len(present) > 1:
+        raise ToolArgsRepairError(
+            f"conflicting {semantic_name} fields: {', '.join(present)}",
+            repair_kind="invalid_args",
+        )
+    if not present:
+        if allow_empty:
+            return "", None
+        msg = missing_msg or f"{semantic_name} requires a value"
+        raise ToolArgsRepairError(msg, repair_kind="invalid_args")
+
+    key = present[0]
+    val = args[key]
+    if not isinstance(val, str):
+        raise ToolArgsRepairError(
+            f"{semantic_name} must be a string",
+            repair_kind="invalid_args",
+        )
+
+    if not allow_empty and not val.strip():
+        raise ToolArgsRepairError(
+            f"{semantic_name} cannot be empty or whitespace",
+            repair_kind="invalid_args",
+        )
+
+    alias_used = key if key != keys[0] else None
+    return val, alias_used
+
+
 def _bounded_positive_int(
     value: object,
     name: str,
@@ -152,28 +239,10 @@ def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    counts: dict[str, int] = {}
-    rewrites = 0
-
-    # Path resolution
-    if "path" not in args and "cwd" not in args:
-        raise ToolArgsRepairError(
-            "edit requires a top-level path and can only edit one file",
-            repair_kind="invalid_args",
-        )
-
-    if "path" in args:
-        raw_path = args.get("path")
-    else:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-
-    norm_path, path_changed = _normalize_path(raw_path)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
-
+    norm_path, rewrites, counts = _resolve_path_arg(
+        args,
+        missing_msg="edit requires a top-level path and can only edit one file",
+    )
     call_args: dict[str, Any] = {"path": norm_path}
 
     has_content = "content" in args
@@ -190,7 +259,7 @@ def _normalize_edit(
         )
 
     if has_content:
-        raw_content = args.get("content")
+        raw_content = args["content"]
         if not isinstance(raw_content, str):
             raise ToolArgsRepairError(
                 "edit content must be a string",
@@ -206,7 +275,6 @@ def _normalize_edit(
     if has_replacements:
         raw_replacements = args.get("replacements")
 
-        # Repair JSON string replacements
         if isinstance(raw_replacements, str):
             try:
                 parsed_replacements = json.loads(raw_replacements)
@@ -219,7 +287,6 @@ def _normalize_edit(
             rewrites += 1
             raw_replacements = parsed_replacements
 
-        # Repair single replacement object placed directly as replacements
         if isinstance(raw_replacements, dict):
             raw_replacements = [raw_replacements]
             _record_repair(counts, "replacement_object_wrapped")
@@ -251,37 +318,25 @@ def _normalize_edit(
                     repair_kind="invalid_args",
                 )
 
-            # Resolve old string
-            old_val = None
-            for key in ("old_string", "search", "old", "before"):
-                if key in item:
-                    old_val = item.get(key)
-                    if key in ("old", "before", "search"):
-                        _record_repair(counts, "edit_field_alias")
-                        rewrites += 1
-                    break
+            old_val, old_alias = _require_text_arg(
+                item,
+                single_old_keys,
+                "old_string",
+                allow_empty=False,
+            )
+            if old_alias:
+                _record_repair(counts, "edit_field_alias")
+                rewrites += 1
 
-            # Resolve new string
-            new_val = None
-            for key in ("new_string", "replace", "replacement", "after", "new"):
-                if key in item:
-                    new_val = item.get(key)
-                    if key in ("replace", "replacement", "after", "new"):
-                        _record_repair(counts, "edit_field_alias")
-                        rewrites += 1
-                    break
-
-            if (
-                old_val is None
-                or new_val is None
-                or not isinstance(old_val, str)
-                or not isinstance(new_val, str)
-                or not old_val
-            ):
-                raise ToolArgsRepairError(
-                    "every edit replacement requires non-empty old_string and a new_string",
-                    repair_kind="invalid_args",
-                )
+            new_val, new_alias = _require_text_arg(
+                item,
+                single_new_keys,
+                "new_string",
+                allow_empty=True,
+            )
+            if new_alias:
+                _record_repair(counts, "edit_field_alias")
+                rewrites += 1
 
             normalized_replacements.append({
                 "search": old_val,
@@ -296,35 +351,25 @@ def _normalize_edit(
         )
 
     # Single replacement mode
-    old_val = None
-    for key in ("old_string", "search", "old", "before"):
-        if key in args:
-            old_val = args.get(key)
-            if key in ("old", "before", "search"):
-                _record_repair(counts, "edit_field_alias")
-                rewrites += 1
-            break
+    old_val, old_alias = _require_text_arg(
+        args,
+        single_old_keys,
+        "old_string",
+        allow_empty=False,
+    )
+    if old_alias:
+        _record_repair(counts, "edit_field_alias")
+        rewrites += 1
 
-    new_val = None
-    for key in ("new_string", "replace", "replacement", "after", "new"):
-        if key in args:
-            new_val = args.get(key)
-            if key in ("replace", "replacement", "after", "new"):
-                _record_repair(counts, "edit_field_alias")
-                rewrites += 1
-            break
-
-    if (
-        old_val is None
-        or new_val is None
-        or not isinstance(old_val, str)
-        or not isinstance(new_val, str)
-        or not old_val
-    ):
-        raise ToolArgsRepairError(
-            "edit requires non-empty old_string and a new_string",
-            repair_kind="invalid_args",
-        )
+    new_val, new_alias = _require_text_arg(
+        args,
+        single_new_keys,
+        "new_string",
+        allow_empty=True,
+    )
+    if new_alias:
+        _record_repair(counts, "edit_field_alias")
+        rewrites += 1
 
     call_args["replacements"] = [{"search": old_val, "replace": new_val}]
     return ToolArgsRepairResult(
@@ -338,26 +383,10 @@ def _normalize_read(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    counts: dict[str, int] = {}
-    rewrites = 0
-
-    if "path" in args:
-        raw_path = args.get("path")
-    elif "cwd" in args:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-    else:
-        raw_path = None
-
-    if raw_path is None or raw_path == "":
-        raise ToolArgsRepairError("read requires a path", repair_kind="invalid_args")
-
-    norm_path, path_changed = _normalize_path(raw_path)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
-
+    norm_path, rewrites, counts = _resolve_path_arg(
+        args,
+        missing_msg="read requires a path",
+    )
     call_args: dict[str, Any] = {"path": norm_path}
 
     if "offset" in args:
@@ -387,23 +416,7 @@ def _normalize_read(
 
 
 def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
-    counts: dict[str, int] = {}
-    rewrites = 0
-
-    if "path" in args:
-        raw_path = args.get("path")
-    elif "cwd" in args:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-    else:
-        raw_path = "."
-
-    norm_path, path_changed = _normalize_path(raw_path, allow_empty=True)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
-
+    norm_path, rewrites, counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
     return ToolArgsRepairResult(
         args={"path": norm_path},
         alias_rewrite_count=rewrites,
@@ -412,72 +425,52 @@ def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+    query_val, query_alias = _require_text_arg(
+        args,
+        ("query", "pattern"),
+        "query",
+        missing_msg="grep requires a query",
+        allow_empty=False,
+    )
     counts: dict[str, int] = {}
     rewrites = 0
-
-    query = None
-    if "query" in args:
-        query = args.get("query")
-    elif "pattern" in args:
-        query = args.get("pattern")
+    if query_alias:
         _record_repair(counts, "search_field_alias")
         rewrites += 1
 
-    if query is None or str(query) == "":
-        raise ToolArgsRepairError("grep requires a query", repair_kind="invalid_args")
-
-    if "path" in args:
-        raw_path = args.get("path")
-    elif "cwd" in args:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-    else:
-        raw_path = "."
-
-    norm_path, path_changed = _normalize_path(raw_path, allow_empty=True)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    rewrites += path_rewrites
+    for k, v in path_counts.items():
+        counts[k] = counts.get(k, 0) + v
 
     return ToolArgsRepairResult(
-        args={"query": str(query), "path": norm_path},
+        args={"query": query_val, "path": norm_path},
         alias_rewrite_count=rewrites,
         arg_repair_counts=counts,
     )
 
 
 def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+    symbol_val, symbol_alias = _require_text_arg(
+        args,
+        ("symbol", "name"),
+        "symbol",
+        missing_msg="find_references requires a symbol",
+        allow_empty=False,
+    )
     counts: dict[str, int] = {}
     rewrites = 0
-
-    symbol = None
-    if "symbol" in args:
-        symbol = args.get("symbol")
-    elif "name" in args:
-        symbol = args.get("name")
+    if symbol_alias:
         _record_repair(counts, "references_field_alias")
         rewrites += 1
 
-    if symbol is None or not str(symbol).strip():
-        raise ToolArgsRepairError("find_references requires a symbol", repair_kind="invalid_args")
-
-    if "path" in args:
-        raw_path = args.get("path")
-    elif "cwd" in args:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-    else:
-        raw_path = "."
-
-    norm_path, path_changed = _normalize_path(raw_path, allow_empty=True)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    rewrites += path_rewrites
+    for k, v in path_counts.items():
+        counts[k] = counts.get(k, 0) + v
 
     return ToolArgsRepairResult(
-        args={"symbol": str(symbol).strip(), "path": norm_path},
+        args={"symbol": symbol_val.strip(), "path": norm_path},
         alias_rewrite_count=rewrites,
         arg_repair_counts=counts,
     )
@@ -487,36 +480,26 @@ def _normalize_run_shell(
     tool_name: str,
     args: Mapping[str, Any],
 ) -> ToolArgsRepairResult:
+    cmd_val, cmd_alias = _require_text_arg(
+        args,
+        ("command", "cmd"),
+        "command",
+        missing_msg=f"{tool_name} requires a command",
+        allow_empty=False,
+    )
     counts: dict[str, int] = {}
     rewrites = 0
-
-    command = None
-    if "command" in args:
-        command = args.get("command")
-    elif "cmd" in args:
-        command = args.get("cmd")
+    if cmd_alias:
         _record_repair(counts, "command_field_alias")
         rewrites += 1
 
-    if command is None or not str(command):
-        raise ToolArgsRepairError(f"{tool_name} requires a command", repair_kind="invalid_args")
-
-    if "path" in args:
-        raw_path = args.get("path")
-    elif "cwd" in args:
-        raw_path = args.get("cwd")
-        _record_repair(counts, "path_alias")
-        rewrites += 1
-    else:
-        raw_path = "."
-
-    norm_path, path_changed = _normalize_path(raw_path, allow_empty=True)
-    if path_changed:
-        _record_repair(counts, "path_normalized")
-        rewrites += 1
+    norm_path, path_rewrites, path_counts = _resolve_path_arg(args, allow_empty=True, default_path=".")
+    rewrites += path_rewrites
+    for k, v in path_counts.items():
+        counts[k] = counts.get(k, 0) + v
 
     return ToolArgsRepairResult(
-        args={"command": str(command), "path": norm_path},
+        args={"command": cmd_val, "path": norm_path},
         alias_rewrite_count=rewrites,
         arg_repair_counts=counts,
     )

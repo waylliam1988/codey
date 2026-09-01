@@ -402,7 +402,7 @@ class JsonToolCodec:
             )
         for obj in objects:
             try:
-                plan = self._parse_object(obj)
+                pairs, control = self._parse_object_items(obj)
             except ProtocolValidationError as exc:
                 return ToolPlan(
                     calls=[],
@@ -411,35 +411,27 @@ class JsonToolCodec:
                     protocol_error_kind=exc.kind,
                     protocol_tool_name=str(getattr(exc, "tool_name", "") or ""),
                 )
-            if plan.protocol_error:
-                return plan
-            if plan.calls:
-                accepted_any = False
-                for call in plan.calls:
+            if pairs:
+                for call, repair in pairs:
                     key = _tool_call_key(call)
                     if key in seen_calls:
                         continue
                     seen_calls.add(key)
                     calls.append(call)
-                    accepted_any = True
+                    total_rewrites += repair.alias_rewrite_count
+                    for k, v in repair.arg_repair_counts.items():
+                        merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
                     if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
                         break
-                if accepted_any:
-                    total_rewrites += plan.alias_rewrite_count
-                    for k, v in plan.arg_repair_counts.items():
-                        merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
                 if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
                     break
                 continue
             if calls:
                 continue
-            if plan.control is not None:
-                total_rewrites += plan.alias_rewrite_count
-                for k, v in plan.arg_repair_counts.items():
-                    merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
+            if control is not None:
                 return ToolPlan(
                     calls=[],
-                    control=plan.control,
+                    control=control,
                     alias_rewrite_count=total_rewrites,
                     arg_repair_counts=merged_repair_counts,
                 )
@@ -500,7 +492,10 @@ class JsonToolCodec:
     def public_example(self, tool_name: str) -> str:
         return tool_defs.public_example(tool_name, self._definitions)
 
-    def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
+    def _parse_object_items(
+        self,
+        obj: dict[str, Any],
+    ) -> tuple[list[tuple[ToolCall, ToolArgsRepairResult]], Control | None]:
         tool = str(obj.get("tool") or obj.get("name") or "").strip()
         args = _object_args(obj)
 
@@ -514,29 +509,19 @@ class JsonToolCodec:
                     "tool call. Call the tool directly instead.",
                     PROTOCOL_NESTED_TOOL_IN_DONE,
                 )
-            return ToolPlan(calls=[], control=Control(kind="done", body=summary))
+            return [], Control(kind="done", body=summary)
         if normalized == "continue":
-            return ToolPlan(calls=[], control=Control(kind="continue", body=_summary_from_args(args)))
+            return [], Control(kind="continue", body=_summary_from_args(args))
         if normalized == "read_files":
             self._require_allowed(normalized)
-            calls, rewrites, repair_counts = self._read_files(args)
-            control = Control(kind="continue", body="Need file contents") if calls else None
-            return ToolPlan(
-                calls=calls,
-                control=control,
-                alias_rewrite_count=rewrites,
-                arg_repair_counts=repair_counts,
-            )
+            pairs = self._read_files(args)
+            control = Control(kind="continue", body="Need file contents") if pairs else None
+            return pairs, control
         if normalized == "parallel":
             self._require_allowed(normalized)
-            calls, rewrites, repair_counts = self._parallel(args)
-            control = Control(kind="continue", body="Need tool results") if calls else None
-            return ToolPlan(
-                calls=calls,
-                control=control,
-                alias_rewrite_count=rewrites,
-                arg_repair_counts=repair_counts,
-            )
+            pairs = self._parallel(args)
+            control = Control(kind="continue", body="Need tool results") if pairs else None
+            return pairs, control
 
         if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
             if normalized in {"write", "write_file", "create_file"} and self._is_allowed("edit"):
@@ -556,15 +541,25 @@ class JsonToolCodec:
 
         call, repair = self._tool_call(tool, args)
         if call is None:
-            return ToolPlan(calls=[], control=None)
+            return [], None
+        return [(call, repair)], Control(kind="continue", body="Need tool result")
+
+    def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
+        pairs, control = self._parse_object_items(obj)
+        calls = [c for c, _ in pairs]
+        rewrites = sum(r.alias_rewrite_count for _, r in pairs)
+        counts: dict[str, int] = {}
+        for _, r in pairs:
+            for k, v in r.arg_repair_counts.items():
+                counts[k] = counts.get(k, 0) + v
         return ToolPlan(
-            calls=[call],
-            control=Control(kind="continue", body="Need tool result"),
-            alias_rewrite_count=repair.alias_rewrite_count,
-            arg_repair_counts=repair.arg_repair_counts,
+            calls=calls,
+            control=control,
+            alias_rewrite_count=rewrites,
+            arg_repair_counts=counts,
         )
 
-    def _read_files(self, args: dict[str, Any]) -> tuple[list[ToolCall], int, dict[str, int]]:
+    def _read_files(self, args: dict[str, Any]) -> list[tuple[ToolCall, ToolArgsRepairResult]]:
         paths = args.get("paths")
         if isinstance(paths, str):
             paths = [paths]
@@ -574,9 +569,7 @@ class JsonToolCodec:
             raise ProtocolValidationError(
                 f"read_files accepts at most {tool_defs.MAX_ACCIDENTAL_TOOL_CALLS} paths"
             )
-        calls: list[ToolCall] = []
-        total_rewrites = 0
-        merged_counts: dict[str, int] = {}
+        pairs: list[tuple[ToolCall, ToolArgsRepairResult]] = []
         for raw_path in paths:
             if not raw_path:
                 raise ProtocolValidationError("read_files paths cannot be empty")
@@ -588,13 +581,10 @@ class JsonToolCodec:
                 )
             except ToolArgsRepairError as exc:
                 raise ProtocolValidationError(str(exc), kind=exc.repair_kind, tool_name="read") from exc
-            calls.append(ToolCall(name="read", args=repair.args))
-            total_rewrites += repair.alias_rewrite_count
-            for k, v in repair.arg_repair_counts.items():
-                merged_counts[k] = merged_counts.get(k, 0) + v
-        return calls, total_rewrites, merged_counts
+            pairs.append((ToolCall(name="read", args=repair.args), repair))
+        return pairs
 
-    def _parallel(self, args: dict[str, Any]) -> tuple[list[ToolCall], int, dict[str, int]]:
+    def _parallel(self, args: dict[str, Any]) -> list[tuple[ToolCall, ToolArgsRepairResult]]:
         raw_calls = args.get("calls")
         if not isinstance(raw_calls, list) or not raw_calls:
             raise ProtocolValidationError("parallel requires a non-empty calls list")
@@ -615,18 +605,13 @@ class JsonToolCodec:
                 )
             validated.append((tool, _object_args(raw)))
 
-        calls: list[ToolCall] = []
-        total_rewrites = 0
-        merged_counts: dict[str, int] = {}
+        pairs: list[tuple[ToolCall, ToolArgsRepairResult]] = []
         for tool, raw_args in validated:
             call, repair = self._tool_call(tool, raw_args)
             if call is None:
                 raise ProtocolValidationError(f"invalid {tool} call inside parallel")
-            calls.append(call)
-            total_rewrites += repair.alias_rewrite_count
-            for k, v in repair.arg_repair_counts.items():
-                merged_counts[k] = merged_counts.get(k, 0) + v
-        return calls, total_rewrites, merged_counts
+            pairs.append((call, repair))
+        return pairs
 
     def _tool_call(
         self,

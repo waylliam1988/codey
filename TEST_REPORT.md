@@ -20,6 +20,9 @@ tools:       introduced codey.tool_args_repair with pure functions for lexical p
              Strictly enforces project-relative paths, rejecting absolute drive letters (C:\),
              UNC paths (//share), root prefixes (/), and parent traversal escape (../).
              Path segments preserve raw characters and internal whitespace without guessing or stripping.
+             Conflicting alias keys within the same semantic group (e.g. old_string + old, cmd + command,
+             query + pattern, symbol + name, path + cwd) fail closed immediately with ToolArgsRepairError.
+             Text arguments (query, symbol, command) require non-blank string types; non-string values fail closed.
              Unsupported runtime tools fail closed immediately with ToolArgsRepairError.
              Supports equivalent parameter aliases:
              - edit: old / search / before -> old_string; replace / replacement / after / new -> new_string
@@ -35,29 +38,30 @@ tools:       introduced codey.tool_args_repair with pure functions for lexical p
 codec:       streamlined codey.protocols.json_codec by delegating parameter parsing and repair to
              normalize_tool_args(), removing duplicated validation loops from _tool_call().
              read_files and parallel batching reuse the same canonical normalizer.
-             Telemetry accumulation occurs strictly after deduplication so duplicate calls do not inflate counts.
+             Telemetry accumulation occurs strictly per accepted call after deduplication.
              Prompt repair guidance includes {"write", "write_file", "create_file"}.
 telemetry:   ToolPlan records bounded alias_rewrite_count and arg_repair_counts.
              Agent loop forwards repair telemetry to RunTrace via record_protocol_valid_turn.
              RunTrace safely tracks bounded repair counts (max 999) and sanitizes/drops sensitive
              or raw keys, ensuring zero raw prompt, argument, or path leakage.
-harness:     added tests/manual/tool_args_repair_smoke.py evaluating dialect coverage and safety boundaries.
+harness:     added tests/manual/tool_args_repair_smoke.py and tests/manual/tool_args_repair_live_ab.py.
 ```
 
 Verification:
 
 - Unit & Protocol tests:
-  - `python -m unittest tests/test_tool_args_repair.py` (19 tests passed)
-  - `python -m unittest tests/test_protocols.py` (53 tests passed)
+  - `python -m unittest tests/test_tool_args_repair.py` (21 tests passed)
+  - `python -m unittest tests/test_protocols.py` (54 tests passed)
   - `python -m unittest tests/test_run_trace.py` (63 tests passed)
   - `python -m unittest tests/test_architecture.py` (71 tests passed)
   - `python -m unittest tests/test_agent.py` (124 tests passed)
   - `python tests/manual/tool_args_repair_smoke.py` (16 test cases, 100% expected outcome)
+  - `python tests/manual/tool_args_repair_live_ab.py` (5 scenarios, 36.36% turn reduction, 8 repair turns saved)
 - Code Quality:
   - `python -m compileall codey tests` (passed)
   - `ruff check codey tests` (passed)
 - Full regression suite:
-  - `pytest` (`3355 passed, 4 skipped in 296.31s (0:04:56)`)
+  - `pytest` (`3358 passed, 4 skipped in 315.52s (0:05:15)`)
 
 ## 0.5.2 Effect Intent / Settlement + Tool Replay Policy v1 (2026-08-31)
 

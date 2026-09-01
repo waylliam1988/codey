@@ -799,10 +799,26 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(plan.protocol_error, "")
         self.assertEqual(len(plan.calls), 1)
-        # Should only count telemetry for the single accepted call
         self.assertEqual(plan.alias_rewrite_count, 2)
         self.assertEqual(plan.arg_repair_counts.get("search_field_alias"), 1)
         self.assertEqual(plan.arg_repair_counts.get("path_normalized"), 1)
+
+    def test_wrapper_partial_duplicate_dedupes_telemetry_per_call(self) -> None:
+        codec = JsonToolCodec()
+        # Single read_file for src\a.py, followed by read_files for [src\a.py, src\b.py]
+        reply = (
+            '{"tool":"read_file","args":{"path":"src\\\\a.py"}}\n\n'
+            '{"tool":"read_files","args":{"paths":["src\\\\a.py","src\\\\b.py"]}}'
+        )
+        plan = codec.parse(reply)
+
+        self.assertEqual(plan.protocol_error, "")
+        self.assertEqual(len(plan.calls), 2)
+        self.assertEqual(plan.calls[0].args["path"], "src/a.py")
+        self.assertEqual(plan.calls[1].args["path"], "src/b.py")
+        # Exactly 2 path_normalized repairs counted (one per accepted unique call)
+        self.assertEqual(plan.alias_rewrite_count, 2)
+        self.assertEqual(plan.arg_repair_counts.get("path_normalized"), 2)
 
 
 if __name__ == "__main__":

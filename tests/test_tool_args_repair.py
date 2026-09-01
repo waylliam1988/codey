@@ -194,6 +194,34 @@ class ToolArgsRepairTests(unittest.TestCase):
                     normalize_tool_args(unsupported, {"path": "a.py"}, limits=self.limits)
                 self.assertIn("unsupported runtime tool", str(ctx.exception))
 
+    def test_text_args_reject_non_string_types_and_blanks(self) -> None:
+        invalid_values = (0, False, None, [], {}, "", "   ")
+        for inv in invalid_values:
+            with self.subTest(tool="search", val=inv):
+                with self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args("search", {"query": inv, "path": "."}, limits=self.limits)
+            with self.subTest(tool="references", val=inv):
+                with self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args("references", {"symbol": inv, "path": "."}, limits=self.limits)
+            with self.subTest(tool="run", val=inv):
+                with self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args("run", {"command": inv, "path": "."}, limits=self.limits)
+
+    def test_conflicting_alias_fields_fail_closed(self) -> None:
+        conflict_cases = (
+            ("search", {"query": "foo", "pattern": "bar", "path": "."}),
+            ("references", {"symbol": "SymA", "name": "SymB", "path": "."}),
+            ("run", {"command": "pytest", "cmd": "rm -rf x", "path": "."}),
+            ("read", {"path": "a.py", "cwd": "b.py"}),
+            ("edit", {"path": "a.py", "old_string": "foo", "old": "bar", "new_string": "baz"}),
+            ("edit", {"path": "a.py", "old_string": "foo", "new_string": "baz", "replace": "qux"}),
+        )
+        for tool, args in conflict_cases:
+            with self.subTest(tool=tool, args=args):
+                with self.assertRaises(ToolArgsRepairError) as ctx:
+                    normalize_tool_args(tool, args, limits=self.limits)
+                self.assertIn("conflicting", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
