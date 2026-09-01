@@ -176,5 +176,24 @@ class ToolArgsRepairTests(unittest.TestCase):
             normalize_tool_args("run", {"path": "."}, limits=self.limits)
 
 
+    def test_path_normalization_preserves_internal_spaces_in_segments(self) -> None:
+        res = normalize_tool_args("read", {"path": "dir / file.py"}, limits=self.limits)
+        self.assertEqual(res.args["path"], "dir / file.py")
+
+    def test_edit_content_rejects_non_string_types(self) -> None:
+        for invalid_content in (0, False, None, [1, 2], {"a": 1}):
+            with self.subTest(invalid_content=invalid_content):
+                with self.assertRaises(ToolArgsRepairError) as ctx:
+                    normalize_tool_args("edit", {"path": "a.py", "content": invalid_content}, limits=self.limits)
+                self.assertIn("content must be a string", str(ctx.exception))
+
+    def test_unsupported_runtime_tool_fails_closed(self) -> None:
+        for unsupported in ("future_tool", "write_file", "unknown_xyz", "browser"):
+            with self.subTest(tool=unsupported):
+                with self.assertRaises(ToolArgsRepairError) as ctx:
+                    normalize_tool_args(unsupported, {"path": "a.py"}, limits=self.limits)
+                self.assertIn("unsupported runtime tool", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

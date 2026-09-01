@@ -6,9 +6,10 @@
 
 - Tool Argument Canonicalization & Protocol Friction Reduction v1:
   - Added `codey.tool_args_repair` providing pure functions for lexical path normalization, bounded positive integer parsing, and equivalent field alias rewriting for canonical runtime tools (`edit`, `read`, `ls`, `search`, `references`, `run`, `shell`).
-  - Path normalization strictly enforces project-relative paths, folding `.` and safe `..` while rejecting Windows drive letters (`C:\`), UNC paths (`//share`), root paths (`/`), and parent directory traversal escaping project root (`../`).
+  - Path normalization strictly enforces project-relative paths, folding `.` and safe `..` while rejecting Windows drive letters (`C:\`), UNC paths (`//share`), root paths (`/`), and parent directory traversal escaping project root (`../`). Path segments preserve internal whitespace without stripping; unsupported runtime tools fail closed immediately.
   - Equivalent parameter aliases:
     - `edit`: `old` / `search` / `before` -> `old_string`; `replace` / `replacement` / `after` / `new` -> `new_string`.
+    - `edit`: `content` strictly requires a string type, avoiding silent data loss on non-string inputs.
     - `edit`: wraps single replacement object directly passed in `replacements`.
     - `edit`: parses JSON string `replacements` safely; invalid JSON fails closed.
     - `read`: coerces numeric string `offset` / `limit` to bounded positive integers; bool, float, and invalid values are strictly rejected.
@@ -17,8 +18,8 @@
     - `run` / `shell`: `cmd` -> `command` (never guesses command content).
     - `write` / `write_file` / `create_file` remain strictly unknown tools without hidden mutation aliases.
   - Slimmed `codey.protocols.json_codec`: `_tool_call()` delegates all parameter parsing and validation to `normalize_tool_args()`, eliminating over 100 lines of duplicated logic; `read_files` and `parallel` reuse the shared normalizer.
-  - Bounded telemetry: `ToolPlan` carries `alias_rewrite_count` and `arg_repair_counts`; `AgentLoop` forwards telemetry to `RunTrace.record_protocol_valid_turn`; `RunTrace` records and sanitizes repair counts without persisting raw paths, commands, queries, or prompt text.
-  - A/B harness: added `tests/manual/tool_args_repair_ab.py` for evaluating parser friction reduction and safety boundaries across diverse model output dialects.
+  - Bounded telemetry: `ToolPlan` carries `alias_rewrite_count` and `arg_repair_counts` accumulated strictly after call deduplication; `AgentLoop` forwards telemetry to `RunTrace.record_protocol_valid_turn`; `RunTrace` records and sanitizes repair counts without persisting raw paths, commands, queries, or prompt text.
+  - Dialect smoke harness: added `tests/manual/tool_args_repair_smoke.py` for evaluating parser friction reduction and safety boundaries across diverse model output dialects.
 
 ## 0.5.2 - Effect Intent / Settlement + Tool Replay Policy v1
 

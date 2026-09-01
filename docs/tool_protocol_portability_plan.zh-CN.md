@@ -532,10 +532,10 @@ provider/dialect args
 
 ```text
 search/replace/replacement -> old_string/new_string
-write_file/content -> edit content
 single replacement object -> replacements[...]
 JSON string edits -> parsed replacements, fail closed on invalid JSON
 numeric strings for offset/limit -> bounded ints
+write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引导 edit(content=...)，不做生产隐藏 alias
 ```
 
 注意：

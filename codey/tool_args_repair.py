@@ -57,7 +57,10 @@ def _normalize_path(
             return ".", False
         raise ToolArgsRepairError("path cannot be empty", repair_kind="invalid_args")
 
-    raw_str = str(raw_value).strip()
+    if not isinstance(raw_value, str):
+        raise ToolArgsRepairError("path must be a string", repair_kind="invalid_args")
+
+    raw_str = raw_value.strip()
     if not raw_str:
         if allow_empty:
             return ".", False
@@ -86,7 +89,6 @@ def _normalize_path(
     segments = normalized_slashes.split("/")
     stack: list[str] = []
     for segment in segments:
-        segment = segment.strip()
         if segment in ("", "."):
             continue
         if segment == "..":
@@ -188,7 +190,13 @@ def _normalize_edit(
         )
 
     if has_content:
-        call_args["content"] = str(args.get("content") or "")
+        raw_content = args.get("content")
+        if not isinstance(raw_content, str):
+            raise ToolArgsRepairError(
+                "edit content must be a string",
+                repair_kind="invalid_args",
+            )
+        call_args["content"] = raw_content
         return ToolArgsRepairResult(
             args=call_args,
             alias_rewrite_count=rewrites,
@@ -263,15 +271,21 @@ def _normalize_edit(
                         rewrites += 1
                     break
 
-            if old_val is None or new_val is None or not str(old_val):
+            if (
+                old_val is None
+                or new_val is None
+                or not isinstance(old_val, str)
+                or not isinstance(new_val, str)
+                or not old_val
+            ):
                 raise ToolArgsRepairError(
                     "every edit replacement requires non-empty old_string and a new_string",
                     repair_kind="invalid_args",
                 )
 
             normalized_replacements.append({
-                "search": str(old_val),
-                "replace": str(new_val),
+                "search": old_val,
+                "replace": new_val,
             })
 
         call_args["replacements"] = normalized_replacements
@@ -300,13 +314,19 @@ def _normalize_edit(
                 rewrites += 1
             break
 
-    if old_val is None or new_val is None or not str(old_val):
+    if (
+        old_val is None
+        or new_val is None
+        or not isinstance(old_val, str)
+        or not isinstance(new_val, str)
+        or not old_val
+    ):
         raise ToolArgsRepairError(
             "edit requires non-empty old_string and a new_string",
             repair_kind="invalid_args",
         )
 
-    call_args["replacements"] = [{"search": str(old_val), "replace": str(new_val)}]
+    call_args["replacements"] = [{"search": old_val, "replace": new_val}]
     return ToolArgsRepairResult(
         args=call_args,
         alias_rewrite_count=rewrites,
@@ -529,25 +549,7 @@ def normalize_tool_args(
     if normalized_tool in ("run", "shell"):
         return _normalize_run_shell(normalized_tool, args)
 
-    # For unknown/other runtime tools, preserve keys and normalize path if present
-    counts: dict[str, int] = {}
-    rewrites = 0
-    result_args: dict[str, Any] = dict(args)
-    if "path" in result_args or "cwd" in result_args:
-        if "path" in result_args:
-            raw_path = result_args["path"]
-        else:
-            raw_path = result_args.pop("cwd")
-            _record_repair(counts, "path_alias")
-            rewrites += 1
-        norm_path, path_changed = _normalize_path(raw_path, allow_empty=True)
-        if path_changed:
-            _record_repair(counts, "path_normalized")
-            rewrites += 1
-        result_args["path"] = norm_path
-
-    return ToolArgsRepairResult(
-        args=result_args,
-        alias_rewrite_count=rewrites,
-        arg_repair_counts=counts,
+    raise ToolArgsRepairError(
+        f"unsupported runtime tool: {normalized_tool}",
+        repair_kind="unknown_tool",
     )

@@ -681,7 +681,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 self.assertIn(plan.calls[0].name, SUPPORTED_TOOL_NAMES)
 
     def test_unknown_write_tools_are_protocol_errors_not_compatibility_aliases(self) -> None:
-        for name in ("write", "write_file"):
+        for name in ("write", "write_file", "create_file"):
             with self.subTest(tool=name):
                 plan = JsonToolCodec().parse(json.dumps({
                     "tool": name,
@@ -787,6 +787,22 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("path_alias", plan.arg_repair_counts)
         self.assertIn("search_field_alias", plan.arg_repair_counts)
         self.assertIn("numeric_coerced", plan.arg_repair_counts)
+
+    def test_deduplicated_calls_do_not_inflate_repair_telemetry(self) -> None:
+        codec = JsonToolCodec()
+        call_json = json.dumps({
+            "tool": "grep",
+            "args": {"path": r"src\utils", "pattern": "login_func"},
+        })
+        reply = f"{call_json}\n\n{call_json}"
+        plan = codec.parse(reply)
+
+        self.assertEqual(plan.protocol_error, "")
+        self.assertEqual(len(plan.calls), 1)
+        # Should only count telemetry for the single accepted call
+        self.assertEqual(plan.alias_rewrite_count, 2)
+        self.assertEqual(plan.arg_repair_counts.get("search_field_alias"), 1)
+        self.assertEqual(plan.arg_repair_counts.get("path_normalized"), 1)
 
 
 if __name__ == "__main__":

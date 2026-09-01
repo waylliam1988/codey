@@ -413,23 +413,30 @@ class JsonToolCodec:
                 )
             if plan.protocol_error:
                 return plan
-            total_rewrites += plan.alias_rewrite_count
-            for k, v in plan.arg_repair_counts.items():
-                merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
             if plan.calls:
+                accepted_any = False
                 for call in plan.calls:
                     key = _tool_call_key(call)
                     if key in seen_calls:
                         continue
                     seen_calls.add(key)
                     calls.append(call)
+                    accepted_any = True
+                    if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
+                        break
+                if accepted_any:
+                    total_rewrites += plan.alias_rewrite_count
+                    for k, v in plan.arg_repair_counts.items():
+                        merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
                 if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
-                    calls = calls[: tool_defs.MAX_ACCIDENTAL_TOOL_CALLS]
                     break
                 continue
             if calls:
                 continue
             if plan.control is not None:
+                total_rewrites += plan.alias_rewrite_count
+                for k, v in plan.arg_repair_counts.items():
+                    merged_repair_counts[k] = merged_repair_counts.get(k, 0) + v
                 return ToolPlan(
                     calls=[],
                     control=plan.control,
@@ -532,7 +539,7 @@ class JsonToolCodec:
             )
 
         if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
-            if normalized in {"write", "write_file"} and self._is_allowed("edit"):
+            if normalized in {"write", "write_file", "create_file"} and self._is_allowed("edit"):
                 message = (
                     f"unknown tool: {tool}. Use edit with content to create a new file, "
                     'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.'

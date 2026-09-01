@@ -149,7 +149,7 @@ def protocol_repair_prompt(
     if kind == PROTOCOL_UNKNOWN_TOOL:
         tool = unknown_tool_from_error(error)
         edit_example = codec_public_example(codec, "edit")
-        if tool in {"write", "write_file"} and edit_example:
+        if tool in {"write", "write_file", "create_file"} and edit_example:
             example = unknown_write_repair_example(previous)
             lines.extend((
                 "The previous reply used an unknown write tool. Coding has no "
