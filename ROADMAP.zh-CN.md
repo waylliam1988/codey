@@ -3657,7 +3657,7 @@ GLM 实机时暴露出启动深链问题：`main/alltoolsdetail` 入口可能触
 
 状态：已完成（2026-09-01，focused replay/runtime gate、manual self-test、same-run
 resume smoke、DeepSeek live resume smoke、compileall、ruff、`git diff --check` 和
-全量 pytest `3383 passed, 16 skipped in 320.09s (0:05:20)`
+全量 pytest `3384 passed, 16 skipped in 297.52s (0:04:57)`
 完成）。在 0.5.2 的 effect intent / settlement 和 0.5.3 的
 canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程在 safe tool
 执行中途被杀掉时，恢复路径按 persisted canonical args 自动重跑，并把结果作为
@@ -3695,6 +3695,7 @@ pending safe effect 先重新过 schema / lane / project-boundary / runtime vali
 通过校验后走现有 execute_tool_call 路径，不写第二套 read/search 实现
 tool result 以 bounded recovered result 回到同一条 agent loop
 带 recovered tool result 的续跑跳过 work-queue claim 和 auto router，避免恢复结果被分派到非 writer 路径
+hybrid writer 崩溃恢复直接回到 project writer，不重复执行 Research
 原 effect 写 replayed settlement，并记录 replayed_from_effect_id / replay_count
 Run Details 只显示 quiet recovery row，不显示 effect_id / replay class / raw args
 ```
@@ -3728,7 +3729,7 @@ Run Details 能区分 replayed safe read 和 interrupted unsafe effect
 - 不保存 unsafe tool 的 raw args；safe replay_args 也必须是 canonical、bounded、可重新校验的最小字段。
 - 不保存 prompt、reply、stdout、stderr、diff、source body、完整搜索结果。
 - 不为旧的无 replay_args effect 猜参数；缺字段、坏 schema、路径逃逸、未知 tool 都 fail closed。
-- 不新增 SafeReplayManager；`safe_tool_replay.py` 只做恢复编排和验证胶水。
+- 不新增 SafeReplayManager；`safe_tool_replay.py` 只做候选提取和参数校验。
 - 不保留旧的 settlement-only 恢复 wrapper；生产只有 `_recover_effects_for_resume()` 一个入口。
 - 不把 replay 当后台任务；只在显式 resume gate 内运行。
 

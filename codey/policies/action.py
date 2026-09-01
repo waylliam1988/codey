@@ -91,8 +91,6 @@ DANGEROUS_ACTIONS = WRITE_ACTIONS | frozenset({
 })
 
 
-
-
 @dataclass(frozen=True)
 class ActionSubject:
     kind: str
@@ -642,9 +640,6 @@ def _permission_denied(subject: ActionSubject) -> ActionPolicyDecision:
         reason_code="permission_profile_denied",
         display="action denied by permission profile",
     )
-
-
-
 
 
 def _reason_code(reason: str) -> str:

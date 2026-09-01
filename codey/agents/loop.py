@@ -655,8 +655,6 @@ def run(request: AgentRequest) -> RunResult:
     )
     return _run_loop(session, reply, start_turn=start_turn)
 
-
-
 __all__ = [
     "AgentLoopSession",
     "DEFAULT_CODEC",

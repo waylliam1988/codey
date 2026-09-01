@@ -45,7 +45,6 @@ class TurnState:
 
 
 def call_arg(call: ToolCall, name: str, default: str = "") -> str:
-
     value = call.args.get(name, default)
     if value is None:
         return default
@@ -184,7 +183,6 @@ def record_tool_call_intent(
     )
     effects.record_intent(session.session_id, session.run_id, intent)
     return effect_id
-
 
 
 def record_tool_call_settlement(

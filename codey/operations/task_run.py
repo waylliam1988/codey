@@ -43,7 +43,6 @@ from codey.operations.project_completion_flow import (
     record_completion_proof_trace,
     run_project_mode,
 )
-
 from codey.operations.provider_preflight import connect_provider_with_preflight
 from codey.operations.research_flow import (
     ResearchFlowDeps,
@@ -260,6 +259,12 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         if not recover_ok:
             return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
+        recovered_resume = bool(recovered_tool_outcomes)
+        if recovered_resume:
+            task_kind = "project"
+            if not continue_task:
+                request = replace(request, continue_task=True)
+                continue_task = True
 
         try:
             if not recovered_tool_outcomes:
@@ -320,6 +325,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             project=project,
             claimed_work_item=claimed_work_item,
             route_result=route_result,
+            recovered_resume=recovered_resume,
         )
         state.emit({
             "type": "task_start",
@@ -1212,11 +1218,15 @@ def _record_route_trace(
     project: str | None,
     claimed_work_item: GhostWorkItem | None,
     route_result: Any,
+    recovered_resume: bool = False,
 ) -> None:
     route_source = "explicit_user_choice" if str(request.intent or "").strip().lower() != "auto" else "baseline"
     route_reason = "intent_selected" if route_source == "explicit_user_choice" else "baseline_kept"
     route_selected_mode = task_kind
-    if claimed_work_item is not None:
+    if recovered_resume:
+        route_source = "runtime_recovery"
+        route_reason = "safe_tool_replay"
+    elif claimed_work_item is not None:
         route_source = "local_work_item"
         route_reason = "claimed_work_item"
     elif route_result is not None:

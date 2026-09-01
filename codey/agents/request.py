@@ -37,7 +37,6 @@ class RecoveredToolOutcome:
 
 @dataclass(frozen=True)
 class AgentRequest:
-
     provider: ChatProvider
     project: Path
     task: str
@@ -76,6 +75,8 @@ class AgentRequest:
     run_id: str = ""
     runtime_effects: Any = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+
+
 __all__ = [
     "AgentRequest",
     "ChangeTracker",

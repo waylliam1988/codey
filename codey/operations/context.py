@@ -40,7 +40,6 @@ class RunFrame:
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
 
 
-
 @dataclass
 class RunWork:
     recent_events: list[str]

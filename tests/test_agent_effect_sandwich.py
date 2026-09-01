@@ -643,6 +643,93 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(recovered[0].call.name, "read")
         self.assertIn("recovered file text", recovered[0].outcome.model_text)
 
+    def test_recovered_hybrid_writer_resume_dispatches_project_not_research(self) -> None:
+        state = server.AppContext()
+        run_id = "run-recovered-hybrid-writer-1"
+        target = self.project_dir / "target.txt"
+        target.write_text("hybrid recovered file text", encoding="utf-8")
+
+        self.assertIsNotNone(
+            state.runtime_operations.start(
+                session_id=self.session_id,
+                run_id=run_id,
+                project=str(self.project_dir),
+                provider_id="mock_provider",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="hybrid",
+            )
+        )
+        state.runtime_effects.record_intent(
+            self.session_id,
+            run_id,
+            RuntimeEffectIntent(
+                effect_id=new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id),
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=run_id,
+                turn=1,
+                tool_index=0,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "target.txt"},
+            ),
+        )
+
+        seen_requests: list[Any] = []
+
+        def fake_agent_run(req: Any) -> RunResult:
+            seen_requests.append(req)
+            return RunResult("ok", "done", 2, False, False, False)
+
+        emitted_events: list[dict] = []
+        state.emit = lambda event: emitted_events.append(event)
+
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=fake_agent_run,
+            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
+            run_review=Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            runtime_effects=state.runtime_effects,
+            is_git_repository=lambda _project: True,
+        )
+
+        with patch.object(state, "get_provider", return_value=MockProvider()), \
+             patch("codey.operations.task_run.run_hybrid_mode", autospec=True) as mock_hybrid:
+            run_task_submission(
+                deps,
+                TaskSubmission(
+                    self.session_id,
+                    str(self.project_dir),
+                    "research then continue writer",
+                    5,
+                    False,
+                    "mock_provider",
+                    intent="hybrid",
+                    run_id=run_id,
+                ),
+            )
+
+        mock_hybrid.assert_not_called()
+        self.assertEqual(len(seen_requests), 1)
+        request = seen_requests[0]
+        self.assertTrue(request.fresh_chat or request.conversation is not None)
+        self.assertTrue(request.recovered_tool_outcomes)
+        self.assertIn("hybrid recovered file text", request.recovered_tool_outcomes[0].outcome.model_text)
+        start_events = [e for e in emitted_events if e.get("type") == "task_start"]
+        self.assertEqual(len(start_events), 1)
+        self.assertEqual(start_events[0].get("mode"), "agent")
+        self.assertTrue(start_events[0].get("continue_task"))
+
     def test_pre_gate_recovery_failure_leaves_no_detailed_operation_in_store(self) -> None:
         from codey.runs.details import load_run_details
 

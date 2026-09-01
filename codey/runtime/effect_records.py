@@ -105,8 +105,6 @@ _SETTLEMENT_PAYLOAD_KEYS = frozenset({
     "created_at",
 })
 
-
-
 class RuntimeEffectError(Exception):
     """Base error for runtime effect violations."""
 
@@ -430,7 +428,6 @@ class RuntimeEffectSettlement:
             record_kind=RECORD_KIND_SETTLEMENT,
             schema_version=SCHEMA_VERSION,
         )
-
 
 
 @dataclass(frozen=True)
@@ -828,7 +825,6 @@ class RuntimeEffectStore:
             replayed_searches=replayed_searches,
             explanation_lines=tuple(lines),
         )
-
 
 
 __all__ = [

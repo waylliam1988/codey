@@ -30,7 +30,8 @@ agents:     extracted execute_information_tool_call() and evaluate_tool_call_pol
             and send continuation prompt starting from max(turn) + 1.
 operations: upgraded task_run.py resume recovery gate to _recover_effects_for_resume with strict safety gates
             (valid project directory, writer task candidate, policy approval check, and canonical replay execution).
-            Recovered-outcome resumes skip work-queue claim and auto routing so replayed tool results return to the same writer path.
+            Recovered-outcome resumes skip work-queue claim and auto routing, then return directly to project writer so
+            a hybrid writer crash does not rerun Research before consuming recovered tool results.
             Removed the old settlement-only resume wrapper so there is a single recovery entrypoint.
             Wired recovered_tool_outcomes into RunFrame and consumed/cleared it in _run_one_writer_attempt.
             Keeps unsafe, provider, repair, invalid, and non-writer effects fail-closed to synthetic interrupted settlements.
@@ -44,9 +45,9 @@ harness:    added tests/test_safe_tool_replay.py, added tests/manual/safe_tool_r
 Verification:
 
 - Focused regression set:
-  - `python -m pytest tests/test_safe_tool_replay.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_runtime_session_log.py -q` (85 passed, 34 subtests passed in 2.07s)
-  - `python -m pytest tests/test_run_details.py tests/test_task_entry_operation_state.py tests/test_task_entry_run_trace.py tests/test_run_trace.py tests/test_run_trace_completion_repair_context.py tests/test_run_ledger.py tests/test_run_ledger_projection.py tests/test_project_completion_flow_enforcement.py tests/test_project_completion_flow_edit_integrity.py tests/test_project_completion_flow_analysis_run.py -q` (165 passed, 6 subtests passed in 44.38s)
-  - `python -m pytest tests/test_headless_runner.py tests/test_event_matrix.py -q` (15 passed, 205 subtests passed in 3.44s)
+  - `python -m pytest tests/test_safe_tool_replay.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_runtime_session_log.py tests/test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q` (87 passed, 34 subtests passed in 2.15s)
+  - `python -m pytest tests/test_run_details.py tests/test_task_entry_operation_state.py tests/test_task_entry_run_trace.py tests/test_run_trace.py tests/test_run_trace_completion_repair_context.py tests/test_run_ledger.py tests/test_run_ledger_projection.py tests/test_project_completion_flow_enforcement.py tests/test_project_completion_flow_edit_integrity.py tests/test_project_completion_flow_analysis_run.py -q` (165 passed, 6 subtests passed in 44.99s)
+  - `python -m pytest tests/test_headless_runner.py tests/test_event_matrix.py tests/test_architecture.py -q` (87 passed, 479 subtests passed in 12.76s)
   - `python tests/manual/safe_tool_replay_smoke.py --self-test` (passed; 3 pending intents: 2 safe replayed with replay_count=1, 1 unsafe interrupted, agent loop resumed turn 2, details projected 3 recovery rows)
   - `python tests/manual/safe_tool_replay_smoke.py --same-run-self-test` (passed; recovered one pending read in the same session/run, injected the recovered tool result exactly once, then completed `edit` + `run`)
   - `python tests/manual/safe_tool_replay_smoke.py --provider deepseek --port 9222 --max-turns 8 --keep-open --output tests/manual/results/safe_tool_replay_live_resume-deepseek-20260901.json` (passed; injected read crash, recovered 1 read outcome, `replay_count=1`, same provider conversation continued in 4 sends with `read`/`edit`/`run`, `checks_passed=true`, `final_content_ok=true`)
@@ -54,7 +55,7 @@ Verification:
   - `ruff check codey tests` (passed)
   - `git diff --check` (passed)
 - Full regression suite:
-  - `python -m pytest` (`3383 passed, 16 skipped in 320.09s (0:05:20)`)
+  - `python -m pytest` (`3384 passed, 16 skipped in 297.52s (0:04:57)`)
 
 ## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-09-01)
 
