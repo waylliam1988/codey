@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from codey.runtime.replay_policy import is_replayable_safe_tool
+from codey.tool_args_repair import ToolArgLimits
 
 REPLAY_ARG_TEXT_MAX_CHARS = 1000
-REPLAY_READ_MAX_LINES = 600
+REPLAY_READ_MAX_LINES = ToolArgLimits().read_max_lines
 _REPLAY_READ_MAX_OFFSET = 1_000_000_000
 _REPLAY_ARG_ALLOWED_KEYS = {
     "read": frozenset({"path", "offset", "limit"}),

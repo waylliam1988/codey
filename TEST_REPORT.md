@@ -18,9 +18,11 @@ runtime:    introduced codey.runtime.safe_tool_replay for pure data validation a
             Added codey.runtime.replay_args for shared persisted replay_args shape validation.
             Defined narrow replayable whitelist REPLAYABLE_SAFE_TOOL_NAMES = {"read", "ls", "search", "references"}.
             Extended RuntimeEffectIntent with canonical replay_args (validated strictly with zero alias rewrites and zero repairs).
+            Malformed persisted replay_args loaded from the log now fail closed as missing replay args instead of aborting recovery.
             Extended RuntimeEffectSettlement with replay_count and replayed_from_effect_id.
             Extended RecoverySummary to compute and render recovered safe actions ("Read action was recovered", "Search action was recovered").
             Updated session log compaction to preserve replayed effect intents and settlements.
+            Hardened compaction against malformed replay_count payloads.
 agents:     extracted execute_information_tool_call() and evaluate_tool_call_policy_for() in tool_execution.py for clean replay reuse.
             Extracted tool_result_from_outcome() and updated record_tool_call_intent() to record replay_args for replayable safe tools.
             Defined RecoveredToolOutcome in request.py and added recovered_tool_outcomes to AgentRequest.
@@ -28,25 +30,28 @@ agents:     extracted execute_information_tool_call() and evaluate_tool_call_pol
             and send continuation prompt starting from max(turn) + 1.
 operations: upgraded task_run.py resume recovery gate to _recover_effects_for_resume with strict safety gates
             (valid project directory, writer task candidate, policy approval check, and canonical replay execution).
+            Recovered-outcome resumes skip work-queue claim and auto routing so replayed tool results return to the same writer path.
             Removed the old settlement-only resume wrapper so there is a single recovery entrypoint.
             Wired recovered_tool_outcomes into RunFrame and consumed/cleared it in _run_one_writer_attempt.
             Keeps unsafe, provider, repair, invalid, and non-writer effects fail-closed to synthetic interrupted settlements.
 details:    updated DESIGN.md and details projection documentation to permit "Read action was recovered" and "Search action was recovered".
 harness:    added tests/test_safe_tool_replay.py, added tests/manual/safe_tool_replay_smoke.py (--self-test),
-            updated tests/test_tool_replay_policy.py, tests/test_runtime_effect_records.py, and tests/test_agent_effect_sandwich.py.
+            updated tests/test_tool_replay_policy.py, tests/test_runtime_effect_records.py, tests/test_agent_effect_sandwich.py,
+            and tests/test_runtime_session_log.py.
 ```
 
 Verification:
 
 - Focused regression set:
-  - `python -m pytest tests/test_safe_tool_replay.py tests/test_tool_replay_policy.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py` (58 passed in 1.46s)
-  - `python -m pytest tests/test_architecture.py tests/test_ui_architecture.py` (83 passed in 10.16s)
+  - `python -m pytest tests/test_safe_tool_replay.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_runtime_session_log.py -q` (85 passed, 34 subtests passed in 2.07s)
+  - `python -m pytest tests/test_run_details.py tests/test_task_entry_operation_state.py tests/test_task_entry_run_trace.py tests/test_run_trace.py tests/test_run_trace_completion_repair_context.py tests/test_run_ledger.py tests/test_run_ledger_projection.py tests/test_project_completion_flow_enforcement.py tests/test_project_completion_flow_edit_integrity.py tests/test_project_completion_flow_analysis_run.py -q` (165 passed, 6 subtests passed in 44.38s)
+  - `python -m pytest tests/test_headless_runner.py tests/test_event_matrix.py -q` (15 passed, 205 subtests passed in 3.44s)
   - `python tests/manual/safe_tool_replay_smoke.py --self-test` (passed; 3 pending intents: 2 safe replayed with replay_count=1, 1 unsafe interrupted, agent loop resumed turn 2, details projected 3 recovery rows)
   - `python -m compileall -q codey tests` (passed)
   - `ruff check codey tests` (passed)
   - `git diff --check` (passed)
 - Full regression suite:
-  - `python -m pytest` (`3379 passed, 16 skipped in 318.04s (0:05:18)`)
+  - `python -m pytest` (`3383 passed, 16 skipped in 320.09s (0:05:20)`)
 
 ## 0.5.3 Shared Tool Argument Repair + Protocol Friction Reduction v1 (2026-09-01)
 

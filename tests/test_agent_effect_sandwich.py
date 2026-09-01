@@ -30,14 +30,18 @@ from codey.operations.task_run import TaskRunDeps, _recover_effects_for_resume, 
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runtime.effect_records import (
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectIntent,
     RuntimeEffectStore,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
+    new_effect_id,
 )
 from codey.runtime import cancellation
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.effects import RuntimeOperationStore, lane_for_run, operation_id_for_run
 from codey.runtime.models import ToolCall
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
@@ -558,6 +562,87 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
+    def test_recovered_tool_outcomes_skip_work_claim_and_auto_router(self) -> None:
+        state = server.AppContext()
+        run_id = "run-recovered-skip-router-1"
+        target = self.project_dir / "target.txt"
+        target.write_text("recovered file text", encoding="utf-8")
+
+        self.assertIsNotNone(
+            state.runtime_operations.start(
+                session_id=self.session_id,
+                run_id=run_id,
+                project=str(self.project_dir),
+                provider_id="mock_provider",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+        )
+        state.runtime_effects.record_intent(
+            self.session_id,
+            run_id,
+            RuntimeEffectIntent(
+                effect_id=new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id),
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=run_id,
+                turn=1,
+                tool_index=0,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "target.txt"},
+            ),
+        )
+        seen_requests: list[Any] = []
+
+        def fake_agent_run(req: Any) -> RunResult:
+            seen_requests.append(req)
+            return RunResult("ok", "done", 2, False, False, False)
+
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=fake_agent_run,
+            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
+            run_review=Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            runtime_effects=state.runtime_effects,
+            is_git_repository=lambda _project: True,
+        )
+
+        with patch.object(state, "get_provider", return_value=MockProvider()), \
+             patch("codey.operations.task_run.maybe_claim_work_item", autospec=True) as mock_claim, \
+             patch("codey.operations.task_run.maybe_route_auto", autospec=True) as mock_route:
+            run_task_submission(
+                deps,
+                TaskSubmission(
+                    self.session_id,
+                    str(self.project_dir),
+                    "continue task",
+                    5,
+                    False,
+                    "mock_provider",
+                    intent="auto",
+                    run_id=run_id,
+                ),
+            )
+
+        mock_claim.assert_not_called()
+        mock_route.assert_not_called()
+        self.assertEqual(len(seen_requests), 1)
+        recovered = seen_requests[0].recovered_tool_outcomes
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0].call.name, "read")
+        self.assertIn("recovered file text", recovered[0].outcome.model_text)
+
     def test_pre_gate_recovery_failure_leaves_no_detailed_operation_in_store(self) -> None:
         from codey.runs.details import load_run_details
 
@@ -669,7 +754,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(len(recovered), 1)
         rec = recovered[0]
-        self.assertEqual(rec.effect_id, eff_read)
         self.assertEqual(rec.call.name, "read")
         self.assertTrue(rec.outcome.ok)
         self.assertIn("file content to read", rec.outcome.model_text)
@@ -717,6 +801,58 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(recovered, ())
         loaded = self.effects.load_effects(self.session_id, self.run_id)
         proj = next(p for p in loaded if p.intent.effect_id == eff_read)
+        self.assertFalse(proj.is_pending)
+        assert proj.settlement is not None
+        self.assertEqual(proj.settlement.status, "interrupted")
+        self.assertEqual(proj.settlement.replay_count, 0)
+
+    def test_resume_invalid_persisted_replay_args_fails_closed_without_recovery_failure(self) -> None:
+        from codey.operations.task_run import _recover_effects_for_resume
+
+        eff_id = "eff_bad_replay_args"
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+        self.log.append(
+            self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "runtime_effect",
+                "record_kind": "intent",
+                "ref": f"effect:{eff_id}",
+                "effect_id": eff_id,
+                "effect_category": "tool_call",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": lane,
+                "operation_id": op_id,
+                "turn": 1,
+                "tool_index": 0,
+                "tool_name": "read",
+                "replay_class": "safe",
+                "replay_args": {"path": "../outside.py"},
+            },
+        )
+
+        deps = SimpleNamespace(
+            runtime_effects=self.effects,
+            state=SimpleNamespace(runtime_effects=self.effects),
+        )
+        ok, recovered = _recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(recovered, ())
+        loaded = self.effects.load_effects(self.session_id, self.run_id)
+        proj = next(p for p in loaded if p.intent.effect_id == eff_id)
+        self.assertIsNone(proj.intent.replay_args)
         self.assertFalse(proj.is_pending)
         assert proj.settlement is not None
         self.assertEqual(proj.settlement.status, "interrupted")
@@ -790,7 +926,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             reply='{"tool": "done", "args": {"summary": "task finished after resume"}}'
         )
         recovered_outcome = RecoveredToolOutcome(
-            effect_id="eff_recovered_1",
             call=ToolCall(name="read", args={"path": "foo.py"}),
             outcome=ToolOutcome("dummy file content", True),
             turn=1,
@@ -822,7 +957,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             reply='{"tool": "done", "args": {"summary": "should not be sent"}}'
         )
         recovered_outcome = RecoveredToolOutcome(
-            effect_id="eff_recovered_1",
             call=ToolCall(name="read", args={"path": "foo.py"}),
             outcome=ToolOutcome("dummy file content", True),
             turn=1,

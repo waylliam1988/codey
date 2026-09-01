@@ -261,28 +261,28 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if not recover_ok:
             return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
 
-
         try:
-            claim_result = maybe_claim_work_item(ghost_deps, request, run_id=run_id)
-            if claim_result is not None:
-                claimed_work_item = claim_result.item
-                task_kind = claim_result.mode or task_kind
-                request = replace(
-                    request,
-                    task=claim_result.task or request.task,
-                    continue_task=True,
-                )
-                task = request.task
-                continue_task = request.continue_task
-            else:
-                route_result = maybe_route_auto(
-                    ghost_deps,
-                    request,
-                    baseline_mode=baseline_task_kind,
-                    run_id=run_id,
-                )
-                if route_result is not None:
-                    task_kind = route_result.final_mode
+            if not recovered_tool_outcomes:
+                claim_result = maybe_claim_work_item(ghost_deps, request, run_id=run_id)
+                if claim_result is not None:
+                    claimed_work_item = claim_result.item
+                    task_kind = claim_result.mode or task_kind
+                    request = replace(
+                        request,
+                        task=claim_result.task or request.task,
+                        continue_task=True,
+                    )
+                    task = request.task
+                    continue_task = request.continue_task
+                else:
+                    route_result = maybe_route_auto(
+                        ghost_deps,
+                        request,
+                        baseline_mode=baseline_task_kind,
+                        run_id=run_id,
+                    )
+                    if route_result is not None:
+                        task_kind = route_result.final_mode
         except cancellation.TaskCancelled:
             state.set_provider_session(provider_id, None)
             release_work_item(
@@ -1094,7 +1094,6 @@ def _recover_effects_for_resume(
                     effects_store.record_settlement(session_id, run_id, settlement)
                     recovered_outcomes.append(
                         RecoveredToolOutcome(
-                            effect_id=candidate.effect_id,
                             call=candidate.call,
                             outcome=outcome,
                             turn=candidate.turn,

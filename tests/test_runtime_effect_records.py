@@ -147,6 +147,22 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         s2 = self.store.record_settlement(self.session_id, self.run_id, settlement1)
         self.assertEqual(s1.effect_id, s2.effect_id)
 
+        replay_class_conflict = RuntimeEffectSettlement(
+            effect_id=effect_id,
+            effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            status=SETTLEMENT_STATUS_OK,
+            replay_class=ReplayClass.SAFE,
+        )
+        with self.assertRaises(RuntimeEffectError) as ctx:
+            self.store.record_settlement(
+                self.session_id,
+                self.run_id,
+                replay_class_conflict,
+            )
+        self.assertIn("already settled", str(ctx.exception))
+
         # Conflicting settlement raises
         conflicting = RuntimeEffectSettlement(
             effect_id=effect_id,
@@ -766,6 +782,41 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                         replay_class=ReplayClass.SAFE,
                         replay_args=dict(replay_args),
                     )
+
+    def test_direct_log_invalid_replay_args_loads_as_missing_args(self) -> None:
+        eff_id = "eff_bad_replay_args"
+        self.log.append(
+            self.session_id,
+            lane=self.lane,
+            operation_id=self.op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "runtime_effect",
+                "record_kind": "intent",
+                "ref": f"effect:{eff_id}",
+                "effect_id": eff_id,
+                "effect_category": "tool_call",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": self.lane,
+                "operation_id": self.op_id,
+                "turn": 1,
+                "tool_index": 0,
+                "tool_name": "read",
+                "replay_class": "safe",
+                "replay_args": {"path": "../outside.py"},
+            },
+        )
+
+        loaded = self.store.load_effects(self.session_id, self.run_id)
+        self.assertEqual(len(loaded), 1)
+        self.assertIsNone(loaded[0].intent.replay_args)
+
+        self.store.synthesize_interrupted(self.session_id, self.run_id, eff_id)
+        summary = self.store.recovery_summary(self.session_id, self.run_id)
+        self.assertEqual(summary.retryable_reads, 1)
+        self.assertIn("Read action can be retried", summary.explanation_lines)
 
     def test_replay_args_forbidden_on_unsafe_or_non_replayable_intent(self) -> None:
         # Unsafe tool_call

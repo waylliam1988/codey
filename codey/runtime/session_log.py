@@ -441,6 +441,16 @@ def _file_stamp(path: Path) -> _FileStamp:
     return _FileStamp(file_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
 
 
+def _nonnegative_payload_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return max(value, 0)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return 0
+
+
 def _complete_batch_prefix(
     entries: list[RuntimeLogEntry],
 ) -> list[RuntimeLogEntry]:
@@ -536,7 +546,7 @@ def _compact_entries(
                 if settlement_entry is not None:
                     status = settlement_entry.payload.get("status")
                     sent_state = settlement_entry.payload.get("sent_state")
-                    replay_count = int(settlement_entry.payload.get("replay_count") or 0)
+                    replay_count = _nonnegative_payload_int(settlement_entry.payload.get("replay_count"))
                     if status in {"interrupted", "error"} or sent_state == "maybe_sent" or replay_count > 0:
                         compacted.append(intent_entry)
                         compacted.append(settlement_entry)

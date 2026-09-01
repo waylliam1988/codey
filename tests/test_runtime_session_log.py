@@ -24,6 +24,7 @@ from codey.runtime.session_log import (
     RuntimeLogEntry,
     RuntimeLogWriteError,
     RuntimeSessionLog,
+    _compact_entries,
 )
 
 
@@ -388,6 +389,77 @@ class RuntimeSessionLogTests(unittest.TestCase):
         by_id = {projection.intent.effect_id: projection for projection in recovered}
         self.assertFalse(by_id[read_id].is_pending)
         self.assertTrue(by_id[edit_id].is_pending)
+
+    def test_compaction_treats_malformed_replay_count_as_not_recovered(self) -> None:
+        entries = (
+            RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_started",
+                payload={"operation_kind": "agent"},
+            ),
+            RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_effect",
+                payload={
+                    "schema_version": 1,
+                    "effect_kind": "runtime_effect",
+                    "record_kind": "intent",
+                    "ref": "effect:eff_bad_count",
+                    "effect_id": "eff_bad_count",
+                    "effect_category": "tool_call",
+                    "session_id": "s1",
+                    "run_id": "run-1",
+                    "lane": "current",
+                    "operation_id": "op-1",
+                    "turn": 1,
+                    "tool_index": 0,
+                    "tool_name": "read",
+                    "replay_class": "safe",
+                },
+            ),
+            RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_effect",
+                payload={
+                    "schema_version": 1,
+                    "effect_kind": "runtime_effect",
+                    "record_kind": "settlement",
+                    "ref": "effect_settlement:eff_bad_count",
+                    "effect_id": "eff_bad_count",
+                    "effect_category": "tool_call",
+                    "session_id": "s1",
+                    "run_id": "run-1",
+                    "lane": "current",
+                    "operation_id": "op-1",
+                    "status": "ok",
+                    "sent_state": "settled",
+                    "replay_class": "safe",
+                    "replay_count": {"bad": True},
+                },
+            ),
+            RuntimeLogEntry(
+                session_id="s1",
+                lane="current",
+                operation_id="op-1",
+                kind="operation_settled",
+                payload={"outcome": "completed"},
+            ),
+        )
+
+        compacted = _compact_entries(entries)
+
+        effect_entries = [
+            entry
+            for entry in compacted
+            if entry.payload.get("effect_id") == "eff_bad_count"
+        ]
+        self.assertEqual(effect_entries, [])
 
     def test_rejects_second_open_operation_in_lane(self) -> None:
         with tempfile.TemporaryDirectory() as td:

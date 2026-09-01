@@ -174,6 +174,30 @@ def _require_ref(payload: dict[str, Any], expected: str) -> None:
         raise RuntimeEffectError(f"effect ref '{actual}' does not match expected ref '{expected}'")
 
 
+def _replay_args_from_payload(
+    *,
+    effect_category: str,
+    replay_class: str,
+    tool_name: str,
+    raw_replay_args: Any,
+) -> dict[str, object] | None:
+    if raw_replay_args is None:
+        return None
+    if (
+        effect_category != EFFECT_CATEGORY_TOOL_CALL
+        or replay_class != ReplayClass.SAFE
+        or not is_replayable_safe_tool(tool_name)
+    ):
+        return None
+    if not isinstance(raw_replay_args, dict) or isinstance(raw_replay_args, bool):
+        return None
+    try:
+        validate_replay_args_shape(tool_name, raw_replay_args)
+    except ValueError:
+        return None
+    return dict(raw_replay_args)
+
+
 @dataclass(frozen=True)
 class RuntimeEffectIntent:
     effect_id: str
@@ -270,17 +294,19 @@ class RuntimeEffectIntent:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect:{effect_id}")
-
-        raw_replay_args = payload.get("replay_args")
-        replay_args: dict[str, object] | None = None
-        if raw_replay_args is not None:
-            if not isinstance(raw_replay_args, dict) or isinstance(raw_replay_args, bool):
-                raise RuntimeEffectError("replay_args must be a dict or None")
-            replay_args = dict(raw_replay_args)
+        effect_category = _require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES)
+        tool_name = _require_bounded_str(payload.get("tool_name") or "", "tool_name", MAX_TEXT_CHARS, allow_empty=True)
+        replay_class = _require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
+        replay_args = _replay_args_from_payload(
+            effect_category=effect_category,
+            replay_class=replay_class,
+            tool_name=tool_name,
+            raw_replay_args=payload.get("replay_args"),
+        )
 
         return cls(
             effect_id=effect_id,
-            effect_category=_require_enum_str(payload.get("effect_category"), "effect_category", EFFECT_CATEGORIES),
+            effect_category=effect_category,
             session_id=_require_bounded_str(payload.get("session_id"), "session_id", MAX_REF_CHARS),
             run_id=_require_bounded_str(payload.get("run_id"), "run_id", MAX_REF_CHARS),
             lane=_require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS),
@@ -289,11 +315,11 @@ class RuntimeEffectIntent:
             provider_id=_require_bounded_str(payload.get("provider_id") or "", "provider_id", MAX_TEXT_CHARS, allow_empty=True),
             turn=_require_nonnegative_int(payload.get("turn"), "turn"),
             tool_index=_require_nonnegative_int(payload.get("tool_index"), "tool_index"),
-            tool_name=_require_bounded_str(payload.get("tool_name") or "", "tool_name", MAX_TEXT_CHARS, allow_empty=True),
+            tool_name=tool_name,
             tool_id=_require_bounded_str(payload.get("tool_id") or "", "tool_id", MAX_TEXT_CHARS, allow_empty=True),
             args_digest=_require_bounded_str(payload.get("args_digest") or "", "args_digest", MAX_ARGS_DIGEST_CHARS, allow_empty=True),
             display_ref=_require_bounded_str(payload.get("display_ref") or "", "display_ref", MAX_TEXT_CHARS, allow_empty=True),
-            replay_class=_require_enum_str(payload.get("replay_class"), "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE)),
+            replay_class=replay_class,
             replay_args=replay_args,
             created_at=_require_bounded_str(payload.get("created_at") or "", "created_at", MAX_TEXT_CHARS, allow_empty=True),
             record_kind=RECORD_KIND_INTENT,
@@ -552,6 +578,7 @@ class RuntimeEffectStore:
                 matching.settlement.status == settlement.status
                 and matching.settlement.error_code == settlement.error_code
                 and matching.settlement.sent_state == settlement.sent_state
+                and matching.settlement.replay_class == settlement.replay_class
                 and matching.settlement.replay_count == settlement.replay_count
                 and matching.settlement.replayed_from_effect_id == settlement.replayed_from_effect_id
             ):

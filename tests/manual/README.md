@@ -800,6 +800,17 @@ python -B tests\manual\tool_args_repair_dialect_pressure_ab.py `
   --keep-open
 ```
 
+`safe_tool_replay_smoke.py` covers 0.5.4 Safe Tool Replay. The self-test uses
+deterministic crash/resume state: two replayable safe intents (`read`,
+`search`) are replayed exactly once, one unsafe intent is interrupted, the
+agent loop resumes at the next turn with recovered tool results, and Run
+Details shows quiet recovery rows. This is a resume-path gate, not a clean-path
+quality A/B.
+
+```powershell
+python -B tests\manual\safe_tool_replay_smoke.py --self-test
+```
+
 2026-07-28 live A/B now measures the production repair prompt directly. An
 earlier prototype run showed the same direction but included ideal repaired
 shapes, so it is treated as over-strong directional evidence. The production

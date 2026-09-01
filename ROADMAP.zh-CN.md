@@ -3655,7 +3655,9 @@ GLM 实机时暴露出启动深链问题：`main/alltoolsdetail` 入口可能触
 
 ## 0.5.4 - Safe Tool Replay v1
 
-状态：已完成。在 0.5.2 的 effect intent / settlement 和 0.5.3 的
+状态：已完成（2026-09-01，focused replay/runtime gate、manual self-test、compileall、
+ruff、`git diff --check` 和全量 pytest `3383 passed, 16 skipped in 320.09s (0:05:20)`
+完成）。在 0.5.2 的 effect intent / settlement 和 0.5.3 的
 canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程在 safe tool
 执行中途被杀掉时，恢复路径按 persisted canonical args 自动重跑，并把结果作为
 同一个 tool call 的恢复结果继续进入 agent loop。直接收益是读文件、搜索、列目录这类
@@ -3691,6 +3693,7 @@ safe intent 持久化 canonical replay_args，unsafe intent 仍只存 digest / b
 pending safe effect 先重新过 schema / lane / project-boundary / runtime validator
 通过校验后走现有 execute_tool_call 路径，不写第二套 read/search 实现
 tool result 以 bounded recovered result 回到同一条 agent loop
+带 recovered tool result 的续跑跳过 work-queue claim 和 auto router，避免恢复结果被分派到非 writer 路径
 原 effect 写 replayed settlement，并记录 replayed_from_effect_id / replay_count
 Run Details 只显示 quiet recovery row，不显示 effect_id / replay class / raw args
 ```

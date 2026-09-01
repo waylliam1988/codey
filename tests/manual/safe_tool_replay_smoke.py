@@ -138,11 +138,11 @@ def run_self_test() -> bool:
         print(f"[safe_tool_replay_smoke] _recover_effects_for_resume produced {len(recovered_outcomes)} recovered outcomes.")
 
         # Check outcomes contents
-        read_outcome = next(r for r in recovered_outcomes if r.effect_id == eff_read)
+        read_outcome = next(r for r in recovered_outcomes if r.call.name == "read")
         assert read_outcome.outcome.ok, "read outcome should be ok"
         assert "hello codey replay" in read_outcome.outcome.model_text
 
-        search_outcome = next(r for r in recovered_outcomes if r.effect_id == eff_search)
+        search_outcome = next(r for r in recovered_outcomes if r.call.name == "search")
         assert search_outcome.outcome.ok, "search outcome should be ok"
         assert "helper.py" in search_outcome.outcome.model_text
 

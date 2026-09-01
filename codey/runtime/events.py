@@ -77,12 +77,12 @@ def render_run_event(event: RunEvent) -> str:
     if event.kind == "tool_start" and event.call is not None:
         path = str(event.call.args.get("path") or "")
         label = path if path != "." else ""
-        return f"  · {event.call.name} {label} -> {event.message}"
+        return f"  - {event.call.name} {label} -> {event.message}"
     if event.kind == "tool" and event.call is not None and event.outcome is not None:
         path = str(event.call.args.get("path") or "")
         label = path if path != "." else ""
         first_line = event.outcome.presentation_result(80)
-        return f"  · {event.call.name} {label} -> {first_line}"
+        return f"  - {event.call.name} {label} -> {first_line}"
     if event.kind == "info":
         names = str(event.metadata.get("names") or "")
         suffix = f": {names}" if names else ""

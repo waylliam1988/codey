@@ -29,7 +29,6 @@ class ChangeTracker(Protocol):
 
 @dataclass(frozen=True)
 class RecoveredToolOutcome:
-    effect_id: str
     call: ToolCall
     outcome: ToolOutcome
     turn: int
