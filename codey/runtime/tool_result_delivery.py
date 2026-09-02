@@ -262,9 +262,16 @@ def _validate_run_boundary(
     entry_op_match = (entry.operation_id == expected_op)
     payload_run_match = (payload.get("run_id") == run_id)
     payload_op_match = (payload.get("operation_id") == expected_op)
+    payload_lane_match = (payload.get("lane") == expected_lane)
 
     # Check if this record is related to the queried run
-    matches_any = entry_lane_match or entry_op_match or payload_run_match or payload_op_match
+    matches_any = (
+        entry_lane_match
+        or entry_op_match
+        or payload_run_match
+        or payload_op_match
+        or payload_lane_match
+    )
     if not matches_any:
         return False
 
@@ -579,15 +586,9 @@ class ToolResultDeliveryStore:
         rec_lookups = _require_nonnegative_int(recovered_lookups, "recovered_lookups")
 
         # Check existing recovered records for this batch in current operation for idempotency
-        entries = self._session_log.read(session_id)
-        for entry in entries:
-            if entry.kind != "operation_effect" or entry.operation_id != expected_op:
-                continue
-            payload = entry.payload
+        for rkind, payload in self._iter_validated_delivery_records(session_id, run_id):
             if (
-                isinstance(payload, dict)
-                and payload.get("effect_kind") == EFFECT_KIND
-                and payload.get("record_kind") == RECORD_KIND_RECOVERED
+                rkind == RECORD_KIND_RECOVERED
                 and payload.get("batch_id") == clean_batch_id
             ):
                 existing_eids = payload.get("recovered_effect_ids")

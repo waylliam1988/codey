@@ -48,12 +48,18 @@ def complete_send(
         }
     if staged or normalized_flow:
         previous_controls = {
-            action: deepcopy(provider.get(action))
+            action: {
+                "host": prev.get("host"),
+                "fingerprint": deepcopy(prev.get("fingerprint")),
+                "verified": bool(prev.get("verified")),
+                "failures": 0,
+            }
             for action in staged
-            if isinstance(provider.get(action), dict)
+            if isinstance(provider.get(action), dict) and (prev := provider.get(action))
         }
         previous_meta = provider.get(REVIVAL_KEY)
         if isinstance(previous_meta, dict):
+            # Strip previous_bundle from meta to avoid recursive nesting explosion
             previous_meta = {
                 key: deepcopy(value)
                 for key, value in previous_meta.items()
@@ -87,8 +93,9 @@ def complete_send(
                     current_meta.get("flow_requires_verification")
                 )
         flow_recipe = normalized_flow or current_flow
+
         provider[REVIVAL_KEY] = {
-            "generation": old_generation + 1,
+            "generation": min(old_generation + 1, 99),
             "status": "provisional",
             "success_count": 1,
             "failures": 0,

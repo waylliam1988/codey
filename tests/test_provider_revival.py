@@ -546,5 +546,47 @@ class ProviderRevivalTests(unittest.TestCase):
         self.assertEqual(provider["_revival"]["failures"], 0)
         self.assertEqual(provider["message_box"]["failures"], 1)
 
+    def test_generation_capped_at_99_and_previous_bundle_is_slim(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            # Set initial generation to 98
+            write_json_atomic(path, {
+                "qwen": {
+                    "_revival": {
+                        "generation": 98,
+                        "status": "active",
+                    }
+                }
+            })
+            revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"send_button": {"tag": "button"}},
+                {"send_button"},
+                set(),
+            )
+            data1 = read_json(path)["qwen"]["_revival"]
+            self.assertEqual(data1["generation"], 99)
+            self.assertIn("previous_bundle", data1)
+            # Ensure previous_bundle contains only non-recursive minimal keys
+            prev_bundle = data1["previous_bundle"]
+            self.assertEqual(set(prev_bundle.keys()), {"controls", "revival"})
+            if prev_bundle.get("revival"):
+                self.assertNotIn("previous_bundle", prev_bundle["revival"])
+
+            # Another send should stay capped at 99
+            revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"response": {"tag": "div"}},
+                {"response"},
+                set(),
+            )
+            data2 = read_json(path)["qwen"]["_revival"]
+            self.assertEqual(data2["generation"], 99)
+
+
 if __name__ == "__main__":
     unittest.main()

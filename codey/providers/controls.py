@@ -8,6 +8,7 @@ user to click the control once and keep only that latest teaching.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -26,6 +27,8 @@ from codey.providers import revival as provider_revival
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
 from codey.providers.diagnostics import ResponseMissing
 from codey.providers.profiles import get_profile
+
+logger = logging.getLogger(__name__)
 
 CONTROL_MESSAGE_BOX = "message_box"
 CONTROL_SEND_BUTTON = "send_button"
@@ -808,7 +811,8 @@ def _update_learned_control(
                 attempt = _revival_attempts().get(provider_id)
                 if attempt is not None:
                     attempt.persistent_failure_recorded = True
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        logger.warning("Failed to record learned control update for %s: %s", provider_id, exc)
         return
 
 
@@ -933,7 +937,8 @@ def _complete_revival_send(provider_id: str) -> None:
         )
         if changed:
             _invalidate_flow_cache(path, provider_id)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        logger.warning("Failed to complete revival send for %s: %s", provider_id, exc)
         for action in attempt.staged:
             _remember_source(provider_id, action, "")
         _clear_pending_controls(provider_id)

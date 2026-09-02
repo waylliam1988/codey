@@ -18,6 +18,7 @@ from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
+from codey.policies.redaction import looks_prompt_visible_secret
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
@@ -972,6 +973,9 @@ def _item_line(item: GhostContinuityItem) -> str:
 def _safe_prompt_text(value: object, *, warnings: list[str], kind: str) -> bool:
     text = _clean_context_text(value)
     if not text:
+        return False
+    if looks_prompt_visible_secret(text):
+        warnings.append(f"secret_continuity_skipped:{kind}")
         return False
     if "ghost" in text.casefold():
         warnings.append(f"internal_name_continuity_skipped:{kind}")

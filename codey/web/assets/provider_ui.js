@@ -38,19 +38,39 @@ function syncProviderUI(providerId) {
     if (dot) dot.className = 'dot ' + providerAvailability(btn.dataset.provider);
   });
 }
-function applyProviderStatus(providers) {
+let refreshTimer = null;
+let lastRequestId = 0;
+let lastAppliedSSETime = 0;
+
+function applyProviderStatus(providers, isSSE) {
   if (!Array.isArray(providers)) return;
+  if (isSSE) lastAppliedSSETime = Date.now();
   for (const item of providers) {
     if (item && PROVIDERS.includes(item.id)) providerStatus[item.id] = !!item.available;
   }
   syncProviderUI(currentProviderId());
 }
-async function refreshProviderStatus() {
+function refreshProviderStatus() {
+  const immediate = arguments[0];
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  if (!immediate) {
+    refreshTimer = setTimeout(() => _doRefreshProviderStatus(), 500);
+    return;
+  }
+  _doRefreshProviderStatus();
+}
+async function _doRefreshProviderStatus() {
+  const reqId = ++lastRequestId;
+  const fetchTime = Date.now();
   try {
     const r = await fetch('/api/providers');
     if (!r.ok) return;
     const data = await r.json();
-    applyProviderStatus(data.providers);
+    if (reqId !== lastRequestId || fetchTime < lastAppliedSSETime) return;
+    applyProviderStatus(data.providers, false);
   } catch {}
 }
 

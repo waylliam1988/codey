@@ -8,6 +8,38 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
+
+Scope:
+
+```text
+automation: hardened BrowserWorker timeout handling; timing out while running marks job as ABANDONED,
+            discards late results in worker loop, and clears slot to prevent subsequent job pollution.
+workspace:  wrapped all SnapshotStore operations (load, put_baseline, set_after_hash, remove, delete)
+            with cross-process/cross-thread file locking (_lock_target outside snapshot dir);
+            SnapshotStore.remove() best-effort unlinks baseline body; capture_before() failure rolls back
+            in-memory state and unlinks orphaned baseline files; optimized ChangeTracker.collect() with
+            single-pass diff and count calculation (_diff_and_counts).
+providers:  bounded Provider Revival generation to min(old + 1, 99); slimmed previous_bundle to non-recursive
+            minimal rollback structure; logged warnings on control persistence failures.
+ghost:      unified GhostContinuityStore._safe_prompt_text() with looks_prompt_visible_secret()
+            to reject high-entropy tokens, API keys (sk-...), and sensitive Chinese keywords.
+delivery:   extended _validate_run_boundary() to trigger on payload_lane_match; unified record_recovered()
+            idempotency and conflicting replay validation through _iter_validated_delivery_records().
+server/api: refactored forget_conversation() to collect per-store errors; /api/new_chat surfaces
+            unpurged_stores in payload on partial cleanup failures; /api/run 409 response carries hint: "try_continue".
+web/ui:     added 500ms debounce and monotonic request ID tracking to provider_ui.js status refresh;
+            prioritized live SSE updates over stale fetch responses.
+```
+
+Verification:
+
+- `pytest tests/test_browser_worker.py tests/test_changes.py tests/test_ghost_continuity.py tests/test_tool_result_delivery.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py` (`349 passed in 4.88s`)
+- `python -m ruff check codey tests` (passed; all checks passed)
+- `python -m compileall -q codey tests` (passed)
+- `pytest tests/test_architecture.py` (`72 passed in 10.70s`)
+- `git diff --check` (passed; zero trailing whitespace, clean diff)
+- Full pytest suite: `pytest` (`3435 passed, 4 skipped in 294.39s (0:04:54)`)
 
 ## 0.5.5 Safe Replay Result Delivery Receipt v1 (2026-09-02)
 

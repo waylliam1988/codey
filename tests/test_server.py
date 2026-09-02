@@ -1393,7 +1393,7 @@ class ResearchServerHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(busy_status, 409)
-        self.assertEqual(busy_payload, {"error": "busy"})
+        self.assertEqual(busy_payload, {"error": "busy", "hint": "try_continue"})
         self.assertEqual(error_status, 500)
         self.assertEqual(error_payload, {"error": "boom"})
 
@@ -1639,6 +1639,32 @@ class LocalProviderApiTests(unittest.TestCase):
 
             self.assertEqual(response.status, 409)
             self.assertFalse(body.get("ok"))
+        finally:
+            httpd.shutdown()
+
+    def test_new_chat_reports_unpurged_stores_on_partial_failure(self) -> None:
+        httpd, host, port = self._start_server()
+        state = server.AppContext()
+        # Mock ghost_continuity delete_scope to raise error
+        fake_continuity = mock.Mock()
+        fake_continuity.delete_scope.side_effect = OSError("disk failure")
+        state.ghost_continuity = fake_continuity
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/new_chat",
+                    body=json.dumps({"session_id": "session-clean"}),
+                )
+                response = conn.getresponse()
+                body = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(body.get("ok"))
+            self.assertIn("unpurged_stores", body)
+            self.assertIn("ghost_continuity", body["unpurged_stores"])
         finally:
             httpd.shutdown()
 

@@ -506,6 +506,46 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertTrue(result.ok, result)
             self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 
+    def test_concurrent_put_baseline_does_not_lose_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            num_files = 20
+
+            def writer(idx: int) -> None:
+                rel = f"file_{idx}.txt"
+                store.put_baseline(root, rel, f"content_{idx}")
+
+            threads = [threading.Thread(target=writer, args=(i,)) for i in range(num_files)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            before, _ = store.load(root)
+            self.assertEqual(len(before), num_files)
+            for i in range(num_files):
+                self.assertEqual(before.get(f"file_{i}.txt"), f"content_{i}")
+
+    def test_capture_before_failure_cleans_up_orphaned_body(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            file_path = root / "temp.txt"
+            file_path.write_text("initial", encoding="utf-8")
+
+            # Patch _update_manifest_locked to raise error during manifest write
+            with mock.patch.object(store, "_update_manifest_locked", side_effect=OSError("disk full")):
+                with self.assertRaises(OSError):
+                    tracker.capture_before("temp.txt")
+
+            # Verify memory state rolled back
+            self.assertFalse(tracker.has_snapshots)
+            # Verify body file cleaned up
+            baseline_file = store._baseline_path(root, "temp.txt")
+            self.assertFalse(baseline_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

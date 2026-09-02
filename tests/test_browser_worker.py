@@ -68,7 +68,7 @@ class BrowserWorkerTests(unittest.TestCase):
         with self.assertRaises(TimeoutError) as ctx:
             worker.call(queued_job, timeout=0.05)
 
-        self.assertIn("cancellation requested", str(ctx.exception))
+        self.assertIn("job abandoned", str(ctx.exception))
 
         unblock.set()
         # Give worker a moment to process the remaining queue
@@ -157,7 +157,7 @@ class BrowserWorkerTests(unittest.TestCase):
         health = worker.health_snapshot()
 
         self.assertEqual(health.state, "stuck")
-        self.assertEqual(health.current_job_state, "cancellation_requested")
+        self.assertEqual(health.current_job_state, "abandoned")
         self.assertTrue(health.stuck_detected)
         self.assertGreaterEqual(health.running_for_seconds, health.stuck_after_seconds)
 
@@ -169,6 +169,30 @@ class BrowserWorkerTests(unittest.TestCase):
         release.set()
         self.assertTrue(probe_ran.wait(2.0))
         self.assertEqual(worker.call(lambda: 123, timeout=2.0), 123)
+
+    def test_running_job_timeout_abandons_and_discards_late_result(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-abandon-worker")
+        started = threading.Event()
+        finish_slow_work = threading.Event()
+        slow_work_finished = threading.Event()
+
+        def slow_job() -> str:
+            started.set()
+            finish_slow_work.wait(timeout=2.0)
+            slow_work_finished.set()
+            return "late_success_value"
+
+        with self.assertRaises(TimeoutError) as ctx:
+            worker.call(slow_job, timeout=0.05)
+        self.assertIn("job abandoned", str(ctx.exception))
+
+        # Allow slow job to finish in the background
+        finish_slow_work.set()
+        self.assertTrue(slow_work_finished.wait(2.0))
+
+        # Subsequent call receives its own result, completely unpolluted by the late result
+        res = worker.call(lambda: "fresh_job_value", timeout=2.0)
+        self.assertEqual(res, "fresh_job_value")
 
 
 if __name__ == "__main__":

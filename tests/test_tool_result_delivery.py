@@ -1,7 +1,6 @@
-"""Deterministic tests for tool result delivery tracking, receipts, and projection (0.5.5)."""
-
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -598,6 +597,62 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         self.assertEqual(len(facts), 1)
         self.assertEqual(facts[0].batch_id, batch_id)
         self.assertEqual(facts[0].recovered_reads, 1)
+
+    def test_run_boundary_payload_lane_match_triggers_validation(self) -> None:
+        # A corrupted entry with mismatched payload lane MUST trigger run boundary check and fail closed!
+        expected_lane = lane_for_run(self.run_id)
+        expected_op = operation_id_for_run(self.run_id)
+        self.log.append(
+            session_id=self.session_id,
+            lane=expected_lane,
+            operation_id=expected_op,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "batch_intent",
+                "ref": "delivery_intent:b-mismatch",
+                "batch_id": "b-mismatch",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": "wrong_payload_lane",  # Payload lane mismatch!
+                "operation_id": expected_op,
+                "turn": 1,
+                "items": [{"tool_index": 0, "tool_name": "read", "ref": "eff-1", "replay_class": "safe", "is_denied": False}],
+                "batch_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError) as ctx:
+            self.store.load_batches(self.session_id, self.run_id)
+        self.assertIn("run boundary mismatch", str(ctx.exception))
+
+    def test_record_recovered_fails_closed_when_existing_recovered_entry_is_malformed(self) -> None:
+        expected_op = operation_id_for_run(self.run_id)
+        expected_lane = lane_for_run(self.run_id)
+        # Inject malformed recovered entry with missing required fields
+        self.log.append(
+            session_id=self.session_id,
+            lane=expected_lane,
+            operation_id=expected_op,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "recovered",
+                "ref": "delivery_recovered:b1",
+                # missing batch_id, session_id, etc.
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id="b1",
+                recovered_effect_ids=["eff-1"],
+                recovered_reads=1,
+                recovered_lookups=0,
+            )
 
 
 class SafeReplayRecoveryDeliveryTests(unittest.TestCase):

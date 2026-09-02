@@ -27,6 +27,7 @@ class _JobState(Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     CANCELLATION_REQUESTED = "cancellation_requested"
+    ABANDONED = "abandoned"
 
 
 @dataclass
@@ -40,6 +41,7 @@ class _Job:
     cancel_event: threading.Event = field(default_factory=threading.Event)
     deadline: float | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+    abandoned: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,7 +96,7 @@ class BrowserWorker:
         while True:
             job = self._queue.get()
             with job.lock:
-                if job.state == _JobState.CANCELLED:
+                if job.state == _JobState.CANCELLED or job.abandoned:
                     with self._state_lock:
                         self._cancelled_jobs += 1
                     job.done.set()
@@ -108,20 +110,29 @@ class BrowserWorker:
             try:
                 with cancellation.scope(job.cancel_event):
                     with cancellation.deadline_scope(job.deadline):
-                        job.slot.append(job.fn(*job.args, **job.kwargs))
+                        result = job.fn(*job.args, **job.kwargs)
+                        with job.lock:
+                            if not job.abandoned and job.state != _JobState.ABANDONED:
+                                job.slot.append(result)
             except Exception as exc:
                 failed = True
-                job.slot.append(exc)
+                with job.lock:
+                    if not job.abandoned and job.state != _JobState.ABANDONED:
+                        job.slot.append(exc)
             finally:
                 with job.lock:
-                    if job.state != _JobState.CANCELLED:
+                    if job.abandoned or job.state in (_JobState.CANCELLED, _JobState.ABANDONED):
+                        job.state = _JobState.ABANDONED
+                        final_state = _JobState.ABANDONED
+                        job.slot.clear()
+                    else:
                         job.state = _JobState.COMPLETED
-                    final_state = job.state
+                        final_state = _JobState.COMPLETED
                 with self._state_lock:
                     if self._current_job is job:
                         self._current_job = None
                         self._current_started_at = 0.0
-                    if final_state == _JobState.CANCELLED:
+                    if final_state in (_JobState.CANCELLED, _JobState.ABANDONED):
                         self._cancelled_jobs += 1
                     elif failed:
                         self._failed_jobs += 1
@@ -149,7 +160,10 @@ class BrowserWorker:
             current_state = job_state.value
             if started_at:
                 running_for = max(0.0, observed_at - started_at)
-            stuck = job_state == _JobState.CANCELLATION_REQUESTED and running_for >= self._stuck_after_seconds
+            stuck = (
+                job_state in (_JobState.CANCELLATION_REQUESTED, _JobState.ABANDONED)
+                and running_for >= self._stuck_after_seconds
+            )
             state = "stuck" if stuck else job_state.value
         return BrowserWorkerHealth(
             state=state,
@@ -207,6 +221,7 @@ class BrowserWorker:
         if caller_event is not None and caller_event.is_set():
             job.cancel_event.set()
             job.state = _JobState.CANCELLED
+            job.abandoned = True
             raise cancellation.TaskCancelled("task was cancelled before browser job execution")
 
         self._queue.put(job)
@@ -216,30 +231,35 @@ class BrowserWorker:
                 if caller_event is not None and caller_event.is_set():
                     with job.lock:
                         job.cancel_event.set()
+                        job.abandoned = True
                         if job.state == _JobState.QUEUED:
                             job.state = _JobState.CANCELLED
                         elif job.state == _JobState.RUNNING:
-                            job.state = _JobState.CANCELLATION_REQUESTED
+                            job.state = _JobState.ABANDONED
                     raise cancellation.TaskCancelled("task was cancelled during browser job execution")
                 if active_deadline is not None and time.monotonic() >= active_deadline:
                     with job.lock:
                         job.cancel_event.set()
+                        job.abandoned = True
                         if job.state == _JobState.QUEUED:
                             job.state = _JobState.CANCELLED
                         elif job.state == _JobState.RUNNING:
-                            job.state = _JobState.CANCELLATION_REQUESTED
+                            job.state = _JobState.ABANDONED
                     raise TimeoutError(
-                        "browser worker call timed out: cancellation requested; browser job may finish asynchronously"
+                        "browser worker call timed out: job abandoned; late results strictly discarded"
                     )
         except Exception:
             with job.lock:
                 job.cancel_event.set()
+                job.abandoned = True
                 if job.state == _JobState.QUEUED:
                     job.state = _JobState.CANCELLED
                 elif job.state == _JobState.RUNNING:
-                    job.state = _JobState.CANCELLATION_REQUESTED
+                    job.state = _JobState.ABANDONED
             raise
 
+        if not job.slot:
+            raise RuntimeError("browser job completed without returning a result or exception")
         result = job.slot[0]
         if isinstance(result, Exception):
             raise result

@@ -3805,6 +3805,7 @@ recovered outcomes 按 turn/tool_index 排序，一次性交给 AgentRequest
 safe tool 多调用同轮崩溃后，不会只恢复 pending 的后半截结果
 模型继续时能看到同一轮完整 safe read/search/ls/references 结果
 不需要保存文件正文、搜索全文或 provider transcript 来修复恢复缺口
+核心并发安全、文件锁、Worker 超时防护与敏感凭据保护完成全面加固并通过 3435 项全量回归测试
 ```
 
 ### 边界

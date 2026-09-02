@@ -309,7 +309,7 @@ def run_submit_response(
     except Exception as exc:
         return 500, {"error": str(exc)}
     if run_id is None:
-        return 409, {"error": "busy"}
+        return 409, {"error": "busy", "hint": "try_continue"}
     return 200, {"ok": True, "run_id": run_id}
 
 
@@ -420,7 +420,13 @@ def new_chat_response(ctx: Any, body: dict) -> tuple[int, dict]:
         return 400, {"ok": False, "error": "session_id required"}
     if ctx.active_run_for(session_id=session_id) is not None:
         return 409, {"ok": False, "error": "run in progress"}
-    ctx.forget_conversation(session_id)
+    failures = ctx.forget_conversation(session_id)
+    if failures:
+        return 200, {
+            "ok": True,
+            "warnings": [f"Failed to purge store {k}: {v}" for k, v in failures.items()],
+            "unpurged_stores": list(failures.keys()),
+        }
     return 200, {"ok": True}
 
 

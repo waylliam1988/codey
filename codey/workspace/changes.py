@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     delete_file,
@@ -124,64 +125,70 @@ class SnapshotStore:
     def path_for(self, root: str | Path) -> Path:
         return self.dir_for(root) / "manifest.json"
 
+    def _lock_target(self, root: str | Path) -> Path:
+        resolved_root = Path(root).expanduser().resolve()
+        return self.dir_for(resolved_root).parent / ".snapshots.lock"
+
     def _baseline_path(self, root: str | Path, rel: str) -> Path:
         digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:32]
         return self.dir_for(root) / BASELINE_DIR_NAME / f"{digest}.txt"
 
     def load(self, root: str | Path) -> tuple[dict[str, str | None], dict[str, str]]:
         resolved_root = Path(root).expanduser().resolve()
-        payload = read_json(
-            self.path_for(resolved_root),
-            max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
-        )
-        if not payload or payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
-            return {}, {}
-        raw_files = payload.get("files")
-        if not isinstance(raw_files, dict):
-            return {}, {}
+        with with_file_lock(self._lock_target(resolved_root)):
+            manifest_path = self.path_for(resolved_root)
+            payload = read_json(
+                manifest_path,
+                max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
+            )
+            if not payload or payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+                return {}, {}
+            raw_files = payload.get("files")
+            if not isinstance(raw_files, dict):
+                return {}, {}
 
-        before: dict[str, str | None] = {}
-        hashes: dict[str, str] = {}
-        total = 0
-        for rel, entry in raw_files.items():
-            if len(before) >= MAX_SNAPSHOT_FILES or not isinstance(rel, str):
-                return {}, {}
-            if not isinstance(entry, dict):
-                return {}, {}
-            try:
-                path = _safe_join(resolved_root, rel)
-                canonical = path.relative_to(resolved_root).as_posix()
-            except (ValueError, OSError):
-                return {}, {}
-            if canonical != rel:
-                return {}, {}
-            content: str | None
-            if entry.get("baseline") is None:
-                content = None
-            else:
+            before: dict[str, str | None] = {}
+            hashes: dict[str, str] = {}
+            total = 0
+            for rel, entry in raw_files.items():
+                if len(before) >= MAX_SNAPSHOT_FILES or not isinstance(rel, str):
+                    return {}, {}
+                if not isinstance(entry, dict):
+                    return {}, {}
                 try:
-                    body = self._baseline_path(resolved_root, rel).read_text(
-                        encoding="utf-8"
-                    )
-                except (OSError, UnicodeDecodeError):
+                    path = _safe_join(resolved_root, rel)
+                    canonical = path.relative_to(resolved_root).as_posix()
+                except (ValueError, OSError):
                     return {}, {}
-                if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
+                if canonical != rel:
                     return {}, {}
-                content = body
-            total += len((content or "").encode("utf-8"))
-            if total > MAX_SNAPSHOT_TOTAL_BYTES:
-                return {}, {}
-            before[rel] = content
+                content: str | None
+                if entry.get("baseline") is None:
+                    content = None
+                else:
+                    try:
+                        body = self._baseline_path(resolved_root, rel).read_text(
+                            encoding="utf-8"
+                        )
+                    except (OSError, UnicodeDecodeError):
+                        return {}, {}
+                    if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
+                        return {}, {}
+                    content = body
+                total += len((content or "").encode("utf-8"))
+                if total > MAX_SNAPSHOT_TOTAL_BYTES:
+                    return {}, {}
+                before[rel] = content
 
-            digest = entry.get("after_hash")
-            if digest is not None and not (
-                isinstance(digest, str)
-                and (digest == "missing" or digest.startswith("sha256:"))
-            ):
-                return {}, {}
-            if isinstance(digest, str):
-                hashes[rel] = digest
-        return before, hashes
+                digest = entry.get("after_hash")
+                if digest is not None and not (
+                    isinstance(digest, str)
+                    and (digest == "missing" or digest.startswith("sha256:"))
+                ):
+                    return {}, {}
+                if isinstance(digest, str):
+                    hashes[rel] = digest
+            return before, hashes
 
     def put_baseline(
         self,
@@ -193,22 +200,33 @@ class SnapshotStore:
 
         resolved_root = Path(root).expanduser().resolve()
         body_path = self._baseline_path(resolved_root, rel)
-        if content is None:
-            _remove_file(body_path)
-        else:
-            _write_bytes_atomic(body_path, content.encode("utf-8"))
-        self._update_manifest(
-            resolved_root,
-            rel,
-            lambda entry: {**entry, "baseline": None if content is None else body_path.name},
-        )
+
+        with with_file_lock(self._lock_target(resolved_root)):
+            written_body = False
+            try:
+                if content is None:
+                    _remove_file(body_path)
+                else:
+                    _write_bytes_atomic(body_path, content.encode("utf-8"))
+                    written_body = True
+                self._update_manifest_locked(
+                    resolved_root,
+                    rel,
+                    lambda entry: {**entry, "baseline": None if content is None else body_path.name},
+                )
+            except Exception:
+                if written_body:
+                    _remove_file(body_path)
+                raise
 
     def set_after_hash(self, root: str | Path, rel: str, digest: str) -> None:
-        self._update_manifest(
-            Path(root).expanduser().resolve(),
-            rel,
-            lambda entry: {**entry, "after_hash": digest},
-        )
+        resolved_root = Path(root).expanduser().resolve()
+        with with_file_lock(self._lock_target(resolved_root)):
+            self._update_manifest_locked(
+                resolved_root,
+                rel,
+                lambda entry: {**entry, "after_hash": digest},
+            )
 
     def remove(self, root: str | Path, rel: str) -> None:
         """Drop one file from the snapshot; deletes the store when empty."""
@@ -217,35 +235,36 @@ class SnapshotStore:
         body_path = self._baseline_path(resolved_root, rel)
         manifest_path = self.path_for(resolved_root)
 
-        payload = read_json(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
-        files = payload.get("files") if isinstance(payload, dict) else None
-        if not isinstance(files, dict) or rel not in files:
-            return
-        del files[rel]
-        if files:
-            write_json_atomic(
-                manifest_path,
-                {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
-                max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
-            )
-        else:
-            delete_file(manifest_path)
-            delete_file(body_path)
+        with with_file_lock(self._lock_target(resolved_root)):
+            _remove_file(body_path)
             _remove_dir_if_empty(body_path.parent)
-            _remove_dir_if_empty(self.dir_for(resolved_root))
-            return
-        _remove_file(body_path)
-        _remove_dir_if_empty(body_path.parent)
+
+            payload = read_json(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            files = payload.get("files") if isinstance(payload, dict) else None
+            if not isinstance(files, dict) or rel not in files:
+                return
+            del files[rel]
+            if files:
+                write_json_atomic(
+                    manifest_path,
+                    {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
+                    max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
+                )
+            else:
+                delete_file(manifest_path)
+                _remove_dir_if_empty(self.dir_for(resolved_root))
 
     def delete(self, root: str | Path) -> None:
-        try:
-            shutil.rmtree(self.dir_for(root))
-        except FileNotFoundError:
-            return
-        except OSError:
-            return
+        resolved_root = Path(root).expanduser().resolve()
+        with with_file_lock(self._lock_target(resolved_root)):
+            try:
+                shutil.rmtree(self.dir_for(resolved_root))
+            except FileNotFoundError:
+                return
+            except OSError:
+                return
 
-    def _update_manifest(
+    def _update_manifest_locked(
         self,
         resolved_root: Path,
         rel: str,
@@ -284,20 +303,24 @@ def _remove_dir_if_empty(directory: Path) -> None:
         pass
 
 
-def _change_counts(before: str | None, after: str | None) -> tuple[int, int]:
+def _diff_and_counts(path: str, before: str | None, after: str | None) -> tuple[str, int, int]:
+    # splitlines() without keepends + lineterm="": keeping line endings here
+    # made every content line double-spaced in the rendered diff.
     before_lines = [] if before is None else before.splitlines()
     after_lines = [] if after is None else after.splitlines()
+    fromfile = "/dev/null" if before is None else f"a/{path}"
+    tofile = "/dev/null" if after is None else f"b/{path}"
+    diff_lines = list(difflib.unified_diff(before_lines, after_lines, fromfile=fromfile, tofile=tofile, lineterm=""))
     additions = 0
     deletions = 0
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=before_lines, b=after_lines).get_opcodes():
-        if tag == "insert":
-            additions += j2 - j1
-        elif tag == "delete":
-            deletions += i2 - i1
-        elif tag == "replace":
-            deletions += i2 - i1
-            additions += j2 - j1
-    return additions, deletions
+    for line in diff_lines:
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+    body = "\n".join(diff_lines)
+    diff_text = f"diff --git a/{path} b/{path}\n{body}" if body else ""
+    return diff_text, additions, deletions
 
 
 def _status_for(before: str | None, after: str | None) -> str:
@@ -306,18 +329,6 @@ def _status_for(before: str | None, after: str | None) -> str:
     if before is not None and after is None:
         return "D"
     return "M"
-
-
-def _diff_for(path: str, before: str | None, after: str | None) -> str:
-    # splitlines() without keepends + lineterm="": keeping line endings here
-    # made every content line double-spaced in the rendered diff.
-    before_lines = [] if before is None else before.splitlines()
-    after_lines = [] if after is None else after.splitlines()
-    fromfile = "/dev/null" if before is None else f"a/{path}"
-    tofile = "/dev/null" if after is None else f"b/{path}"
-    diff = difflib.unified_diff(before_lines, after_lines, fromfile=fromfile, tofile=tofile, lineterm="")
-    body = "\n".join(diff)
-    return f"diff --git a/{path} b/{path}\n{body}" if body else ""
 
 
 class ChangeTracker:
@@ -395,6 +406,12 @@ class ChangeTracker:
                 if rel_posix in self._before and self._before[rel_posix] == before:
                     del self._before[rel_posix]
                     self._total_bytes -= added
+                store = self.store
+            if store is not None:
+                try:
+                    store.remove(self.root, rel_posix)
+                except Exception:
+                    pass
             raise
 
     def capture_after(self, rel: str) -> None:
@@ -448,14 +465,13 @@ class ChangeTracker:
         files = []
         diff_parts = []
         for snapshot in snapshots:
-            additions, deletions = _change_counts(snapshot.before, snapshot.after)
+            diff, additions, deletions = _diff_and_counts(snapshot.path, snapshot.before, snapshot.after)
             files.append({
                 "path": snapshot.path,
                 "status": _status_for(snapshot.before, snapshot.after),
                 "additions": additions,
                 "deletions": deletions,
             })
-            diff = _diff_for(snapshot.path, snapshot.before, snapshot.after)
             if diff:
                 diff_parts.append(diff)
 

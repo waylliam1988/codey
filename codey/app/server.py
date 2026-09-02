@@ -573,53 +573,28 @@ class AppContext:
     def conversation_for(self, session_id: str) -> ConversationContext:
         return self.conversation_registry.for_session(session_id)
 
-    def forget_conversation(self, session_id: str) -> None:
+    def forget_conversation(self, session_id: str) -> dict[str, str]:
+        failures: dict[str, str] = {}
         self.conversation_registry.forget(session_id)
         with self.lock:
             self.providers.forget_session(session_id)
         self.run_registry.clear_session_outputs(session_id)
-        continuity = getattr(self, "ghost_continuity", None)
-        if continuity is not None:
-            try:
-                continuity.delete_scope("session", session_id=session_id)
-            except Exception:
-                pass
-        router = getattr(self, "ghost_router", None)
-        if router is not None:
-            try:
-                router.delete_scope("session", session_id=session_id)
-            except Exception:
-                pass
-        sleep = getattr(self, "ghost_sleep", None)
-        if sleep is not None:
-            try:
-                sleep.delete_scope("session", session_id=session_id)
-            except Exception:
-                pass
-        work_queue = getattr(self, "ghost_work_queue", None)
-        if work_queue is not None:
-            try:
-                work_queue.delete_scope("session", session_id=session_id)
-            except Exception:
-                pass
-        affinity = getattr(self, "ghost_affinity", None)
-        if affinity is not None:
-            try:
-                affinity.delete_scope("session", session_id=session_id)
-            except Exception:
-                pass
-        traces = getattr(self, "run_traces", None)
-        if traces is not None:
-            try:
-                traces.delete_session(session_id)
-            except Exception:
-                pass
-        operations = getattr(self, "runtime_operations", None)
-        if operations is not None:
-            try:
-                operations.delete_session(session_id)
-            except Exception:
-                pass
+        for store_name, attr_name, method in (
+            ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
+            ("ghost_router", "ghost_router", lambda s: s.delete_scope("session", session_id=session_id)),
+            ("ghost_sleep", "ghost_sleep", lambda s: s.delete_scope("session", session_id=session_id)),
+            ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
+            ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),
+            ("run_traces", "run_traces", lambda s: s.delete_session(session_id)),
+            ("runtime_operations", "runtime_operations", lambda s: s.delete_session(session_id)),
+        ):
+            target = getattr(self, attr_name, None)
+            if target is not None:
+                try:
+                    method(target)
+                except Exception as exc:
+                    failures[store_name] = str(exc)
+        return failures
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
