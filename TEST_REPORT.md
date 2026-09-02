@@ -25,7 +25,10 @@ providers:  bounded Provider Revival generation to min(old + 1, 99); slimmed pre
 ghost:      unified GhostContinuityStore._safe_prompt_text() with looks_prompt_visible_secret()
             to reject high-entropy tokens, API keys (sk-...), and sensitive Chinese keywords.
 delivery:   extended _validate_run_boundary() to trigger on payload_lane_match; unified record_recovered()
-            idempotency and conflicting replay validation through _iter_validated_delivery_records().
+            idempotency and conflicting replay validation through _iter_validated_delivery_records();
+            enforced delivered -> send_attempt matching and added delivery receipts for single-effect
+            recovered fallback prompts; rejected multiple distinct or duplicate send_attempt / delivered
+            receipts for a single batch during projection.
 server/api: refactored forget_conversation() to collect per-store errors; /api/new_chat surfaces
             unpurged_stores in payload on partial cleanup failures; /api/run 409 response carries hint: "try_continue".
 web/ui:     added 500ms debounce and monotonic request ID tracking to provider_ui.js status refresh;
@@ -34,12 +37,14 @@ web/ui:     added 500ms debounce and monotonic request ID tracking to provider_u
 
 Verification:
 
-- `pytest tests/test_browser_worker.py tests/test_changes.py tests/test_ghost_continuity.py tests/test_tool_result_delivery.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py tests/test_workspace_revision.py tests/test_agent_effect_sandwich.py` (`391 passed, 1 skipped in 32.41s`)
-- `python -m ruff check codey tests tools/bootstrap_smoke.py` (passed; all checks passed)
-- `python -m compileall -q codey tests tools` (passed)
-- `pytest tests/test_architecture.py` (`72 passed in 10.70s`)
+- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_safe_tool_replay.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_replay_policy.py tests/test_tool_definition.py tests/test_tool_runtime.py tests/test_browser_worker.py tests/test_changes.py tests/test_workspace_revision.py tests/test_provider_controls.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py tests/test_architecture.py -q` (`649 passed, 4 skipped, 342 subtests passed in 44.75s`)
+- `pytest tests/test_server.py::WebAssetTests::test_runtime_version_matches_release_docs tests/test_tool_result_delivery.py -q` (`33 passed in 1.44s`)
+- `ruff check` (passed; all checks passed)
+- `python -B -m compileall -q codey tests tools` (passed)
+- `python -B tests/manual/safe_tool_replay_delivery_smoke.py --self-test` (passed)
+- `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest` (`3428 passed, 16 skipped in 295.09s (0:04:55)`)
+- Full pytest suite: `pytest -q` (`3431 passed, 16 skipped, 1208 subtests passed in 291.66s (0:04:51)`)
 
 ## 0.5.5 Safe Replay Result Delivery Receipt v1 (2026-09-02)
 
@@ -53,7 +58,9 @@ runtime:    introduced codey.runtime.tool_result_delivery with DeliveryBatchInte
             Strict schema validation rejecting forbidden raw fields (prompt, reply, result,
             stdout, stderr, diff, source_body), enforcing exact item payload schema, strict non-negative
             integers and bounded strings, aligning run boundaries with RuntimeEffectStore, rejecting
-            orphan send_attempt / delivered records, and verifying digest.
+            orphan send_attempt / delivered records, rejecting delivered records without a matching
+            prior send_attempt, rejecting multiple send_attempt / delivered receipts per batch, and
+            verifying digest.
             Added can_recover_before_provider_send ensuring send_attempt batches fail closed.
             Updated RuntimeSessionLog._compact_entries to preserve active delivery receipts
             for open operations, and compact delivered batches while keeping durable recovered facts.
@@ -62,6 +69,8 @@ agents:     extracted codey.agents.tool_turn (execute_turn_tools) to record turn
             Extracted codey.agents.result_delivery (deliver_turn_results,
             deliver_recovered_results, build_next_tool_prompt) with TurnState fast-path digest reuse.
             Eliminated duplicate prompt formatting across 3 separate sites in codey/agents/loop.py.
+            Added receipt creation for recovered single-effect fallback prompts that do not already
+            have a recovered batch id.
             Wired two-phase delivery receipt recording during provider send in prompt_context.py.
 operations: extended recover_effects_for_resume() to identify undelivered all-safe batches,
             re-executing all safe tools in the batch using canonical replay_args in strict
@@ -71,19 +80,22 @@ operations: extended recover_effects_for_resume() to identify undelivered all-sa
             Injected recovered_tool_result_batch_id into RunFrame and AgentRequest.
 details:    wired load_recovered_facts into Run Details (codey/runs/details.py) ensuring
             recovered facts project accurately even after session compaction.
-harness:    added unit tests in tests/test_tool_result_delivery.py (27/27 passed).
+harness:    added unit tests in tests/test_tool_result_delivery.py (32/32 passed).
             Added manual smoke in tests/manual/safe_tool_replay_delivery_smoke.py (--self-test, --same-run-self-test passed).
             Architecture boundaries verified in tests/test_architecture.py (72/72 passed).
 ```
 
 Verification:
 
-- `pytest tests/test_tool_result_delivery.py` (`27 passed in 0.99s`)
+- `pytest tests/test_tool_result_delivery.py -q` (`32 passed in 1.20s`)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --self-test` (passed; multi-tool crash recovery, prompt parity, idempotent re-recovery)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed; multi-turn continuous delivery receipts)
-- `pytest tests/test_architecture.py` (`72 passed in 10.39s`)
-- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`59 passed in 2.13s`)
-- `pytest` (`3428 passed, 16 skipped in 295.09s (0:04:55)`)
+- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_safe_tool_replay.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_replay_policy.py tests/test_tool_definition.py tests/test_tool_runtime.py tests/test_browser_worker.py tests/test_changes.py tests/test_workspace_revision.py tests/test_provider_controls.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py tests/test_architecture.py -q` (`649 passed, 4 skipped, 342 subtests passed in 44.75s`)
+- `pytest tests/test_server.py::WebAssetTests::test_runtime_version_matches_release_docs tests/test_tool_result_delivery.py -q` (`33 passed in 1.44s`)
+- `ruff check` (passed; all checks passed)
+- `python -B -m compileall -q codey tests tools` (passed)
+- `git diff --check` (passed; zero trailing whitespace, clean diff)
+- `pytest -q` (`3431 passed, 16 skipped, 1208 subtests passed in 291.66s (0:04:51)`)
 
 ## 0.5.4 Safe Tool Replay v1 (2026-09-01)
 

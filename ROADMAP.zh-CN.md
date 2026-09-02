@@ -3805,7 +3805,7 @@ recovered outcomes 按 turn/tool_index 排序，一次性交给 AgentRequest
 safe tool 多调用同轮崩溃后，不会只恢复 pending 的后半截结果
 模型继续时能看到同一轮完整 safe read/search/ls/references 结果
 不需要保存文件正文、搜索全文或 provider transcript 来修复恢复缺口
-核心并发安全、文件锁、Worker 超时防护与敏感凭据保护完成全面加固并通过 3428 项全量回归测试
+核心并发安全、文件锁、Worker 超时防护与敏感凭据保护完成全面加固并通过 3430 项全量回归测试
 ```
 
 ### 边界
@@ -3834,15 +3834,18 @@ task_run.py resume gate 继续只消费 recovery plan，不理解 batch receipt 
 同轮 safe batch 已 delivered：恢复时不重复 replay
 mixed safe + unsafe 未 delivered batch：fail closed，不做 partial transcript reconstruction
 provider send maybe_sent：不自动重发 provider prompt
+delivered receipt 必须匹配既有 send_attempt，不能绕过两阶段状态机
+同一 result batch 不能出现多条不同或重复的 send_attempt / delivered receipt
+单 effect fallback 恢复结果也会在重新交付给 provider 时获得 delivery receipt
 recovered results 排序稳定，且每个 result 只注入一次
 不保存 source body / stdout / stderr / diff / prompt / reply
 ```
 
 实测证据：
-- `tests/test_tool_result_delivery.py`：27/27 passed（涵盖 schema 拒绝 raw 字段、严格 5 字段 item schema 与非负整数/有界字符串校验、同 batch_id 冲突拒绝、未知 delivery record_kind 显式抛错、损坏日志字段校验、对齐 RuntimeEffectStore 的 run 边界校验、拒绝孤儿 send_attempt / delivered 记录、同一 turn batch digest 不匹配显式 invariant failure、TurnState fast-path digest 复用、item.ref 空值拦截、两阶段交付状态流、send_attempt 失败阻断 provider.send 与 fail-closed、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、真实 execute_turn_tools 正确识别 safe tool 与两阶段恢复、read + denied shell 单一 delivered batch 消除悬空 batch、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups并在异常时优雅 warning、record_recovered 幂等性与冲突拒绝）。
+- `tests/test_tool_result_delivery.py`：32/32 passed（涵盖 schema 拒绝 raw 字段、严格 5 字段 item schema 与非负整数/有界字符串校验、同 batch_id 冲突拒绝、未知 delivery record_kind 显式抛错、损坏日志字段校验、对齐 RuntimeEffectStore 的 run 边界校验、拒绝孤儿 send_attempt / delivered 记录、拒绝没有匹配 send_attempt 的 delivered receipt、拒绝同一 batch 多条 send_attempt / delivered receipt、同一 turn batch digest 不匹配显式 invariant failure、TurnState fast-path digest 复用、item.ref 空值拦截、两阶段交付状态流、send_attempt 失败阻断 provider.send 与 fail-closed、单 effect fallback 恢复结果重新交付时自动补 delivery receipt、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、真实 execute_turn_tools 正确识别 safe tool 与两阶段恢复、read + denied shell 单一 delivered batch 消除悬空 batch、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups并在异常时优雅 warning、record_recovered 幂等性与冲突拒绝）。
 - `tests/manual/safe_tool_replay_delivery_smoke.py`：`--self-test`（多 safe tool 同轮前 settled 后 pending 崩溃恢复）与 `--same-run-self-test`（多轮两阶段 receipt 连续写入）100% passed。
 - `tests/test_architecture.py`：72/72 passed（分层边界与 AST 静态合规全部守卫）。
-- 全量回归：3428 passed, 16 skipped in 295.09s (0:04:55)。
+- 全量回归：3431 passed, 16 skipped, 1208 subtests passed in 291.66s (0:04:51)。
 
 ### A/B
 

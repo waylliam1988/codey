@@ -408,6 +408,17 @@ class ToolResultDeliveryStore:
     def session_log(self) -> RuntimeSessionLog:
         return self._session_log
 
+    def _projection_for_batch(
+        self,
+        session_id: str,
+        run_id: str,
+        batch_id: str,
+    ) -> DeliveryBatchProjection | None:
+        for batch in self.load_batches(session_id, run_id):
+            if batch.intent.batch_id == batch_id:
+                return batch
+        return None
+
     def _append_delivery_record(
         self,
         session_id: str,
@@ -494,6 +505,16 @@ class ToolResultDeliveryStore:
         if operation_id and operation_id != expected_op:
             raise ToolResultDeliveryError(f"operation_id mismatch: expected {expected_op!r}, got {operation_id!r}")
 
+        projection = self._projection_for_batch(session_id, run_id, clean_batch_id)
+        if projection is None:
+            raise ToolResultDeliveryError(f"cannot record send_attempt for unknown batch: {clean_batch_id!r}")
+        if projection.is_delivered:
+            raise ToolResultDeliveryError(f"cannot record send_attempt for delivered batch: {clean_batch_id!r}")
+        if clean_peid in projection.send_attempts:
+            return
+        if projection.send_attempts:
+            raise ToolResultDeliveryError(f"batch already has a send_attempt: {clean_batch_id!r}")
+
         payload = {
             "schema_version": SCHEMA_VERSION,
             "effect_kind": EFFECT_KIND,
@@ -534,6 +555,18 @@ class ToolResultDeliveryStore:
             raise ToolResultDeliveryError(f"lane mismatch: expected {expected_lane!r}, got {lane!r}")
         if operation_id and operation_id != expected_op:
             raise ToolResultDeliveryError(f"operation_id mismatch: expected {expected_op!r}, got {operation_id!r}")
+
+        projection = self._projection_for_batch(session_id, run_id, clean_batch_id)
+        if projection is None:
+            raise ToolResultDeliveryError(f"cannot record delivered for unknown batch: {clean_batch_id!r}")
+        if clean_peid in projection.delivered_effect_ids:
+            return
+        if projection.delivered_effect_ids:
+            raise ToolResultDeliveryError(f"batch already has a delivered receipt: {clean_batch_id!r}")
+        if clean_peid not in projection.send_attempts:
+            raise ToolResultDeliveryError(
+                f"cannot record delivered without matching send_attempt: {clean_batch_id!r}"
+            )
 
         payload = {
             "schema_version": SCHEMA_VERSION,
@@ -756,6 +789,34 @@ class ToolResultDeliveryStore:
         if orphan_delivered:
             raise ToolResultDeliveryError(
                 f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
+            )
+        conflicting_attempts = {
+            bid: ids
+            for bid, ids in send_attempts.items()
+            if len(ids) != 1 or len(set(ids)) != 1
+        }
+        if conflicting_attempts:
+            raise ToolResultDeliveryError(
+                f"batch has conflicting send_attempt records: {conflicting_attempts}"
+            )
+        conflicting_delivered = {
+            bid: ids
+            for bid, ids in delivered.items()
+            if len(ids) != 1 or len(set(ids)) != 1
+        }
+        if conflicting_delivered:
+            raise ToolResultDeliveryError(
+                f"batch has conflicting delivered records: {conflicting_delivered}"
+            )
+        delivered_without_attempt: dict[str, list[str]] = {}
+        for bid, delivered_ids in delivered.items():
+            attempted = set(send_attempts.get(bid, ()))
+            missing = [peid for peid in delivered_ids if peid not in attempted]
+            if missing:
+                delivered_without_attempt[bid] = missing
+        if delivered_without_attempt:
+            raise ToolResultDeliveryError(
+                f"delivered records without matching send_attempt: {delivered_without_attempt}"
             )
 
         projections: list[DeliveryBatchProjection] = []

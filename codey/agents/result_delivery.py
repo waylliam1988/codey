@@ -138,14 +138,16 @@ def deliver_recovered_results(
     session: AgentLoopSession,
     turn_state: TurnState,
     *,
+    turn: int,
     recovered_batch_id: str = "",
 ) -> str:
     """Deliver recovered tool results on resume, marking delivery receipt on send."""
+    batch_id = recovered_batch_id or ensure_result_batch_intent(session, turn_state, turn)
     next_prompt = build_next_tool_prompt(session, turn_state)
     return send_prompt(
         session,
         next_prompt,
-        delivery_batch_id=recovered_batch_id,
+        delivery_batch_id=batch_id,
         restart_request=(
             "Continue the unfinished task using the latest local tool results below.\n\n"
             f"{next_prompt}"

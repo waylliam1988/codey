@@ -518,6 +518,7 @@ def run(request: AgentRequest) -> RunResult:
             outcome=rec.outcome,
             tool_index=rec.tool_index,
             effect_id=rec.effect_id,
+            replay_class="safe",
         )
 
     start_turn = max((rec.turn for rec in recovered_outcomes), default=1) + 1
@@ -535,6 +536,7 @@ def run(request: AgentRequest) -> RunResult:
     reply = deliver_recovered_results(
         session,
         turn_state,
+        turn=start_turn - 1,
         recovered_batch_id=request.recovered_tool_result_batch_id,
     )
     return _run_loop(session, reply, start_turn=start_turn)

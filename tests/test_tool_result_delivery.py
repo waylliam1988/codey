@@ -320,6 +320,143 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         with self.assertRaises(ToolResultDeliveryError):
             self.store.load_batches(self.session_id, self.run_id)
 
+    def test_delivered_without_matching_send_attempt_rejected(self) -> None:
+        batch_id = "batch-direct-delivered"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="eff-read",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self.store.record_batch_intent(
+            self.session_id,
+            self.run_id,
+            DeliveryBatchIntent(
+                batch_id=batch_id,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+        )
+
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_delivered(
+                self.session_id,
+                self.run_id,
+                batch_id=batch_id,
+                provider_effect_id="provider-eff-direct",
+            )
+
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+        self.log.append(
+            session_id=self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "delivered",
+                "ref": f"delivery_delivered:{batch_id}:provider-eff-direct",
+                "batch_id": batch_id,
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": lane,
+                "operation_id": op_id,
+                "provider_effect_id": "provider-eff-direct",
+                "created_at": "2026-09-02T12:00:00Z",
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
+
+    def test_load_batches_rejects_multiple_send_or_delivered_receipts(self) -> None:
+        def start_case(case: str) -> tuple[str, str, str, tuple[DeliveryBatchItem, ...]]:
+            sid = f"{self.session_id}-{case}"
+            rid = f"{self.run_id}-{case}"
+            bid = f"batch-{case}"
+            self.operations.start(
+                session_id=sid,
+                run_id=rid,
+                project=str(self.temp_dir.name),
+                provider_id="mock_provider",
+                turn_budget=10,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            items = (
+                DeliveryBatchItem(
+                    tool_index=0,
+                    tool_name="read",
+                    ref=f"eff-{case}-read",
+                    replay_class="safe",
+                    is_denied=False,
+                ),
+            )
+            self.store.record_batch_intent(
+                sid,
+                rid,
+                DeliveryBatchIntent(
+                    batch_id=bid,
+                    session_id=sid,
+                    run_id=rid,
+                    turn=1,
+                    items=items,
+                    batch_digest=compute_batch_digest(items),
+                ),
+            )
+            return sid, rid, bid, items
+
+        def append_receipt(
+            sid: str,
+            rid: str,
+            bid: str,
+            *,
+            record_kind: str,
+            provider_effect_id: str,
+        ) -> None:
+            lane = lane_for_run(rid)
+            op_id = operation_id_for_run(rid)
+            ref_kind = "attempt" if record_kind == "send_attempt" else "delivered"
+            self.log.append(
+                session_id=sid,
+                lane=lane,
+                operation_id=op_id,
+                kind="operation_effect",
+                payload={
+                    "schema_version": 1,
+                    "effect_kind": "tool_result_delivery",
+                    "record_kind": record_kind,
+                    "ref": f"delivery_{ref_kind}:{bid}:{provider_effect_id}",
+                    "batch_id": bid,
+                    "session_id": sid,
+                    "run_id": rid,
+                    "lane": lane,
+                    "operation_id": op_id,
+                    "provider_effect_id": provider_effect_id,
+                    "created_at": "2026-09-02T12:00:00Z",
+                },
+            )
+
+        sid, rid, bid, _items = start_case("attempt-conflict")
+        append_receipt(sid, rid, bid, record_kind="send_attempt", provider_effect_id="provider-eff-a")
+        append_receipt(sid, rid, bid, record_kind="send_attempt", provider_effect_id="provider-eff-b")
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(sid, rid)
+
+        sid, rid, bid, _items = start_case("delivered-conflict")
+        append_receipt(sid, rid, bid, record_kind="send_attempt", provider_effect_id="provider-eff-a")
+        append_receipt(sid, rid, bid, record_kind="delivered", provider_effect_id="provider-eff-a")
+        append_receipt(sid, rid, bid, record_kind="delivered", provider_effect_id="provider-eff-a")
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(sid, rid)
+
     def test_record_recovered_bounded_str_strictness(self) -> None:
         batch_id = "batch-rec-strict"
         # Overlong effect id
@@ -1545,6 +1682,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 batch_digest=compute_batch_digest(items),
             ),
         )
+        self.delivery.record_send_attempt(
+            self.session_id,
+            self.run_id,
+            batch_id=batch_id,
+            provider_effect_id="provider-eff-ok",
+        )
         self.delivery.record_delivered(
             self.session_id,
             self.run_id,
@@ -1565,6 +1708,67 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
         self.assertTrue(recovery.ok)
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
+
+    def test_single_effect_fallback_recovered_prompt_gets_delivery_receipt(self) -> None:
+        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.effects.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_read,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                phase="writer",
+                turn=1,
+                tool_index=0,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "target.py"},
+            ),
+        )
+
+        deps = Mock()
+        deps.runtime_effects = self.effects
+        deps.tool_result_delivery = self.delivery
+        recovery = recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(recovery.ok)
+        self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
+        self.assertEqual(recovery.recovered_tool_result_batch_id, "")
+
+        from codey.agents.loop import run
+
+        provider = MockDeliveryProvider()
+        result = run(AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="finish after recovery",
+            codec=JsonToolCodec(),
+            fresh_chat=False,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+            recovered_tool_outcomes=recovery.recovered_tool_outcomes,
+        ))
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(len(provider.prompts), 1)
+        self.assertIn("print('hello')", provider.prompts[0])
+
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertTrue(batches[0].is_delivered)
+        self.assertEqual(len(batches[0].send_attempts), 1)
+        self.assertEqual(batches[0].delivered_effect_ids, batches[0].send_attempts)
+        self.assertEqual(batches[0].intent.items[0].ref, eff_read)
+        self.assertEqual(batches[0].intent.items[0].replay_class, "safe")
 
 
 class AgentPromptParityTests(unittest.TestCase):

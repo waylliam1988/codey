@@ -7,8 +7,8 @@
 - 安全工具重放结果交付凭据与精准轮次恢复 v1：
   - 新增 `codey.runtime.tool_result_delivery`：基于单一事实源 `RuntimeSessionLog` 提供纯数据类 `DeliveryBatchIntent`、`DeliveryBatchProjection`、`DeliveryRecoveredFact` 与 `ToolResultDeliveryStore` 存储。支持全生命周期两阶段交付凭据跟踪（`batch_intent` -> `send_attempt` -> `delivered` / `recovered`），严格拒绝 `prompt`、`reply`、`result`、`stdout`、`stderr`、`diff`、`source_body` 等原始输出字段，使用严格 5 字段 item exact payload schema 与非负整数/有界字符串校验，对齐 `RuntimeEffectStore` 的 run 边界校验，严格拒绝孤儿 `send_attempt` / `delivered` 记录，并校验 SHA-256 批次 digest。
   - 闭环崩溃恢复时间窗口：抽取 `codey.agents.tool_turn`（`execute_turn_tools`），在执行任何工具前提前记录轮次级的 `batch_intent`，彻底消除工具间执行崩溃的盲区。恢复时自动投影未交付的 all-safe batch，使用持久化的标准 `replay_args` 按 `(turn, tool_index)` 严格顺序重新执行整批 safe tools；对已 settled 工具不写重复结算，仅记 `recovered` 事实。
-  - 严格 Fail-Closed 边界：引入 `can_recover_before_provider_send` 严格要求零 send attempts，防止 provider 已接收 prompt 但进程崩溃导致重复发送；混合批次（包含 `edit`、`run`、`shell`）或不可恢复批次严格 fail-closed，维护 `blocked_effect_ids` 杜绝内部 safe tool 发生局部单 effect 回退重放；扩展 `_validate_run_boundary()` 补充 `payload_lane_match` 严格校验。
-  - Agent Loop 架构精简与 Prompt 字节一致性：抽取 `codey.agents.result_delivery`（`deliver_turn_results`、`deliver_recovered_results`、`build_next_tool_prompt`），消除 `codey/agents/loop.py` 中 3 处重复分散的代码，通过 `TurnState` 支持 fast-path digest 复用免去冗余日志反查，并通过 Parity Test 严格保障 clean path prompt 字节级完全一致。
+  - 严格 Fail-Closed 边界：引入 `can_recover_before_provider_send` 严格要求零 send attempts，防止 provider 已接收 prompt 但进程崩溃导致重复发送；`delivered` receipt 必须对应同一 provider effect 的既有 `send_attempt`；batch 投影拒绝同一 batch 出现多条不同或重复的 `send_attempt` / `delivered` receipt；混合批次（包含 `edit`、`run`、`shell`）或不可恢复批次严格 fail-closed，维护 `blocked_effect_ids` 杜绝内部 safe tool 发生局部单 effect 回退重放；扩展 `_validate_run_boundary()` 补充 `payload_lane_match` 严格校验。
+  - Agent Loop 架构精简与 Prompt 字节一致性：抽取 `codey.agents.result_delivery`（`deliver_turn_results`、`deliver_recovered_results`、`build_next_tool_prompt`），消除 `codey/agents/loop.py` 中 3 处重复分散的代码，通过 `TurnState` 支持 fast-path digest 复用免去冗余日志反查；即使 resume 走单个 safe effect fallback、没有既有 batch id，也会为恢复结果 prompt 补上 delivery receipt；Parity Test 严格保障 clean path prompt 字节级完全一致。
   - 日志压缩与 Run Details 消费：更新 `RuntimeSessionLog._compact_entries`，open operation 保留 active delivery 凭据，settled operation 裁剪已 delivered batch 但持久保留 `recovered` 事实；将 `load_recovered_facts` 接入 `codey.runs.details`，保障在日志压缩后运行详情依然能准确投影恢复事实并在日志异常时展示优雅 warning。
   - 核心运行时与并发安全深化加固：
     - `BrowserWorker`：running 超时标记任务为 `ABANDONED`，彻底丢弃延迟结果，清理 slot 杜绝后续 job 污染。
@@ -16,7 +16,7 @@
     - `Provider Revival`：限制代际递增上限 `min(old + 1, 99)`；精简 `previous_bundle` 为非递归最小回滚结构；持久化异常记录 warning。
     - `Ghost Continuity`：`_safe_prompt_text()` 全局接入 `looks_prompt_visible_secret()`，拦截 API key 与高熵敏感凭证进入 prompt 上下文。
     - `清理语义与 UI 稳定性`：`forget_conversation()` 汇总各 store 清理失败并在 `/api/new_chat` 中如实暴露 unpurged_stores；`provider_ui.js` 增加 500ms debounce 与单调请求序号比对。
-  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py`、`tests/test_browser_worker.py`、`tests/test_changes.py`、`tests/test_ghost_continuity.py`、`tests/test_provider_revival.py`。全量 pytest 通过：`3428 passed, 16 skipped in 295.09s (0:04:55)`。
+  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py`、`tests/test_browser_worker.py`、`tests/test_changes.py`、`tests/test_ghost_continuity.py`、`tests/test_provider_revival.py`。全量 pytest 通过：`3431 passed, 16 skipped, 1208 subtests passed in 291.66s (0:04:51)`。
 
 ## 0.5.4 - Safe Tool Replay v1
 
