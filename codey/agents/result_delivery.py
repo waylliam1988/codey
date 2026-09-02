@@ -8,13 +8,13 @@ Does not import operations, ghost, or web providers.
 
 from __future__ import annotations
 
-
 from codey.agents.prompt_context import append_coding_context, send_prompt
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState
 from codey.runtime.effects import lane_for_run, operation_id_for_run
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
+    DeliveryBatchItem,
     compute_batch_digest,
     new_batch_id,
 )
@@ -35,21 +35,33 @@ def record_result_batch_intent_safely(
     ):
         return ""
 
+    items = tuple(
+        DeliveryBatchItem(
+            tool_index=item.tool_index,
+            tool_name=item.tool_name,
+            ref=item.effect_id or f"item:{item.turn}:{item.tool_index}:{item.tool_name}",
+            replay_class=item.replay_class,
+            is_denied=item.is_denied,
+        )
+        for item in turn_state.delivery_items
+    )
+    expected_digest = compute_batch_digest(items)
+
     try:
-        # Check if an undelivered batch for this turn was already planned
+        # Check if an undelivered batch with EXACT matching items/digest was already planned
         batches = delivery_store.load_batches(session.session_id, session.run_id)
         for b in reversed(batches):
-            if b.intent.turn == turn and not b.is_delivered and not b.send_attempts:
+            if (
+                b.intent.turn == turn
+                and b.intent.batch_digest == expected_digest
+                and not b.is_delivered
+                and not b.send_attempts
+            ):
                 return b.intent.batch_id
     except Exception:
         pass
 
     batch_id = new_batch_id(session.run_id, turn)
-    tool_refs = tuple(
-        item.effect_id or f"item:{item.turn}:{item.tool_index}:{item.tool_name}"
-        for item in turn_state.delivery_items
-    )
-    tool_names = tuple(item.tool_name for item in turn_state.delivery_items)
     try:
         intent = DeliveryBatchIntent(
             batch_id=batch_id,
@@ -58,9 +70,8 @@ def record_result_batch_intent_safely(
             lane=lane_for_run(session.run_id),
             operation_id=operation_id_for_run(session.run_id),
             turn=turn,
-            tool_refs=tool_refs,
-            tool_names=tool_names,
-            batch_digest=compute_batch_digest(tool_refs, tool_names),
+            items=items,
+            batch_digest=expected_digest,
         )
         delivery_store.record_batch_intent(session.session_id, session.run_id, intent)
         return batch_id

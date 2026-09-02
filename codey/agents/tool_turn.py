@@ -2,11 +2,12 @@
 
 Decomposes tool execution in a turn into:
 1. Planning & Intent Phase:
-   - Evaluates policy and replay decisions for all calls in the turn.
+   - Evaluates policy and replay decisions for ALL calls in the turn.
+   - Captures policy-denied, approval-required, intent-error, and effect-backed tools.
    - Records tool call intents early to obtain effect IDs.
    - Records the turn-level DeliveryBatchIntent before any execution starts,
-     ensuring that if a crash occurs between tools, durable recovery knows
-     the full batch envelope of the turn.
+     ensuring that durable recovery knows the full provider-visible envelope
+     of the turn.
 2. Execution Phase:
    - Emits tool started events.
    - Executes calls and records outcomes.
@@ -37,8 +38,10 @@ from codey.agents.tool_execution import (
 )
 from codey.runtime import cancellation
 from codey.runtime.models import ToolCall
+from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
+    DeliveryBatchItem,
     compute_batch_digest,
     new_batch_id,
 )
@@ -50,9 +53,11 @@ class PlannedToolCall:
     call: ToolCall
     effect_id: str = ""
     replay_decision: Any = None
+    replay_class_str: str = "unsafe"
     policy_denied: bool = False
     policy_decision: Any = None
     requires_approval: bool = False
+    intent_error: Exception | None = None
 
 
 @dataclass(frozen=True)
@@ -75,8 +80,7 @@ def execute_turn_tools(
 
     # 1. Planning & Intent Phase
     planned: list[PlannedToolCall] = []
-    delivery_tool_refs: list[str] = []
-    delivery_tool_names: list[str] = []
+    batch_items: list[DeliveryBatchItem] = []
 
     for tool_index, call in enumerate(calls):
         policy_decision, replay_decision = evaluate_tool_call_policy(
@@ -85,14 +89,28 @@ def execute_turn_tools(
             turn=turn,
             tool_index=tool_index,
         )
+        rclass_val = getattr(getattr(replay_decision, "replay_class", None), "value", "unsafe")
+        if rclass_val not in {"safe", "unsafe"}:
+            rclass_val = "safe" if getattr(replay_decision, "replay_class", None) == ReplayClass.SAFE else "unsafe"
+
         if policy_denied(policy_decision):
             planned.append(
                 PlannedToolCall(
                     tool_index=tool_index,
                     call=call,
+                    replay_class_str=rclass_val,
                     policy_denied=True,
                     policy_decision=policy_decision,
                     replay_decision=replay_decision,
+                )
+            )
+            batch_items.append(
+                DeliveryBatchItem(
+                    tool_index=tool_index,
+                    tool_name=call.name,
+                    ref=f"denied:{call.name}:{tool_index}",
+                    replay_class=rclass_val,
+                    is_denied=True,
                 )
             )
             continue
@@ -103,46 +121,87 @@ def execute_turn_tools(
                     tool_index=tool_index,
                     call=call,
                     requires_approval=True,
+                    replay_class_str=rclass_val,
                     policy_decision=policy_decision,
                     replay_decision=replay_decision,
+                )
+            )
+            batch_items.append(
+                DeliveryBatchItem(
+                    tool_index=tool_index,
+                    tool_name=call.name,
+                    ref=f"approval:{call.name}:{tool_index}",
+                    replay_class=rclass_val,
+                    is_denied=False,
                 )
             )
             # Stop planning further calls after shell approval requirement
             break
 
-        effect_id = record_tool_call_intent(
-            session,
-            call,
-            turn=turn,
-            tool_index=tool_index,
-            replay_decision=replay_decision,
-        )
+        try:
+            effect_id = record_tool_call_intent(
+                session,
+                call,
+                turn=turn,
+                tool_index=tool_index,
+                replay_decision=replay_decision,
+            )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            planned.append(
+                PlannedToolCall(
+                    tool_index=tool_index,
+                    call=call,
+                    replay_class_str=rclass_val,
+                    intent_error=exc,
+                    replay_decision=replay_decision,
+                    policy_decision=policy_decision,
+                )
+            )
+            batch_items.append(
+                DeliveryBatchItem(
+                    tool_index=tool_index,
+                    tool_name=call.name,
+                    ref=f"error:{call.name}:{tool_index}",
+                    replay_class=rclass_val,
+                    is_denied=True,
+                )
+            )
+            continue
+
         planned.append(
             PlannedToolCall(
                 tool_index=tool_index,
                 call=call,
                 effect_id=effect_id,
+                replay_class_str=rclass_val,
                 replay_decision=replay_decision,
                 policy_decision=policy_decision,
             )
         )
-        delivery_tool_refs.append(effect_id or f"synthetic:{call.name}:{tool_index}")
-        delivery_tool_names.append(call.name)
+        batch_items.append(
+            DeliveryBatchItem(
+                tool_index=tool_index,
+                tool_name=call.name,
+                ref=effect_id or f"synthetic:{call.name}:{tool_index}",
+                replay_class=rclass_val,
+                is_denied=False,
+            )
+        )
 
-    # Record turn-level batch intent before executing any tool
-    if delivery_tool_refs and session.tool_result_delivery is not None and session.session_id and session.run_id:
+    # Record turn-level batch intent covering ALL planned results
+    if batch_items and session.tool_result_delivery is not None and session.session_id and session.run_id:
         try:
             batch_id = new_batch_id(session.run_id, turn)
-            refs_tuple = tuple(delivery_tool_refs)
-            names_tuple = tuple(delivery_tool_names)
-            digest = compute_batch_digest(refs_tuple, names_tuple)
+            items_tuple = tuple(batch_items)
+            digest = compute_batch_digest(items_tuple)
             intent = DeliveryBatchIntent(
                 batch_id=batch_id,
                 session_id=session.session_id,
                 run_id=session.run_id,
                 turn=turn,
-                tool_refs=refs_tuple,
-                tool_names=names_tuple,
+                items=items_tuple,
                 batch_digest=digest,
             )
             session.tool_result_delivery.record_batch_intent(
@@ -167,6 +226,23 @@ def execute_turn_tools(
                 outcome=outcome,
                 tool_index=item.tool_index,
                 effect_id="",
+                replay_class=item.replay_class_str,
+                is_denied=True,
+            )
+            continue
+
+        if item.intent_error is not None:
+            outcome = tool_error_outcome(item.intent_error)
+            record_tool_outcome(
+                session,
+                turn_state,
+                turn=turn,
+                call=item.call,
+                outcome=outcome,
+                tool_index=item.tool_index,
+                effect_id="",
+                replay_class=item.replay_class_str,
+                is_denied=True,
             )
             continue
 
@@ -227,6 +303,8 @@ def execute_turn_tools(
                 outcome=outcome,
                 tool_index=item.tool_index,
                 effect_id=effect_id,
+                replay_class=item.replay_class_str,
+                is_denied=False,
             )
         finally:
             if effect_id:

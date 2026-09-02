@@ -132,29 +132,58 @@ def _load_recovery_summary(
         except Exception:
             summary = None
 
+    delivery_reads = 0
+    delivery_lookups = 0
     if tool_result_delivery is not None:
         try:
             facts = tool_result_delivery.load_recovered_facts(session_id, run_id)
             if facts:
-                total_reads = sum(f.recovered_reads for f in facts)
-                total_lookups = sum(f.recovered_lookups for f in facts)
-                if summary is None or not getattr(summary, "explanation_lines", ()):
-                    lines: list[str] = []
-                    if total_reads > 0:
-                        lines.append("Read action was recovered")
-                    if total_lookups > 0:
-                        lines.append("Lookup action was recovered")
-                    if lines:
-                        from codey.runtime.effect_records import RecoverySummary
-                        summary = RecoverySummary(
-                            replayed_reads=total_reads,
-                            replayed_lookups=total_lookups,
-                            explanation_lines=tuple(lines),
-                        )
+                delivery_reads = sum(f.recovered_reads for f in facts)
+                delivery_lookups = sum(f.recovered_lookups for f in facts)
         except Exception:
             pass
 
-    return summary
+    if summary is None and delivery_reads == 0 and delivery_lookups == 0:
+        return None
+
+    from codey.runtime.effect_records import RecoverySummary
+
+    if summary is None:
+        lines: list[str] = []
+        if delivery_reads > 0:
+            lines.append("Read action was recovered")
+        if delivery_lookups > 0:
+            lines.append("Lookup action was recovered")
+        return RecoverySummary(
+            replayed_reads=delivery_reads,
+            replayed_lookups=delivery_lookups,
+            explanation_lines=tuple(lines),
+        )
+
+    # Merge delivery fact totals with runtime summary
+    final_reads = max(delivery_reads, summary.replayed_reads)
+    final_lookups = max(delivery_lookups, summary.replayed_lookups)
+
+    preserved_other_lines = [
+        line for line in summary.explanation_lines
+        if line not in {"Read action was recovered", "Lookup action was recovered"}
+    ]
+    lines = []
+    if final_reads > 0:
+        lines.append("Read action was recovered")
+    if final_lookups > 0:
+        lines.append("Lookup action was recovered")
+    lines.extend(preserved_other_lines)
+
+    return RecoverySummary(
+        interrupted_writes=summary.interrupted_writes,
+        unconfirmed_provider_calls=summary.unconfirmed_provider_calls,
+        retryable_read_only=summary.retryable_read_only,
+        interrupted_repairs=summary.interrupted_repairs,
+        replayed_reads=final_reads,
+        replayed_lookups=final_lookups,
+        explanation_lines=tuple(lines),
+    )
 
 
 def _summary_rows(

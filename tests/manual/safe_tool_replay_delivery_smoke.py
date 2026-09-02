@@ -29,6 +29,7 @@ from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
+    DeliveryBatchItem,
     ToolResultDeliveryStore,
     compute_batch_digest,
     new_batch_id,
@@ -128,8 +129,22 @@ def run_self_test() -> int:
 
         # Delivery batch recorded before prompt was sent
         batch_id = new_batch_id(run_id, 1)
-        tool_refs = (eff_read, eff_search)
-        tool_names = ("read", "search")
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="search",
+                ref=eff_search,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         delivery.record_batch_intent(
             session_id,
             run_id,
@@ -138,9 +153,8 @@ def run_self_test() -> int:
                 session_id=session_id,
                 run_id=run_id,
                 turn=1,
-                tool_refs=tool_refs,
-                tool_names=tool_names,
-                batch_digest=compute_batch_digest(tool_refs, tool_names),
+                items=items,
+                batch_digest=compute_batch_digest(items),
             ),
         )
 

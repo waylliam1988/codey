@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
+from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
 from codey.agents.result_delivery import build_next_tool_prompt
 from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
@@ -34,6 +35,7 @@ from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
+    DeliveryBatchItem,
     ToolResultDeliveryError,
     ToolResultDeliveryStore,
     compute_batch_digest,
@@ -78,6 +80,15 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_schema_rejects_raw_content_and_oversized_fields(self) -> None:
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="ref1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         intent = DeliveryBatchIntent(
             batch_id="batch-1",
             session_id=self.session_id,
@@ -85,9 +96,8 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             lane="lane-1",
             operation_id="op-1",
             turn=1,
-            tool_refs=("ref1",),
-            tool_names=("read",),
-            batch_digest=compute_batch_digest(("ref1",), ("read",)),
+            items=items,
+            batch_digest=compute_batch_digest(items),
         )
         # Invalid empty session_id
         with self.assertRaises(ToolResultDeliveryError):
@@ -98,8 +108,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
                 lane="lane-1",
                 operation_id="op-1",
                 turn=1,
-                tool_refs=(),
-                tool_names=(),
+                items=(),
                 batch_digest="d",
             ).validate()
 
@@ -111,30 +120,27 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             _check_no_forbidden_keys(raw_payload)
 
     def test_schema_hygiene_strict_checks(self) -> None:
-        # Mismatched lengths
+        # Empty items
         with self.assertRaises(ToolResultDeliveryError):
-            compute_batch_digest(("ref1", "ref2"), ("read",))
-
-        with self.assertRaises(ToolResultDeliveryError):
-            DeliveryBatchIntent(
-                batch_id="batch-1",
-                session_id=self.session_id,
-                run_id=self.run_id,
-                turn=1,
-                tool_refs=("ref1", "ref2"),
-                tool_names=("read",),
-                batch_digest="digest",
-            ).validate()
+            compute_batch_digest(())
 
         # Mismatched digest
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="ref1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         with self.assertRaises(ToolResultDeliveryError):
             DeliveryBatchIntent(
                 batch_id="batch-1",
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
-                tool_refs=("ref1",),
-                tool_names=("read",),
+                items=items,
                 batch_digest="wrong_digest",
             ).validate()
 
@@ -148,19 +154,65 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
                 allowed_keys=frozenset({"schema_version"}),
             )
 
+    def test_record_recovered_idempotency_and_conflict_rejection(self) -> None:
+        batch_id = "batch-idempotent-1"
+        self.store.record_recovered(
+            self.session_id,
+            self.run_id,
+            batch_id=batch_id,
+            recovered_effect_ids=("eff-1",),
+            recovered_reads=1,
+            recovered_lookups=0,
+        )
+        # Same record -> idempotent no-op
+        self.store.record_recovered(
+            self.session_id,
+            self.run_id,
+            batch_id=batch_id,
+            recovered_effect_ids=("eff-1",),
+            recovered_reads=1,
+            recovered_lookups=0,
+        )
+        facts = self.store.load_recovered_facts(self.session_id, self.run_id)
+        self.assertEqual(len(facts), 1)
+
+        # Conflicting record -> raises ToolResultDeliveryError
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=("eff-1",),
+                recovered_reads=2,  # Conflicting read count!
+                recovered_lookups=0,
+            )
+
     def test_batch_lifecycle_intent_attempt_delivered(self) -> None:
         batch_id = "batch-life-1"
-        tool_refs = ("eff-1", "eff-2")
-        tool_names = ("read", "search")
-        digest = compute_batch_digest(tool_refs, tool_names)
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="eff-1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="search",
+                ref="eff-2",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        digest = compute_batch_digest(items)
 
         intent = DeliveryBatchIntent(
             batch_id=batch_id,
             session_id=self.session_id,
             run_id=self.run_id,
             turn=1,
-            tool_refs=tool_refs,
-            tool_names=tool_names,
+            items=items,
             batch_digest=digest,
         )
         self.store.record_batch_intent(self.session_id, self.run_id, intent)
@@ -200,16 +252,31 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         self.assertEqual(b_after_deliv.delivered_effect_ids, ("eff-send-100",))
         self.assertEqual(len(self.store.undelivered_replayable_batches(self.session_id, self.run_id)), 0)
 
-    def test_unsafe_batch_not_in_undelivered_replayable(self) -> None:
-        batch_id = "batch-unsafe-1"
+    def test_unsafe_and_policy_denied_batch_not_in_undelivered_replayable(self) -> None:
+        batch_id = "batch-denied-1"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="eff-read",
+                replay_class="safe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="shell",
+                ref="denied:shell:1",
+                replay_class="unsafe",
+                is_denied=True,
+            ),
+        )
         intent = DeliveryBatchIntent(
             batch_id=batch_id,
             session_id=self.session_id,
             run_id=self.run_id,
             turn=1,
-            tool_refs=("eff-read", "eff-edit"),
-            tool_names=("read", "edit"),
-            batch_digest=compute_batch_digest(("eff-read", "eff-edit"), ("read", "edit")),
+            items=items,
+            batch_digest=compute_batch_digest(items),
         )
         self.store.record_batch_intent(self.session_id, self.run_id, intent)
         b0 = self.store.load_batches(self.session_id, self.run_id)[0]
@@ -219,14 +286,22 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
 
     def test_compaction_retains_delivery_for_open_and_recovered_for_closed(self) -> None:
         batch_id = "batch-rec-1"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="eff-1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         intent = DeliveryBatchIntent(
             batch_id=batch_id,
             session_id=self.session_id,
             run_id=self.run_id,
             turn=1,
-            tool_refs=("eff-1",),
-            tool_names=("read",),
-            batch_digest=compute_batch_digest(("eff-1",), ("read",)),
+            items=items,
+            batch_digest=compute_batch_digest(items),
         )
         self.store.record_batch_intent(self.session_id, self.run_id, intent)
         self.store.record_recovered(
@@ -364,8 +439,22 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
 
         # 3. delivery batch intent was recorded
         batch_id = new_batch_id(self.run_id, 1)
-        tool_refs = (eff_read, eff_search)
-        tool_names = ("read", "search")
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="search",
+                ref=eff_search,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         self.delivery.record_batch_intent(
             self.session_id,
             self.run_id,
@@ -374,9 +463,8 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
-                tool_refs=tool_refs,
-                tool_names=tool_names,
-                batch_digest=compute_batch_digest(tool_refs, tool_names),
+                items=items,
+                batch_digest=compute_batch_digest(items),
             ),
         )
 
@@ -417,8 +505,130 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(batches[0].recovered_reads, 1)
         self.assertEqual(batches[0].recovered_lookups, 1)
 
+    def test_run_details_merges_delivery_reads_and_runtime_lookups(self) -> None:
+        # read settled (fact only in delivery) + search pending (replay in runtime effects)
+        eff_search = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.effects.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_search,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                phase="writer",
+                turn=1,
+                tool_index=1,
+                tool_name="search",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": ".", "query": "hello"},
+            ),
+        )
+        self.effects.record_settlement(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=eff_search,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+                replay_count=1,
+                replayed_from_effect_id=eff_search,
+            ),
+        )
+        # Delivery store has recovered both read and lookup
+        self.delivery.record_recovered(
+            self.session_id,
+            self.run_id,
+            batch_id="batch-merged-details",
+            recovered_effect_ids=("eff-read", eff_search),
+            recovered_reads=1,
+            recovered_lookups=1,
+        )
+
+        details = load_run_details(
+            run_ledgers=None,
+            run_traces=None,
+            runtime_operations=self.operations,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+            session_id=self.session_id,
+            run_id=self.run_id,
+        )
+        self.assertTrue(details.available)
+        recovery_values = [r.value for r in details.rows if r.label == "Recovery"]
+        # Both Read and Lookup MUST be displayed!
+        self.assertIn("Read action was recovered", recovery_values)
+        self.assertIn("Lookup action was recovered", recovery_values)
+
+    def test_policy_denied_tool_in_batch_fails_closed_in_recovery(self) -> None:
+        # Batch had read + shell(policy denied). Should NOT replay read alone!
+        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        self.effects.record_intent(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectIntent(
+                effect_id=eff_read,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                phase="writer",
+                turn=1,
+                tool_index=0,
+                tool_name="read",
+                replay_class=ReplayClass.SAFE,
+                replay_args={"path": "target.py"},
+            ),
+        )
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="shell",
+                ref="denied:shell:1",
+                replay_class="unsafe",
+                is_denied=True,
+            ),
+        )
+        batch_id = "batch-denied-fail-closed"
+        self.delivery.record_batch_intent(
+            self.session_id,
+            self.run_id,
+            DeliveryBatchIntent(
+                batch_id=batch_id,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+        )
+
+        deps = Mock()
+        deps.runtime_effects = self.effects
+        deps.tool_result_delivery = self.delivery
+
+        recovery = recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(recovery.ok)
+        # Must fail-closed: 0 recovered outcomes, read is blocked from single fallback
+        self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
+
     def test_send_attempt_without_delivered_fails_closed_in_recovery(self) -> None:
-        # Batch had send_attempt recorded before crash (provider may have already received prompt)
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         self.effects.record_intent(
             self.session_id,
@@ -437,6 +647,15 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             ),
         )
         batch_id = "batch-attempted-fail-closed"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         self.delivery.record_batch_intent(
             self.session_id,
             self.run_id,
@@ -445,9 +664,8 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
-                tool_refs=(eff_read,),
-                tool_names=("read",),
-                batch_digest=compute_batch_digest((eff_read,), ("read",)),
+                items=items,
+                batch_digest=compute_batch_digest(items),
             ),
         )
         self.delivery.record_send_attempt(
@@ -469,14 +687,11 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             task_kind="project",
         )
         self.assertTrue(recovery.ok)
-        # Must NOT recover any outcomes because provider send already started!
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
-        # Pending read must be synthesized to interrupted, not replayed
         pending = self.effects.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 0)
 
     def test_mixed_batch_blocks_pending_safe_effect_from_single_replay(self) -> None:
-        # edit settled + read pending + mixed batch intent
         eff_edit = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
 
@@ -526,6 +741,22 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
 
         batch_id = "batch-mixed-fail-closed"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="edit",
+                ref=eff_edit,
+                replay_class="unsafe",
+                is_denied=False,
+            ),
+            DeliveryBatchItem(
+                tool_index=1,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         self.delivery.record_batch_intent(
             self.session_id,
             self.run_id,
@@ -534,9 +765,8 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
-                tool_refs=(eff_edit, eff_read),
-                tool_names=("edit", "read"),
-                batch_digest=compute_batch_digest((eff_edit, eff_read), ("edit", "read")),
+                items=items,
+                batch_digest=compute_batch_digest(items),
             ),
         )
 
@@ -552,7 +782,6 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             task_kind="project",
         )
         self.assertTrue(recovery.ok)
-        # Even though read is pending and safe, it MUST NOT be replayed because the batch was mixed!
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
         pending = self.effects.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 0)
@@ -589,6 +818,15 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             ),
         )
         batch_id = "batch-delivered-ok"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
         self.delivery.record_batch_intent(
             self.session_id,
             self.run_id,
@@ -597,9 +835,8 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
-                tool_refs=(eff_read,),
-                tool_names=("read",),
-                batch_digest=compute_batch_digest((eff_read,), ("read",)),
+                items=items,
+                batch_digest=compute_batch_digest(items),
             ),
         )
         self.delivery.record_delivered(
@@ -624,7 +861,6 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
 
     def test_turn_tool_execution_natural_crash_window(self) -> None:
-        # Test execute_turn_tools records batch_intent BEFORE executing any tool
         calls = [
             ToolCall(name="read", args={"path": "target.py"}),
             ToolCall(name="search", args={"query": "hello"}),
@@ -694,31 +930,6 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(batches), 1)
         self.assertEqual(batches[0].intent.tool_names, ("read", "search"))
 
-    def test_load_recovered_facts_and_run_details_consumption(self) -> None:
-        batch_id = "batch-details-1"
-        self.delivery.record_recovered(
-            self.session_id,
-            self.run_id,
-            batch_id=batch_id,
-            recovered_effect_ids=("eff-1",),
-            recovered_reads=1,
-            recovered_lookups=0,
-        )
-
-        details = load_run_details(
-            run_ledgers=None,
-            run_traces=None,
-            runtime_operations=self.operations,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-            session_id=self.session_id,
-            run_id=self.run_id,
-        )
-        self.assertTrue(details.available)
-        recovery_rows = [r for r in details.rows if r.label == "Recovery"]
-        self.assertEqual(len(recovery_rows), 1)
-        self.assertEqual(recovery_rows[0].value, "Read action was recovered")
-
 
 class AgentPromptParityTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -729,14 +940,23 @@ class AgentPromptParityTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def test_clean_path_prompt_parity(self) -> None:
+    def test_clean_path_prompt_exact_byte_parity(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall(name="read", args={"path": "sample.txt"})
         result = ToolResult(call=call, model_text="sample content")
 
         turn_state = TurnState(
             results=[result],
-            delivery_items=[ToolResultDeliveryItem(turn=1, tool_index=0, tool_name="read")],
+            delivery_items=[
+                ToolResultDeliveryItem(
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    effect_id="eff-1",
+                    replay_class="safe",
+                    is_denied=False,
+                )
+            ],
         )
 
         provider = MockDeliveryProvider()
@@ -789,10 +1009,16 @@ class AgentPromptParityTests(unittest.TestCase):
             project_instructions=[],
         )
 
-        prompt = build_next_tool_prompt(session, turn_state, protocol_reminder="\n\nNote: reminder")
-        self.assertIn("tool=read_file", prompt)
-        self.assertIn("sample content", prompt)
-        self.assertIn("Note: reminder", prompt)
+        # 1. Computed via deliver_turn_results prompt builder
+        actual_prompt = build_next_tool_prompt(session, turn_state, protocol_reminder="\n\nNote: reminder")
+
+        # 2. Canonical expected prompt via exact sequential concatenation
+        raw_results = codec.format_results(turn_state.results)
+        expected_uncontext = f"{raw_results}\n\nNote: reminder"
+        expected_prompt = append_coding_context(session, expected_uncontext)
+
+        # Must be 100% exact byte-for-byte equal!
+        self.assertEqual(actual_prompt, expected_prompt)
 
 
 if __name__ == "__main__":

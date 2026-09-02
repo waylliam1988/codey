@@ -71,7 +71,7 @@ def recover_effects_for_resume(
             raw_batches = delivery_store.load_batches(session_id, run_id)
             all_batches = tuple(raw_batches) if isinstance(raw_batches, (list, tuple)) else ()
         except Exception:
-            all_batches = ()
+            return ResumeRecoveryResult(ok=False)
 
         effect_by_id = {
             p.intent.effect_id: p

@@ -44,6 +44,8 @@ class ToolResultDeliveryItem:
     tool_index: int
     tool_name: str
     effect_id: str = ""
+    replay_class: str = "unsafe"
+    is_denied: bool = False
 
 
 @dataclass
@@ -320,6 +322,8 @@ def record_tool_outcome(
     outcome: ToolOutcome,
     tool_index: int,
     effect_id: str = "",
+    replay_class: str = "unsafe",
+    is_denied: bool = False,
 ) -> None:
     path = call_arg(call, "path", ".")
     model_text = outcome.model_text
@@ -331,6 +335,8 @@ def record_tool_outcome(
             tool_index=tool_index,
             tool_name=call.name,
             effect_id=effect_id,
+            replay_class=replay_class,
+            is_denied=is_denied,
         )
     )
     if call.name == "read" and outcome.ok:
