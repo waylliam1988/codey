@@ -10,7 +10,7 @@
   - 严格 Fail-Closed 边界：引入 `can_recover_before_provider_send` 严格要求零 send attempts，防止 provider 已接收 prompt 但进程崩溃导致重复发送；维护 `blocked_effect_ids`，杜绝混合批次或不可恢复批次内的 safe tool 发生局部单 effect 回退重放。
   - Agent Loop 架构精简与 Prompt 字节一致性：抽取 `codey.agents.result_delivery`（`deliver_turn_results`、`deliver_recovered_results`、`build_next_tool_prompt`），消除 `codey/agents/loop.py` 中 3 处重复分散的 tool results 组装与 prompt delivery 代码，并通过 Parity Test 严格保障 clean path prompt 字节级完全一致。
   - 日志压缩与 Run Details 消费：更新 `RuntimeSessionLog._compact_entries`，open operation 保留 active delivery 凭据，settled operation 裁剪已 delivered batch 但持久保留 `recovered` 事实；将 `load_recovered_facts` 接入 `codey.runs.details`，保障在日志压缩后运行详情依然能准确投影恢复事实。
-  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py` 单元测试（18/18 passed）、确定性故障注入 smoke `tests/manual/safe_tool_replay_delivery_smoke.py`（`--self-test` 与 `--same-run-self-test` 100% 通过），架构边界测试 `tests/test_architecture.py`（72/72 passed）。全量 pytest 通过：`3418 passed, 4 skipped in 291.12s (0:04:51)`。
+  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py` 单元测试（22/22 passed）、确定性故障注入 smoke `tests/manual/safe_tool_replay_delivery_smoke.py`（`--self-test` 与 `--same-run-self-test` 100% 通过），架构边界测试 `tests/test_architecture.py`（72/72 passed）。全量 pytest 通过：`3422 passed, 4 skipped in 290.96s (0:04:50)`。
 
 ## 0.5.4 - Safe Tool Replay v1
 

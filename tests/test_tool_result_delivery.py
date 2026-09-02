@@ -9,7 +9,11 @@ from unittest.mock import Mock, patch
 
 from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
-from codey.agents.result_delivery import build_next_tool_prompt, deliver_turn_results
+from codey.agents.result_delivery import (
+    build_next_tool_prompt,
+    deliver_turn_results,
+    ensure_result_batch_intent,
+)
 from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
 from codey.agents.tool_execution import (
     ToolResultDeliveryItem,
@@ -190,6 +194,54 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
                 "replay_class": "safe",
                 "is_denied": 1,
             })
+
+    def test_unknown_record_kind_in_log_fails_closed(self) -> None:
+        from codey.runtime.effects import lane_for_run, operation_id_for_run
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+        # Append unknown bogus record_kind
+        self.log.append(
+            session_id=self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "bogus_kind",
+                "ref": "delivery_bogus:batch-bogus",
+                "batch_id": "batch-bogus",
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
+
+    def test_missing_or_corrupt_fields_in_log_fails_closed(self) -> None:
+        from codey.runtime.effects import lane_for_run, operation_id_for_run
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+        # Corrupt send_attempt missing provider_effect_id
+        self.log.append(
+            session_id=self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "send_attempt",
+                "ref": "delivery_attempt:b1:p1",
+                "batch_id": "b1",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": lane,
+                "operation_id": op_id,
+                # missing provider_effect_id
+                "created_at": "2026-09-02T12:00:00Z",
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
 
     def test_conflicting_duplicate_batch_intent_rejected(self) -> None:
         items1 = (
@@ -799,7 +851,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
 
         # Inject failure into record_send_attempt
         with patch.object(self.delivery, "record_send_attempt", side_effect=RuntimeError("disk full")):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(ToolResultDeliveryError):
                 deliver_turn_results(session, res.turn_state, 1)
 
         # Provider send MUST NOT have been called!
@@ -812,6 +864,158 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertTrue(send_effects[0].is_settled)
         self.assertEqual(send_effects[0].settlement.error_code, "delivery_attempt_failed")
         self.assertEqual(send_effects[0].settlement.sent_state, "settled")
+
+    def test_ensure_result_batch_intent_rejects_empty_ref(self) -> None:
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        session = AgentLoopSession(
+            request=AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec),
+            provider=provider,
+            project=self.project_dir,
+            user_task="test",
+            codec=codec,
+            max_turns=5,
+            stagnant_turns=3,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=True,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            profile=profile_for_name("coding_writer"),
+            tool_fns=DEFAULT_TOOL_FNS,
+            trace_recorder=None,
+            trace=Mock(),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=True,
+            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            stagnation=LoopStagnation(seen_info=set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+        )
+        turn_state = TurnState(
+            results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
+            delivery_items=[
+                ToolResultDeliveryItem(
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    ref="",  # empty ref!
+                )
+            ],
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            ensure_result_batch_intent(session, turn_state, 1)
+
+    def test_ensure_result_batch_intent_rejects_digest_mismatch_for_same_turn(self) -> None:
+        # Pre-record batch intent for turn 1 with tool "read"
+        items_early = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="ref-1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self.delivery.record_batch_intent(
+            self.session_id,
+            self.run_id,
+            DeliveryBatchIntent(
+                batch_id="batch-early-1",
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items_early,
+                batch_digest=compute_batch_digest(items_early),
+            ),
+        )
+
+        # Now try delivering turn 1 with unexpected different tool "search"
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        session = AgentLoopSession(
+            request=AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec),
+            provider=provider,
+            project=self.project_dir,
+            user_task="test",
+            codec=codec,
+            max_turns=5,
+            stagnant_turns=3,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=True,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            profile=profile_for_name("coding_writer"),
+            tool_fns=DEFAULT_TOOL_FNS,
+            trace_recorder=None,
+            trace=Mock(),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=True,
+            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            stagnation=LoopStagnation(seen_info=set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+        )
+        turn_state = TurnState(
+            results=[ToolResult(call=ToolCall(name="search", args={"query": "q"}), model_text="ok")],
+            delivery_items=[
+                ToolResultDeliveryItem(
+                    turn=1,
+                    tool_index=0,
+                    tool_name="search",
+                    ref="ref-diff",
+                    replay_class="safe",
+                    is_denied=False,
+                )
+            ],
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            ensure_result_batch_intent(session, turn_state, 1)
 
     def test_single_canonical_batch_for_read_plus_policy_denied_shell(self) -> None:
         calls = [

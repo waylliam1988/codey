@@ -255,7 +255,7 @@ def _send_provider_with_effect(
                 batch_id=delivery_batch_id,
                 provider_effect_id=effect_id,
             )
-        except Exception:
+        except Exception as exc:
             if effects is not None and effect_id:
                 record_settlement_safely(
                     effects,
@@ -271,7 +271,10 @@ def _send_provider_with_effect(
                         sent_state="settled",
                     ),
                 )
-            raise
+            from codey.runtime.tool_result_delivery import ToolResultDeliveryError
+            if isinstance(exc, ToolResultDeliveryError):
+                raise
+            raise ToolResultDeliveryError(f"delivery receipt write failed: {exc}") from exc
 
     try:
         reply_text = session.provider.send(prompt)

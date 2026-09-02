@@ -37,19 +37,19 @@ operations: extended recover_effects_for_resume() to identify undelivered all-sa
             Injected recovered_tool_result_batch_id into RunFrame and AgentRequest.
 details:    wired load_recovered_facts into Run Details (codey/runs/details.py) ensuring
             recovered facts project accurately even after session compaction.
-harness:    added unit tests in tests/test_tool_result_delivery.py (18/18 passed).
+harness:    added unit tests in tests/test_tool_result_delivery.py (22/22 passed).
             Added manual smoke in tests/manual/safe_tool_replay_delivery_smoke.py (--self-test, --same-run-self-test passed).
             Architecture boundaries verified in tests/test_architecture.py (72/72 passed).
 ```
 
 Verification:
 
-- `pytest tests/test_tool_result_delivery.py` (`18 passed in 0.89s`)
+- `pytest tests/test_tool_result_delivery.py` (`22 passed in 0.95s`)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --self-test` (passed; multi-tool crash recovery, prompt parity, idempotent re-recovery)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed; multi-turn continuous delivery receipts)
-- `pytest tests/test_architecture.py` (`72 passed in 10.29s`)
-- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`50 passed in 2.05s`)
-- `pytest` (`3418 passed, 4 skipped in 291.12s (0:04:51)`)
+- `pytest tests/test_architecture.py` (`72 passed in 10.41s`)
+- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`54 passed in 2.30s`)
+- `pytest` (`3422 passed, 4 skipped in 290.96s (0:04:50)`)
 
 ## 0.5.4 Safe Tool Replay v1 (2026-09-01)
 

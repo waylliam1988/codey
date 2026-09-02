@@ -15,6 +15,7 @@ from codey.runtime.effects import lane_for_run, operation_id_for_run
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
+    ToolResultDeliveryError,
     compute_batch_digest,
     new_batch_id,
 )
@@ -35,28 +36,39 @@ def ensure_result_batch_intent(
     ):
         return ""
 
-    items = tuple(
-        DeliveryBatchItem(
-            tool_index=item.tool_index,
-            tool_name=item.tool_name,
-            ref=item.ref or item.effect_id or f"item:{item.turn}:{item.tool_index}:{item.tool_name}",
-            replay_class=item.replay_class,
-            is_denied=item.is_denied,
+    raw_items: list[DeliveryBatchItem] = []
+    for item in turn_state.delivery_items:
+        if not item.ref or not isinstance(item.ref, str) or not item.ref.strip():
+            raise ToolResultDeliveryError(
+                f"missing canonical ref in delivery item for tool {item.tool_name!r}"
+            )
+        raw_items.append(
+            DeliveryBatchItem(
+                tool_index=item.tool_index,
+                tool_name=item.tool_name,
+                ref=item.ref,
+                replay_class=item.replay_class,
+                is_denied=item.is_denied,
+            )
         )
-        for item in turn_state.delivery_items
-    )
+    items = tuple(raw_items)
     expected_digest = compute_batch_digest(items)
 
-    # Check if an undelivered batch with EXACT matching items/digest was already planned
     batches = delivery_store.load_batches(session.session_id, session.run_id)
     for b in reversed(batches):
-        if (
-            b.intent.turn == turn
-            and b.intent.batch_digest == expected_digest
-            and not b.is_delivered
-            and not b.send_attempts
-        ):
-            return b.intent.batch_id
+        if b.intent.turn == turn:
+            if not b.is_delivered and not b.send_attempts:
+                if b.intent.batch_digest == expected_digest:
+                    return b.intent.batch_id
+                # Invariant failure: an early planned batch for this exact turn exists without any send attempts,
+                # but its envelope digest does not match the results about to be delivered.
+                raise ToolResultDeliveryError(
+                    f"turn {turn} delivery batch envelope mismatch: expected digest {expected_digest!r}, "
+                    f"found early batch {b.intent.batch_id!r} with digest {b.intent.batch_digest!r}"
+                )
+            # Note: if a batch for this turn already has send_attempts, it indicates a prior
+            # provider attempt in this turn that failed or timed out. A new writer/failover run
+            # may record a fresh batch for recovery tracking.
 
     batch_id = new_batch_id(session.run_id, turn)
     intent = DeliveryBatchIntent(

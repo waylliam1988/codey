@@ -683,16 +683,21 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             conversation.update_snapshot(
                 replace(conversation.snapshot, provider_id=current_id, blocker=str(exc))
             )
-        failure = (
-            exc.failure
-            if isinstance(exc, ProviderActionError)
-            else deps.capture_provider_failure(
-                model=PROVIDER_LABELS.get(current_id, current_id),
-                action="task" if current_item is not None else "connect",
-                page=None,
-                error=exc,
+        from codey.runtime.tool_result_delivery import ToolResultDeliveryError
+
+        if isinstance(exc, ToolResultDeliveryError):
+            failure = None
+        else:
+            failure = (
+                exc.failure
+                if isinstance(exc, ProviderActionError)
+                else deps.capture_provider_failure(
+                    model=PROVIDER_LABELS.get(current_id, current_id),
+                    action="task" if current_item is not None else "connect",
+                    page=None,
+                    error=exc,
+                )
             )
-        )
         state.run_registry.set_last_provider_failure(failure)
         if failure is not None and work is not None and work.ledger is not None:
             try:
