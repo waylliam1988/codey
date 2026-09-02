@@ -50,8 +50,7 @@ function applyProviderStatus(providers, isSSE) {
   }
   syncProviderUI(currentProviderId());
 }
-function refreshProviderStatus() {
-  const immediate = arguments[0];
+function refreshProviderStatus(immediate = false) {
   if (refreshTimer) {
     clearTimeout(refreshTimer);
     refreshTimer = null;

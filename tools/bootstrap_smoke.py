@@ -24,15 +24,18 @@ from codey.reviews.core import (
 )
 
 
-BUGGY_DIFF = (
-    "def _diff_for(path: str, before: str | None, after: str | None) -> str:\n"
+BUGGY_DIFF_AND_COUNTS = (
+    "def _diff_and_counts(path: str, before: str | None, after: str | None) -> tuple[str, int, int]:\n"
     "    before_lines = [] if before is None else before.splitlines(keepends=True)\n"
     "    after_lines = [] if after is None else after.splitlines(keepends=True)\n"
     "    fromfile = \"/dev/null\" if before is None else f\"a/{path}\"\n"
     "    tofile = \"/dev/null\" if after is None else f\"b/{path}\"\n"
-    "    diff = difflib.unified_diff(after_lines, before_lines, fromfile=fromfile, tofile=tofile, lineterm=\"\")\n"
-    "    body = \"\\n\".join(diff)\n"
-    "    return f\"diff --git a/{path} b/{path}\\n{body}\" if body else \"\"\n"
+    "    diff_lines = list(difflib.unified_diff(after_lines, before_lines, fromfile=fromfile, tofile=tofile, lineterm=\"\"))\n"
+    "    additions = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))\n"
+    "    deletions = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))\n"
+    "    body = \"\\n\".join(diff_lines)\n"
+    "    diff_text = f\"diff --git a/{path} b/{path}\\n{body}\" if body else \"\"\n"
+    "    return diff_text, additions, deletions\n"
 )
 
 
@@ -68,9 +71,9 @@ def _copy_repo(src: Path, dst: Path) -> None:
 def inject_bug(root: Path) -> None:
     path = root / "codey" / "workspace" / "changes.py"
     text = path.read_text(encoding="utf-8")
-    start = text.index("def _diff_for(")
-    end = text.index("\n\nclass ChangeTracker:", start)
-    path.write_text(text[:start] + BUGGY_DIFF + text[end:], encoding="utf-8")
+    start = text.index("def _diff_and_counts(")
+    end = text.index("\ndef _status_for", start)
+    path.write_text(text[:start] + BUGGY_DIFF_AND_COUNTS + text[end:], encoding="utf-8")
 
 
 def _run_python_unittest(root: Path) -> dict:

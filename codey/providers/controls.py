@@ -1055,8 +1055,8 @@ def _record_revival_flow_failure(provider_id: str, error: BaseException) -> None
     try:
         if provider_revival.record_flow_failure(store, provider_id):
             _invalidate_flow_cache(store, provider_id)
-    except (OSError, ValueError):
-        pass
+    except (OSError, ValueError) as exc:
+        logger.warning("Failed to record revival flow failure for %s: %s", provider_id, exc)
 
 
 def _clear_pending_controls(provider_id: str) -> None:

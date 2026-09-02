@@ -546,6 +546,45 @@ class ProviderControlsTests(unittest.TestCase):
 
             self.assertEqual(controls.load_controls(path), before)
 
+    def test_flow_failure_persistence_errors_are_logged(self) -> None:
+        from codey.providers import flow as provider_flow
+        from codey.providers.diagnostics import ResponseMissing
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with (
+            mock.patch.object(controls, "CONTROL_STORE", Path("provider-controls.json")),
+            mock.patch.object(
+                controls,
+                "_load_flow_cached",
+                return_value={
+                    provider_flow.STAGE_COMPLETION: (
+                        provider_flow.PREDICATE_RESPONSE_STABLE,
+                    )
+                },
+            ),
+            mock.patch.object(
+                controls.provider_revival,
+                "record_flow_failure",
+                side_effect=OSError("disk full"),
+            ),
+            self.assertLogs("codey.providers.controls", level="WARNING") as logs,
+        ):
+
+            @controls.revival_send("qwen")
+            def failing_send(current_page):
+                del current_page
+                attempt = controls._revival_attempts()["qwen"]
+                attempt.loaded_flow_stages.add(provider_flow.STAGE_COMPLETION)
+                attempt.flow_evaluated_stages.add(provider_flow.STAGE_COMPLETION)
+                raise ResponseMissing("missing", stage=provider_flow.STAGE_COMPLETION)
+
+            with self.assertRaises(ResponseMissing):
+                failing_send(page)
+
+        self.assertTrue(
+            any("Failed to record revival flow failure for qwen" in row for row in logs.output)
+        )
+
     def test_flow_recovery_is_staged_then_promoted_by_next_natural_send(self) -> None:
         from codey.providers import flow as provider_flow
 

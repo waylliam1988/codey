@@ -395,11 +395,11 @@ function currentProviderId() {
 function syncProviderUI(providerId) {
   window.CodeyProviderUI.sync(providerId);
 }
-function applyProviderStatus(providers) {
-  window.CodeyProviderUI.applyStatus(providers);
+function applyProviderStatus(providers, isSSE = true) {
+  window.CodeyProviderUI.applyStatus(providers, isSSE);
 }
-function refreshProviderStatus() {
-  return window.CodeyProviderUI.refreshStatus();
+function refreshProviderStatus(immediate = false) {
+  return window.CodeyProviderUI.refreshStatus(immediate);
 }
 
 let uiStatePersistTimer = null;

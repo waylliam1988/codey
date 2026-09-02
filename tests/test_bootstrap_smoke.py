@@ -19,9 +19,11 @@ class BootstrapSmokeTests(unittest.TestCase):
             (root / "codey" / "workspace").mkdir(parents=True)
             (root / "codey" / "workspace" / "changes.py").write_text(
                 "import difflib\n\n"
-                "def _diff_for(path: str, before: str | None, after: str | None) -> str:\n"
+                "def _diff_and_counts(path: str, before: str | None, after: str | None) -> tuple[str, int, int]:\n"
                 "    old\n"
-                "\n\nclass ChangeTracker:\n"
+                "\ndef _status_for(before: str | None, after: str | None) -> str:\n"
+                "    return 'M'\n"
+                "\nclass ChangeTracker:\n"
                 "    pass\n",
                 encoding="utf-8",
             )
@@ -30,6 +32,7 @@ class BootstrapSmokeTests(unittest.TestCase):
 
             text = (root / "codey" / "workspace" / "changes.py").read_text(encoding="utf-8")
             self.assertIn("difflib.unified_diff(after_lines, before_lines", text)
+            self.assertIn("return diff_text, additions, deletions", text)
 
     def test_run_bootstrap_smoke_rejects_same_writer_and_reviewer(self) -> None:
         with self.assertRaisesRegex(ValueError, "reviewer must be different"):

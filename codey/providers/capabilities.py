@@ -30,7 +30,6 @@ class ProviderCapability:
     native_tool_interference_risk: Reliability
     needs_canary_by_default: bool
     failure_families: tuple[str, ...] = ()
-    notes: tuple[str, ...] = ()
 
 
 DEFAULT_PROVIDER_CAPABILITY = ProviderCapability(
@@ -43,7 +42,6 @@ DEFAULT_PROVIDER_CAPABILITY = ProviderCapability(
     native_tool_interference_risk=RELIABILITY_MEDIUM,
     needs_canary_by_default=False,
     failure_families=(),
-    notes=("default static provider capability",),
 )
 
 
@@ -58,7 +56,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_MEDIUM,
         needs_canary_by_default=False,
         failure_families=("response_missing", "submission_uncertain"),
-        notes=("default web provider",),
     ),
     "mimo": ProviderCapability(
         provider_id="mimo",
@@ -70,7 +67,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_MEDIUM,
         needs_canary_by_default=False,
         failure_families=("response_missing",),
-        notes=("kept as fallback for Research when no better sibling is available",),
     ),
     "stepfun": ProviderCapability(
         provider_id="stepfun",
@@ -82,7 +78,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_MEDIUM,
         needs_canary_by_default=False,
         failure_families=("response_missing", "submission_uncertain"),
-        notes=("stable sibling fallback",),
     ),
     "qwen": ProviderCapability(
         provider_id="qwen",
@@ -94,7 +89,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_HIGH,
         needs_canary_by_default=False,
         failure_families=("control_missing", "readiness_stale"),
-        notes=("web provider with more native-tool interference risk",),
     ),
     "glm": ProviderCapability(
         provider_id="glm",
@@ -106,7 +100,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_MEDIUM,
         needs_canary_by_default=False,
         failure_families=("response_missing",),
-        notes=("web provider",),
     ),
     "local": ProviderCapability(
         provider_id="local",
@@ -118,7 +111,6 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_LOW,
         needs_canary_by_default=False,
         failure_families=("transient",),
-        notes=("OpenAI-compatible local endpoint",),
     ),
 }
 

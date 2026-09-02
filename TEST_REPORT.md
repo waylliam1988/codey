@@ -34,12 +34,12 @@ web/ui:     added 500ms debounce and monotonic request ID tracking to provider_u
 
 Verification:
 
-- `pytest tests/test_browser_worker.py tests/test_changes.py tests/test_ghost_continuity.py tests/test_tool_result_delivery.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py` (`349 passed in 4.88s`)
-- `python -m ruff check codey tests` (passed; all checks passed)
-- `python -m compileall -q codey tests` (passed)
+- `pytest tests/test_browser_worker.py tests/test_changes.py tests/test_ghost_continuity.py tests/test_tool_result_delivery.py tests/test_provider_revival.py tests/test_server.py tests/test_ui.py tests/test_ui_architecture.py tests/test_workspace_revision.py tests/test_agent_effect_sandwich.py` (`391 passed, 1 skipped in 32.41s`)
+- `python -m ruff check codey tests tools/bootstrap_smoke.py` (passed; all checks passed)
+- `python -m compileall -q codey tests tools` (passed)
 - `pytest tests/test_architecture.py` (`72 passed in 10.70s`)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest` (`3435 passed, 4 skipped in 294.39s (0:04:54)`)
+- Full pytest suite: `pytest` (`3428 passed, 16 skipped in 295.09s (0:04:55)`)
 
 ## 0.5.5 Safe Replay Result Delivery Receipt v1 (2026-09-02)
 
@@ -83,7 +83,7 @@ Verification:
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed; multi-turn continuous delivery receipts)
 - `pytest tests/test_architecture.py` (`72 passed in 10.39s`)
 - `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`59 passed in 2.13s`)
-- `pytest` (`3427 passed, 4 skipped in 296.53s (0:04:56)`)
+- `pytest` (`3428 passed, 16 skipped in 295.09s (0:04:55)`)
 
 ## 0.5.4 Safe Tool Replay v1 (2026-09-01)
 
@@ -6083,7 +6083,7 @@ Production changes:
   `capability_for()`, and `rank_providers()`.
 - Capabilities describe static hints only: JSON reliability, coding/research/
   review fit, context budget hint, native-tool interference risk, canary hint,
-  failure families, and notes.
+  and bounded failure families.
 - `rank_providers()` is pure and deterministic. It preserves input order as the
   tie-breaker, keeps explicit `preferred` providers first, treats `avoid` as
   "rank later" rather than "disable", honors `excluded`, and returns defaults

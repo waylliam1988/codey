@@ -28,6 +28,18 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
             self.assertTrue(store.path_for(project).is_file())
             self.assertFalse((project / ".codey").exists())
 
+    def test_missing_revision_read_does_not_create_state_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkspaceRevisionStore(Path(td) / "state")
+
+            state = store.current_state(project)
+
+            self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION)
+            self.assertTrue(state.fingerprint.startswith("sha256:"))
+            self.assertFalse(store.path_for(project).parent.exists())
+
     def test_existing_corrupt_revision_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"

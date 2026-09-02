@@ -127,7 +127,7 @@ class SnapshotStore:
 
     def _lock_target(self, root: str | Path) -> Path:
         resolved_root = Path(root).expanduser().resolve()
-        return self.dir_for(resolved_root).parent / ".snapshots.lock"
+        return self.dir_for(resolved_root)
 
     def _baseline_path(self, root: str | Path, rel: str) -> Path:
         digest = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:32]
@@ -135,8 +135,13 @@ class SnapshotStore:
 
     def load(self, root: str | Path) -> tuple[dict[str, str | None], dict[str, str]]:
         resolved_root = Path(root).expanduser().resolve()
+        manifest_path = self.path_for(resolved_root)
+        try:
+            if not manifest_path.exists():
+                return {}, {}
+        except OSError:
+            return {}, {}
         with with_file_lock(self._lock_target(resolved_root)):
-            manifest_path = self.path_for(resolved_root)
             payload = read_json(
                 manifest_path,
                 max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
@@ -155,6 +160,10 @@ class SnapshotStore:
                     return {}, {}
                 if not isinstance(entry, dict):
                     return {}, {}
+                if set(entry) - {"baseline", "after_hash"}:
+                    return {}, {}
+                if "baseline" not in entry:
+                    return {}, {}
                 try:
                     path = _safe_join(resolved_root, rel)
                     canonical = path.relative_to(resolved_root).as_posix()
@@ -166,6 +175,9 @@ class SnapshotStore:
                 if entry.get("baseline") is None:
                     content = None
                 else:
+                    expected_body = self._baseline_path(resolved_root, rel).name
+                    if entry.get("baseline") != expected_body:
+                        return {}, {}
                     try:
                         body = self._baseline_path(resolved_root, rel).read_text(
                             encoding="utf-8"
@@ -212,7 +224,10 @@ class SnapshotStore:
                 self._update_manifest_locked(
                     resolved_root,
                     rel,
-                    lambda entry: {**entry, "baseline": None if content is None else body_path.name},
+                    lambda entry: {
+                        **entry,
+                        "baseline": None if content is None else body_path.name,
+                    },
                 )
             except Exception:
                 if written_body:
@@ -232,6 +247,12 @@ class SnapshotStore:
         """Drop one file from the snapshot; deletes the store when empty."""
 
         resolved_root = Path(root).expanduser().resolve()
+        snapshot_dir = self.dir_for(resolved_root)
+        try:
+            if not snapshot_dir.exists():
+                return
+        except OSError:
+            return
         body_path = self._baseline_path(resolved_root, rel)
         manifest_path = self.path_for(resolved_root)
 
@@ -256,9 +277,15 @@ class SnapshotStore:
 
     def delete(self, root: str | Path) -> None:
         resolved_root = Path(root).expanduser().resolve()
+        snapshot_dir = self.dir_for(resolved_root)
+        try:
+            if not snapshot_dir.exists():
+                return
+        except OSError:
+            return
         with with_file_lock(self._lock_target(resolved_root)):
             try:
-                shutil.rmtree(self.dir_for(resolved_root))
+                shutil.rmtree(snapshot_dir)
             except FileNotFoundError:
                 return
             except OSError:
@@ -303,14 +330,26 @@ def _remove_dir_if_empty(directory: Path) -> None:
         pass
 
 
-def _diff_and_counts(path: str, before: str | None, after: str | None) -> tuple[str, int, int]:
+def _diff_and_counts(
+    path: str,
+    before: str | None,
+    after: str | None,
+) -> tuple[str, int, int]:
     # splitlines() without keepends + lineterm="": keeping line endings here
     # made every content line double-spaced in the rendered diff.
     before_lines = [] if before is None else before.splitlines()
     after_lines = [] if after is None else after.splitlines()
     fromfile = "/dev/null" if before is None else f"a/{path}"
     tofile = "/dev/null" if after is None else f"b/{path}"
-    diff_lines = list(difflib.unified_diff(before_lines, after_lines, fromfile=fromfile, tofile=tofile, lineterm=""))
+    diff_lines = list(
+        difflib.unified_diff(
+            before_lines,
+            after_lines,
+            fromfile=fromfile,
+            tofile=tofile,
+            lineterm="",
+        )
+    )
     additions = 0
     deletions = 0
     for line in diff_lines:
@@ -465,13 +504,19 @@ class ChangeTracker:
         files = []
         diff_parts = []
         for snapshot in snapshots:
-            diff, additions, deletions = _diff_and_counts(snapshot.path, snapshot.before, snapshot.after)
-            files.append({
-                "path": snapshot.path,
-                "status": _status_for(snapshot.before, snapshot.after),
-                "additions": additions,
-                "deletions": deletions,
-            })
+            diff, additions, deletions = _diff_and_counts(
+                snapshot.path,
+                snapshot.before,
+                snapshot.after,
+            )
+            files.append(
+                {
+                    "path": snapshot.path,
+                    "status": _status_for(snapshot.before, snapshot.after),
+                    "additions": additions,
+                    "deletions": deletions,
+                }
+            )
             if diff:
                 diff_parts.append(diff)
 

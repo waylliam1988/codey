@@ -16,7 +16,7 @@
     - `Provider Revival`：限制代际递增上限 `min(old + 1, 99)`；精简 `previous_bundle` 为非递归最小回滚结构；持久化异常记录 warning。
     - `Ghost Continuity`：`_safe_prompt_text()` 全局接入 `looks_prompt_visible_secret()`，拦截 API key 与高熵敏感凭证进入 prompt 上下文。
     - `清理语义与 UI 稳定性`：`forget_conversation()` 汇总各 store 清理失败并在 `/api/new_chat` 中如实暴露 unpurged_stores；`provider_ui.js` 增加 500ms debounce 与单调请求序号比对。
-  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py`、`tests/test_browser_worker.py`、`tests/test_changes.py`、`tests/test_ghost_continuity.py`、`tests/test_provider_revival.py`。全量 pytest 通过：`3435 passed, 4 skipped in 294.39s (0:04:54)`。
+  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py`、`tests/test_browser_worker.py`、`tests/test_changes.py`、`tests/test_ghost_continuity.py`、`tests/test_provider_revival.py`。全量 pytest 通过：`3428 passed, 16 skipped in 295.09s (0:04:55)`。
 
 ## 0.5.4 - Safe Tool Replay v1
 
@@ -2673,7 +2673,7 @@
 
 - 新增 `codey/provider_capabilities.py`：静态内部 provider 能力注册表，记录
   JSON 可靠性、coding/research/review 适配度、上下文预算提示、网页原生工具干扰
-  风险、canary 提示、bounded failure families 和备注。
+  风险、canary 提示和 bounded failure families。
 - `rank_providers()` 是纯确定性排序 helper。它保留输入顺序作为 tie-break，
   明确 selected/preferred provider 优先，`avoid` 只表示“有替代时排后”，不会禁用，
   unknown provider 走 default capability。通用 hybrid 排序取 Research 和 Coding 中更严的适配度。

@@ -353,24 +353,12 @@ class KnowledgeIndex:
             "SELECT e.note_id,e.src,e.dst,e.kind,n.session_id,n.project,n.title FROM concept_edges e"
             " JOIN notes n ON n.id=e.note_id WHERE n.status='active'"
         )
-        session_id = str(session_id or "").strip()
-        with self._lock:
-            rows = []
-            if session_id:
-                rows.extend(
-                    self._conn.execute(
-                        select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
-                        (session_id, limit),
-                    ).fetchall()
-                )
-            if len(rows) < limit:
-                rows.extend(
-                    self._conn.execute(
-                        select_sql + " ORDER BY n.updated DESC LIMIT ?",
-                        (limit,),
-                    ).fetchall()
-                )
-        return _unique_rows([dict(r) for r in rows], limit, ("note_id", "src", "dst", "kind"))
+        return self._session_first_rows(
+            select_sql,
+            limit=limit,
+            session_id=session_id,
+            unique_keys=("note_id", "src", "dst", "kind"),
+        )
 
     def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[dict]:
         """Raw tag rows of active notes joined with note metadata.
@@ -386,6 +374,21 @@ class KnowledgeIndex:
             " FROM tags t JOIN notes n ON n.id=t.note_id"
             " WHERE n.status='active'"
         )
+        return self._session_first_rows(
+            select_sql,
+            limit=limit,
+            session_id=session_id,
+            unique_keys=("note_id", "tag"),
+        )
+
+    def _session_first_rows(
+        self,
+        select_sql: str,
+        *,
+        limit: int,
+        session_id: str,
+        unique_keys: tuple[str, ...],
+    ) -> list[dict]:
         session_id = str(session_id or "").strip()
         with self._lock:
             rows = []
@@ -403,7 +406,7 @@ class KnowledgeIndex:
                         (limit,),
                     ).fetchall()
                 )
-        return _unique_rows([dict(r) for r in rows], limit, ("note_id", "tag"))
+        return _unique_rows([dict(r) for r in rows], limit, unique_keys)
 
     def close(self) -> None:
         with self._lock:

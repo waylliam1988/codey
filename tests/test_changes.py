@@ -478,6 +478,42 @@ class ChangeTrackerTests(unittest.TestCase):
 
                 self.assertFalse(tracker.has_snapshots)
 
+    def test_manifest_entries_require_canonical_baseline_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("app.py")
+            manifest = store.path_for(root)
+            original = manifest.read_text(encoding="utf-8")
+
+            manifest.write_text(
+                original.replace('"baseline":', '"extra":true,"baseline":'),
+                encoding="utf-8",
+            )
+            with_extra_key = ChangeTracker(root, store)
+            self.assertFalse(with_extra_key.has_snapshots)
+
+            manifest.write_text(
+                '{"schema_version":1,"files":{"app.py":{"after_hash":"missing"}}}',
+                encoding="utf-8",
+            )
+            missing_baseline_key = ChangeTracker(root, store)
+            self.assertFalse(missing_baseline_key.has_snapshots)
+
+            manifest.write_text(
+                original.replace(
+                    store._baseline_path(root, "app.py").name,
+                    "wrong-baseline.txt",
+                ),
+                encoding="utf-8",
+            )
+            wrong_baseline_ref = ChangeTracker(root, store)
+            self.assertFalse(wrong_baseline_ref.has_snapshots)
+
     def test_snapshot_survives_abrupt_process_exit(self) -> None:
         script = (
             "import os,sys; from pathlib import Path; "
@@ -526,6 +562,32 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(len(before), num_files)
             for i in range(num_files):
                 self.assertEqual(before.get(f"file_{i}.txt"), f"content_{i}")
+
+    def test_snapshot_lock_file_lives_outside_snapshot_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+
+            store.put_baseline(root, "app.py", "old\n")
+
+            self.assertTrue((store.dir_for(root).parent / ".recovery.lock").is_file())
+            self.assertFalse((store.dir_for(root) / ".recovery.lock").exists())
+
+    def test_missing_manifest_load_does_not_create_lock_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+
+            before, hashes = store.load(root)
+
+            self.assertEqual(before, {})
+            self.assertEqual(hashes, {})
+            self.assertFalse(store.dir_for(root).parent.exists())
+
+            store.remove(root, "app.py")
+            store.delete(root)
+
+            self.assertFalse(store.dir_for(root).parent.exists())
 
     def test_capture_before_failure_cleans_up_orphaned_body(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:

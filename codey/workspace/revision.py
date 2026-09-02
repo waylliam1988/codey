@@ -185,6 +185,17 @@ class WorkspaceRevisionStore:
         ignored_paths: Iterable[str] = (),
     ) -> WorkspaceState:
         path = self.path_for(project)
+        try:
+            if not path.exists():
+                return WorkspaceState(
+                    revision=INITIAL_WORKSPACE_REVISION,
+                    fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
+                )
+        except OSError:
+            return WorkspaceState(
+                revision=INITIAL_WORKSPACE_REVISION,
+                fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
+            )
         with with_file_lock(path):
             return WorkspaceState(
                 revision=self._read_revision_unlocked(path),

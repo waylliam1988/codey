@@ -45,7 +45,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("--ok-dot:", STYLE_SOURCE)
         self.assertIn(".dot.ok", STYLE_SOURCE)
         self.assertIn("let providerStatus", PROVIDER_UI_JS)
-        self.assertIn("function refreshProviderStatus()", PROVIDER_UI_JS)
+        self.assertIn("function refreshProviderStatus(immediate = false)", PROVIDER_UI_JS)
         self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
         self.assertIn("providerStatus[id] ? 'ok' : ''", PROVIDER_UI_JS)
         self.assertIn(".provider-item.active .check", STYLE_SOURCE)
@@ -53,6 +53,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('<script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyProviderUI.init({", HTML)
         self.assertIn("window.CodeyProviderUI = {", PROVIDER_UI_JS)
+        self.assertIn("function applyProviderStatus(providers, isSSE = true)", HTML)
+        self.assertIn("window.CodeyProviderUI.applyStatus(providers, isSSE)", HTML)
+        self.assertIn("function refreshProviderStatus(immediate = false)", HTML)
+        self.assertIn("window.CodeyProviderUI.refreshStatus(immediate)", HTML)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')

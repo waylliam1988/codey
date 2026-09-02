@@ -16,7 +16,7 @@
     - `Provider Revival`: bounded generation counter to `min(old + 1, 99)`; slimmed `previous_bundle` to non-recursive minimal rollback representation; logged persistence failures.
     - `Ghost Continuity`: `_safe_prompt_text()` enforces `looks_prompt_visible_secret()` globally, preventing secrets and tokens from leaking into continuity projections.
     - `Session Cleanup & UI`: `forget_conversation()` collects per-store errors; `/api/new_chat` returns unpurged store warnings; `provider_ui.js` introduces 500ms debounce and monotonic request ID tracking.
-  - Testing & Verification: added unit tests in `tests/test_tool_result_delivery.py`, `tests/test_browser_worker.py`, `tests/test_changes.py`, `tests/test_ghost_continuity.py`, and `tests/test_provider_revival.py`. Full pytest suite passed with `3435 passed, 4 skipped in 294.39s (0:04:54)`.
+  - Testing & Verification: added unit tests in `tests/test_tool_result_delivery.py`, `tests/test_browser_worker.py`, `tests/test_changes.py`, `tests/test_ghost_continuity.py`, and `tests/test_provider_revival.py`. Full pytest suite passed with `3428 passed, 16 skipped in 295.09s (0:04:55)`.
 
 ## 0.5.4 - Safe Tool Replay v1
 
@@ -3247,8 +3247,8 @@
 
 - Added `codey/provider_capabilities.py`, a static internal registry of
   provider capability hints: JSON reliability, coding/research/review fit,
-  context budget hints, native-tool interference risk, canary hint, bounded
-  failure families, and notes.
+  context budget hints, native-tool interference risk, canary hint, and
+  bounded failure families.
 - `rank_providers()` is a pure deterministic ordering helper. It preserves
   input order as the tie-breaker, keeps an explicit preferred provider first,
   treats `avoid` as "rank later" rather than "disable", and returns default
