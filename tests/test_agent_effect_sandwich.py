@@ -25,8 +25,9 @@ from codey.agents.tool_execution import (
 )
 from codey.agents.tools import AgentToolFns
 from codey.app import server
+from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
-from codey.operations.task_run import TaskRunDeps, _recover_effects_for_resume, _start_run_operation
+from codey.operations.task_run import TaskRunDeps, _start_run_operation
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runtime.effect_records import (
@@ -259,15 +260,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
         deps = MagicMock()
         deps.runtime_effects = broken_store
-        ok, recovered = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id="s1",
             run_id="r1",
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertFalse(ok)
-        self.assertEqual(recovered, ())
+        self.assertFalse(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
 
     def test_record_intent_failure_in_loop_does_not_execute_tool_or_settle(self) -> None:
         from codey.agents.loop import _run_loop
@@ -813,8 +814,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertIsNone(proj_edit.intent.replay_args)
 
     def test_resume_recovers_pending_safe_tool_and_settles_with_replay_count(self) -> None:
-        from codey.operations.task_run import _recover_effects_for_resume
-
         # Write a dummy file to project_dir
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
@@ -831,14 +830,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         # Resume recovery
-        ok, recovered = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=self.session_id,
             run_id=self.run_id,
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(ok)
+        self.assertTrue(recovery.ok)
+        recovered = recovery.recovered_tool_outcomes
         self.assertEqual(len(recovered), 1)
         rec = recovered[0]
         self.assertEqual(rec.call.name, "read")
@@ -854,9 +854,55 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.replay_count, 1)
         self.assertEqual(proj.settlement.replayed_from_effect_id, eff_read)
 
-    def test_resume_does_not_replay_planning_readonly_effects(self) -> None:
-        from codey.operations.task_run import _recover_effects_for_resume
+    def test_resume_replay_uses_writer_profile_for_task_kind(self) -> None:
+        from codey.runtime.replay_policy import tool_replay_policy
 
+        test_file = self.project_dir / "target.txt"
+        test_file.write_text("file content to read", encoding="utf-8")
+
+        session = self._create_session(MockProvider())
+        call_read = ToolCall(name="read", args={"path": "target.txt"})
+        _, replay_read = evaluate_tool_call_policy(session, call_read, turn=1, tool_index=0)
+        record_tool_call_intent(
+            session,
+            call_read,
+            turn=1,
+            tool_index=0,
+            replay_decision=replay_read,
+        )
+
+        deps = SimpleNamespace(
+            runtime_effects=self.effects,
+            state=SimpleNamespace(runtime_effects=self.effects),
+        )
+        seen_profiles: list[str] = []
+
+        def fake_profile(task_kind: str, *, phase: str = "") -> SimpleNamespace:
+            self.assertEqual(task_kind, "hybrid")
+            self.assertEqual(phase, "writer")
+            return SimpleNamespace(name="custom_writer")
+
+        def fake_evaluate(call: ToolCall, **kwargs: Any) -> tuple[None, Any]:
+            seen_profiles.append(str(kwargs.get("permission_profile") or ""))
+            return None, tool_replay_policy(call.name)
+
+        with (
+            patch("codey.operations.recovery.profile_for_task_kind", side_effect=fake_profile),
+            patch("codey.operations.recovery.evaluate_tool_call_policy_for", side_effect=fake_evaluate),
+        ):
+            recovery = recover_effects_for_resume(
+                deps,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                project=str(self.project_dir),
+                task_kind="hybrid",
+            )
+
+        self.assertTrue(recovery.ok)
+        self.assertEqual(seen_profiles, ["custom_writer"])
+        self.assertEqual(len(recovery.recovered_tool_outcomes), 1)
+
+    def test_resume_does_not_replay_planning_readonly_effects(self) -> None:
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
 
@@ -876,7 +922,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             state=SimpleNamespace(runtime_effects=self.effects),
         )
 
-        ok, recovered = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=self.session_id,
             run_id=self.run_id,
@@ -884,8 +930,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_kind="planning_readonly",
         )
 
-        self.assertTrue(ok)
-        self.assertEqual(recovered, ())
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
         loaded = self.effects.load_effects(self.session_id, self.run_id)
         proj = next(p for p in loaded if p.intent.effect_id == eff_read)
         self.assertFalse(proj.is_pending)
@@ -894,8 +940,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.replay_count, 0)
 
     def test_resume_invalid_persisted_replay_args_fails_closed_without_recovery_failure(self) -> None:
-        from codey.operations.task_run import _recover_effects_for_resume
-
         eff_id = "eff_bad_replay_args"
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
@@ -927,7 +971,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             runtime_effects=self.effects,
             state=SimpleNamespace(runtime_effects=self.effects),
         )
-        ok, recovered = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=self.session_id,
             run_id=self.run_id,
@@ -935,8 +979,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task_kind="project",
         )
 
-        self.assertTrue(ok)
-        self.assertEqual(recovered, ())
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
         loaded = self.effects.load_effects(self.session_id, self.run_id)
         proj = next(p for p in loaded if p.intent.effect_id == eff_id)
         self.assertIsNone(proj.intent.replay_args)
@@ -946,8 +990,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.replay_count, 0)
 
     def test_resume_replay_propagates_cancellation(self) -> None:
-        from codey.operations.task_run import _recover_effects_for_resume
-
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
 
@@ -964,7 +1006,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         stop.set()
 
         with cancellation.scope(stop), self.assertRaises(cancellation.TaskCancelled):
-            _recover_effects_for_resume(
+            recover_effects_for_resume(
                 deps,
                 session_id=self.session_id,
                 run_id=self.run_id,
@@ -977,8 +1019,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(pending[0].intent.effect_id, eff_read)
 
     def test_resume_synthesizes_interrupted_for_pending_unsafe_tool(self) -> None:
-        from codey.operations.task_run import _recover_effects_for_resume
-
         session = self._create_session(MockProvider())
         call_edit = ToolCall(name="edit", args={"path": "foo.py", "content": "bar"})
         _, replay_edit = evaluate_tool_call_policy(session, call_edit, turn=1, tool_index=0)
@@ -988,14 +1028,15 @@ class AgentEffectSandwichTests(unittest.TestCase):
         deps.runtime_effects = self.effects
         deps.state = Mock()
 
-        ok, recovered = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=self.session_id,
             run_id=self.run_id,
             project=str(self.project_dir),
             task_kind="project",
         )
-        self.assertTrue(ok)
+        self.assertTrue(recovery.ok)
+        recovered = recovery.recovered_tool_outcomes
         self.assertEqual(len(recovered), 0)  # Unsafe is NEVER replayed
 
         loaded = self.effects.load_effects(self.session_id, self.run_id)

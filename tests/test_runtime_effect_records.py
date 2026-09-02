@@ -815,8 +815,8 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
 
         self.store.synthesize_interrupted(self.session_id, self.run_id, eff_id)
         summary = self.store.recovery_summary(self.session_id, self.run_id)
-        self.assertEqual(summary.retryable_reads, 1)
-        self.assertIn("Read action can be retried", summary.explanation_lines)
+        self.assertEqual(summary.retryable_read_only, 1)
+        self.assertIn("Read-only action can be retried", summary.explanation_lines)
 
     def test_replay_args_forbidden_on_unsafe_or_non_replayable_intent(self) -> None:
         # Unsafe tool_call
@@ -832,7 +832,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             )
         self.assertIn("replay_args only permitted for replayable safe tool calls", str(ctx.exception))
 
-        # Non-replayable safe tool (e.g. project_facts)
+        # Replay args remain forbidden for names outside the replayable runtime set.
         with self.assertRaises(RuntimeEffectError) as ctx:
             RuntimeEffectIntent(
                 effect_id="eff_facts_args",
@@ -969,10 +969,10 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
 
         summary = self.store.recovery_summary(self.session_id, self.run_id)
         self.assertEqual(summary.replayed_reads, 1)
-        self.assertEqual(summary.replayed_searches, 1)
+        self.assertEqual(summary.replayed_lookups, 1)
         self.assertEqual(summary.interrupted_writes, 1)
         self.assertIn("Read action was recovered", summary.explanation_lines)
-        self.assertIn("Search action was recovered", summary.explanation_lines)
+        self.assertIn("Lookup action was recovered", summary.explanation_lines)
         self.assertIn("Local write was interrupted and was not repeated", summary.explanation_lines)
 
 

@@ -2,6 +2,16 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Replay and recovery cleanup:
+  - Added `READ_ONLY_RUNTIME_TOOL_NAMES` to the coding tool contract and derived replay policy from runtime tool facts via `SAFE_RUNTIME_TOOL_NAMES` and `UNSAFE_RUNTIME_TOOL_NAMES`. Removed stale non-runtime names (`project_facts`, `project_map`, `write`, `knowledge_write`) from replay policy; unknown tools still fail closed.
+  - Collapsed replay argument allowed/required key tables into `ReplayArgSpec` plus `REPLAY_ARG_TOOL_NAMES`, with cross-module invariant tests tying replay policy, replay args, and runtime tool definitions together.
+  - Renamed `RecoverySummary.replayed_searches` to `replayed_lookups` and changed recovery detail copy to `Lookup action was recovered` / `Read-only action can be retried`, so `ls` and `references` are no longer described as search/read actions.
+  - Extracted resume effect recovery from `task_run.py` into `codey.operations.recovery`. `task_run.py` now gates on `recover_effects_for_resume()`, while replay execution derives the writer permission profile through `profile_for_task_kind(task_kind, phase="writer")`.
+  - Bounded `list_directory()` enumeration before sorting large directories using `LIST_MAX_DIR_ENTRIES` and `LIST_MAX_SUBDIR_ENTRIES`, with explicit truncation rows in the model-facing result.
+  - Verification: focused replay/recovery/tool-runtime set passed with `152 passed, 3 skipped, 51 subtests passed in 3.11s`; `tests/manual/safe_tool_replay_smoke.py --self-test` passed; full pytest passed with `3388 passed, 16 skipped, 1208 subtests passed in 284.52s (0:04:44)`.
+
 ## 0.5.4 - Safe Tool Replay v1
 
 - Safe Tool Replay & Resumption Recovery v1:

@@ -65,6 +65,8 @@ SEARCH_MAX_SCAN_BYTES = 16 * 1024 * 1024
 SEARCH_MAX_SCAN_FILES = DEFAULT_MAX_SCAN_FILES
 SEARCH_MAX_SCAN_DIRS = DEFAULT_MAX_SCAN_DIRS
 SEARCH_MAX_DIR_ENTRIES = DEFAULT_MAX_DIR_ENTRIES
+LIST_MAX_DIR_ENTRIES = DEFAULT_MAX_DIR_ENTRIES
+LIST_MAX_SUBDIR_ENTRIES = 50
 WRITE_MAX_FILE_BYTES = 512 * 1024
 READ_DEFAULT_LINES = 300
 READ_MAX_LINES = 600
@@ -700,26 +702,43 @@ def read_file(
     )
 
 
+def _bounded_directory_entries(path: Path, max_entries: int) -> tuple[list[Path], bool]:
+    entries: list[Path] = []
+    limited = False
+    for index, entry in enumerate(path.iterdir()):
+        cancellation.check()
+        if index >= max_entries:
+            limited = True
+            break
+        if not entry.name.startswith("."):
+            entries.append(entry)
+    return sorted(entries), limited
+
+
 def list_directory(root: Path, rel: str) -> ToolOutcome:
     cancellation.check()
     path = safe_join(root, rel)
     if not path.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     lines: list[str] = []
-    for entry in sorted(path.iterdir()):
+    entries, entry_limited = _bounded_directory_entries(path, LIST_MAX_DIR_ENTRIES)
+    for entry in entries:
         cancellation.check()
-        if entry.name.startswith("."):
-            continue
         if entry.is_dir():
             lines.append(f"{entry.name}/")
-            for sub in sorted(entry.iterdir())[:50]:
+            sub_entries, sub_limited = _bounded_directory_entries(entry, LIST_MAX_SUBDIR_ENTRIES)
+            for sub in sub_entries:
                 cancellation.check()
-                if sub.name.startswith("."):
-                    continue
                 tag = "/" if sub.is_dir() else ""
                 lines.append(f"  {sub.name}{tag}")
+            if sub_limited:
+                lines.append(
+                    f"  ... list_dir stopped after {LIST_MAX_SUBDIR_ENTRIES} directory entries"
+                )
         else:
             lines.append(entry.name)
+    if entry_limited:
+        lines.append(f"... list_dir stopped after {LIST_MAX_DIR_ENTRIES} directory entries")
     return ToolOutcome("\n".join(lines) if lines else "(empty)", True)
 
 

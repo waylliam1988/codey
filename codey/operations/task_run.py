@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from codey.agents.request import RecoveredToolOutcome
-from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.chat import run_chat_mode
 from codey.operations.conversation_plan import build_conversation_plan
@@ -44,6 +42,7 @@ from codey.operations.project_completion_flow import (
     run_project_mode,
 )
 from codey.operations.provider_preflight import connect_provider_with_preflight
+from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.research_flow import (
     ResearchFlowDeps,
     default_research_search_provider,
@@ -67,11 +66,6 @@ from codey.runtime.effects import (
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
     mark_terminal,
-)
-from codey.runtime.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
-    SENT_STATE_MAYBE_SENT,
-    SENT_STATE_SETTLED,
 )
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
@@ -248,17 +242,18 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         return operation_outcome_from_task_done_event(error_event)
 
-    recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+    recovered_tool_outcomes = ()
     try:
-        recover_ok, recovered_tool_outcomes = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=session_id,
             run_id=run_id,
             project=project or "",
             task_kind=baseline_task_kind,
         )
-        if not recover_ok:
+        if not recovery.ok:
             return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
+        recovered_tool_outcomes = recovery.recovered_tool_outcomes
         recovered_resume = bool(recovered_tool_outcomes)
         if recovered_resume:
             task_kind = "project"
@@ -1021,116 +1016,6 @@ def _start_run_operation(
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
         return False
-
-
-def _recover_effects_for_resume(
-    deps: TaskRunDeps,
-    *,
-    session_id: str,
-    run_id: str,
-    project: str,
-    task_kind: str,
-) -> tuple[bool, tuple[RecoveredToolOutcome, ...]]:
-    effects_store = deps.runtime_effects or getattr(deps.state, "runtime_effects", None)
-    if effects_store is None:
-        return True, ()
-    try:
-        pending = effects_store.pending_effects(session_id, run_id)
-    except Exception:
-        return False, ()
-
-    project_path = Path(project).expanduser().resolve() if project else None
-    is_writer_candidate = (
-        project_path is not None
-        and project_path.is_dir()
-        and task_kind in {"project", "hybrid"}
-    )
-
-    tool_fns = None
-    if is_writer_candidate:
-        tool_fns = DEFAULT_TOOL_FNS
-
-    from codey.agents.tool_execution import (
-        evaluate_tool_call_policy_for,
-        execute_information_tool_call,
-        policy_denied,
-    )
-
-    from codey.runtime.effect_records import (
-        EFFECT_CATEGORY_TOOL_CALL,
-        RuntimeEffectSettlement,
-        SETTLEMENT_STATUS_ERROR,
-        SETTLEMENT_STATUS_OK,
-    )
-    from codey.runtime.replay_policy import ReplayClass
-    from codey.runtime.safe_tool_replay import candidate_from_effect
-
-    recovered_outcomes: list[RecoveredToolOutcome] = []
-
-    for proj in pending:
-        intent = proj.intent
-        candidate = candidate_from_effect(proj)
-        replayed = False
-
-        if candidate is not None and is_writer_candidate and tool_fns is not None and project_path is not None:
-            try:
-                policy_decision, replay_decision = evaluate_tool_call_policy_for(
-                    candidate.call,
-                    project=project_path,
-                    permission_profile="coding_writer",
-                    approval_available=False,
-                    phase="writer",
-                )
-                if not policy_denied(policy_decision) and replay_decision.replay_class == ReplayClass.SAFE:
-                    outcome = execute_information_tool_call(project_path, tool_fns, candidate.call)
-                    status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
-                    error_code = str(outcome.error_code or ("" if outcome.ok else "error"))[:80]
-                    settlement = RuntimeEffectSettlement(
-                        effect_id=candidate.effect_id,
-                        effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                        session_id=session_id,
-                        run_id=run_id,
-                        status=status,
-                        error_code=error_code,
-                        sent_state=SENT_STATE_SETTLED,
-                        replay_class=ReplayClass.SAFE,
-                        replay_count=1,
-                        replayed_from_effect_id=candidate.effect_id,
-                    )
-                    effects_store.record_settlement(session_id, run_id, settlement)
-                    recovered_outcomes.append(
-                        RecoveredToolOutcome(
-                            call=candidate.call,
-                            outcome=outcome,
-                            turn=candidate.turn,
-                            tool_index=candidate.tool_index,
-                        )
-                    )
-                    replayed = True
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception:
-                replayed = False
-
-        if not replayed:
-            try:
-                sent_state = (
-                    SENT_STATE_MAYBE_SENT
-                    if intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
-                    else SENT_STATE_SETTLED
-                )
-                effects_store.synthesize_interrupted(
-                    session_id=session_id,
-                    run_id=run_id,
-                    effect_id=intent.effect_id,
-                    reason="interrupted_by_crash",
-                    replay_class=intent.replay_class,
-                    sent_state=sent_state,
-                )
-            except Exception:
-                return False, ()
-
-    return True, tuple(recovered_outcomes)
 
 
 def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, object]) -> None:

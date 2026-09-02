@@ -197,6 +197,11 @@ RESULT_TOOL_NAMES = {
     if definition.runtime_name is not None and definition.examples
 }
 SUPPORTED_RUNTIME_TOOL_NAMES = frozenset(RUNTIME_TOOL_DEFINITION_BY_NAME)
+READ_ONLY_RUNTIME_TOOL_NAMES = frozenset(
+    name
+    for name, definition in RUNTIME_TOOL_DEFINITION_BY_NAME.items()
+    if definition.read_only
+)
 INFORMATION_RUNTIME_TOOL_NAMES = frozenset(
     name
     for name, definition in RUNTIME_TOOL_DEFINITION_BY_NAME.items()

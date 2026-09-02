@@ -10,35 +10,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-SAFE_TOOL_NAMES = frozenset({
-    "read",
-    "ls",
-    "search",
-    "references",
-    "project_facts",
-    "project_map",
-})
+from codey.toolchain.definition import (
+    READ_ONLY_RUNTIME_TOOL_NAMES,
+    SUPPORTED_RUNTIME_TOOL_NAMES,
+)
 
-REPLAYABLE_SAFE_TOOL_NAMES = frozenset({
-    "read",
-    "ls",
-    "search",
-    "references",
-})
+SAFE_RUNTIME_TOOL_NAMES = READ_ONLY_RUNTIME_TOOL_NAMES
+UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
+REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES
 
 
 def is_replayable_safe_tool(tool_name: str) -> bool:
     """Return True if tool_name is in the replayable safe tools whitelist."""
     return str(tool_name or "").strip() in REPLAYABLE_SAFE_TOOL_NAMES
-
-
-UNSAFE_TOOL_NAMES = frozenset({
-    "edit",
-    "write",
-    "shell",
-    "run",
-    "knowledge_write",
-})
 
 
 class ReplayClass:
@@ -77,12 +61,12 @@ def tool_replay_policy(
             replay_class=ReplayClass.UNSAFE,
             reason="approval_required" if approval_required else "shell_command",
         )
-    if canonical_name in SAFE_TOOL_NAMES:
+    if canonical_name in SAFE_RUNTIME_TOOL_NAMES:
         return ReplayDecision(
             replay_class=ReplayClass.SAFE,
             reason="read_only_tool",
         )
-    if canonical_name in UNSAFE_TOOL_NAMES:
+    if canonical_name in UNSAFE_RUNTIME_TOOL_NAMES:
         return ReplayDecision(
             replay_class=ReplayClass.UNSAFE,
             reason="mutating_or_executing_tool",
@@ -114,8 +98,8 @@ __all__ = [
     "ReplayClass",
     "ReplayClassType",
     "ReplayDecision",
-    "SAFE_TOOL_NAMES",
-    "UNSAFE_TOOL_NAMES",
+    "SAFE_RUNTIME_TOOL_NAMES",
+    "UNSAFE_RUNTIME_TOOL_NAMES",
     "is_replayable_safe_tool",
     "provider_replay_policy",
     "repair_replay_policy",

@@ -7,6 +7,7 @@ from codey.runtime.models import ToolCall
 from codey.protocols import JsonToolCodec
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
+    READ_ONLY_RUNTIME_TOOL_NAMES,
     RESULT_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
     TOOL_DEFINITIONS,
@@ -57,6 +58,10 @@ class ToolDefinitionTests(unittest.TestCase):
         )
         self.assertEqual(SUPPORTED_RUNTIME_TOOL_NAMES, runtime_names)
         self.assertEqual(set(RESULT_TOOL_NAMES), runtime_names)
+        self.assertEqual(
+            READ_ONLY_RUNTIME_TOOL_NAMES,
+            {"ls", "read", "references", "search"},
+        )
         self.assertEqual(
             INFORMATION_RUNTIME_TOOL_NAMES,
             {"ls", "read", "references", "run", "search", "shell"},

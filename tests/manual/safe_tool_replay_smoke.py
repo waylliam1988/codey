@@ -32,7 +32,7 @@ from codey.agents.tool_execution import (
     evaluate_tool_call_policy,
     record_tool_call_intent,
 )
-from codey.operations.task_run import _recover_effects_for_resume
+from codey.operations.recovery import recover_effects_for_resume
 from codey.runtime.effect_records import (
     RuntimeEffectStore,
     SETTLEMENT_STATUS_OK,
@@ -256,22 +256,23 @@ def run_self_test() -> bool:
         assert len(pending_before) == 3, f"expected 3 pending effects, got {len(pending_before)}"
         print("[safe_tool_replay_smoke] successfully recorded 3 pending intents (2 safe, 1 unsafe).")
 
-        # 2. Trigger resume recovery via _recover_effects_for_resume
+        # 2. Trigger resume recovery.
         deps = Mock()
         deps.runtime_effects = effects_store
         deps.state = Mock()
         deps.state.runtime_effects = effects_store
 
-        ok, recovered_outcomes = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
             task_kind="project",
         )
-        assert ok, "expected _recover_effects_for_resume to succeed"
+        assert recovery.ok, "expected recover_effects_for_resume to succeed"
+        recovered_outcomes = recovery.recovered_tool_outcomes
         assert len(recovered_outcomes) == 2, f"expected 2 recovered outcomes, got {len(recovered_outcomes)}"
-        print(f"[safe_tool_replay_smoke] _recover_effects_for_resume produced {len(recovered_outcomes)} recovered outcomes.")
+        print(f"[safe_tool_replay_smoke] recover_effects_for_resume produced {len(recovered_outcomes)} recovered outcomes.")
 
         # Check outcomes contents
         read_outcome = next(r for r in recovered_outcomes if r.call.name == "read")
@@ -303,10 +304,10 @@ def run_self_test() -> bool:
         # 4. Check RecoverySummary
         summary = effects_store.recovery_summary(session_id, run_id)
         assert summary.replayed_reads == 1
-        assert summary.replayed_searches == 1
+        assert summary.replayed_lookups == 1
         assert summary.interrupted_writes == 1
         assert "Read action was recovered" in summary.explanation_lines
-        assert "Search action was recovered" in summary.explanation_lines
+        assert "Lookup action was recovered" in summary.explanation_lines
         assert "Local write was interrupted and was not repeated" in summary.explanation_lines
 
         # 5. Agent loop execution with recovered outcomes
@@ -397,14 +398,15 @@ def run_same_run_self_test() -> bool:
         deps.runtime_effects = effects_store
         deps.state = Mock()
         deps.state.runtime_effects = effects_store
-        ok, recovered_outcomes = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             deps,
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
             task_kind="project",
         )
-        assert ok, "expected resume recovery to succeed"
+        assert recovery.ok, "expected resume recovery to succeed"
+        recovered_outcomes = recovery.recovered_tool_outcomes
         assert len(recovered_outcomes) == 1, "expected one recovered read outcome"
 
         result = run_agent_loop(
@@ -526,21 +528,22 @@ def _run_live_resume_case(
         recover_deps.runtime_effects = effects_store
         recover_deps.state = Mock()
         recover_deps.state.runtime_effects = effects_store
-        ok, recovered_outcomes = _recover_effects_for_resume(
+        recovery = recover_effects_for_resume(
             recover_deps,
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
             task_kind="project",
         )
+        recovered_outcomes = recovery.recovered_tool_outcomes
         prompt_index = len(provider.prompts)
-        if not ok or not recovered_outcomes:
+        if not recovery.ok or not recovered_outcomes:
             return {
                 "ok": False,
                 "provider": provider_id,
                 "seconds": round(time.time() - started_at, 3),
                 "stage": "recovery",
-                "recover_ok": ok,
+                "recover_ok": recovery.ok,
                 "recovered_outcomes": len(recovered_outcomes),
             }
 
@@ -571,7 +574,7 @@ def _run_live_resume_case(
             "provider_sends": len(provider.prompts),
             "recovered_outcomes": len(recovered_outcomes),
             "replayed_reads": summary.replayed_reads,
-            "replayed_searches": summary.replayed_searches,
+            "replayed_lookups": summary.replayed_lookups,
             "interrupted_writes": summary.interrupted_writes,
             "resume_prompt_contains_recovered_read": "FEATURE_FLAG = False" in resume_prompt,
             "final_content_ok": _final_content_ok(project_dir),

@@ -804,7 +804,7 @@ python -B tests\manual\tool_args_repair_dialect_pressure_ab.py `
 self-test uses deterministic crash/resume state: two replayable safe intents
 (`read`, `search`) are replayed exactly once, one unsafe intent is interrupted,
 the agent loop resumes at the next turn with recovered tool results, and Run
-Details shows quiet recovery rows. The same-run self-test covers the production
+Details shows quiet read/lookup recovery rows. The same-run self-test covers the production
 continuation shape: one pending safe read is recovered in the same session/run,
 its tool result is injected exactly once, and the resumed loop completes
 `edit` + `run`.

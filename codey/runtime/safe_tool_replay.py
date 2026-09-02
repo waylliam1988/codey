@@ -4,7 +4,7 @@ Provides validation and candidate projection for pending safe information tool
 intents during crash recovery. Strictly adheres to canonical-only args without
 alias rewrites or repair fallbacks.
 
-Does NOT import agents, operations, ghost, provider, or toolchain runtime.
+Does not import agents, operations, ghost, provider, or tool executors.
 """
 
 from __future__ import annotations

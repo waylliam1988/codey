@@ -57,6 +57,35 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(read.ok)
         self.assertEqual(read.model_text, "ok")
 
+    def test_list_directory_stops_at_top_level_entry_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(4):
+                (root / f"file_{index}.txt").write_text("x", encoding="utf-8")
+
+            with mock.patch.object(tool_runtime, "LIST_MAX_DIR_ENTRIES", 3):
+                outcome = tool_runtime.list_directory(root, ".")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("list_dir stopped after 3 directory entries", outcome.model_text)
+        visible_files = [line for line in outcome.model_text.splitlines() if line.endswith(".txt")]
+        self.assertLessEqual(len(visible_files), 3)
+
+    def test_list_directory_stops_at_subdirectory_entry_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            child = root / "child"
+            child.mkdir()
+            for index in range(4):
+                (child / f"file_{index}.txt").write_text("x", encoding="utf-8")
+
+            with mock.patch.object(tool_runtime, "LIST_MAX_SUBDIR_ENTRIES", 2):
+                outcome = tool_runtime.list_directory(root, ".")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("child/", outcome.model_text)
+        self.assertIn("list_dir stopped after 2 directory entries", outcome.model_text)
+
     def test_tool_outcome_exposes_separate_projections(self) -> None:
         outcome = tool_runtime.ToolOutcome(
             "MODEL_ONLY",

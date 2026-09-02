@@ -18,7 +18,7 @@ from codey.runtime.models import ToolCall
 from codey.runtime.replay_policy import (
     REPLAYABLE_SAFE_TOOL_NAMES,
     ReplayClass,
-    SAFE_TOOL_NAMES,
+    SAFE_RUNTIME_TOOL_NAMES,
     is_replayable_safe_tool,
 )
 from codey.runtime.safe_tool_replay import (
@@ -34,16 +34,14 @@ class SafeToolReplayTests(unittest.TestCase):
         self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset(expected))
         for name in expected:
             self.assertTrue(is_replayable_safe_tool(name))
-            self.assertIn(name, SAFE_TOOL_NAMES)
+            self.assertIn(name, SAFE_RUNTIME_TOOL_NAMES)
 
-        # project_facts and project_map are safe, but NOT replayable in 0.5.4
-        self.assertIn("project_facts", SAFE_TOOL_NAMES)
-        self.assertIn("project_map", SAFE_TOOL_NAMES)
+        self.assertNotIn("project_facts", SAFE_RUNTIME_TOOL_NAMES)
+        self.assertNotIn("project_map", SAFE_RUNTIME_TOOL_NAMES)
         self.assertFalse(is_replayable_safe_tool("project_facts"))
         self.assertFalse(is_replayable_safe_tool("project_map"))
 
-        # Unsafe tools are not replayable
-        for name in ("edit", "write", "run", "shell", "unknown_tool", ""):
+        for name in ("edit", "write", "run", "shell", "knowledge_write", "unknown_tool", ""):
             self.assertFalse(is_replayable_safe_tool(name))
 
     def test_validate_replay_args_canonical_success(self) -> None:

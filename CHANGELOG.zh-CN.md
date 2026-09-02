@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased
+
+- Replay 与恢复清理：
+  - 在 coding tool contract 中新增 `READ_ONLY_RUNTIME_TOOL_NAMES`，并让 replay policy 从 runtime tool 事实派生 `SAFE_RUNTIME_TOOL_NAMES` 与 `UNSAFE_RUNTIME_TOOL_NAMES`。移除 replay policy 中的非 runtime 历史名称（`project_facts`、`project_map`、`write`、`knowledge_write`）；未知工具仍然 fail closed。
+  - 将 replay 参数 allowed/required 双表收束为 `ReplayArgSpec` 与 `REPLAY_ARG_TOOL_NAMES`，并补上 replay policy、replay args、runtime tool definition 的跨模块 invariant 测试。
+  - 将 `RecoverySummary.replayed_searches` 改名为 `replayed_lookups`，恢复详情文案改为 `Lookup action was recovered` / `Read-only action can be retried`，避免把 `ls` 与 `references` 误写成 search/read。
+  - 将 resume effect recovery 从 `task_run.py` 抽到 `codey.operations.recovery`。`task_run.py` 只通过 `recover_effects_for_resume()` 做前置门控；重放执行通过 `profile_for_task_kind(task_kind, phase="writer")` 派生 writer 权限 profile。
+  - `list_directory()` 在排序大目录前先按 `LIST_MAX_DIR_ENTRIES` 与 `LIST_MAX_SUBDIR_ENTRIES` 限界枚举，并在模型可见结果中显式标记截断。
+  - 验证：聚焦 replay/recovery/tool-runtime 集合通过：`152 passed, 3 skipped, 51 subtests passed in 3.11s`；`tests/manual/safe_tool_replay_smoke.py --self-test` 通过；全量 pytest 通过：`3388 passed, 16 skipped, 1208 subtests passed in 284.52s (0:04:44)`。
+
 ## 0.5.4 - Safe Tool Replay v1
 
 - 安全工具重放与崩溃恢复 v1：

@@ -448,10 +448,10 @@ class RuntimeEffectProjection:
 class RecoverySummary:
     interrupted_writes: int = 0
     unconfirmed_provider_calls: int = 0
-    retryable_reads: int = 0
+    retryable_read_only: int = 0
     interrupted_repairs: int = 0
     replayed_reads: int = 0
-    replayed_searches: int = 0
+    replayed_lookups: int = 0
     explanation_lines: tuple[str, ...] = ()
 
 
@@ -771,10 +771,10 @@ class RuntimeEffectStore:
         effects = self.load_effects(session_id, run_id)
         interrupted_writes = 0
         unconfirmed_provider_calls = 0
-        retryable_reads = 0
+        retryable_read_only = 0
         interrupted_repairs = 0
         replayed_reads = 0
-        replayed_searches = 0
+        replayed_lookups = 0
 
         for proj in effects:
             intent = proj.intent
@@ -786,7 +786,7 @@ class RuntimeEffectStore:
                 if intent.tool_name == "read":
                     replayed_reads += 1
                 elif intent.tool_name in {"ls", "search", "references"}:
-                    replayed_searches += 1
+                    replayed_lookups += 1
                 continue
 
             if settlement.status != SETTLEMENT_STATUS_INTERRUPTED:
@@ -798,17 +798,17 @@ class RuntimeEffectStore:
                 interrupted_repairs += 1
             elif intent.effect_category == EFFECT_CATEGORY_TOOL_CALL:
                 if intent.replay_class == ReplayClass.SAFE:
-                    retryable_reads += 1
+                    retryable_read_only += 1
                 else:
                     interrupted_writes += 1
 
         lines: list[str] = []
         if replayed_reads > 0:
             lines.append("Read action was recovered")
-        if replayed_searches > 0:
-            lines.append("Search action was recovered")
-        if retryable_reads > 0:
-            lines.append("Read action can be retried")
+        if replayed_lookups > 0:
+            lines.append("Lookup action was recovered")
+        if retryable_read_only > 0:
+            lines.append("Read-only action can be retried")
         if interrupted_writes > 0:
             lines.append("Local write was interrupted and was not repeated")
         if unconfirmed_provider_calls > 0:
@@ -819,10 +819,10 @@ class RuntimeEffectStore:
         return RecoverySummary(
             interrupted_writes=interrupted_writes,
             unconfirmed_provider_calls=unconfirmed_provider_calls,
-            retryable_reads=retryable_reads,
+            retryable_read_only=retryable_read_only,
             interrupted_repairs=interrupted_repairs,
             replayed_reads=replayed_reads,
-            replayed_searches=replayed_searches,
+            replayed_lookups=replayed_lookups,
             explanation_lines=tuple(lines),
         )
 

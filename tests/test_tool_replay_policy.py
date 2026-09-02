@@ -7,18 +7,23 @@ import unittest
 from codey.runtime.replay_policy import (
     REPLAYABLE_SAFE_TOOL_NAMES,
     ReplayClass,
-    UNSAFE_TOOL_NAMES,
+    SAFE_RUNTIME_TOOL_NAMES,
+    UNSAFE_RUNTIME_TOOL_NAMES,
     is_replayable_safe_tool,
     provider_replay_policy,
     repair_replay_policy,
     tool_replay_policy,
 )
+from codey.runtime.replay_args import REPLAY_ARG_TOOL_NAMES
+from codey.toolchain.definition import (
+    READ_ONLY_RUNTIME_TOOL_NAMES,
+    SUPPORTED_RUNTIME_TOOL_NAMES,
+)
 
 
 class ToolReplayPolicyTests(unittest.TestCase):
     def test_safe_tools_are_classified_as_safe(self) -> None:
-        safe_tools = ["read", "ls", "search", "references", "project_facts", "project_map"]
-        for tool_name in safe_tools:
+        for tool_name in SAFE_RUNTIME_TOOL_NAMES:
             with self.subTest(tool=tool_name):
                 decision = tool_replay_policy(tool_name)
                 self.assertEqual(decision.replay_class, ReplayClass.SAFE)
@@ -28,16 +33,15 @@ class ToolReplayPolicyTests(unittest.TestCase):
         self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset({"read", "ls", "search", "references"}))
         for tool in ("read", "ls", "search", "references"):
             self.assertTrue(is_replayable_safe_tool(tool))
-        # project_facts and project_map are safe, but not replayable in 0.5.4
+        # Context/research names are not coding runtime tools.
         self.assertFalse(is_replayable_safe_tool("project_facts"))
         self.assertFalse(is_replayable_safe_tool("project_map"))
-        # Unsafe tools are not replayable
-        for tool in UNSAFE_TOOL_NAMES:
+        self.assertFalse(is_replayable_safe_tool("knowledge_write"))
+        for tool in UNSAFE_RUNTIME_TOOL_NAMES:
             self.assertFalse(is_replayable_safe_tool(tool))
 
     def test_unsafe_tools_are_classified_as_unsafe(self) -> None:
-        unsafe_tools = ["edit", "write", "shell", "run", "knowledge_write"]
-        for tool_name in unsafe_tools:
+        for tool_name in UNSAFE_RUNTIME_TOOL_NAMES:
             with self.subTest(tool=tool_name):
                 decision = tool_replay_policy(tool_name)
                 self.assertEqual(decision.replay_class, ReplayClass.UNSAFE)
@@ -48,12 +52,33 @@ class ToolReplayPolicyTests(unittest.TestCase):
         self.assertEqual(decision.reason, "mutating_or_executing_tool")
 
     def test_unknown_tool_defaults_to_unsafe(self) -> None:
-        unknown_tools = ["weird_plugin", "custom_exec", "rm_rf", ""]
+        unknown_tools = [
+            "weird_plugin",
+            "custom_exec",
+            "rm_rf",
+            "project_facts",
+            "project_map",
+            "write",
+            "knowledge_write",
+            "",
+        ]
         for tool_name in unknown_tools:
             with self.subTest(tool=tool_name):
                 decision = tool_replay_policy(tool_name)
                 self.assertEqual(decision.replay_class, ReplayClass.UNSAFE)
                 self.assertEqual(decision.reason, "unknown_tool")
+
+    def test_runtime_tool_policy_invariants(self) -> None:
+        self.assertEqual(SAFE_RUNTIME_TOOL_NAMES, READ_ONLY_RUNTIME_TOOL_NAMES)
+        self.assertEqual(
+            UNSAFE_RUNTIME_TOOL_NAMES,
+            SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES,
+        )
+        self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, REPLAY_ARG_TOOL_NAMES)
+        self.assertEqual(
+            SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES - UNSAFE_RUNTIME_TOOL_NAMES,
+            frozenset(),
+        )
 
     def test_policy_denied_overrides_to_unsafe_denied(self) -> None:
         decision = tool_replay_policy("read", policy_denied=True)

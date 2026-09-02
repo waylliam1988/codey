@@ -244,7 +244,7 @@ row, even if a stale non-terminal snapshot exists on disk.
 
 Optional `Recovery` rows (0.5.2 / 0.5.4) explain settled interrupted external effects
 and recovered safe actions only after runtime recovery has written a settlement. Allowed copy:
-`Read action was recovered`, `Search action was recovered`, `Read action can be retried`,
+`Read action was recovered`, `Lookup action was recovered`, `Read-only action can be retried`,
 `Local write was interrupted and was not repeated`, `Provider response was not confirmed`,
 and `Repair round was interrupted`. Do not show pending in-flight effects, effect ids,
 provider ids, replay class, or runtime record names.

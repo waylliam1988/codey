@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from codey.runtime.replay_policy import is_replayable_safe_tool
 from codey.tool_args_repair import ToolArgLimits
@@ -10,18 +11,33 @@ from codey.tool_args_repair import ToolArgLimits
 REPLAY_ARG_TEXT_MAX_CHARS = 1000
 REPLAY_READ_MAX_LINES = ToolArgLimits().read_max_lines
 _REPLAY_READ_MAX_OFFSET = 1_000_000_000
-_REPLAY_ARG_ALLOWED_KEYS = {
-    "read": frozenset({"path", "offset", "limit"}),
-    "ls": frozenset({"path"}),
-    "search": frozenset({"path", "query"}),
-    "references": frozenset({"path", "symbol"}),
+
+
+@dataclass(frozen=True)
+class ReplayArgSpec:
+    allowed: frozenset[str]
+    required: frozenset[str]
+
+
+_REPLAY_ARG_SPECS = {
+    "read": ReplayArgSpec(
+        allowed=frozenset({"path", "offset", "limit"}),
+        required=frozenset({"path"}),
+    ),
+    "ls": ReplayArgSpec(
+        allowed=frozenset({"path"}),
+        required=frozenset({"path"}),
+    ),
+    "search": ReplayArgSpec(
+        allowed=frozenset({"path", "query"}),
+        required=frozenset({"path", "query"}),
+    ),
+    "references": ReplayArgSpec(
+        allowed=frozenset({"path", "symbol"}),
+        required=frozenset({"path", "symbol"}),
+    ),
 }
-_REPLAY_ARG_REQUIRED_KEYS = {
-    "read": frozenset({"path"}),
-    "ls": frozenset({"path"}),
-    "search": frozenset({"path", "query"}),
-    "references": frozenset({"path", "symbol"}),
-}
+REPLAY_ARG_TOOL_NAMES = frozenset(_REPLAY_ARG_SPECS)
 
 
 def _validate_replay_text_arg(value: object, key: str) -> str:
@@ -76,12 +92,13 @@ def validate_replay_args_shape(
             raise ValueError(f"invalid replay arg key: {key}")
         keys.add(key)
 
-    allowed = _REPLAY_ARG_ALLOWED_KEYS[canonical_name]
-    required = _REPLAY_ARG_REQUIRED_KEYS[canonical_name]
-    unknown = sorted(keys - allowed)
+    spec = _REPLAY_ARG_SPECS.get(canonical_name)
+    if spec is None:
+        raise ValueError(f"tool has no replay arg schema: {canonical_name}")
+    unknown = sorted(keys - spec.allowed)
     if unknown:
         raise ValueError(f"unsupported replay arg fields: {', '.join(unknown)}")
-    missing = sorted(required - keys)
+    missing = sorted(spec.required - keys)
     if missing:
         raise ValueError(f"missing replay arg fields: {', '.join(missing)}")
 
@@ -107,6 +124,7 @@ def validate_replay_args_shape(
 
 
 __all__ = [
+    "REPLAY_ARG_TOOL_NAMES",
     "REPLAY_ARG_TEXT_MAX_CHARS",
     "REPLAY_READ_MAX_LINES",
     "validate_replay_args_shape",
