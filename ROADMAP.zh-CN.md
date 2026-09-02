@@ -2737,7 +2737,7 @@ NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 
 ```text
 Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
-Research untrusted source wrapper -> 0.5.6 prompt-surface / injection hardening
+Research untrusted source wrapper -> 0.5.7 Research source rendering A/B，胜出才接默认渲染，否则删除或留在 manual harness
 Research bounded follow-up / source_connector_done 收口 -> 0.5.7，A/B 证明后推广，否则删除或留在 manual harness
 TaskRunner convergence point -> 0.5 横向架构线，按真实 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
@@ -2749,7 +2749,7 @@ Provider/protocol outcome learning -> 0.5.8，不回流 evidence / permission / 
 | finding | 0.5 归属 | 文档原则 |
 | --- | --- | --- |
 | Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
-| Research source content 进入模型后的 prompt-injection 边界 | 0.5.6 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
+| Research source content 进入模型后的 prompt-injection 边界 | 0.5.7 Research source rendering A/B；胜出才改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality；未胜出的 treatment 不留 production 接线 |
 | Research bounded follow-up / source_connector_done 0.4 实验收口 | 0.5.7 Research Follow-up Quality Closure | production path 必须有 release gate 消费者；无消费者的 arm 删除或留在 manual harness |
 | TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
@@ -2764,7 +2764,9 @@ Provider/protocol outcome learning -> 0.5.8，不回流 evidence / permission / 
 0.4.19 收口的 NetworkPolicy 允许状态命名，不再作为
 0.5 能力项；后续只在 regression test 或 release evidence 中维护。
 
-Research untrusted source wrapper 的顺序必须是 A/B-first：
+Research untrusted source wrapper 的版本归属固定为 0.5.7。0.5.6 只让现有
+Research source 内容进入 prompt surface 观测，不新增 wrapper 生产代码、不预埋
+默认关闭的 renderer。0.5.7 的顺序必须是 A/B-first：
 
 ```text
 1. 写 deterministic malicious-source fixture 和 scorer，先跑旧生产 prompt 作为 baseline。
@@ -2774,8 +2776,9 @@ Research untrusted source wrapper 的顺序必须是 A/B-first：
 5. 改生产后重跑 deterministic tests + 同一 Research live smoke，作为 release 证据。
 ```
 
-也就是说，不先把 wrapper 直接塞进生产 prompt；先用 A/B 证明它减少 prompt-injection
-风险且没有明显损害 Research 质量。
+也就是说，不先把 wrapper 直接塞进生产 prompt，也不把 default-off treatment 停放在
+`codey/research/`。A/B 胜出就同版收成默认渲染；不胜出就删除 treatment 或只保留
+manual harness 复盘材料。
 
 ### 0.4.x Stabilization Track
 
@@ -3880,27 +3883,6 @@ model_tool_contract_hash 覆盖最终模型可见文本
 RunTrace 同时记录 controller_action_contract_hash / runtime_tool_contract_hash
 ```
 
-本版还承接 Research untrusted source wrapper 的验证，但必须按 A/B-first 顺序落地：
-
-```text
-tests/fixtures/research_prompt_injection/
-tests/test_research_source_rendering.py
-tests/manual/research_source_rendering_ab.py
-codey/research/source_rendering.py（只有 A/B 通过后才接入默认 open_url 渲染）
-```
-
-wrapper 只能改变网页来源内容的模型可见边界，不改变 Research planner、tool schema、
-EvidenceLedger、citation contract 或 completion gate。默认生产路径必须先保持旧渲染，
-直到 baseline / treatment 都有 result JSON、journal 和 transcript，且 treatment 证明：
-
-```text
-source injection text 没有变成 tool action
-source body 被明确标记为 data / untrusted source
-evidence quality 不降
-source coverage 不降
-completion honesty 不降
-```
-
 直接收益：
 
 ```text
@@ -3936,16 +3918,16 @@ research open_url / knowledge_write 不被改名成 read / write
 
 ### A/B
 
-默认 parity 不需要 A/B。若本版顺手压缩工具说明、改变模型可见文案，或启用
-Research untrusted source wrapper 的生产默认渲染，必须先走
-`tests/manual/tool_protocol_portability_ab.py` 或专用 Research source-rendering A/B。
+默认 parity 不需要 A/B。若本版顺手压缩工具说明或改变模型可见文案，必须先走
+`tests/manual/tool_protocol_portability_ab.py`。Research untrusted source wrapper
+不属于 0.5.6 生产范围；它归入 0.5.7 的 Research source rendering A/B。
 
-## 0.5.7 - Research Follow-up Quality Closure + Source Finalizer A/B v1
+## 0.5.7 - Research Follow-up Quality Closure + Source Rendering/Finalizer A/B v1
 
 状态：计划。目标是把 0.4 的 bounded Research follow-up 和
-`source_connector_done` batch/checklist 实验收成明确结论：有可测净收益的部分进入
-默认 Research finalizer；没有消费者或收益不稳的 arm 删除，或继续停留在 manual
-harness，不进入 production path。
+`source_connector_done` batch/checklist 实验收成明确结论，并正式验证
+Research untrusted source wrapper：有可测净收益的部分进入默认 Research path；
+没有消费者或收益不稳的 arm 删除，或继续停留在 manual harness，不进入 production path。
 
 ### 做什么
 
@@ -3954,10 +3936,13 @@ harness，不进入 production path。
 ```text
 codey/research/followup_quality.py
 codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer）
+codey/research/source_rendering.py（只有 A/B 胜出才同版新增/保留并接入默认 open_url 渲染；不胜出不创建或删除）
 tests/test_research_followup_quality.py
 tests/test_source_connector_done_scorer.py
+tests/test_research_source_rendering.py
 tests/manual/research_followup_quality_ab.py
 tests/manual/source_connector_done_ab.py
+tests/manual/research_source_rendering_ab.py
 ```
 
 闭环对象：
@@ -3972,6 +3957,14 @@ source_connector_done batch/checklist：
   不直接推广旧 arm
   先用 deterministic scorer 和 live A/B 比较 done quality / citation quality / provider stalls
   胜出才收成窄的 source finalizer；不胜出就删除生产接线，只保留 manual 复盘材料
+
+Research untrusted source wrapper：
+  只改变 source-content rendering，不改 planner、tool schema、EvidenceLedger、citation contract 或 completion gate
+  baseline / treatment 都必须落 result JSON、journal 和 transcript
+  source injection text 不能变成 tool action
+  source body 必须被明确标记为 data / untrusted source
+  evidence quality / source coverage / completion honesty 不能下降
+  胜出才同版接入默认 open_url 渲染；不胜出就删除 treatment 或保留 manual-only
 ```
 
 真实消费者：
@@ -3987,6 +3980,7 @@ manual A/B journal 继续保存对照结果，但不能被 production RunTrace i
 ```text
 Research follow-up 不再只是“安全可跑”，而是有 proof-quality 结论
 0.4 的 source_connector_done 实验要么变成窄而有证据的默认 finalizer，要么退出生产路线
+Research source prompt-injection hardening 要么通过 A/B 进入默认 source rendering，要么不留 production 接线
 减少 manual harness / production path 之间的重复指标和悬空接线
 ```
 
@@ -3996,6 +3990,7 @@ Research follow-up 不再只是“安全可跑”，而是有 proof-quality 结�
 - 不做后台递归 Research。
 - 不让 batch/checklist 未经 A/B 进入默认 finalizer。
 - 不改变 EvidenceLedger、citation contract 或 completion gate，除非 treatment 胜出且有 release gate。
+- 不把 default-off source wrapper 停放在 production module；实验必须 promote-or-delete。
 - 不把 provider-specific prompt 当通用 Research 策略。
 - 不把 raw webpage body、raw transcript、prompt、reply 写入生产 trace。
 
@@ -4006,6 +4001,7 @@ ResearchPipeline 只调用 choose_followup_materials() / evaluate_source_finaliz
 followup_quality.py 只做纯 scorer / selection，不调用 provider/browser/tool runtime
 source_connector_done manual arm 与 release gate 共用 scorer，避免重复指标
 Research finalizer 只消费结构化 decision，不扫 A/B journal 原文
+source wrapper renderer 只有在 A/B 胜出并成为默认路径时才进入 codey/research/
 ```
 
 ### 验证
@@ -4016,6 +4012,8 @@ fresh URL whitelist / max rounds / max sources 边界保持
 scorer deterministic 且不依赖 provider
 source_connector_done treatment 不能降低 citation locator 命中率
 source_connector_done treatment 不能增加 unsupported claims
+source wrapper treatment 不能把网页中的指令性文本转成 tool action
+source wrapper treatment 不能降低 evidence quality / source coverage / completion honesty
 provider stalls / extra provider sends 必须计入 gate
 未通过 A/B 的 arm 不得被 production ResearchPipeline import
 ```
@@ -4043,6 +4041,8 @@ sent_chars
 如果 bounded follow-up 质量收益稳定：保留默认 evidence-only follow-up，并只调整证明有收益的 selection/merge 点
 如果 source_connector_done batch/checklist 胜出：收成最窄 production finalizer，旧 batch/checklist harness 退到 manual
 如果 source_connector_done 没胜出：删除或继续 manual-only，不留下 production 接线
+如果 source wrapper 胜出：同版接入默认 open_url/source-content rendering，并删除 baseline-only 临时分支
+如果 source wrapper 没胜出：删除 treatment 或继续 manual-only，不留下 `codey/research/source_rendering.py` 空接线
 ```
 
 ## 0.5.8 - Provider / Protocol Affinity + Repair Outcome Learning v1
@@ -5048,10 +5048,11 @@ Safe read/search replay -> 0.5.4：
   收口方式：0.5.4 在 0.5.3 canonical args 后按 persisted safe replay_args 自动 replay；
     unsafe replay count 必须始终为 0。
 
-Research untrusted source wrapper -> 0.5.6：
-  当前状态：计划项，不默认生产渲染。
-  收口方式：0.5.6 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
-    evidence quality / source coverage / completion honesty，才改默认 source rendering。
+Research untrusted source wrapper -> 0.5.7：
+  当前状态：计划项，不默认生产渲染，也不在 0.5.6 停放 default-off production renderer。
+  收口方式：0.5.7 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
+    evidence quality / source coverage / completion honesty，且 injection 文本没有变成 tool action，
+    才同版改默认 source rendering；否则删除 treatment 或保留 manual-only。
 ```
 
 ## Adapter 自修复 prompt 分层（后续）
