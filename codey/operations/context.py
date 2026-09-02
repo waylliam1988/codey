@@ -38,6 +38,7 @@ class RunFrame:
     preflight_switches: int
     trace: Any | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+    recovered_tool_result_batch_id: str = ""
 
 
 @dataclass

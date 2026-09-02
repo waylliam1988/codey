@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from codey.agents.context import load_project_instructions
 from codey.agents.prompt_context import (
-    append_coding_context,
     initial_reply,
     send_prompt,
+)
+from codey.agents.result_delivery import (
+    deliver_recovered_results,
+    deliver_turn_results,
 )
 from codey.agents.protocol import protocol_repair_prompt
 from codey.agents.request import (
@@ -173,6 +176,7 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         session_id=request.session_id,
         run_id=request.run_id,
         runtime_effects=request.runtime_effects,
+        tool_result_delivery=request.tool_result_delivery,
     )
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
@@ -369,6 +373,7 @@ def _run_loop(
                     call=call,
                     outcome=outcome,
                     tool_index=tool_index,
+                    effect_id=effect_id,
                 )
             finally:
                 if effect_id:
@@ -423,19 +428,12 @@ def _run_loop(
                         turn,
                     )
 
-                formatted = session.codec.format_results(turn_state.results)
                 protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
-                next_prompt = append_coding_context(
+                reply = deliver_turn_results(
                     session,
-                    f"{formatted}{protocol_reminder}",
-                )
-                reply = send_prompt(
-                    session,
-                    next_prompt,
-                    restart_request=(
-                        "Continue the unfinished task using the latest local tool results below.\n\n"
-                        f"{next_prompt}"
-                    ),
+                    turn_state,
+                    turn,
+                    protocol_reminder=protocol_reminder,
                 )
                 _report_reply(session, turn + 1, reply)
                 continue
@@ -593,18 +591,7 @@ def _run_loop(
                 turn,
             )
 
-        next_prompt = append_coding_context(
-            session,
-            session.codec.format_results(turn_state.results),
-        )
-        reply = send_prompt(
-            session,
-            next_prompt,
-            restart_request=(
-                "Continue the unfinished task using the latest local tool results below.\n\n"
-                f"{next_prompt}"
-            ),
-        )
+        reply = deliver_turn_results(session, turn_state, turn)
         _report_reply(session, turn + 1, reply)
 
     return _finish(session, "(max turns reached)", "max_turns", session.max_turns)
@@ -627,12 +614,9 @@ def run(request: AgentRequest) -> RunResult:
             call=rec.call,
             outcome=rec.outcome,
             tool_index=rec.tool_index,
+            effect_id=rec.effect_id,
         )
 
-    next_prompt = append_coding_context(
-        session,
-        session.codec.format_results(turn_state.results),
-    )
     start_turn = max((rec.turn for rec in recovered_outcomes), default=1) + 1
     if start_turn > session.max_turns:
         emit(
@@ -645,13 +629,10 @@ def run(request: AgentRequest) -> RunResult:
             "max_turns",
             session.max_turns,
         )
-    reply = send_prompt(
+    reply = deliver_recovered_results(
         session,
-        next_prompt,
-        restart_request=(
-            "Continue the unfinished task using the latest local tool results below.\n\n"
-            f"{next_prompt}"
-        ),
+        turn_state,
+        recovered_batch_id=request.recovered_tool_result_batch_id,
     )
     return _run_loop(session, reply, start_turn=start_turn)
 

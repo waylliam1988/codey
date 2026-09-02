@@ -15,6 +15,7 @@ from typing import Mapping
 from codey.runtime.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
+    RuntimeEffectIntent,
     RuntimeEffectProjection,
 )
 from codey.runtime.models import ToolCall
@@ -80,18 +81,14 @@ def replay_args_for_tool_call(call: ToolCall) -> dict[str, object] | None:
         return None
 
 
-def candidate_from_effect(
-    projection: RuntimeEffectProjection,
+def candidate_from_intent(
+    intent: RuntimeEffectIntent,
 ) -> SafeToolReplayCandidate | None:
-    """Derive a safe tool replay candidate from a pending effect projection.
+    """Derive a safe tool replay candidate directly from an effect intent.
 
-    Returns None if the effect is not pending, not a safe tool call, has no
-    valid canonical replay args, or is otherwise non-replayable.
+    Returns None if the intent is not a safe tool call, has no valid canonical
+    replay args, or is otherwise non-replayable.
     """
-    if not projection.is_pending:
-        return None
-
-    intent = projection.intent
     if intent.effect_category != EFFECT_CATEGORY_TOOL_CALL:
         return None
     if intent.replay_class != ReplayClass.SAFE:
@@ -115,9 +112,23 @@ def candidate_from_effect(
     )
 
 
+def candidate_from_effect(
+    projection: RuntimeEffectProjection,
+) -> SafeToolReplayCandidate | None:
+    """Derive a safe tool replay candidate from a pending effect projection.
+
+    Returns None if the effect is not pending, not a safe tool call, has no
+    valid canonical replay args, or is otherwise non-replayable.
+    """
+    if not projection.is_pending:
+        return None
+    return candidate_from_intent(projection.intent)
+
+
 __all__ = [
     "SafeToolReplayCandidate",
     "candidate_from_effect",
+    "candidate_from_intent",
     "replay_args_for_tool_call",
     "validate_replay_args",
 ]

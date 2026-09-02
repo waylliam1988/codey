@@ -2,15 +2,15 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## 0.5.5 - Safe Replay Result Delivery Receipt v1
 
-- Replay and recovery cleanup:
-  - Added `READ_ONLY_RUNTIME_TOOL_NAMES` to the coding tool contract and derived replay policy from runtime tool facts via `SAFE_RUNTIME_TOOL_NAMES` and `UNSAFE_RUNTIME_TOOL_NAMES`. Removed stale non-runtime names (`project_facts`, `project_map`, `write`, `knowledge_write`) from replay policy; unknown tools still fail closed.
-  - Collapsed replay argument allowed/required key tables into `ReplayArgSpec` plus `REPLAY_ARG_TOOL_NAMES`, with cross-module invariant tests tying replay policy, replay args, and runtime tool definitions together.
-  - Renamed `RecoverySummary.replayed_searches` to `replayed_lookups` and changed recovery detail copy to `Lookup action was recovered` / `Read-only action can be retried`, so `ls` and `references` are no longer described as search/read actions.
-  - Extracted resume effect recovery from `task_run.py` into `codey.operations.recovery`. `task_run.py` now gates on `recover_effects_for_resume()`, while replay execution derives the writer permission profile through `profile_for_task_kind(task_kind, phase="writer")`.
-  - Bounded `list_directory()` enumeration before sorting large directories using `LIST_MAX_DIR_ENTRIES` and `LIST_MAX_SUBDIR_ENTRIES`, with explicit truncation rows in the model-facing result.
-  - Verification: focused replay/recovery/tool-runtime set passed with `152 passed, 3 skipped, 51 subtests passed in 3.11s`; `tests/manual/safe_tool_replay_smoke.py --self-test` passed; full pytest passed with `3388 passed, 16 skipped, 1208 subtests passed in 284.52s (0:04:44)`.
+- Safe Replay Result Delivery Receipts & Exact Turn Recovery v1:
+  - Added `codey.runtime.tool_result_delivery`: provides pure data classes `DeliveryBatchIntent`, `DeliveryBatchProjection` and the store `ToolResultDeliveryStore` backed by durable `RuntimeSessionLog`. Tracks two-phase delivery receipts (`batch_intent` -> `send_attempt` -> `delivered` / `recovered`) with strict schema validation rejecting forbidden raw fields (`prompt`, `reply`, `result`, `stdout`, `stderr`, `diff`, `source_body`).
+  - Closed Crash-Recovery Gap: resolved the non-blocking 0.5.4 limitation where multi-safe-tool turns crashing between execution and provider delivery only recovered pending tools. 0.5.5 folds durable logs to identify undelivered all-safe batches, re-executing all safe tools in the batch using canonical persisted `replay_args` in strict `(turn, tool_index)` order without writing duplicate settlements for already-settled tools.
+  - Fail-Closed Boundary: mixed batches containing mutating actions (`edit`, `write`, `run`, `shell`) or provider sends strictly fail closed without partial replay; already delivered batches are never replayed.
+  - Agent Loop Refactoring & Prompt Parity: extracted `codey.agents.result_delivery` (`deliver_turn_results`, `deliver_recovered_results`, `build_next_tool_prompt`), eliminating redundant prompt formatting and dispatch code across 3 separate sites in `codey/agents/loop.py`. Guarantees byte-level prompt parity with clean paths.
+  - Log Compaction Rules: updated `RuntimeSessionLog._compact_entries` to preserve active delivery receipts for open operations, and prune delivered batches while retaining durable `recovered` facts for settled operations.
+  - Testing & Verification: added unit tests in `tests/test_tool_result_delivery.py` (8/8 passed), manual crash-position smoke in `tests/manual/safe_tool_replay_delivery_smoke.py` (`--self-test` & `--same-run-self-test` passed), and full architecture compliance in `tests/test_architecture.py` (72/72 passed). Full pytest suite passed with `3408 passed, 4 skipped in 301.73s`.
 
 ## 0.5.4 - Safe Tool Replay v1
 

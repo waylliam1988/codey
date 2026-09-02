@@ -38,9 +38,18 @@ SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
 INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
 
 
+@dataclass(frozen=True)
+class ToolResultDeliveryItem:
+    turn: int
+    tool_index: int
+    tool_name: str
+    effect_id: str = ""
+
+
 @dataclass
 class TurnState:
     results: list[ToolResult] = field(default_factory=list)
+    delivery_items: list[ToolResultDeliveryItem] = field(default_factory=list)
     made_progress: bool = False
 
 
@@ -310,11 +319,20 @@ def record_tool_outcome(
     call: ToolCall,
     outcome: ToolOutcome,
     tool_index: int,
+    effect_id: str = "",
 ) -> None:
     path = call_arg(call, "path", ".")
     model_text = outcome.model_text
     emit(session, RunEvent.tool_finished(turn, call, outcome, index=tool_index))
     turn_state.results.append(tool_result_from_outcome(call, outcome))
+    turn_state.delivery_items.append(
+        ToolResultDeliveryItem(
+            turn=turn,
+            tool_index=tool_index,
+            tool_name=call.name,
+            effect_id=effect_id,
+        )
+    )
     if call.name == "read" and outcome.ok:
         canonical = canonical_project_path(session.project, path)
         session.progress.read_file_paths.add(canonical)
@@ -449,6 +467,7 @@ def execute_tool_call(
 __all__ = [
     "INFORMATION_TOOL_NAMES",
     "SUPPORTED_TOOL_NAMES",
+    "ToolResultDeliveryItem",
     "TurnState",
     "call_arg",
     "emit_tool_started_after_intent",

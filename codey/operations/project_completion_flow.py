@@ -145,6 +145,7 @@ class ReviewAccess:
 class RuntimeAccess:
     commit_run_operation: Callable[[RunWork, Callable], None]
     effects: Any = None
+    tool_result_delivery: Any = None
 
 
 @dataclass(frozen=True)
@@ -587,6 +588,8 @@ def _run_one_writer_attempt(
 ) -> RunResult:
     recovered_outcomes = ctx.frame.recovered_tool_outcomes
     ctx.frame.recovered_tool_outcomes = ()
+    recovered_batch_id = ctx.frame.recovered_tool_result_batch_id
+    ctx.frame.recovered_tool_result_batch_id = ""
     return ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
@@ -632,7 +635,9 @@ def _run_one_writer_attempt(
         session_id=ctx.request.session_id,
         run_id=ctx.frame.run_id,
         runtime_effects=ctx.deps.runtime.effects,
+        tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         recovered_tool_outcomes=recovered_outcomes,
+        recovered_tool_result_batch_id=recovered_batch_id,
     ))
 
 

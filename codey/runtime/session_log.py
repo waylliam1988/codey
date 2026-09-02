@@ -489,6 +489,7 @@ def _compact_entries(
     latest_phase: dict[str, RuntimeLogEntry] = {}
     settled: dict[str, RuntimeLogEntry] = {}
     operation_effects: dict[str, list[RuntimeLogEntry]] = {}
+    delivery_effects: dict[str, list[RuntimeLogEntry]] = {}
 
     for entry in entries:
         if entry.kind == "operation_started":
@@ -502,6 +503,8 @@ def _compact_entries(
                 latest_phase[entry.operation_id] = entry
             elif effect_kind == "runtime_effect":
                 operation_effects.setdefault(entry.operation_id, []).append(entry)
+            elif effect_kind == "tool_result_delivery":
+                delivery_effects.setdefault(entry.operation_id, []).append(entry)
             continue
         if entry.kind == "operation_settled":
             settled[entry.operation_id] = entry
@@ -551,6 +554,17 @@ def _compact_entries(
                         compacted.append(intent_entry)
                         compacted.append(settlement_entry)
 
+        raw_deliveries = delivery_effects.get(operation_id, [])
+        for deliv in raw_deliveries:
+            rkind = deliv.payload.get("record_kind")
+            bid = str(deliv.payload.get("batch_id") or "")
+            if not bid or not rkind:
+                continue
+            if is_open:
+                compacted.append(deliv)
+            else:
+                if rkind == "recovered":
+                    compacted.append(deliv)
 
         finish = settled.get(operation_id)
         if finish is not None:

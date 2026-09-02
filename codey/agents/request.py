@@ -33,6 +33,7 @@ class RecoveredToolOutcome:
     outcome: ToolOutcome
     turn: int
     tool_index: int
+    effect_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,9 @@ class AgentRequest:
     session_id: str = ""
     run_id: str = ""
     runtime_effects: Any = None
+    tool_result_delivery: Any = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
+    recovered_tool_result_batch_id: str = ""
 
 
 __all__ = [

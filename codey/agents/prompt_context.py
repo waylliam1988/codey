@@ -203,6 +203,7 @@ def _send_provider_with_effect(
     source_ref: str,
     capability_id: str = "agent_runner",
     name: str = "coding_outbound_prompt",
+    delivery_batch_id: str = "",
 ) -> str:
     record_provider_send_prompt(
         session.trace_recorder,
@@ -213,6 +214,7 @@ def _send_provider_with_effect(
         capability_id=capability_id,
     )
     effects = session.runtime_effects
+    delivery_store = session.tool_result_delivery
     effect_id = ""
     if effects is not None and session.session_id and session.run_id:
         session.provider_send_index += 1
@@ -244,6 +246,17 @@ def _send_provider_with_effect(
             replay_class=replay_decision.replay_class,
         )
         effects.record_intent(session.session_id, session.run_id, intent)
+
+    if delivery_store is not None and delivery_batch_id and effect_id and session.session_id and session.run_id:
+        try:
+            delivery_store.record_send_attempt(
+                session.session_id,
+                session.run_id,
+                batch_id=delivery_batch_id,
+                provider_effect_id=effect_id,
+            )
+        except Exception:
+            pass
 
     try:
         reply_text = session.provider.send(prompt)
@@ -279,6 +292,17 @@ def _send_provider_with_effect(
                 sent_state=SENT_STATE_SETTLED,
             ),
         )
+    if delivery_store is not None and delivery_batch_id and effect_id and session.session_id and session.run_id:
+        try:
+            delivery_store.record_delivered(
+                session.session_id,
+                session.run_id,
+                batch_id=delivery_batch_id,
+                provider_effect_id=effect_id,
+            )
+        except Exception:
+            pass
+
     return reply_text
 
 
@@ -302,6 +326,7 @@ def send_prompt(
     *,
     restart_request: str | None = None,
     include_ghost_directive: bool = True,
+    delivery_batch_id: str = "",
 ) -> str:
     opened_fresh_chat = False
     if session.conversation is not None and session.conversation.needs_rollover(prompt):
@@ -333,6 +358,7 @@ def send_prompt(
         source_ref="provider_send:coding",
         capability_id="agent_runner",
         name="coding_outbound_prompt",
+        delivery_batch_id=delivery_batch_id,
     )
     if session.conversation is not None:
         if opened_fresh_chat:

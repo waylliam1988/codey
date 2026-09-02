@@ -94,6 +94,7 @@ from codey.runs.trace import RunTraceStore
 from codey.runtime.effect_records import RuntimeEffectStore
 from codey.runtime.effects import RuntimeOperationStore
 from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.tool_result_delivery import ToolResultDeliveryStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
@@ -194,6 +195,7 @@ class AppContext:
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.runtime_effects = RuntimeEffectStore(self.runtime_log)
+        self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None

@@ -9,7 +9,7 @@ from codey.runtime.outcome import OperationOutcomeStatus
 from codey.runtime.session_log import RuntimeLogCorruption, RuntimeLogEntry
 
 _OUTCOMES = {"completed", "failed", "aborted", "suspended"}
-_KNOWN_EFFECT_KINDS = {"run_phase", "runtime_effect"}
+_KNOWN_EFFECT_KINDS = {"run_phase", "runtime_effect", "tool_result_delivery"}
 
 
 @dataclass

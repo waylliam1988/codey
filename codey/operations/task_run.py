@@ -243,6 +243,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         return operation_outcome_from_task_done_event(error_event)
 
     recovered_tool_outcomes = ()
+    recovered_tool_result_batch_id = ""
     try:
         recovery = recover_effects_for_resume(
             deps,
@@ -254,6 +255,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if not recovery.ok:
             return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
         recovered_tool_outcomes = recovery.recovered_tool_outcomes
+        recovered_tool_result_batch_id = recovery.recovered_tool_result_batch_id
         recovered_resume = bool(recovered_tool_outcomes)
         if recovered_resume:
             task_kind = "project"
@@ -599,6 +601,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             preflight_switches=preflight.switches,
             trace=trace,
             recovered_tool_outcomes=recovered_tool_outcomes,
+            recovered_tool_result_batch_id=recovered_tool_result_batch_id,
         )
 
         hooks = RunHooks(
@@ -874,6 +877,7 @@ def _project_completion_deps(
         runtime=RuntimeAccess(
             commit_run_operation=commit_run_operation,
             effects=deps.runtime_effects or getattr(deps.state, "runtime_effects", None),
+            tool_result_delivery=getattr(deps.state, "tool_result_delivery", None),
         ),
     )
 

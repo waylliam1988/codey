@@ -101,6 +101,7 @@ class AgentLoopSession:
     session_id: str = ""
     run_id: str = ""
     runtime_effects: Any = None
+    tool_result_delivery: Any = None
     provider_send_index: int = 0
 
 

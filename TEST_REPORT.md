@@ -9,38 +9,40 @@ docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
 
-## Unreleased Replay/Recovery Cleanup (2026-09-02)
+## 0.5.5 Safe Replay Result Delivery Receipt v1 (2026-09-02)
 
 Scope:
 
 ```text
-toolchain:  added READ_ONLY_RUNTIME_TOOL_NAMES as the explicit read-only runtime
-            tool set derived from ToolDefinition metadata.
-replay:     derived SAFE_RUNTIME_TOOL_NAMES and UNSAFE_RUNTIME_TOOL_NAMES from
-            runtime tool definitions, removing stale non-runtime names from
-            replay policy while keeping unknown tools fail-closed.
-            Collapsed replay arg allowed/required key tables into ReplayArgSpec
-            and exported REPLAY_ARG_TOOL_NAMES for invariant tests.
-recovery:   moved resume effect recovery from task_run.py to
-            codey.operations.recovery. task_run.py now only calls
-            recover_effects_for_resume(); replay uses profile_for_task_kind()
-            for the writer permission profile.
-details:    renamed replayed_searches to replayed_lookups and changed recovery
-            detail copy to "Lookup action was recovered" and
-            "Read-only action can be retried".
-tools:      bounded list_directory() top-level and subdirectory enumeration
-            before sorting, with explicit truncation rows.
-harness:    updated replay/recovery tests and manual safe-tool replay smoke.
+runtime:    introduced codey.runtime.tool_result_delivery with DeliveryBatchIntent,
+            DeliveryBatchProjection, and ToolResultDeliveryStore.
+            Tracks two-phase delivery receipts (batch_intent -> send_attempt -> delivered / recovered)
+            backed by durable RuntimeSessionLog.
+            Strict schema validation rejecting forbidden raw fields (prompt, reply, result,
+            stdout, stderr, diff, source_body).
+            Updated RuntimeSessionLog._compact_entries to preserve active delivery receipts
+            for open operations, and compact delivered batches while keeping durable recovered facts.
+agents:     extracted codey.agents.result_delivery (deliver_turn_results,
+            deliver_recovered_results, build_next_tool_prompt).
+            Eliminated duplicate prompt formatting across 3 separate sites in codey/agents/loop.py.
+            Wired two-phase delivery receipt recording during provider send in prompt_context.py.
+operations: extended recover_effects_for_resume() to identify undelivered all-safe batches,
+            re-executing all safe tools in the batch using canonical replay_args in strict
+            (turn, tool_index) order without duplicate settlements for settled tools.
+            Injected recovered_tool_result_batch_id into RunFrame and AgentRequest.
+harness:    added unit tests in tests/test_tool_result_delivery.py (8/8 passed).
+            Added manual smoke in tests/manual/safe_tool_replay_delivery_smoke.py (--self-test, --same-run-self-test passed).
+            Architecture boundaries verified in tests/test_architecture.py (72/72 passed).
 ```
 
 Verification:
 
-- `python -B -m ruff check codey tests` (passed)
-- `python -B -m pytest tests/test_tool_definition.py tests/test_tool_replay_policy.py tests/test_safe_tool_replay.py tests/test_runtime_effect_records.py tests/test_agent_effect_sandwich.py tests/test_tool_runtime.py -q` (`152 passed, 3 skipped, 51 subtests passed in 3.11s`)
-- `python -B tests/manual/safe_tool_replay_smoke.py --self-test` (passed; 3 pending intents, 2 safe tools replayed, 1 unsafe tool interrupted, agent loop resumed at turn 2, details projected 3 recovery rows)
-- `python -B -m pytest -q` (`3388 passed, 16 skipped, 1208 subtests passed in 284.52s (0:04:44)`)
-- `python -B -m compileall -q codey tests` (passed)
-- `git diff --check` (passed)
+- `pytest tests/test_tool_result_delivery.py` (`8 passed in 0.36s`)
+- `python -B tests/manual/safe_tool_replay_delivery_smoke.py --self-test` (passed; multi-tool crash recovery, prompt parity, idempotent re-recovery)
+- `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed; multi-turn continuous delivery receipts)
+- `pytest tests/test_architecture.py` (`72 passed in 10.38s`)
+- `pytest tests/test_agent_effect_sandwich.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_safe_tool_replay.py tests/test_tool_result_delivery.py` (`87 passed in 2.39s`)
+- `pytest` (`3408 passed, 4 skipped in 301.73s (0:05:01)`)
 
 ## 0.5.4 Safe Tool Replay v1 (2026-09-01)
 

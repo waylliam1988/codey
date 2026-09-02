@@ -3769,7 +3769,7 @@ tool result。若本版额外改变正常路径 tool prompt、tool schema、prov
 
 ## 0.5.5 - Safe Replay Result Delivery Receipt v1
 
-状态：计划。目标是补齐 0.5.4 的一个非阻塞恢复限制：如果同一轮里已有部分
+状态：已完成。目标是补齐 0.5.4 的一个非阻塞恢复限制：如果同一轮里已有部分
 safe tool 完成并结算，但进程在把整轮 tool result 发给 provider 前崩溃，0.5.4 只能恢复
 仍 pending 的 safe effect，不能完美重建那一轮已经完成但尚未交付给模型的结果。
 
@@ -3821,8 +3821,9 @@ safe tool 多调用同轮崩溃后，不会只恢复 pending 的后半截结果
 
 ```text
 tool_result_delivery.py 只做纯 projection / batch selection，不 import agents/provider/ghost/tool_runtime
-AgentLoop 只调用小的 record_result_batch_* helper，不自己 fold runtime log
+AgentLoop 只调用小的 deliver_turn_results / deliver_recovered_results helper，不自己 fold runtime log
 task_run.py resume gate 继续只消费 recovery plan，不理解 batch receipt payload 细节
+消除了 loop.py 中三处分散的 tool results 组装与 prompt delivery 冗余
 ```
 
 ### 验证
@@ -3836,12 +3837,18 @@ recovered results 排序稳定，且每个 result 只注入一次
 不保存 source body / stdout / stderr / diff / prompt / reply
 ```
 
+实测证据：
+- `tests/test_tool_result_delivery.py`：8/8 passed（涵盖 schema 拒绝 raw 字段、两阶段交付状态流、undelivered all-safe batch 投影、closed session compaction 规则、mixed batch fail-closed、clean-path prompt parity）。
+- `tests/manual/safe_tool_replay_delivery_smoke.py`：`--self-test`（多 safe tool 同轮前 settled 后 pending 崩溃恢复）与 `--same-run-self-test`（多轮两阶段 receipt 连续写入）100% passed。
+- `tests/test_architecture.py`：72/72 passed（分层边界与 AST 静态合规全部守卫）。
+- 全量回归：3408 passed, 4 skipped in 301.73s。
+
 ### A/B
 
 不需要 clean-path 质量 A/B。它是 resume-only durability closure，不改变正常 prompt、tool schema、
-provider routing 或非恢复路径 transcript。需要 deterministic crash-position tests、同一 run
-resume smoke，以及一条 live resume smoke 覆盖“多 safe tool 同轮、前一个已 settled、后一个
-pending”的恢复场景。
+provider routing 或非恢复路径 transcript。通过确定性故障注入测试（`tests/test_tool_result_delivery.py`）
+与本地同一 run resume smoke（`tests/manual/safe_tool_replay_delivery_smoke.py --self-test / --same-run-self-test`）
+严格验证。
 
 ## 0.5.6 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
 
