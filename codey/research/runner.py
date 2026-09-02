@@ -198,6 +198,9 @@ class ResearchRunner:
             )
             self.changes = self.tools.changes
         self.result: ResearchRunResult | None = None
+        # Monotonic per-send counter for prompt-surface send_ref when no
+        # runtime effect exists (research has no provider effect store).
+        self._research_send_seq = 0
         # Intro rows are projected at the provider-turn boundary, not at
         # assembly time: the controller appends its action block after the
         # intro is built, so only the exact outbound bytes define the shared
@@ -550,6 +553,23 @@ class ResearchRunner:
             # outbound provider-send attempt first, so they share the epoch
             # stamped below.
             self._bind_pending_intro_rows(message)
+            try:
+                include_source_search = bool(getattr(self.codec, "include_source_search", True))
+                model_hash = (
+                    controller_action_contract_hash(include_source_search=include_source_search)
+                    if self.controller is not None
+                    else self.codec.model_tool_contract_hash()
+                )
+                runtime_hash = (
+                    self.codec.model_tool_contract_hash()
+                    if self.controller is not None
+                    else ""
+                )
+            except Exception:
+                model_hash = ""
+                runtime_hash = ""
+            self._research_send_seq += 1
+            research_send_ref = f"research_send:{self._research_send_seq}"
             record_provider_send_prompt(
                 self.trace_recorder,
                 name="research_outbound_prompt",
@@ -557,6 +577,11 @@ class ResearchRunner:
                 purpose="research prompt sent to provider",
                 source_ref="provider_send:research",
                 capability_id="research_runner",
+                phase="research",
+                send_ref=research_send_ref,
+                provider_effect_id="",
+                model_tool_contract_hash=model_hash,
+                runtime_tool_contract_hash=runtime_hash,
             )
             if getattr(self.provider, "thread_safe_send", False):
                 reply = self._send_provider_cancellable(message)

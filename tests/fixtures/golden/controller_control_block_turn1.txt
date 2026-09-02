@@ -1,0 +1,16 @@
+Research controller current allowed actions:
+- Allowed tools this turn: knowledge_search, knowledge_read, web_search
+- Reply with exactly one JSON object using only the allowed tools below.
+- Use top-level "tool" and "args" fields exactly; do not use "name" or top-level arguments.
+- Tools not listed here are forbidden this turn, even if they appeared earlier.
+- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.
+- Use open_result for search results and reopen_source for already-opened source pages/offsets.
+- Saved evidence items: 0; saved/updated notes: 0.
+- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
+
+Allowed JSON shapes for this turn (choose exactly one):
+- {"tool":"knowledge_search","args":{"query":"..."}}
+- {"tool":"knowledge_read","args":{"id":"<note id>"}}
+- {"tool":"web_search","args":{"query":"..."}}
+
+Do not call tools outside the allowed list. Do not output multiple JSON objects.

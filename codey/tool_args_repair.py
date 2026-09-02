@@ -15,6 +15,25 @@ from typing import Any
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 
+PATH_ARG_KEYS = ("path", "cwd")
+SEARCH_QUERY_KEYS = ("query", "pattern")
+REFERENCES_SYMBOL_KEYS = ("symbol", "name")
+COMMAND_KEYS = ("command", "cmd")
+EDIT_OLD_KEYS = ("old_string", "search", "old", "before")
+EDIT_NEW_KEYS = ("new_string", "replace", "replacement", "after", "new")
+
+ARG_REPAIR_POLICY = {
+    "path_alias": "cwd -> path",
+    "path_normalized": "lexical path normalization",
+    "search_field_alias": "pattern -> query",
+    "references_field_alias": "name -> symbol",
+    "command_field_alias": "cmd -> command",
+    "edit_field_alias": "old/search/before -> old_string, replace/replacement/after/new -> new_string",
+    "numeric_coerced": "numeric string -> int",
+    "json_replacements_parsed": "JSON string -> replacements list",
+    "replacement_object_wrapped": "single object -> list",
+}
+
 
 @dataclass(frozen=True)
 class ToolArgLimits:
@@ -116,7 +135,7 @@ def _resolve_path_arg(
     missing_msg: str | None = None,
 ) -> tuple[str, int, dict[str, int]]:
     """Resolve and normalize path from args, checking for path/cwd conflicts."""
-    present = [k for k in ("path", "cwd") if k in args]
+    present = [k for k in PATH_ARG_KEYS if k in args]
     if len(present) > 1:
         raise ToolArgsRepairError(
             f"conflicting path fields: {', '.join(present)}",
@@ -243,8 +262,8 @@ def _normalize_edit(
     args: Mapping[str, Any],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    single_old_keys = ("old_string", "search", "old", "before")
-    single_new_keys = ("new_string", "replace", "replacement", "after", "new")
+    single_old_keys = EDIT_OLD_KEYS
+    single_new_keys = EDIT_NEW_KEYS
     _reject_unknown_args(
         args,
         {"path", "cwd", "content", "replacements", *single_old_keys, *single_new_keys},
@@ -440,10 +459,10 @@ def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"query", "pattern", "path", "cwd"}, context="grep")
+    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS}, context="grep")
     query_val, query_alias = _require_text_arg(
         args,
-        ("query", "pattern"),
+        SEARCH_QUERY_KEYS,
         "query",
         missing_msg="grep requires a query",
         allow_blank=False,
@@ -467,10 +486,10 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"symbol", "name", "path", "cwd"}, context="find_references")
+    _reject_unknown_args(args, {*REFERENCES_SYMBOL_KEYS, *PATH_ARG_KEYS}, context="find_references")
     symbol_val, symbol_alias = _require_text_arg(
         args,
-        ("symbol", "name"),
+        REFERENCES_SYMBOL_KEYS,
         "symbol",
         missing_msg="find_references requires a symbol",
         allow_blank=False,
@@ -497,10 +516,10 @@ def _normalize_run_shell(
     tool_name: str,
     args: Mapping[str, Any],
 ) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"command", "cmd", "path", "cwd"}, context=tool_name)
+    _reject_unknown_args(args, {*COMMAND_KEYS, *PATH_ARG_KEYS}, context=tool_name)
     cmd_val, cmd_alias = _require_text_arg(
         args,
-        ("command", "cmd"),
+        COMMAND_KEYS,
         "command",
         missing_msg=f"{tool_name} requires a command",
         allow_blank=False,

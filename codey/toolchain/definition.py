@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 
 from codey.runtime.models import ToolCall
@@ -228,28 +226,6 @@ def definitions_for_tool_names(names: tuple[str, ...] | list[str] | set[str]) ->
                 definitions.append(definition)
                 seen.add(definition.name)
     return tuple(definitions)
-
-
-def render_tool_contract(definitions: tuple[ToolDefinition, ...] | None = None) -> str:
-    definitions_to_render = TOOL_DEFINITIONS if definitions is None else definitions
-    chunks: list[str] = []
-    for definition in definitions_to_render:
-        if not definition.examples:
-            continue
-        examples = "\n".join(f"  {example}" for example in definition.examples)
-        chunks.append(f"{examples}\n    {definition.description}")
-    return "\n\n".join(chunks)
-
-
-def model_tool_contract_hash(definitions: tuple[ToolDefinition, ...] | None = None) -> str:
-    """Hash the coding tool contract text currently visible to the model."""
-
-    payload = {
-        "kind": "coding_tool_contract",
-        "contract": render_tool_contract(definitions),
-    }
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def public_example(

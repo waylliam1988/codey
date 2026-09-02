@@ -205,14 +205,6 @@ def _send_provider_with_effect(
     name: str = "coding_outbound_prompt",
     delivery_batch_id: str = "",
 ) -> str:
-    record_provider_send_prompt(
-        session.trace_recorder,
-        name=name,
-        text=prompt,
-        purpose=purpose,
-        source_ref=source_ref,
-        capability_id=capability_id,
-    )
     effects = session.runtime_effects
     delivery_store = session.tool_result_delivery
     effect_id = ""
@@ -231,6 +223,7 @@ def _send_provider_with_effect(
             record_settlement_safely,
         )
         from codey.runtime.replay_policy import provider_replay_policy
+
         replay_decision = provider_replay_policy(purpose)
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.run_id)
         intent = RuntimeEffectIntent(
@@ -246,6 +239,26 @@ def _send_provider_with_effect(
             replay_class=replay_decision.replay_class,
         )
         effects.record_intent(session.session_id, session.run_id, intent)
+
+    # Prompt surface is bound to the exact outbound bytes and the effect that
+    # carries them, so the trace row proves what was sent together.
+    try:
+        model_hash = session.codec.model_tool_contract_hash() if getattr(session, "codec", None) else ""
+    except Exception:
+        model_hash = ""
+    record_provider_send_prompt(
+        session.trace_recorder,
+        name=name,
+        text=prompt,
+        purpose=purpose,
+        source_ref=source_ref,
+        capability_id=capability_id,
+        phase="writer",
+        send_ref=effect_id,
+        provider_effect_id=effect_id,
+        model_tool_contract_hash=str(model_hash or ""),
+        runtime_tool_contract_hash="",
+    )
 
     if delivery_store is not None and delivery_batch_id and effect_id and session.session_id and session.run_id:
         try:

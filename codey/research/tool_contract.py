@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from typing import Any
+
 
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
@@ -29,6 +28,8 @@ class ToolContract:
     name: str
     required: dict[str, type] = field(default_factory=dict)
     optional: dict[str, ToolArg] = field(default_factory=dict)
+    example: str = ""
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,8 @@ TOOL_CONTRACTS = {
     "web_search": ToolContract(
         name="web_search",
         required={"query": str},
+        example='{"tool":"web_search","args":{"query":"..."}}',
+        description="search the web for ranked results",
     ),
     "open_url": ToolContract(
         name="open_url",
@@ -52,19 +55,27 @@ TOOL_CONTRACTS = {
             "limit": ToolArg(int, 6000),
             "pages": ToolArg(str, ""),
         },
+        example='{"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}',
+        description="read a page's text; for PDFs, pages selects bounded page ranges",
     ),
     "source_search": ToolContract(
         name="source_search",
         required={"url": str, "query": str},
         optional={"limit": ToolArg(int, 6)},
+        example='{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}',
+        description="search within a source already opened with open_url; returns locators, offsets, and PDF pages",
     ),
     "knowledge_search": ToolContract(
         name="knowledge_search",
         required={"query": str},
+        example='{"tool":"knowledge_search","args":{"query":"..."}}',
+        description="search your existing local notes FIRST",
     ),
     "knowledge_read": ToolContract(
         name="knowledge_read",
         required={"id": str},
+        example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
+        description="read one existing note in full",
     ),
     "knowledge_write": ToolContract(
         name="knowledge_write",
@@ -82,18 +93,71 @@ TOOL_CONTRACTS = {
             "valid_until": ToolArg(str, None),
             "status": ToolArg(str, "active"),
         },
+        example='{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}',
+        description="save small source/fact/hypothesis/conclusion/question notes; final reports must use done",
     ),
     "knowledge_link": ToolContract(
         name="knowledge_link",
         required={"src": str, "dst": str},
         optional={"kind": ToolArg(str, "relates")},
+        example='{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}',
+        description="",
     ),
     "done": ToolContract(
         name="done",
         required={"answer": str},
         optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str)},
+        example='{"tool":"done","args":{"answer":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
+        description="",
     ),
 }
+
+
+def research_tool_names(*, include_source_search: bool = True) -> tuple[str, ...]:
+    base = (
+        "web_search",
+        "open_url",
+        "knowledge_search",
+        "knowledge_read",
+        "knowledge_write",
+        "knowledge_link",
+        "done",
+    )
+    if not include_source_search:
+        return base
+    # source_search is inserted after open_url to match the system prompt order
+    return (
+        "web_search",
+        "open_url",
+        "source_search",
+        "knowledge_search",
+        "knowledge_read",
+        "knowledge_write",
+        "knowledge_link",
+        "done",
+    )
+
+
+def render_research_tool_contract_text(*, include_source_search: bool = True) -> str:
+    lines: list[str] = []
+    for name in research_tool_names(include_source_search=include_source_search):
+        contract = TOOL_CONTRACTS[name]
+        example = contract.example
+        description = contract.description
+        if description:
+            lines.append(f"- {example}  {description}")
+        else:
+            lines.append(f"- {example}")
+    return "\n".join(lines)
+
+
+def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
+    from codey.tool_prompt import model_visible_contract_hash
+
+    return model_visible_contract_hash(
+        "research_tool_contract",
+        render_research_tool_contract_text(include_source_search=include_source_search),
+    )
 
 
 def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
@@ -132,6 +196,10 @@ def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
 
 
 def tool_example(tool: str) -> str:
+    # Legacy dynamic examples used by repair / controller allowed-actions.
+    # Kept byte-identical to 0.5.5 so dynamic repair prompts do not become a
+    # model-visible change. Static Tools: block is rendered from ToolContract
+    # examples instead.
     if tool == "web_search":
         return '{"tool":"web_search","args":{"query":"..."}}'
     if tool == "open_url":
@@ -150,34 +218,11 @@ def tool_example(tool: str) -> str:
             '"open_questions":["..."]}}'
         )
     if tool == "knowledge_link":
-        return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}'
+        return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}'
     if tool == "done":
         return '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}'
     return '{"tool":"web_search","args":{"query":"..."}}'
 
-
-def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
-    """Hash the Research JSON tool contract visible to the model."""
-
-    tools = [
-        name
-        for name in TOOL_CONTRACTS
-        if include_source_search or name != "source_search"
-    ]
-    payload = {
-        "kind": "research_tool_contract",
-        "tools": [
-            {
-                "name": name,
-                "required": sorted(TOOL_CONTRACTS[name].required),
-                "optional": sorted(TOOL_CONTRACTS[name].optional),
-                "example": tool_example(name),
-            }
-            for name in tools
-        ],
-    }
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 def _coerce(
     tool: str,

@@ -205,6 +205,11 @@ def record_provider_send_prompt(
     source_ref: str,
     capability_id: str = "",
     epoch_id: str = "",
+    phase: str = "",
+    send_ref: str = "",
+    provider_effect_id: str = "",
+    model_tool_contract_hash: str = "",
+    runtime_tool_contract_hash: str = "",
 ) -> None:
     """Record one outbound prompt at the safe provider-turn boundary.
 
@@ -213,17 +218,100 @@ def record_provider_send_prompt(
     (overridable so a caller can share an epoch computed for the same bytes),
     and the fixed admission reason. It never changes the prompt text or the
     send.
+
+    A thin prompt-surface summary row is projected only when an explicit
+    ``phase`` and ``send_ref`` are supplied. ``send_ref`` is the per-send
+    identity (writer: ``provider_effect_id``, research: ``research_send:{n}``);
+    ``prompt_digest`` remains the content identity. If no ``send_ref`` is
+    supplied, only the existing ``prompt_sections`` row is recorded.
     """
+    resolved_epoch = str(epoch_id or "").strip() or context_epoch_id(text)
     FailOpenPromptTrace(trace).record_section(PromptEnvelopeSection(
         name=name,
         text=text,
         purpose=purpose,
         freshness=PROVIDER_TURN_BOUNDARY,
         source_refs=(source_ref,),
-        epoch_id=epoch_id or context_epoch_id(text),
+        epoch_id=resolved_epoch,
         admission_reason=PROVIDER_TURN_ADMISSION,
         capability_id=capability_id,
     ))
+    # Thin surface summary -- fail-open, never blocks provider send.
+    if trace is None:
+        return
+    # exact forbidden keys are rejected at the payload layer; do not guess phase
+    effective_phase = str(phase or "").strip()
+    effective_send_ref = str(send_ref or "").strip() or str(provider_effect_id or "").strip()
+    if not effective_phase or not effective_send_ref:
+        return
+    try:
+        import hashlib
+
+        from codey.runtime.prompt_surface import (
+            PromptSurfaceSection,
+            build_prompt_surface_record,
+            validate_prompt_surface_payload,
+        )
+
+        prompt_digest = "sha256:" + hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
+        prompt_chars = len(str(text or ""))
+        # One section summarizing the outbound bytes; detailed section breakdown
+        # stays in the existing prompt_sections stream.
+        section = PromptSurfaceSection(
+            name=str(name or "prompt_section"),
+            digest=prompt_digest,
+            chars=prompt_chars,
+            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
+            model_visible=True,
+            freshness=PROVIDER_TURN_BOUNDARY,
+            epoch_id=resolved_epoch,
+            capability_id=str(capability_id or ""),
+        )
+        record = build_prompt_surface_record(
+            phase=effective_phase,
+            send_ref=effective_send_ref,
+            prompt_digest=prompt_digest,
+            prompt_chars=prompt_chars,
+            epoch_id=resolved_epoch,
+            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
+            provider_effect_id=str(provider_effect_id or "").strip(),
+            model_tool_contract_hash=str(model_tool_contract_hash or "").strip(),
+            runtime_tool_contract_hash=str(runtime_tool_contract_hash or "").strip(),
+            sections=(section,),
+        )
+        payload: dict[str, object] = {
+            "schema_version": record.schema_version,
+            "surface_id": record.surface_id,
+            "send_ref": record.send_ref,
+            "phase": record.phase,
+            "prompt_digest": record.prompt_digest,
+            "prompt_chars": record.prompt_chars,
+            "epoch_id": record.epoch_id,
+            "source_refs": list(record.source_refs),
+            "provider_effect_id": record.provider_effect_id,
+            "model_tool_contract_hash": record.model_tool_contract_hash,
+            "runtime_tool_contract_hash": record.runtime_tool_contract_hash,
+            "sections": [
+                {
+                    "name": sec.name,
+                    "digest": sec.digest,
+                    "chars": sec.chars,
+                    "source_refs": list(sec.source_refs),
+                    "model_visible": bool(sec.model_visible),
+                    "freshness": sec.freshness,
+                    "epoch_id": sec.epoch_id,
+                    "capability_id": sec.capability_id,
+                }
+                for sec in record.sections
+            ],
+        }
+        if not validate_prompt_surface_payload(payload):
+            return
+        FailOpenPromptTrace(trace).call("record_prompt_surface", payload)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return
 
 
 def _is_trace_cancellation(exc: BaseException) -> bool:

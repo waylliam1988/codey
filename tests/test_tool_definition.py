@@ -5,6 +5,8 @@ import unittest
 
 from codey.runtime.models import ToolCall
 from codey.protocols import JsonToolCodec
+from codey.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     READ_ONLY_RUNTIME_TOOL_NAMES,
@@ -16,7 +18,6 @@ from codey.toolchain.definition import (
     definitions_for_tool_names,
     public_example,
     render_tool_activity,
-    render_tool_contract,
 )
 
 

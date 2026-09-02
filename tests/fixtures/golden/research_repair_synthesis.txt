@@ -1,0 +1,32 @@
+Your last reply did not satisfy the Research tool contract.
+Error: knowledge_write is not allowed by the current Research controller state; allowed tools: knowledge_search, knowledge_read, web_search, open_result, done
+
+The tool was valid JSON, but it is not allowed by the current Research controller state.
+Do not call knowledge_write again until it appears in the allowed tools list.
+Use exactly one JSON shape from the current allowed-actions block.
+If you need evidence first, search/open sources before writing notes or calling done.
+
+Reply with exactly one JSON object and no prose.
+
+Research controller current allowed actions:
+- Allowed tools this turn: knowledge_search, knowledge_read, web_search, open_result, done
+- Reply with exactly one JSON object using only the allowed tools below.
+- Use top-level "tool" and "args" fields exactly; do not use "name" or top-level arguments.
+- Tools not listed here are forbidden this turn, even if they appeared earlier.
+- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.
+- Use open_result for search results and reopen_source for already-opened source pages/offsets.
+- Saved evidence items: 0; saved/updated notes: 0.
+- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
+- done is allowed only to report insufficient/no citable evidence and what was searched.
+
+Allowed JSON shapes for this turn (choose exactly one):
+- {"tool":"knowledge_search","args":{"query":"..."}}
+- {"tool":"knowledge_read","args":{"id":"<note id>"}}
+- {"tool":"web_search","args":{"query":"..."}}
+- {"tool":"open_result","args":{"result_id":"r1"}}
+- {"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}
+
+Search results you may open:
+- r1: Helium article - https://example.com/helium - Helium supply.
+
+Do not call tools outside the allowed list. Do not output multiple JSON objects.

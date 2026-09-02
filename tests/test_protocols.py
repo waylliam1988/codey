@@ -17,13 +17,14 @@ from codey.protocols.json_codec import (
     PROTOCOL_UNKNOWN_TOOL,
     SYSTEM_PROMPT,
 )
+from codey.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+
 from codey.toolchain.definition import (
     MAX_ACCIDENTAL_TOOL_CALLS,
     MAX_PARALLEL_CALLS,
     RESULT_TOOL_NAMES,
     TOOL_DEFINITIONS,
     TOOL_DEFINITION_BY_NAME,
-    render_tool_contract,
 )
 from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 

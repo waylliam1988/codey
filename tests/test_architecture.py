@@ -1423,7 +1423,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # tool for them, and neither surface may rename tools across domains:
         # coding keeps its read/write vocabulary and research keeps its own.
         from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
-        from codey.toolchain.definition import TOOL_DEFINITIONS, render_tool_contract
+        from codey.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+        from codey.toolchain.definition import TOOL_DEFINITIONS
 
         self.assertEqual(
             {spec.name for spec in TOOL_DEFINITIONS},

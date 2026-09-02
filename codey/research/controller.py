@@ -7,7 +7,6 @@ ordinary JSON tool arguments that the existing codec already validates.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,40 +24,56 @@ from codey.research.tool_contract import (
 CONTROLLER_DISPLAY_LIMIT = 8
 
 
+@dataclass(frozen=True)
+class ControllerActionContract:
+    name: str
+    required: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()
+    lowers_to: str = ""
+
+
+CONTROLLER_ACTION_CONTRACTS: tuple[ControllerActionContract, ...] = (
+    ControllerActionContract(name="knowledge_search", required=("query",), lowers_to="knowledge_search"),
+    ControllerActionContract(name="knowledge_read", required=("id",), lowers_to="knowledge_read"),
+    ControllerActionContract(name="web_search", required=("query",), lowers_to="web_search"),
+    ControllerActionContract(name="open_result", required=("result_id",), lowers_to="open_url"),
+    ControllerActionContract(name="reopen_source", required=("source_id",), optional=("offset", "limit", "pages"), lowers_to="open_url"),
+    ControllerActionContract(name="open_hit", required=("hit_id",), lowers_to="open_url"),
+    ControllerActionContract(name="source_search", required=("source_id", "query"), optional=("limit",), lowers_to="source_search"),
+    ControllerActionContract(name="knowledge_write", required=("type", "title", "body"), optional=("id", "sources", "tags", "aliases", "relations", "evidence", "open_questions", "confidence", "retrieved_at", "valid_until", "status"), lowers_to="knowledge_write"),
+    ControllerActionContract(name="knowledge_link", required=("src", "dst"), optional=("kind",), lowers_to="knowledge_link"),
+    ControllerActionContract(name="done", required=("answer",), optional=("open_questions",), lowers_to="done"),
+)
+
+
+def controller_action_names(*, include_source_search: bool = True) -> tuple[str, ...]:
+    names = tuple(contract.name for contract in CONTROLLER_ACTION_CONTRACTS)
+    if include_source_search:
+        return names
+    return tuple(name for name in names if name != "source_search")
+
+
+def render_controller_action_contract_text(*, include_source_search: bool = True) -> str:
+    lines: list[str] = []
+    for contract in CONTROLLER_ACTION_CONTRACTS:
+        if contract.name == "source_search" and not include_source_search:
+            continue
+        required = ",".join(contract.required)
+        optional = ",".join(contract.optional)
+        lowers = f" -> {contract.lowers_to}" if contract.lowers_to and contract.lowers_to != contract.name else ""
+        lines.append(f"{contract.name} required=[{required}] optional=[{optional}]{lowers}")
+    return "\n".join(lines)
+
+
 def controller_action_contract_hash(*, include_source_search: bool = True) -> str:
     """Hash the Research controller action contract visible to the model."""
 
-    actions: list[dict[str, object]] = [
-        {"name": "knowledge_search", "required": ["query"], "optional": []},
-        {"name": "knowledge_read", "required": ["id"], "optional": []},
-        {"name": "web_search", "required": ["query"], "optional": []},
-        {"name": "open_result", "required": ["result_id"], "optional": []},
-        {"name": "reopen_source", "required": ["source_id"], "optional": ["offset", "limit", "pages"]},
-        {"name": "open_hit", "required": ["hit_id"], "optional": []},
-        {"name": "knowledge_write", "required": ["type", "title", "body"], "optional": [
-            "id",
-            "sources",
-            "tags",
-            "aliases",
-            "relations",
-            "evidence",
-            "open_questions",
-            "confidence",
-            "retrieved_at",
-            "valid_until",
-            "status",
-        ]},
-        {"name": "knowledge_link", "required": ["src", "dst"], "optional": ["kind"]},
-        {"name": "done", "required": ["answer"], "optional": ["open_questions"]},
-    ]
-    if include_source_search:
-        actions.insert(6, {"name": "source_search", "required": ["source_id", "query"], "optional": ["limit"]})
-    payload = {
-        "kind": "research_controller_action_contract",
-        "actions": actions,
-    }
-    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
+    from codey.tool_prompt import model_visible_contract_hash
+
+    return model_visible_contract_hash(
+        "research_controller_action_contract",
+        render_controller_action_contract_text(include_source_search=include_source_search),
+    )
 
 
 def controller_system_prompt(*, include_source_search: bool = True) -> str:
@@ -571,19 +586,7 @@ def controller_tool_example(tool: str, state: ResearchControlState) -> str:
 
 def controller_tool_name(name: object, *, include_source_search: bool = True) -> str:
     raw = str(name or "").strip().lower()
-    tools = {
-        "knowledge_search",
-        "knowledge_read",
-        "web_search",
-        "open_result",
-        "reopen_source",
-        "open_hit",
-        "knowledge_write",
-        "knowledge_link",
-        "done",
-    }
-    if include_source_search:
-        tools.add("source_search")
+    tools = set(controller_action_names(include_source_search=include_source_search))
     return raw if raw in tools else ""
 
 

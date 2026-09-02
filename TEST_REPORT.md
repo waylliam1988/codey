@@ -1,6 +1,6 @@
 # Codey Test Report
 
-0.4 final stabilization 结论见：
+0.4 final stabilization 结论见:
 
 ```text
 docs/0.4_final_stabilization_report.zh-CN.md
@@ -8,6 +8,72 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## 0.5.6 Tool Prompt Consolidation + Prompt Surface Thin Trace v1 (2026-09-03)
+
+Scope:
+
+```text
+tool_prompt:  introduced codey.tool_prompt with RenderedToolContract,
+              model_visible_contract_hash(), render_coding_tool_contract_text(),
+              render_coding_tool_contract(), render_coding_system_prompt() and
+              coding_model_tool_contract_hash(). Pure helper, no agent/runtime
+              dependency; digest hashes only final model-visible text.
+toolchain:    slimmed codey.toolchain.definition to data + mappings;
+              removed render_tool_contract() and model_tool_contract_hash()
+              without a compatibility wrapper; migrated all call sites to
+              codey.tool_prompt with byte parity for the default writer prompt.
+codec:        slimmed codey.protocols.json_codec to delegate SYSTEM_PROMPT and
+              JsonToolCodec hash/render to codey.tool_prompt without changing
+              parse/repair behavior.
+tool_args:    extracted PATH_ARG_KEYS, SEARCH_QUERY_KEYS,
+              REFERENCES_SYMBOL_KEYS, COMMAND_KEYS, EDIT_OLD_KEYS, EDIT_NEW_KEYS
+              and ARG_REPAIR_POLICY; normalizers now share those constants.
+research:     ToolContract now carries example/description;
+              added research_tool_names(), render_research_tool_contract_text()
+              and research_tool_contract_hash() hashing the visible text;
+              protocols keep hard-boundary copy but Tools: block is now injected
+              from the contract renderer with byte parity for both
+              include_source_search flag values.
+controller:   added ControllerActionContract, CONTROLLER_ACTION_CONTRACTS,
+              controller_action_names(), render_controller_action_contract_text()
+              and rewired controller_action_contract_hash() to hash the static
+              contract text only; dynamic allowed-actions block is tracked via
+              prompt_digest/epoch_id instead.
+prompt_surface: added thin codey.runtime.prompt_surface with schema version,
+              PromptSurfaceSection/Record, prompt_surface_id() (now per-send
+              phase+send_ref+prompt_digest), build_prompt_surface_record() and
+              validate_prompt_surface_payload() with strict sha256/ctx_epoch/
+              prompt_surface hex and schema_version==1; PromptSurfaceRecord is
+              per send (surface_id = send identity, prompt_digest = content
+              identity, send_ref = provider_effect_id / research_send:{n});
+              removed unused trust_class wiring.
+envelope/trace: extended record_provider_send_prompt() to accept
+              phase/send_ref/provider_effect_id/contract hashes and only when
+              explicit phase+send_ref project a bounded prompt-surface summary
+              via FailOpenPromptTrace (no writer pollution for chat/review);
+              extended RunTrace with PromptSurfaceTrace (send_ref+schema_version),
+              prompt_surfaces and record_prompt_surface() strict validation and
+              per-send dedup.
+provider_send: reordered _send_provider_with_effect() to create provider effect
+              intent first, then record the surface with phase="writer",
+              send_ref=effect_id and contract hashes before provider.send();
+              wired research runner with monotonic _research_send_seq and
+              phase="research", send_ref="research_send:{n}" and controller vs
+              codec hashes.
+research:     tool_example() keeps legacy 0.5.5 dynamic examples for repair/
+              control-block parity; static Tools: block comes from contract.
+```
+
+Verification:
+
+- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`23 passed, 27 subtests passed in 0.83s`)
+- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`259 passed, 69 subtests passed in 15.56s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.36s`)
+- `ruff check` (passed; all checks passed)
+- `python -B -m compileall -q codey tests tools` (passed)
+- `git diff --check` (passed; zero trailing whitespace, clean diff)
+- Full pytest suite: `pytest -q` (`3466 passed, 4 skipped, 1235 subtests passed in 291.64s (0:04:51)` after refinement; per-send surface, strict validation, golden fixtures, and legacy tool_example parity all covered; no model-visible bytes changed, so no live provider A/B is required for this version).
+
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 
 Scope:

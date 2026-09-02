@@ -18,10 +18,9 @@ from codey.research.controller import controller_action_contract_hash
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.runs.trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
 from codey.policies.action import ActionSubject, evaluate_action
-from codey.toolchain.definition import (
-    definitions_for_tool_names,
-    model_tool_contract_hash,
-)
+from codey.tool_prompt import coding_model_tool_contract_hash as model_tool_contract_hash
+
+from codey.toolchain.definition import definitions_for_tool_names
 
 
 class _PromptProvider:

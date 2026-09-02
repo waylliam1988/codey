@@ -12,6 +12,7 @@ from codey.research.tool_contract import (
     PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
     TOOL_CONTRACTS,
+    render_research_tool_contract_text,
     research_tool_contract_hash,
     validate_tool_args,
 )
@@ -223,31 +224,15 @@ def exact_tool_object_error(obj: Mapping[str, Any]) -> str:
     return 'JSON tool object must contain exactly top-level "tool" and "args" fields'
 
 
-_SYSTEM_PROMPT = """You are a local research agent. You investigate a question on \
-the live web, then save what you learn into a local Markdown knowledge library so it can be \
-reused and audited later. You never invent facts.
-
-Answer ONLY with JSON tool calls. No prose outside JSON. One JSON object per action.
-
-Tools:
-- {"tool":"web_search","args":{"query":"..."}}  search the web for ranked results
-- {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}  read a page's text; for PDFs, pages selects bounded page ranges
-- {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
-- {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
-- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
-- {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
-- {"tool":"done","args":{"answer":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}
-
-Note types (choose the right one; never mislabel):
+_RESEARCH_NOTE_TYPES = """Note types (choose the right one; never mislabel):
 - source: a web page you read (put its url in sources, and retrieved date context in body)
 - fact: a verifiable claim. MUST include at least one source. Do not write a guess as a fact.
 - hypothesis: your inference or expectation. It is NOT a fact. Label it as a hypothesis.
 - conclusion: an actionable takeaway derived from facts + hypotheses.
 - question: something still open that needs more research.
-- synthesis: created after done passes quality review. Do not write synthesis with knowledge_write.
+- synthesis: created after done passes quality review. Do not write synthesis with knowledge_write."""
 
-Discipline:
-- Start by calling knowledge_search to see what you already know.
+_RESEARCH_DISCIPLINE_BASE = """- Start by calling knowledge_search to see what you already know.
 - A web_search result is not evidence yet. After web_search, call open_url on useful result URLs before knowledge_write.
 - open_url can read text PDFs. For PDFs, pass pages like "1-5" or "4"; default is the first pages.
 - Prefer 2+ independent sources before writing a fact.
@@ -262,10 +247,31 @@ Discipline:
 - If no strong counter-evidence exists, write "未找到强反证" and explain what you searched that would have falsified the conclusion.
 - Keep notes small and single-topic. Link related notes.
 - tags should be 2-5 short lowercase concept nouns (e.g. "helium supply", "war"), not sentences.
-- relations declare concept-to-concept links the note's evidence supports, as {"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}. Only declare relations the cited sources actually state; never declare a guessed relation.
+- relations declare concept-to-concept links the note's evidence supports, as {"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}. Only declare relations the cited sources actually state; never declare a guessed relation."""
 
-Be efficient: a handful of good searches and reads beat many shallow ones. When you have \
-enough, save the important findings as notes, link them, then call done."""
+_RESEARCH_EFFICIENT = "Be efficient: a handful of good searches and reads beat many shallow ones. When you have enough, save the important findings as notes, link them, then call done."
+
+
+def _research_body(include_source_search: bool) -> str:
+    tools = render_research_tool_contract_text(include_source_search=include_source_search)
+    discipline = _RESEARCH_DISCIPLINE_BASE
+    if include_source_search:
+        discipline = discipline.replace(
+            '- open_url can read text PDFs. For PDFs, pass pages like "1-5" or "4"; default is the first pages.',
+            '- open_url can read text PDFs. For PDFs, pass pages like "1-5" or "4"; default is the first pages.\n'
+            "- source_search searches only inside already-opened sources. It returns locator previews, not evidence. For HTML, open the returned offset before citing. For PDF page-specific evidence, open_url pages=\"N\" before citing [n p.N].",
+        )
+    return (
+        "You are a local research agent. You investigate a question on the live web, then save what you learn into a local Markdown knowledge library so it can be reused and audited later. You never invent facts.\n\n"
+        "Answer ONLY with JSON tool calls. No prose outside JSON. One JSON object per action.\n\n"
+        f"Tools:\n{tools}\n\n"
+        f"{_RESEARCH_NOTE_TYPES}\n\n"
+        f"Discipline:\n{discipline}\n\n"
+        f"{_RESEARCH_EFFICIENT}"
+    )
+
+
+_SYSTEM_PROMPT = _research_body(False)
 
 
 def _tool_names(include_source_search: bool) -> str:
@@ -289,28 +295,4 @@ def _hard_boundary(include_source_search: bool) -> str:
 
 
 def _system_prompt(include_source_search: bool) -> str:
-    if not include_source_search:
-        return _hard_boundary(False) + "\n\n" + _SYSTEM_PROMPT
-    tool_needle = (
-        '- {"tool":"open_url","args":{"url":"https://...",'
-        '"offset":0,"limit":6000,"pages":"1-5"}}  read a page\'s text; '
-        "for PDFs, pages selects bounded page ranges\n"
-    )
-    tool_insert = (
-        tool_needle
-        + '- {"tool":"source_search","args":{"url":"https://...",'
-        '"query":"...","limit":6}}  search within a source already opened with '
-        "open_url; returns locators, offsets, and PDF pages\n"
-    )
-    prompt = _SYSTEM_PROMPT.replace(tool_needle, tool_insert)
-    discipline_needle = (
-        "- open_url can read text PDFs. For PDFs, pass pages like \"1-5\" or \"4\"; "
-        "default is the first pages."
-    )
-    discipline_insert = (
-        discipline_needle
-        + "\n- source_search searches only inside already-opened sources. It returns "
-        "locator previews, not evidence. For HTML, open the returned offset before "
-        "citing. For PDF page-specific evidence, open_url pages=\"N\" before citing [n p.N]."
-    )
-    return _hard_boundary(True) + "\n\n" + prompt.replace(discipline_needle, discipline_insert)
+    return _hard_boundary(include_source_search) + "\n\n" + _research_body(include_source_search)

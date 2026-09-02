@@ -87,6 +87,7 @@ MAX_COMPLETION_REPAIR_ROWS = 4
 MAX_PROTOCOL_ERROR_KINDS = 16
 MAX_PROTOCOL_UNKNOWN_TOOLS = 8
 MAX_PROTOCOL_VALID_TURNS = 64
+MAX_PROMPT_SURFACES = 80
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -191,6 +192,46 @@ class PromptSectionTrace:
 
 
 @dataclass(frozen=True)
+class PromptSurfaceTrace:
+    surface_id: str
+    phase: str
+    prompt_digest: str
+    prompt_chars: int
+    epoch_id: str
+    send_ref: str = ""
+    source_refs: tuple[str, ...] = ()
+    provider_effect_id: str = ""
+    model_tool_contract_hash: str = ""
+    runtime_tool_contract_hash: str = ""
+    sections: tuple[dict[str, object], ...] = ()
+    schema_version: int = 1
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "surface_id": _clip(self.surface_id, 120),
+            "phase": _identifier(self.phase, 40),
+            "prompt_digest": _clip(self.prompt_digest, 80),
+            "prompt_chars": max(0, int(self.prompt_chars or 0)),
+            "epoch_id": _identifier(self.epoch_id, 80),
+        }
+        if self.send_ref:
+            payload["send_ref"] = _clip(self.send_ref, 80)
+        refs = _bounded_refs(self.source_refs)
+        if refs:
+            payload["source_refs"] = list(refs)
+        if self.provider_effect_id:
+            payload["provider_effect_id"] = _clip(self.provider_effect_id, 80)
+        if self.model_tool_contract_hash:
+            payload["model_tool_contract_hash"] = _clip(self.model_tool_contract_hash, 80)
+        if self.runtime_tool_contract_hash:
+            payload["runtime_tool_contract_hash"] = _clip(self.runtime_tool_contract_hash, 80)
+        if self.sections:
+            payload["sections"] = [dict(item) for item in self.sections[:8]]
+        return payload
+
+
+@dataclass(frozen=True)
 class RouterTrace:
     baseline_mode: str = ""
     selected_mode: str = ""
@@ -239,6 +280,7 @@ class RunTraceManifest:
     permission_profiles: list[dict[str, str]] = field(default_factory=list)
     router: RouterTrace | None = None
     prompt_sections: list[PromptSectionTrace] = field(default_factory=list)
+    prompt_surfaces: list[PromptSurfaceTrace] = field(default_factory=list)
     model_tool_contract_hash: str = ""
     runtime_tool_contract_hash: str = ""
     tool_contracts: list[dict[str, str]] = field(default_factory=list)
@@ -286,6 +328,9 @@ class RunTraceManifest:
             "router": self.router.to_payload() if self.router else {},
             "prompt_sections": [
                 item.to_payload() for item in self.prompt_sections[:MAX_PROMPT_SECTIONS]
+            ],
+            "prompt_surfaces": [
+                item.to_payload() for item in self.prompt_surfaces[:MAX_PROMPT_SURFACES]
             ],
             "model_tool_contract_hash": _clip(self.model_tool_contract_hash, 80),
             "runtime_tool_contract_hash": _clip(self.runtime_tool_contract_hash, 80),
@@ -419,6 +464,7 @@ class RunTraceRecorder:
         self._brief_projection_keys: set[str] = set()
         self._topic_continuity_keys: set[str] = set()
         self._completion_repair_keys: set[str] = set()
+        self._prompt_surface_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -547,6 +593,61 @@ class RunTraceRecorder:
             self.flush()
         else:
             self.checkpoint()
+
+    def record_prompt_surface(self, payload: Mapping[str, object]) -> None:
+        try:
+            from codey.runtime.prompt_surface import validate_prompt_surface_payload
+        except Exception:
+            return
+        if not isinstance(payload, Mapping):
+            return
+        if not validate_prompt_surface_payload(payload):
+            return
+        surface_id = _clip(payload.get("surface_id"), 120)
+        send_ref = _clip(payload.get("send_ref"), 80)
+        if not surface_id or surface_id in self._prompt_surface_keys:
+            return
+        if not send_ref:
+            return
+        # bounded section payloads already validated
+        sections: tuple[dict[str, object], ...] = ()
+        raw_sections = payload.get("sections")
+        if isinstance(raw_sections, (list, tuple)):
+            cleaned: list[dict[str, object]] = []
+            for item in raw_sections[:8]:
+                if not isinstance(item, Mapping):
+                    continue
+                cleaned.append({
+                    "name": _identifier(item.get("name"), 80),
+                    "digest": _clip(item.get("digest"), 80),
+                    "chars": max(0, int(item.get("chars") or 0)),
+                    "source_refs": list(_bounded_refs(item.get("source_refs") or ())),
+                    "model_visible": bool(item.get("model_visible", True)),
+                    "freshness": _identifier(item.get("freshness"), 80),
+                    "epoch_id": _identifier(item.get("epoch_id"), 80),
+                    "capability_id": _identifier(item.get("capability_id"), 80),
+                })
+            sections = tuple(cleaned)
+        item = PromptSurfaceTrace(
+            surface_id=surface_id,
+            phase=_identifier(payload.get("phase"), 40),
+            prompt_digest=_clip(payload.get("prompt_digest"), 80),
+            prompt_chars=max(0, int(payload.get("prompt_chars") or 0)),
+            epoch_id=_identifier(payload.get("epoch_id"), 80),
+            send_ref=send_ref,
+            source_refs=_bounded_refs(payload.get("source_refs") or ()),
+            provider_effect_id=_clip(payload.get("provider_effect_id"), 80),
+            model_tool_contract_hash=_clip(payload.get("model_tool_contract_hash"), 80),
+            runtime_tool_contract_hash=_clip(payload.get("runtime_tool_contract_hash"), 80),
+            sections=sections,
+            schema_version=int(payload.get("schema_version") or 1),
+        )
+        self._prompt_surface_keys.add(surface_id)
+        self.manifest.prompt_surfaces.append(item)
+        if len(self.manifest.prompt_surfaces) > MAX_PROMPT_SURFACES:
+            del self.manifest.prompt_surfaces[:-MAX_PROMPT_SURFACES]
+            self.manifest.warnings.append("prompt_surfaces_truncated")
+        self.flush()
 
     def record_context_sources(
         self,
