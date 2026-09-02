@@ -65,6 +65,14 @@ FORBIDDEN_RAW_KEYS = frozenset({
     "text",
 })
 
+_ITEM_PAYLOAD_KEYS = frozenset({
+    "tool_index",
+    "tool_name",
+    "ref",
+    "replay_class",
+    "is_denied",
+})
+
 _INTENT_PAYLOAD_KEYS = frozenset({
     "schema_version",
     "effect_kind",
@@ -77,8 +85,6 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "operation_id",
     "turn",
     "items",
-    "tool_refs",
-    "tool_names",
     "batch_digest",
     "created_at",
 })
@@ -141,35 +147,40 @@ class DeliveryBatchItem:
     is_denied: bool = False
 
     def validate(self) -> None:
-        if self.tool_index < 0:
-            raise ToolResultDeliveryError(f"invalid tool_index: {self.tool_index}")
-        if not self.tool_name or not isinstance(self.tool_name, str) or not self.tool_name.strip():
+        if type(self.tool_index) is not int or self.tool_index < 0:
+            raise ToolResultDeliveryError(f"invalid tool_index: {self.tool_index!r}")
+        if not isinstance(self.tool_name, str) or not self.tool_name.strip():
             raise ToolResultDeliveryError(f"invalid tool_name: {self.tool_name!r}")
-        if not self.ref or not isinstance(self.ref, str) or len(self.ref) > MAX_REF_CHARS:
+        if not isinstance(self.ref, str) or not self.ref.strip() or len(self.ref) > MAX_REF_CHARS:
             raise ToolResultDeliveryError(f"invalid ref: {self.ref!r}")
         if self.replay_class not in {"safe", "unsafe"}:
             raise ToolResultDeliveryError(f"invalid replay_class: {self.replay_class!r}")
+        if type(self.is_denied) is not bool:
+            raise ToolResultDeliveryError(f"invalid is_denied: {self.is_denied!r}")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
         return {
-            "tool_index": int(self.tool_index),
-            "tool_name": str(self.tool_name),
-            "ref": str(self.ref),
-            "replay_class": str(self.replay_class),
-            "is_denied": bool(self.is_denied),
+            "tool_index": self.tool_index,
+            "tool_name": self.tool_name,
+            "ref": self.ref,
+            "replay_class": self.replay_class,
+            "is_denied": self.is_denied,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> DeliveryBatchItem:
         if not isinstance(data, Mapping):
-            raise ToolResultDeliveryError(f"invalid item payload: {data!r}")
+            raise ToolResultDeliveryError(f"invalid item payload type: {type(data)}")
+        if set(data.keys()) != _ITEM_PAYLOAD_KEYS:
+            diff = set(data.keys()) ^ _ITEM_PAYLOAD_KEYS
+            raise ToolResultDeliveryError(f"item payload key mismatch: {diff}")
         item = cls(
-            tool_index=int(data.get("tool_index", 0)),
-            tool_name=str(data.get("tool_name") or ""),
-            ref=str(data.get("ref") or ""),
-            replay_class=str(data.get("replay_class") or "unsafe"),
-            is_denied=bool(data.get("is_denied", False)),
+            tool_index=data["tool_index"],
+            tool_name=data["tool_name"],
+            ref=data["ref"],
+            replay_class=data["replay_class"],
+            is_denied=data["is_denied"],
         )
         item.validate()
         return item
@@ -225,8 +236,8 @@ class DeliveryBatchIntent:
             raise ToolResultDeliveryError("session_id must not be empty")
         if not self.run_id:
             raise ToolResultDeliveryError("run_id must not be empty")
-        if self.turn < 0:
-            raise ToolResultDeliveryError(f"turn must be non-negative: {self.turn}")
+        if type(self.turn) is not int or self.turn < 0:
+            raise ToolResultDeliveryError(f"turn must be non-negative int: {self.turn}")
         if not self.items:
             raise ToolResultDeliveryError("items must not be empty")
         if len(self.items) > MAX_TOOL_REFS:
@@ -257,8 +268,6 @@ class DeliveryBatchIntent:
             "operation_id": operation_id,
             "turn": int(self.turn),
             "items": [it.to_dict() for it in self.items],
-            "tool_refs": list(self.tool_refs),
-            "tool_names": list(self.tool_names),
             "batch_digest": self.batch_digest,
             "created_at": self.created_at or datetime.now(timezone.utc).isoformat(),
         }
@@ -540,35 +549,36 @@ class ToolResultDeliveryStore:
                 raise ToolResultDeliveryError("delivery record missing batch_id in current operation")
 
             if rkind == RECORD_KIND_BATCH_INTENT:
-                if batch_id not in intents:
-                    raw_items = payload.get("items")
-                    if isinstance(raw_items, list) and raw_items:
-                        items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
-                    else:
-                        tool_refs = tuple(str(r) for r in payload.get("tool_refs", ()))
-                        tool_names = tuple(str(n) for n in payload.get("tool_names", ()))
-                        items = tuple(
-                            DeliveryBatchItem(
-                                tool_index=idx,
-                                tool_name=n,
-                                ref=r,
-                                replay_class="safe" if is_replayable_safe_tool(n) else "unsafe",
-                                is_denied=False,
-                            )
-                            for idx, (r, n) in enumerate(zip(tool_refs, tool_names, strict=True))
-                        )
-                    intent = DeliveryBatchIntent(
-                        batch_id=batch_id,
-                        session_id=str(payload.get("session_id") or ""),
-                        run_id=str(payload.get("run_id") or ""),
-                        lane=str(payload.get("lane") or ""),
-                        operation_id=str(payload.get("operation_id") or ""),
-                        turn=int(payload.get("turn") or 0),
-                        items=items,
-                        batch_digest=str(payload.get("batch_digest") or ""),
-                        created_at=str(payload.get("created_at") or ""),
+                raw_items = payload.get("items")
+                if not isinstance(raw_items, list) or not raw_items:
+                    raise ToolResultDeliveryError(
+                        f"batch_intent missing or invalid items in batch {batch_id!r}"
                     )
-                    intent.validate()
+                items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
+                intent = DeliveryBatchIntent(
+                    batch_id=batch_id,
+                    session_id=str(payload.get("session_id") or ""),
+                    run_id=str(payload.get("run_id") or ""),
+                    lane=str(payload.get("lane") or ""),
+                    operation_id=str(payload.get("operation_id") or ""),
+                    turn=int(payload.get("turn") if payload.get("turn") is not None else -1),
+                    items=items,
+                    batch_digest=str(payload.get("batch_digest") or ""),
+                    created_at=str(payload.get("created_at") or ""),
+                )
+                intent.validate()
+
+                if batch_id in intents:
+                    existing = intents[batch_id]
+                    if (
+                        existing.turn != intent.turn
+                        or existing.items != intent.items
+                        or existing.batch_digest != intent.batch_digest
+                    ):
+                        raise ToolResultDeliveryError(
+                            f"conflicting duplicate batch intent for batch_id {batch_id!r}"
+                        )
+                else:
                     intents[batch_id] = intent
                     ordered_batch_ids.append(batch_id)
             elif rkind == RECORD_KIND_SEND_ATTEMPT:

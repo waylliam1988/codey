@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
-from codey.agents.result_delivery import build_next_tool_prompt
+from codey.agents.result_delivery import build_next_tool_prompt, deliver_turn_results
 from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
 from codey.agents.tool_execution import (
     ToolResultDeliveryItem,
@@ -22,6 +22,7 @@ from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
 from codey.runtime.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
@@ -153,6 +154,89 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
                 payload={"schema_version": 1, "extra_bad_field": 123},
                 allowed_keys=frozenset({"schema_version"}),
             )
+
+    def test_item_schema_strictness_and_type_validation(self) -> None:
+        # Missing keys
+        with self.assertRaises(ToolResultDeliveryError):
+            DeliveryBatchItem.from_dict({"tool_index": 0, "tool_name": "read"})
+
+        # Extra unknown keys
+        with self.assertRaises(ToolResultDeliveryError):
+            DeliveryBatchItem.from_dict({
+                "tool_index": 0,
+                "tool_name": "read",
+                "ref": "ref1",
+                "replay_class": "safe",
+                "is_denied": False,
+                "unknown_key": "bad",
+            })
+
+        # Bool as tool_index (isinstance(True, int) is True, but type is bool)
+        with self.assertRaises(ToolResultDeliveryError):
+            DeliveryBatchItem.from_dict({
+                "tool_index": True,
+                "tool_name": "read",
+                "ref": "ref1",
+                "replay_class": "safe",
+                "is_denied": False,
+            })
+
+        # Non-bool as is_denied
+        with self.assertRaises(ToolResultDeliveryError):
+            DeliveryBatchItem.from_dict({
+                "tool_index": 0,
+                "tool_name": "read",
+                "ref": "ref1",
+                "replay_class": "safe",
+                "is_denied": 1,
+            })
+
+    def test_conflicting_duplicate_batch_intent_rejected(self) -> None:
+        items1 = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="ref1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        intent1 = DeliveryBatchIntent(
+            batch_id="batch-conflict",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            turn=1,
+            items=items1,
+            batch_digest=compute_batch_digest(items1),
+        )
+        self.store.record_batch_intent(self.session_id, self.run_id, intent1)
+
+        # Identical intent -> safe
+        self.store.record_batch_intent(self.session_id, self.run_id, intent1)
+        batches = self.store.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+
+        # Conflicting intent with same batch_id -> raises error
+        items2 = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="search",
+                ref="ref2",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        intent2 = DeliveryBatchIntent(
+            batch_id="batch-conflict",
+            session_id=self.session_id,
+            run_id=self.run_id,
+            turn=1,
+            items=items2,
+            batch_digest=compute_batch_digest(items2),
+        )
+        self.store.record_batch_intent(self.session_id, self.run_id, intent2)
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
 
     def test_record_recovered_idempotency_and_conflict_rejection(self) -> None:
         batch_id = "batch-idempotent-1"
@@ -564,8 +648,247 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertIn("Read action was recovered", recovery_values)
         self.assertIn("Lookup action was recovered", recovery_values)
 
+    def test_real_execute_turn_tools_marks_safe_items_and_recovers_all_on_crash(self) -> None:
+        calls = [
+            ToolCall(name="read", args={"path": "target.py"}),
+            ToolCall(name="search", args={"path": ".", "query": "hello"}),
+        ]
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="read and search",
+            codec=codec,
+            tool_result_delivery=self.delivery,
+        )
+        session = AgentLoopSession(
+            request=req,
+            provider=provider,
+            project=self.project_dir,
+            user_task="read and search",
+            codec=codec,
+            max_turns=5,
+            stagnant_turns=3,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=True,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            profile=profile_for_name("coding_writer"),
+            tool_fns=DEFAULT_TOOL_FNS,
+            trace_recorder=None,
+            trace=Mock(),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=True,
+            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            stagnation=LoopStagnation(seen_info=set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+        )
+
+        res = execute_turn_tools(session, calls, turn=1)
+        self.assertFalse(res.stopped)
+        self.assertEqual(len(res.turn_state.results), 2)
+
+        # Batch intent was recorded early with real "safe" classes!
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        b0 = batches[0]
+        self.assertEqual(b0.intent.items[0].replay_class, "safe")
+        self.assertEqual(b0.intent.items[1].replay_class, "safe")
+        self.assertTrue(b0.is_all_safe)
+        self.assertTrue(b0.can_recover_before_provider_send)
+
+        # Simulate crash before provider send -> recovery re-executes both safe tools
+        deps = Mock()
+        deps.runtime_effects = self.effects
+        deps.tool_result_delivery = self.delivery
+        recovery = recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(recovery.ok)
+        self.assertEqual(len(recovery.recovered_tool_outcomes), 2)
+        self.assertEqual(recovery.recovered_tool_outcomes[0].call.name, "read")
+        self.assertEqual(recovery.recovered_tool_outcomes[1].call.name, "search")
+
+    def test_send_attempt_failure_blocks_provider_send_and_fails_closed(self) -> None:
+        calls = [ToolCall(name="read", args={"path": "target.py"})]
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="read target",
+            codec=codec,
+            tool_result_delivery=self.delivery,
+        )
+        session = AgentLoopSession(
+            request=req,
+            provider=provider,
+            project=self.project_dir,
+            user_task="read target",
+            codec=codec,
+            max_turns=5,
+            stagnant_turns=3,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=True,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            profile=profile_for_name("coding_writer"),
+            tool_fns=DEFAULT_TOOL_FNS,
+            trace_recorder=None,
+            trace=Mock(),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=True,
+            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            stagnation=LoopStagnation(seen_info=set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+        )
+        res = execute_turn_tools(session, calls, turn=1)
+
+        # Inject failure into record_send_attempt
+        with patch.object(self.delivery, "record_send_attempt", side_effect=RuntimeError("disk full")):
+            with self.assertRaises(RuntimeError):
+                deliver_turn_results(session, res.turn_state, 1)
+
+        # Provider send MUST NOT have been called!
+        self.assertEqual(len(provider.prompts), 0)
+
+        # Provider effect settlement must be recorded as settled error
+        effects = self.effects.load_effects(self.session_id, self.run_id)
+        send_effects = [e for e in effects if e.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND]
+        self.assertEqual(len(send_effects), 1)
+        self.assertTrue(send_effects[0].is_settled)
+        self.assertEqual(send_effects[0].settlement.error_code, "delivery_attempt_failed")
+        self.assertEqual(send_effects[0].settlement.sent_state, "settled")
+
+    def test_single_canonical_batch_for_read_plus_policy_denied_shell(self) -> None:
+        calls = [
+            ToolCall(name="read", args={"path": "target.py"}),
+            ToolCall(name="shell", args={"command": "rm -rf /"}),
+        ]
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        req = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="read and shell",
+            codec=codec,
+            tool_result_delivery=self.delivery,
+        )
+        session = AgentLoopSession(
+            request=req,
+            provider=provider,
+            project=self.project_dir,
+            user_task="read and shell",
+            codec=codec,
+            max_turns=5,
+            stagnant_turns=3,
+            on_event=lambda e: None,
+            on_shell_request=None,
+            stop_flag=None,
+            fresh_chat=False,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=None,
+            active_provider_id="mock",
+            handoff="",
+            project_facts="",
+            research_context="",
+            project_map="",
+            project_config_warnings="",
+            work_checkpoint="",
+            verification_candidates=(),
+            verification_candidate_loader=None,
+            coding_context_enabled=True,
+            ghost_directive="",
+            ghost_continuity="",
+            completion_repair_context="",
+            completion_repair_context_payload=None,
+            # shell is forbidden without approval channel -> policy denied
+            profile=profile_for_name("planning_readonly"),
+            tool_fns=DEFAULT_TOOL_FNS,
+            trace_recorder=None,
+            trace=Mock(),
+            system_prompt_text="",
+            project_text=str(self.project_dir),
+            verification_required=False,
+            verification_forbidden=True,
+            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            stagnation=LoopStagnation(seen_info=set()),
+            project_instructions=[],
+            session_id=self.session_id,
+            run_id=self.run_id,
+            runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
+        )
+
+        res = execute_turn_tools(session, calls, turn=1)
+        self.assertFalse(res.stopped)
+        self.assertEqual(len(res.turn_state.results), 2)
+
+        # Deliver results to provider
+        deliver_turn_results(session, res.turn_state, 1)
+
+        # Exactly 1 batch must exist, and it must be delivered
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertTrue(batches[0].is_delivered)
+        self.assertEqual(len(batches[0].send_attempts), 1)
+
     def test_policy_denied_tool_in_batch_fails_closed_in_recovery(self) -> None:
-        # Batch had read + shell(policy denied). Should NOT replay read alone!
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         self.effects.record_intent(
             self.session_id,
@@ -860,76 +1183,6 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertTrue(recovery.ok)
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
 
-    def test_turn_tool_execution_natural_crash_window(self) -> None:
-        calls = [
-            ToolCall(name="read", args={"path": "target.py"}),
-            ToolCall(name="search", args={"query": "hello"}),
-        ]
-        provider = MockDeliveryProvider()
-        codec = JsonToolCodec()
-        req = AgentRequest(
-            provider=provider,
-            project=self.project_dir,
-            task="read and search",
-            codec=codec,
-            tool_result_delivery=self.delivery,
-        )
-        session = AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="read and search",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
-            fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
-            project_instructions=[],
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
-
-        res = execute_turn_tools(session, calls, turn=1)
-        self.assertFalse(res.stopped)
-        self.assertEqual(len(res.turn_state.results), 2)
-
-        # Batch intent was recorded early
-        batches = self.delivery.load_batches(self.session_id, self.run_id)
-        self.assertEqual(len(batches), 1)
-        self.assertEqual(batches[0].intent.tool_names, ("read", "search"))
-
 
 class AgentPromptParityTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -952,6 +1205,7 @@ class AgentPromptParityTests(unittest.TestCase):
                     turn=1,
                     tool_index=0,
                     tool_name="read",
+                    ref="eff-1",
                     effect_id="eff-1",
                     replay_class="safe",
                     is_denied=False,

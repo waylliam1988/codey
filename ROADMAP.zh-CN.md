@@ -3838,10 +3838,10 @@ recovered results 排序稳定，且每个 result 只注入一次
 ```
 
 实测证据：
-- `tests/test_tool_result_delivery.py`：14/14 passed（涵盖 schema 拒绝 raw 字段、refs/names/digest 强校验、两阶段交付状态流、send_attempt fail-closed 拦截、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、turn-level early intent 记录与恢复、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups、record_recovered 幂等性与冲突拒绝、policy-denied 纳入批次并 fail-closed）。
+- `tests/test_tool_result_delivery.py`：18/18 passed（涵盖 schema 拒绝 raw 字段、严格 5 字段 item schema 与 bool 类型校验、同 batch_id 冲突拒绝、两阶段交付状态流、send_attempt 失败阻断 provider.send 与 fail-closed、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、真实 execute_turn_tools 正确识别 safe tool 与两阶段恢复、read + denied shell 单一 delivered batch 消除悬空 batch、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups、record_recovered 幂等性与冲突拒绝）。
 - `tests/manual/safe_tool_replay_delivery_smoke.py`：`--self-test`（多 safe tool 同轮前 settled 后 pending 崩溃恢复）与 `--same-run-self-test`（多轮两阶段 receipt 连续写入）100% passed。
 - `tests/test_architecture.py`：72/72 passed（分层边界与 AST 静态合规全部守卫）。
-- 全量回归：3414 passed, 4 skipped in 300.49s (0:05:00)。
+- 全量回归：3418 passed, 4 skipped in 291.12s (0:04:51)。
 
 ### A/B
 

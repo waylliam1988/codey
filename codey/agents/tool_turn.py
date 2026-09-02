@@ -10,7 +10,7 @@ Decomposes tool execution in a turn into:
      of the turn.
 2. Execution Phase:
    - Emits tool started events.
-   - Executes calls and records outcomes.
+   - Executes calls and records outcomes with canonical item ref.
    - Records settlements in finally blocks.
    - Handles approval stops and cancellation gracefully.
 """
@@ -47,10 +47,18 @@ from codey.runtime.tool_result_delivery import (
 )
 
 
+def replay_class_value(replay_decision: Any) -> str:
+    """Safely extract string replay class from ReplayDecision or enum/constant."""
+    raw = getattr(replay_decision, "replay_class", ReplayClass.UNSAFE)
+    val = getattr(raw, "value", raw)
+    return "safe" if val == "safe" or val == ReplayClass.SAFE else "unsafe"
+
+
 @dataclass(frozen=True)
 class PlannedToolCall:
     tool_index: int
     call: ToolCall
+    ref: str = ""
     effect_id: str = ""
     replay_decision: Any = None
     replay_class_str: str = "unsafe"
@@ -89,15 +97,15 @@ def execute_turn_tools(
             turn=turn,
             tool_index=tool_index,
         )
-        rclass_val = getattr(getattr(replay_decision, "replay_class", None), "value", "unsafe")
-        if rclass_val not in {"safe", "unsafe"}:
-            rclass_val = "safe" if getattr(replay_decision, "replay_class", None) == ReplayClass.SAFE else "unsafe"
+        rclass_val = replay_class_value(replay_decision)
 
         if policy_denied(policy_decision):
+            ref = f"denied:{call.name}:{tool_index}"
             planned.append(
                 PlannedToolCall(
                     tool_index=tool_index,
                     call=call,
+                    ref=ref,
                     replay_class_str=rclass_val,
                     policy_denied=True,
                     policy_decision=policy_decision,
@@ -108,7 +116,7 @@ def execute_turn_tools(
                 DeliveryBatchItem(
                     tool_index=tool_index,
                     tool_name=call.name,
-                    ref=f"denied:{call.name}:{tool_index}",
+                    ref=ref,
                     replay_class=rclass_val,
                     is_denied=True,
                 )
@@ -116,10 +124,12 @@ def execute_turn_tools(
             continue
 
         if call.name == "shell":
+            ref = f"approval:{call.name}:{tool_index}"
             planned.append(
                 PlannedToolCall(
                     tool_index=tool_index,
                     call=call,
+                    ref=ref,
                     requires_approval=True,
                     replay_class_str=rclass_val,
                     policy_decision=policy_decision,
@@ -130,7 +140,7 @@ def execute_turn_tools(
                 DeliveryBatchItem(
                     tool_index=tool_index,
                     tool_name=call.name,
-                    ref=f"approval:{call.name}:{tool_index}",
+                    ref=ref,
                     replay_class=rclass_val,
                     is_denied=False,
                 )
@@ -149,10 +159,12 @@ def execute_turn_tools(
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
+            ref = f"error:{call.name}:{tool_index}"
             planned.append(
                 PlannedToolCall(
                     tool_index=tool_index,
                     call=call,
+                    ref=ref,
                     replay_class_str=rclass_val,
                     intent_error=exc,
                     replay_decision=replay_decision,
@@ -163,17 +175,19 @@ def execute_turn_tools(
                 DeliveryBatchItem(
                     tool_index=tool_index,
                     tool_name=call.name,
-                    ref=f"error:{call.name}:{tool_index}",
+                    ref=ref,
                     replay_class=rclass_val,
                     is_denied=True,
                 )
             )
             continue
 
+        ref = effect_id or f"synthetic:{call.name}:{tool_index}"
         planned.append(
             PlannedToolCall(
                 tool_index=tool_index,
                 call=call,
+                ref=ref,
                 effect_id=effect_id,
                 replay_class_str=rclass_val,
                 replay_decision=replay_decision,
@@ -184,33 +198,30 @@ def execute_turn_tools(
             DeliveryBatchItem(
                 tool_index=tool_index,
                 tool_name=call.name,
-                ref=effect_id or f"synthetic:{call.name}:{tool_index}",
+                ref=ref,
                 replay_class=rclass_val,
                 is_denied=False,
             )
         )
 
-    # Record turn-level batch intent covering ALL planned results
+    # Record turn-level batch intent covering ALL planned results (fail-closed)
     if batch_items and session.tool_result_delivery is not None and session.session_id and session.run_id:
-        try:
-            batch_id = new_batch_id(session.run_id, turn)
-            items_tuple = tuple(batch_items)
-            digest = compute_batch_digest(items_tuple)
-            intent = DeliveryBatchIntent(
-                batch_id=batch_id,
-                session_id=session.session_id,
-                run_id=session.run_id,
-                turn=turn,
-                items=items_tuple,
-                batch_digest=digest,
-            )
-            session.tool_result_delivery.record_batch_intent(
-                session.session_id,
-                session.run_id,
-                intent,
-            )
-        except Exception:
-            pass
+        batch_id = new_batch_id(session.run_id, turn)
+        items_tuple = tuple(batch_items)
+        digest = compute_batch_digest(items_tuple)
+        intent = DeliveryBatchIntent(
+            batch_id=batch_id,
+            session_id=session.session_id,
+            run_id=session.run_id,
+            turn=turn,
+            items=items_tuple,
+            batch_digest=digest,
+        )
+        session.tool_result_delivery.record_batch_intent(
+            session.session_id,
+            session.run_id,
+            intent,
+        )
 
     # 2. Execution Phase
     for item in planned:
@@ -225,6 +236,7 @@ def execute_turn_tools(
                 call=item.call,
                 outcome=outcome,
                 tool_index=item.tool_index,
+                ref=item.ref,
                 effect_id="",
                 replay_class=item.replay_class_str,
                 is_denied=True,
@@ -240,6 +252,7 @@ def execute_turn_tools(
                 call=item.call,
                 outcome=outcome,
                 tool_index=item.tool_index,
+                ref=item.ref,
                 effect_id="",
                 replay_class=item.replay_class_str,
                 is_denied=True,
@@ -302,6 +315,7 @@ def execute_turn_tools(
                 call=item.call,
                 outcome=outcome,
                 tool_index=item.tool_index,
+                ref=item.ref,
                 effect_id=effect_id,
                 replay_class=item.replay_class_str,
                 is_denied=False,
@@ -322,4 +336,5 @@ __all__ = [
     "PlannedToolCall",
     "TurnToolExecutionResult",
     "execute_turn_tools",
+    "replay_class_value",
 ]

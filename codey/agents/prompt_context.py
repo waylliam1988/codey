@@ -256,7 +256,22 @@ def _send_provider_with_effect(
                 provider_effect_id=effect_id,
             )
         except Exception:
-            pass
+            if effects is not None and effect_id:
+                record_settlement_safely(
+                    effects,
+                    session.session_id,
+                    session.run_id,
+                    RuntimeEffectSettlement(
+                        effect_id=effect_id,
+                        effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                        session_id=session.session_id,
+                        run_id=session.run_id,
+                        status=SETTLEMENT_STATUS_ERROR,
+                        error_code="delivery_attempt_failed",
+                        sent_state="settled",
+                    ),
+                )
+            raise
 
     try:
         reply_text = session.provider.send(prompt)

@@ -43,6 +43,7 @@ class ToolResultDeliveryItem:
     turn: int
     tool_index: int
     tool_name: str
+    ref: str = ""
     effect_id: str = ""
     replay_class: str = "unsafe"
     is_denied: bool = False
@@ -321,6 +322,7 @@ def record_tool_outcome(
     call: ToolCall,
     outcome: ToolOutcome,
     tool_index: int,
+    ref: str = "",
     effect_id: str = "",
     replay_class: str = "unsafe",
     is_denied: bool = False,
@@ -334,6 +336,7 @@ def record_tool_outcome(
             turn=turn,
             tool_index=tool_index,
             tool_name=call.name,
+            ref=ref or effect_id or f"item:{turn}:{tool_index}:{call.name}",
             effect_id=effect_id,
             replay_class=replay_class,
             is_denied=is_denied,
