@@ -34,7 +34,7 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.effects import RuntimeOperationStore, lane_for_run, operation_id_for_run
 from codey.runtime.models import ToolCall, ToolResult
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
@@ -98,8 +98,8 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             batch_id="batch-1",
             session_id=self.session_id,
             run_id=self.run_id,
-            lane="lane-1",
-            operation_id="op-1",
+            lane=lane_for_run(self.run_id),
+            operation_id=operation_id_for_run(self.run_id),
             turn=1,
             items=items,
             batch_digest=compute_batch_digest(items),
@@ -196,7 +196,6 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             })
 
     def test_unknown_record_kind_in_log_fails_closed(self) -> None:
-        from codey.runtime.effects import lane_for_run, operation_id_for_run
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
         # Append unknown bogus record_kind
@@ -215,9 +214,10 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         )
         with self.assertRaises(ToolResultDeliveryError):
             self.store.load_batches(self.session_id, self.run_id)
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_recovered_facts(self.session_id, self.run_id)
 
     def test_missing_or_corrupt_fields_in_log_fails_closed(self) -> None:
-        from codey.runtime.effects import lane_for_run, operation_id_for_run
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
         # Corrupt send_attempt missing provider_effect_id
@@ -242,6 +242,111 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         )
         with self.assertRaises(ToolResultDeliveryError):
             self.store.load_batches(self.session_id, self.run_id)
+
+    def test_run_boundary_mismatch_fails_closed(self) -> None:
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+
+        # Record with mismatched session_id in payload
+        self.log.append(
+            session_id=self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "batch_intent",
+                "ref": "delivery_intent:b-mismatch",
+                "batch_id": "b-mismatch",
+                "session_id": "wrong-sess",
+                "run_id": self.run_id,
+                "lane": lane,
+                "operation_id": op_id,
+                "turn": 1,
+                "items": [{"tool_index": 0, "tool_name": "read", "ref": "r1", "replay_class": "safe", "is_denied": False}],
+                "batch_digest": "some_digest",
+                "created_at": "2026-09-02T12:00:00Z",
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
+
+    def test_record_batch_intent_rejects_conflicting_coordinates(self) -> None:
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref="ref1",
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        # Intent has mismatched run_id
+        intent = DeliveryBatchIntent(
+            batch_id="batch-mismatch",
+            session_id=self.session_id,
+            run_id="wrong_run_id",
+            turn=1,
+            items=items,
+            batch_digest=compute_batch_digest(items),
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_batch_intent(self.session_id, self.run_id, intent)
+
+    def test_orphan_send_attempt_and_delivered_rejected(self) -> None:
+        lane = lane_for_run(self.run_id)
+        op_id = operation_id_for_run(self.run_id)
+
+        # Inject send_attempt without prior batch_intent
+        self.log.append(
+            session_id=self.session_id,
+            lane=lane,
+            operation_id=op_id,
+            kind="operation_effect",
+            payload={
+                "schema_version": 1,
+                "effect_kind": "tool_result_delivery",
+                "record_kind": "send_attempt",
+                "ref": "delivery_attempt:orphan-1:eff-p1",
+                "batch_id": "orphan-1",
+                "session_id": self.session_id,
+                "run_id": self.run_id,
+                "lane": lane,
+                "operation_id": op_id,
+                "provider_effect_id": "eff-p1",
+                "created_at": "2026-09-02T12:00:00Z",
+            },
+        )
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.load_batches(self.session_id, self.run_id)
+
+    def test_record_recovered_bounded_str_strictness(self) -> None:
+        batch_id = "batch-rec-strict"
+        # Overlong effect id
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=("a" * 200,),
+            )
+        # Empty effect id
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=("",),
+            )
+        # Non-string effect id
+        with self.assertRaises(ToolResultDeliveryError):
+            self.store.record_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id=batch_id,
+                recovered_effect_ids=(123,),  # type: ignore
+            )
 
     def test_conflicting_duplicate_batch_intent_rejected(self) -> None:
         items1 = (
@@ -700,6 +805,22 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertIn("Read action was recovered", recovery_values)
         self.assertIn("Lookup action was recovered", recovery_values)
 
+    def test_run_details_handles_delivery_store_errors_with_warning(self) -> None:
+        # Patch load_recovered_facts to raise error
+        with patch.object(self.delivery, "load_recovered_facts", side_effect=ToolResultDeliveryError("corrupted")):
+            details = load_run_details(
+                run_ledgers=None,
+                run_traces=None,
+                runtime_operations=self.operations,
+                runtime_effects=self.effects,
+                tool_result_delivery=self.delivery,
+                session_id=self.session_id,
+                run_id=self.run_id,
+            )
+            self.assertTrue(details.available)
+            recovery_values = [r.value for r in details.rows if r.label == "Recovery"]
+            self.assertIn("Recovery details unavailable (receipt log error)", recovery_values)
+
     def test_real_execute_turn_tools_marks_safe_items_and_recovers_all_on_crash(self) -> None:
         calls = [
             ToolCall(name="read", args={"path": "target.py"}),
@@ -764,6 +885,9 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         res = execute_turn_tools(session, calls, turn=1)
         self.assertFalse(res.stopped)
         self.assertEqual(len(res.turn_state.results), 2)
+        # Fast path check: turn_state MUST have delivery_batch_id set!
+        self.assertTrue(bool(res.turn_state.delivery_batch_id))
+        self.assertTrue(bool(res.turn_state.delivery_batch_digest))
 
         # Batch intent was recorded early with real "safe" classes!
         batches = self.delivery.load_batches(self.session_id, self.run_id)

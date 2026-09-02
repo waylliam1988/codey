@@ -54,6 +54,8 @@ class TurnState:
     results: list[ToolResult] = field(default_factory=list)
     delivery_items: list[ToolResultDeliveryItem] = field(default_factory=list)
     made_progress: bool = False
+    delivery_batch_id: str = ""
+    delivery_batch_digest: str = ""
 
 
 def call_arg(call: ToolCall, name: str, default: str = "") -> str:

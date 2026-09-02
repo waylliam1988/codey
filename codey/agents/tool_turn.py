@@ -222,6 +222,8 @@ def execute_turn_tools(
             session.run_id,
             intent,
         )
+        turn_state.delivery_batch_id = batch_id
+        turn_state.delivery_batch_digest = digest
 
     # 2. Execution Phase
     for item in planned:

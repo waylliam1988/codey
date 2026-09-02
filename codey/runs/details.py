@@ -134,6 +134,7 @@ def _load_recovery_summary(
 
     delivery_reads = 0
     delivery_lookups = 0
+    delivery_error = False
     if tool_result_delivery is not None:
         try:
             facts = tool_result_delivery.load_recovered_facts(session_id, run_id)
@@ -141,19 +142,41 @@ def _load_recovery_summary(
                 delivery_reads = sum(f.recovered_reads for f in facts)
                 delivery_lookups = sum(f.recovered_lookups for f in facts)
         except Exception:
-            pass
+            delivery_error = True
 
-    if summary is None and delivery_reads == 0 and delivery_lookups == 0:
+    has_runtime_recovery = bool(
+        summary is not None
+        and (
+            summary.replayed_reads > 0
+            or summary.replayed_lookups > 0
+            or summary.explanation_lines
+            or summary.interrupted_writes > 0
+            or summary.unconfirmed_provider_calls > 0
+            or summary.retryable_read_only > 0
+            or summary.interrupted_repairs > 0
+        )
+    )
+
+    if not has_runtime_recovery and delivery_reads == 0 and delivery_lookups == 0:
+        if delivery_error:
+            from codey.runtime.effect_records import RecoverySummary
+            return RecoverySummary(
+                replayed_reads=0,
+                replayed_lookups=0,
+                explanation_lines=("Recovery details unavailable (receipt log error)",),
+            )
         return None
 
     from codey.runtime.effect_records import RecoverySummary
 
-    if summary is None:
+    if not has_runtime_recovery or summary is None:
         lines: list[str] = []
         if delivery_reads > 0:
             lines.append("Read action was recovered")
         if delivery_lookups > 0:
             lines.append("Lookup action was recovered")
+        if delivery_error:
+            lines.append("Some recovery details unavailable (receipt log error)")
         return RecoverySummary(
             replayed_reads=delivery_reads,
             replayed_lookups=delivery_lookups,
@@ -173,6 +196,8 @@ def _load_recovery_summary(
         lines.append("Read action was recovered")
     if final_lookups > 0:
         lines.append("Lookup action was recovered")
+    if delivery_error:
+        lines.append("Some recovery details unavailable (receipt log error)")
     lines.extend(preserved_other_lines)
 
     return RecoverySummary(

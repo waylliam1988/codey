@@ -3838,10 +3838,10 @@ recovered results 排序稳定，且每个 result 只注入一次
 ```
 
 实测证据：
-- `tests/test_tool_result_delivery.py`：22/22 passed（涵盖 schema 拒绝 raw 字段、严格 5 字段 item schema 与非负整数类型校验、同 batch_id 冲突拒绝、未知 delivery record_kind 显式抛错、损坏日志字段校验、同一 turn batch digest 不匹配显式 invariant failure、item.ref 空值拦截、两阶段交付状态流、send_attempt 失败阻断 provider.send 与 fail-closed、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、真实 execute_turn_tools 正确识别 safe tool 与两阶段恢复、read + denied shell 单一 delivered batch 消除悬空 batch、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups、record_recovered 幂等性与冲突拒绝）。
+- `tests/test_tool_result_delivery.py`：27/27 passed（涵盖 schema 拒绝 raw 字段、严格 5 字段 item schema 与非负整数/有界字符串校验、同 batch_id 冲突拒绝、未知 delivery record_kind 显式抛错、损坏日志字段校验、对齐 RuntimeEffectStore 的 run 边界校验、拒绝孤儿 send_attempt / delivered 记录、同一 turn batch digest 不匹配显式 invariant failure、TurnState fast-path digest 复用、item.ref 空值拦截、两阶段交付状态流、send_attempt 失败阻断 provider.send 与 fail-closed、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、真实 execute_turn_tools 正确识别 safe tool 与两阶段恢复、read + denied shell 单一 delivered batch 消除悬空 batch、clean-path prompt 字节级 parity 全文精确比对、Run Details 权威合并 reads/lookups并在异常时优雅 warning、record_recovered 幂等性与冲突拒绝）。
 - `tests/manual/safe_tool_replay_delivery_smoke.py`：`--self-test`（多 safe tool 同轮前 settled 后 pending 崩溃恢复）与 `--same-run-self-test`（多轮两阶段 receipt 连续写入）100% passed。
 - `tests/test_architecture.py`：72/72 passed（分层边界与 AST 静态合规全部守卫）。
-- 全量回归：3422 passed, 4 skipped in 290.96s (0:04:50)。
+- 全量回归：3427 passed, 4 skipped in 296.53s (0:04:56)。
 
 ### A/B
 

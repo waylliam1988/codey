@@ -19,14 +19,16 @@ runtime:    introduced codey.runtime.tool_result_delivery with DeliveryBatchInte
             Tracks two-phase delivery receipts (batch_intent -> send_attempt -> delivered / recovered)
             backed by durable RuntimeSessionLog.
             Strict schema validation rejecting forbidden raw fields (prompt, reply, result,
-            stdout, stderr, diff, source_body), matching refs/names lengths, and verifying digest.
+            stdout, stderr, diff, source_body), enforcing exact item payload schema, strict non-negative
+            integers and bounded strings, aligning run boundaries with RuntimeEffectStore, rejecting
+            orphan send_attempt / delivered records, and verifying digest.
             Added can_recover_before_provider_send ensuring send_attempt batches fail closed.
             Updated RuntimeSessionLog._compact_entries to preserve active delivery receipts
             for open operations, and compact delivered batches while keeping durable recovered facts.
 agents:     extracted codey.agents.tool_turn (execute_turn_tools) to record turn-level
             batch intents early before executing any tool, eliminating the inter-tool crash window.
             Extracted codey.agents.result_delivery (deliver_turn_results,
-            deliver_recovered_results, build_next_tool_prompt).
+            deliver_recovered_results, build_next_tool_prompt) with TurnState fast-path digest reuse.
             Eliminated duplicate prompt formatting across 3 separate sites in codey/agents/loop.py.
             Wired two-phase delivery receipt recording during provider send in prompt_context.py.
 operations: extended recover_effects_for_resume() to identify undelivered all-safe batches,
@@ -37,19 +39,19 @@ operations: extended recover_effects_for_resume() to identify undelivered all-sa
             Injected recovered_tool_result_batch_id into RunFrame and AgentRequest.
 details:    wired load_recovered_facts into Run Details (codey/runs/details.py) ensuring
             recovered facts project accurately even after session compaction.
-harness:    added unit tests in tests/test_tool_result_delivery.py (22/22 passed).
+harness:    added unit tests in tests/test_tool_result_delivery.py (27/27 passed).
             Added manual smoke in tests/manual/safe_tool_replay_delivery_smoke.py (--self-test, --same-run-self-test passed).
             Architecture boundaries verified in tests/test_architecture.py (72/72 passed).
 ```
 
 Verification:
 
-- `pytest tests/test_tool_result_delivery.py` (`22 passed in 0.95s`)
+- `pytest tests/test_tool_result_delivery.py` (`27 passed in 0.99s`)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --self-test` (passed; multi-tool crash recovery, prompt parity, idempotent re-recovery)
 - `python -B tests/manual/safe_tool_replay_delivery_smoke.py --same-run-self-test` (passed; multi-turn continuous delivery receipts)
-- `pytest tests/test_architecture.py` (`72 passed in 10.41s`)
-- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`54 passed in 2.30s`)
-- `pytest` (`3422 passed, 4 skipped in 290.96s (0:04:50)`)
+- `pytest tests/test_architecture.py` (`72 passed in 10.39s`)
+- `pytest tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_run_details.py` (`59 passed in 2.13s`)
+- `pytest` (`3427 passed, 4 skipped in 296.53s (0:04:56)`)
 
 ## 0.5.4 Safe Tool Replay v1 (2026-09-01)
 

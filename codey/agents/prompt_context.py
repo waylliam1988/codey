@@ -318,8 +318,12 @@ def _send_provider_with_effect(
                 batch_id=delivery_batch_id,
                 provider_effect_id=effect_id,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            if getattr(session, "trace", None) is not None:
+                try:
+                    session.trace.call("record_delivery_warning", f"failed to record delivered receipt: {exc}")
+                except Exception:
+                    pass
 
     return reply_text
 

@@ -54,6 +54,16 @@ def ensure_result_batch_intent(
     items = tuple(raw_items)
     expected_digest = compute_batch_digest(items)
 
+    # Fast path: turn_state already recorded the batch intent at the start of this turn
+    if turn_state.delivery_batch_id:
+        if turn_state.delivery_batch_digest == expected_digest:
+            return turn_state.delivery_batch_id
+        raise ToolResultDeliveryError(
+            f"turn {turn} delivery batch envelope mismatch: expected digest {expected_digest!r}, "
+            f"found early batch {turn_state.delivery_batch_id!r} with digest {turn_state.delivery_batch_digest!r}"
+        )
+
+    # Slow / failover path: inspect durable store if not present in turn_state
     batches = delivery_store.load_batches(session.session_id, session.run_id)
     for b in reversed(batches):
         if b.intent.turn == turn:
@@ -82,6 +92,8 @@ def ensure_result_batch_intent(
         batch_digest=expected_digest,
     )
     delivery_store.record_batch_intent(session.session_id, session.run_id, intent)
+    turn_state.delivery_batch_id = batch_id
+    turn_state.delivery_batch_digest = expected_digest
     return batch_id
 
 
