@@ -5,12 +5,12 @@
 ## 0.5.5 - Safe Replay Result Delivery Receipt v1
 
 - 安全工具重放结果交付凭据与精准轮次恢复 v1：
-  - 新增 `codey.runtime.tool_result_delivery`：基于单一事实源 `RuntimeSessionLog` 提供纯数据类 `DeliveryBatchIntent`、`DeliveryBatchProjection` 与 `ToolResultDeliveryStore` 存储。支持全生命周期两阶段交付凭据跟踪（`batch_intent` -> `send_attempt` -> `delivered` / `recovered`），严格拒绝 `prompt`、`reply`、`result`、`stdout`、`stderr`、`diff`、`source_body` 等原始输出字段。
-  - 闭环崩溃恢复缺口：解决 0.5.4 中多 safe tool 同轮执行、部分 settled 但整轮未 delivered 给模型时崩溃只能恢复 pending 状态的非阻塞限制。0.5.5 自动投影未交付的 all-safe batch，使用持久化的标准 `replay_args` 按 `(turn, tool_index)` 严格顺序重新执行整批 safe tools；对已 settled 工具不写重复结算，仅记 `recovered` 事实。
-  - 严格 Fail-Closed 边界：包含修改类工具（`edit`、`write`、`run`、`shell`）或 provider send 的 mixed batch 严格 fail-closed，不做任何不安全拼接；已 delivered 的 batch 绝对不重复重放。
+  - 新增 `codey.runtime.tool_result_delivery`：基于单一事实源 `RuntimeSessionLog` 提供纯数据类 `DeliveryBatchIntent`、`DeliveryBatchProjection`、`DeliveryRecoveredFact` 与 `ToolResultDeliveryStore` 存储。支持全生命周期两阶段交付凭据跟踪（`batch_intent` -> `send_attempt` -> `delivered` / `recovered`），严格拒绝 `prompt`、`reply`、`result`、`stdout`、`stderr`、`diff`、`source_body` 等原始输出字段，校验 tool refs/names 长度一致及 SHA-256 批次 digest。
+  - 闭环崩溃恢复时间窗口：抽取 `codey.agents.tool_turn`（`execute_turn_tools`），在执行任何工具前提前记录轮次级的 `batch_intent`，彻底消除工具间执行崩溃的盲区。恢复时自动投影未交付的 all-safe batch，使用持久化的标准 `replay_args` 按 `(turn, tool_index)` 严格顺序重新执行整批 safe tools；对已 settled 工具不写重复结算，仅记 `recovered` 事实。
+  - 严格 Fail-Closed 边界：引入 `can_recover_before_provider_send` 严格要求零 send attempts，防止 provider 已接收 prompt 但进程崩溃导致重复发送；维护 `blocked_effect_ids`，杜绝混合批次或不可恢复批次内的 safe tool 发生局部单 effect 回退重放。
   - Agent Loop 架构精简与 Prompt 字节一致性：抽取 `codey.agents.result_delivery`（`deliver_turn_results`、`deliver_recovered_results`、`build_next_tool_prompt`），消除 `codey/agents/loop.py` 中 3 处重复分散的 tool results 组装与 prompt delivery 代码，并通过 Parity Test 严格保障 clean path prompt 字节级完全一致。
-  - 日志压缩演进：更新 `RuntimeSessionLog._compact_entries`，open operation 保留 active delivery 凭据，settled operation 裁剪已 delivered batch 但持久保留 `recovered` 事实。
-  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py` 单元测试（8/8 passed）、确定性故障注入 smoke `tests/manual/safe_tool_replay_delivery_smoke.py`（`--self-test` 与 `--same-run-self-test` 100% 通过），架构边界测试 `tests/test_architecture.py`（72/72 passed）。全量 pytest 通过：`3408 passed, 4 skipped in 301.73s`。
+  - 日志压缩与 Run Details 消费：更新 `RuntimeSessionLog._compact_entries`，open operation 保留 active delivery 凭据，settled operation 裁剪已 delivered batch 但持久保留 `recovered` 事实；将 `load_recovered_facts` 接入 `codey.runs.details`，保障在日志压缩后运行详情依然能准确投影恢复事实。
+  - 测试与回归保障：新增 `tests/test_tool_result_delivery.py` 单元测试（12/12 passed）、确定性故障注入 smoke `tests/manual/safe_tool_replay_delivery_smoke.py`（`--self-test` 与 `--same-run-self-test` 100% 通过），架构边界测试 `tests/test_architecture.py`（72/72 passed）。全量 pytest 通过：`3412 passed, 4 skipped in 293.60s (0:04:53)`。
 
 ## 0.5.4 - Safe Tool Replay v1
 

@@ -2,7 +2,7 @@
 
 The session log is the durable fact source. This module records bounded receipts
 around the delivery of tool results to model providers:
-1. batch_intent: recorded before tool execution or before result sending
+1. batch_intent: recorded before tool execution in a turn
 2. send_attempt: recorded when a provider send effect starts
 3. delivered: recorded when the provider request settles successfully
 4. recovered: recorded when safe results are reconstructed on resume
@@ -130,6 +130,28 @@ class ToolResultDeliveryError(ValueError):
     """Raised when delivery receipt data violates schema or bounds."""
 
 
+def compute_batch_digest(tool_refs: tuple[str, ...], tool_names: tuple[str, ...]) -> str:
+    if len(tool_refs) != len(tool_names):
+        raise ToolResultDeliveryError(
+            f"tool_refs length ({len(tool_refs)}) must match tool_names length ({len(tool_names)})"
+        )
+    parts = [f"{n}:{r}" for n, r in zip(tool_names, tool_refs, strict=True)]
+    raw = "|".join(parts).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def new_batch_id(run_id: str, turn: int) -> str:
+    clean_run = "".join(c for c in str(run_id) if c.isalnum() or c in "-_")[:40]
+    token = uuid.uuid4().hex[:12]
+    return f"deliv-{clean_run}-t{turn}-{token}"
+
+
+def _check_no_forbidden_keys(payload: dict[str, Any]) -> None:
+    for key in payload:
+        if key.lower() in FORBIDDEN_RAW_KEYS:
+            raise ToolResultDeliveryError(f"forbidden raw data key in payload: {key}")
+
+
 @dataclass(frozen=True)
 class DeliveryBatchIntent:
     batch_id: str
@@ -152,16 +174,27 @@ class DeliveryBatchIntent:
             raise ToolResultDeliveryError("run_id must not be empty")
         if self.turn < 0:
             raise ToolResultDeliveryError(f"turn must be non-negative: {self.turn}")
+        if not self.tool_refs:
+            raise ToolResultDeliveryError("tool_refs must not be empty")
         if len(self.tool_refs) > MAX_TOOL_REFS:
             raise ToolResultDeliveryError("tool_refs exceed maximum count")
+        if len(self.tool_refs) != len(self.tool_names):
+            raise ToolResultDeliveryError(
+                f"tool_refs length ({len(self.tool_refs)}) does not match tool_names length ({len(self.tool_names)})"
+            )
         for ref in self.tool_refs:
-            if not isinstance(ref, str) or len(ref) > MAX_REF_CHARS:
+            if not isinstance(ref, str) or not ref.strip() or len(ref) > MAX_REF_CHARS:
                 raise ToolResultDeliveryError(f"invalid tool_ref: {ref!r}")
         for name in self.tool_names:
             if not isinstance(name, str) or not name.strip():
                 raise ToolResultDeliveryError(f"invalid tool_name: {name!r}")
         if not self.batch_digest or len(self.batch_digest) > MAX_DIGEST_CHARS:
             raise ToolResultDeliveryError(f"invalid batch_digest: {self.batch_digest!r}")
+        expected_digest = compute_batch_digest(self.tool_refs, self.tool_names)
+        if self.batch_digest != expected_digest:
+            raise ToolResultDeliveryError(
+                f"batch_digest mismatch: expected {expected_digest!r}, got {self.batch_digest!r}"
+            )
 
     def to_payload(self) -> dict[str, Any]:
         self.validate()
@@ -186,6 +219,19 @@ class DeliveryBatchIntent:
 
 
 @dataclass(frozen=True)
+class DeliveryRecoveredFact:
+    batch_id: str
+    session_id: str
+    run_id: str
+    lane: str
+    operation_id: str
+    recovered_effect_ids: tuple[str, ...]
+    recovered_reads: int = 0
+    recovered_lookups: int = 0
+    created_at: str = ""
+
+
+@dataclass(frozen=True)
 class DeliveryBatchProjection:
     intent: DeliveryBatchIntent
     send_attempts: tuple[str, ...] = ()
@@ -202,23 +248,14 @@ class DeliveryBatchProjection:
             return False
         return all(is_replayable_safe_tool(name) for name in self.intent.tool_names)
 
-
-def compute_batch_digest(tool_refs: tuple[str, ...], tool_names: tuple[str, ...]) -> str:
-    parts = [f"{n}:{r}" for n, r in zip(tool_names, tool_refs)]
-    raw = "|".join(parts).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()[:32]
-
-
-def new_batch_id(run_id: str, turn: int) -> str:
-    clean_run = "".join(c for c in str(run_id) if c.isalnum() or c in "-_")[:40]
-    token = uuid.uuid4().hex[:12]
-    return f"deliv-{clean_run}-t{turn}-{token}"
-
-
-def _check_no_forbidden_keys(payload: dict[str, Any]) -> None:
-    for key in payload:
-        if key.lower() in FORBIDDEN_RAW_KEYS:
-            raise ToolResultDeliveryError(f"forbidden raw data key in payload: {key}")
+    @property
+    def can_recover_before_provider_send(self) -> bool:
+        """True only if batch is all-safe, never delivered, and no send attempt has been made."""
+        return (
+            not self.is_delivered
+            and not bool(self.send_attempts)
+            and self.is_all_safe
+        )
 
 
 class ToolResultDeliveryStore:
@@ -230,6 +267,26 @@ class ToolResultDeliveryStore:
     @property
     def session_log(self) -> RuntimeSessionLog:
         return self._session_log
+
+    def _append_delivery_record(
+        self,
+        session_id: str,
+        lane: str,
+        operation_id: str,
+        payload: dict[str, Any],
+        allowed_keys: frozenset[str],
+    ) -> None:
+        _check_no_forbidden_keys(payload)
+        if not allowed_keys.issuperset(payload.keys()):
+            extra = set(payload.keys()) - allowed_keys
+            raise ToolResultDeliveryError(f"unknown payload fields: {extra}")
+        self._session_log.append(
+            session_id=session_id,
+            lane=lane,
+            operation_id=operation_id,
+            kind="operation_effect",
+            payload=payload,
+        )
 
     def record_batch_intent(
         self,
@@ -252,18 +309,12 @@ class ToolResultDeliveryStore:
                 batch_digest=intent.batch_digest,
                 created_at=intent.created_at,
             )
-        _check_no_forbidden_keys(intent.to_payload())
-        payload = intent.to_payload()
-        if not _INTENT_PAYLOAD_KEYS.issuperset(payload.keys()):
-            extra = set(payload.keys()) - _INTENT_PAYLOAD_KEYS
-            raise ToolResultDeliveryError(f"unknown payload fields: {extra}")
-
-        self._session_log.append(
+        self._append_delivery_record(
             session_id=session_id,
             lane=intent.lane,
             operation_id=intent.operation_id,
-            kind="operation_effect",
-            payload=payload,
+            payload=intent.to_payload(),
+            allowed_keys=_INTENT_PAYLOAD_KEYS,
         )
 
     def record_send_attempt(
@@ -296,14 +347,12 @@ class ToolResultDeliveryStore:
             "provider_effect_id": provider_effect_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        _check_no_forbidden_keys(payload)
-
-        self._session_log.append(
+        self._append_delivery_record(
             session_id=session_id,
             lane=lane,
             operation_id=operation_id,
-            kind="operation_effect",
             payload=payload,
+            allowed_keys=_SEND_ATTEMPT_PAYLOAD_KEYS,
         )
 
     def record_delivered(
@@ -336,14 +385,12 @@ class ToolResultDeliveryStore:
             "provider_effect_id": provider_effect_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        _check_no_forbidden_keys(payload)
-
-        self._session_log.append(
+        self._append_delivery_record(
             session_id=session_id,
             lane=lane,
             operation_id=operation_id,
-            kind="operation_effect",
             payload=payload,
+            allowed_keys=_DELIVERED_PAYLOAD_KEYS,
         )
 
     def record_recovered(
@@ -379,14 +426,12 @@ class ToolResultDeliveryStore:
             "recovered_lookups": max(0, int(recovered_lookups)),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        _check_no_forbidden_keys(payload)
-
-        self._session_log.append(
+        self._append_delivery_record(
             session_id=session_id,
             lane=lane,
             operation_id=operation_id,
-            kind="operation_effect",
             payload=payload,
+            allowed_keys=_RECOVERED_PAYLOAD_KEYS,
         )
 
     def load_batches(
@@ -476,17 +521,49 @@ class ToolResultDeliveryStore:
 
         return tuple(projections)
 
+    def load_recovered_facts(
+        self,
+        session_id: str,
+        run_id: str,
+    ) -> tuple[DeliveryRecoveredFact, ...]:
+        """Load durable recovered facts directly from session log, even after compaction."""
+        entries = self._session_log.read(session_id)
+        target_op = operation_id_for_run(run_id)
+        facts: list[DeliveryRecoveredFact] = []
+        for entry in entries:
+            if entry.kind != "operation_effect":
+                continue
+            payload = entry.payload
+            if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_RECOVERED:
+                continue
+            if entry.operation_id != target_op:
+                continue
+            batch_id = str(payload.get("batch_id") or "").strip()
+            if not batch_id:
+                continue
+            facts.append(
+                DeliveryRecoveredFact(
+                    batch_id=batch_id,
+                    session_id=str(payload.get("session_id") or ""),
+                    run_id=str(payload.get("run_id") or ""),
+                    lane=str(payload.get("lane") or ""),
+                    operation_id=str(payload.get("operation_id") or ""),
+                    recovered_effect_ids=tuple(str(e) for e in payload.get("recovered_effect_ids", ())),
+                    recovered_reads=max(0, int(payload.get("recovered_reads", 0))),
+                    recovered_lookups=max(0, int(payload.get("recovered_lookups", 0))),
+                    created_at=str(payload.get("created_at") or ""),
+                )
+            )
+        return tuple(facts)
+
     def undelivered_replayable_batches(
         self,
         session_id: str,
         run_id: str,
     ) -> tuple[DeliveryBatchProjection, ...]:
-        """Return undelivered batches where every tool call is replayable safe."""
+        """Return undelivered batches where every tool call is replayable safe and no send attempt exists."""
         batches = self.load_batches(session_id, run_id)
-        return tuple(
-            b for b in batches
-            if not b.is_delivered and b.is_all_safe
-        )
+        return tuple(b for b in batches if b.can_recover_before_provider_send)
 
 
 __all__ = [
@@ -495,8 +572,10 @@ __all__ = [
     "RECORD_KIND_DELIVERED",
     "RECORD_KIND_RECOVERED",
     "RECORD_KIND_SEND_ATTEMPT",
+    "RECORD_KINDS",
     "DeliveryBatchIntent",
     "DeliveryBatchProjection",
+    "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",
     "compute_batch_digest",

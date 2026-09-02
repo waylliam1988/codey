@@ -63,13 +63,15 @@ def recover_effects_for_resume(
     consumed_effect_ids: set[str] = set()
     recovered_batch_id = ""
 
+    blocked_effect_ids: set[str] = set()
+
     # 1. Process undelivered all-safe batches if delivery store is available
     if delivery_store is not None and project_path is not None:
         try:
-            raw_batches = delivery_store.undelivered_replayable_batches(session_id, run_id)
-            undelivered_batches = tuple(raw_batches) if isinstance(raw_batches, (list, tuple)) else ()
+            raw_batches = delivery_store.load_batches(session_id, run_id)
+            all_batches = tuple(raw_batches) if isinstance(raw_batches, (list, tuple)) else ()
         except Exception:
-            undelivered_batches = ()
+            all_batches = ()
 
         effect_by_id = {
             p.intent.effect_id: p
@@ -77,7 +79,13 @@ def recover_effects_for_resume(
             if hasattr(p, "intent") and hasattr(p.intent, "effect_id")
         }
 
-        for batch in undelivered_batches:
+        recovered_a_batch = False
+        for batch in all_batches:
+            if not batch.can_recover_before_provider_send or recovered_a_batch:
+                # Any batch that cannot be recovered whole blocks its effects from single-effect fallback
+                blocked_effect_ids.update(batch.intent.tool_refs)
+                continue
+
             batch_candidates: list[tuple[SafeToolReplayCandidate, bool]] = []
             batch_valid = True
 
@@ -106,6 +114,7 @@ def recover_effects_for_resume(
                 batch_candidates.append((candidate, proj.is_pending))
 
             if not batch_valid or not batch_candidates:
+                blocked_effect_ids.update(batch.intent.tool_refs)
                 continue
 
             batch_outcomes: list[RecoveredToolOutcome] = []
@@ -162,7 +171,7 @@ def recover_effects_for_resume(
                 )
                 recovered_outcomes.extend(batch_outcomes)
                 recovered_batch_id = batch.intent.batch_id
-                break  # Recovered latest valid undelivered batch
+                recovered_a_batch = True
 
     # 2. Process remaining pending effects
     for projection in pending:
@@ -170,20 +179,21 @@ def recover_effects_for_resume(
         if intent.effect_id in consumed_effect_ids:
             continue
 
-        candidate = candidate_from_effect(projection)
-        recovered = _try_replay_safe_tool(
-            effects_store,
-            candidate,
-            session_id=session_id,
-            run_id=run_id,
-            project_path=project_path,
-            profile_name=profile_name,
-            tool_fns=DEFAULT_TOOL_FNS,
-        )
-        if recovered is not None:
-            recovered_outcomes.append(recovered)
-            consumed_effect_ids.add(intent.effect_id)
-            continue
+        if intent.effect_id not in blocked_effect_ids:
+            candidate = candidate_from_effect(projection)
+            recovered = _try_replay_safe_tool(
+                effects_store,
+                candidate,
+                session_id=session_id,
+                run_id=run_id,
+                project_path=project_path,
+                profile_name=profile_name,
+                tool_fns=DEFAULT_TOOL_FNS,
+            )
+            if recovered is not None:
+                recovered_outcomes.append(recovered)
+                consumed_effect_ids.add(intent.effect_id)
+                continue
 
         if not _settle_interrupted(
             effects_store,

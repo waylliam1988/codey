@@ -25,7 +25,7 @@ def record_result_batch_intent_safely(
     turn_state: TurnState,
     turn: int,
 ) -> str:
-    """Record durable batch intent for a completed turn's tool results."""
+    """Find existing or record durable batch intent for a completed turn's tool results."""
     delivery_store = session.tool_result_delivery
     if (
         delivery_store is None
@@ -35,24 +35,33 @@ def record_result_batch_intent_safely(
     ):
         return ""
 
+    try:
+        # Check if an undelivered batch for this turn was already planned
+        batches = delivery_store.load_batches(session.session_id, session.run_id)
+        for b in reversed(batches):
+            if b.intent.turn == turn and not b.is_delivered and not b.send_attempts:
+                return b.intent.batch_id
+    except Exception:
+        pass
+
     batch_id = new_batch_id(session.run_id, turn)
     tool_refs = tuple(
         item.effect_id or f"item:{item.turn}:{item.tool_index}:{item.tool_name}"
         for item in turn_state.delivery_items
     )
     tool_names = tuple(item.tool_name for item in turn_state.delivery_items)
-    intent = DeliveryBatchIntent(
-        batch_id=batch_id,
-        session_id=session.session_id,
-        run_id=session.run_id,
-        lane=lane_for_run(session.run_id),
-        operation_id=operation_id_for_run(session.run_id),
-        turn=turn,
-        tool_refs=tool_refs,
-        tool_names=tool_names,
-        batch_digest=compute_batch_digest(tool_refs, tool_names),
-    )
     try:
+        intent = DeliveryBatchIntent(
+            batch_id=batch_id,
+            session_id=session.session_id,
+            run_id=session.run_id,
+            lane=lane_for_run(session.run_id),
+            operation_id=operation_id_for_run(session.run_id),
+            turn=turn,
+            tool_refs=tool_refs,
+            tool_names=tool_names,
+            batch_digest=compute_batch_digest(tool_refs, tool_names),
+        )
         delivery_store.record_batch_intent(session.session_id, session.run_id, intent)
         return batch_id
     except Exception:

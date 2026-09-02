@@ -288,7 +288,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         object.__setattr__(session, "tool_fns", custom_tools)
 
         reply_json = '```json\n{"calls": [{"name": "read", "args": {"path": "foo.py"}}], "control": {"action": "done", "body": "finished"}}\n```'
-        with patch("codey.agents.loop.record_tool_call_intent", side_effect=RuntimeError("intent write failed")):
+        with patch("codey.agents.tool_turn.record_tool_call_intent", side_effect=RuntimeError("intent write failed")):
             _run_loop(session, reply_json)
 
         # Tool should NOT have been executed

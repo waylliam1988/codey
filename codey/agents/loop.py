@@ -30,19 +30,9 @@ from codey.agents.tool_execution import (
     INFORMATION_TOOL_NAMES,
     SUPPORTED_TOOL_NAMES,
     TurnState,
-    call_arg,
-    emit_tool_started_after_intent,
-    evaluate_tool_call_policy,
-    execute_tool_call,
-    mark_policy_denied_run,
-    policy_denied,
-    policy_error_outcome,
-    record_tool_call_intent,
-    record_tool_call_settlement,
     record_tool_outcome,
-    request_shell_approval,
-    tool_error_outcome,
 )
+from codey.agents.tool_turn import execute_turn_tools
 from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.agents.verification_driver import (
     default_candidate_reminder,
@@ -57,7 +47,6 @@ from codey.agents.verification_driver import (
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.protocols.json_codec import PROTOCOL_NO_JSON
-from codey.runtime import cancellation
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolPlan
 from codey.runtime.prompt_envelope import (
@@ -288,101 +277,15 @@ def _run_loop(
                 arg_repair_counts=plan.arg_repair_counts,
             )
 
-        turn_state = TurnState()
-        for tool_index, call in enumerate(calls):
-            path = call_arg(call, "path", ".")
-            effect_id = ""
-            replay_decision = None
-            try:
-                policy_decision, replay_decision = evaluate_tool_call_policy(
-                    session,
-                    call,
-                    turn=turn,
-                    tool_index=tool_index,
-                )
-                if policy_denied(policy_decision):
-                    assert policy_decision is not None
-                    outcome = policy_error_outcome(policy_decision)
-                    if call.name == "run":
-                        mark_policy_denied_run(session)
-                    record_tool_outcome(
-                        session,
-                        turn_state,
-                        turn=turn,
-                        call=call,
-                        outcome=outcome,
-                        tool_index=tool_index,
-                    )
-                    continue
-                if call.name == "shell":
-                    command = call_arg(call, "command").strip()
-                    request_shell_approval(
-                        session,
-                        path=path,
-                        command=command,
-                        policy_decision=policy_decision,
-                    )
-                    return _finish(
-                        session,
-                        "shell command requires approval",
-                        "approval",
-                        turn,
-                    )
-
-                effect_id = record_tool_call_intent(
-                    session,
-                    call,
-                    turn=turn,
-                    tool_index=tool_index,
-                    replay_decision=replay_decision,
-                )
-                emit_tool_started_after_intent(
-                    session,
-                    call,
-                    turn=turn,
-                    tool_index=tool_index,
-                )
-                try:
-                    outcome = execute_tool_call(
-                        session,
-                        call,
-                        turn=turn,
-                        tool_index=tool_index,
-                    )
-                except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
-                    if effect_id:
-                        record_tool_call_settlement(
-                            session,
-                            effect_id,
-                            outcome=tool_error_outcome(exc),
-                            replay_decision=replay_decision,
-                        )
-                    raise
-                except Exception as exc:
-                    outcome = tool_error_outcome(exc)
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception as exc:
-                outcome = tool_error_outcome(exc)
-
-            try:
-                record_tool_outcome(
-                    session,
-                    turn_state,
-                    turn=turn,
-                    call=call,
-                    outcome=outcome,
-                    tool_index=tool_index,
-                    effect_id=effect_id,
-                )
-            finally:
-                if effect_id:
-                    record_tool_call_settlement(
-                        session,
-                        effect_id,
-                        outcome=outcome,
-                        replay_decision=replay_decision,
-                    )
+        turn_result = execute_turn_tools(session, calls, turn=turn)
+        if turn_result.stopped:
+            return _finish(
+                session,
+                turn_result.stop_summary,
+                turn_result.stop_reason,
+                turn,
+            )
+        turn_state = turn_result.turn_state
 
         if session.conversation is not None:
             session.conversation.update_snapshot(

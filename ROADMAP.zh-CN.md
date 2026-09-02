@@ -3838,10 +3838,10 @@ recovered results 排序稳定，且每个 result 只注入一次
 ```
 
 实测证据：
-- `tests/test_tool_result_delivery.py`：8/8 passed（涵盖 schema 拒绝 raw 字段、两阶段交付状态流、undelivered all-safe batch 投影、closed session compaction 规则、mixed batch fail-closed、clean-path prompt parity）。
+- `tests/test_tool_result_delivery.py`：12/12 passed（涵盖 schema 拒绝 raw 字段、refs/names/digest 强校验、两阶段交付状态流、send_attempt fail-closed 拦截、undelivered all-safe batch 投影、closed session compaction 规则与 recovered fact 直接投影、mixed batch 拦截 safe tool 局部单 effect 重放、turn-level early intent 记录与恢复、clean-path prompt parity、Run Details 真实消费展示）。
 - `tests/manual/safe_tool_replay_delivery_smoke.py`：`--self-test`（多 safe tool 同轮前 settled 后 pending 崩溃恢复）与 `--same-run-self-test`（多轮两阶段 receipt 连续写入）100% passed。
 - `tests/test_architecture.py`：72/72 passed（分层边界与 AST 静态合规全部守卫）。
-- 全量回归：3408 passed, 4 skipped in 301.73s。
+- 全量回归：3412 passed, 4 skipped in 293.60s (0:04:53)。
 
 ### A/B
 

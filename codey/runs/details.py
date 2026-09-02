@@ -87,6 +87,7 @@ def load_run_details(
     run_id: str,
     runtime_operations: Any = None,
     runtime_effects: Any = None,
+    tool_result_delivery: Any = None,
 ) -> RunDetailsSummary:
     """Build a short UI-ready explanation for one run."""
 
@@ -98,7 +99,7 @@ def load_run_details(
     operation = _load_operation_state(runtime_operations, session, run)
     projection = load_run_projection(run_ledgers, session, run)
     trace = _load_trace_payload(run_traces, session, run)
-    recovery = _load_recovery_summary(runtime_effects, session, run)
+    recovery = _load_recovery_summary(runtime_effects, session, run, tool_result_delivery=tool_result_delivery)
     if projection is None and trace is None and operation is None and not (recovery and recovery.explanation_lines):
         return unavailable_summary()
 
@@ -118,13 +119,42 @@ def unavailable_summary() -> RunDetailsSummary:
     )
 
 
-def _load_recovery_summary(runtime_effects: Any, session_id: str, run_id: str) -> Any | None:
-    if runtime_effects is None:
-        return None
-    try:
-        return runtime_effects.recovery_summary(session_id, run_id)
-    except Exception:
-        return None
+def _load_recovery_summary(
+    runtime_effects: Any,
+    session_id: str,
+    run_id: str,
+    tool_result_delivery: Any = None,
+) -> Any | None:
+    summary = None
+    if runtime_effects is not None:
+        try:
+            summary = runtime_effects.recovery_summary(session_id, run_id)
+        except Exception:
+            summary = None
+
+    if tool_result_delivery is not None:
+        try:
+            facts = tool_result_delivery.load_recovered_facts(session_id, run_id)
+            if facts:
+                total_reads = sum(f.recovered_reads for f in facts)
+                total_lookups = sum(f.recovered_lookups for f in facts)
+                if summary is None or not getattr(summary, "explanation_lines", ()):
+                    lines: list[str] = []
+                    if total_reads > 0:
+                        lines.append("Read action was recovered")
+                    if total_lookups > 0:
+                        lines.append("Lookup action was recovered")
+                    if lines:
+                        from codey.runtime.effect_records import RecoverySummary
+                        summary = RecoverySummary(
+                            replayed_reads=total_reads,
+                            replayed_lookups=total_lookups,
+                            explanation_lines=tuple(lines),
+                        )
+        except Exception:
+            pass
+
+    return summary
 
 
 def _summary_rows(
