@@ -79,7 +79,11 @@ def canonical_surface_phase(value: object) -> str:
 
 
 def canonical_surface_send_ref(value: object) -> str:
-    text = str(value or "").strip()[:80]
+    return str(value or "").strip()[:80]
+
+
+def sanitize_log_ref(value: object, limit: int = 80) -> str:
+    text = str(value or "").strip()[:limit]
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
 
 

@@ -301,6 +301,19 @@ class PromptSurfaceTests(unittest.TestCase):
         self.assertEqual(len(trace2.surfaces), 1)
         self.assertEqual(trace2.surfaces[0]["phase"], "writer")
         self.assertEqual(trace2.surfaces[0]["send_ref"], "effect_99")
+        # uncanonical send_ref with spaces/slashes must be rejected at surface layer
+        trace_bad_send = _CaptureTrace()
+        record_provider_send_prompt(
+            trace_bad_send,
+            name="coding_outbound_prompt",
+            text="hello dirty send_ref",
+            purpose="test dirty send_ref rejection",
+            source_ref="provider_send:coding",
+            phase="writer",
+            send_ref="effect 1",
+        )
+        self.assertEqual(len(trace_bad_send.sections), 1)
+        self.assertEqual(len(trace_bad_send.surfaces), 0)
 
     def test_run_trace_records_prompt_surface_per_send(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -393,6 +406,65 @@ class PromptSurfaceTests(unittest.TestCase):
                 prompt_digest=obj["prompt_surfaces"][0]["prompt_digest"],
             )
             self.assertEqual(obj["prompt_surfaces"][0]["surface_id"], derived)
+
+    def test_record_prompt_surface_dedup_does_not_flush_repeatedly(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td))
+            recorder = store.open(run_id="run-dedup", session_id="sess-dedup", project=None, mode_initial="project", provider_initial="deepseek")
+            flush_count = 0
+            orig_flush = recorder.flush
+
+            def counting_flush():
+                nonlocal flush_count
+                flush_count += 1
+                return orig_flush()
+
+            recorder.flush = counting_flush
+
+            surf1 = prompt_surface_id(phase="writer", send_ref="effect_1", prompt_digest="sha256:" + "b" * 64)
+            payload = {
+                "schema_version": PROMPT_SURFACE_SCHEMA_VERSION,
+                "surface_id": surf1,
+                "send_ref": "effect_1",
+                "phase": "writer",
+                "prompt_digest": "sha256:" + "b" * 64,
+                "prompt_chars": 42,
+                "epoch_id": "ctx_epoch:" + "c" * 16,
+            }
+            recorder.record_prompt_surface(payload)
+            self.assertEqual(flush_count, 1)
+            # second call with identical payload must be rejected/deduped and NOT flush again
+            recorder.record_prompt_surface(payload)
+            self.assertEqual(flush_count, 1)
+            # invalid payload must not flush
+            recorder.record_prompt_surface({"bad": "payload"})
+            self.assertEqual(flush_count, 1)
+
+    def test_record_provider_prompt_boundary_supports_inheritance(self) -> None:
+        class BaseTrace:
+            def __init__(self):
+                self.boundary_calls = []
+
+            def record_provider_prompt_boundary(self, section_args, surface_payload=None):
+                self.boundary_calls.append((section_args, surface_payload))
+
+        class DerivedTrace(BaseTrace):
+            def __getattr__(self, name):
+                return lambda *a, **kw: None
+
+        derived = DerivedTrace()
+        record_provider_send_prompt(
+            derived,
+            name="coding_outbound_prompt",
+            text="hello inherited boundary",
+            purpose="test inheritance",
+            source_ref="provider_send:test",
+            phase="writer",
+            send_ref="effect_inherited_1",
+        )
+        self.assertEqual(len(derived.boundary_calls), 1)
+        self.assertEqual(derived.boundary_calls[0][0]["name"], "coding_outbound_prompt")
+        self.assertEqual(derived.boundary_calls[0][1]["send_ref"], "effect_inherited_1")
 
 
 if __name__ == "__main__":

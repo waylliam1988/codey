@@ -208,7 +208,7 @@ class PromptSurfaceTrace:
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
-            "schema_version": 1,
+            "schema_version": int(self.schema_version or 1),
             "surface_id": _clip(self.surface_id, 120),
             "phase": _identifier(self.phase, 40),
             "prompt_digest": _clip(self.prompt_digest, 80),
@@ -678,8 +678,8 @@ class RunTraceRecorder:
         return True
 
     def record_prompt_surface(self, payload: Mapping[str, object]) -> None:
-        self._append_prompt_surface(payload)
-        self.flush()
+        if self._append_prompt_surface(payload):
+            self.flush()
 
     def record_provider_prompt_boundary(
         self,

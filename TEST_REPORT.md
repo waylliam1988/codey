@@ -46,9 +46,10 @@ controller:   added ControllerActionContract, CONTROLLER_ACTION_CONTRACTS,
 prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               PromptSurfaceSection/Record, prompt_surface_id() (per-send
               phase+send_ref+prompt_digest); added shared canonicalizers
-              canonical_surface_phase(), canonical_surface_send_ref(),
-              canonical_surface_prompt_digest(); build_prompt_surface_record()
-              normalizes fields before id calculation;
+              canonical_surface_phase(), canonical_surface_send_ref() (pure strip
+              without silent character substitution to prevent identity collapse),
+              sanitize_log_ref() (display only), canonical_surface_prompt_digest();
+              build_prompt_surface_record() normalizes fields before id calculation;
               validate_prompt_surface_payload() strictly recomputes and verifies
               authentic derived surface_id, rejects non-canonical phase (>40 chars,
               spaces, special chars), restricts send_ref to identifier charset
@@ -57,13 +58,15 @@ prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               ctx_epoch pattern, checks sha256 hex, uses type(x) is int to seal
               bool-int loopholes, and removed no-op provider_effect_id logic and dead
               _is_epoch() helper.
-envelope/trace: extended record_provider_send_prompt() to prioritize
-              trace.record_provider_prompt_boundary() for single-flush atomic batch
-              persistence of prompt section and surface; extracted private helpers
-              _append_prompt_section() and _append_prompt_surface() on RunTraceRecorder;
-              extended RunTrace with PromptSurfaceTrace (send_ref+schema_version),
-              prompt_surfaces and record_prompt_surface() strict validation and
-              per-send dedup.
+envelope/trace: extended record_provider_send_prompt() to extract private helper
+              _build_validated_surface_payload(), use inspect.getattr_static() to
+              safely detect trace.record_provider_prompt_boundary() with full
+              inheritance support while avoiding dynamic __getattr__ interception;
+              extracted private helpers _append_prompt_section() and
+              _append_prompt_surface() on RunTraceRecorder; extended RunTrace with
+              PromptSurfaceTrace (now serializing self.schema_version and send_ref),
+              prompt_surfaces and record_prompt_surface() with conditional flushing
+              only upon successful non-duplicate append.
 provider_send: reordered _send_provider_with_effect() to create provider effect
               intent first, then record the surface with phase="writer",
               send_ref=effect_id and contract hashes before provider.send();
@@ -75,13 +78,13 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
 
 Verification:
 
-- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`25 passed, 27 subtests passed in 1.15s`)
+- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`27 passed, 27 subtests passed in 1.10s`)
 - `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`260 passed, 69 subtests passed in 15.60s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.70s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.45s`)
 - `ruff check` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3468 passed, 4 skipped, 1235 subtests passed in 300.86s (0:05:00)` after round 3 review findings refinement; strict identifier send_ref, unpadded prompt_digest canonical verification, RunTraceRecorder single-flush record_provider_prompt_boundary batching; no model-visible coding bytes changed).
+- Full pytest suite: `pytest -q` (`3470 passed, 4 skipped, 1235 subtests passed in 311.19s (0:05:11)` after round 4 review findings refinement; pure strip send_ref without silent identity collapse, _build_validated_surface_payload private extraction, inspect.getattr_static static detection, record_prompt_surface conditional flush, PromptSurfaceTrace.schema_version serialization; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

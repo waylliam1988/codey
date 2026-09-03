@@ -7,6 +7,7 @@ assembly helper plus a trace sink, not a plugin system or prompt policy layer.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -196,6 +197,89 @@ def is_model_boundary_freshness(value: object) -> bool:
     return str(value or "").strip() in MODEL_BOUNDARY_FRESHNESS
 
 
+def _build_validated_surface_payload(
+    *,
+    text: str,
+    name: str,
+    source_ref: str,
+    resolved_epoch: str,
+    capability_id: str = "",
+    phase: str = "",
+    send_ref: str = "",
+    provider_effect_id: str = "",
+    model_tool_contract_hash: str = "",
+    runtime_tool_contract_hash: str = "",
+) -> dict[str, object] | None:
+    effective_phase = str(phase or "").strip()
+    effective_send_ref = str(send_ref or "").strip()
+    if not effective_phase or not effective_send_ref:
+        return None
+    try:
+        import hashlib
+
+        from codey.runtime.prompt_surface import (
+            PromptSurfaceSection,
+            build_prompt_surface_record,
+            validate_prompt_surface_payload,
+        )
+
+        prompt_digest = "sha256:" + hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
+        prompt_chars = len(str(text or ""))
+        section = PromptSurfaceSection(
+            name=str(name or "prompt_section"),
+            digest=prompt_digest,
+            chars=prompt_chars,
+            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
+            model_visible=True,
+            freshness=PROVIDER_TURN_BOUNDARY,
+            epoch_id=resolved_epoch,
+            capability_id=str(capability_id or ""),
+        )
+        record = build_prompt_surface_record(
+            phase=effective_phase,
+            send_ref=effective_send_ref,
+            prompt_digest=prompt_digest,
+            prompt_chars=prompt_chars,
+            epoch_id=resolved_epoch,
+            source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
+            provider_effect_id=str(provider_effect_id or "").strip(),
+            model_tool_contract_hash=str(model_tool_contract_hash or "").strip(),
+            runtime_tool_contract_hash=str(runtime_tool_contract_hash or "").strip(),
+            sections=(section,),
+        )
+        payload: dict[str, object] = {
+            "schema_version": record.schema_version,
+            "surface_id": record.surface_id,
+            "send_ref": record.send_ref,
+            "phase": record.phase,
+            "prompt_digest": record.prompt_digest,
+            "prompt_chars": record.prompt_chars,
+            "epoch_id": record.epoch_id,
+            "source_refs": list(record.source_refs),
+            "provider_effect_id": record.provider_effect_id,
+            "model_tool_contract_hash": record.model_tool_contract_hash,
+            "runtime_tool_contract_hash": record.runtime_tool_contract_hash,
+            "sections": [
+                {
+                    "name": sec.name,
+                    "digest": sec.digest,
+                    "chars": sec.chars,
+                    "source_refs": list(sec.source_refs),
+                    "model_visible": bool(sec.model_visible),
+                    "freshness": sec.freshness,
+                    "epoch_id": sec.epoch_id,
+                    "capability_id": sec.capability_id,
+                }
+                for sec in record.sections
+            ],
+        }
+        return payload if validate_prompt_surface_payload(payload) else None
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return None
+
+
 def record_provider_send_prompt(
     trace: Any | None,
     *,
@@ -226,75 +310,22 @@ def record_provider_send_prompt(
     supplied, only the existing ``prompt_sections`` row is recorded.
     """
     resolved_epoch = str(epoch_id or "").strip() or context_epoch_id(text)
-    surface_payload: dict[str, object] | None = None
-    effective_phase = str(phase or "").strip()
-    effective_send_ref = str(send_ref or "").strip()
-    if effective_phase and effective_send_ref and trace is not None:
-        try:
-            import hashlib
-
-            from codey.runtime.prompt_surface import (
-                PromptSurfaceSection,
-                build_prompt_surface_record,
-                validate_prompt_surface_payload,
-            )
-
-            prompt_digest = "sha256:" + hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()
-            prompt_chars = len(str(text or ""))
-            section = PromptSurfaceSection(
-                name=str(name or "prompt_section"),
-                digest=prompt_digest,
-                chars=prompt_chars,
-                source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
-                model_visible=True,
-                freshness=PROVIDER_TURN_BOUNDARY,
-                epoch_id=resolved_epoch,
-                capability_id=str(capability_id or ""),
-            )
-            record = build_prompt_surface_record(
-                phase=effective_phase,
-                send_ref=effective_send_ref,
-                prompt_digest=prompt_digest,
-                prompt_chars=prompt_chars,
-                epoch_id=resolved_epoch,
-                source_refs=(str(source_ref or "").strip()[:120],) if str(source_ref or "").strip() else (),
-                provider_effect_id=str(provider_effect_id or "").strip(),
-                model_tool_contract_hash=str(model_tool_contract_hash or "").strip(),
-                runtime_tool_contract_hash=str(runtime_tool_contract_hash or "").strip(),
-                sections=(section,),
-            )
-            payload: dict[str, object] = {
-                "schema_version": record.schema_version,
-                "surface_id": record.surface_id,
-                "send_ref": record.send_ref,
-                "phase": record.phase,
-                "prompt_digest": record.prompt_digest,
-                "prompt_chars": record.prompt_chars,
-                "epoch_id": record.epoch_id,
-                "source_refs": list(record.source_refs),
-                "provider_effect_id": record.provider_effect_id,
-                "model_tool_contract_hash": record.model_tool_contract_hash,
-                "runtime_tool_contract_hash": record.runtime_tool_contract_hash,
-                "sections": [
-                    {
-                        "name": sec.name,
-                        "digest": sec.digest,
-                        "chars": sec.chars,
-                        "source_refs": list(sec.source_refs),
-                        "model_visible": bool(sec.model_visible),
-                        "freshness": sec.freshness,
-                        "epoch_id": sec.epoch_id,
-                        "capability_id": sec.capability_id,
-                    }
-                    for sec in record.sections
-                ],
-            }
-            if validate_prompt_surface_payload(payload):
-                surface_payload = payload
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            surface_payload = None
+    surface_payload = (
+        _build_validated_surface_payload(
+            text=text,
+            name=name,
+            source_ref=source_ref,
+            resolved_epoch=resolved_epoch,
+            capability_id=capability_id,
+            phase=phase,
+            send_ref=send_ref,
+            provider_effect_id=provider_effect_id,
+            model_tool_contract_hash=model_tool_contract_hash,
+            runtime_tool_contract_hash=runtime_tool_contract_hash,
+        )
+        if trace is not None
+        else None
+    )
 
     section_args = {
         "name": name,
@@ -306,10 +337,14 @@ def record_provider_send_prompt(
         "admission_reason": PROVIDER_TURN_ADMISSION,
         "capability_id": capability_id,
     }
-    trace_cls = type(trace) if trace is not None else None
+    boundary_decl = (
+        inspect.getattr_static(trace, "record_provider_prompt_boundary", None)
+        if trace is not None
+        else None
+    )
     boundary_fn = (
         getattr(trace, "record_provider_prompt_boundary", None)
-        if trace_cls is not None and "record_provider_prompt_boundary" in trace_cls.__dict__
+        if boundary_decl is not None
         else None
     )
     if callable(boundary_fn):
