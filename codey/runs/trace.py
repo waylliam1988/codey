@@ -534,7 +534,7 @@ class RunTraceRecorder:
                     self.manifest.warnings.append("tool_contracts_truncated")
             self.checkpoint()
 
-    def record_prompt_section(
+    def _append_prompt_section(
         self,
         name: str,
         text: object,
@@ -548,15 +548,14 @@ class RunTraceRecorder:
         epoch_id: str = "",
         admission_reason: str = "",
         capability_id: str = "",
-    ) -> None:
+    ) -> bool:
         rendered = str(text or "")
         if not rendered:
-            return
+            return False
         refs = _bounded_refs(source_refs)
         if not refs and model_visible:
             fallback = _identifier(name, 80) or "prompt_section"
             refs = (f"prompt_section:{fallback}",)
-        model_boundary = is_model_boundary_freshness(freshness)
         item = PromptSectionTrace(
             name=name,
             digest=digest_text(rendered),
@@ -581,34 +580,63 @@ class RunTraceRecorder:
             item.epoch_id,
         )
         if key in self._prompt_keys:
-            if model_boundary:
-                self.flush()
-            return
+            return False
         self._prompt_keys.add(key)
         self.manifest.prompt_sections.append(item)
         if len(self.manifest.prompt_sections) > MAX_PROMPT_SECTIONS:
             del self.manifest.prompt_sections[:-MAX_PROMPT_SECTIONS]
             self.manifest.warnings.append("prompt_sections_truncated")
+        return True
+
+    def record_prompt_section(
+        self,
+        name: str,
+        text: object,
+        *,
+        purpose: str = "",
+        model_visible: bool = True,
+        budget: int = 0,
+        truncated: bool = False,
+        freshness: str = "",
+        source_refs: Iterable[object] = (),
+        epoch_id: str = "",
+        admission_reason: str = "",
+        capability_id: str = "",
+    ) -> None:
+        model_boundary = is_model_boundary_freshness(freshness)
+        added = self._append_prompt_section(
+            name,
+            text,
+            purpose=purpose,
+            model_visible=model_visible,
+            budget=budget,
+            truncated=truncated,
+            freshness=freshness,
+            source_refs=source_refs,
+            epoch_id=epoch_id,
+            admission_reason=admission_reason,
+            capability_id=capability_id,
+        )
         if model_boundary:
             self.flush()
-        else:
+        elif added:
             self.checkpoint()
 
-    def record_prompt_surface(self, payload: Mapping[str, object]) -> None:
+    def _append_prompt_surface(self, payload: Mapping[str, object]) -> bool:
         try:
             from codey.runtime.prompt_surface import validate_prompt_surface_payload
         except Exception:
-            return
+            return False
         if not isinstance(payload, Mapping):
-            return
+            return False
         if not validate_prompt_surface_payload(payload):
-            return
+            return False
         surface_id = _clip(payload.get("surface_id"), 120)
         send_ref = _clip(payload.get("send_ref"), 80)
         if not surface_id or surface_id in self._prompt_surface_keys:
-            return
+            return False
         if not send_ref:
-            return
+            return False
         # bounded section payloads already validated
         sections: tuple[dict[str, object], ...] = ()
         raw_sections = payload.get("sections")
@@ -647,6 +675,33 @@ class RunTraceRecorder:
         if len(self.manifest.prompt_surfaces) > MAX_PROMPT_SURFACES:
             del self.manifest.prompt_surfaces[:-MAX_PROMPT_SURFACES]
             self.manifest.warnings.append("prompt_surfaces_truncated")
+        return True
+
+    def record_prompt_surface(self, payload: Mapping[str, object]) -> None:
+        self._append_prompt_surface(payload)
+        self.flush()
+
+    def record_provider_prompt_boundary(
+        self,
+        section_args: Mapping[str, object],
+        surface_payload: Mapping[str, object] | None = None,
+    ) -> None:
+        if isinstance(section_args, Mapping):
+            self._append_prompt_section(
+                name=str(section_args.get("name") or ""),
+                text=section_args.get("text"),
+                purpose=str(section_args.get("purpose") or ""),
+                model_visible=bool(section_args.get("model_visible", True)),
+                budget=int(section_args.get("budget") or 0),
+                truncated=bool(section_args.get("truncated", False)),
+                freshness=str(section_args.get("freshness") or ""),
+                source_refs=section_args.get("source_refs") or (),
+                epoch_id=str(section_args.get("epoch_id") or ""),
+                admission_reason=str(section_args.get("admission_reason") or ""),
+                capability_id=str(section_args.get("capability_id") or ""),
+            )
+        if surface_payload is not None:
+            self._append_prompt_surface(surface_payload)
         self.flush()
 
     def record_context_sources(

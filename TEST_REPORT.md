@@ -51,15 +51,16 @@ prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               normalizes fields before id calculation;
               validate_prompt_surface_payload() strictly recomputes and verifies
               authentic derived surface_id, rejects non-canonical phase (>40 chars,
-              spaces, special chars) and send_ref (>80 chars, unstripped), requires
-              non-empty epoch_id matching ctx_epoch pattern, checks sha256 hex,
-              uses type(x) is int to seal bool-int loopholes, and removed no-op
-              provider_effect_id logic and dead _is_epoch() helper.
-envelope/trace: extended record_provider_send_prompt() to accept
-              phase/send_ref/provider_effect_id/contract hashes and only when
-              explicit phase+send_ref are present project a bounded prompt-surface
-              summary via FailOpenPromptTrace (no fallback from send_ref to
-              provider_effect_id; empty surfaces when send_ref is missing);
+              spaces, special chars), restricts send_ref to identifier charset
+              (^[A-Za-z0-9._:-]{1,80}$, rejecting whitespace/newlines), strictly
+              checks unpadded prompt_digest, requires non-empty epoch_id matching
+              ctx_epoch pattern, checks sha256 hex, uses type(x) is int to seal
+              bool-int loopholes, and removed no-op provider_effect_id logic and dead
+              _is_epoch() helper.
+envelope/trace: extended record_provider_send_prompt() to prioritize
+              trace.record_provider_prompt_boundary() for single-flush atomic batch
+              persistence of prompt section and surface; extracted private helpers
+              _append_prompt_section() and _append_prompt_surface() on RunTraceRecorder;
               extended RunTrace with PromptSurfaceTrace (send_ref+schema_version),
               prompt_surfaces and record_prompt_surface() strict validation and
               per-send dedup.
@@ -74,13 +75,13 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
 
 Verification:
 
-- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`24 passed, 27 subtests passed in 1.12s`)
-- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`259 passed, 69 subtests passed in 15.56s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.41s`)
+- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`25 passed, 27 subtests passed in 1.15s`)
+- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`260 passed, 69 subtests passed in 15.60s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.70s`)
 - `ruff check` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3467 passed, 4 skipped, 1235 subtests passed in 318.59s (0:05:18)` after round 2 review findings refinement; shared canonicalizers and strict non-canonical rejection, epoch_id required regex check, dead alias purged, golden import decoupled, and stored surface_id authenticity asserted; no model-visible coding bytes changed).
+- Full pytest suite: `pytest -q` (`3468 passed, 4 skipped, 1235 subtests passed in 300.86s (0:05:00)` after round 3 review findings refinement; strict identifier send_ref, unpadded prompt_digest canonical verification, RunTraceRecorder single-flush record_provider_prompt_boundary batching; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

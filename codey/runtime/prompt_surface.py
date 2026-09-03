@@ -36,6 +36,7 @@ _FORBIDDEN_PAYLOAD_KEYS = frozenset(
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _EPOCH_RE = re.compile(r"^ctx_epoch:[0-9a-f]{16}$")
 _SURFACE_RE = re.compile(r"^prompt_surface:[0-9a-f]{16}$")
+_SEND_REF_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,8 @@ def canonical_surface_phase(value: object) -> str:
 
 
 def canonical_surface_send_ref(value: object) -> str:
-    return str(value or "").strip()[:80]
+    text = str(value or "").strip()[:80]
+    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
 
 
 def canonical_surface_prompt_digest(value: object) -> str:
@@ -119,7 +121,7 @@ def build_prompt_surface_record(
 
 
 def _is_sha256(value: object) -> bool:
-    return bool(_SHA256_RE.match(str(value or "").strip()))
+    return bool(isinstance(value, str) and _SHA256_RE.match(value))
 
 
 def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
@@ -143,10 +145,19 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     # phase must be canonical: 1..40 chars, no extra whitespace or non-identifier characters
     if not isinstance(phase, str) or not (1 <= len(phase) <= 40) or phase != canonical_surface_phase(phase):
         return False
-    # send_ref must be canonical: 1..80 chars, already stripped
-    if not isinstance(send_ref, str) or not (1 <= len(send_ref) <= 80) or send_ref != canonical_surface_send_ref(send_ref):
+    # send_ref must be canonical: 1..80 chars, strict identifier charset, no whitespace or newlines
+    if (
+        not isinstance(send_ref, str)
+        or not _SEND_REF_RE.match(send_ref)
+        or send_ref != canonical_surface_send_ref(send_ref)
+    ):
         return False
-    if not isinstance(prompt_digest, str) or not _is_sha256(prompt_digest):
+    # prompt_digest must be canonical: strict sha256 pattern, no whitespace
+    if (
+        not isinstance(prompt_digest, str)
+        or not _is_sha256(prompt_digest)
+        or prompt_digest != canonical_surface_prompt_digest(prompt_digest)
+    ):
         return False
     if surface_id != prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest):
         return False
@@ -158,7 +169,7 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     # optional hashes, if present must be sha256
     for key in ("model_tool_contract_hash", "runtime_tool_contract_hash"):
         val = payload.get(key)
-        if val not in (None, "") and str(val).strip() and not _is_sha256(val):
+        if val not in (None, "") and not _is_sha256(val):
             return False
     sections = payload.get("sections")
     if sections is not None:
@@ -172,10 +183,10 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
             for k in item:
                 if str(k) in _FORBIDDEN_PAYLOAD_KEYS:
                     return False
-            name = str(item.get("name") or "").strip()
-            digest = str(item.get("digest") or "").strip()
+            name = item.get("name")
+            digest = item.get("digest")
             chars = item.get("chars")
-            if not name or not _is_sha256(digest):
+            if not isinstance(name, str) or not name.strip() or not _is_sha256(digest):
                 return False
             if type(chars) is not int or chars < 0:
                 return False

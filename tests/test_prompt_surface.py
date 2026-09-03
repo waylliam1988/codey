@@ -150,13 +150,38 @@ class PromptSurfaceTests(unittest.TestCase):
         bad_padded_phase = dict(good)
         bad_padded_phase["phase"] = " writer "
         self.assertFalse(validate_prompt_surface_payload(bad_padded_phase))
-        # non-canonical send_ref (> 80 chars, or unstripped)
+        # non-canonical send_ref (> 80 chars, unstripped, containing whitespace or newlines)
         bad_long_send = dict(good)
         bad_long_send["send_ref"] = "s" * 81
         self.assertFalse(validate_prompt_surface_payload(bad_long_send))
         bad_padded_send = dict(good)
         bad_padded_send["send_ref"] = " effect_1 "
         self.assertFalse(validate_prompt_surface_payload(bad_padded_send))
+        bad_newline_send = dict(good)
+        bad_newline_send["send_ref"] = "effect_1\nmore"
+        bad_newline_send["surface_id"] = prompt_surface_id(
+            phase="writer",
+            send_ref=bad_newline_send["send_ref"],
+            prompt_digest=good["prompt_digest"],
+        )
+        self.assertFalse(validate_prompt_surface_payload(bad_newline_send))
+        bad_space_send = dict(good)
+        bad_space_send["send_ref"] = "effect 1"
+        bad_space_send["surface_id"] = prompt_surface_id(
+            phase="writer",
+            send_ref=bad_space_send["send_ref"],
+            prompt_digest=good["prompt_digest"],
+        )
+        self.assertFalse(validate_prompt_surface_payload(bad_space_send))
+        # padded / non-canonical prompt_digest must be strictly rejected
+        bad_padded_digest = dict(good)
+        bad_padded_digest["prompt_digest"] = " " + str(good["prompt_digest"]) + " "
+        bad_padded_digest["surface_id"] = prompt_surface_id(
+            phase="writer",
+            send_ref=good["send_ref"],
+            prompt_digest=bad_padded_digest["prompt_digest"],
+        )
+        self.assertFalse(validate_prompt_surface_payload(bad_padded_digest))
         # bool-int loopholes must be rejected
         bad_bool_schema = dict(good)
         bad_bool_schema["schema_version"] = True
@@ -338,6 +363,36 @@ class PromptSurfaceTests(unittest.TestCase):
                     prompt_digest=surf["prompt_digest"],
                 )
                 self.assertEqual(surf["surface_id"], derived)
+
+    def test_record_provider_prompt_boundary_writes_section_and_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td))
+            recorder = store.open(run_id="run-boundary", session_id="sess-boundary", project=None, mode_initial="project", provider_initial="deepseek")
+            record_provider_send_prompt(
+                recorder,
+                name="coding_outbound_prompt",
+                text="outbound prompt content",
+                purpose="test boundary recording",
+                source_ref="provider_send:test",
+                phase="writer",
+                send_ref="eff_provider_send_1234",
+            )
+            recorder.finish(status="done")
+            data = store.path_for("sess-boundary", "run-boundary").read_text(encoding="utf-8")
+            import json
+
+            obj = json.loads(data)
+            self.assertEqual(len(obj["prompt_sections"]), 1)
+            self.assertEqual(len(obj["prompt_surfaces"]), 1)
+            self.assertEqual(obj["prompt_sections"][0]["name"], "coding_outbound_prompt")
+            self.assertEqual(obj["prompt_surfaces"][0]["phase"], "writer")
+            self.assertEqual(obj["prompt_surfaces"][0]["send_ref"], "eff_provider_send_1234")
+            derived = prompt_surface_id(
+                phase=obj["prompt_surfaces"][0]["phase"],
+                send_ref=obj["prompt_surfaces"][0]["send_ref"],
+                prompt_digest=obj["prompt_surfaces"][0]["prompt_digest"],
+            )
+            self.assertEqual(obj["prompt_surfaces"][0]["surface_id"], derived)
 
 
 if __name__ == "__main__":
