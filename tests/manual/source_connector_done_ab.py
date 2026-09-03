@@ -41,6 +41,12 @@ from codey.research import runner as runner_module
 from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
 from codey.research.runner import ResearchRunner
+from codey.research.source_finalizer_scoring import (
+    aggregate_source_finalizer_rows,
+    paired_source_finalizer_deltas,
+    rate_rows,
+    score_source_finalizer_row,
+)
 from codey.providers.registry import connect_provider, provider_ids
 
 from tests.manual import source_connector_ab as base
@@ -434,7 +440,7 @@ def run_case(
                 "tool_calls": tool_calls[:40],
                 "info": infos[:12],
             }
-            row["score"] = _score_row(row)
+            row["score"] = score_source_finalizer_row(row)
             if trace is not None:
                 trace.record_case_complete(
                     run_id=run_id,
@@ -610,7 +616,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {"rows": len(rows), "run_count": len(rows), "by_case": {}, "by_arm": {}}
     for arm in sorted({str(row.get("arm") or "") for row in rows if row.get("arm")}):
         arm_rows = [row for row in rows if row.get("arm") == arm]
-        summary["by_arm"][arm] = _aggregate_rows(arm_rows)
+        summary["by_arm"][arm] = aggregate_source_finalizer_rows(arm_rows)
     for case in sorted({str(row.get("case") or "") for row in rows if row.get("case")}):
         case_rows = [row for row in rows if row.get("case") == case]
         arms = {
@@ -622,90 +628,16 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         batch_rows = arms.get("batch", [])
         summary["by_case"][case] = {
             "runs": len(case_rows),
-            "arms": {arm: _aggregate_rows(arm_rows) for arm, arm_rows in arms.items()},
-            "paired_vs_baseline": _paired_vs_baseline(case_rows),
-            "baseline_first_pass_rate": _rate(baseline_rows, "first_done_passed"),
-            "boundary_first_pass_rate": _rate(boundary_rows, "first_done_passed"),
-            "batch_first_pass_rate": _rate(batch_rows, "first_done_passed"),
-            "baseline_eventual_success_rate": _rate(baseline_rows, "eventual_done_passed"),
-            "boundary_eventual_success_rate": _rate(boundary_rows, "eventual_done_passed"),
-            "batch_eventual_success_rate": _rate(batch_rows, "eventual_done_passed"),
+            "arms": {arm: aggregate_source_finalizer_rows(arm_rows) for arm, arm_rows in arms.items()},
+            "paired_vs_baseline": paired_source_finalizer_deltas(case_rows),
+            "baseline_first_pass_rate": rate_rows(baseline_rows, "first_done_passed"),
+            "boundary_first_pass_rate": rate_rows(boundary_rows, "first_done_passed"),
+            "batch_first_pass_rate": rate_rows(batch_rows, "first_done_passed"),
+            "baseline_eventual_success_rate": rate_rows(baseline_rows, "eventual_done_passed"),
+            "boundary_eventual_success_rate": rate_rows(boundary_rows, "eventual_done_passed"),
+            "batch_eventual_success_rate": rate_rows(batch_rows, "eventual_done_passed"),
         }
     return summary
-
-
-def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    count = len(rows)
-    return {
-        "count": count,
-        "first_pass_rate": _rate(rows, "first_done_passed"),
-        "eventual_success_rate": _rate(rows, "eventual_done_passed"),
-        "clean_success_rate": _rate(rows, "clean_success"),
-        "proof_pass_rate": _rate(rows, "proof_ok"),
-        "connector_valid_rate": _rate(rows, "connector_valid"),
-        "average_done_attempts": _avg(rows, "done_attempts"),
-        "average_quality_retry_count": _avg(rows, "quality_retry_count"),
-        "average_score": _avg(rows, "score"),
-    }
-
-
-def _paired_vs_baseline(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    by_sample: dict[int, dict[str, dict[str, Any]]] = {}
-    for row in rows:
-        sample = int(row.get("sample") or 1)
-        arm = str(row.get("arm") or "")
-        if not arm:
-            continue
-        by_sample.setdefault(sample, {})[arm] = row
-    arms = sorted({str(row.get("arm") or "") for row in rows if row.get("arm") and row.get("arm") != "baseline"})
-    summary: dict[str, Any] = {}
-    for arm in arms:
-        pairs = [(items.get("baseline"), items.get(arm)) for items in by_sample.values()]
-        pairs = [(base_row, arm_row) for base_row, arm_row in pairs if base_row and arm_row]
-        if not pairs:
-            continue
-        summary[arm] = {
-            "paired_samples": len(pairs),
-            "score_delta_avg": _avg_deltas(pairs, "score"),
-            "done_attempt_delta_avg": _avg_deltas(pairs, "done_attempts"),
-            "quality_retry_delta_avg": _avg_deltas(pairs, "quality_retry_count"),
-            "first_pass_delta": _rate([arm_row for _base_row, arm_row in pairs], "first_done_passed")
-            - _rate([base_row for base_row, _arm_row in pairs], "first_done_passed"),
-        }
-    return summary
-
-
-def _avg_deltas(pairs: list[tuple[dict[str, Any], dict[str, Any]]], key: str) -> float | None:
-    deltas: list[float] = []
-    for base_row, arm_row in pairs:
-        try:
-            deltas.append(float(arm_row.get(key) or 0) - float(base_row.get(key) or 0))
-        except (TypeError, ValueError):
-            continue
-    if not deltas:
-        return None
-    return round(sum(deltas) / len(deltas), 3)
-
-
-def _rate(rows: list[dict[str, Any]], key: str) -> float | None:
-    if not rows:
-        return None
-    return round(sum(1 for row in rows if row.get(key)) / len(rows), 3)
-
-
-def _avg(rows: list[dict[str, Any]], key: str) -> float | None:
-    values: list[float] = []
-    for row in rows:
-        value = row.get(key)
-        if isinstance(value, bool) or value in (None, ""):
-            continue
-        try:
-            values.append(float(value))
-        except (TypeError, ValueError):
-            continue
-    if not values:
-        return None
-    return round(sum(values) / len(values), 3)
 
 
 def _search_provider_for_arm(arm: str):
@@ -730,16 +662,6 @@ def _opened_target_host(urls: list[str], target_hosts: tuple[str, ...]) -> bool:
 def _expected_terms_present(summary: str, expected_terms: tuple[str, ...]) -> bool:
     text = str(summary or "").casefold()
     return all(term.casefold() in text for term in expected_terms)
-
-
-def _score_row(row: dict[str, Any]) -> int:
-    return (
-        (3 if row.get("stop_reason") == "done" else 0)
-        + (3 if row.get("opened_target_host") else 0)
-        + (2 if int(row.get("evidence_count") or 0) > 0 else 0)
-        + (2 if row.get("proof_ok") else 0)
-        + (1 if row.get("expected_terms_present") else 0)
-    )
 
 
 def _timestamp() -> str:

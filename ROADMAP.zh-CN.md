@@ -3860,8 +3860,8 @@ provider routing 或非恢复路径 transcript。通过确定性故障注入测�
 ## 0.5.6 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
 
 状态：已完成（2026-09-03，ruff、compileall、focused gates、golden parity、run trace
-surface gates、architecture gate 和全量 pytest `3475 passed, 4 skipped, 1241
-subtests passed in 293.02s (0:04:53)` 完成）。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
+surface gates、architecture gate 和全量 pytest `3481 passed, 4 skipped, 1253
+subtests passed in 290.34s (0:04:50)` 完成）。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
 生成，并用 hash/parity tests 防止 prompt 描述、parser 接受范围和 runtime 语义漂移。
 这不是空接线：本版的直接收益是减少“工具文案说 A、parser/runtime 实际做 B”的协议故障。
 
@@ -3931,12 +3931,21 @@ research open_url / knowledge_write 不被改名成 read / write
 Research untrusted source wrapper：有可测净收益的部分进入默认 Research path；
 没有消费者或收益不稳的 arm 删除，或继续停留在 manual harness，不进入 production path。
 
+0.5.6 已提前完成的预备清理：`codey.research.followup_selection` 已承接
+ResearchPipeline 的纯 candidate selection / stop decision；
+`codey.research.followup_quality` 和 `codey.research.source_finalizer_scoring`
+已承接 manual harness 之间重复的 bounded follow-up / source-finalizer 行评分与
+聚合逻辑。0.5.7 不需要新建 manager；下一步是在这些纯 scorer 上补实机
+release gate 和 A/B 消费者。
+
 ### 做什么
 
 新增或扩展：
 
 ```text
-codey/research/followup_quality.py
+codey/research/followup_quality.py（0.5.6 已有纯 scorer；0.5.7 扩展 release gate 输入/输出）
+codey/research/followup_selection.py（0.5.6 已有纯 selection；0.5.7 只按真实失败样本调整）
+codey/research/source_finalizer_scoring.py（0.5.6 已有纯 scorer；供 source_connector_done gate 共用）
 codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer）
 codey/research/source_rendering.py（只有 A/B 胜出才同版新增/保留并接入默认 open_url 渲染；不胜出不创建或删除）
 tests/test_research_followup_quality.py
@@ -3999,8 +4008,8 @@ Research source prompt-injection hardening 要么通过 A/B 进入默认 source 
 ### 顺手架构优化
 
 ```text
-ResearchPipeline 只调用 choose_followup_materials() / evaluate_source_finalizer_candidate()
-followup_quality.py 只做纯 scorer / selection，不调用 provider/browser/tool runtime
+ResearchPipeline 继续只调用 followup_selection 的纯 decision，不解释 A/B 原始字段
+followup_quality.py / source_finalizer_scoring.py 只做纯 scorer，不调用 provider/browser/tool runtime
 source_connector_done manual arm 与 release gate 共用 scorer，避免重复指标
 Research finalizer 只消费结构化 decision，不扫 A/B journal 原文
 source wrapper renderer 只有在 A/B 胜出并成为默认路径时才进入 codey/research/

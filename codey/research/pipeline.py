@@ -10,6 +10,7 @@ from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.evidence_runtime import snapshot_from_research_record
+import codey.research.followup_selection as followup_selection
 from codey.research.brief_projection import project_research_brief
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
@@ -192,7 +193,7 @@ class ResearchPipeline:
                             material=material,
                         )
                         candidate_review = self._review(candidate, require_ledger_record=False)
-                        if _selects_candidate(candidate, candidate_review, best, best_review):
+                        if followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
                             try:
                                 best_tools.commit_staged(staged_tools)
                             except cancellation.TaskCancelled:
@@ -270,11 +271,11 @@ class ResearchPipeline:
             return "max_followup_rounds"
         if review is None:
             return "proof_review_missing"
-        if not _has_actionable_gap(review):
-            return _pipeline_stop_reason(plan, review)
+        if not followup_selection.has_actionable_gap(review):
+            return followup_selection.pipeline_stop_reason(plan, review)
         if not plan.query_candidates:
-            return _pipeline_stop_reason(plan, review)
-        if not _is_followup_eligible_stop(result.stop_reason):
+            return followup_selection.pipeline_stop_reason(plan, review)
+        if not followup_selection.is_followup_eligible_stop(result.stop_reason):
             reason = str(result.stop_reason or "unknown").strip() or "unknown"
             return "initial_stop_reason_" + _reason_code(reason)
         if self.context.should_stop():
@@ -394,174 +395,6 @@ class ResearchPipeline:
             return max(0, min(3, int(self.config.max_followup_rounds or 0)))
         except (TypeError, ValueError):
             return 0
-
-
-@dataclass(frozen=True)
-class ResearchCandidateScore:
-    """Explicit lexicographic ranking for follow-up candidate selection.
-
-    Field order IS the priority order, decided top-down:
-
-    1. ``proof_rank`` — a proof-complete result dominates every partial
-       answer status; otherwise the deterministic answer-status rank applies.
-    2. ``stop_rank`` — a clean ``done`` beats budget stops beats abnormal
-       stops.
-    3. ``answers_question`` — question alignment before evidence volume.
-    4. ``coverage`` — bounded answer-coverage score.
-    5-7. Verification booleans: citation locator, support relation,
-       counterevidence.
-    8. ``missing_evidence_count`` — fewer unsupported gaps wins ties; negated
-       inside :meth:`sort_key`.
-
-    Hard safety (unsupported-claim regression) is NOT part of the score: it is
-    a separate dominance constraint checked before comparison in
-    :func:`_selects_candidate`, so no score weight can ever buy back an
-    unsupported regression.
-    """
-
-    proof_rank: float
-    stop_rank: float
-    answers_question: bool
-    coverage: float
-    citation_locator_verified: bool
-    support_relation_verified: bool
-    counterevidence_checked: bool
-    missing_evidence_count: int
-
-    def sort_key(self) -> tuple[float, float, int, float, int, int, int, int]:
-        return (
-            self.proof_rank,
-            self.stop_rank,
-            int(self.answers_question),
-            self.coverage,
-            int(self.citation_locator_verified),
-            int(self.support_relation_verified),
-            int(self.counterevidence_checked),
-            -self.missing_evidence_count,
-        )
-
-
-def _selects_candidate(
-    candidate: ResearchRunResult,
-    candidate_review: ResearchProofReview | None,
-    current: ResearchRunResult,
-    current_review: ResearchProofReview | None,
-) -> bool:
-    if candidate.stop_reason in {"error", "protocol", "stopped"}:
-        return False
-    if candidate_review is None:
-        return False
-    if _unsupported_regression(candidate_review, current_review):
-        return False
-    candidate_score = _candidate_score(candidate, candidate_review)
-    current_score = _candidate_score(current, current_review)
-    return candidate_score.sort_key() > current_score.sort_key()
-
-
-def _candidate_score(
-    result: ResearchRunResult,
-    review: ResearchProofReview | None,
-) -> ResearchCandidateScore:
-    if review is None:
-        return ResearchCandidateScore(
-            proof_rank=0.0,
-            stop_rank=_stop_score(result.stop_reason),
-            answers_question=False,
-            coverage=0.0,
-            citation_locator_verified=False,
-            support_relation_verified=False,
-            counterevidence_checked=False,
-            missing_evidence_count=0,
-        )
-    return ResearchCandidateScore(
-        proof_rank=4.0 if review.ok else float(_answer_status_rank(review.answer_status)),
-        stop_rank=_stop_score(result.stop_reason),
-        answers_question=bool(review.answers_question),
-        coverage=_bounded_score(review.answer_coverage_score),
-        citation_locator_verified=bool(review.citation_locator_verified),
-        support_relation_verified=bool(review.support_relation_verified),
-        counterevidence_checked=bool(review.counterevidence_checked),
-        missing_evidence_count=len(review.missing_evidence),
-    )
-
-
-def _unsupported_regression(
-    candidate: ResearchProofReview,
-    current: ResearchProofReview | None,
-) -> bool:
-    if current is None:
-        return False
-    current_unsupported = "unsupported_claims" in set(current.missing_evidence)
-    candidate_unsupported = "unsupported_claims" in set(candidate.missing_evidence)
-    return candidate_unsupported and not current_unsupported
-
-
-def _answer_status_rank(status: str) -> int:
-    return {
-        "answered": 3,
-        "partial": 2,
-        "insufficient_evidence": 1,
-        "not_answered": 0,
-    }.get(str(status or ""), 0)
-
-
-def _bounded_score(value: object) -> float:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return max(0.0, min(1.0, parsed))
-
-
-def _stop_score(stop_reason: str) -> float:
-    if stop_reason == "done":
-        return 1.0
-    if stop_reason in {"max_turns", "no_progress"}:
-        return 0.4
-    return 0.0
-
-
-def _has_actionable_gap(review: ResearchProofReview | None) -> bool:
-    if review is None:
-        return False
-    if review.ok:
-        return False
-    if review.answer_status in {"not_answered", "insufficient_evidence"}:
-        return True
-    missing = set(review.missing_evidence)
-    return bool(
-        review.answer_status == "partial"
-        and (
-            review.coverage_gaps
-            or review.followup_questions
-            or review.query_rewrite_candidates
-            or missing.intersection({
-                "answer_coverage_gap",
-                "counterevidence_not_checked",
-                "partial_answer",
-            })
-        )
-    )
-
-
-def _is_followup_eligible_stop(stop_reason: str) -> bool:
-    reason = str(stop_reason or "").strip().lower()
-    return reason not in {"stopped", "cancelled", "user_aborted", "timeout"}
-
-
-def _pipeline_stop_reason(
-    plan: ResearchPlan,
-    review: ResearchProofReview | None = None,
-) -> str:
-    if not plan.query_candidates:
-        reasons = set(plan.reason_codes)
-        if "proof_ok_no_required_followup" in reasons:
-            return "proof_ok_no_required_followup"
-        return "no_query_candidates"
-    if not _has_actionable_gap(review):
-        return "no_actionable_gap"
-    return "planned"
-
 
 def _reason_code(value: object) -> str:
     text = str(value or "").strip()

@@ -58,7 +58,8 @@ prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               checks unpadded prompt_digest, requires non-empty epoch_id matching
               ctx_epoch pattern, uses fullmatch() for sha256/epoch/surface refs
               so trailing newlines cannot pass, and uses type(x) is int to seal
-              bool-int loopholes.
+              bool-int loopholes. Removed the actual dead _is_epoch() helper and
+              locked that cleanup with an architecture gate.
 envelope/trace: extended record_provider_send_prompt() to extract private helper
               _build_validated_surface_payload(), use inspect.getattr_static() to
               safely detect trace.record_provider_prompt_boundary() with full
@@ -77,17 +78,28 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
               phase="research", send_ref="research_send:{n}" and controller vs
               codec hashes; exported render_research_repair_prompt(), removing
               the obsolete _protocol_repair_prompt alias.
+research_followup: extracted pure codey.research.followup_selection for candidate
+              selection/stop decisions, codey.research.followup_quality for
+              bounded follow-up row score/usefulness, and
+              codey.research.source_finalizer_scoring for source-finalizer A/B
+              score/aggregation. ResearchPipeline now consumes the shared
+              selection leaf; bounded_research_planner_ab.py,
+              bounded_research_merge_projection.py and source_connector_done_ab.py
+              consume shared scorers instead of carrying duplicate private copies.
+              No manager layer, provider/browser import, default-off production
+              renderer or compatibility wrapper was added.
 ```
 
 Verification:
 
-- `pytest tests/test_prompt_surface.py tests/test_prompt_envelope.py tests/test_tool_contract_drift.py tests/test_tool_prompt.py tests/test_golden_parity.py tests/test_research_controller.py -q` (`76 passed, 53 subtests passed in 1.05s`)
-- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py tests/test_server.py -q` (`446 passed, 69 subtests passed in 45.57s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.46s`)
+- `pytest tests/test_prompt_surface.py tests/test_architecture.py tests/test_research_pipeline.py tests/test_research_followup_quality.py tests/test_source_connector_done_ab.py tests/test_bounded_research_planner_ab.py -q` (`119 passed, 300 subtests passed in 15.43s`)
+- `python -B tests\manual\bounded_research_planner_ab.py --self-test` (passed)
+- `python -B tests\manual\bounded_research_merge_projection.py --self-test` (passed)
+- `python -B tests\manual\source_connector_done_ab.py --self-test` (passed)
 - `python -m ruff check codey tests` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
-- `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3475 passed, 4 skipped, 1241 subtests passed in 293.02s (0:04:53)` after prompt surface strict fullmatch hardening, send_ref identity truncation removal, boundary descriptor fail-open, dynamic knowledge_link byte-parity restoration, and version 0.5.6 release metadata update; no model-visible coding bytes changed).
+- `git diff --check` (passed; zero trailing whitespace)
+- Full pytest suite: `pytest -q` (`3481 passed, 4 skipped, 1253 subtests passed in 290.34s (0:04:50)` after prompt surface dead-helper cleanup, Research follow-up selection/scorer extraction, source-finalizer scorer extraction, and targeted manual harness self-tests; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

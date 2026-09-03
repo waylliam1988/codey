@@ -119,16 +119,16 @@ def build_prompt_surface_record(
     )
 
 
+def _matches(pattern: re.Pattern[str], value: object) -> bool:
+    return bool(isinstance(value, str) and pattern.fullmatch(value))
+
+
 def _is_sha256(value: object) -> bool:
-    return bool(isinstance(value, str) and _SHA256_RE.fullmatch(value))
-
-
-def _is_epoch(value: object) -> bool:
-    return bool(isinstance(value, str) and _EPOCH_RE.fullmatch(value))
+    return _matches(_SHA256_RE, value)
 
 
 def _is_surface_id(value: object) -> bool:
-    return bool(isinstance(value, str) and _SURFACE_RE.fullmatch(value))
+    return _matches(_SURFACE_RE, value)
 
 
 def _is_phase(value: object) -> bool:
@@ -178,7 +178,7 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     if type(prompt_chars) is not int or prompt_chars < 0 or prompt_chars > 10_000_000:
         return False
     # epoch_id is required and must strictly match ctx_epoch pattern
-    if not _is_epoch(epoch_id):
+    if not _matches(_EPOCH_RE, epoch_id):
         return False
     # optional hashes, if present must be sha256
     for key in ("model_tool_contract_hash", "runtime_tool_contract_hash"):
@@ -205,6 +205,6 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
             if type(chars) is not int or chars < 0:
                 return False
             epoch = item.get("epoch_id")
-            if epoch not in (None, "") and not _is_epoch(epoch):
+            if epoch not in (None, "") and not _matches(_EPOCH_RE, epoch):
                 return False
     return True

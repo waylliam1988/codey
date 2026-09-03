@@ -984,6 +984,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for token in forbidden_source:
             self.assertNotIn(token, source)
 
+    def test_prompt_surface_source_has_no_dead_epoch_helper(self) -> None:
+        source = (ROOT / "codey" / "runtime" / "prompt_surface.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        functions = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+
+        self.assertNotIn("_is_epoch", functions)
+        self.assertNotIn("_is_epoch(", source)
+
+    def test_research_followup_scorers_are_pure_leaf_modules(self) -> None:
+        for path in (
+            ROOT / "codey" / "research" / "followup_selection.py",
+            ROOT / "codey" / "research" / "followup_quality.py",
+            ROOT / "codey" / "research" / "source_finalizer_scoring.py",
+        ):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self._assert_stdlib_leaf(path)
+
     def test_research_regression_gate_production_module_is_gone(self) -> None:
         self.assertFalse((ROOT / "codey" / "research" / "regression_gate.py").exists())
         source = (ROOT / "codey" / "research" / "__init__.py").read_text(encoding="utf-8")

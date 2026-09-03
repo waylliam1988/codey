@@ -19,6 +19,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.research.followup_quality import followup_usefulness, score_followup_quality_row
 from codey.research.protocols import extract_json_objects
 
 
@@ -139,7 +140,7 @@ def _pair_rows(rows: list[Any]) -> dict[str, dict[str, dict[str, Any]]]:
 
 
 def _observed_summary(baseline: dict[str, Any], planner: dict[str, Any]) -> dict[str, Any]:
-    usefulness = _followup_usefulness(baseline, planner)
+    usefulness = followup_usefulness(baseline, planner)
     return {
         "score": int(planner.get("score") or 0),
         "useful": bool(usefulness.get("useful")),
@@ -160,7 +161,7 @@ def _projected_summary(
     planner: dict[str, Any],
     projected_planner: dict[str, Any],
 ) -> dict[str, Any]:
-    usefulness = _followup_usefulness(baseline, projected_planner)
+    usefulness = followup_usefulness(baseline, projected_planner)
     return {
         "score": int(projected_planner.get("score") or 0),
         "useful": bool(usefulness.get("useful")),
@@ -264,7 +265,7 @@ def _project_planner_row(
     projected["pipeline_stop_reason"] = "done"
     projected["stop_reason"] = "done"
     projected["proof_missing_evidence"] = _project_missing_evidence(planner)
-    projected["score"] = _score_row(projected)
+    projected["score"] = score_followup_quality_row(projected)
     projected["projection_reason"] = "fresh_trace_evidence_narrow_merge"
     return projected
 
@@ -321,112 +322,6 @@ def _fresh_text_has_expected_terms(fresh: dict[str, Any]) -> bool:
     return "stable-v2" in text or "recommended endpoint" in text
 
 
-def _followup_usefulness(
-    baseline: dict[str, Any],
-    planner: dict[str, Any],
-) -> dict[str, Any]:
-    if not baseline or not planner:
-        return {"evaluated": False}
-    baseline_ok = bool(baseline.get("ok"))
-    planner_ok = bool(planner.get("ok"))
-    if not baseline_ok or not planner_ok:
-        return {
-            "evaluated": False,
-            "reason": "row_not_ok",
-            "baseline_ok": baseline_ok,
-            "planner_ok": planner_ok,
-        }
-    coverage_delta = round(_float(planner.get("proof_coverage")) - _float(baseline.get("proof_coverage")), 3)
-    unsupported_rate_delta = round(
-        _float(planner.get("unsupported_claim_rate")) - _float(baseline.get("unsupported_claim_rate")),
-        3,
-    )
-    score_delta = int(planner.get("score") or 0) - int(baseline.get("score") or 0)
-    source_delta = int(planner.get("record_source_count") or 0) - int(baseline.get("record_source_count") or 0)
-    evidence_delta = int(planner.get("record_evidence_count") or 0) - int(baseline.get("record_evidence_count") or 0)
-    query_delta = len(planner.get("fixture_queries") or ()) - len(baseline.get("fixture_queries") or ())
-    fetch_delta = len(planner.get("fixture_fetches") or ()) - len(baseline.get("fixture_fetches") or ())
-    baseline_fetch_urls = {str(item or "") for item in baseline.get("fixture_fetches") or ()}
-    planner_fetch_urls = {str(item or "") for item in planner.get("fixture_fetches") or ()}
-    new_fetched_urls = tuple(sorted(url for url in planner_fetch_urls - baseline_fetch_urls if url))
-    send_delta = int(planner.get("provider_send_count") or 0) - int(baseline.get("provider_send_count") or 0)
-    seconds_delta = round(_float(planner.get("seconds")) - _float(baseline.get("seconds")), 3)
-    answer_status_delta = _answer_status_rank(planner.get("proof_answer_status")) - _answer_status_rank(
-        baseline.get("proof_answer_status")
-    )
-    reasons: list[str] = []
-    quality_reasons: list[str] = []
-    quality_regressions: list[str] = []
-    if coverage_delta >= 0.05:
-        reasons.append("coverage_improved")
-        quality_reasons.append("coverage_improved")
-    elif coverage_delta <= -0.05:
-        quality_regressions.append("coverage_regressed")
-    if unsupported_rate_delta <= -0.02:
-        reasons.append("unsupported_rate_improved")
-        quality_reasons.append("unsupported_rate_improved")
-    elif unsupported_rate_delta >= 0.02:
-        quality_regressions.append("unsupported_rate_regressed")
-    if evidence_delta > 0:
-        reasons.append("new_evidence")
-    if source_delta > 0:
-        reasons.append("new_sources")
-    if new_fetched_urls:
-        reasons.append("new_fetched_sources")
-    if answer_status_delta > 0:
-        reasons.append("answer_status_improved")
-        quality_reasons.append("answer_status_improved")
-    elif answer_status_delta < 0:
-        quality_regressions.append("answer_status_regressed")
-    if planner.get("proof_ok") and not baseline.get("proof_ok"):
-        reasons.append("proof_ok_recovered")
-        quality_reasons.append("proof_ok_recovered")
-    elif baseline.get("proof_ok") and not planner.get("proof_ok"):
-        quality_regressions.append("proof_ok_regressed")
-    if score_delta > 0:
-        reasons.append("score_improved")
-    elif score_delta < 0:
-        quality_regressions.append("score_regressed")
-    if planner.get("expected_terms_present") and not baseline.get("expected_terms_present"):
-        reasons.append("expected_terms_recovered")
-        quality_reasons.append("expected_terms_recovered")
-    elif baseline.get("expected_terms_present") and not planner.get("expected_terms_present"):
-        quality_regressions.append("expected_terms_lost")
-    material_gain = bool(source_delta > 0 or evidence_delta > 0)
-    execution_material_gain = bool(new_fetched_urls)
-    quality_gain = bool(quality_reasons)
-    quality_regression = bool(quality_regressions)
-    useful = bool(
-        int(planner.get("followup_rounds") or 0) > 0
-        and material_gain
-        and quality_gain
-        and not quality_regression
-    )
-    return {
-        "evaluated": True,
-        "useful": useful,
-        "material_gain": material_gain,
-        "execution_material_gain": execution_material_gain,
-        "quality_gain": quality_gain,
-        "quality_regression": quality_regression,
-        "reason_codes": reasons,
-        "quality_regression_codes": quality_regressions,
-        "followup_rounds": int(planner.get("followup_rounds") or 0),
-        "new_sources": max(0, source_delta),
-        "new_evidence": max(0, evidence_delta),
-        "new_fetched_sources": len(new_fetched_urls),
-        "new_fetched_source_urls": [_clip(url, 160) for url in new_fetched_urls[:6]],
-        "answer_coverage_delta": coverage_delta,
-        "unsupported_claim_rate_delta": unsupported_rate_delta,
-        "answer_status_delta": answer_status_delta,
-        "score_delta": score_delta,
-        "query_delta": query_delta,
-        "fetch_delta": fetch_delta,
-        "provider_send_delta": send_delta,
-        "seconds_delta": seconds_delta,
-    }
-
-
 def _projection_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     valid = [row for row in rows if not row.get("error")]
     improved = [
@@ -449,31 +344,6 @@ def _projection_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "retained_useful": [f"{row['provider']}:{row['phase']}:{row['case']}" for row in retained],
         "regressed_from_useful": [f"{row['provider']}:{row['phase']}:{row['case']}" for row in regressed],
     }
-
-
-def _score_row(row: dict[str, Any]) -> int:
-    status = str(row.get("proof_answer_status") or "")
-    status_score = {
-        "answered": 4,
-        "partial": 2,
-        "insufficient_evidence": 1,
-        "not_answered": 0,
-    }.get(status, 0)
-    return (
-        (4 if row.get("proof_ok") else 0)
-        + status_score
-        + min(3, int(row.get("evidence_count") or 0))
-        + (2 if row.get("expected_terms_present") else 0)
-    )
-
-
-def _answer_status_rank(status: object) -> int:
-    return {
-        "answered": 3,
-        "partial": 2,
-        "insufficient_evidence": 1,
-        "not_answered": 0,
-    }.get(str(status or ""), 0)
 
 
 def _float(value: object) -> float:
@@ -554,7 +424,7 @@ def _self_test() -> None:
         }],
     }
     projected = _project_planner_row(baseline=baseline, planner=planner, fresh=fresh)
-    useful = _followup_usefulness(baseline, projected)
+    useful = followup_usefulness(baseline, projected)
     assert projected["unsupported_claim_count"] == 0
     assert projected["record_claim_count"] == 2
     assert useful["useful"] is True

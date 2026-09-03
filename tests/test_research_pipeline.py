@@ -12,9 +12,11 @@ from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, ResearchPipelineConfig, RunTraceResearchSink
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore
+import codey.research.followup_selection as followup_selection_module
+from codey.research.followup_selection import ResearchCandidateScore, candidate_score, selects_candidate
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
-from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, _selects_candidate
+from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.proof_quality import CoverageGap, ResearchProofReview
 from codey.research.query_planner import QueryCandidate, ResearchPlan
@@ -640,13 +642,13 @@ def test_pipeline_staging_isolates_rejected_followup_side_effects() -> None:
         original_review = pipeline_module.review_research_proof
         original_plan = pipeline_module.build_research_plan
         original_execute = pipeline_module.PlanExecutor.execute
-        original_selects = pipeline_module._selects_candidate
+        original_selects = followup_selection_module.selects_candidate
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
             pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
             # Candidate is explicitly rejected
-            pipeline_module._selects_candidate = lambda cand, cr, best, br: False
+            followup_selection_module.selects_candidate = lambda cand, cr, best, br: False
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
@@ -659,7 +661,7 @@ def test_pipeline_staging_isolates_rejected_followup_side_effects() -> None:
             pipeline_module.review_research_proof = original_review
             pipeline_module.build_research_plan = original_plan
             pipeline_module.PlanExecutor.execute = original_execute
-            pipeline_module._selects_candidate = original_selects
+            followup_selection_module.selects_candidate = original_selects
 
         assert output.final_result is initial.result
         assert output.planner_stop_reason == "candidate_not_selected"
@@ -762,13 +764,13 @@ def test_pipeline_staging_commits_accepted_followup_side_effects() -> None:
         original_review = pipeline_module.review_research_proof
         original_plan = pipeline_module.build_research_plan
         original_execute = pipeline_module.PlanExecutor.execute
-        original_selects = pipeline_module._selects_candidate
+        original_selects = followup_selection_module.selects_candidate
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
             pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
             # Candidate is accepted
-            pipeline_module._selects_candidate = lambda cand, cr, best, br: True
+            followup_selection_module.selects_candidate = lambda cand, cr, best, br: True
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
@@ -781,7 +783,7 @@ def test_pipeline_staging_commits_accepted_followup_side_effects() -> None:
             pipeline_module.review_research_proof = original_review
             pipeline_module.build_research_plan = original_plan
             pipeline_module.PlanExecutor.execute = original_execute
-            pipeline_module._selects_candidate = original_selects
+            followup_selection_module.selects_candidate = original_selects
 
         assert output.followup_applied is True
         assert output.planner_stop_reason in {"evidence_merged", "max_followup_rounds"}
@@ -932,7 +934,7 @@ def test_pipeline_selection_rejects_unsupported_claim_regression() -> None:
         missing=("unsupported_claims",),
     )
 
-    assert _selects_candidate(candidate, candidate_review, current, current_review) is False
+    assert selects_candidate(candidate, candidate_review, current, current_review) is False
 
 
 def test_pipeline_selection_accepts_minimal_evidence_candidate_after_protocol_not_answered() -> None:
@@ -955,7 +957,7 @@ def test_pipeline_selection_accepts_minimal_evidence_candidate_after_protocol_no
         missing=("answer_coverage_gap",),
     )
 
-    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+    assert selects_candidate(candidate, candidate_review, current, current_review) is True
 
 
 def test_pipeline_selection_proof_complete_dominates_partial_status() -> None:
@@ -978,9 +980,9 @@ def test_pipeline_selection_proof_complete_dominates_partial_status() -> None:
         missing=(),
     )
 
-    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+    assert selects_candidate(candidate, candidate_review, current, current_review) is True
     # And the reverse direction must not trade a proof-complete result away.
-    assert _selects_candidate(current, current_review, candidate, candidate_review) is False
+    assert selects_candidate(current, current_review, candidate, candidate_review) is False
 
 
 def test_pipeline_selection_question_alignment_outranks_coverage() -> None:
@@ -1010,12 +1012,10 @@ def test_pipeline_selection_question_alignment_outranks_coverage() -> None:
         ),
     )
 
-    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+    assert selects_candidate(candidate, candidate_review, current, current_review) is True
 
 
 def test_research_candidate_score_missing_evidence_negated_in_sort_key() -> None:
-    from codey.research.pipeline import ResearchCandidateScore
-
     fewer = ResearchCandidateScore(
         proof_rank=0.0,
         stop_rank=1.0,
@@ -1038,6 +1038,29 @@ def test_research_candidate_score_missing_evidence_negated_in_sort_key() -> None
     )
 
     assert fewer.sort_key() > more.sort_key()
+
+
+def test_research_candidate_score_rejects_nonfinite_coverage() -> None:
+    result = ResearchRunResult("question", "summary", "done", 1)
+    nan_review = _review(
+        record_id="research_record:" + "1" * 16,
+        record_digest="sha256:" + "1" * 64,
+        ok=False,
+        answer_status="partial",
+        score=float("nan"),
+        missing=("answer_coverage_gap",),
+    )
+    inf_review = _review(
+        record_id="research_record:" + "2" * 16,
+        record_digest="sha256:" + "2" * 64,
+        ok=False,
+        answer_status="partial",
+        score=float("inf"),
+        missing=("answer_coverage_gap",),
+    )
+
+    assert candidate_score(result, nan_review).coverage == 0.0
+    assert candidate_score(result, inf_review).coverage == 0.0
 
 
 def test_pipeline_retains_best_when_staging_commit_fails() -> None:
@@ -1130,12 +1153,12 @@ def test_pipeline_retains_best_when_staging_commit_fails() -> None:
         original_review = pipeline_module.review_research_proof
         original_plan = pipeline_module.build_research_plan
         original_execute = pipeline_module.PlanExecutor.execute
-        original_selects = pipeline_module._selects_candidate
+        original_selects = followup_selection_module.selects_candidate
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
             pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
-            pipeline_module._selects_candidate = lambda cand, cr, best, br: True
+            followup_selection_module.selects_candidate = lambda cand, cr, best, br: True
             # Simulate commit failure in target tools
             initial_tools.commit_staged = lambda staged: (_ for _ in ()).throw(OSError("Disk full during note commit"))
             pipeline = ResearchPipeline(
@@ -1150,7 +1173,7 @@ def test_pipeline_retains_best_when_staging_commit_fails() -> None:
             pipeline_module.review_research_proof = original_review
             pipeline_module.build_research_plan = original_plan
             pipeline_module.PlanExecutor.execute = original_execute
-            pipeline_module._selects_candidate = original_selects
+            followup_selection_module.selects_candidate = original_selects
 
         # Followup commit failure gracefully preserves the initial successful result
         assert output.final_result is initial.result
@@ -1511,7 +1534,7 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
                     ledger_record_verified=True,
                     missing_evidence=("partial_answer",),
                 )
-            # Make candidate score worse so _selects_candidate returns False
+            # Make candidate score worse so selects_candidate returns False
             return ResearchProofReview(
                 ok=False,
                 answers_question=False,

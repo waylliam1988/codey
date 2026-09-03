@@ -53,6 +53,9 @@ from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.evidence_followup import run_evidence_followup
+import codey.research.followup_selection as followup_selection
+import codey.research.pipeline as pipeline_module
+from codey.research.followup_quality import followup_usefulness, score_followup_quality_row
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
@@ -472,7 +475,7 @@ def run_case(
                 "summary_chars": len(result.summary or ""),
                 "summary_preview": _clip(result.summary, 1600),
             }
-            row["score"] = _score_row(row)
+            row["score"] = score_followup_quality_row(row)
             bind_row_evidence_refs(row, layout=layout, tracing_provider=run_provider)
             if trace is not None:
                 trace.record_case_complete(case=case.name, arm=arm, row=row)
@@ -523,12 +526,10 @@ def _run_pipeline_with_ab_experiment(
 ):
     if arm != "planner":
         return pipeline.run()
-    from codey.research import pipeline as pipeline_module
-
     original_executor = pipeline_module.PlanExecutor
-    original_has_actionable_gap = pipeline_module._has_actionable_gap
-    original_pipeline_stop_reason = pipeline_module._pipeline_stop_reason
-    original_is_followup_eligible_stop = pipeline_module._is_followup_eligible_stop
+    original_has_actionable_gap = followup_selection.has_actionable_gap
+    original_pipeline_stop_reason = followup_selection.pipeline_stop_reason
+    original_is_followup_eligible_stop = followup_selection.is_followup_eligible_stop
 
     class _FreshMaterialExecutor(FreshMaterialPlanExecutor):
         def __init__(self, *, config=None, should_stop=None) -> None:
@@ -550,9 +551,9 @@ def _run_pipeline_with_ab_experiment(
 
     try:
         pipeline_module.PlanExecutor = _FreshMaterialExecutor
-        pipeline_module._has_actionable_gap = _ab_needs_new_material
-        pipeline_module._pipeline_stop_reason = ab_pipeline_stop_reason
-        pipeline_module._is_followup_eligible_stop = lambda stop_reason: (
+        followup_selection.has_actionable_gap = _ab_needs_new_material
+        followup_selection.pipeline_stop_reason = ab_pipeline_stop_reason
+        followup_selection.is_followup_eligible_stop = lambda stop_reason: (
             str(stop_reason or "")
             in {
                 "done",
@@ -564,9 +565,9 @@ def _run_pipeline_with_ab_experiment(
         return pipeline.run()
     finally:
         pipeline_module.PlanExecutor = original_executor
-        pipeline_module._has_actionable_gap = original_has_actionable_gap
-        pipeline_module._pipeline_stop_reason = original_pipeline_stop_reason
-        pipeline_module._is_followup_eligible_stop = original_is_followup_eligible_stop
+        followup_selection.has_actionable_gap = original_has_actionable_gap
+        followup_selection.pipeline_stop_reason = original_pipeline_stop_reason
+        followup_selection.is_followup_eligible_stop = original_is_followup_eligible_stop
 
 
 def _ab_has_actionable_gap(review: object | None) -> bool:
@@ -701,31 +702,6 @@ def _float(value: object) -> float:
         return 0.0
 
 
-def _score_row(row: dict[str, Any]) -> int:
-    status = str(row.get("proof_answer_status") or "")
-    status_score = {
-        "answered": 4,
-        "partial": 2,
-        "insufficient_evidence": 1,
-        "not_answered": 0,
-    }.get(status, 0)
-    return (
-        (4 if row.get("proof_ok") else 0)
-        + status_score
-        + min(3, int(row.get("evidence_count") or 0))
-        + (2 if row.get("expected_terms_present") else 0)
-    )
-
-
-def _answer_status_rank(status: object) -> int:
-    return {
-        "answered": 3,
-        "partial": 2,
-        "insufficient_evidence": 1,
-        "not_answered": 0,
-    }.get(str(status or ""), 0)
-
-
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {"rows": len(rows), "by_case": {}}
     for case in sorted({str(row.get("case") or "") for row in rows if row.get("case")}):
@@ -733,7 +709,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         arms = {str(row.get("arm") or ""): row for row in case_rows}
         baseline = arms.get("baseline", {})
         planner = arms.get("planner", {})
-        usefulness = _followup_usefulness(baseline, planner)
+        usefulness = followup_usefulness(baseline, planner)
         summary["by_case"][case] = {
             "baseline_score": baseline.get("score"),
             "planner_score": planner.get("score"),
@@ -747,112 +723,6 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "followup_usefulness": usefulness,
         }
     return summary
-
-
-def _followup_usefulness(
-    baseline: dict[str, Any],
-    planner: dict[str, Any],
-) -> dict[str, Any]:
-    if not baseline or not planner:
-        return {"evaluated": False}
-    baseline_ok = bool(baseline.get("ok"))
-    planner_ok = bool(planner.get("ok"))
-    if not baseline_ok or not planner_ok:
-        return {
-            "evaluated": False,
-            "reason": "row_not_ok",
-            "baseline_ok": baseline_ok,
-            "planner_ok": planner_ok,
-        }
-    coverage_delta = round(
-        _float(planner.get("proof_coverage")) - _float(baseline.get("proof_coverage")),
-        3,
-    )
-    unsupported_rate_delta = round(
-        _float(planner.get("unsupported_claim_rate")) - _float(baseline.get("unsupported_claim_rate")),
-        3,
-    )
-    score_delta = int(planner.get("score") or 0) - int(baseline.get("score") or 0)
-    source_delta = int(planner.get("record_source_count") or 0) - int(baseline.get("record_source_count") or 0)
-    evidence_delta = int(planner.get("record_evidence_count") or 0) - int(baseline.get("record_evidence_count") or 0)
-    query_delta = len(planner.get("fixture_queries") or ()) - len(baseline.get("fixture_queries") or ())
-    fetch_delta = len(planner.get("fixture_fetches") or ()) - len(baseline.get("fixture_fetches") or ())
-    baseline_fetch_urls = {str(item or "") for item in baseline.get("fixture_fetches") or ()}
-    planner_fetch_urls = {str(item or "") for item in planner.get("fixture_fetches") or ()}
-    new_fetched_urls = tuple(sorted(url for url in planner_fetch_urls - baseline_fetch_urls if url))
-    send_delta = int(planner.get("provider_send_count") or 0) - int(baseline.get("provider_send_count") or 0)
-    seconds_delta = round(_float(planner.get("seconds")) - _float(baseline.get("seconds")), 3)
-    answer_status_delta = _answer_status_rank(planner.get("proof_answer_status")) - _answer_status_rank(
-        baseline.get("proof_answer_status")
-    )
-    reasons: list[str] = []
-    quality_reasons: list[str] = []
-    quality_regressions: list[str] = []
-    if coverage_delta >= 0.05:
-        reasons.append("coverage_improved")
-        quality_reasons.append("coverage_improved")
-    elif coverage_delta <= -0.05:
-        quality_regressions.append("coverage_regressed")
-    if unsupported_rate_delta <= -0.02:
-        reasons.append("unsupported_rate_improved")
-        quality_reasons.append("unsupported_rate_improved")
-    elif unsupported_rate_delta >= 0.02:
-        quality_regressions.append("unsupported_rate_regressed")
-    if evidence_delta > 0:
-        reasons.append("new_evidence")
-    if source_delta > 0:
-        reasons.append("new_sources")
-    if new_fetched_urls:
-        reasons.append("new_fetched_sources")
-    if answer_status_delta > 0:
-        reasons.append("answer_status_improved")
-        quality_reasons.append("answer_status_improved")
-    elif answer_status_delta < 0:
-        quality_regressions.append("answer_status_regressed")
-    if planner.get("proof_ok") and not baseline.get("proof_ok"):
-        reasons.append("proof_ok_recovered")
-        quality_reasons.append("proof_ok_recovered")
-    elif baseline.get("proof_ok") and not planner.get("proof_ok"):
-        quality_regressions.append("proof_ok_regressed")
-    if score_delta > 0:
-        reasons.append("score_improved")
-    elif score_delta < 0:
-        quality_regressions.append("score_regressed")
-    if planner.get("expected_terms_present") and not baseline.get("expected_terms_present"):
-        reasons.append("expected_terms_recovered")
-        quality_reasons.append("expected_terms_recovered")
-    elif baseline.get("expected_terms_present") and not planner.get("expected_terms_present"):
-        quality_regressions.append("expected_terms_lost")
-    material_gain = bool(source_delta > 0 or evidence_delta > 0)
-    execution_material_gain = bool(new_fetched_urls)
-    quality_gain = bool(quality_reasons)
-    quality_regression = bool(quality_regressions)
-    useful = bool(
-        int(planner.get("followup_rounds") or 0) > 0 and material_gain and quality_gain and not quality_regression
-    )
-    return {
-        "evaluated": True,
-        "useful": useful,
-        "material_gain": material_gain,
-        "execution_material_gain": execution_material_gain,
-        "quality_gain": quality_gain,
-        "quality_regression": quality_regression,
-        "reason_codes": reasons,
-        "quality_regression_codes": quality_regressions,
-        "followup_rounds": int(planner.get("followup_rounds") or 0),
-        "new_sources": max(0, source_delta),
-        "new_evidence": max(0, evidence_delta),
-        "new_fetched_sources": len(new_fetched_urls),
-        "new_fetched_source_urls": [_clip(url, 160) for url in new_fetched_urls[:6]],
-        "answer_coverage_delta": coverage_delta,
-        "unsupported_claim_rate_delta": unsupported_rate_delta,
-        "answer_status_delta": answer_status_delta,
-        "score_delta": score_delta,
-        "query_delta": query_delta,
-        "fetch_delta": fetch_delta,
-        "provider_send_delta": send_delta,
-        "seconds_delta": seconds_delta,
-    }
 
 
 def run_provider(
@@ -1209,7 +1079,7 @@ def _self_test() -> None:
             assert replay.new_evidence_count == 1
         finally:
             store.close()
-    failed_usefulness = _followup_usefulness(
+    failed_usefulness = followup_usefulness(
         {"arm": "baseline", "ok": False, "error": "timeout"},
         {
             "arm": "planner",
@@ -1223,7 +1093,7 @@ def _self_test() -> None:
     )
     assert failed_usefulness["evaluated"] is False
     assert failed_usefulness["reason"] == "row_not_ok"
-    material_only = _followup_usefulness(
+    material_only = followup_usefulness(
         {
             "arm": "baseline",
             "ok": True,
