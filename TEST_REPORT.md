@@ -45,12 +45,16 @@ controller:   added ControllerActionContract, CONTROLLER_ACTION_CONTRACTS,
               prompt_digest/epoch_id instead.
 prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               PromptSurfaceSection/Record, prompt_surface_id() (per-send
-              phase+send_ref+prompt_digest); build_prompt_surface_record()
+              phase+send_ref+prompt_digest); added shared canonicalizers
+              canonical_surface_phase(), canonical_surface_send_ref(),
+              canonical_surface_prompt_digest(); build_prompt_surface_record()
               normalizes fields before id calculation;
               validate_prompt_surface_payload() strictly recomputes and verifies
-              authentic derived surface_id, checks sha256/ctx_epoch hex and
-              uses type(x) is int to seal bool-int loopholes; removed dead
-              _is_epoch() helper.
+              authentic derived surface_id, rejects non-canonical phase (>40 chars,
+              spaces, special chars) and send_ref (>80 chars, unstripped), requires
+              non-empty epoch_id matching ctx_epoch pattern, checks sha256 hex,
+              uses type(x) is int to seal bool-int loopholes, and removed no-op
+              provider_effect_id logic and dead _is_epoch() helper.
 envelope/trace: extended record_provider_send_prompt() to accept
               phase/send_ref/provider_effect_id/contract hashes and only when
               explicit phase+send_ref are present project a bounded prompt-surface
@@ -64,18 +68,19 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
               send_ref=effect_id and contract hashes before provider.send();
               wired research runner with monotonic _research_send_seq and
               phase="research", send_ref="research_send:{n}" and controller vs
-              codec hashes; exported render_research_repair_prompt().
+              codec hashes; exported render_research_repair_prompt(), removing
+              the obsolete _protocol_repair_prompt alias.
 ```
 
 Verification:
 
 - `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`24 passed, 27 subtests passed in 1.12s`)
 - `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`259 passed, 69 subtests passed in 15.56s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.45s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.41s`)
 - `ruff check` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3467 passed, 4 skipped, 1235 subtests passed in 349.69s (0:05:49)` after review findings refinement; authentic derived surface_id verification, bool-int loopholes closed, send_ref fallback removed, dead code purged, knowledge_link exact title capability locked, and authentic research repair prompt golden asserted; no model-visible coding bytes changed).
+- Full pytest suite: `pytest -q` (`3467 passed, 4 skipped, 1235 subtests passed in 318.59s (0:05:18)` after round 2 review findings refinement; shared canonicalizers and strict non-canonical rejection, epoch_id required regex check, dead alias purged, golden import decoupled, and stored surface_id authenticity asserted; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

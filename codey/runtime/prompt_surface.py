@@ -72,6 +72,19 @@ def prompt_surface_id(*, phase: str, send_ref: str, prompt_digest: str) -> str:
     return f"prompt_surface:{digest}"
 
 
+def canonical_surface_phase(value: object) -> str:
+    text = str(value or "").strip()[:40]
+    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+
+
+def canonical_surface_send_ref(value: object) -> str:
+    return str(value or "").strip()[:80]
+
+
+def canonical_surface_prompt_digest(value: object) -> str:
+    return str(value or "").strip()[:80]
+
+
 def build_prompt_surface_record(
     *,
     phase: str,
@@ -85,9 +98,9 @@ def build_prompt_surface_record(
     runtime_tool_contract_hash: str = "",
     sections: tuple[PromptSurfaceSection, ...] = (),
 ) -> PromptSurfaceRecord:
-    norm_phase = str(phase or "").strip()[:40]
-    norm_send_ref = str(send_ref or "").strip()[:80]
-    norm_prompt_digest = str(prompt_digest or "").strip()[:80]
+    norm_phase = canonical_surface_phase(phase)
+    norm_send_ref = canonical_surface_send_ref(send_ref)
+    norm_prompt_digest = canonical_surface_prompt_digest(prompt_digest)
     surface = prompt_surface_id(phase=norm_phase, send_ref=norm_send_ref, prompt_digest=norm_prompt_digest)
     return PromptSurfaceRecord(
         surface_id=surface,
@@ -119,35 +132,33 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     schema_version = payload.get("schema_version")
     if type(schema_version) is not int or schema_version != PROMPT_SURFACE_SCHEMA_VERSION:
         return False
-    surface_id = str(payload.get("surface_id") or "").strip()
-    send_ref = str(payload.get("send_ref") or "").strip()
-    phase = str(payload.get("phase") or "").strip()
-    prompt_digest = str(payload.get("prompt_digest") or "").strip()
+    surface_id = payload.get("surface_id")
+    send_ref = payload.get("send_ref")
+    phase = payload.get("phase")
+    prompt_digest = payload.get("prompt_digest")
     prompt_chars = payload.get("prompt_chars")
-    epoch_id = str(payload.get("epoch_id") or "").strip()
-    if not _SURFACE_RE.match(surface_id):
+    epoch_id = payload.get("epoch_id")
+    if not isinstance(surface_id, str) or not _SURFACE_RE.match(surface_id):
         return False
-    if not send_ref:
+    # phase must be canonical: 1..40 chars, no extra whitespace or non-identifier characters
+    if not isinstance(phase, str) or not (1 <= len(phase) <= 40) or phase != canonical_surface_phase(phase):
         return False
-    if not phase:
+    # send_ref must be canonical: 1..80 chars, already stripped
+    if not isinstance(send_ref, str) or not (1 <= len(send_ref) <= 80) or send_ref != canonical_surface_send_ref(send_ref):
         return False
-    if not _is_sha256(prompt_digest):
+    if not isinstance(prompt_digest, str) or not _is_sha256(prompt_digest):
         return False
     if surface_id != prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest):
         return False
     if type(prompt_chars) is not int or prompt_chars < 0 or prompt_chars > 10_000_000:
         return False
-    if epoch_id and not _EPOCH_RE.match(epoch_id):
+    # epoch_id is required and must strictly match ctx_epoch pattern
+    if not isinstance(epoch_id, str) or not _EPOCH_RE.match(epoch_id):
         return False
     # optional hashes, if present must be sha256
     for key in ("model_tool_contract_hash", "runtime_tool_contract_hash"):
         val = payload.get(key)
         if val not in (None, "") and str(val).strip() and not _is_sha256(val):
-            return False
-    provider_effect_id = payload.get("provider_effect_id")
-    if provider_effect_id not in (None, "") and str(provider_effect_id).strip():
-        # provider_effect_id is opaque but bounded; no strict format, just non-empty string allowed
-        if not str(provider_effect_id).strip():
             return False
     sections = payload.get("sections")
     if sections is not None:

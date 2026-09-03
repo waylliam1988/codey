@@ -341,7 +341,7 @@ class ResearchRunner:
                     phase="research",
                     turn=turn,
                 )
-                message = _protocol_repair_prompt(self.codec, plan, control_state)
+                message = render_research_repair_prompt(self.codec, plan, control_state)
                 continue
             if plan.calls or plan.control is not None:
                 self.prompt_trace.call(
@@ -1076,9 +1076,6 @@ def render_research_repair_prompt(
         "Reply with exactly one JSON object and no prose.",
     ])
     return "\n".join(lines)
-
-
-_protocol_repair_prompt = render_research_repair_prompt
 
 
 def _tool_from_protocol_error(error: str, state: ResearchControlState | None = None) -> str:

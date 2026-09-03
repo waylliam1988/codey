@@ -26,7 +26,7 @@ from codey.research.controller import (
     render_control_block,
 )
 from codey.research.protocols import JsonToolCodec, extract_json_objects
-from codey.research.runner import _protocol_repair_prompt
+from codey.research.runner import render_research_repair_prompt
 from codey.research.tool_contract import PROTOCOL_TOO_MANY_TOOLS
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 
@@ -85,7 +85,7 @@ Reply with exactly one JSON object and no prose."""
 
 def _new_prompt() -> str:
     state = _first_turn_state()
-    repair = _protocol_repair_prompt(JsonToolCodec(), _too_many_plan(), state)
+    repair = render_research_repair_prompt(JsonToolCodec(), _too_many_plan(), state)
     return repair.rstrip() + "\n\n" + render_control_block(state)
 
 

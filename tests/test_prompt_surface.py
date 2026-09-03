@@ -116,7 +116,7 @@ class PromptSurfaceTests(unittest.TestCase):
             send_ref="  effect_padded  ",
             prompt_digest="  sha256:" + "9" * 64 + "  ",
             prompt_chars=10,
-            epoch_id="ctx_epoch:1234",
+            epoch_id="ctx_epoch:" + "c" * 16,
         )
         self.assertEqual(record.phase, "writer")
         self.assertEqual(record.send_ref, "effect_padded")
@@ -140,6 +140,23 @@ class PromptSurfaceTests(unittest.TestCase):
         forged_surface = dict(good)
         forged_surface["surface_id"] = "prompt_surface:" + "0" * 16
         self.assertFalse(validate_prompt_surface_payload(forged_surface))
+        # non-canonical phase (> 40 chars, or containing whitespace/special characters)
+        bad_long_phase = dict(good)
+        bad_long_phase["phase"] = "p" * 41
+        self.assertFalse(validate_prompt_surface_payload(bad_long_phase))
+        bad_space_phase = dict(good)
+        bad_space_phase["phase"] = "writer with space"
+        self.assertFalse(validate_prompt_surface_payload(bad_space_phase))
+        bad_padded_phase = dict(good)
+        bad_padded_phase["phase"] = " writer "
+        self.assertFalse(validate_prompt_surface_payload(bad_padded_phase))
+        # non-canonical send_ref (> 80 chars, or unstripped)
+        bad_long_send = dict(good)
+        bad_long_send["send_ref"] = "s" * 81
+        self.assertFalse(validate_prompt_surface_payload(bad_long_send))
+        bad_padded_send = dict(good)
+        bad_padded_send["send_ref"] = " effect_1 "
+        self.assertFalse(validate_prompt_surface_payload(bad_padded_send))
         # bool-int loopholes must be rejected
         bad_bool_schema = dict(good)
         bad_bool_schema["schema_version"] = True
@@ -166,6 +183,17 @@ class PromptSurfaceTests(unittest.TestCase):
         bad_send = dict(good)
         del bad_send["send_ref"]
         self.assertFalse(validate_prompt_surface_payload(bad_send))
+        # missing / empty epoch_id must be strictly rejected
+        bad_missing_epoch = dict(good)
+        del bad_missing_epoch["epoch_id"]
+        self.assertFalse(validate_prompt_surface_payload(bad_missing_epoch))
+        bad_empty_epoch = dict(good)
+        bad_empty_epoch["epoch_id"] = ""
+        self.assertFalse(validate_prompt_surface_payload(bad_empty_epoch))
+        # bad epoch
+        bad_epoch = dict(good)
+        bad_epoch["epoch_id"] = "ctx_epoch:zzzz"
+        self.assertFalse(validate_prompt_surface_payload(bad_epoch))
         for forbidden in ("prompt", "reply", "content", "body", "text", "stdout", "stderr", "diff", "source_body", "result", "model_text"):
             with self.subTest(key=forbidden):
                 bad = dict(good)
@@ -175,10 +203,6 @@ class PromptSurfaceTests(unittest.TestCase):
         bad_section = dict(good)
         bad_section["sections"] = [{"name": "x", "digest": "sha256:" + "a" * 64, "chars": 1, "prompt": "leak"}]
         self.assertFalse(validate_prompt_surface_payload(bad_section))
-        # bad epoch
-        bad_epoch = dict(good)
-        bad_epoch["epoch_id"] = "ctx_epoch:zzzz"
-        self.assertFalse(validate_prompt_surface_payload(bad_epoch))
 
     def test_record_provider_send_prompt_is_fail_open_except_cancellation(self) -> None:
         # broken trace must not raise even with explicit phase/send_ref
@@ -306,6 +330,14 @@ class PromptSurfaceTests(unittest.TestCase):
                     self.assertNotIn(forbidden, surf)
                     for sec in surf.get("sections", []):
                         self.assertNotIn(forbidden, sec)
+            # stored payload fields must authentically derive the exact surface_id
+            for surf in obj["prompt_surfaces"]:
+                derived = prompt_surface_id(
+                    phase=surf["phase"],
+                    send_ref=surf["send_ref"],
+                    prompt_digest=surf["prompt_digest"],
+                )
+                self.assertEqual(surf["surface_id"], derived)
 
 
 if __name__ == "__main__":

@@ -69,7 +69,7 @@ class GoldenParityTests(unittest.TestCase):
                 pass
 
     def test_research_repair_prompt_golden(self) -> None:
-        from codey.protocols.json_codec import PROTOCOL_DISALLOWED_TOOL
+        from codey.research.tool_contract import PROTOCOL_DISALLOWED_TOOL
         from codey.research.controller import ResearchController, ResearchControlState
         from codey.research.protocols import JsonToolCodec as ResearchCodec
         from codey.research.runner import render_research_repair_prompt
