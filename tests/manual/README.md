@@ -90,6 +90,45 @@ arm schedules, complete-matrix checks, atomic JSON persistence, resume
 payloads with provider identity guards, and the fixture search provider) lives
 in `ab_harness_common.py`; production code must never import it.
 
+`research_experiment_gate.py` is the current metric-only gate for Research
+default-path decisions. It reads completed result JSON files from
+`tests/manual/results/`, skips interrupted files with `complete:false`, and
+copies only bounded metrics into its output. It must not copy raw prompt,
+reply, transcript, webpage, or final-report bodies.
+
+```powershell
+python -B tests\manual\research_experiment_gate.py --self-test
+python -B tests\manual\research_experiment_gate.py `
+  --output tests\manual\results\research_experiment_gate-0.5.7-history.json
+```
+
+The 2026-09-04 recompute read 67 completed source files and skipped 14
+incomplete files. Current decisions: keep PubMed/arXiv connectors for source
+reach; keep evidence-only follow-up guarded and evidence-only; keep the done
+finalizer narrowly as citation/source-list cleanup; do not promote the
+untrusted source wrapper without a real A/B.
+
+`research_followup_quality_ab.py` is the live connector-backed follow-up quality
+A/B. Both arms use the production connector-aware search path; `baseline`
+disables bounded follow-up, while `planner` enables one evidence-only follow-up
+round plus deterministic merge. Use it to decide whether follow-up improves the
+final ResearchRecord, not to diagnose browser search failures.
+
+```powershell
+python -B tests\manual\research_followup_quality_ab.py --self-test
+python -B tests\manual\research_followup_quality_ab.py `
+  --provider mimo `
+  --case pubmed `
+  --arms baseline,planner `
+  --max-turns 18 `
+  --open-if-missing `
+  --output tests\manual\results\research_followup_quality_ab-mimo-pubmed.json
+```
+
+If a live row is stopped for provider login, CAPTCHA, or manual cancellation,
+leave the file as `complete:false`; the gate will skip it rather than treating
+it as evidence for or against the feature.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen
@@ -629,6 +668,15 @@ open or foreground that provider page. Rows are written atomically after each
 case/arm, and reruns skip completed rows unless `--rerun-failed` is set. The
 trace file is written next to the output file by default, or to
 `--trace-output` when set.
+
+2026-09-04 MiMo PubMed connector-priority smoke:
+`tests\manual\results\source_connector_ab-mimo-connector-priority2-smoke-20260904.json`
+completed with `ok=true`, `score=9`, `stop_reason=done`, `turns=12`,
+`sources_read=4`, `opened_target_host=true`, and `connector_errors=[]`.
+It opened two PubMed pages before broadening to other sources. The remaining
+failure was `proof_ok=false` with partial evidence/citation support, so this is
+evidence that real browser search and connector priority are working, not that
+final proof quality is solved.
 
 `source_connector_done_ab.py` is the companion done-stage probe. It keeps the
 same live connector setup, but compares prompt/checklist strategies with

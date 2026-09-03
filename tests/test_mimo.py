@@ -162,6 +162,46 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertEqual(mimo._clean_copied_text(raw, visible), raw)
 
+    def test_normalizes_single_markdown_json_tool_reply(self) -> None:
+        raw = '{"tool":"web_search","args":{"query":"alpha"}}'
+
+        self.assertEqual(
+            mimo._normalize_mimo_json_tool_reply(f"```json\n{raw}\n```"),
+            raw,
+        )
+
+    def test_normalizes_identical_mimo_json_overlay_duplicates(self) -> None:
+        raw = '{"tool":"web_search","args":{"query":"alpha"}}'
+
+        self.assertEqual(
+            mimo._normalize_mimo_json_tool_reply(f"json\n{raw}\njson\n{raw}"),
+            raw,
+        )
+
+    def test_normalizes_identical_adjacent_json_tool_replies(self) -> None:
+        raw = '{"tool":"web_search","args":{"query":"alpha"}}'
+
+        self.assertEqual(
+            mimo._normalize_mimo_json_tool_reply(f"{raw}\n{raw}"),
+            raw,
+        )
+
+    def test_mimo_json_normalizer_keeps_different_tool_replies_strict(self) -> None:
+        first = '{"tool":"web_search","args":{"query":"alpha"}}'
+        second = '{"tool":"web_search","args":{"query":"beta"}}'
+        raw = f"json\n{first}\njson\n{second}"
+
+        self.assertEqual(mimo._normalize_mimo_json_tool_reply(raw), raw)
+
+    def test_final_text_normalizes_visible_mimo_json_overlay_duplicate(self) -> None:
+        raw = '{"tool":"web_search","args":{"query":"alpha"}}'
+        with (
+            mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
+            mock.patch.object(mimo, "_last_text", return_value=f"json\n{raw}\njson\n{raw}"),
+        ):
+            self.assertEqual(mimo._final_text(object()), raw)
+
     def test_response_text_script_removes_mimo_hidden_overlay_duplicates(self) -> None:
         self.assertIn('[aria-hidden="true"]', mimo._RESPONSE_TEXT_JS)
         self.assertIn('[hidden]', mimo._RESPONSE_TEXT_JS)

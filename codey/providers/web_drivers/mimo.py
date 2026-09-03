@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 from playwright.sync_api import Locator, Page
@@ -18,6 +19,10 @@ from codey.providers.submission import (
     SendAttempt,
     SubmissionUncertain,
     confirm_submission,
+)
+from codey.toolchain.json_reply import (
+    is_json_tool_reply as _is_json_tool_reply,
+    normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
 )
 from codey.automation.web_clipboard import copy_action_text
 
@@ -311,15 +316,93 @@ def _clean_copied_text(raw: str, visible_text: str) -> str:
     return text
 
 
+def _normalize_mimo_json_tool_reply(text: str) -> str:
+    clean = str(text or "").strip()
+    if not clean:
+        return ""
+    repaired = _normalize_final_json_tool_reply(clean)
+    if _is_json_tool_reply(repaired):
+        return repaired
+
+    fenced = _markdown_json_payload(clean)
+    if fenced:
+        repaired = _normalize_final_json_tool_reply(fenced)
+        if _is_json_tool_reply(repaired):
+            return repaired
+        deduped = _dedupe_identical_json_tool_objects(fenced)
+        if deduped:
+            return deduped
+
+    deduped = _dedupe_identical_json_tool_objects(clean)
+    return deduped or clean
+
+
+def _markdown_json_payload(text: str) -> str:
+    lines = str(text or "").strip().splitlines()
+    if len(lines) < 3:
+        return ""
+    opener = lines[0].strip().casefold()
+    if opener not in {"```", "```json"} or lines[-1].strip() != "```":
+        return ""
+    return "\n".join(lines[1:-1]).strip()
+
+
+def _dedupe_identical_json_tool_objects(text: str) -> str:
+    clean = _without_mimo_json_markers(text)
+    if not clean:
+        return ""
+    objects = _parse_only_json_objects(clean)
+    if not 1 <= len(objects) <= 2:
+        return ""
+    first = objects[0]
+    if not isinstance(first, dict) or any(obj != first for obj in objects):
+        return ""
+    candidate = json.dumps(first, ensure_ascii=False, separators=(",", ":"))
+    return candidate if _is_json_tool_reply(candidate) else ""
+
+
+def _without_mimo_json_markers(text: str) -> str:
+    lines = str(text or "").strip().splitlines()
+    kept: list[str] = []
+    removed = False
+    for line in lines:
+        if line.strip().casefold() == "json":
+            removed = True
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip() if removed else str(text or "").strip()
+
+
+def _parse_only_json_objects(text: str) -> list[object]:
+    clean = str(text or "")
+    decoder = json.JSONDecoder()
+    values: list[object] = []
+    index = 0
+    while index < len(clean):
+        while index < len(clean) and clean[index].isspace():
+            index += 1
+        if index >= len(clean):
+            break
+        try:
+            value, end = decoder.raw_decode(clean, index)
+        except ValueError:
+            return []
+        values.append(value)
+        index = end
+    return values
+
+
 def _final_text(page: Page, *, completion_verified: bool = False) -> str:
     raw = "" if completion_verified else _copy_last_text(page)
     if raw:
+        raw = _normalize_mimo_json_tool_reply(raw)
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         return raw
     if not completion_verified and not _generation_complete(page):
         raise RuntimeError("Xiaomi MiMo response is still generating")
     fallback = _last_text(page)
     if fallback:
+        fallback = _normalize_mimo_json_tool_reply(fallback)
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         return fallback
     controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)

@@ -3926,32 +3926,61 @@ research open_url / knowledge_write 不被改名成 read / write
 
 ## 0.5.7 - Research Follow-up Quality Closure + Source Rendering/Finalizer A/B v1
 
-状态：计划。目标是把 0.4 的 bounded Research follow-up 和
-`source_connector_done` batch/checklist 实验收成明确结论，并正式验证
-Research untrusted source wrapper：有可测净收益的部分进入默认 Research path；
-没有消费者或收益不稳的 arm 删除，或继续停留在 manual harness，不进入 production path。
+状态：实验验收中，尚未 bump 运行时版本。目标仍然是把 0.4 的 bounded
+Research follow-up 和 `source_connector_done` batch/checklist 实验收成明确结论，
+并正式验证 Research untrusted source wrapper：有可测净收益的部分进入默认
+Research path；没有消费者或收益不稳的 arm 删除，或继续停留在 manual harness，
+不进入 production path。
 
 0.5.6 已提前完成的预备清理：`codey.research.followup_selection` 已承接
 ResearchPipeline 的纯 candidate selection / stop decision；
 `codey.research.followup_quality` 和 `codey.research.source_finalizer_scoring`
 已承接 manual harness 之间重复的 bounded follow-up / source-finalizer 行评分与
-聚合逻辑。0.5.7 不需要新建 manager；下一步是在这些纯 scorer 上补实机
-release gate 和 A/B 消费者。
+聚合逻辑。当前修复又新增了 `tests/manual/research_experiment_gate.py` 和
+`tests/manual/research_followup_quality_ab.py`，用同一套纯 scorer 复算历史结果并
+继续跑 connector-backed follow-up A/B。0.5.7 不需要新建 manager。
+
+2026-09-04 当前验收结论：
+
+```text
+PubMed/arXiv source connector:
+  保留默认路径。gate 统计 target_host_gains=3、target_host_losses=0、
+  score_gains=4、score_losses=0；MiMo PubMed connector-priority smoke 已确认
+  真实网页搜索和 PubMed 打开路径恢复。
+
+bounded evidence-only follow-up:
+  保留 guarded 默认形态，但不扩大。gate 统计 safe_evidence_only_pairs=11、
+  useful_pairs=8，同时仍有 quality regression 样本；因此只保留
+  evidence-only write + deterministic merge，不恢复让模型重写整篇报告的旧形态。
+
+done citation/source finalizer:
+  保留为窄的引用/来源列表整理器。它能减少 done retry / quality retry，但
+  proof_gains=0，不能宣传成研究质量提升器，也不能推广旧 batch/checklist arm。
+
+untrusted source wrapper:
+  暂不进默认路径。当前 row_count=0，没有 malicious-source A/B 证据；不能为了
+  “以后可能有用”在 production module 停放 default-off renderer。
+
+当前真正堵点:
+  不再是 MiMo 搜索打不开；是 final report 里的部分结论没有和 EvidenceLedger
+  中保存的证据/引用绑定得足够紧。
+```
 
 ### 做什么
 
-新增或扩展：
+已新增或继续扩展：
 
 ```text
-codey/research/followup_quality.py（0.5.6 已有纯 scorer；0.5.7 扩展 release gate 输入/输出）
-codey/research/followup_selection.py（0.5.6 已有纯 selection；0.5.7 只按真实失败样本调整）
-codey/research/source_finalizer_scoring.py（0.5.6 已有纯 scorer；供 source_connector_done gate 共用）
-codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer）
-codey/research/source_rendering.py（只有 A/B 胜出才同版新增/保留并接入默认 open_url 渲染；不胜出不创建或删除）
+codey/research/followup_quality.py（已有纯 scorer；继续供 release gate / harness 共用）
+codey/research/followup_selection.py（已有纯 selection；只按真实失败样本调整）
+codey/research/source_finalizer_scoring.py（已有纯 scorer；供 source_connector_done gate 共用）
+tests/manual/research_experiment_gate.py（已新增；只输出 metric，不复制 raw prompt/reply/source body）
+tests/manual/research_followup_quality_ab.py（已新增；connector-backed baseline/planner A/B）
+codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer；当前未新增）
+codey/research/source_rendering.py（只有 source wrapper A/B 胜出才新增/保留；当前未新增）
 tests/test_research_followup_quality.py
 tests/test_source_connector_done_scorer.py
 tests/test_research_source_rendering.py
-tests/manual/research_followup_quality_ab.py
 tests/manual/source_connector_done_ab.py
 tests/manual/research_source_rendering_ab.py
 ```
@@ -4903,7 +4932,7 @@ TaskRunner 不再继续吸收新生命周期状态
 CompletionProof / Evidence / Verification 的 source of truth 明确
 Ghost / World Model / Protocol affinity 没有污染 evidence / permission / completion
 Research untrusted source wrapper 只有 A/B 通过后才默认启用
-Research bounded follow-up 已经有 proof-quality 结论，source_connector_done batch/checklist 已按 A/B 结果推广或退出 production path
+Research bounded follow-up 必须有 proof-quality 结论；source_connector_done batch/checklist 必须按 A/B 结果推广或退出 production path
 Protocol telemetry / contract hash 已被 0.5.3 / 0.5.6 / 0.5.8 的 release gate 消费，或删除无消费者字段
 Safe read/search replay 已实现，unsafe replay count 始终为 0
 至少两个 provider 完成 coding + research + ghost 核心 A/B
@@ -5036,13 +5065,15 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 
 ```text
 Research bounded follow-up -> 0.5.7：
-  当前状态：已接入生产 ResearchPipeline，安全闭环成立。
-  未闭环：多 provider proof-quality 净收益还没稳定证明。
+  当前状态：已接入生产 ResearchPipeline，安全闭环成立；2026-09-04 gate 结论为
+    keep_default_with_more_live_gate。
+  未闭环：多 provider proof-quality 净收益还没稳定证明，不能扩大到重写整篇报告。
   收口方式：0.5.7 用 scorer + journal + live A/B 给出质量结论；保留 evidence-only 边界，
     只根据真实失败样本改 planner / material selection / merge selection。
 
 source_connector_done batch/checklist -> 0.5.7：
-  当前状态：manual A/B 结论不推广；不是默认生产 completion 能力。
+  当前状态：窄 done citation/source finalizer 作为整理器保留；旧 batch/checklist arm
+    不推广，不是默认生产 completion 能力。
   收口方式：0.5.7 先写 deterministic scorer 和 live A/B arm，证明 done quality /
     citation quality / completion honesty 提升，且不增加 provider stalls，再收成窄 finalizer；
     否则删除或继续 manual-only。
@@ -5060,7 +5091,8 @@ Safe read/search replay -> 0.5.4：
     unsafe replay count 必须始终为 0。
 
 Research untrusted source wrapper -> 0.5.7：
-  当前状态：计划项，不默认生产渲染，也不在 0.5.6 停放 default-off production renderer。
+  当前状态：计划项；2026-09-04 gate 中 row_count=0，没有 A/B 证据。
+    不默认生产渲染，也不在 0.5.6 停放 default-off production renderer。
   收口方式：0.5.7 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
     evidence quality / source coverage / completion honesty，且 injection 文本没有变成 tool action，
     才同版改默认 source rendering；否则删除 treatment 或保留 manual-only。

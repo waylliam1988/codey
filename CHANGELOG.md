@@ -2,6 +2,41 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Research Connector Recovery + Experiment Gate
+
+- Restored browser-backed Research search under TUN proxy setups by allowing
+  DNS-resolved `198.18.0.0/15` fake-IP answers in `NetworkPolicy` by default
+  while continuing to block literal fake-IP URL targets. This fixes the real
+  search path instead of hiding failures behind connector-only fallback.
+- Hardened the MiMo web driver with a narrow JSON-tool reply normalizer for the
+  shapes observed in live Research: one fenced JSON reply, duplicated
+  `json ... json ...` overlay text, and adjacent identical JSON objects. Different
+  JSON objects remain strict protocol errors.
+- Tightened the Research controller's source path for PubMed/arXiv questions:
+  when connector priority results are available and no connector source has been
+  opened yet, the model is shown only those priority result rows and is allowed
+  only `open_result`. Failed priority opens are recorded and demoted, so a broken
+  PubMed/arXiv result cannot deadlock the run. Near the turn limit, runs with
+  evidence are pushed toward finish actions, with a narrow prose-final-report
+  recovery only in that finish state.
+- Added `tests/manual/research_experiment_gate.py` to recompute metric-only
+  Research default-path decisions from completed result JSON files, skipping
+  `complete:false` interrupted runs and never copying raw prompt, reply, report,
+  transcript, or webpage bodies into the gate output. Added
+  `tests/manual/research_followup_quality_ab.py` for connector-backed baseline
+  vs evidence-only follow-up A/B checks.
+- Recomputed the historical Research gate on 2026-09-04:
+  `source_file_count=67`, `skipped_incomplete_files=14`, verdict `ok=true`.
+  Current default-path decision is to keep PubMed/arXiv connectors for source
+  reach, keep evidence-only follow-up guarded, keep the narrow done citation
+  finalizer as a citation/source-list cleanup step, and not promote the untrusted
+  source wrapper without a real A/B.
+- Live MiMo connector-priority smoke on the PubMed case completed with real web
+  search working: `ok=true`, `score=9`, `stop_reason=done`, `turns=12`,
+  `sources_read=4`, two PubMed URLs opened, and `connector_errors=[]`. The proof
+  review remained partial, so the remaining Research bottleneck is claim-to-
+  evidence support in the final report, not search/open failure.
+
 ## 0.5.6 - Tool Prompt Consolidation + Prompt Surface Thin Trace v1
 
 - Tool Prompt Consolidation & Runtime Prompt Surface v1:

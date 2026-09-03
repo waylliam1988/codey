@@ -111,6 +111,46 @@ class TrackingSearch(FakeSearch):
         return super().fetch(url)
 
 
+class PriorityFailSearch(FakeSearch):
+    pubmed_url = "https://pubmed.ncbi.nlm.nih.gov/41142624/"
+    general_url = "https://example.com/general"
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+        self.fetch_urls: list[str] = []
+
+    def search(self, query: str, limit: int = 8) -> list[dict]:
+        self.queries.append(query)
+        return [
+            {
+                "title": "PubMed: ICI hepatotoxicity",
+                "url": self.pubmed_url,
+                "snippet": "medical abstract",
+            },
+            {
+                "title": "General page",
+                "url": self.general_url,
+                "snippet": "general result",
+            },
+        ]
+
+    def fetch(self, url: str) -> dict:
+        self.fetch_urls.append(url)
+        if url == self.pubmed_url:
+            return {
+                "url": url,
+                "title": "PubMed",
+                "text": "ERROR: connector fetch failed",
+                "truncated": False,
+            }
+        return {
+            "url": url,
+            "title": "General page",
+            "text": "General opened evidence text.",
+            "truncated": False,
+        }
+
+
 class RecordingTrace:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
@@ -2504,6 +2544,29 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Search results you may open", provider.sent[1])
         self.assertIn('{"tool":"open_result","args":{"result_id":"r1"}}', provider.sent[1])
 
+    def test_research_runner_demotes_failed_priority_connector_result(self) -> None:
+        provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "hepatotoxicity"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r2"}}),
+        )
+        search = PriorityFailSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, search, store, max_turns=3)
+            with mock.patch("codey.research.tools.check_fetch_url", return_value=None):
+                list(runner.run("Research hepatotoxicity"))
+            store.close()
+
+        self.assertEqual(search.queries, ["hepatotoxicity"])
+        self.assertEqual(search.fetch_urls, [PriorityFailSearch.pubmed_url, PriorityFailSearch.general_url])
+        self.assertIn("Priority source results", provider.sent[1])
+        self.assertIn("Use one of these result_id values first: r1", provider.sent[1])
+        self.assertNotIn("Priority source results", provider.sent[2])
+        self.assertIn("Search results you may open", provider.sent[2])
+        self.assertIn("r2: General page", provider.sent[2])
+        self.assertNotIn("r1: PubMed", provider.sent[2])
+
     def test_research_runner_can_disable_controller_for_manual_baselines(self) -> None:
         provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
         with tempfile.TemporaryDirectory() as td:
@@ -4344,17 +4407,18 @@ class NetworkPolicyTests(unittest.TestCase):
         with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
 
-            self.assertEqual(
-                DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True),
-                "refusing to open a non-public address",
-            )
+            self.assertIsNone(DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True))
             self.assertEqual(
                 DEFAULT_NETWORK_POLICY.evaluate_url("https://example.com/api", resolve=True).status,
-                NetworkStatus.BLOCKED_PRIVATE,
+                NetworkStatus.POLICY_ALLOWED,
             )
 
-            # TUN/transparent proxy environments must opt into fake-IP
-            # compatibility; it is never the cold-start default.
+            strict_policy = NetworkPolicy(allow_dns_fake_ip=False)
+            self.assertEqual(
+                strict_policy.check_url("https://example.com/api", resolve=True),
+                "refusing to open a non-public address",
+            )
+
             explicit_policy = NetworkPolicy(allow_dns_fake_ip=True)
             self.assertIsNone(explicit_policy.check_url("https://example.com/api", resolve=True))
             self.assertEqual(

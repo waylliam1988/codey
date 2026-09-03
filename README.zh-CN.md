@@ -327,6 +327,10 @@ connector fallback 错误以及
 写入 Run Trace，同时保留 `token_budget_exceeded`、`authorization_required` 这类合法
 审计 code；
 live transport 的 tool name 和 User-Agent 使用不含产品名的中性标识。
+当 PubMed/arXiv connector 结果可用时，Research controller 会先要求模型打开这些
+优先结果，而不是先被普通网页结果带走。如果某个优先结果打不开，controller 会把它
+降级并恢复普通搜索流程，不会反复卡在同一个 URL 上。TUN/透明代理下 DNS 解析得到的
+fake-IP 可以通过浏览器搜索策略，但用户直接输入 literal fake-IP URL 仍会被阻止。
 Research JSON tool call 只接受恰好一个 JSON object，且顶层只能有 `tool` + `args`；
 隐藏 `name`、顶层参数字段、额外顶层字段或额外 JSON object 都会走协议错误。
 最终 `done` 现在会先经过一个很窄的 deterministic citation compiler，再进入报告质量门。

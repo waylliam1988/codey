@@ -5,11 +5,11 @@ unresolved network endpoints. Note that this is an application-level SSRF guard
 and not a hard DNS-rebinding sandbox, as browser navigation engines resolve
 connections independently.
 
-When ``allow_dns_fake_ip`` is explicitly enabled, DNS-resolved 198.18.0.0/15
-addresses are treated as policy-allowed for TUN/transparent-proxy setups. That
-compatibility path is not proof that the destination is a globally routed
-public host; it only means the URL passed this application's configured fetch
-policy.
+DNS-resolved 198.18.0.0/15 addresses are treated as policy-allowed by default
+for TUN/transparent-proxy setups. That compatibility path is not proof that the
+destination is a globally routed public host; it only means the URL passed this
+application's configured fetch policy. Literal 198.18.0.0/15 IP URLs remain
+blocked.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class NetworkPolicy:
         allowed_cache_ttl_seconds: float = 5.0,
         blocked_cache_ttl_seconds: float = 45.0,
         max_cache_entries: int = 1024,
-        allow_dns_fake_ip: bool = False,
+        allow_dns_fake_ip: bool = True,
     ) -> None:
         self.allowed_cache_ttl_seconds = max(0.0, float(allowed_cache_ttl_seconds))
         self.blocked_cache_ttl_seconds = max(0.0, float(blocked_cache_ttl_seconds))

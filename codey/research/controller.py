@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
-from codey.runtime.models import ToolPlan, ToolResult
+from codey.runtime.models import Control, ToolPlan, ToolResult
 from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
@@ -22,6 +23,7 @@ from codey.research.tool_contract import (
 )
 
 CONTROLLER_DISPLAY_LIMIT = 8
+FINAL_REPORT_SECTION_MARKERS = ("结论", "关键证据", "反证与限制", "来源质量", "搜索覆盖", "来源")
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,7 @@ class OpenTarget:
 class ResearchControlState:
     allowed_tools: tuple[str, ...]
     result_urls: dict[str, str] = field(default_factory=dict)
+    priority_result_ids: tuple[str, ...] = ()
     source_urls: dict[str, str] = field(default_factory=dict)
     hit_targets: dict[str, OpenTarget] = field(default_factory=dict)
     result_lines: tuple[str, ...] = ()
@@ -170,6 +173,7 @@ class ResearchControlState:
     evidence_count: int = 0
     note_count: int = 0
     done_escape: bool = False
+    finish_required: bool = False
 
 
 class ResearchController:
@@ -179,10 +183,11 @@ class ResearchController:
         self._source_ids_by_url: dict[str, str] = {}
         self._source_urls_by_id: dict[str, str] = {}
         self._hit_ids_by_key: dict[str, str] = {}
+        self._failed_priority_result_url_keys: set[str] = set()
 
     def build_state(self, tools: object, *, turn: int, max_turns: int) -> ResearchControlState:
         ledger = tools.ledger
-        result_rows = self._result_rows(ledger)
+        result_rows = self._available_result_rows(self._result_rows(ledger))
         source_rows = self._source_rows(ledger)
         hit_rows = self._hit_rows(ledger)
         evidence_urls = _evidence_source_urls(ledger)
@@ -191,31 +196,48 @@ class ResearchController:
         grounded_count = len(getattr(tools, "grounded_ids", ()))
         activity = bool(ledger.searches or ledger.opened_sources)
         done_escape = evidence_count == 0 and activity and int(turn or 0) >= max(1, int(max_turns or 1) - 1)
+        finish_required = _finish_required(turn=turn, max_turns=max_turns, evidence_count=evidence_count)
+        priority_result_ids = _priority_connector_result_ids(result_rows, source_rows)
 
-        allowed = ["knowledge_search", "knowledge_read", "web_search"]
-        if result_rows:
-            allowed.append("open_result")
-        if source_rows:
-            allowed.append("reopen_source")
-        if hit_rows:
-            allowed.append("open_hit")
-        if source_rows and self.include_source_search:
-            allowed.append("source_search")
-        if source_rows:
-            allowed.append("knowledge_write")
-        if note_count >= 2 or (note_count >= 1 and grounded_count):
-            allowed.append("knowledge_link")
-        if evidence_count > 0 or done_escape:
-            allowed.append("done")
+        if finish_required:
+            allowed = ["done"]
+            if source_rows:
+                allowed.append("knowledge_write")
+            if note_count >= 2 or (note_count >= 1 and grounded_count):
+                allowed.append("knowledge_link")
+        elif priority_result_ids:
+            allowed = ["open_result"]
+        else:
+            allowed = ["knowledge_search", "knowledge_read", "web_search"]
+            if result_rows:
+                allowed.append("open_result")
+            if source_rows:
+                allowed.append("reopen_source")
+            if hit_rows:
+                allowed.append("open_hit")
+            if source_rows and self.include_source_search:
+                allowed.append("source_search")
+            if source_rows:
+                allowed.append("knowledge_write")
+            if note_count >= 2 or (note_count >= 1 and grounded_count):
+                allowed.append("knowledge_link")
+            if evidence_count > 0 or done_escape:
+                allowed.append("done")
 
         citable = tuple(row["line"] for row in source_rows if row["url"] in evidence_urls)
         noncitable = tuple(row["line"] for row in source_rows if row["url"] not in evidence_urls)
+        visible_result_rows = (
+            tuple(row for row in result_rows if row["id"] in priority_result_ids)
+            if priority_result_ids
+            else tuple(result_rows[-CONTROLLER_DISPLAY_LIMIT:])
+        )
         return ResearchControlState(
             allowed_tools=tuple(dict.fromkeys(allowed)),
             result_urls={row["id"]: row["url"] for row in result_rows},
+            priority_result_ids=priority_result_ids,
             source_urls=dict(self._source_urls_by_id),
             hit_targets={row["id"]: row["target"] for row in hit_rows},
-            result_lines=tuple(row["line"] for row in result_rows[-CONTROLLER_DISPLAY_LIMIT:]),
+            result_lines=tuple(row["line"] for row in visible_result_rows),
             source_lines=tuple(row["line"] for row in source_rows[-CONTROLLER_DISPLAY_LIMIT:]),
             hit_lines=tuple(row["line"] for row in hit_rows[-CONTROLLER_DISPLAY_LIMIT:]),
             citable_source_lines=citable[-CONTROLLER_DISPLAY_LIMIT:],
@@ -223,11 +245,15 @@ class ResearchController:
             evidence_count=evidence_count,
             note_count=note_count,
             done_escape=done_escape,
+            finish_required=finish_required,
         )
 
     def parse_plan(self, codec: ProtocolCodec, reply: str, state: ResearchControlState) -> ToolPlan:
         obj, error_kind, error = exact_json_object(reply or "")
         if error:
+            finish_answer = _finish_report_answer(reply, state)
+            if finish_answer:
+                return ToolPlan(calls=[], control=Control("done", finish_answer))
             return ToolPlan(calls=[], control=None, protocol_error=error, protocol_error_kind=error_kind)
         plan = self._parse_controller_object(codec, obj, state)
         if plan.protocol_error or (not plan.calls and plan.control is None):
@@ -236,6 +262,31 @@ class ResearchController:
 
     def append_block(self, message: str, state: ResearchControlState) -> str:
         return str(message or "").rstrip() + "\n\n" + render_control_block(state)
+
+    def record_tool_outcome(
+        self,
+        state: ResearchControlState | None,
+        call: object,
+        model_text: str,
+    ) -> None:
+        if state is None or not state.priority_result_ids:
+            return
+        if str(getattr(call, "name", "") or "") != "open_url":
+            return
+        if not _open_failed(model_text):
+            return
+        args = getattr(call, "args", {})
+        if not isinstance(args, dict):
+            return
+        url_key = _result_url_key(args.get("url"))
+        if not url_key:
+            return
+        priority_url_keys = {
+            _result_url_key(state.result_urls.get(result_id, ""))
+            for result_id in state.priority_result_ids
+        }
+        if url_key in priority_url_keys:
+            self._failed_priority_result_url_keys.add(url_key)
 
     def _parse_controller_object(
         self,
@@ -308,6 +359,14 @@ class ResearchController:
                     "line": _result_line(rid, str(result.title or ""), url, str(result.snippet or "")),
                 })
         return _recent_unique_rows(rows)
+
+    def _available_result_rows(self, rows: list[dict[str, str]]) -> list[dict[str, str]]:
+        if not self._failed_priority_result_url_keys:
+            return rows
+        return [
+            row for row in rows
+            if _result_url_key(row.get("url")) not in self._failed_priority_result_url_keys
+        ]
 
     def _source_rows(self, ledger: object) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
@@ -424,12 +483,24 @@ def render_control_block(state: ResearchControlState) -> str:
         lines.append(
             "- done is allowed only to report insufficient/no citable evidence and what was searched."
         )
+    if state.finish_required:
+        lines.append(
+            "- Finish now: call done with the evidence-backed report, or save one missing opened-source "
+            "evidence item with knowledge_write before done."
+        )
     lines.extend(("", "Allowed JSON shapes for this turn (choose exactly one):"))
     for tool in state.allowed_tools:
         for example in _tool_examples(tool, state):
             lines.append(f"- {example}")
     if state.result_lines:
-        lines.extend(("", "Search results you may open:"))
+        if state.priority_result_ids:
+            lines.extend((
+                "",
+                "Priority source results you must open before ordinary web results:",
+                f"- Use one of these result_id values first: {', '.join(state.priority_result_ids)}",
+            ))
+        else:
+            lines.extend(("", "Search results you may open:"))
         lines.extend(f"- {line}" for line in state.result_lines)
     if state.source_lines:
         lines.extend(("", "Opened sources you may inspect or reopen:"))
@@ -445,6 +516,63 @@ def render_control_block(state: ResearchControlState) -> str:
         lines.extend(f"- {line}" for line in state.noncitable_source_lines)
     lines.extend(("", "Do not call tools outside the allowed list. Do not output multiple JSON objects."))
     return "\n".join(lines)
+
+
+def _finish_required(*, turn: int, max_turns: int, evidence_count: int) -> bool:
+    if int(evidence_count or 0) <= 0:
+        return False
+    return int(turn or 0) >= max(1, int(max_turns or 1) - 2)
+
+
+def _finish_report_answer(reply: str, state: ResearchControlState) -> str:
+    if not state.finish_required or "done" not in state.allowed_tools:
+        return ""
+    text = str(reply or "").strip()
+    if len(text) < 80:
+        return ""
+    if "结论" not in text or "来源" not in text:
+        return ""
+    marker_count = sum(1 for marker in FINAL_REPORT_SECTION_MARKERS if marker in text)
+    return text if marker_count >= 3 else ""
+
+
+def _priority_connector_result_ids(result_rows: list[dict[str, str]], source_rows: list[dict[str, str]]) -> tuple[str, ...]:
+    if any(_is_connector_source_url(row["url"]) for row in source_rows):
+        return ()
+    ids: list[str] = []
+    for row in result_rows:
+        if _is_connector_source_url(row["url"]):
+            ids.append(str(row["id"]))
+        if len(ids) >= 2:
+            break
+    return tuple(ids)
+
+
+def _is_connector_source_url(url: str) -> bool:
+    parsed = _parsed_url(url)
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if host == "pubmed.ncbi.nlm.nih.gov":
+        return True
+    return host == "arxiv.org" and parsed.path.startswith("/abs/")
+
+
+def _parsed_url(url: str):
+    try:
+        return urlparse(str(url or "").strip())
+    except ValueError:
+        return urlparse("")
+
+
+def _result_url_key(url: object) -> str:
+    parsed = _parsed_url(str(url or ""))
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    path = (parsed.path or "").rstrip("/")
+    query = ("?" + parsed.query) if parsed.query else ""
+    return f"{parsed.scheme.lower()}://{host}{path}{query}" if host else ""
+
+
+def _open_failed(model_text: str) -> bool:
+    return str(model_text or "").startswith(("ERROR:", "SKIPPED:", "NEEDS_OPEN:"))
 
 
 def format_controller_results(results: list[ToolResult]) -> str:
@@ -470,6 +598,11 @@ def _compile_open_result_args(args: dict[str, Any], state: ResearchControlState)
     result_id = _normalized_id(args.get("result_id"))
     if not result_id:
         return {}, "open_result missing required arg 'result_id'"
+    if state.priority_result_ids and result_id not in state.priority_result_ids:
+        return {}, (
+            "open_result must use a priority source result_id before ordinary web results: "
+            + ", ".join(state.priority_result_ids)
+        )
     url = state.result_urls.get(result_id, "")
     if not url:
         return {}, f"unknown result_id: {result_id}"
@@ -577,6 +710,9 @@ def _rewrite_evidence_item(value: dict[str, Any], state: ResearchControlState) -
 
 def _tool_examples(tool: str, state: ResearchControlState) -> tuple[str, ...]:
     if tool == "open_result":
+        if state.priority_result_ids:
+            rid = state.priority_result_ids[0]
+            return (f'{{"tool":"open_result","args":{{"result_id":"{rid}"}}}}',)
         if state.result_urls:
             rid = next(iter(state.result_urls))
             return (f'{{"tool":"open_result","args":{{"result_id":"{rid}"}}}}',)

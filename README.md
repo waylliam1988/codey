@@ -405,6 +405,12 @@ Bounded connector fallback errors and adjacent evidence/proof reason or warning
 codes are recorded in Run Trace without raw request data while preserving safe
 audit codes such as `token_budget_exceeded` and `authorization_required`; live
 transport metadata uses a neutral tool name and User-Agent.
+When PubMed/arXiv connector results are available, the Research controller
+asks the model to open those priority results before broad generic web results.
+If a priority result cannot be opened, that result is demoted and normal search
+flow resumes instead of repeatedly blocking on the same URL. TUN/transparent
+proxy DNS fake-IP answers are allowed for resolved browser-search hosts, while
+literal fake-IP URL targets remain blocked.
 Research JSON tool calls must be exactly one plain JSON object with only
 top-level `tool` plus `args`; hidden `name`, top-level-argument, extra-field,
 extra-object, array, fenced-block, or prose-wrapper shapes are protocol errors.

@@ -8,6 +8,84 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## Post-0.5.6 Research Connector Recovery + Experiment Gate (2026-09-04)
+
+Scope:
+
+```text
+network:     restored NetworkPolicy allow_dns_fake_ip=True by default so TUN /
+             transparent-proxy DNS answers in 198.18.0.0/15 do not break
+             browser-backed Research search. Literal fake-IP URL targets remain
+             blocked.
+mimo:        added a MiMo-local JSON-tool reply normalizer for observed live
+             overlay/copy shapes: one fenced JSON object, duplicated
+             "json" marker output, or two adjacent identical JSON objects. It
+             does not accept different adjacent JSON objects.
+controller:  prioritized PubMed/arXiv connector results before generic result
+             rows when no connector source has been opened yet. The priority
+             phase shows only priority rows and allows only open_result.
+             Failed priority opens are recorded and excluded from later
+             priority blocking, so an unreadable PubMed/arXiv result cannot
+             deadlock the run. The control-block example now points at the
+             actual priority result id. Near the turn limit, evidence-bearing
+             runs narrow toward finish actions; prose final-report recovery is
+             allowed only in that finish state.
+runner:      records Research controller tool outcomes after execution so the
+             controller can demote failed priority results using the real tool
+             status.
+gate:        added tests/manual/research_experiment_gate.py, a metric-only
+             Research decision gate over completed manual result JSON files.
+             It skips complete:false files and does not copy raw prompt, reply,
+             transcript, report, or webpage bodies.
+followup_ab: added tests/manual/research_followup_quality_ab.py for live
+             connector-backed baseline vs evidence-only follow-up checks. The
+             interrupted MiMo priority run remains complete:false and is skipped
+             by the gate.
+```
+
+Experiment gate:
+
+- `python -B tests\manual\research_experiment_gate.py --output tests\manual\results\research_experiment_gate-0.5.7-history.json`
+  - `verdict.ok=true`
+  - `source_file_count=67`
+  - `skipped_incomplete_files=14`
+  - Bounded evidence-only follow-up: `safe_evidence_only_pairs=11`,
+    `useful_pairs=8`, current decision `keep_default_with_more_live_gate`.
+  - PubMed/arXiv source connector: `target_host_gains=3`,
+    `target_host_losses=0`, `score_gains=4`, `score_losses=0`, current
+    decision `keep_default_for_source_reach`.
+  - Done citation/source finalizer: `first_pass_gains=2`,
+    `done_attempt_reductions=3`, `quality_retry_reductions=3`,
+    `proof_gains=0`, `connector_losses=1`, current decision
+    `keep_narrow_done_finalizer`.
+  - Untrusted source wrapper: `row_count=0`, current decision
+    `do_not_promote_without_ab`.
+
+Live MiMo connector-priority smoke:
+
+- Command:
+  `python -B tests\manual\source_connector_ab.py --provider mimo --case pubmed --arms connector --max-turns 12 --send-timeout 180 --new-chat-timeout 90 --output tests\manual\results\source_connector_ab-mimo-connector-priority2-smoke-20260904.json --rerun-failed --open-if-missing`
+- Result:
+  `complete=true`, one row, `ok=true`, `score=9`, `stop_reason=done`,
+  `turns=12`, `sources_read=4`, `opened_target_host=true`,
+  `expected_terms_present=true`, `connector_errors=[]`.
+- Opened sources included two PubMed URLs:
+  `https://pubmed.ncbi.nlm.nih.gov/41972337/` and
+  `https://pubmed.ncbi.nlm.nih.gov/42577735/`, plus Nature Reviews and TachyDx.
+- Proof review remained partial with unsupported/citation-support gaps:
+  `proof_ok=false`, `proof_answer_status=partial`. Interpretation: real web
+  search and source opening are working again; the remaining bottleneck is
+  final-report claim-to-evidence binding.
+
+Verification:
+
+- `python -m ruff check codey\policies\network.py codey\providers\web_drivers\mimo.py codey\research\controller.py tests\test_mimo.py tests\test_research.py tests\test_research_controller.py tests\manual\research_experiment_gate.py tests\manual\research_followup_quality_ab.py tests\test_research_experiment_gate.py` (passed)
+- `python -m pytest tests\test_mimo.py tests\test_research_experiment_gate.py tests\test_research.py::NetworkPolicyTests tests\test_research_controller.py -q` (`97 passed, 11 subtests passed in 13.98s`)
+- `python -m ruff check codey\research\controller.py codey\research\runner.py tests\test_research.py tests\test_research_controller.py` (passed)
+- `python -m pytest tests\test_research_controller.py tests\test_research.py::ResearchBoundaryTests::test_research_runner_demotes_failed_priority_connector_result -q` (`35 passed in 0.67s`)
+- `python -m pytest tests\test_mimo.py tests\test_research_experiment_gate.py tests\test_research.py::NetworkPolicyTests tests\test_research.py::ResearchBoundaryTests::test_research_runner_demotes_failed_priority_connector_result tests\test_research_controller.py -q` (`100 passed, 11 subtests passed in 14.15s`)
+- Full pytest suite: `python -m pytest` (`3489 passed, 16 skipped in 306.84s (0:05:06)`)
+
 ## 0.5.6 Tool Prompt Consolidation + Prompt Surface Thin Trace v1 (2026-09-03)
 
 Scope:

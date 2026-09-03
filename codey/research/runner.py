@@ -360,6 +360,12 @@ class ResearchRunner:
                     break
                 yield RunEvent.tool_finished(turn, call, outcome, index)
                 results.append((call, outcome))
+                if self.controller is not None:
+                    self.controller.record_tool_outcome(
+                        control_state,
+                        call,
+                        _outcome_model_text(outcome),
+                    )
                 if self._stop_requested():
                     stop_reason = "stopped"
                     break

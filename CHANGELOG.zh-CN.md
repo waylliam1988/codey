@@ -2,6 +2,37 @@
 
 [English version](CHANGELOG.md)
 
+## 未发布 - Research Connector 恢复与实验 Gate
+
+- 恢复 TUN 代理场景下的浏览器 Research 搜索：`NetworkPolicy` 默认允许 DNS
+  解析得到的 `198.18.0.0/15` fake-IP 地址，但仍然阻止用户直接打开 literal
+  fake-IP URL。这里修的是实际网页搜索路径，没有用 connector-only fallback
+  把搜索失败藏起来。
+- MiMo 网页驱动新增很窄的 JSON 工具回复规整：只处理实机 Research 里观察到的
+  单个 fenced JSON、`json ... json ...` 覆盖层重复文本，以及相邻的完全相同
+  JSON object；如果两个 JSON object 内容不同，仍然按严格协议错误处理。
+- 收紧 Research controller 的 PubMed/arXiv 来源路径：当有优先 connector 结果且还
+  没打开过 connector 来源时，本回合只给模型展示这些优先结果，并且只允许
+  `open_result`。如果某个优先 PubMed/arXiv 结果打开失败，controller 会记录并降级
+  这个坏结果，后续不会反复强迫模型打开同一个坏链接，因此不会卡死。接近轮次上限且
+  已经有证据时，controller 会收窄到 finish 动作；只在这个 finish 状态下做窄的
+  prose final report 恢复。
+- 新增 `tests/manual/research_experiment_gate.py`：从已完成的 Research 实验 JSON 中
+  复算“默认路径该保留什么”的指标，只保留 metric，不复制原始 prompt、reply、
+  report、transcript 或网页正文，并跳过 `complete:false` 的中断文件。新增
+  `tests/manual/research_followup_quality_ab.py` 用于 connector-backed baseline 与
+  evidence-only follow-up 的实机 A/B。
+- 2026-09-04 已复算历史 Research gate：`source_file_count=67`，
+  `skipped_incomplete_files=14`，verdict 为 `ok=true`。当前默认路径结论是：
+  PubMed/arXiv connector 保留，因为它能让 Codey 更容易到达可靠来源；evidence-only
+  follow-up 保留但继续 guarded；done finalizer 保留为很窄的引用/来源列表整理器；
+  untrusted source wrapper 没有实机 A/B 证据，暂不进默认路径。
+- MiMo PubMed connector-priority 实机 smoke 已跑通真实网页搜索：
+  `ok=true`、`score=9`、`stop_reason=done`、`turns=12`、`sources_read=4`、
+  打开了两个 PubMed URL，`connector_errors=[]`。proof review 仍是 partial，
+  所以当前 Research 的主要堵点已经不是“搜索/打开失败”，而是最终报告里的部分结论
+  没有和保存的证据/引用绑定得足够紧。
+
 ## 0.5.6 - Tool Prompt 收敛与 Prompt 面薄追踪 v1
 
 - 工具提示面收敛与运行时 Prompt 面薄追踪 v1：

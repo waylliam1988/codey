@@ -16,6 +16,7 @@ from codey.research.controller import (
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.protocols import JsonToolCodec
+from codey.research.runner import render_research_repair_prompt
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tool_contract import PROTOCOL_NO_JSON
 
@@ -27,6 +28,27 @@ def tools_for(ledger: ResearchLedger) -> SimpleNamespace:
         updated_ids=[],
         grounded_ids=set(),
     )
+
+
+def ledger_with_evidence() -> ResearchLedger:
+    ledger = ResearchLedger()
+    ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
+    ledger.record_open("https://example.com/a", "https://example.com/a", "Alpha", "Alpha evidence text")
+    ledger.record_source_search("https://example.com/a", "Alpha", [{"offset": 0, "snippet": "Alpha evidence"}])
+    evidence = ledger.prepare_evidence_items(
+        [{
+            "claim": "Alpha has evidence.",
+            "source_url": "https://example.com/a",
+            "excerpt": "Alpha evidence text",
+        }],
+        fallback_sources=["https://example.com/a"],
+        fallback_claim="Alpha has evidence.",
+        fallback_body="Alpha evidence text",
+        note_type="fact",
+    )
+    assert not evidence.error
+    ledger.add_evidence_items(list(evidence.items), note_id="fact-1")
+    return ledger
 
 
 class ResearchControllerTests(unittest.TestCase):
@@ -82,6 +104,153 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertNotIn('{"tool":"open_url","args":{"result_id"', block)
         self.assertNotIn('{"tool":"open_url","args":{"source_id"', block)
         self.assertNotIn('{"tool":"open_url","args":{"hit_id"', block)
+
+    def test_priority_connector_results_must_be_opened_before_ordinary_results(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search(
+            "immune checkpoint inhibitor hepatotoxicity",
+            [
+                {
+                    "title": "PubMed: ICI hepatotoxicity",
+                    "url": "https://pubmed.ncbi.nlm.nih.gov/41142624/",
+                    "snippet": "medical abstract",
+                },
+                {
+                    "title": "General web result",
+                    "url": "https://example.com/general",
+                    "snippet": "general page",
+                },
+            ],
+        )
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
+
+        self.assertEqual(state.allowed_tools, ("open_result",))
+        self.assertEqual(state.priority_result_ids, ("r1",))
+        self.assertEqual(len(state.result_lines), 1)
+        self.assertIn("pubmed.ncbi.nlm.nih.gov", state.result_lines[0])
+        self.assertNotIn("example.com/general", "\n".join(state.result_lines))
+        self.assertIn("Priority source results", render_control_block(state))
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"open_result","args":{"result_id":"r2"}}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "invalid_args")
+        self.assertIn("priority source result_id", plan.protocol_error)
+        self.assertFalse(plan.calls)
+
+    def test_priority_connector_example_uses_priority_id_when_not_first_result(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search(
+            "immune checkpoint inhibitor hepatotoxicity",
+            [
+                {
+                    "title": "General web result",
+                    "url": "https://example.com/general",
+                    "snippet": "general page",
+                },
+                {
+                    "title": "PubMed: ICI hepatotoxicity",
+                    "url": "https://pubmed.ncbi.nlm.nih.gov/41142624/",
+                    "snippet": "medical abstract",
+                },
+            ],
+        )
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
+        block = render_control_block(state)
+
+        self.assertEqual(state.priority_result_ids, ("r2",))
+        self.assertIn('{"tool":"open_result","args":{"result_id":"r2"}}', block)
+        self.assertNotIn('{"tool":"open_result","args":{"result_id":"r1"}}', block)
+
+    def test_failed_priority_connector_results_stop_blocking_normal_flow(self) -> None:
+        first_pubmed = "https://pubmed.ncbi.nlm.nih.gov/41142624/"
+        second_pubmed = "https://pubmed.ncbi.nlm.nih.gov/41972337/"
+        general = "https://example.com/general"
+        ledger = ResearchLedger()
+        ledger.record_search(
+            "immune checkpoint inhibitor hepatotoxicity",
+            [
+                {"title": "PubMed first", "url": first_pubmed, "snippet": "medical abstract"},
+                {"title": "PubMed second", "url": second_pubmed, "snippet": "medical abstract"},
+                {"title": "General web result", "url": general, "snippet": "general page"},
+            ],
+        )
+        controller = ResearchController()
+        first_state = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
+
+        controller.record_tool_outcome(
+            first_state,
+            ToolCall("open_url", {"url": first_pubmed}),
+            "ERROR: open failed",
+        )
+        second_state = controller.build_state(tools_for(ledger), turn=3, max_turns=8)
+
+        self.assertEqual(second_state.allowed_tools, ("open_result",))
+        self.assertEqual(second_state.priority_result_ids, ("r2",))
+        self.assertNotIn("r1", second_state.result_urls)
+        self.assertIn("r3", second_state.result_urls)
+        self.assertIn("r2:", "\n".join(second_state.result_lines))
+        self.assertNotIn("r1:", "\n".join(second_state.result_lines))
+
+        controller.record_tool_outcome(
+            second_state,
+            ToolCall("open_url", {"url": second_pubmed}),
+            "SKIPPED: unsupported content",
+        )
+        third_state = controller.build_state(tools_for(ledger), turn=4, max_turns=8)
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"open_result","args":{"result_id":"r3"}}',
+            third_state,
+        )
+
+        self.assertEqual(third_state.priority_result_ids, ())
+        self.assertIn("web_search", third_state.allowed_tools)
+        self.assertIn("open_result", third_state.allowed_tools)
+        self.assertEqual(third_state.result_urls, {"r3": general})
+        self.assertIn("Search results you may open", render_control_block(third_state))
+        self.assertFalse(plan.protocol_error)
+        self.assertEqual(plan.calls[0].args["url"], general)
+
+    def test_priority_connector_result_limit_clears_after_connector_source_open(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search(
+            "immune checkpoint inhibitor hepatotoxicity",
+            [
+                {
+                    "title": "PubMed: ICI hepatotoxicity",
+                    "url": "https://pubmed.ncbi.nlm.nih.gov/41142624/",
+                    "snippet": "medical abstract",
+                },
+                {
+                    "title": "General web result",
+                    "url": "https://example.com/general",
+                    "snippet": "general page",
+                },
+            ],
+        )
+        ledger.record_open(
+            "https://pubmed.ncbi.nlm.nih.gov/41142624/",
+            "https://pubmed.ncbi.nlm.nih.gov/41142624/",
+            "PubMed",
+            "medical abstract text",
+        )
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger), turn=3, max_turns=8)
+
+        self.assertEqual(state.priority_result_ids, ())
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"open_result","args":{"result_id":"r2"}}',
+            state,
+        )
+
+        self.assertFalse(plan.protocol_error)
+        self.assertEqual(plan.calls[0].args["url"], "https://example.com/general")
 
     def test_control_block_omits_source_search_guidance_when_disabled(self) -> None:
         state = ResearchControlState(
@@ -426,27 +595,87 @@ class ResearchControllerTests(unittest.TestCase):
         ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
         early = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
         late = controller.build_state(tools_for(ledger), turn=7, max_turns=8)
-        ledger = ResearchLedger()
-        ledger.record_open("https://example.com/a", "https://example.com/a", "Alpha", "Alpha evidence text")
-        evidence = ledger.prepare_evidence_items(
-            [{
-                "claim": "Alpha has evidence.",
-                "source_url": "https://example.com/a",
-                "excerpt": "Alpha evidence text",
-            }],
-            fallback_sources=["https://example.com/a"],
-            fallback_claim="Alpha has evidence.",
-            fallback_body="Alpha evidence text",
-            note_type="fact",
-        )
-        assert not evidence.error
-        ledger.add_evidence_items(list(evidence.items), note_id="fact-1")
+        ledger = ledger_with_evidence()
         with_evidence = controller.build_state(tools_for(ledger), turn=3, max_turns=8)
 
         self.assertNotIn("done", early.allowed_tools)
         self.assertIn("done", late.allowed_tools)
         self.assertTrue(late.done_escape)
         self.assertIn("done", with_evidence.allowed_tools)
+        self.assertFalse(with_evidence.finish_required)
+
+    def test_near_limit_with_evidence_switches_to_finish_actions(self) -> None:
+        controller = ResearchController()
+        ledger = ledger_with_evidence()
+        tools = tools_for(ledger)
+        tools.created_ids = ["fact-1", "fact-2"]
+
+        state = controller.build_state(tools, turn=6, max_turns=8)
+
+        self.assertTrue(state.finish_required)
+        self.assertEqual(state.allowed_tools, ("done", "knowledge_write", "knowledge_link"))
+        self.assertNotIn("web_search", state.allowed_tools)
+        self.assertNotIn("open_result", state.allowed_tools)
+        self.assertNotIn("reopen_source", state.allowed_tools)
+        self.assertNotIn("open_hit", state.allowed_tools)
+        self.assertNotIn("source_search", state.allowed_tools)
+        self.assertIn("Finish now:", render_control_block(state))
+
+    def test_finish_repair_prefers_done_example_after_no_json_reply(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger_with_evidence()), turn=6, max_turns=8)
+
+        plan = controller.parse_plan(JsonToolCodec(), "I can now answer the question.", state)
+        prompt = render_research_repair_prompt(JsonToolCodec(), plan, state)
+
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NO_JSON)
+        self.assertIn('{"tool":"done"', prompt)
+        self.assertNotIn('{"tool":"knowledge_search"', prompt)
+
+    def test_finish_state_accepts_plain_final_report_as_done(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger_with_evidence()), turn=6, max_turns=8)
+        report = (
+            "结论\n"
+            "Alpha has evidence [1].\n\n"
+            "关键证据\n"
+            "- Alpha evidence text [1].\n\n"
+            "来源\n"
+            "[1] https://example.com/a\n"
+        )
+
+        plan = controller.parse_plan(JsonToolCodec(), report, state)
+
+        self.assertFalse(plan.protocol_error)
+        self.assertIsNotNone(plan.control)
+        self.assertEqual(plan.control.kind, "done")
+        self.assertEqual(plan.control.body, report.strip())
+
+    def test_finish_state_does_not_accept_short_prose_as_done(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger_with_evidence()), turn=6, max_turns=8)
+
+        plan = controller.parse_plan(JsonToolCodec(), "I can now answer the question.", state)
+
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NO_JSON)
+        self.assertIsNone(plan.control)
+
+    def test_plain_final_report_is_not_recovered_before_finish_state(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger_with_evidence()), turn=3, max_turns=8)
+        report = (
+            "结论\n"
+            "Alpha has evidence [1].\n\n"
+            "关键证据\n"
+            "- Alpha evidence text [1].\n\n"
+            "来源\n"
+            "[1] https://example.com/a\n"
+        )
+
+        plan = controller.parse_plan(JsonToolCodec(), report, state)
+
+        self.assertIsNone(plan.control)
+        self.assertTrue(plan.protocol_error)
 
     def test_disallowed_tool_is_typed_protocol_error(self) -> None:
         controller = ResearchController()
