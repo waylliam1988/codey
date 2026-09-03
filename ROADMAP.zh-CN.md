@@ -3859,7 +3859,9 @@ provider routing 或非恢复路径 transcript。通过确定性故障注入测�
 
 ## 0.5.6 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
 
-状态：计划。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
+状态：已完成（2026-09-03，ruff、compileall、focused gates、golden parity、run trace
+surface gates、architecture gate 和全量 pytest `3475 passed, 4 skipped, 1241
+subtests passed in 293.02s (0:04:53)` 完成）。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
 生成，并用 hash/parity tests 防止 prompt 描述、parser 接受范围和 runtime 语义漂移。
 这不是空接线：本版的直接收益是减少“工具文案说 A、parser/runtime 实际做 B”的协议故障。
 

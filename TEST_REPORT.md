@@ -35,9 +35,10 @@ research:     ToolContract now carries example/description;
               protocols keep hard-boundary copy but Tools: block is now injected
               from the contract renderer with byte parity for both
               include_source_search flag values. Removed unused _SYSTEM_PROMPT.
-              Dynamic tool_example() converges on cold-start capability with
-              explicit exact note title support (dst:"<note id or exact title>")
-              locked by drift tests.
+              Static Tools: knowledge_link exposes exact note title support
+              (dst:"<note id or exact title>"); dynamic tool_example() and
+              controller allowed-action examples keep the 0.5.5 legacy bytes
+              (dst:"<note id>") so repair/controller prompts do not drift.
 controller:   added ControllerActionContract, CONTROLLER_ACTION_CONTRACTS,
               controller_action_names(), render_controller_action_contract_text()
               and rewired controller_action_contract_hash() to hash the static
@@ -47,21 +48,23 @@ prompt_surface: added thin codey.runtime.prompt_surface with schema version,
               PromptSurfaceSection/Record, prompt_surface_id() (per-send
               phase+send_ref+prompt_digest); added shared canonicalizers
               canonical_surface_phase(), canonical_surface_send_ref() (pure strip
-              without silent character substitution to prevent identity collapse),
-              sanitize_log_ref() (display only), canonical_surface_prompt_digest();
+              without silent character substitution or identity truncation),
+              canonical_surface_prompt_digest();
               build_prompt_surface_record() normalizes fields before id calculation;
               validate_prompt_surface_payload() strictly recomputes and verifies
               authentic derived surface_id, rejects non-canonical phase (>40 chars,
               spaces, special chars), restricts send_ref to identifier charset
               (^[A-Za-z0-9._:-]{1,80}$, rejecting whitespace/newlines), strictly
               checks unpadded prompt_digest, requires non-empty epoch_id matching
-              ctx_epoch pattern, checks sha256 hex, uses type(x) is int to seal
-              bool-int loopholes, and removed no-op provider_effect_id logic and dead
-              _is_epoch() helper.
+              ctx_epoch pattern, uses fullmatch() for sha256/epoch/surface refs
+              so trailing newlines cannot pass, and uses type(x) is int to seal
+              bool-int loopholes.
 envelope/trace: extended record_provider_send_prompt() to extract private helper
               _build_validated_surface_payload(), use inspect.getattr_static() to
               safely detect trace.record_provider_prompt_boundary() with full
               inheritance support while avoiding dynamic __getattr__ interception;
+              the real getattr is also fail-open so broken descriptor/property
+              adapters fall back instead of breaking provider sends;
               extracted private helpers _append_prompt_section() and
               _append_prompt_surface() on RunTraceRecorder; extended RunTrace with
               PromptSurfaceTrace (now serializing self.schema_version and send_ref),
@@ -78,13 +81,13 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
 
 Verification:
 
-- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`27 passed, 27 subtests passed in 1.10s`)
-- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`260 passed, 69 subtests passed in 15.60s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.45s`)
-- `ruff check` (passed; all checks passed)
+- `pytest tests/test_prompt_surface.py tests/test_prompt_envelope.py tests/test_tool_contract_drift.py tests/test_tool_prompt.py tests/test_golden_parity.py tests/test_research_controller.py -q` (`76 passed, 53 subtests passed in 1.05s`)
+- `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py tests/test_server.py -q` (`446 passed, 69 subtests passed in 45.57s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.46s`)
+- `python -m ruff check codey tests` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3470 passed, 4 skipped, 1235 subtests passed in 311.19s (0:05:11)` after round 4 review findings refinement; pure strip send_ref without silent identity collapse, _build_validated_surface_payload private extraction, inspect.getattr_static static detection, record_prompt_surface conditional flush, PromptSurfaceTrace.schema_version serialization; no model-visible coding bytes changed).
+- Full pytest suite: `pytest -q` (`3475 passed, 4 skipped, 1241 subtests passed in 293.02s (0:04:53)` after prompt surface strict fullmatch hardening, send_ref identity truncation removal, boundary descriptor fail-open, dynamic knowledge_link byte-parity restoration, and version 0.5.6 release metadata update; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

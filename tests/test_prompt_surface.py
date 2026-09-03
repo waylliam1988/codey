@@ -124,6 +124,27 @@ class PromptSurfaceTests(unittest.TestCase):
         expected_surface = prompt_surface_id(phase="writer", send_ref="effect_padded", prompt_digest="sha256:" + "9" * 64)
         self.assertEqual(record.surface_id, expected_surface)
 
+    def test_build_prompt_surface_record_does_not_collapse_long_send_refs(self) -> None:
+        prefix = "s" * 80
+        first = build_prompt_surface_record(
+            phase="writer",
+            send_ref=prefix + "a",
+            prompt_digest="sha256:" + "9" * 64,
+            prompt_chars=10,
+            epoch_id="ctx_epoch:" + "c" * 16,
+        )
+        second = build_prompt_surface_record(
+            phase="writer",
+            send_ref=prefix + "b",
+            prompt_digest="sha256:" + "9" * 64,
+            prompt_chars=10,
+            epoch_id="ctx_epoch:" + "c" * 16,
+        )
+
+        self.assertEqual(first.send_ref, prefix + "a")
+        self.assertEqual(second.send_ref, prefix + "b")
+        self.assertNotEqual(first.surface_id, second.surface_id)
+
     def test_validate_rejects_forbidden_keys_and_strict_shapes(self) -> None:
         authentic_surface = prompt_surface_id(phase="writer", send_ref="effect_1", prompt_digest="sha256:" + "b" * 64)
         good = {
@@ -229,6 +250,60 @@ class PromptSurfaceTests(unittest.TestCase):
         bad_section["sections"] = [{"name": "x", "digest": "sha256:" + "a" * 64, "chars": 1, "prompt": "leak"}]
         self.assertFalse(validate_prompt_surface_payload(bad_section))
 
+    def test_validate_rejects_trailing_newline_in_strict_identifiers(self) -> None:
+        good = {
+            "schema_version": PROMPT_SURFACE_SCHEMA_VERSION,
+            "surface_id": prompt_surface_id(
+                phase="writer",
+                send_ref="effect_1",
+                prompt_digest="sha256:" + "b" * 64,
+            ),
+            "send_ref": "effect_1",
+            "phase": "writer",
+            "prompt_digest": "sha256:" + "b" * 64,
+            "prompt_chars": 10,
+            "epoch_id": "ctx_epoch:" + "c" * 16,
+        }
+        self.assertTrue(validate_prompt_surface_payload(good))
+
+        cases: dict[str, dict[str, object]] = {}
+        bad_epoch = dict(good)
+        bad_epoch["epoch_id"] = str(good["epoch_id"]) + "\n"
+        cases["epoch_id"] = bad_epoch
+
+        bad_model_hash = dict(good)
+        bad_model_hash["model_tool_contract_hash"] = "sha256:" + "d" * 64 + "\n"
+        cases["model_tool_contract_hash"] = bad_model_hash
+
+        bad_runtime_hash = dict(good)
+        bad_runtime_hash["runtime_tool_contract_hash"] = "sha256:" + "e" * 64 + "\n"
+        cases["runtime_tool_contract_hash"] = bad_runtime_hash
+
+        bad_section_digest = dict(good)
+        bad_section_digest["sections"] = [{
+            "name": "coding_outbound_prompt",
+            "digest": "sha256:" + "f" * 64 + "\n",
+            "chars": 10,
+        }]
+        cases["section_digest"] = bad_section_digest
+
+        bad_section_epoch = dict(good)
+        bad_section_epoch["sections"] = [{
+            "name": "coding_outbound_prompt",
+            "digest": "sha256:" + "f" * 64,
+            "chars": 10,
+            "epoch_id": "ctx_epoch:" + "c" * 16 + "\n",
+        }]
+        cases["section_epoch_id"] = bad_section_epoch
+
+        bad_surface_id = dict(good)
+        bad_surface_id["surface_id"] = str(good["surface_id"]) + "\n"
+        cases["surface_id"] = bad_surface_id
+
+        for label, payload in cases.items():
+            with self.subTest(label=label):
+                self.assertFalse(validate_prompt_surface_payload(payload))
+
     def test_record_provider_send_prompt_is_fail_open_except_cancellation(self) -> None:
         # broken trace must not raise even with explicit phase/send_ref
         record_provider_send_prompt(
@@ -314,6 +389,20 @@ class PromptSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(len(trace_bad_send.sections), 1)
         self.assertEqual(len(trace_bad_send.surfaces), 0)
+
+        # overlong send_ref must not be truncated into a fake surface identity
+        trace_long_send = _CaptureTrace()
+        record_provider_send_prompt(
+            trace_long_send,
+            name="coding_outbound_prompt",
+            text="hello long send_ref",
+            purpose="test long send_ref rejection",
+            source_ref="provider_send:coding",
+            phase="writer",
+            send_ref="s" * 81,
+        )
+        self.assertEqual(len(trace_long_send.sections), 1)
+        self.assertEqual(len(trace_long_send.surfaces), 0)
 
     def test_run_trace_records_prompt_surface_per_send(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -407,6 +496,28 @@ class PromptSurfaceTests(unittest.TestCase):
             )
             self.assertEqual(obj["prompt_surfaces"][0]["surface_id"], derived)
 
+    def test_record_provider_prompt_boundary_rejects_long_send_ref_without_dropping_section(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td))
+            recorder = store.open(run_id="run-long-send", session_id="sess-long-send", project=None, mode_initial="project", provider_initial="deepseek")
+            record_provider_send_prompt(
+                recorder,
+                name="coding_outbound_prompt",
+                text="outbound prompt content",
+                purpose="test long send_ref",
+                source_ref="provider_send:test",
+                phase="writer",
+                send_ref="s" * 81,
+            )
+            recorder.finish(status="done")
+            data = store.path_for("sess-long-send", "run-long-send").read_text(encoding="utf-8")
+            import json
+
+            obj = json.loads(data)
+            self.assertEqual(len(obj["prompt_sections"]), 1)
+            self.assertEqual(obj["prompt_sections"][0]["name"], "coding_outbound_prompt")
+            self.assertEqual(obj["prompt_surfaces"], [])
+
     def test_record_prompt_surface_dedup_does_not_flush_repeatedly(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(Path(td))
@@ -465,6 +576,44 @@ class PromptSurfaceTests(unittest.TestCase):
         self.assertEqual(len(derived.boundary_calls), 1)
         self.assertEqual(derived.boundary_calls[0][0]["name"], "coding_outbound_prompt")
         self.assertEqual(derived.boundary_calls[0][1]["send_ref"], "effect_inherited_1")
+
+    def test_record_provider_prompt_boundary_descriptor_error_falls_back(self) -> None:
+        class DescriptorTrace(_CaptureTrace):
+            @property
+            def record_provider_prompt_boundary(self):
+                raise OSError("trace descriptor unavailable")
+
+        trace = DescriptorTrace()
+        record_provider_send_prompt(
+            trace,
+            name="coding_outbound_prompt",
+            text="hello descriptor fallback",
+            purpose="test descriptor fallback",
+            source_ref="provider_send:test",
+            phase="writer",
+            send_ref="effect_descriptor_1",
+        )
+
+        self.assertEqual(len(trace.sections), 1)
+        self.assertEqual(len(trace.surfaces), 1)
+        self.assertEqual(trace.surfaces[0]["send_ref"], "effect_descriptor_1")
+
+    def test_record_provider_prompt_boundary_descriptor_cancellation_propagates(self) -> None:
+        class StoppingDescriptorTrace(_CaptureTrace):
+            @property
+            def record_provider_prompt_boundary(self):
+                raise cancellation.DeadlineExceeded("stop")
+
+        with self.assertRaises(cancellation.DeadlineExceeded):
+            record_provider_send_prompt(
+                StoppingDescriptorTrace(),
+                name="coding_outbound_prompt",
+                text="hello descriptor stop",
+                purpose="test descriptor stop",
+                source_ref="provider_send:test",
+                phase="writer",
+                send_ref="effect_descriptor_stop",
+            )
 
 
 if __name__ == "__main__":

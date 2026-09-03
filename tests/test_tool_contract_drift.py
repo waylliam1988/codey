@@ -53,18 +53,22 @@ class ToolContractDriftTests(unittest.TestCase):
                 self.assertIn(expected_kind, plan.arg_repair_counts)
                 self.assertIn(expected_kind, EXPECTED_ARG_REPAIR_KINDS)
 
-    def test_knowledge_link_example_converges_on_exact_title(self) -> None:
+    def test_knowledge_link_contract_exposes_exact_title_without_dynamic_prompt_drift(self) -> None:
         from codey.research.controller import ResearchControlState, render_control_block
-        from codey.research.tool_contract import tool_example
+        from codey.research.tool_contract import render_research_tool_contract_text, tool_example
 
-        # dynamic example must reflect real exact-title capability
+        # Static Research Tools: contract reflects the real exact-title capability.
+        contract = render_research_tool_contract_text(include_source_search=False)
+        self.assertIn('"dst":"<note id or exact title>"', contract)
+
+        # Dynamic repair/controller examples stay byte-identical to 0.5.5.
         example = tool_example("knowledge_link")
-        self.assertIn("exact title", example)
-
-        # controller allowed-actions block must also render exact title in knowledge_link example
+        self.assertIn('"dst":"<note id>"', example)
+        self.assertNotIn("exact title", example)
         state = ResearchControlState(allowed_tools=("knowledge_link",))
         block = render_control_block(state)
-        self.assertIn("exact title", block)
+        self.assertIn('"dst":"<note id>"', block)
+        self.assertNotIn("exact title", block)
 
     def test_runtime_only_fields_do_not_enter_model_contract(self) -> None:
         # model-visible contract text must not contain runtime-only vocabulary

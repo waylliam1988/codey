@@ -337,16 +337,18 @@ def record_provider_send_prompt(
         "admission_reason": PROVIDER_TURN_ADMISSION,
         "capability_id": capability_id,
     }
-    boundary_decl = (
-        inspect.getattr_static(trace, "record_provider_prompt_boundary", None)
-        if trace is not None
-        else None
-    )
-    boundary_fn = (
-        getattr(trace, "record_provider_prompt_boundary", None)
-        if boundary_decl is not None
-        else None
-    )
+    boundary_fn = None
+    if trace is not None:
+        try:
+            boundary_decl = inspect.getattr_static(trace, "record_provider_prompt_boundary", None)
+            if boundary_decl is not None:
+                boundary_fn = getattr(trace, "record_provider_prompt_boundary", None)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            if _is_trace_cancellation(exc):
+                raise
+            boundary_fn = None
     if callable(boundary_fn):
         try:
             boundary_fn(section_args, surface_payload=surface_payload)

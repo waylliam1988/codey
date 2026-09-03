@@ -218,7 +218,7 @@ def tool_example(tool: str) -> str:
             '"open_questions":["..."]}}'
         )
     if tool == "knowledge_link":
-        return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}'
+        return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}'
     if tool == "done":
         return '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}'
     return '{"tool":"web_search","args":{"query":"..."}}'

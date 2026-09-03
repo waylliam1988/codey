@@ -33,10 +33,11 @@ _FORBIDDEN_PAYLOAD_KEYS = frozenset(
     }
 )
 
-_SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_EPOCH_RE = re.compile(r"^ctx_epoch:[0-9a-f]{16}$")
-_SURFACE_RE = re.compile(r"^prompt_surface:[0-9a-f]{16}$")
-_SEND_REF_RE = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
+_SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}")
+_EPOCH_RE = re.compile(r"ctx_epoch:[0-9a-f]{16}")
+_SURFACE_RE = re.compile(r"prompt_surface:[0-9a-f]{16}")
+_IDENTIFIER_RE = re.compile(r"[A-Za-z0-9._:-]+")
+_SEND_REF_RE = re.compile(r"[A-Za-z0-9._:-]{1,80}")
 
 
 @dataclass(frozen=True)
@@ -74,21 +75,15 @@ def prompt_surface_id(*, phase: str, send_ref: str, prompt_digest: str) -> str:
 
 
 def canonical_surface_phase(value: object) -> str:
-    text = str(value or "").strip()[:40]
-    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+    return str(value or "").strip()
 
 
 def canonical_surface_send_ref(value: object) -> str:
-    return str(value or "").strip()[:80]
-
-
-def sanitize_log_ref(value: object, limit: int = 80) -> str:
-    text = str(value or "").strip()[:limit]
-    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+    return str(value or "").strip()
 
 
 def canonical_surface_prompt_digest(value: object) -> str:
-    return str(value or "").strip()[:80]
+    return str(value or "").strip()
 
 
 def build_prompt_surface_record(
@@ -125,7 +120,23 @@ def build_prompt_surface_record(
 
 
 def _is_sha256(value: object) -> bool:
-    return bool(isinstance(value, str) and _SHA256_RE.match(value))
+    return bool(isinstance(value, str) and _SHA256_RE.fullmatch(value))
+
+
+def _is_epoch(value: object) -> bool:
+    return bool(isinstance(value, str) and _EPOCH_RE.fullmatch(value))
+
+
+def _is_surface_id(value: object) -> bool:
+    return bool(isinstance(value, str) and _SURFACE_RE.fullmatch(value))
+
+
+def _is_phase(value: object) -> bool:
+    return bool(isinstance(value, str) and 1 <= len(value) <= 40 and _IDENTIFIER_RE.fullmatch(value))
+
+
+def _is_send_ref(value: object) -> bool:
+    return bool(isinstance(value, str) and _SEND_REF_RE.fullmatch(value))
 
 
 def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
@@ -144,15 +155,14 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     prompt_digest = payload.get("prompt_digest")
     prompt_chars = payload.get("prompt_chars")
     epoch_id = payload.get("epoch_id")
-    if not isinstance(surface_id, str) or not _SURFACE_RE.match(surface_id):
+    if not _is_surface_id(surface_id):
         return False
     # phase must be canonical: 1..40 chars, no extra whitespace or non-identifier characters
-    if not isinstance(phase, str) or not (1 <= len(phase) <= 40) or phase != canonical_surface_phase(phase):
+    if not _is_phase(phase) or phase != canonical_surface_phase(phase):
         return False
     # send_ref must be canonical: 1..80 chars, strict identifier charset, no whitespace or newlines
     if (
-        not isinstance(send_ref, str)
-        or not _SEND_REF_RE.match(send_ref)
+        not _is_send_ref(send_ref)
         or send_ref != canonical_surface_send_ref(send_ref)
     ):
         return False
@@ -168,7 +178,7 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     if type(prompt_chars) is not int or prompt_chars < 0 or prompt_chars > 10_000_000:
         return False
     # epoch_id is required and must strictly match ctx_epoch pattern
-    if not isinstance(epoch_id, str) or not _EPOCH_RE.match(epoch_id):
+    if not _is_epoch(epoch_id):
         return False
     # optional hashes, if present must be sha256
     for key in ("model_tool_contract_hash", "runtime_tool_contract_hash"):
@@ -195,6 +205,6 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
             if type(chars) is not int or chars < 0:
                 return False
             epoch = item.get("epoch_id")
-            if epoch not in (None, "") and not _EPOCH_RE.match(str(epoch)):
+            if epoch not in (None, "") and not _is_epoch(epoch):
                 return False
     return True
