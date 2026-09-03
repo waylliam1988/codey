@@ -5,7 +5,6 @@ import unittest
 from codey.protocols.json_codec import JsonToolCodec
 from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
 from codey.tool_args_repair import (
-    ARG_REPAIR_POLICY,
     COMMAND_KEYS,
     EDIT_NEW_KEYS,
     EDIT_OLD_KEYS,
@@ -15,6 +14,18 @@ from codey.tool_args_repair import (
 )
 from codey.tool_prompt import render_coding_tool_contract_text
 from codey.toolchain.definition import TOOL_DEFINITIONS
+
+EXPECTED_ARG_REPAIR_KINDS = {
+    "path_alias",
+    "path_normalized",
+    "search_field_alias",
+    "references_field_alias",
+    "command_field_alias",
+    "edit_field_alias",
+    "numeric_coerced",
+    "json_replacements_parsed",
+    "replacement_object_wrapped",
+}
 
 
 class ToolContractDriftTests(unittest.TestCase):
@@ -27,24 +38,9 @@ class ToolContractDriftTests(unittest.TestCase):
         self.assertEqual(EDIT_OLD_KEYS, ("old_string", "search", "old", "before"))
         self.assertEqual(EDIT_NEW_KEYS, ("new_string", "replace", "replacement", "after", "new"))
 
-    def test_arg_repair_policy_contains_all_recorded_kinds(self) -> None:
-        # parser telemetry may only emit kinds that are declared in the policy
-        expected_kinds = {
-            "path_alias",
-            "path_normalized",
-            "search_field_alias",
-            "references_field_alias",
-            "command_field_alias",
-            "edit_field_alias",
-            "numeric_coerced",
-            "json_replacements_parsed",
-            "replacement_object_wrapped",
-        }
-        self.assertEqual(set(ARG_REPAIR_POLICY.keys()), expected_kinds)
-
-    def test_parser_aliases_are_policy_declared(self) -> None:
+    def test_parser_aliases_are_known_repair_kinds(self) -> None:
         codec = JsonToolCodec()
-        # emit one of each alias shape and ensure the recorded kind is in policy
+        # emit one of each alias shape and ensure the recorded kind is in expected kinds
         cases = [
             ('{"tool":"grep","args":{"pattern":"x","path":"."}}', "search_field_alias"),
             ('{"tool":"read_file","args":{"path":"app.py","offset":"5"}}', "numeric_coerced"),
@@ -55,7 +51,20 @@ class ToolContractDriftTests(unittest.TestCase):
                 plan = codec.parse(payload)
                 self.assertEqual(plan.protocol_error, "")
                 self.assertIn(expected_kind, plan.arg_repair_counts)
-                self.assertIn(expected_kind, ARG_REPAIR_POLICY)
+                self.assertIn(expected_kind, EXPECTED_ARG_REPAIR_KINDS)
+
+    def test_knowledge_link_example_converges_on_exact_title(self) -> None:
+        from codey.research.controller import ResearchControlState, render_control_block
+        from codey.research.tool_contract import tool_example
+
+        # dynamic example must reflect real exact-title capability
+        example = tool_example("knowledge_link")
+        self.assertIn("exact title", example)
+
+        # controller allowed-actions block must also render exact title in knowledge_link example
+        state = ResearchControlState(allowed_tools=("knowledge_link",))
+        block = render_control_block(state)
+        self.assertIn("exact title", block)
 
     def test_runtime_only_fields_do_not_enter_model_contract(self) -> None:
         # model-visible contract text must not contain runtime-only vocabulary

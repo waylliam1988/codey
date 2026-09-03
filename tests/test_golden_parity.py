@@ -69,23 +69,32 @@ class GoldenParityTests(unittest.TestCase):
                 pass
 
     def test_research_repair_prompt_golden(self) -> None:
-        # synthesis repair golden was captured from a real runner
-        # fallback to direct _protocol_repair_prompt if fixture missing
-        fixture = FIXTURE_ROOT / "research_repair_synthesis.txt"
-        if not fixture.exists():
-            self.skipTest("repair fixture not present")
-        # The fixture currently holds a "not allowed" repair; we validate that the
-        # runner still produces the same bytes for that case.
-        # Re-generate the same repair via the controller path
+        from codey.protocols.json_codec import PROTOCOL_DISALLOWED_TOOL
+        from codey.research.controller import ResearchController, ResearchControlState
+        from codey.research.protocols import JsonToolCodec as ResearchCodec
+        from codey.research.runner import render_research_repair_prompt
+        from codey.runtime.models import ToolPlan
 
-        # Use the stored fixture as golden; ensure current code still matches it
-        # by re-reading the file we wrote during fixture generation (which was
-        # produced by the same code path).
-        expected = fixture.read_text(encoding="utf-8")
-        # We cannot easily re-run the full runner without fragile setup, so we
-        # at least ensure the file is non-empty and mentions the expected marker.
-        self.assertIn("Research controller current allowed actions", expected)
-        self.assertIn("knowledge_search", expected)
+        state = ResearchControlState(
+            allowed_tools=("knowledge_search", "knowledge_read", "web_search", "open_result", "done"),
+            evidence_count=0,
+            note_count=0,
+            done_escape=True,
+            result_lines=("r1: Helium article - https://example.com/helium - Helium supply.",),
+            result_urls={"r1": "https://example.com/helium"},
+        )
+        plan = ToolPlan(
+            calls=[],
+            control=None,
+            protocol_error="knowledge_write is not allowed by the current Research controller state; allowed tools: knowledge_search, knowledge_read, web_search, open_result, done",
+            protocol_error_kind=PROTOCOL_DISALLOWED_TOOL,
+            protocol_tool_name="knowledge_write",
+        )
+        codec = ResearchCodec(include_source_search=False)
+        repair_body = render_research_repair_prompt(codec, plan, state)
+        ctrl = ResearchController(include_source_search=False)
+        actual = ctrl.append_block(repair_body, state)
+        self._assert_fixture("research_repair_synthesis.txt", actual)
 
 
 if __name__ == "__main__":

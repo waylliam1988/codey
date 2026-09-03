@@ -271,9 +271,6 @@ def _research_body(include_source_search: bool) -> str:
     )
 
 
-_SYSTEM_PROMPT = _research_body(False)
-
-
 def _tool_names(include_source_search: bool) -> str:
     names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
     if include_source_search:

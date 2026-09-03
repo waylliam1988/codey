@@ -85,14 +85,17 @@ def build_prompt_surface_record(
     runtime_tool_contract_hash: str = "",
     sections: tuple[PromptSurfaceSection, ...] = (),
 ) -> PromptSurfaceRecord:
-    surface = prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest)
+    norm_phase = str(phase or "").strip()[:40]
+    norm_send_ref = str(send_ref or "").strip()[:80]
+    norm_prompt_digest = str(prompt_digest or "").strip()[:80]
+    surface = prompt_surface_id(phase=norm_phase, send_ref=norm_send_ref, prompt_digest=norm_prompt_digest)
     return PromptSurfaceRecord(
         surface_id=surface,
-        phase=str(phase or "").strip()[:40],
-        prompt_digest=str(prompt_digest or "").strip()[:80],
+        phase=norm_phase,
+        prompt_digest=norm_prompt_digest,
         prompt_chars=max(0, int(prompt_chars or 0)),
         epoch_id=str(epoch_id or "").strip()[:80],
-        send_ref=str(send_ref or "").strip()[:80],
+        send_ref=norm_send_ref,
         source_refs=tuple(str(r).strip()[:120] for r in source_refs or () if str(r).strip())[:16],
         provider_effect_id=str(provider_effect_id or "").strip()[:80],
         model_tool_contract_hash=str(model_tool_contract_hash or "").strip()[:80],
@@ -106,19 +109,6 @@ def _is_sha256(value: object) -> bool:
     return bool(_SHA256_RE.match(str(value or "").strip()))
 
 
-def _is_epoch(value: object) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return True
-        # empty epoch is allowed only when surface is not recorded; but for
-        # validated payloads we require a proper epoch if present. The caller
-        # must supply a real epoch for a real send; empty is treated as missing
-        # and will fail the surface_id check if needed. Here we allow empty so
-        # build-time records without epoch still validate as false at the
-        # surface_id stage. For strict payloads we check separately.
-    return bool(_EPOCH_RE.match(text))
-
-
 def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     if not isinstance(payload, Mapping):
         return False
@@ -126,7 +116,8 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
     for key in payload:
         if str(key) in _FORBIDDEN_PAYLOAD_KEYS:
             return False
-    if payload.get("schema_version") != PROMPT_SURFACE_SCHEMA_VERSION:
+    schema_version = payload.get("schema_version")
+    if type(schema_version) is not int or schema_version != PROMPT_SURFACE_SCHEMA_VERSION:
         return False
     surface_id = str(payload.get("surface_id") or "").strip()
     send_ref = str(payload.get("send_ref") or "").strip()
@@ -142,7 +133,9 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
         return False
     if not _is_sha256(prompt_digest):
         return False
-    if not isinstance(prompt_chars, int) or prompt_chars < 0 or prompt_chars > 10_000_000:
+    if surface_id != prompt_surface_id(phase=phase, send_ref=send_ref, prompt_digest=prompt_digest):
+        return False
+    if type(prompt_chars) is not int or prompt_chars < 0 or prompt_chars > 10_000_000:
         return False
     if epoch_id and not _EPOCH_RE.match(epoch_id):
         return False
@@ -173,7 +166,7 @@ def validate_prompt_surface_payload(payload: Mapping[str, object]) -> bool:
             chars = item.get("chars")
             if not name or not _is_sha256(digest):
                 return False
-            if not isinstance(chars, int) or chars < 0:
+            if type(chars) is not int or chars < 0:
                 return False
             epoch = item.get("epoch_id")
             if epoch not in (None, "") and not _EPOCH_RE.match(str(epoch)):

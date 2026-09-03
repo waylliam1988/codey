@@ -110,10 +110,25 @@ class PromptSurfaceTests(unittest.TestCase):
         self.assertNotEqual(record.surface_id, record2.surface_id)
         self.assertEqual(record.prompt_digest, record2.prompt_digest)
 
+    def test_build_prompt_surface_record_normalizes_before_id_generation(self) -> None:
+        record = build_prompt_surface_record(
+            phase="  writer  ",
+            send_ref="  effect_padded  ",
+            prompt_digest="  sha256:" + "9" * 64 + "  ",
+            prompt_chars=10,
+            epoch_id="ctx_epoch:1234",
+        )
+        self.assertEqual(record.phase, "writer")
+        self.assertEqual(record.send_ref, "effect_padded")
+        self.assertEqual(record.prompt_digest, "sha256:" + "9" * 64)
+        expected_surface = prompt_surface_id(phase="writer", send_ref="effect_padded", prompt_digest="sha256:" + "9" * 64)
+        self.assertEqual(record.surface_id, expected_surface)
+
     def test_validate_rejects_forbidden_keys_and_strict_shapes(self) -> None:
+        authentic_surface = prompt_surface_id(phase="writer", send_ref="effect_1", prompt_digest="sha256:" + "b" * 64)
         good = {
             "schema_version": PROMPT_SURFACE_SCHEMA_VERSION,
-            "surface_id": "prompt_surface:" + "a" * 16,
+            "surface_id": authentic_surface,
             "send_ref": "effect_1",
             "phase": "writer",
             "prompt_digest": "sha256:" + "b" * 64,
@@ -121,6 +136,20 @@ class PromptSurfaceTests(unittest.TestCase):
             "epoch_id": "ctx_epoch:" + "c" * 16,
         }
         self.assertTrue(validate_prompt_surface_payload(good))
+        # mismatched / forged surface_id with correct shape must be rejected
+        forged_surface = dict(good)
+        forged_surface["surface_id"] = "prompt_surface:" + "0" * 16
+        self.assertFalse(validate_prompt_surface_payload(forged_surface))
+        # bool-int loopholes must be rejected
+        bad_bool_schema = dict(good)
+        bad_bool_schema["schema_version"] = True
+        self.assertFalse(validate_prompt_surface_payload(bad_bool_schema))
+        bad_bool_chars = dict(good)
+        bad_bool_chars["prompt_chars"] = True
+        self.assertFalse(validate_prompt_surface_payload(bad_bool_chars))
+        bad_bool_section = dict(good)
+        bad_bool_section["sections"] = [{"name": "x", "digest": "sha256:" + "a" * 64, "chars": True}]
+        self.assertFalse(validate_prompt_surface_payload(bad_bool_section))
         # missing schema_version
         bad_schema = dict(good)
         del bad_schema["schema_version"]
@@ -194,6 +223,19 @@ class PromptSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(len(trace.sections), 1)
         self.assertEqual(len(trace.surfaces), 0)
+        # phase + provider_effect_id without send_ref -> NO fallback, surfaces must be empty
+        trace_fallback = _CaptureTrace()
+        record_provider_send_prompt(
+            trace_fallback,
+            name="coding_outbound_prompt",
+            text="hello fallback",
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            phase="writer",
+            provider_effect_id="effect_legacy",
+        )
+        self.assertEqual(len(trace_fallback.sections), 1)
+        self.assertEqual(len(trace_fallback.surfaces), 0)
         # explicit writer phase and send_ref -> both
         trace2 = _CaptureTrace()
         record_provider_send_prompt(
@@ -215,9 +257,10 @@ class PromptSurfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(Path(td))
             recorder = store.open(run_id="run-surface", session_id="sess-surface", project=None, mode_initial="project", provider_initial="deepseek")
+            surf1 = prompt_surface_id(phase="writer", send_ref="effect_1", prompt_digest="sha256:" + "b" * 64)
             base_payload = {
                 "schema_version": PROMPT_SURFACE_SCHEMA_VERSION,
-                "surface_id": "prompt_surface:" + "a" * 16,
+                "surface_id": surf1,
                 "send_ref": "effect_1",
                 "phase": "writer",
                 "prompt_digest": "sha256:" + "b" * 64,
@@ -235,14 +278,16 @@ class PromptSurfaceTests(unittest.TestCase):
             # duplicate same surface_id must be deduped
             recorder.record_prompt_surface(base_payload)
             # same prompt_digest but different send_ref/surface_id must record second surface
+            surf2 = prompt_surface_id(phase="writer", send_ref="effect_2", prompt_digest="sha256:" + "b" * 64)
             second = dict(base_payload)
-            second["surface_id"] = "prompt_surface:" + "f" * 16
+            second["surface_id"] = surf2
             second["send_ref"] = "effect_2"
             second["provider_effect_id"] = "effect_2"
             recorder.record_prompt_surface(second)
             # forbidden payload must be ignored
+            surf3 = prompt_surface_id(phase="writer", send_ref="effect_3", prompt_digest="sha256:" + "b" * 64)
             bad = dict(base_payload)
-            bad["surface_id"] = "prompt_surface:" + "1" * 16
+            bad["surface_id"] = surf3
             bad["send_ref"] = "effect_3"
             bad["prompt"] = "raw prompt leak"
             recorder.record_prompt_surface(bad)

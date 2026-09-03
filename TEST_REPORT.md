@@ -26,31 +26,36 @@ codec:        slimmed codey.protocols.json_codec to delegate SYSTEM_PROMPT and
               JsonToolCodec hash/render to codey.tool_prompt without changing
               parse/repair behavior.
 tool_args:    extracted PATH_ARG_KEYS, SEARCH_QUERY_KEYS,
-              REFERENCES_SYMBOL_KEYS, COMMAND_KEYS, EDIT_OLD_KEYS, EDIT_NEW_KEYS
-              and ARG_REPAIR_POLICY; normalizers now share those constants.
+              REFERENCES_SYMBOL_KEYS, COMMAND_KEYS, EDIT_OLD_KEYS, EDIT_NEW_KEYS;
+              normalizers consume those constants and drift tests validate against
+              declared kinds without maintaining an unused production table.
 research:     ToolContract now carries example/description;
               added research_tool_names(), render_research_tool_contract_text()
               and research_tool_contract_hash() hashing the visible text;
               protocols keep hard-boundary copy but Tools: block is now injected
               from the contract renderer with byte parity for both
-              include_source_search flag values.
+              include_source_search flag values. Removed unused _SYSTEM_PROMPT.
+              Dynamic tool_example() converges on cold-start capability with
+              explicit exact note title support (dst:"<note id or exact title>")
+              locked by drift tests.
 controller:   added ControllerActionContract, CONTROLLER_ACTION_CONTRACTS,
               controller_action_names(), render_controller_action_contract_text()
               and rewired controller_action_contract_hash() to hash the static
               contract text only; dynamic allowed-actions block is tracked via
               prompt_digest/epoch_id instead.
 prompt_surface: added thin codey.runtime.prompt_surface with schema version,
-              PromptSurfaceSection/Record, prompt_surface_id() (now per-send
-              phase+send_ref+prompt_digest), build_prompt_surface_record() and
-              validate_prompt_surface_payload() with strict sha256/ctx_epoch/
-              prompt_surface hex and schema_version==1; PromptSurfaceRecord is
-              per send (surface_id = send identity, prompt_digest = content
-              identity, send_ref = provider_effect_id / research_send:{n});
-              removed unused trust_class wiring.
+              PromptSurfaceSection/Record, prompt_surface_id() (per-send
+              phase+send_ref+prompt_digest); build_prompt_surface_record()
+              normalizes fields before id calculation;
+              validate_prompt_surface_payload() strictly recomputes and verifies
+              authentic derived surface_id, checks sha256/ctx_epoch hex and
+              uses type(x) is int to seal bool-int loopholes; removed dead
+              _is_epoch() helper.
 envelope/trace: extended record_provider_send_prompt() to accept
               phase/send_ref/provider_effect_id/contract hashes and only when
-              explicit phase+send_ref project a bounded prompt-surface summary
-              via FailOpenPromptTrace (no writer pollution for chat/review);
+              explicit phase+send_ref are present project a bounded prompt-surface
+              summary via FailOpenPromptTrace (no fallback from send_ref to
+              provider_effect_id; empty surfaces when send_ref is missing);
               extended RunTrace with PromptSurfaceTrace (send_ref+schema_version),
               prompt_surfaces and record_prompt_surface() strict validation and
               per-send dedup.
@@ -59,20 +64,18 @@ provider_send: reordered _send_provider_with_effect() to create provider effect
               send_ref=effect_id and contract hashes before provider.send();
               wired research runner with monotonic _research_send_seq and
               phase="research", send_ref="research_send:{n}" and controller vs
-              codec hashes.
-research:     tool_example() keeps legacy 0.5.5 dynamic examples for repair/
-              control-block parity; static Tools: block comes from contract.
+              codec hashes; exported render_research_repair_prompt().
 ```
 
 Verification:
 
-- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`23 passed, 27 subtests passed in 0.83s`)
+- `pytest tests/test_tool_prompt.py tests/test_tool_contract_drift.py tests/test_prompt_surface.py tests/test_golden_parity.py -q` (`24 passed, 27 subtests passed in 1.12s`)
 - `pytest tests/test_protocols.py tests/test_research.py tests/test_run_trace.py -q` (`259 passed, 69 subtests passed in 15.56s`)
-- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.36s`)
+- `pytest tests/test_architecture.py -q` (`72 passed, 274 subtests passed in 10.45s`)
 - `ruff check` (passed; all checks passed)
 - `python -B -m compileall -q codey tests tools` (passed)
 - `git diff --check` (passed; zero trailing whitespace, clean diff)
-- Full pytest suite: `pytest -q` (`3466 passed, 4 skipped, 1235 subtests passed in 291.64s (0:04:51)` after refinement; per-send surface, strict validation, golden fixtures, and legacy tool_example parity all covered; no model-visible bytes changed, so no live provider A/B is required for this version).
+- Full pytest suite: `pytest -q` (`3467 passed, 4 skipped, 1235 subtests passed in 349.69s (0:05:49)` after review findings refinement; authentic derived surface_id verification, bool-int loopholes closed, send_ref fallback removed, dead code purged, knowledge_link exact title capability locked, and authentic research repair prompt golden asserted; no model-visible coding bytes changed).
 
 ## Core Runtime Hardening & Concurrency Safety Verification (2026-09-02)
 

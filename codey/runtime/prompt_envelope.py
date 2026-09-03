@@ -241,7 +241,7 @@ def record_provider_send_prompt(
         return
     # exact forbidden keys are rejected at the payload layer; do not guess phase
     effective_phase = str(phase or "").strip()
-    effective_send_ref = str(send_ref or "").strip() or str(provider_effect_id or "").strip()
+    effective_send_ref = str(send_ref or "").strip()
     if not effective_phase or not effective_send_ref:
         return
     try:

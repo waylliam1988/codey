@@ -22,18 +22,6 @@ COMMAND_KEYS = ("command", "cmd")
 EDIT_OLD_KEYS = ("old_string", "search", "old", "before")
 EDIT_NEW_KEYS = ("new_string", "replace", "replacement", "after", "new")
 
-ARG_REPAIR_POLICY = {
-    "path_alias": "cwd -> path",
-    "path_normalized": "lexical path normalization",
-    "search_field_alias": "pattern -> query",
-    "references_field_alias": "name -> symbol",
-    "command_field_alias": "cmd -> command",
-    "edit_field_alias": "old/search/before -> old_string, replace/replacement/after/new -> new_string",
-    "numeric_coerced": "numeric string -> int",
-    "json_replacements_parsed": "JSON string -> replacements list",
-    "replacement_object_wrapped": "single object -> list",
-}
-
 
 @dataclass(frozen=True)
 class ToolArgLimits:

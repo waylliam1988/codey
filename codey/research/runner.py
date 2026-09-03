@@ -971,7 +971,7 @@ def _quality_review_followup(
     return rendered + "\n\n" + prompt
 
 
-def _protocol_repair_prompt(
+def render_research_repair_prompt(
     codec: ProtocolCodec,
     plan,
     state: ResearchControlState | None = None,
@@ -1076,6 +1076,9 @@ def _protocol_repair_prompt(
         "Reply with exactly one JSON object and no prose.",
     ])
     return "\n".join(lines)
+
+
+_protocol_repair_prompt = render_research_repair_prompt
 
 
 def _tool_from_protocol_error(error: str, state: ResearchControlState | None = None) -> str:
