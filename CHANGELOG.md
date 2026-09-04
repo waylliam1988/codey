@@ -36,6 +36,12 @@
   transcript-only inputs stay digest/count-only and explicitly report that
   claim-level projection is unknown without a record. No production wiring was
   added.
+- Fresh Research manual A/B rows now persist a bounded `research_record`
+  payload on successful runs via shared harness plumbing. This lets
+  `research_claim_support_projection.py` perform claim-level gap localization
+  on new source-connector, follow-up-quality, done-finalizer, and bounded
+  planner results while continuing to avoid raw prompt/reply/source/report
+  bodies. No production report editing or repair wiring was added.
 - Added `tests/manual/research_source_rendering_ab.py`, a manual-only A/B for
   the untrusted source wrapper. It compares raw source rendering against a
   fenced untrusted-data wrapper on malicious-source fixtures and gates the

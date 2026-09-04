@@ -30,6 +30,11 @@
   降级 unsupported required claim 的 claim-ref 投影；只有历史 row 或 transcript 的
   输入保持 digest/count-only，并明确说明没有 record 时无法做 claim-level projection。
   没有新增生产接线。
+- 新跑的 Research manual A/B 成功 row 现在会通过共享 harness plumbing 写入有界的
+  `research_record` payload。这样 `research_claim_support_projection.py` 可以对新的
+  source-connector、follow-up-quality、done-finalizer 和 bounded planner 结果做
+  claim-level gap 定位，同时仍不复制原始 prompt、reply、source 或 report 正文。
+  没有新增生产报告改写或 repair 接线。
 - 新增 `tests/manual/research_source_rendering_ab.py`：untrusted source wrapper 的
   manual-only A/B。它把 raw source rendering 和带 fenced untrusted-data wrapper 的
   rendering 放在含恶意网页文字的 fixture 上比较，验收条件是 wrapper 没有 injection

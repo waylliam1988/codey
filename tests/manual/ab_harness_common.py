@@ -32,6 +32,32 @@ from tests.manual.ab_journal import (
 )
 
 MAX_RESULT_BYTES = 1024 * 1024
+MAX_RESEARCH_RECORD_SOURCES = 24
+MAX_RESEARCH_RECORD_EVIDENCE = 48
+MAX_RESEARCH_RECORD_CLAIMS = 32
+MAX_RESEARCH_RECORD_ASSUMPTIONS = 16
+MAX_RESEARCH_RECORD_RELATIONS = 96
+MAX_RESEARCH_RECORD_REFS = 48
+
+_RESEARCH_RECORD_TOP_LEVEL_KEYS = (
+    "schema_version",
+    "kind",
+    "record_id",
+    "record_digest",
+    "question",
+    "answer_status",
+    "sources",
+    "evidence",
+    "claims",
+    "assumptions",
+    "relations",
+    "unsupported_claim_count",
+    "run_id",
+    "session_id",
+    "project_ref",
+    "synthesis_id",
+    "stop_reason",
+)
 
 # Closed failure vocabulary for A/B evidence. Every failed row names ONE of
 # these classes so post-hoc summaries never re-guess what a crash meant.
@@ -312,6 +338,321 @@ def bounded_error_row(*, case: str, arm: str, repeat: int, exc: BaseException) -
         "repeat": max(1, int(repeat)),
         "error": f"{type(exc).__name__}: {exc}",
     }
+
+
+def research_record_payload(record: object) -> dict[str, Any]:
+    """Return a bounded ResearchRecord-shaped payload for manual A/B rows."""
+
+    raw: object = {}
+    to_jsonable = getattr(record, "to_jsonable", None)
+    if callable(to_jsonable):
+        try:
+            raw = to_jsonable()
+        except Exception:
+            raw = {}
+    elif isinstance(record, Mapping):
+        raw = record
+    if not isinstance(raw, Mapping):
+        return {}
+    payload = _sanitize_research_record_payload(raw)
+    if not _looks_like_research_record_payload(payload):
+        return {}
+    return payload
+
+
+def attach_research_record_payload(row: dict[str, Any], record: object) -> dict[str, Any]:
+    """Attach a bounded ResearchRecord payload so projection can locate claims."""
+
+    payload = research_record_payload(record)
+    if payload:
+        row["research_record"] = payload
+        row["research_record_included"] = True
+    else:
+        row.pop("research_record", None)
+        row["research_record_included"] = False
+    return row
+
+
+def _sanitize_research_record_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    clean: dict[str, Any] = {}
+    for key in _RESEARCH_RECORD_TOP_LEVEL_KEYS:
+        if key not in payload:
+            continue
+        if key == "question":
+            clean[key] = _sanitize_question_ref(payload.get(key))
+        elif key == "project_ref":
+            clean[key] = _sanitize_project_ref(payload.get(key))
+        elif key == "sources":
+            clean[key] = _sanitize_record_sequence(
+                payload.get(key),
+                sanitizer=_sanitize_source_record,
+                limit=MAX_RESEARCH_RECORD_SOURCES,
+            )
+        elif key == "evidence":
+            clean[key] = _sanitize_record_sequence(
+                payload.get(key),
+                sanitizer=_sanitize_evidence_record,
+                limit=MAX_RESEARCH_RECORD_EVIDENCE,
+            )
+        elif key == "claims":
+            clean[key] = _sanitize_record_sequence(
+                payload.get(key),
+                sanitizer=_sanitize_claim_record,
+                limit=MAX_RESEARCH_RECORD_CLAIMS,
+            )
+        elif key == "assumptions":
+            clean[key] = _sanitize_record_sequence(
+                payload.get(key),
+                sanitizer=_sanitize_assumption_record,
+                limit=MAX_RESEARCH_RECORD_ASSUMPTIONS,
+            )
+        elif key == "relations":
+            clean[key] = _sanitize_record_sequence(
+                payload.get(key),
+                sanitizer=_sanitize_relation_record,
+                limit=MAX_RESEARCH_RECORD_RELATIONS,
+            )
+        elif key in {"schema_version", "unsupported_claim_count"}:
+            clean[key] = _nonnegative_int(payload.get(key))
+        elif key == "kind":
+            clean[key] = _clip(payload.get(key), 80) or "research_record"
+        elif key == "answer_status":
+            clean[key] = _clip(payload.get(key), 40)
+        elif key in {"record_id", "run_id", "session_id", "synthesis_id"}:
+            clean[key] = _clip(payload.get(key), 120)
+        elif key == "record_digest":
+            clean[key] = _clip(payload.get(key), 80)
+        elif key == "stop_reason":
+            clean[key] = _clip(payload.get(key), 80)
+    for key in ("sources", "evidence", "claims", "assumptions", "relations"):
+        clean.setdefault(key, [])
+    if not clean.get("kind") and _looks_like_research_record_payload(clean):
+        clean["kind"] = "research_record"
+    return clean
+
+
+def _looks_like_research_record_payload(payload: Mapping[str, Any]) -> bool:
+    has_lists = all(
+        isinstance(payload.get(key), list)
+        for key in ("sources", "evidence", "claims", "assumptions", "relations")
+    )
+    has_answer_status = bool(str(payload.get("answer_status") or "").strip())
+    if payload.get("kind") == "research_record":
+        return has_lists and has_answer_status
+    claims = payload.get("claims")
+    return bool(
+        has_lists
+        and has_answer_status
+        and isinstance(claims, list)
+        and any(isinstance(claim, Mapping) and claim.get("claim_id") for claim in claims)
+    )
+
+
+def _sanitize_record_sequence(
+    value: object,
+    *,
+    sanitizer: Callable[[Mapping[str, Any]], dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    rows: list[dict[str, Any]] = []
+    max_items = max(0, int(limit))
+    for index, item in enumerate(value):
+        if index >= max_items:
+            break
+        if not isinstance(item, Mapping):
+            continue
+        clean = sanitizer(item)
+        if clean:
+            rows.append(clean)
+    return rows
+
+
+def _sanitize_question_ref(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        "question_id": _clip(value.get("question_id"), 120),
+        "question_text_digest": _clip(value.get("question_text_digest"), 80),
+        "chars": _nonnegative_int(value.get("chars")),
+    }
+
+
+def _sanitize_project_ref(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    clean: dict[str, Any] = {}
+    if value.get("basename"):
+        clean["basename"] = _clip(value.get("basename"), 80)
+    if value.get("digest"):
+        clean["digest"] = _clip(value.get("digest"), 80)
+    return clean
+
+
+def _sanitize_source_record(value: Mapping[str, Any]) -> dict[str, Any]:
+    source_id = _clip(value.get("source_id"), 120)
+    if not source_id:
+        return {}
+    return {
+        "source_id": source_id,
+        "requested_url_ref": _sanitize_url_ref(value.get("requested_url_ref")),
+        "final_url_ref": _sanitize_url_ref(value.get("final_url_ref")),
+        "host": _clip(value.get("host"), 120),
+        "title_digest": _clip(value.get("title_digest"), 80),
+        "content_hash": _clip(value.get("content_hash"), 80),
+        "retrieved_at": _clip(value.get("retrieved_at"), 80),
+        "content_kind": _clip(value.get("content_kind"), 40) or "html",
+        "page_count": _nonnegative_int(value.get("page_count")),
+        "pages_read": _positive_int_list(value.get("pages_read"), limit=MAX_RESEARCH_RECORD_REFS),
+        "truncated": bool(value.get("truncated")),
+        "quality": _sanitize_source_quality(value.get("quality")),
+    }
+
+
+def _sanitize_evidence_record(value: Mapping[str, Any]) -> dict[str, Any]:
+    evidence_id = _clip(value.get("evidence_id"), 120)
+    source_id = _clip(value.get("source_id"), 120)
+    if not evidence_id or not source_id:
+        return {}
+    return {
+        "evidence_id": evidence_id,
+        "source_id": source_id,
+        "excerpt_digest": _clip(value.get("excerpt_digest"), 80),
+        "bounded_excerpt": _clip(value.get("bounded_excerpt"), 360),
+        "locator": _sanitize_evidence_locator(value.get("locator")),
+        "stance": _clip(value.get("stance"), 40) or "supports",
+        "note_id": _clip(value.get("note_id"), 120),
+        "claim_text_digest": _clip(value.get("claim_text_digest"), 80),
+    }
+
+
+def _sanitize_claim_record(value: Mapping[str, Any]) -> dict[str, Any]:
+    claim_id = _clip(value.get("claim_id"), 120)
+    if not claim_id:
+        return {}
+    return {
+        "claim_id": claim_id,
+        "claim_text": _clip(value.get("claim_text"), 260),
+        "claim_section": _clip(value.get("claim_section"), 80),
+        "citation_numbers": _positive_int_list(value.get("citation_numbers"), limit=MAX_RESEARCH_RECORD_REFS),
+        "evidence_refs": _bounded_string_list(value.get("evidence_refs"), limit=MAX_RESEARCH_RECORD_REFS),
+        "assumption_refs": _bounded_string_list(value.get("assumption_refs"), limit=MAX_RESEARCH_RECORD_REFS),
+        "status": _clip(value.get("status"), 40) or "unsupported",
+    }
+
+
+def _sanitize_assumption_record(value: Mapping[str, Any]) -> dict[str, Any]:
+    assumption_id = _clip(value.get("assumption_id"), 120)
+    if not assumption_id:
+        return {}
+    return {
+        "assumption_id": assumption_id,
+        "assumption_text": _clip(value.get("assumption_text"), 260),
+        "reason": _clip(value.get("reason"), 80),
+        "claim_ref": _clip(value.get("claim_ref"), 120),
+    }
+
+
+def _sanitize_relation_record(value: Mapping[str, Any]) -> dict[str, Any]:
+    relation_id = _clip(value.get("relation_id"), 120)
+    from_ref = _clip(value.get("from_ref"), 120)
+    to_ref = _clip(value.get("to_ref"), 120)
+    if not relation_id or not from_ref or not to_ref:
+        return {}
+    return {
+        "relation_id": relation_id,
+        "relation_kind": _clip(value.get("relation_kind"), 40),
+        "from_ref": from_ref,
+        "to_ref": to_ref,
+        "citation_numbers": _positive_int_list(value.get("citation_numbers"), limit=MAX_RESEARCH_RECORD_REFS),
+    }
+
+
+def _sanitize_url_ref(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    clean: dict[str, Any] = {}
+    for key, limit in (
+        ("url_digest", 80),
+        ("host", 120),
+        ("scheme", 20),
+        ("path_digest", 80),
+    ):
+        if value.get(key):
+            clean[key] = _clip(value.get(key), limit)
+    if value.get("redacted"):
+        clean["redacted"] = True
+    return clean
+
+
+def _sanitize_evidence_locator(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    clean: dict[str, Any] = {
+        "kind": _clip(value.get("kind"), 40) or "unknown",
+        "source_id": _clip(value.get("source_id"), 120),
+        "char_start": _nonnegative_int(value.get("char_start")),
+        "char_end": _nonnegative_int(value.get("char_end")),
+    }
+    page = _nonnegative_int(value.get("page"))
+    if page:
+        clean["page"] = page
+    if value.get("locator"):
+        clean["locator"] = _clip(value.get("locator"), 80)
+    return clean
+
+
+def _sanitize_source_quality(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    clean: dict[str, Any] = {}
+    for key in ("level", "kind", "freshness", "independent_group"):
+        if value.get(key):
+            clean[key] = _clip(value.get(key), 40)
+    return clean
+
+
+def _positive_int_list(value: object, *, limit: int) -> list[int]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    out: list[int] = []
+    max_items = max(0, int(limit))
+    for index, item in enumerate(value):
+        if index >= max_items:
+            break
+        if isinstance(item, bool):
+            continue
+        try:
+            number = int(item)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            out.append(number)
+    return out
+
+
+def _bounded_string_list(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    out: list[str] = []
+    max_items = max(0, int(limit))
+    for index, item in enumerate(value):
+        if index >= max_items:
+            break
+        text = _clip(item, 120)
+        if text:
+            out.append(text)
+    return out
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
@@ -998,6 +1339,7 @@ __all__ = [
     "TRANSCRIPT_MODE_FLAGS",
     "TracingProvider",
     "append_or_replace_failed_row",
+    "attach_research_record_payload",
     "bind_row_evidence_refs",
     "bounded_error_row",
     "build_arm_manifest",
@@ -1016,6 +1358,7 @@ __all__ = [
     "new_payload",
     "normalize_payload_metadata",
     "open_journal_for_output",
+    "research_record_payload",
     "row_has_terminal_failure",
     "transcript_path_for_row",
     "timestamp",

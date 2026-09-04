@@ -50,7 +50,11 @@ from codey.research.source_finalizer_scoring import (
 from codey.providers.registry import connect_provider, provider_ids
 
 from tests.manual import source_connector_ab as base
-from tests.manual.ab_harness_common import row_has_terminal_failure, upsert_case_row
+from tests.manual.ab_harness_common import (
+    attach_research_record_payload,
+    row_has_terminal_failure,
+    upsert_case_row,
+)
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -440,6 +444,7 @@ def run_case(
                 "tool_calls": tool_calls[:40],
                 "info": infos[:12],
             }
+            attach_research_record_payload(row, result.research_record)
             row["score"] = score_source_finalizer_row(row)
             if trace is not None:
                 trace.record_case_complete(

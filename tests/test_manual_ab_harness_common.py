@@ -226,6 +226,113 @@ def test_write_payload_bounded_enforces_size_cap(tmp_path: Path) -> None:
     assert not path.exists()
 
 
+def _minimal_research_record_payload() -> dict[str, object]:
+    source_id = "source:0000000000000001"
+    evidence_id = "evidence:0000000000000002"
+    claim_id = "claim:0000000000000003"
+    return {
+        "schema_version": 1,
+        "kind": "research_record",
+        "record_id": "research_record:" + "a" * 16,
+        "record_digest": "sha256:" + "b" * 64,
+        "question": {
+            "question_id": "question:" + "c" * 16,
+            "question_text_digest": "sha256:" + "d" * 64,
+            "chars": 18,
+            "question_text": "RAW QUESTION SHOULD NOT BE COPIED",
+        },
+        "answer_status": "answered",
+        "sources": [{
+            "source_id": source_id,
+            "final_url_ref": {"url_digest": "sha256:" + "1" * 64, "host": "example.com"},
+            "host": "example.com",
+            "title_digest": "sha256:" + "2" * 64,
+            "content_hash": "abc123",
+            "content_kind": "html",
+            "quality": {
+                "level": "primary",
+                "kind": "official",
+                "freshness": "fresh",
+                "raw_source_body": "RAW SOURCE SHOULD NOT BE COPIED",
+            },
+            "source_body": "RAW SOURCE SHOULD NOT BE COPIED",
+        }],
+        "evidence": [{
+            "evidence_id": evidence_id,
+            "source_id": source_id,
+            "excerpt_digest": "sha256:" + "3" * 64,
+            "bounded_excerpt": "Bounded evidence excerpt.",
+            "locator": {"kind": "html", "source_id": source_id, "char_start": 0, "char_end": 24},
+            "stance": "supports",
+            "claim_text_digest": "sha256:" + "4" * 64,
+            "source_body": "RAW EVIDENCE SOURCE SHOULD NOT BE COPIED",
+        }],
+        "claims": [{
+            "claim_id": claim_id,
+            "claim_text": "Bounded claim text.",
+            "claim_section": "conclusion",
+            "citation_numbers": [1],
+            "evidence_refs": [evidence_id],
+            "status": "evidence_backed",
+            "reply": "RAW REPLY SHOULD NOT BE COPIED",
+        }],
+        "assumptions": [],
+        "relations": [{
+            "relation_id": "relation:0000000000000004",
+            "relation_kind": "supports",
+            "from_ref": claim_id,
+            "to_ref": evidence_id,
+            "citation_numbers": [1],
+        }],
+        "unsupported_claim_count": 0,
+        "run_id": "run-a",
+        "prompt": "RAW PROMPT SHOULD NOT BE COPIED",
+        "reply": "RAW REPLY SHOULD NOT BE COPIED",
+        "report": "RAW REPORT SHOULD NOT BE COPIED",
+    }
+
+
+def test_research_record_payload_keeps_claim_graph_without_raw_fields() -> None:
+    class _Record:
+        def to_jsonable(self) -> dict[str, object]:
+            return _minimal_research_record_payload()
+
+    row = common.attach_research_record_payload({"case": "case-a", "arm": "planner"}, _Record())
+    record = row["research_record"]
+    serialized = json.dumps(row, ensure_ascii=False)
+
+    assert row["research_record_included"] is True
+    assert record["kind"] == "research_record"
+    assert record["sources"][0]["source_id"] == "source:0000000000000001"
+    assert record["evidence"][0]["evidence_id"] == "evidence:0000000000000002"
+    assert record["claims"][0]["claim_id"] == "claim:0000000000000003"
+    assert record["relations"][0]["from_ref"] == "claim:0000000000000003"
+    assert "RAW PROMPT SHOULD NOT BE COPIED" not in serialized
+    assert "RAW REPLY SHOULD NOT BE COPIED" not in serialized
+    assert "RAW REPORT SHOULD NOT BE COPIED" not in serialized
+    assert "RAW SOURCE SHOULD NOT BE COPIED" not in serialized
+    assert "RAW QUESTION SHOULD NOT BE COPIED" not in serialized
+
+
+def test_research_record_payload_accepts_record_shaped_mapping() -> None:
+    record = dict(_minimal_research_record_payload())
+    record.pop("kind")
+
+    payload = common.research_record_payload(record)
+
+    assert payload["kind"] == "research_record"
+    assert payload["claims"][0]["claim_text"] == "Bounded claim text."
+
+
+def test_attach_research_record_payload_fails_closed_for_invalid_records() -> None:
+    row = {"case": "case-a", "arm": "planner", "research_record": {"kind": "research_record"}}
+
+    common.attach_research_record_payload(row, {"claims": "not-a-list"})
+
+    assert row["research_record_included"] is False
+    assert "research_record" not in row
+
+
 def test_provider_identity_mismatch_fails_closed(tmp_path: Path) -> None:
     output = tmp_path / "report.json"
     output.write_text(

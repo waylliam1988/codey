@@ -112,6 +112,11 @@ would reduce target proof gaps. If the input is only a historical result row or
 an archived transcript/report, it stays honest: it emits row-level gap counts
 or report digests/line-count estimates and marks claim projection as unknown.
 It never writes raw prompt, reply, report, or source bodies into its output.
+Fresh runs from the Research manual A/B harnesses now attach a bounded
+`research_record` payload to successful rows (`research_record_included=true`),
+so this projection can locate the exact `claim_ref` behind missing citation,
+missing evidence-ref, missing support-relation, and not-evidence-backed gaps.
+Older result files without that payload remain row-level only.
 
 ```powershell
 python -B tests\manual\research_claim_support_projection.py --self-test

@@ -2,23 +2,24 @@ from __future__ import annotations
 
 import json
 
+from tests.manual import ab_harness_common as common
 from tests.manual import research_claim_support_projection as projection
 
 
 def test_claim_support_projection_flags_record_claims_without_copying_raw_text() -> None:
-    record = projection._self_test_record()
+    row = {
+        "provider": "mimo",
+        "case": "pubmed",
+        "arm": "connector",
+        "summary_text": "RAW REPORT SHOULD NOT BE COPIED",
+    }
+    common.attach_research_record_payload(row, projection._self_test_record())
     payload = projection.build_projection_from_inputs(
         [(
             "record-result.json",
             {
                 "probe": "source_connector_ab",
-                "rows": [{
-                    "provider": "mimo",
-                    "case": "pubmed",
-                    "arm": "connector",
-                    "research_record": record,
-                    "summary_text": "RAW REPORT SHOULD NOT BE COPIED",
-                }],
+                "rows": [row],
             },
         )],
         question="Research helium supply",
@@ -26,6 +27,7 @@ def test_claim_support_projection_flags_record_claims_without_copying_raw_text()
     serialized = json.dumps(payload, ensure_ascii=False)
     item = payload["items"][0]
 
+    assert row["research_record_included"] is True
     assert payload["manual_only"] is True
     assert payload["record_projection_count"] == 1
     assert payload["target_gap_counts"] == {

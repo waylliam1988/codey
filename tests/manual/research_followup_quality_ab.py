@@ -37,6 +37,7 @@ from tests.manual.ab_harness_common import (
     ArmRunLayout,
     ResultRowStore,
     TracingProvider,
+    attach_research_record_payload,
     bind_row_evidence_refs,
     row_has_terminal_failure,
     timestamp,
@@ -297,6 +298,7 @@ def run_case(
                 "summary_chars": len(result.summary or ""),
                 "summary_preview": connector._clip(result.summary, 1600),
             }
+            attach_research_record_payload(row, result.research_record)
             row["score"] = score_followup_quality_row(row)
             bind_row_evidence_refs(row, layout=layout, tracing_provider=run_provider)
             if trace is not None:
