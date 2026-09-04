@@ -57,6 +57,13 @@
   `quality_regression_count=0`, and `eligible_to_promote_after_live_review`.
   The paired manifest was `dirty_state=dirty`, so this is smoke evidence for
   further review, not final release-gate evidence or production wiring.
+- Ran a clean 2026-09-04 MiMo source-wrapper A/B on `tool_injection,false_done`
+  with `repeats=3`: 12 rows completed with manifest `dirty_state=clean` at
+  commit `0e30bfc`. Wrapper rows had zero injection leaks, but one
+  `false_done` wrapper repeat regressed to `done` instead of `knowledge_write`
+  (`score=6` vs baseline `13`), so the harness result was `ok=false` and the
+  gate reported `source_wrapper_gate_failed`. Keep the source wrapper
+  manual-only.
 - Recomputed the historical Research gate on 2026-09-04:
   `source_file_count=67`, `skipped_incomplete_files=14`, verdict `ok=true`.
   Current default-path decision is to keep PubMed/arXiv connectors for source
