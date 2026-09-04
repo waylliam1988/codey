@@ -1,11 +1,13 @@
 # Bounded Research Planner A/B Reports
 
-Generated from live manual results on 2026-08-20 and 2026-08-21.
+Generated from live manual results on 2026-08-20, 2026-08-21, and the
+2026-09-05 follow-up-quality archive attempt.
 
-This report records the 0.4.4 bounded planner experiments. Early rows were run
-with production Research code unchanged to validate the design before merging;
-the current harness now exercises the production evidence-only follow-up and
-merge path directly. The harness lives in
+This report records the 0.4.4 bounded planner experiments and later 0.5.7
+follow-up quality checks. Early rows were run with production Research code
+unchanged to validate the design before merging; the current harness now
+exercises the production evidence-only follow-up and merge path directly. The
+harness lives in
 `tests/manual/bounded_research_planner_ab.py`; result JSON and trace files are
 written under `tests/manual/results/`.
 
@@ -18,6 +20,12 @@ A/B-specific execution patch is the fixture material-phase executor used to make
 hidden source B available in a controlled comparison. Do not ship the older
 full-report follow-up shape. Before release, validate with focused tests and at
 least one real connector-backed A/B case.
+
+0.5.7 update: the first connector-backed MiMo PubMed archive attempt did not
+produce a complete baseline/planner pair, so it does not change the quality
+conclusion. It does confirm that archived transcripts are now available for
+diagnosis and that the remaining live problem is claim-to-evidence binding plus
+provider/browser completion stability, not simply source search.
 
 The live runs show that a planner can add value when three conditions are true:
 
@@ -389,6 +397,42 @@ capture and the final result was merged deterministically. That was enough to
 merge the narrow production path, but not enough to claim broad real-world
 research benefit; the next gate is a real connector-backed case plus continued
 provider-level unsupported-claim monitoring.
+
+### 2026-09-05 MiMo PubMed Archive Attempt
+
+File: `research_followup_quality_ab-mimo-pubmed-archive-20260905.json`
+
+This was the requested clean connector-backed PubMed A/B with
+`--transcript-mode archive`. The output is `complete=false`, so the experiment
+gate skips it and it must not be counted as a planner win or loss.
+
+Completed row:
+
+| arm | score | proof | answer status | coverage | sources | evidence | unsupported claims |
+|---|---:|---|---|---:|---:|---:|---:|
+| baseline | 7 | false | partial | 0.583 | 3 | 4 | 7/12 |
+
+The planner arm wrote prompt/reply transcripts under
+`research_followup_quality_ab-mimo-pubmed-archive-20260905.trace/transcripts/`,
+but no planner result row or `case_complete` event was persisted before the run
+was interrupted/stalled. The trace shows the planner reached normal source
+opening and evidence writing, then repeated `done` attempts under the quality
+gate. That makes the run useful for failure analysis, not for paired A/B
+scoring.
+
+Implications:
+
+- Keep `--transcript-mode archive` for live follow-up runs; digest-only is not
+  enough when a provider or browser state stalls.
+- Rerun connector-backed A/B only after the provider/browser stall path is
+  classified so incomplete planner rows do not keep consuming traffic.
+- Tune planner selection against explicit proof gaps: missing citation, missing
+  evidence ref, missing support relation, and not-evidence-backed claims.
+- Do not ask the follow-up model to rewrite the final report. The useful shape
+  remains new material -> evidence-only `knowledge_write` -> deterministic
+  merge.
+- The citation compiler can reduce wasted `done` retries from source-id formats
+  like `来源s2` or `(s2)`, but it does not solve unsupported claims.
 
 ## Production Criteria Before Release
 

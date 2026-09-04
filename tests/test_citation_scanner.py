@@ -36,6 +36,32 @@ class CitationScannerTests(unittest.TestCase):
             ("s3", False, ""),
         ])
 
+    def test_source_id_refs_cover_common_report_renderings(self) -> None:
+        text = (
+            "结论（来源s2、s3）；关键证据（来源 s4 p.5）；限制 (s5)。\n"
+            "| s6 (paper) | quality |\n"
+            "- s7: source title"
+        )
+
+        refs = source_id_ref_items(text)
+
+        self.assertEqual(
+            [(item.source_id, item.bracketed, item.page_suffix) for item in refs],
+            [
+                ("s2", True, ""),
+                ("s3", True, ""),
+                ("s4", True, " p.5"),
+                ("s5", True, ""),
+                ("s6", False, ""),
+                ("s7", False, ""),
+            ],
+        )
+
+    def test_source_id_refs_do_not_treat_plain_ids_as_citations(self) -> None:
+        text = "plain s1 remains prose; a source was s3; source s12abc is a token"
+
+        self.assertEqual(source_id_refs(text), set())
+
 
 if __name__ == "__main__":
     unittest.main()

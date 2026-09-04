@@ -7,6 +7,13 @@ Result files:
 - `source_connector_done_ab-mimo-pubmed-max24.json`: baseline from the paired max-24 run.
 - `source_connector_done_ab-mimo-pubmed-finalizer-only.json`: finalizer from a clean single-arm process after the paired run.
 
+2026-09-05 note: the production citation compiler now recognizes common
+source-id renderings such as `来源s2`, `(s2)`, grouped source ids, table cells,
+and leading `s2:` rows before the quality gate. This can reduce wasted retry
+loops when the model clearly cited a known source id but did not use `[2]`
+syntax. It does not change the conclusion of this old MiMo sample:
+`proof_ok=false` remains a claim-support problem, not just a formatting problem.
+
 ## Baseline Metrics
 
 - seconds: 492.44

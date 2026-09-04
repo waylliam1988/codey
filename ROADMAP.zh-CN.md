@@ -2737,7 +2737,7 @@ NetworkStatus.POLICY_ALLOWED 替代容易误解的 PUBLIC_WEB 命名
 
 ```text
 Qwen/MiMo modified_test_fixture false completion -> 0.5.0 Edit Integrity Monitor + Receipt Warning
-Research untrusted source wrapper -> 0.5.7 Research source rendering A/B，胜出才接默认渲染，否则删除或留在 manual harness
+Research untrusted source wrapper -> 0.5.7 Research source rendering A/B 已按胜出结果接默认渲染；后续变体仍 promote-or-delete
 Research bounded follow-up / source_connector_done 收口 -> 0.5.7，A/B 证明后推广，否则删除或留在 manual harness
 TaskRunner convergence point -> 0.5 横向架构线，按真实 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore
 Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
@@ -2749,7 +2749,7 @@ Provider/protocol outcome learning -> 0.5.8，不回流 evidence / permission / 
 | finding | 0.5 归属 | 文档原则 |
 | --- | --- | --- |
 | Qwen/MiMo 都会修改测试夹具让 pytest 变绿 | 0.5.0 Edit Integrity Monitor + Receipt Warning | 测试绿不等于验证可信；高置信 suspicious 不能显示成 clean completion |
-| Research source content 进入模型后的 prompt-injection 边界 | 0.5.7 Research source rendering A/B；胜出才改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality；未胜出的 treatment 不留 production 接线 |
+| Research source content 进入模型后的 prompt-injection 边界 | 0.5.7 Research source rendering A/B 已胜出并改默认生产渲染；后续变体仍先 A/B | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality；未胜出的 treatment 不留 production 接线 |
 | Research bounded follow-up / source_connector_done 0.4 实验收口 | 0.5.7 Research Follow-up Quality Closure | production path 必须有 release gate 消费者；无消费者的 arm 删除或留在 manual harness |
 | TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase/effect 抽 RuntimeOperationStore / RuntimeEffectStore | 拆 state transition，不新增 Manager |
 | RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
@@ -3940,7 +3940,7 @@ ResearchPipeline 的纯 candidate selection / stop decision；
 `tests/manual/research_followup_quality_ab.py`，用同一套纯 scorer 复算历史结果并
 继续跑 connector-backed follow-up A/B。0.5.7 不需要新建 manager。
 
-2026-09-04 当前验收结论：
+2026-09-05 当前验收结论：
 
 ```text
 PubMed/arXiv source connector:
@@ -3952,18 +3952,29 @@ bounded evidence-only follow-up:
   保留 guarded 默认形态，但不扩大。gate 统计 safe_evidence_only_pairs=11、
   useful_pairs=8，同时仍有 quality regression 样本；因此只保留
   evidence-only write + deterministic merge，不恢复让模型重写整篇报告的旧形态。
+  2026-09-05 MiMo PubMed archive A/B 是 complete=false：baseline 完成但 proof
+  partial，planner transcript 已保存但没有 planner row / case_complete，因此不能
+  当作 planner 收益或失败证据。
 
 done citation/source finalizer:
   保留为窄的引用/来源列表整理器。它能减少 done retry / quality retry，但
   proof_gains=0，不能宣传成研究质量提升器，也不能推广旧 batch/checklist arm。
+  2026-09-05 新增 common source-id 格式编译：`来源s2`、`来源 s2`、`（s2）`、
+  `（来源s2、s3）`、表格 `| s2 (...) |` 和行首 `s2:` 可以归一成 `[2]`。
+  这只减少格式 retry；不补 evidence、不伪造 citation。
 
 untrusted source wrapper:
-  暂不进默认路径。当前 row_count=0，没有 malicious-source A/B 证据；不能为了
-  “以后可能有用”在 production module 停放 default-off renderer。
+  已接入默认 open_url source rendering。MiMo + Qwen evidence-safe clean fixture
+  与 post-production gate 覆盖 24 行、12 个 wrapper 行、2 个 provider，
+  injection_leak_count=0、quality_regression_count=0、terminal_failure_count=0，
+  decision=keep_default_untrusted_source_wrapper。它只把 source body 明确标成
+  untrusted data，不改变 planner、tool schema、EvidenceLedger、citation contract
+  或 report rewrite。
 
 当前真正堵点:
   不再是 MiMo 搜索打不开；是 final report 里的部分结论没有和 EvidenceLedger
-  中保存的证据/引用绑定得足够紧。
+  中保存的证据/引用绑定得足够紧。下一轮质量提升优先做 claim-to-evidence
+  binding 和基于 proof gap 的 targeted follow-up。
 ```
 
 ### 做什么
@@ -3977,7 +3988,7 @@ codey/research/source_finalizer_scoring.py（已有纯 scorer；供 source_conne
 tests/manual/research_experiment_gate.py（已新增；只输出 metric，不复制 raw prompt/reply/source body）
 tests/manual/research_followup_quality_ab.py（已新增；connector-backed baseline/planner A/B）
 codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer；当前未新增）
-codey/research/source_rendering.py（只有 source wrapper A/B 胜出才新增/保留；当前未新增）
+codey/research/source_rendering.py（已接入默认 open_url/source-content rendering；继续由 wrapper A/B/gate 守护）
 tests/test_research_followup_quality.py
 tests/test_source_connector_done_scorer.py
 tests/test_research_source_rendering.py
@@ -3999,12 +4010,12 @@ source_connector_done batch/checklist：
   胜出才收成窄的 source finalizer；不胜出就删除生产接线，只保留 manual 复盘材料
 
 Research untrusted source wrapper：
-  只改变 source-content rendering，不改 planner、tool schema、EvidenceLedger、citation contract 或 completion gate
+  已只改变 source-content rendering，不改 planner、tool schema、EvidenceLedger、citation contract 或 completion gate
   baseline / treatment 都必须落 result JSON、journal 和 transcript
   source injection text 不能变成 tool action
   source body 必须被明确标记为 data / untrusted source
   evidence quality / source coverage / completion honesty 不能下降
-  胜出才同版接入默认 open_url 渲染；不胜出就删除 treatment 或保留 manual-only
+  已胜出并同版接入默认 open_url 渲染；后续 wording/renderer 变更仍必须先 A/B，失败就删除 treatment 或保留 manual-only
 ```
 
 真实消费者：
@@ -4020,7 +4031,7 @@ manual A/B journal 继续保存对照结果，但不能被 production RunTrace i
 ```text
 Research follow-up 不再只是“安全可跑”，而是有 proof-quality 结论
 0.4 的 source_connector_done 实验要么变成窄而有证据的默认 finalizer，要么退出生产路线
-Research source prompt-injection hardening 要么通过 A/B 进入默认 source rendering，要么不留 production 接线
+Research source prompt-injection hardening 已通过 A/B 进入默认 source rendering；后续只继续验证，不扩大它的职责
 减少 manual harness / production path 之间的重复指标和悬空接线
 ```
 
@@ -4030,7 +4041,7 @@ Research source prompt-injection hardening 要么通过 A/B 进入默认 source 
 - 不做后台递归 Research。
 - 不让 batch/checklist 未经 A/B 进入默认 finalizer。
 - 不改变 EvidenceLedger、citation contract 或 completion gate，除非 treatment 胜出且有 release gate。
-- 不把 default-off source wrapper 停放在 production module；实验必须 promote-or-delete。
+- 不把 default-off source wrapper 停放在 production module；当前 wrapper 已是默认 renderer，后续变体仍必须 promote-or-delete。
 - 不把 provider-specific prompt 当通用 Research 策略。
 - 不把 raw webpage body、raw transcript、prompt、reply 写入生产 trace。
 
@@ -4041,7 +4052,7 @@ ResearchPipeline 继续只调用 followup_selection 的纯 decision，不解释 
 followup_quality.py / source_finalizer_scoring.py 只做纯 scorer，不调用 provider/browser/tool runtime
 source_connector_done manual arm 与 release gate 共用 scorer，避免重复指标
 Research finalizer 只消费结构化 decision，不扫 A/B journal 原文
-source wrapper renderer 只有在 A/B 胜出并成为默认路径时才进入 codey/research/
+source wrapper renderer 已在 A/B 胜出后成为默认路径；后续 renderer 变更仍走同一 gate
 ```
 
 ### 验证
@@ -4081,8 +4092,8 @@ sent_chars
 如果 bounded follow-up 质量收益稳定：保留默认 evidence-only follow-up，并只调整证明有收益的 selection/merge 点
 如果 source_connector_done batch/checklist 胜出：收成最窄 production finalizer，旧 batch/checklist harness 退到 manual
 如果 source_connector_done 没胜出：删除或继续 manual-only，不留下 production 接线
-如果 source wrapper 胜出：同版接入默认 open_url/source-content rendering，并删除 baseline-only 临时分支
-如果 source wrapper 没胜出：删除 treatment 或继续 manual-only，不留下 `codey/research/source_rendering.py` 空接线
+source wrapper 已胜出并接入默认 open_url/source-content rendering；后续只允许基于新 A/B 证据调整 wording/renderer
+如果新的 source wrapper 变体没胜出：删除 treatment 或继续 manual-only，不修改默认生产路径
 ```
 
 ## 0.5.8 - Provider / Protocol Affinity + Repair Outcome Learning v1
@@ -4931,7 +4942,7 @@ RunOperationState / RuntimeEffectStore / ReplayPolicy 已经稳定
 TaskRunner 不再继续吸收新生命周期状态
 CompletionProof / Evidence / Verification 的 source of truth 明确
 Ghost / World Model / Protocol affinity 没有污染 evidence / permission / completion
-Research untrusted source wrapper 只有 A/B 通过后才默认启用
+Research untrusted source wrapper 已在 MiMo+Qwen clean A/B 通过后默认启用
 Research bounded follow-up 必须有 proof-quality 结论；source_connector_done batch/checklist 必须按 A/B 结果推广或退出 production path
 Protocol telemetry / contract hash 已被 0.5.3 / 0.5.6 / 0.5.8 的 release gate 消费，或删除无消费者字段
 Safe read/search replay 已实现，unsafe replay count 始终为 0
@@ -5091,11 +5102,13 @@ Safe read/search replay -> 0.5.4：
     unsafe replay count 必须始终为 0。
 
 Research untrusted source wrapper -> 0.5.7：
-  当前状态：计划项；2026-09-04 gate 中 row_count=0，没有 A/B 证据。
-    不默认生产渲染，也不在 0.5.6 停放 default-off production renderer。
-  收口方式：0.5.7 先做 malicious-source fixture + manual A/B；只有 treatment 不降低
-    evidence quality / source coverage / completion honesty，且 injection 文本没有变成 tool action，
-    才同版改默认 source rendering；否则删除 treatment 或保留 manual-only。
+  当前状态：已收口到默认生产 source rendering。MiMo + Qwen evidence-safe clean
+    fixture 与 post-production gate 覆盖 24 行、12 个 wrapper 行、2 个 provider，
+    injection leak / quality regression / terminal failure 都为 0。
+  收口方式：`codey/research/source_rendering.py` 只包装 opened source body 为
+    untrusted data，保留 factual evidence；不改变 planner、tool schema、
+    EvidenceLedger、citation contract 或 completion gate。后续 renderer/prompt wording
+    变体仍必须先跑 malicious-source A/B，失败就删除或留在 manual-only。
 ```
 
 ## Adapter 自修复 prompt 分层（后续）

@@ -73,17 +73,48 @@
   `quality_regression_count=0`, and the gate reported
   `eligible_to_promote_after_live_review`. This is a clean MiMo fixture win,
   not production wiring.
+- Qwen then completed the same 2026-09-04 evidence-safe source-wrapper clean
+  A/B on `tool_injection,false_done` with `repeats=3`: 12/12 rows completed,
+  6/6 wrapper rows passed, and the manifest was `dirty_state=clean` with
+  `transcript_mode=archive` at commit
+  `5323980de3adcce388791167c21c09ef84f5cd3e`. The MiMo+Qwen cross-provider
+  gate read 24 rows, 12 wrapper rows, and 2 providers with
+  `injection_leak_count=0`, `quality_regression_count=0`, and
+  `terminal_failure_count=0`; its decision was
+  `keep_default_untrusted_source_wrapper`. `codey/research/source_rendering.py`
+  is now wired into the default `open_url` source rendering path. It only marks
+  source bodies as untrusted data; it does not change the planner, tool schema,
+  EvidenceLedger, citation contract, or report-rewrite behavior.
 - Recomputed the historical Research gate on 2026-09-04:
   `source_file_count=67`, `skipped_incomplete_files=14`, verdict `ok=true`.
-  Current default-path decision is to keep PubMed/arXiv connectors for source
-  reach, keep evidence-only follow-up guarded, keep the narrow done citation
-  finalizer as a citation/source-list cleanup step, and not promote the untrusted
-  source wrapper without a clean release-gate A/B.
+  That historical recompute did not include the later clean source-wrapper
+  fixtures, so the wrapper decision is superseded by the cross-provider gate
+  above. The remaining default-path decision is to keep PubMed/arXiv connectors
+  for source reach, keep evidence-only follow-up guarded, and keep the narrow
+  done citation finalizer as a citation/source-list cleanup step.
 - Live MiMo connector-priority smoke on the PubMed case completed with real web
   search working: `ok=true`, `score=9`, `stop_reason=done`, `turns=12`,
   `sources_read=4`, two PubMed URLs opened, and `connector_errors=[]`. The proof
   review remained partial, so the remaining Research bottleneck is claim-to-
   evidence support in the final report, not search/open failure.
+- `tests/manual/research_followup_quality_ab.py` now defaults to
+  `--transcript-mode archive`, so future live Research A/B runs retain
+  prompt/reply transcripts for provider-behavior analysis. The 2026-09-05 MiMo
+  PubMed archive A/B wrote
+  `tests/manual/results/research_followup_quality_ab-mimo-pubmed-archive-20260905.json`,
+  but the file is `complete=false`: the baseline row completed (`score=7`,
+  `proof_ok=false`, `proof_answer_status=partial`, `proof_coverage=0.583`,
+  `sources_read=3`, `evidence_count=4`, `unsupported_claim_count=7/12`), while
+  the planner arm wrote trace transcripts but no `case_complete`/row result.
+  It is not evidence for or against planner quality, and the gate skips it.
+- Extended `codey.utils.citation_scanner` and
+  `codey.research.done_finalizer` to compile common source-id citation
+  renderings: `来源s2`, `来源 s2`, `（s2）`, `（来源s2、s3）`, table cells such
+  as `| s2 (...) |`, and leading source rows such as `s2:`. Source-id rewrites
+  now add ASCII boundary spaces where needed so `word[2]` is not missed by the
+  numeric citation scanner. This is a format repair that reduces wasteful done
+  retries; unmapped source ids still fail closed, and the compiler never adds
+  evidence or fabricates citations.
 
 ## 0.5.6 - Tool Prompt Consolidation + Prompt Surface Thin Trace v1
 

@@ -219,9 +219,18 @@ def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> s
         number = source_id_to_number.get(item.source_id)
         if number is None:
             continue
-        replacement = f"[{number}{item.page_suffix}]" if item.bracketed else f"[{number}]"
+        replacement = _source_id_replacement(text, item, number)
         result = result[:item.start] + replacement + result[item.end:]
     return result
+
+
+def _source_id_replacement(text: str, item, number: int) -> str:
+    replacement = f"[{number}{item.page_suffix}]" if item.bracketed else f"[{number}]"
+    if item.start > 0 and re.match(r"[A-Za-z0-9_]", text[item.start - 1]):
+        replacement = " " + replacement
+    if item.end < len(text) and re.match(r"[A-Za-z0-9_]", text[item.end]):
+        replacement = replacement + " "
+    return replacement
 
 
 def _rewrite_numeric_refs(

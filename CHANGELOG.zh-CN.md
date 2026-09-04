@@ -61,16 +61,39 @@
   wrapper 行通过，`injection_leak_count=0`，`quality_regression_count=0`，gate 报
   `eligible_to_promote_after_live_review`。这是一份干净的 MiMo fixture 胜利，但还不是
   生产接线。
+- 2026-09-04 Qwen 也完成 evidence-safe source-wrapper clean A/B：
+  `tool_injection,false_done` 各 `repeats=3`，12/12 行完成，6/6 个 wrapper 行通过，
+  manifest 为 `dirty_state=clean`、`transcript_mode=archive`、commit
+  `5323980de3adcce388791167c21c09ef84f5cd3e`。MiMo+Qwen cross-provider gate 读取
+  24 行、12 个 wrapper 行、2 个 provider，`injection_leak_count=0`、
+  `quality_regression_count=0`、`terminal_failure_count=0`，decision 为
+  `keep_default_untrusted_source_wrapper`。`codey/research/source_rendering.py` 已进入
+  默认 `open_url` source rendering；它只负责把网页正文标为“不可信数据”，不改变
+  planner、tool schema、EvidenceLedger、citation contract 或 report rewrite 策略。
 - 2026-09-04 已复算历史 Research gate：`source_file_count=67`，
-  `skipped_incomplete_files=14`，verdict 为 `ok=true`。当前默认路径结论是：
+  `skipped_incomplete_files=14`，verdict 为 `ok=true`。这份历史复算不含后续
+  source-wrapper clean fixture，因此 wrapper 结论已由上面的 cross-provider gate 覆盖。
+  其余默认路径结论是：
   PubMed/arXiv connector 保留，因为它能让 Codey 更容易到达可靠来源；evidence-only
-  follow-up 保留但继续 guarded；done finalizer 保留为很窄的引用/来源列表整理器；
-  untrusted source wrapper 没有干净的 release-gate A/B 证据，暂不进默认路径。
+  follow-up 保留但继续 guarded；done finalizer 保留为很窄的引用/来源列表整理器。
 - MiMo PubMed connector-priority 实机 smoke 已跑通真实网页搜索：
   `ok=true`、`score=9`、`stop_reason=done`、`turns=12`、`sources_read=4`、
   打开了两个 PubMed URL，`connector_errors=[]`。proof review 仍是 partial，
   所以当前 Research 的主要堵点已经不是“搜索/打开失败”，而是最终报告里的部分结论
   没有和保存的证据/引用绑定得足够紧。
+- `tests/manual/research_followup_quality_ab.py` 现在默认 `--transcript-mode archive`，
+  后续 live Research A/B 默认保存 prompt/reply transcript，便于回看 provider 行为。
+  2026-09-05 MiMo PubMed archive A/B 输出
+  `tests/manual/results/research_followup_quality_ab-mimo-pubmed-archive-20260905.json`，
+  但文件为 `complete=false`：baseline 行完成（`score=7`、`proof_ok=false`、
+  `proof_answer_status=partial`、`proof_coverage=0.583`、`sources_read=3`、
+  `evidence_count=4`、`unsupported_claim_count=7/12`），planner arm 的 transcript 已写入
+  trace，但没有 `case_complete`/row 结果，不能作为 planner 收益或失败结论；gate 会跳过它。
+- 扩展 `codey.utils.citation_scanner` 和 `codey.research.done_finalizer` 对常见 source-id
+  引用写法的编译：支持 `来源s2`、`来源 s2`、`（s2）`、`（来源s2、s3）`、表格 `| s2 (...) |`
+  和行首 `s2:`，并在把 source-id 改写成 `[2]` 时补 ASCII 边界空格，避免
+  `word[2]` 继续被数字引用扫描漏掉。这是格式修复，用来减少无意义 done retry；
+  未映射 source id 仍然 fail closed，且不会自动补 evidence 或伪造 citation。
 
 ## 0.5.6 - Tool Prompt 收敛与 Prompt 面薄追踪 v1
 

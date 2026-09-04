@@ -3193,6 +3193,82 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("source_id=s1", finalized.text)
         self.assertIn(f"[1] Helium article - {url}", finalized.text)
 
+    def test_done_finalizer_compiles_chinese_and_parenthetical_source_id_refs(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        finalized = finalize_done_answer(
+            "## 结论\nHelium supply depends on gas processing（来源s1）\n\n"
+            "## 关键证据\n- Helium evidence (s1)\n\n"
+            "## 反证与限制\n未找到强反证\n\n"
+            "## 来源质量\n- s1 (secondary source)\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            "## 来源\ns1: Helium article - https://example.com/helium",
+            ledger,
+            source_ids={"s1": url},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("Helium supply depends on gas processing [1]", finalized.text)
+        self.assertIn("Helium evidence [1]", finalized.text)
+        self.assertNotIn("来源s1", finalized.text)
+        self.assertNotIn("(s1)", finalized.text)
+        self.assertNotIn("s1 (secondary source)", finalized.text)
+        self.assertIn(f"[1] Helium article - {url}", finalized.text)
+
+    def test_done_finalizer_rejects_unmapped_chinese_source_id_refs(self) -> None:
+        ledger = helium_ledger()
+
+        finalized = finalize_done_answer(
+            "## 结论\nHelium supply depends on gas processing（来源s9）\n\n"
+            "## 关键证据\n- Helium evidence\n\n"
+            "## 反证与限制\n未找到强反证\n\n"
+            "## 来源质量\n- good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            "## 来源\n[1] Helium article - https://example.com/helium",
+            ledger,
+            source_ids={"s1": "https://example.com/helium"},
+        )
+
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_source_id_refs")
+        self.assertIn("来源s9", finalized.text)
+
+    def test_done_finalizer_compiles_multi_source_id_groups_and_table_cells(self) -> None:
+        first = "https://example.com/alpha"
+        second = "https://example.com/beta"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=first, final_url=first, title="Alpha article", text="Alpha evidence.")
+        ledger.record_open(requested_url=second, final_url=second, title="Beta article", text="Beta evidence.")
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+                EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            ]
+        )
+
+        finalized = finalize_done_answer(
+            "## 结论\nAlpha and beta（来源s2、s3）\n\n"
+            "## 关键证据\n- Alpha (s2)\n- Beta (s3)\n\n"
+            "## 反证与限制\n未找到强反证\n\n"
+            "## 来源质量\n| 来源 | 质量 |\n|---|---|\n| s2 (Alpha) | good |\n| s3 (Beta) | good |\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n1. s2: Alpha article - {first}\n2. s3: Beta article - {second}",
+            ledger,
+            source_ids={"s2": first, "s3": second},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("Alpha and beta [1]、[2]", finalized.text)
+        self.assertIn("- Alpha [1]", finalized.text)
+        self.assertIn("- Beta [2]", finalized.text)
+        self.assertIn("| [1] (Alpha) | good |", finalized.text)
+        self.assertIn("| [2] (Beta) | good |", finalized.text)
+        self.assertNotIn("来源s2", finalized.text)
+        self.assertNotIn("s3 (Beta)", finalized.text)
+        self.assertIn(f"[1] Alpha article - {first}", finalized.text)
+        self.assertIn(f"[2] Beta article - {second}", finalized.text)
+
     def test_done_finalizer_allows_normal_words_like_s1_in_prose(self) -> None:
         # Prose containing "s1" must never be treated as a source-id ref;
         # with strict citation mapping the unexplained [1] simply fails

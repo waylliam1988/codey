@@ -36,6 +36,7 @@ from tests.manual.ab_harness_common import (
     ABJournalWriter,
     ArmRunLayout,
     ResultRowStore,
+    TRANSCRIPT_MODE_FLAGS,
     TracingProvider,
     attach_research_record_payload,
     bind_row_evidence_refs,
@@ -47,7 +48,6 @@ from tests.manual.ab_harness_common import (
 from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     TranscriptReplayCache,
-    TRANSCRIPT_MODE_DIGEST_ONLY,
 )
 
 PROBE = "research_followup_quality_ab"
@@ -438,6 +438,13 @@ def _parse_names(raw_values: list[str] | None, allowed: Mapping[str, object] | S
     return tuple(dict.fromkeys(names))
 
 
+def _transcript_cache_mode(value: str) -> str | None:
+    text = str(value or "").strip()
+    if text not in TRANSCRIPT_MODE_FLAGS:
+        raise ValueError(f"unknown transcript mode: {value}")
+    return TRANSCRIPT_MODE_FLAGS[text]
+
+
 def _self_test() -> None:
     rows = [
         {
@@ -493,6 +500,12 @@ def main() -> int:
     parser.add_argument("--open-if-missing", action="store_true")
     parser.add_argument("--rerun-failed", action="store_true")
     parser.add_argument("--no-live-trace", action="store_true")
+    parser.add_argument(
+        "--transcript-mode",
+        choices=("digest-only", "archive", "off"),
+        default="archive",
+        help="prompt/reply retention for the journal; archive stores raw replay files under the trace directory",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -510,14 +523,16 @@ def main() -> int:
             output = args.output.with_name(f"{args.output.stem}-{provider_id}{args.output.suffix}")
         layout = ArmRunLayout.for_output(output, journal_dir=args.trace_output)
         trace: ABJournalWriter | None = None
-        if not args.no_live_trace:
+        transcript_mode = "off" if args.no_live_trace else args.transcript_mode
+        cache_mode = _transcript_cache_mode(transcript_mode)
+        if cache_mode is not None:
             try:
                 trace = ABJournalWriter(
                     directory=layout.journal_dir,
                     experiment_id=PROBE,
                     run_id=output.stem,
                     provider=provider_id,
-                    transcript_cache=TranscriptReplayCache(layout.journal_dir, mode=TRANSCRIPT_MODE_DIGEST_ONLY),
+                    transcript_cache=TranscriptReplayCache(layout.journal_dir, mode=cache_mode),
                 )
             except ABJournalIdentityMismatch as exc:
                 print(str(exc), file=sys.stderr)
@@ -546,8 +561,8 @@ def main() -> int:
                     arms=selected_arms,
                     cases=[case.name for case in selected_cases],
                     max_turns=max(1, args.max_turns),
-                    journal_dir=layout.journal_dir,
-                    transcript_mode="digest-only" if not args.no_live_trace else "off",
+                    journal_dir=layout.journal_dir if trace is not None else None,
+                    transcript_mode=transcript_mode if trace is not None else "off",
                     started_at=str(result_payload.get("started_at") or ""),
                     finished_at=str(result_payload.get("finished_at") or timestamp()),
                     stop_reason=str(result_payload.get("stop_reason") or ("done" if ok else "unknown")),
