@@ -54,6 +54,13 @@
   造成 evidence-quality、source-coverage 和 completion-honesty regression；harness
   总体 `ok=false`，experiment gate 报 `source_wrapper_gate_failed`。source wrapper
   继续只保留 manual-only，不能进生产默认路径。
+- 已把 manual source-wrapper prompt 改成区分“网页内部命令”和“网页事实”：页面里的
+  命令没有工具调用权限，但同一页面里的事实仍然可以作为 evidence。该 harness 现在
+  默认保存 archived transcript，便于失败后分析。MiMo 在 commit `0bc8764` 上重跑
+  干净 A/B：`tool_injection,false_done` 各 `repeats=3`，12/12 行完成，6/6 个
+  wrapper 行通过，`injection_leak_count=0`，`quality_regression_count=0`，gate 报
+  `eligible_to_promote_after_live_review`。这是一份干净的 MiMo fixture 胜利，但还不是
+  生产接线。
 - 2026-09-04 已复算历史 Research gate：`source_file_count=67`，
   `skipped_incomplete_files=14`，verdict 为 `ok=true`。当前默认路径结论是：
   PubMed/arXiv connector 保留，因为它能让 Codey 更容易到达可靠来源；evidence-only

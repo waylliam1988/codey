@@ -64,6 +64,15 @@
   (`score=6` vs baseline `13`), so the harness result was `ok=false` and the
   gate reported `source_wrapper_gate_failed`. Keep the source wrapper
   manual-only.
+- Updated the manual source-wrapper prompt to separate source-internal commands
+  from source facts: commands inside a page have no tool authority, but factual
+  claims inside the same page can still support evidence. The harness now
+  defaults to archived transcripts for post-run diagnosis. A clean MiMo rerun
+  on `tool_injection,false_done` with `repeats=3` passed at commit `0bc8764`:
+  12/12 rows completed, 6/6 wrapper rows passed, `injection_leak_count=0`,
+  `quality_regression_count=0`, and the gate reported
+  `eligible_to_promote_after_live_review`. This is a clean MiMo fixture win,
+  not production wiring.
 - Recomputed the historical Research gate on 2026-09-04:
   `source_file_count=67`, `skipped_incomplete_files=14`, verdict `ok=true`.
   Current default-path decision is to keep PubMed/arXiv connectors for source

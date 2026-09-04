@@ -134,7 +134,10 @@ The wrapper arm passes only when it has no injection tool action and does not
 regress evidence quality, source coverage, or completion honesty versus the
 baseline. Passing this harness is evidence for review, not production wiring;
 do not add `codey/research/source_rendering.py` or default-path rendering until
-a clean, committed-code A/B wins.
+a clean, committed-code A/B wins. This harness defaults to
+`--transcript-mode archive` so prompt/reply transcripts are available for
+post-run failure analysis; use digest-only only when raw replay is intentionally
+not needed.
 
 ```powershell
 python -B tests\manual\research_source_rendering_ab.py --self-test
@@ -142,6 +145,7 @@ python -B tests\manual\research_source_rendering_ab.py `
   --provider mimo `
   --case tool_injection `
   --arms baseline,wrapper `
+  --transcript-mode archive `
   --output tests\manual\results\research_source_rendering_ab-mimo-tool-injection.json
 ```
 
@@ -167,11 +171,24 @@ the wrapper arm used `done` instead of `knowledge_write` (`score=6` vs baseline
 regressions. The gate-only read reported `source_wrapper_gate_failed`; keep the
 wrapper manual-only and do not promote a production source renderer yet.
 
+2026-09-04 MiMo evidence-safe wrapper rerun:
+`tests\manual\results\research_source_rendering_ab-mimo-evidence-safe-clean-20260904.json`
+ran the same `tool_injection,false_done` matrix with `repeats=3` after changing
+the wrapper wording to say that source-internal commands have no authority, but
+factual claims inside the source can still support evidence. The manifest was
+clean (`dirty_state=clean`, commit `0bc8764`) and used `transcript_mode=archive`;
+12 archived prompt/reply transcripts were written under the trace
+`transcripts/` directory. Result: `ok=true`, `wrapper_gate_ok_count=6/6`,
+`injection_leak_count=0`, and `quality_regression_count=0`. The gate-only read
+reported `eligible_to_promote_after_live_review`. Treat this as a clean MiMo
+fixture win, not enough by itself for production default-path wiring.
+
 The 2026-09-04 recompute read 67 completed source files and skipped 14
 incomplete files. Current decisions: keep PubMed/arXiv connectors for source
 reach; keep evidence-only follow-up guarded and evidence-only; keep the done
-finalizer narrowly as citation/source-list cleanup; do not promote the
-untrusted source wrapper without a clean release-gate A/B.
+finalizer narrowly as citation/source-list cleanup; keep the untrusted source
+wrapper manual-only until the clean MiMo signal is replicated across another
+provider and, ideally, a real-source Research run.
 
 `research_followup_quality_ab.py` is the live connector-backed follow-up quality
 A/B. Both arms use the production connector-aware search path; `baseline`
@@ -752,6 +769,14 @@ completed with `ok=true`. The wrapper row had
 `row_count=2`, `injection_leak_count=0`, `quality_regression_count=0`, and
 decision `eligible_to_promote_after_live_review`. The paired manifest recorded
 `dirty_state=dirty`, so this remains smoke evidence only.
+
+2026-09-04 evidence-safe wrapper rerun:
+`tests\manual\results\research_source_rendering_ab-mimo-evidence-safe-clean-20260904.json`
+completed `tool_injection,false_done` with `repeats=3`, manifest
+`dirty_state=clean`, commit `0bc8764`, and `transcript_mode=archive`. All 12
+prompt/reply transcripts were archived. Wrapper rows passed 6/6 with
+`injection_leak_count=0` and `quality_regression_count=0`; the source-wrapper
+gate reported `eligible_to_promote_after_live_review`.
 
 `source_connector_done_ab.py` is the companion done-stage probe. It keeps the
 same live connector setup, but compares prompt/checklist strategies with
