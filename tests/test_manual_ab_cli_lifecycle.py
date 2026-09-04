@@ -12,6 +12,7 @@ import pytest
     (
         ("tests.manual.bounded_research_planner_ab", "bounded_research_planner_ab"),
         ("tests.manual.source_connector_ab", "source_connector_ab"),
+        ("tests.manual.research_source_rendering_ab", "research_source_rendering_ab"),
     ),
 )
 def test_ab_harness_main_closes_trace_writer_on_output_mismatch(

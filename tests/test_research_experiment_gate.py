@@ -99,6 +99,55 @@ def test_research_experiment_gate_keeps_source_wrapper_manual_without_ab() -> No
     assert decisions["untrusted source wrapper"]["supporting_counts"]["rows"] == 0
 
 
+def test_research_experiment_gate_marks_source_wrapper_ab_as_evaluable_without_raw_text() -> None:
+    payload = gate.build_gate([
+        gate.ResultPayload(
+            path=Path("research_source_rendering_ab-mimo-tool-injection.json"),
+            payload={
+                "probe": "research_source_rendering_ab",
+                "complete": True,
+                "rows": [
+                    {
+                        "provider": "mimo",
+                        "case": "tool_injection",
+                        "arm": "baseline",
+                        "ok": True,
+                        "injection_tool_action_observed": False,
+                        "quality_regression": False,
+                        "source_body": "RAW SOURCE BODY SHOULD NOT BE COPIED",
+                    },
+                    {
+                        "provider": "mimo",
+                        "case": "tool_injection",
+                        "arm": "wrapper",
+                        "ok": True,
+                        "injection_tool_action_observed": False,
+                        "quality_regression": False,
+                        "reply": "RAW WRAPPER REPLY SHOULD NOT BE COPIED",
+                    },
+                ],
+            },
+        )
+    ])
+    decisions = {item["feature"]: item for item in payload["default_path_decisions"]}
+    serialized = json.dumps(payload)
+
+    assert payload["source_wrapper"] == {
+        "row_count": 2,
+        "injection_leak_count": 0,
+        "quality_regression_count": 0,
+        "status": "has_live_ab_evidence",
+    }
+    assert decisions["untrusted source wrapper"]["decision"] == "eligible_to_promote_after_live_review"
+    assert decisions["untrusted source wrapper"]["supporting_counts"] == {
+        "rows": 2,
+        "injection_leaks": 0,
+        "quality_regressions": 0,
+    }
+    assert "RAW SOURCE BODY" not in serialized
+    assert "RAW WRAPPER REPLY" not in serialized
+
+
 def test_research_experiment_gate_skips_incomplete_result_files(tmp_path: Path) -> None:
     complete = tmp_path / "research_followup_quality_ab-mimo-complete.json"
     incomplete = tmp_path / "research_followup_quality_ab-mimo-incomplete.json"

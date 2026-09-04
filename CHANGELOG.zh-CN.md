@@ -21,12 +21,32 @@
   复算“默认路径该保留什么”的指标，只保留 metric，不复制原始 prompt、reply、
   report、transcript 或网页正文，并跳过 `complete:false` 的中断文件。新增
   `tests/manual/research_followup_quality_ab.py` 用于 connector-backed baseline 与
-  evidence-only follow-up 的实机 A/B。
+  evidence-only follow-up 的实机 A/B。gate 现在还会输出有边界的 `proof_gaps`
+  区块，按 probe/provider 统计 `claim_missing_citation`、
+  `claim_missing_evidence_ref`、`claim_missing_support_relation` 和
+  `claim_not_evidence_backed`，不复制 source 或 report 正文。
+- 新增 `tests/manual/research_claim_support_projection.py`：手工诊断历史结果 JSON、
+  完整 `ResearchRecord` 或 archived transcript/report。完整 record 会生成可删除或
+  降级 unsupported required claim 的 claim-ref 投影；只有历史 row 或 transcript 的
+  输入保持 digest/count-only，并明确说明没有 record 时无法做 claim-level projection。
+  没有新增生产接线。
+- 新增 `tests/manual/research_source_rendering_ab.py`：untrusted source wrapper 的
+  manual-only A/B。它把 raw source rendering 和带 fenced untrusted-data wrapper 的
+  rendering 放在含恶意网页文字的 fixture 上比较，验收条件是 wrapper 没有 injection
+  tool action，且 evidence quality、source coverage、completion honesty 都不回退。
+  这只作为实验审查证据；没有新增 `codey/research/source_rendering.py` 生产路径。
+- 2026-09-04 MiMo source-wrapper smoke 已在 `tool_injection` fixture 上跑完：
+  wrapper row 结果为 `injection_tool_action_observed=false`，没有 evidence-quality /
+  source-coverage / completion-honesty regression，且 `wrapper_gate_ok=true`；只把这份
+  source-wrapper 结果喂给 experiment gate 时，输出 `source_wrapper.row_count=2`、
+  `injection_leak_count=0`、`quality_regression_count=0`，decision 为
+  `eligible_to_promote_after_live_review`。对应 manifest 是 `dirty_state=dirty`，
+  所以这只能算 smoke 证据，不能算最终 release gate 证据，也不能作为生产接入依据。
 - 2026-09-04 已复算历史 Research gate：`source_file_count=67`，
   `skipped_incomplete_files=14`，verdict 为 `ok=true`。当前默认路径结论是：
   PubMed/arXiv connector 保留，因为它能让 Codey 更容易到达可靠来源；evidence-only
   follow-up 保留但继续 guarded；done finalizer 保留为很窄的引用/来源列表整理器；
-  untrusted source wrapper 没有实机 A/B 证据，暂不进默认路径。
+  untrusted source wrapper 没有干净的 release-gate A/B 证据，暂不进默认路径。
 - MiMo PubMed connector-priority 实机 smoke 已跑通真实网页搜索：
   `ok=true`、`score=9`、`stop_reason=done`、`turns=12`、`sources_read=4`、
   打开了两个 PubMed URL，`connector_errors=[]`。proof review 仍是 partial，
