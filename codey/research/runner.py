@@ -43,6 +43,7 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.source_document import compact_pages
+from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
 from codey.research.tool_contract import (
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_DISALLOWED_TOOL,
@@ -524,12 +525,13 @@ class ResearchRunner:
         if call.name == "web_search":
             return _Outcome(self.tools.web_search(first_text_arg(args, "query")))
         if call.name == "open_url":
-            return _Outcome(self.tools.open_url(
+            output = self.tools.open_url(
                 str(args.get("url") or ""),
                 offset=args.get("offset", 0),
                 limit=args.get("limit", 6000),
                 pages=str(args.get("pages") or ""),
-            ))
+            )
+            return _Outcome(output, presentation_result=_opened_source_presentation(output))
         if call.name == "source_search":
             return _Outcome(self.tools.source_search(
                 str(args.get("url") or ""),
@@ -1237,14 +1239,14 @@ def _evidence_locator(item: dict) -> str:
 
 
 class _Outcome:
-    def __init__(self, model_text: str, *, changed: bool = False) -> None:
+    def __init__(self, model_text: str, *, changed: bool = False, presentation_result: str = "") -> None:
         self.model_text = model_text
         self.status = _outcome_status(model_text)
         self.ok = self.status != "error"
         self.exit_code = None
         self.changed = changed and self.status == "ok"
         self.truncated = False
-        self.presentation = {"status": self.status, "result": self.first_model_line(200)}
+        self.presentation = {"status": self.status, "result": (presentation_result or self.first_model_line(200))[:200]}
         self.audit = {}
         self.canonical = {}
 
@@ -1276,6 +1278,31 @@ def _outcome_status(output: str) -> str:
     if output.startswith(("NEEDS_OPEN:", "SKIPPED:")):
         return "needs_action"
     return "ok"
+
+
+def _opened_source_presentation(output: str) -> str:
+    text = str(output or "")
+    if UNTRUSTED_SOURCE_START not in text:
+        return ""
+    in_block = False
+    for line in text.splitlines():
+        clean = line.strip()
+        if clean == UNTRUSTED_SOURCE_START:
+            in_block = True
+            continue
+        if clean == UNTRUSTED_SOURCE_END:
+            break
+        if not in_block:
+            continue
+        if clean.startswith("Title:"):
+            title = clean[len("Title:") :].strip()
+            if title:
+                return title
+        if clean.startswith("URL:"):
+            url = clean[len("URL:") :].strip()
+            if url:
+                return url
+    return ""
 
 
 def _outcome_model_text(outcome: _Outcome) -> str:

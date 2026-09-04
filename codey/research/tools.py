@@ -17,7 +17,8 @@ from codey.research.pdf_extract import (
     PdfSkipped,
     extract_pdf_document,
 )
-from codey.research.source_document import SourceDocument, compact_pages
+from codey.research.source_document import SourceDocument
+from codey.research.source_rendering import render_opened_source
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
     SourceSearchHit,
@@ -148,10 +149,11 @@ class ResearchTools:
         self.ledger.record_open_document(document)
         window = document.text[offset : offset + limit]
         more = offset + limit < len(document.text)
-        header = _document_header(document)
-        body = f"{header}\n\n{window}"
-        if more:
-            body += f"\n\n[more text available: open with offset={offset + limit}]"
+        body = render_opened_source(
+            document,
+            window,
+            more_offset=(offset + limit) if more else None,
+        )
         if len(body) > OPEN_MAX_LIMIT:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
         return body
@@ -533,24 +535,6 @@ def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSe
         if len(unique) >= limit:
             break
     return unique
-
-
-def _document_header(document: SourceDocument) -> str:
-    lines = [document.title, document.final_url]
-    if document.content_kind == "pdf":
-        page_meta = _pages_meta(document.pages_read, document.page_count)
-        bits = ["PDF", page_meta]
-        if document.truncated:
-            bits.append("truncated")
-        lines.append(" · ".join(part for part in bits if part))
-    return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
-
-
-def _pages_meta(pages: tuple[int, ...], page_count: int) -> str:
-    if not pages:
-        return ""
-    page_text = compact_pages(pages)
-    return f"pages {page_text} / {page_count}" if page_count else f"pages {page_text}"
 
 
 class StagedKnowledgeStore:

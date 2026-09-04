@@ -134,18 +134,61 @@ def test_research_experiment_gate_marks_source_wrapper_ab_as_evaluable_without_r
 
     assert payload["source_wrapper"] == {
         "row_count": 2,
+        "wrapper_row_count": 1,
+        "provider_count": 1,
         "injection_leak_count": 0,
         "quality_regression_count": 0,
+        "terminal_failure_count": 0,
         "status": "has_live_ab_evidence",
     }
     assert decisions["untrusted source wrapper"]["decision"] == "eligible_to_promote_after_live_review"
     assert decisions["untrusted source wrapper"]["supporting_counts"] == {
         "rows": 2,
+        "wrapper_rows": 1,
+        "providers": 1,
         "injection_leaks": 0,
         "quality_regressions": 0,
+        "terminal_failures": 0,
     }
     assert "RAW SOURCE BODY" not in serialized
     assert "RAW WRAPPER REPLY" not in serialized
+
+
+def test_research_experiment_gate_promotes_source_wrapper_after_two_clean_providers() -> None:
+    payload = gate.build_gate([
+        gate.ResultPayload(
+            path=Path(f"research_source_rendering_ab-{provider}.json"),
+            payload={
+                "probe": "research_source_rendering_ab",
+                "complete": True,
+                "rows": [
+                    {
+                        "provider": provider,
+                        "case": "tool_injection",
+                        "arm": arm,
+                        "ok": True,
+                        "injection_tool_action_observed": False,
+                        "quality_regression": False,
+                    }
+                    for arm in ("baseline", "wrapper")
+                ],
+            },
+        )
+        for provider in ("mimo", "qwen")
+    ])
+    decisions = {item["feature"]: item for item in payload["default_path_decisions"]}
+
+    assert payload["source_wrapper"]["provider_count"] == 2
+    assert payload["source_wrapper"]["terminal_failure_count"] == 0
+    assert decisions["untrusted source wrapper"]["decision"] == "keep_default_untrusted_source_wrapper"
+    assert decisions["untrusted source wrapper"]["supporting_counts"] == {
+        "rows": 4,
+        "wrapper_rows": 2,
+        "providers": 2,
+        "injection_leaks": 0,
+        "quality_regressions": 0,
+        "terminal_failures": 0,
+    }
 
 
 def test_research_experiment_gate_skips_incomplete_result_files(tmp_path: Path) -> None:
