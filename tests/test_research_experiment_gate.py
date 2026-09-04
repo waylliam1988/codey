@@ -33,7 +33,14 @@ def test_research_experiment_gate_scores_bounded_files_without_raw_bodies(tmp_pa
                         "record_evidence_count": 1,
                         "unsupported_claim_rate": 0.3,
                         "provider_send_count": 4,
+                        "proof_ok": False,
+                        "proof_missing_evidence": [
+                            "claim_missing_citation",
+                            "claim_missing_evidence_ref",
+                            "other_gap",
+                        ],
                         "summary_text": "RAW BASELINE REPORT SHOULD NOT BE COPIED",
+                        "source_body": "RAW SOURCE BODY SHOULD NOT BE COPIED",
                     },
                     {
                         "provider": "mimo",
@@ -48,6 +55,12 @@ def test_research_experiment_gate_scores_bounded_files_without_raw_bodies(tmp_pa
                         "provider_send_count": 5,
                         "followup_rounds": 1,
                         "ab_followup_mode": "production_evidence_followup",
+                        "proof_ok": False,
+                        "proof_answer_status": "partial",
+                        "proof_missing_evidence": [
+                            "claim_missing_support_relation",
+                            "claim_not_evidence_backed",
+                        ],
                         "summary_text": "RAW PLANNER REPORT SHOULD NOT BE COPIED",
                     },
                 ],
@@ -64,8 +77,17 @@ def test_research_experiment_gate_scores_bounded_files_without_raw_bodies(tmp_pa
     assert payload["source_file_count"] == 1
     assert payload["bounded_followup"]["pair_count"] == 1
     assert payload["bounded_followup"]["safe_evidence_only_useful_count"] == 1
+    assert payload["proof_gaps"]["reviewed_row_count"] == 2
+    assert payload["proof_gaps"]["proof_failed_row_count"] == 2
+    assert payload["proof_gaps"]["target_gap_counts"] == {
+        "claim_missing_citation": 1,
+        "claim_missing_evidence_ref": 1,
+        "claim_missing_support_relation": 1,
+        "claim_not_evidence_backed": 1,
+    }
     assert "RAW BASELINE REPORT" not in serialized
     assert "RAW PLANNER REPORT" not in serialized
+    assert "RAW SOURCE BODY" not in serialized
     assert "RAW PROMPT" not in serialized
 
 
@@ -115,7 +137,7 @@ def test_research_experiment_gate_skips_incomplete_result_files(tmp_path: Path) 
         json.dumps({
             "probe": "research_followup_quality_ab",
             "complete": False,
-            "rows": [dict(rows[0], score=0)],
+            "rows": [dict(rows[0], score=0, proof_missing_evidence=["claim_missing_citation"])],
         }),
         encoding="utf-8",
     )
@@ -127,3 +149,4 @@ def test_research_experiment_gate_skips_incomplete_result_files(tmp_path: Path) 
     assert payload["skipped_incomplete_files"] == [incomplete.name]
     assert payload["bounded_followup"]["row_count"] == 2
     assert payload["bounded_followup"]["pair_count"] == 1
+    assert payload["proof_gaps"]["target_gap_counts"]["claim_missing_citation"] == 0

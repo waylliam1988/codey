@@ -94,12 +94,30 @@ in `ab_harness_common.py`; production code must never import it.
 default-path decisions. It reads completed result JSON files from
 `tests/manual/results/`, skips interrupted files with `complete:false`, and
 copies only bounded metrics into its output. It must not copy raw prompt,
-reply, transcript, webpage, or final-report bodies.
+reply, transcript, webpage, or final-report bodies. Its `proof_gaps` block
+counts claim-support failures by reason code (`claim_missing_citation`,
+`claim_missing_evidence_ref`, `claim_missing_support_relation`, and
+`claim_not_evidence_backed`) without copying report/source text.
 
 ```powershell
 python -B tests\manual\research_experiment_gate.py --self-test
 python -B tests\manual\research_experiment_gate.py `
   --output tests\manual\results\research_experiment_gate-0.5.7-history.json
+```
+
+`research_claim_support_projection.py` is a manual-only follow-up diagnostic
+for those proof gaps. If a result contains a full `ResearchRecord`, it locates
+problem claim refs and estimates whether deleting or downgrading those claims
+would reduce target proof gaps. If the input is only a historical result row or
+an archived transcript/report, it stays honest: it emits row-level gap counts
+or report digests/line-count estimates and marks claim projection as unknown.
+It never writes raw prompt, reply, report, or source bodies into its output.
+
+```powershell
+python -B tests\manual\research_claim_support_projection.py --self-test
+python -B tests\manual\research_claim_support_projection.py `
+  --input tests\manual\results\source_connector_ab-mimo-connector-priority2-smoke-20260904.json `
+  --output tests\manual\results\research_claim_support_projection-mimo-smoke.json
 ```
 
 The 2026-09-04 recompute read 67 completed source files and skipped 14

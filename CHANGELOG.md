@@ -24,7 +24,18 @@
   `complete:false` interrupted runs and never copying raw prompt, reply, report,
   transcript, or webpage bodies into the gate output. Added
   `tests/manual/research_followup_quality_ab.py` for connector-backed baseline
-  vs evidence-only follow-up A/B checks.
+  vs evidence-only follow-up A/B checks. The gate now also reports a bounded
+  `proof_gaps` block for claim-support failures (`claim_missing_citation`,
+  `claim_missing_evidence_ref`, `claim_missing_support_relation`,
+  `claim_not_evidence_backed`) by probe/provider without copying source or
+  report bodies.
+- Added `tests/manual/research_claim_support_projection.py`, a manual-only
+  diagnostic that reads historical result JSON, full `ResearchRecord` payloads,
+  or archived transcript/report files. Full records get claim-ref projections
+  for deleting or downgrading unsupported required claims; row-only and
+  transcript-only inputs stay digest/count-only and explicitly report that
+  claim-level projection is unknown without a record. No production wiring was
+  added.
 - Recomputed the historical Research gate on 2026-09-04:
   `source_file_count=67`, `skipped_incomplete_files=14`, verdict `ok=true`.
   Current default-path decision is to keep PubMed/arXiv connectors for source

@@ -37,6 +37,20 @@ DEFAULT_PATTERNS = (
     "source_connector_done_ab-*.json",
     "research_source_rendering_ab-*.json",
 )
+PROOF_GAP_CODES = (
+    "claim_missing_citation",
+    "claim_missing_evidence_ref",
+    "claim_missing_support_relation",
+    "claim_not_evidence_backed",
+)
+PROOF_GAP_PROBES = (
+    "bounded_research_planner_ab",
+    "research_followup_quality_ab",
+    "source_connector_ab",
+    "source_connector_done_ab",
+    "research_source_rendering_ab",
+    "research_source_wrapper_ab",
+)
 
 
 @dataclass(frozen=True)
@@ -103,6 +117,7 @@ def build_gate(payloads: Sequence[ResultPayload]) -> dict[str, Any]:
     connectors = _source_connector_gate(complete_payloads)
     finalizer = _done_finalizer_gate(complete_payloads)
     source_wrapper = _source_wrapper_gate(complete_payloads)
+    proof_gaps = _proof_gap_gate(complete_payloads)
     decisions = [
         _bounded_followup_decision(bounded),
         _source_connector_decision(connectors),
@@ -119,6 +134,7 @@ def build_gate(payloads: Sequence[ResultPayload]) -> dict[str, Any]:
         "source_connectors": connectors,
         "done_finalizer": finalizer,
         "source_wrapper": source_wrapper,
+        "proof_gaps": proof_gaps,
         "default_path_decisions": decisions,
         "verdict": {
             "ok": all(item["decision"] != "remove_default_path" for item in decisions),
@@ -291,6 +307,97 @@ def _source_wrapper_gate(payloads: Sequence[ResultPayload]) -> dict[str, Any]:
         "quality_regression_count": sum(1 for row in rows if row.get("quality_regression")),
         "status": "no_live_ab_evidence" if not rows else "has_live_ab_evidence",
     }
+
+
+def _proof_gap_gate(payloads: Sequence[ResultPayload]) -> dict[str, Any]:
+    rows = [
+        _proof_gap_row(row, probe=item.probe)
+        for item in payloads
+        if item.probe in PROOF_GAP_PROBES
+        for row in item.rows
+    ]
+    return {
+        "row_count": len(rows),
+        "reviewed_row_count": sum(1 for row in rows if row["has_proof_review"]),
+        "proof_failed_row_count": sum(1 for row in rows if row["proof_failed"]),
+        "target_gap_row_count": sum(1 for row in rows if row["target_gaps"]),
+        "target_gap_counts": _proof_gap_counts(rows),
+        "by_probe": _proof_gap_groups(rows, "probe"),
+        "by_provider": _proof_gap_groups(rows, "provider"),
+        "sample_rows": [
+            _proof_gap_sample(row)
+            for row in rows
+            if row["target_gaps"] or row["proof_failed"]
+        ][:80],
+    }
+
+
+def _proof_gap_row(row: Mapping[str, Any], *, probe: str) -> dict[str, Any]:
+    missing = _proof_missing_evidence(row)
+    target_gaps = tuple(code for code in PROOF_GAP_CODES if code in missing)
+    proof_ok = row.get("proof_ok")
+    has_explicit_proof_ok = isinstance(proof_ok, bool)
+    has_proof_review = bool(
+        has_explicit_proof_ok
+        or missing
+        or _text(row.get("proof_answer_status"))
+        or _text(row.get("proof_status"))
+    )
+    return {
+        "probe": _text(probe),
+        "provider": _text(row.get("provider")) or "<unknown>",
+        "case": _text(row.get("case")) or "<unknown>",
+        "arm": _text(row.get("arm")) or "<unknown>",
+        "source_file": _text(row.get("_source_file")),
+        "proof_ok": bool(proof_ok) if has_explicit_proof_ok else None,
+        "proof_answer_status": _text(row.get("proof_answer_status")),
+        "missing_evidence": tuple(missing),
+        "target_gaps": target_gaps,
+        "has_proof_review": has_proof_review,
+        "proof_failed": (not bool(proof_ok)) if has_explicit_proof_ok else bool(missing),
+    }
+
+
+def _proof_gap_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    return {
+        code: sum(1 for row in rows if code in row.get("target_gaps", ()))
+        for code in PROOF_GAP_CODES
+    }
+
+
+def _proof_gap_groups(rows: Sequence[Mapping[str, Any]], key: str) -> dict[str, Any]:
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[_text(row.get(key)) or "<unknown>"].append(row)
+    return {
+        name: _proof_gap_bucket(items)
+        for name, items in sorted(grouped.items())
+    }
+
+
+def _proof_gap_bucket(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    return {
+        "rows": len(rows),
+        "reviewed_rows": sum(1 for row in rows if row.get("has_proof_review")),
+        "proof_failed_rows": sum(1 for row in rows if row.get("proof_failed")),
+        "target_gap_rows": sum(1 for row in rows if row.get("target_gaps")),
+        "target_gap_counts": _proof_gap_counts(rows),
+    }
+
+
+def _proof_gap_sample(row: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "probe": _text(row.get("probe")),
+        "provider": _text(row.get("provider")),
+        "case": _text(row.get("case")),
+        "arm": _text(row.get("arm")),
+        "source_file": _text(row.get("source_file")),
+        "proof_answer_status": _text(row.get("proof_answer_status")),
+        "target_gaps": list(row.get("target_gaps", ())),
+    }
+    if row.get("proof_ok") is not None:
+        payload["proof_ok"] = bool(row.get("proof_ok"))
+    return payload
 
 
 def _bounded_followup_decision(summary: Mapping[str, Any]) -> dict[str, Any]:
@@ -487,6 +594,19 @@ def _is_evidence_only_pair(pair: Mapping[str, Any]) -> bool:
         and _int(pair.get("followup_rounds")) > 0
         and _int(pair.get("new_evidence")) > 0
     )
+
+
+def _proof_missing_evidence(row: Mapping[str, Any]) -> tuple[str, ...]:
+    value = row.get("proof_missing_evidence")
+    if not isinstance(value, (list, tuple)):
+        review = row.get("proof_review")
+        value = review.get("missing_evidence") if isinstance(review, Mapping) else ()
+    codes: list[str] = []
+    for item in value if isinstance(value, (list, tuple)) else ():
+        code = _text(item)
+        if code and code not in codes:
+            codes.append(code)
+    return tuple(codes)
 
 
 def _clean_result_paths(paths: Iterable[Path]) -> list[Path]:
