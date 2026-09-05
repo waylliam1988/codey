@@ -105,6 +105,17 @@ query drift, but does not solve claim-to-evidence binding. The same run still ha
 `evidence_refs` and support relations in the `ResearchRecord`, even though the
 report-format gate passed.
 
+2026-09-05 evidence-only schema repair patch:
+`codey.research.evidence_followup` now makes the two valid exits explicit in
+the initial prompt: write strict evidence via `knowledge_write`, or use `done`
+when the fresh material has no relevant evidence. It also treats rejected
+`knowledge_write` shapes as `invalid_knowledge_write_args` and gives the model
+one bounded repair turn with the validator error, allowed URL whitelist, and the
+same retrieved material. The repair turn still cannot search/open and still
+passes through the same controller. This targets the MiMo failure where the
+follow-up emitted an ordinary note shape with `tags`, `relations`, and empty
+`evidence[]`.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

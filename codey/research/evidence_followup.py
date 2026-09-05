@@ -1,9 +1,10 @@
 """Bounded evidence-only follow-up controller for Research pipeline.
 
-This module restricts follow-up model interaction to a single turn and a single
-action: extracting verified fact evidence via ``knowledge_write``. All other
-tools (search, open, done, link) and internal source IDs (s1, s2) are strictly
-forbidden by program-level enforcement.
+This module restricts follow-up model interaction to bounded evidence extraction:
+write verified fact evidence via ``knowledge_write`` or explicitly exit with
+``done`` when the fresh material has no usable evidence. Search/open/link tools
+and internal source IDs (s1, s2) are strictly forbidden by program-level
+enforcement.
 """
 
 from __future__ import annotations
@@ -51,6 +52,12 @@ class EvidenceFollowupResult:
         return self.ok and (self.new_evidence_count > 0 or len(self.written_note_ids) > 0)
 
 
+@dataclass(frozen=True)
+class _FollowupAttempt:
+    result: EvidenceFollowupResult
+    repair_error: str = ""
+
+
 def build_evidence_followup_prompt(
     *,
     question: str,
@@ -62,15 +69,23 @@ def build_evidence_followup_prompt(
     fresh_urls = material.fresh_source_urls
     lines = [
         "You are performing a bounded Evidence-Only follow-up for a research report.",
-        "Your ONLY task is to extract factual evidence excerpts from the freshly retrieved material below using `knowledge_write`.",
+        "Your task has exactly two valid exits:",
+        "1. If the freshly retrieved material contains directly relevant evidence, output one `knowledge_write` call.",
+        "2. If the freshly retrieved material contains no relevant evidence, output one `done` call explaining that no relevant evidence is present.",
         "",
         "STRICT RULES:",
-        "1. ONLY call the tool `knowledge_write` with explicit `args.type='fact'`.",
-        "2. Do NOT attempt to call `done`, `web_search`, `open_url`, or any other tool.",
+        "1. ONLY call `knowledge_write` or `done`. Do NOT call `web_search`, `open_url`, or any other tool.",
+        "2. `knowledge_write` MUST use explicit `args.type='fact'` and a non-empty `evidence` list.",
         "3. Every source in `sources` or `evidence[].source_url` MUST EXACTLY match one of the Allowed Fresh URLs below.",
         "4. NEVER use internal labels like 's1', 's2', or placeholders. Always use the full URL.",
-        "5. You MUST provide explicit evidence items: `evidence: [{'source_url': '...', 'excerpt': '...', 'claim': '...', 'stance': 'supports|contradicts|context'}]`.",
-        "6. Allowed `args` keys are ONLY: type, title, body, sources, evidence.",
+        "5. Each evidence item MUST include `source_url`, `excerpt`, `claim`, and `stance` (`supports`, `contradicts`, or `context`).",
+        "6. Allowed `knowledge_write.args` keys are ONLY: type, title, body, sources, evidence.",
+        "7. Do NOT include `tags`, `relations`, `metadata`, empty `evidence`, or ordinary note-only writes.",
+        "",
+        "INVALID OUTPUT EXAMPLES:",
+        '- {"tool":"knowledge_write","args":{"type":"fact","title":"...","sources":["..."],"tags":[],"relations":[]}}',
+        '- {"tool":"knowledge_write","args":{"type":"fact","title":"...","sources":["..."],"evidence":[]}}',
+        '- {"tool":"web_search","args":{"query":"..."}}',
         "",
         f"Target Research Question: {clip(question, 300)}",
         f"Initial Report Summary: {clip(initial_summary, 1200)}",
@@ -82,7 +97,49 @@ def build_evidence_followup_prompt(
         "Retrieved Material:",
         *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
         "",
-        'Output your single tool call JSON now: {"tool": "knowledge_write", "args": {"type": "fact", "title": "...", "body": "...", "sources": ["..."], "evidence": [{"source_url": "...", "excerpt": "...", "claim": "...", "stance": "supports"}]}}',
+        'If relevant evidence exists, output exactly: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
+        'If no relevant evidence exists, output exactly: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
+    ]
+    return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
+
+
+def build_evidence_followup_repair_prompt(
+    *,
+    question: str,
+    plan: ResearchPlan,
+    material: PlanExecutionResult,
+    validation_error: str,
+    max_context_chars: int = 8000,
+) -> str:
+    fresh_urls = material.fresh_source_urls
+    lines = [
+        "Your previous Evidence-Only follow-up tool call was rejected by the program-level validator.",
+        f"Validation error: {clip(validation_error, 600)}",
+        "",
+        "Repair exactly once using one valid JSON object.",
+        "",
+        "VALID EXITS:",
+        '1. If relevant evidence exists, output exactly one `knowledge_write` call with non-empty `evidence`.',
+        '2. If no relevant evidence exists, output exactly one `done` call with a short no-relevant-evidence answer.',
+        "",
+        "REPAIR RULES:",
+        "1. `knowledge_write.args` keys are ONLY: type, title, body, sources, evidence.",
+        "2. Do NOT include tags, relations, metadata, source_id, result_id, hit_id, s1, or s2.",
+        "3. Do NOT output empty evidence.",
+        "4. Every `sources[]` and `evidence[].source_url` value MUST EXACTLY match one Allowed Fresh URL below.",
+        "5. Each evidence item MUST include source_url, excerpt, claim, and stance.",
+        "",
+        f"Target Research Question: {clip(question, 300)}",
+        f"Plan Reference: {plan.plan_ref}",
+        "",
+        "Allowed Fresh URLs:",
+        *[f"- {url}" for url in fresh_urls],
+        "",
+        "Retrieved Material:",
+        *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
+        "",
+        'Valid `knowledge_write` shape: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
+        'Valid no-evidence shape: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
     ]
     return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
 
@@ -175,8 +232,6 @@ def run_evidence_followup(
     )
     controller = EvidenceFollowupController(tools, fresh_urls)
     initial_evidence_count = len(getattr(tools.ledger, "evidence_items", ()))
-    written_note_ids: list[str] = []
-    errors: list[str] = []
     try:
         reply = provider.send(prompt)
     except cancellation.TaskCancelled:
@@ -190,32 +245,93 @@ def run_evidence_followup(
     if should_stop and should_stop():
         return EvidenceFollowupResult(stop_reason="stopped")
     cancellation.check()
+    attempt = _evaluate_followup_reply(
+        reply,
+        controller=controller,
+        tools=tools,
+        initial_evidence_count=initial_evidence_count,
+        fresh_urls=fresh_urls,
+    )
+    if not attempt.repair_error:
+        return attempt.result
+    if should_stop and should_stop():
+        return EvidenceFollowupResult(stop_reason="stopped")
+    cancellation.check()
+    repair_prompt = build_evidence_followup_repair_prompt(
+        question=question,
+        plan=plan,
+        material=material,
+        validation_error=attempt.repair_error,
+        max_context_chars=max_context_chars,
+    )
+    try:
+        repair_reply = provider.send(repair_prompt)
+    except cancellation.TaskCancelled:
+        raise
+    except Exception as exc:
+        result = EvidenceFollowupResult(
+            ok=False,
+            stop_reason="provider_error",
+            errors=(clip(f"provider send error: {exc}", 200),),
+        )
+        return _prepend_errors(result, attempt.repair_error)
+    if should_stop and should_stop():
+        return EvidenceFollowupResult(stop_reason="stopped")
+    cancellation.check()
+    repaired = _evaluate_followup_reply(
+        repair_reply,
+        controller=controller,
+        tools=tools,
+        initial_evidence_count=initial_evidence_count,
+        fresh_urls=fresh_urls,
+    )
+    if repaired.result.ok:
+        return repaired.result
+    return _prepend_errors(repaired.result, attempt.repair_error)
+
+
+def _evaluate_followup_reply(
+    reply: object,
+    *,
+    controller: EvidenceFollowupController,
+    tools: ResearchTools,
+    initial_evidence_count: int,
+    fresh_urls: tuple[str, ...],
+) -> _FollowupAttempt:
     tool_calls = extract_json_objects(reply)
     if not tool_calls:
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="no_tool_calls",
-            errors=("Model reply contained no structured tool call JSON",),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="no_tool_calls",
+                errors=("Model reply contained no structured tool call JSON",),
+            )
         )
     if len(tool_calls) != 1:
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="invalid_tool_calls_count",
-            errors=(f"Evidence-only follow-up strictly requires exactly 1 tool call, got {len(tool_calls)}.",),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="invalid_tool_calls_count",
+                errors=(f"Evidence-only follow-up strictly requires exactly 1 tool call, got {len(tool_calls)}.",),
+            )
         )
     first_call = tool_calls[0]
     if not isinstance(first_call, dict):
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="invalid_tool_call_shape",
-            errors=("Tool call must be a JSON object",),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="invalid_tool_call_shape",
+                errors=("Tool call must be a JSON object",),
+            )
         )
     tool_name = str(first_call.get("tool") or "").strip().lower()
     if not tool_name:
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="missing_tool_name",
-            errors=("Evidence-only follow-up requires explicit 'tool': 'knowledge_write'",),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="missing_tool_name",
+                errors=("Evidence-only follow-up requires explicit 'tool': 'knowledge_write'",),
+            )
         )
     if tool_name == "done":
         no_relevant = _done_reports_no_relevant_material(first_call.get("args"))
@@ -224,29 +340,47 @@ def run_evidence_followup(
             if no_relevant
             else "Model exited evidence-only follow-up without writing evidence"
         )
-        return EvidenceFollowupResult(
-            ok=False,
-            new_source_urls=fresh_urls,
-            stop_reason="no_relevant_material" if no_relevant else "no_evidence_extracted",
-            errors=(error,),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                new_source_urls=fresh_urls,
+                stop_reason="no_relevant_material" if no_relevant else "no_evidence_extracted",
+                errors=(error,),
+            )
         )
     if tool_name != "knowledge_write":
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="invalid_tool_called",
-            errors=(f"Forbidden tool '{tool_name}' was called in evidence-only follow-up",),
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="invalid_tool_called",
+                errors=(f"Forbidden tool '{tool_name}' was called in evidence-only follow-up",),
+            )
         )
     if "args" not in first_call or not isinstance(first_call.get("args"), dict):
-        return EvidenceFollowupResult(
-            ok=False,
-            stop_reason="missing_tool_args",
-            errors=("Tool call requires explicit 'args': {...} dictionary",),
+        error = "Tool call requires explicit 'args': {...} dictionary"
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                stop_reason="missing_tool_args",
+                errors=(error,),
+            ),
+            repair_error=error,
         )
     args = first_call["args"]
     res = controller.execute_tool_call(tool_name, args)
-
+    written_note_ids: list[str] = []
+    errors: list[str] = []
     if str(res).startswith("ERROR:"):
-        errors.append(clip(res, 200))
+        error = clip(res, 200)
+        return _FollowupAttempt(
+            EvidenceFollowupResult(
+                ok=False,
+                new_source_urls=fresh_urls,
+                stop_reason="invalid_knowledge_write_args",
+                errors=(error,),
+            ),
+            repair_error=error,
+        )
     elif "saved" in str(res) and "note id=" in str(res):
         parts = str(res).split("note id=")
         if len(parts) > 1:
@@ -255,13 +389,15 @@ def run_evidence_followup(
                 written_note_ids.append(nid)
     final_evidence_count = len(getattr(tools.ledger, "evidence_items", ()))
     new_ev_count = max(0, final_evidence_count - initial_evidence_count)
-    return EvidenceFollowupResult(
-        ok=new_ev_count > 0 or len(written_note_ids) > 0,
-        written_note_ids=tuple(written_note_ids),
-        new_evidence_count=new_ev_count,
-        new_source_urls=fresh_urls,
-        stop_reason="written" if (new_ev_count > 0 or written_note_ids) else "no_evidence_extracted",
-        errors=tuple(errors[:10]),
+    return _FollowupAttempt(
+        EvidenceFollowupResult(
+            ok=new_ev_count > 0 or len(written_note_ids) > 0,
+            written_note_ids=tuple(written_note_ids),
+            new_evidence_count=new_ev_count,
+            new_source_urls=fresh_urls,
+            stop_reason="written" if (new_ev_count > 0 or written_note_ids) else "no_evidence_extracted",
+            errors=tuple(errors[:10]),
+        )
     )
 
 
@@ -276,9 +412,26 @@ def _done_reports_no_relevant_material(args: object) -> bool:
     return bool(text and _DONE_NO_RELEVANT_MATERIAL_RE.search(text))
 
 
+def _prepend_errors(result: EvidenceFollowupResult, *errors: str) -> EvidenceFollowupResult:
+    merged_errors = tuple(
+        clip(item, 200)
+        for item in [*errors, *result.errors]
+        if str(item or "").strip()
+    )[:10]
+    return EvidenceFollowupResult(
+        ok=result.ok,
+        written_note_ids=result.written_note_ids,
+        new_evidence_count=result.new_evidence_count,
+        new_source_urls=result.new_source_urls,
+        stop_reason=result.stop_reason,
+        errors=merged_errors,
+    )
+
+
 __all__ = [
     "EvidenceFollowupController",
     "EvidenceFollowupResult",
     "build_evidence_followup_prompt",
+    "build_evidence_followup_repair_prompt",
     "run_evidence_followup",
 ]

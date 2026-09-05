@@ -312,6 +312,13 @@ is a diagnostic/planner stability fix, not a claim-support fix. The proof gate
 still fails until final-report claims carry structured `evidence_refs` and
 support relations.
 
+The follow-up schema repair patch then tightened the prompt around two valid
+exits (`knowledge_write` with non-empty `evidence[]`, or `done` for no relevant
+fresh evidence), introduced `invalid_knowledge_write_args` for rejected
+evidence-only writes, and added one bounded repair turn that reuses the same
+validator and URL whitelist. This specifically targets MiMo replies that fall
+back to ordinary note writes with `tags`, `relations`, or empty `evidence[]`.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

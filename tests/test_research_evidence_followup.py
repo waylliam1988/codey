@@ -25,6 +25,17 @@ class _MockProvider:
         return self.reply
 
 
+class _SequenceProvider:
+    def __init__(self, *replies: str) -> None:
+        self.replies = list(replies)
+        self.sent_prompts: list[str] = []
+
+    def send(self, prompt: str) -> str:
+        self.sent_prompts.append(prompt)
+        index = min(len(self.sent_prompts) - 1, len(self.replies) - 1)
+        return self.replies[index]
+
+
 class _DummySearch:
     def close(self) -> None:
         pass
@@ -476,6 +487,9 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
             assert "Target Research Question: What is the fresh fact?" in prompt
             assert "Allowed Fresh URLs:" in prompt
             assert "- https://example.com/fresh" in prompt
+            assert "If no relevant evidence exists" in prompt
+            assert "Do NOT include `tags`, `relations`" in prompt
+            assert '"evidence":[]' in prompt
 
             result = run_evidence_followup(
                 provider=provider,
@@ -490,5 +504,98 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
             assert result.new_evidence_count == 1
             assert len(result.written_note_ids) == 1
             assert result.stop_reason == "written"
+        finally:
+            store.index.close()
+
+
+def test_run_evidence_followup_repairs_invalid_knowledge_write_schema_once() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            from codey.research.source_document import SourceDocument
+            tools.sources_read.add("https://example.com/fresh")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/fresh",
+                final_url="https://example.com/fresh",
+                title="Fresh Source",
+                text="Fresh source body text excerpt",
+            ))
+
+            first_reply = """```json
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Ordinary Note", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": [], "tags": ["research"], "relations": []}}
+```"""
+            repaired_reply = """```json
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact", "stance": "supports"}]}}
+```"""
+            provider = _SequenceProvider(first_reply, repaired_reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source body text excerpt",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="What is the fresh fact?",
+            )
+
+            assert result.ok is True
+            assert result.has_new_evidence is True
+            assert result.new_evidence_count == 1
+            assert result.stop_reason == "written"
+            assert len(provider.sent_prompts) == 2
+            assert "Validation error:" in provider.sent_prompts[1]
+            assert "forbidden key(s): relations, tags" in provider.sent_prompts[1]
+            assert "Do NOT include tags, relations" in provider.sent_prompts[1]
+        finally:
+            store.index.close()
+
+
+def test_run_evidence_followup_reports_invalid_knowledge_write_args_after_failed_repair() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            reply = """```json
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Empty Evidence", "body": "Body", "sources": ["https://example.com/fresh"], "evidence": []}}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+
+            assert result.ok is False
+            assert result.has_new_evidence is False
+            assert result.stop_reason == "invalid_knowledge_write_args"
+            assert len(provider.sent_prompts) == 2
+            assert "evidence to be a non-empty list" in result.errors[0]
         finally:
             store.index.close()
