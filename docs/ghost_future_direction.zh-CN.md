@@ -1212,33 +1212,46 @@ Ghost Explain 后台调用 provider / search / tool_runtime
 
 ## 版本建议
 
-### 0.4.13
+### 0.4 / 0.5.0-0.5.7 已完成
 
-主线仍是：
+这些阶段已经把 Ghost 必须遵守的边界打好：
 
 ```text
-Verified Completion Enforcement
-Repair Context Admission v1
+Ghost memory 不是 Evidence
+Ghost affinity 不是 Permission
+Ghost continuity 只能进入 ContextEpoch
+CompletionProof / Evidence / Verification 才能决定 done
+Research source/search/memory/Ghost continuity 的边界不能放松
+prompt surface / tool contract / Research proof gate 已经进入生产回归
 ```
 
-Ghost 相关只适合做：
+后续不能为了 Ghost 继续放松这些边界。
+
+### 0.5.8
+
+0.5.8 不继续做 Ghost / World Model 功能。它只做 Pi-style durable operation core：
+详案见 `docs/codey_pi_v2_refactor_direction.zh-CN.md`。
 
 ```text
-记录 completion / protocol telemetry
-确保 CompletionProof / Evidence 不变成 Ghost memory
-确保 Repair Context 不消费 unbounded Ghost state
-明确 Ghost / World Model / Evidence 的文档边界
-文档和架构测试
+total OperationState
+pure runtime reducer
+single mutation boundary
+manual drive / crash injection tests
+task_run.py 瘦身
+effect intent / settlement 与 operation state 的职责分离
 ```
 
-### 0.5.x
+原因是 Ghost / World Model 都应该是 runtime core 的用户，而不是 runtime core 的一部分。
+如果 state machine 还不够明确，提前做 Ghost/World 只会把状态解释权继续分散。
 
-可以开始把 Ghost 变成更强的本地自适应层：
+### 0.6+
+
+0.6+ 才开始把 Ghost 变成更强的本地自适应层：
 
 ```text
+project verification habit projection
 provider/protocol affinity
 repair context outcome learning
-project verification habit projection
 tool args repair telemetry
 shadow-mode adapter dataset export
 Ghost Explain v0
@@ -1247,7 +1260,7 @@ directive selected_nodes / affinity hint provenance explanation
 local context drawer “why this hint”
 ```
 
-World Model 只做最小闭环：
+World Model 也从 0.6+ 开始做最小闭环：
 
 ```text
 World Model Minimal Contract v0
@@ -1260,7 +1273,7 @@ Context Epoch admission tests
 World Model architecture tests
 ```
 
-0.5.x 不做：
+0.6+ 不做：
 
 ```text
 WorldModelManager
@@ -1273,21 +1286,14 @@ Ghost Explain provider verbalizer
 基于 World Model 的 completion gate
 ```
 
-### 0.6+
-
-0.6+ 不再承接旧计划里的新能力清单。小型 Tool Protocol Adapter、local classifier、
-optional training export、multi-provider dialect A/B、bounded Ghost Explain、World Model
-shadow strategy ranker、claim-gap / verification strategy evaluation 已经并入 0.5.xx。
-
-0.6+ 的重点是收敛、默认化和删除：
+0.6+ 的实现原则：
 
 ```text
-TaskRunner 瘦身
-operation / effect / proof / ledger source-of-truth cleanup
-删除重复 projection 和过时 fallback
-默认化 A/B 已证明有净收益的 prompt / protocol 策略
-产品化 Ghost Explain / World Model Inspector 的只读解释面
-把无收益的 adapter / classifier / strategy 保持 shadow 或删除
+先观察 durable facts，再生成 bounded hint
+先 shadow / manual A/B，再决定是否进入默认 prompt
+只存 refs / digest / counts，不存 raw prompt / reply / source body
+Ghost / World Model 不写 EvidenceLedger / CompletionProof
+无收益的 adapter / classifier / strategy 保持 shadow 或删除
 ```
 
 0.6+ 仍不做 Ghost persona、World Model 自动决策、跨 provider 自动仲裁、插件市场或大 UI。
