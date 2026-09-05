@@ -36,6 +36,9 @@ _DONE_NO_RELEVANT_MATERIAL_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_MIN_CONTEXT_CHARS = 2000
+_DEFAULT_CONTEXT_CHARS = 8000
+_MAX_CONTEXT_CHARS = 20000
 
 
 @dataclass(frozen=True)
@@ -100,7 +103,7 @@ def build_evidence_followup_prompt(
         'If relevant evidence exists, output exactly: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
         'If no relevant evidence exists, output exactly: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
     ]
-    return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
+    return clip("\n".join(lines), _context_char_limit(max_context_chars))
 
 
 def build_evidence_followup_repair_prompt(
@@ -141,7 +144,7 @@ def build_evidence_followup_repair_prompt(
         'Valid `knowledge_write` shape: {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["..."],"evidence":[{"source_url":"...","excerpt":"...","claim":"...","stance":"supports"}]}}',
         'Valid no-evidence shape: {"tool":"done","args":{"answer":"No relevant evidence is present in the fresh material."}}',
     ]
-    return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
+    return clip("\n".join(lines), _context_char_limit(max_context_chars))
 
 
 class EvidenceFollowupController:
@@ -410,6 +413,14 @@ def _done_reports_no_relevant_material(args: object) -> bool:
         if args.get(key) is not None
     )
     return bool(text and _DONE_NO_RELEVANT_MATERIAL_RE.search(text))
+
+
+def _context_char_limit(value: object) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        parsed = _DEFAULT_CONTEXT_CHARS
+    return max(_MIN_CONTEXT_CHARS, min(_MAX_CONTEXT_CHARS, parsed))
 
 
 def _prepend_errors(result: EvidenceFollowupResult, *errors: str) -> EvidenceFollowupResult:

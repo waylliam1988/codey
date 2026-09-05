@@ -2,7 +2,7 @@
 
 [English version](CHANGELOG.md)
 
-## 未发布 - Research Connector 恢复与实验 Gate
+## 0.5.7 - Research Follow-up Quality Closure
 
 - 恢复 TUN 代理场景下的浏览器 Research 搜索：`NetworkPolicy` 默认允许 DNS
   解析得到的 `198.18.0.0/15` fake-IP 地址，但仍然阻止用户直接打开 literal
@@ -94,6 +94,34 @@
   和行首 `s2:`，并在把 source-id 改写成 `[2]` 时补 ASCII 边界空格，避免
   `word[2]` 继续被数字引用扫描漏掉。这是格式修复，用来减少无意义 done retry；
   未映射 source id 仍然 fail closed，且不会自动补 evidence 或伪造 citation。
+- 浏览器读取来源现在会等短暂的 challenge/cookie 中间页过去再放弃；如果一篇长正文里只是
+  提到了 cookie 或 captcha 字样，不会再被误判成反爬页。浏览器正文不可用时，会尝试普通
+  HTTP 文本 fallback。宽泛 root landing page 会在搜索结果选择和直接/重定向 `open_url`
+  两条路径里跳过；PubMed/PMC 文章页仍然可打开，ScienceDirect 这类站如果仍被反爬挡住，
+  会在有界时间内返回 no-content 错误，不再拖死 planner。
+- evidence-only follow-up 只作为很窄的一轮生产修复路径保留。prompt 明确只有两个合法出口：
+  带非空显式 evidence 的 `knowledge_write`，或说明 fresh material 没有相关证据的 `done`；
+  controller 会把 no-evidence `done` 归类为 no-op stop reason，而不是非法工具；只有
+  畸形 `knowledge_write` schema 才允许一次 repair。
+- 最终报告 claim filter 已接入生产 finalizer。它不会发明 citation，不会给 unsupported
+  claim 硬贴 evidence，也不会让模型重写整篇报告。结论/关键证据区的 claim 必须保留 citation，
+  并绑定到已打开来源里的 saved evidence；重要但没证据的 claim 会降级到限制/待验证问题，
+  重复或泛泛而谈的 unsupported 句子会删除。
+- 2026-09-05 干净 MiMo PubMed A/B 在 finalizer claim filter 后显示：planner arm 为
+  `score=13`、`proof_ok=true`、`answer_status=answered`、`unsupported_claim_rate=0.000`；
+  baseline 为 `score=7`、`proof_ok=false`、`partial`、`unsupported_claim_rate=0.095`。
+  这条样本的 `planner_stop_reason=no_actionable_gap`，所以它证明的是 finalizer cleanup，
+  不是 evidence-only follow-up 的收益。
+- 2026-09-05 干净 forced actionable-gap MiMo A/B 随后验证了真实 planner 路径：
+  baseline 停在 `score=5`、`proof_ok=false`、`answer_coverage_gap`；planner 跑了一轮
+  evidence-only follow-up，保存 1 条新 evidence，达到 `score=12`、`proof_ok=true`。
+  发布结论是：bounded evidence-only planner 保留在生产；query planner/executor 作为
+  可审计叶子模块保留；更重的 batch/checklist 实验继续留在 manual-only。
+- 从 0.5.6 之后全量审查代码时做了三处发布卫生修复：畸形 planner query/source limit 会在
+  执行前先被有界化；planner payload score 会拒绝 NaN/Inf；evidence-followup prompt 的
+  context limit 即使收到脏值也会回到有界默认。三处都补了 focused regression test。
+- 测试与验证：0.5.7 发布审查、focused Research 回归、文档更新和版本号 bump 后，全量
+  pytest 通过：`3549 passed, 16 skipped, 1259 subtests passed in 299.63s (0:04:59)`。
 
 ## 0.5.6 - Tool Prompt 收敛与 Prompt 面薄追踪 v1
 

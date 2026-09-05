@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.5.6-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.7-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.5.6`
+Version: `0.5.7`
 
 [Version history](CHANGELOG.md)
 
@@ -84,14 +84,14 @@ Version: `0.5.6`
   builds a deterministic Research object record from opened sources, evidence
   snippets, claims, assumptions, and claim/evidence relations. Search results
   and local memory are not treated as evidence.
-- **Know when queued Research is actually done**: queued research follow-ups now
-  complete only after a deterministic proof review verifies answer coverage,
-  citations, opened-source evidence, locators, and support relations. The review
-  also produces quiet planner signals for future follow-up search.
-- **Plan the next reliable source type quietly**: Research proof gaps now feed a
-  deterministic dry-run planner that can prefer PubMed, arXiv, or local
-  project-scoped sources without executing searches or changing model-visible
-  tool results.
+- **Keep Research conclusions evidence-bound**: Research now marks opened web
+  pages as untrusted source data, prioritizes PubMed/arXiv article hits for
+  biomedical and paper questions, skips broad landing pages, and filters final
+  reports so conclusions must bind to saved opened-source evidence.
+- **Fill explicit Research proof gaps once**: when proof review finds a concrete
+  missing-evidence or coverage gap, Codey can run one bounded evidence-only
+  follow-up search, save fresh evidence, and merge it deterministically without
+  asking the model to rewrite the whole report.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -432,6 +432,17 @@ for an interactive, non-generating
 composer before filling it and never repeats a whole send after a slow
 post-click response confirmation; browser PDF requests also use neutral
 transport metadata.
+
+In 0.5.7, the Research follow-up loop is production-wired only for explicit,
+actionable proof gaps. It may run one bounded planner/executor pass and one
+evidence-only `knowledge_write` repair attempt, then merges fresh evidence
+deterministically. Final reports are filtered after citation compilation:
+claims in conclusion/evidence sections must retain citations and bind to saved
+evidence from opened sources; important but unsupported claims are downgraded
+to limitations or open questions, while duplicate or generic unsupported lines
+are removed. Source-wrapper, PubMed/arXiv priority, browser settling, and
+root-landing skip are default production behavior; broader batch/checklist
+experiments remain manual-only.
 
 In 0.2.20, production Research uses a thin controller instead of exposing the
 full tool menu every turn. Codey reads the current Research ledger, shows only
@@ -966,7 +977,7 @@ codey/
       qwen.py               Qwen page driver
       glm.py                GLM page driver
   repairs/                  adapter self-repair sandbox, repair policy/surface, journal, override lifecycle, and worker
-  research/                 Research controller/runner/pipeline, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
+  research/                 Research controller/runner/pipeline, source connectors, bounded planner/executor, evidence-only follow-up, done citation compiler, evidence ledger, object model, report/proof quality gates
     context.py              narrow ResearchPipeline context/config and trace sink
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
     topic_continuity.py     bounded non-evidence continuity and topic-candidate projection

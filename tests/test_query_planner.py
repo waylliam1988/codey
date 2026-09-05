@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from codey.research.query_planner import build_research_plan, research_plan_trace_payload
+from codey.research.query_planner import (
+    QueryCandidate,
+    SourcePreference,
+    build_research_plan,
+    research_plan_trace_payload,
+)
 from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec
 
 
@@ -284,6 +289,18 @@ def test_research_plan_trace_payload_drops_malformed_list_fields() -> None:
     assert trace["reason_codes"] == []
     assert trace["warnings"] == []
     assert "SECRET" not in serialized
+
+
+def test_plan_score_payload_rejects_non_finite_values() -> None:
+    query = QueryCandidate(
+        query_id="research_query:" + "a" * 16,
+        query_preview="clinical hepatotoxicity evidence",
+        score=float("nan"),
+    )
+    preference = SourcePreference("pubmed", score=float("inf"))
+
+    assert query.to_payload()["score"] == 0.0
+    assert preference.to_payload()["score"] == 0.0
 
 
 def test_planner_bounds_query_count_and_does_not_execute_registry_connectors() -> None:

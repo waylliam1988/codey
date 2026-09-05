@@ -705,22 +705,29 @@ _FETCH_PAGE_ERROR_MARKERS = (
     "verify you are human",
     "just a moment",
 )
+_FETCH_CHALLENGE_TEXT_MAX_CHARS = 1500
 
 
 def _usable_fetch_page_text(text: str) -> bool:
     normalized = _clean_space(text).casefold()
     if not normalized:
         return False
-    if any(marker in normalized for marker in _FETCH_PAGE_ERROR_MARKERS):
+    if _looks_like_short_fetch_challenge(normalized):
         return False
     return len(normalized) >= 24
 
 
 def _fetch_page_failure_kind(text: str) -> str:
     normalized = _clean_space(text).casefold()
-    if any(marker in normalized for marker in _FETCH_PAGE_ERROR_MARKERS):
+    if _looks_like_short_fetch_challenge(normalized):
         return "page_unavailable"
     return "page_blank"
+
+
+def _looks_like_short_fetch_challenge(normalized_text: str) -> bool:
+    if len(normalized_text) > _FETCH_CHALLENGE_TEXT_MAX_CHARS:
+        return False
+    return any(marker in normalized_text for marker in _FETCH_PAGE_ERROR_MARKERS)
 
 
 def _set_navigation_timeout(page, timeout_ms: int) -> None:

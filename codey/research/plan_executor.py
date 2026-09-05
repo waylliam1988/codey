@@ -53,17 +53,33 @@ class PlanExecutor:
         baseline_urls = _collect_baseline_urls(tools)
         seen_urls: set[str] = set(baseline_urls)
         stop_reason = "no_queries"
-        query_limit = _bounded_int(
-            min(int(plan.max_queries or 0), self.config.max_queries_per_round),
-            default=self.config.max_queries_per_round,
-            lower=0,
-            upper=8,
+        query_limit = min(
+            _bounded_int(
+                plan.max_queries,
+                default=self.config.max_queries_per_round,
+                lower=0,
+                upper=8,
+            ),
+            _bounded_int(
+                self.config.max_queries_per_round,
+                default=self.config.max_queries_per_round,
+                lower=0,
+                upper=8,
+            ),
         )
-        total_limit = _bounded_int(
-            min(int(plan.max_sources or 0), self.config.max_total_sources),
-            default=self.config.max_total_sources,
-            lower=0,
-            upper=12,
+        total_limit = min(
+            _bounded_int(
+                plan.max_sources,
+                default=self.config.max_total_sources,
+                lower=0,
+                upper=12,
+            ),
+            _bounded_int(
+                self.config.max_total_sources,
+                default=self.config.max_total_sources,
+                lower=0,
+                upper=12,
+            ),
         )
         per_query_limit = _bounded_int(
             self.config.max_sources_per_query,

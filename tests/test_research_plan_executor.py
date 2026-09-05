@@ -197,6 +197,47 @@ def test_plan_executor_stops_before_search_when_total_source_budget_is_full() ->
             store.index.close()
 
 
+def test_plan_executor_bounds_malformed_plan_limits() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        backend = _SearchBackend()
+        try:
+            tools = ResearchTools(
+                search=backend,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-malformed-plan",
+                project="project-malformed-plan",
+            )
+            plan = ResearchPlan(
+                plan_ref="research_plan:" + "9" * 16,
+                query_candidates=(
+                    QueryCandidate("research_query:" + "1" * 16, "alpha evidence"),
+                    QueryCandidate("research_query:" + "2" * 16, "beta evidence"),
+                ),
+                max_queries="not-an-int",
+                max_sources="not-an-int",
+            )
+
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=1,
+                            max_sources_per_query=1,
+                            max_total_sources=1,
+                        )
+                    ).execute(plan, tools)
+
+            assert result.queries_executed == ("alpha evidence",)
+            assert result.fresh_source_urls == ("https://example.com/alpha",)
+            assert result.stop_reason == "max_sources"
+            assert backend.fetch_calls == ["https://example.com/alpha"]
+        finally:
+            store.index.close()
+
+
 def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

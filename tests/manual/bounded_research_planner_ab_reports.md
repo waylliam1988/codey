@@ -14,13 +14,13 @@ are written under `tests/manual/results/`.
 
 ## Decision
 
-Proceed with the default production implementation of evidence-only follow-up
-plus deterministic merge for 0.4.4. The manual harness now calls production
-`run_evidence_followup()` and production deterministic merge; the only remaining
+For 0.5.7, keep the default production implementation of one-round
+evidence-only follow-up plus deterministic merge, but only for explicit
+actionable proof gaps. The manual harness now calls production
+`run_evidence_followup()` and production deterministic merge; the only
 A/B-specific execution patch is the fixture material-phase executor used to make
 hidden source B available in a controlled comparison. Do not ship the older
-full-report follow-up shape. Before release, validate with focused tests and at
-least one real connector-backed A/B case.
+full-report follow-up shape or broader batch/checklist variants.
 
 0.5.7 update: the first connector-backed MiMo PubMed archive attempt did not
 produce a complete baseline/planner pair, so it does not change the quality
@@ -28,13 +28,13 @@ conclusion. It does confirm that archived transcripts are now available for
 diagnosis and that the remaining live problem is claim-to-evidence binding plus
 provider/browser completion stability, not simply source search.
 
-2026-09-05 forced-gap update: keep the evidence-only follow-up production path
-for now, but keep it narrow. The clean forced-gap MiMo run at commit `e9cd261`
+2026-09-05 forced-gap update: keep the evidence-only follow-up production path,
+but keep it narrow. The clean forced-gap MiMo run at commit `e9cd261`
 proved that when the baseline answer is clean but has an explicit actionable
 coverage gap, production follow-up selection, query planning, plan execution,
 evidence-only `knowledge_write`, and deterministic merge can recover the missing
 evidence in one round without a quality regression. This is not a license to
-restore full-report rewrite behavior. If further live gates stop showing this
+restore full-report rewrite behavior. If later live gates stop showing this
 targeted value, remove the production executor/follow-up wiring instead of
 leaving inactive planner code in the default path.
 

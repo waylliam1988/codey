@@ -4436,6 +4436,15 @@ class ResearchBoundaryTests(unittest.TestCase):
             "ERROR: HTTP fallback had no usable visible content: page_unavailable",
         )
 
+    def test_fetch_page_marker_in_long_article_is_still_usable_text(self) -> None:
+        text = (
+            "Readable research article text with methods, results, and discussion. " * 40
+            + "The article discusses why cookies must be enabled for a separate web workflow. "
+            + "It also mentions captcha handling as part of the study context."
+        )
+
+        self.assertTrue(browser_search._usable_fetch_page_text(text))
+
     def test_http_text_fallback_truncates_extracted_text_to_fetch_limit(self) -> None:
         class Headers(dict):
             def get_content_charset(self):

@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.5.6-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.7-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.5.6`
+版本：`0.5.7`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -70,12 +70,12 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **Research 结论更可追踪**：Research 跑完后，Codey 会在后台从已打开来源、
   evidence snippet、claim、assumption 和 claim/evidence 关系生成确定性的研究对象记录。
   搜索结果和本地记忆不会被当成证据。
-- **知道排队 Research 什么时候真的做完**：queued research follow-up 现在只有通过
-  deterministic proof review，确认 answer coverage、citation、opened-source evidence、
-  locator 和 supports relation 后才会完成；同时会生成安静的 planner signals，供后续补搜使用。
-- **安静规划下一步该查哪类可靠来源**：Research proof gap 现在会进入 deterministic
-  dry-run planner，能偏向 PubMed、arXiv 或本地项目范围内来源，但不会执行搜索，也不改变
-  模型可见工具结果。
+- **Research 结论更贴证据**：Research 现在会把打开的网页正文标成“不可信来源数据”，
+  医学/论文问题优先打开 PubMed/arXiv 文章结果，跳过宽泛首页，并在最终报告里只保留
+  能绑定到已打开来源证据的核心结论。
+- **只在明确缺证据时补搜一次**：proof review 发现具体 evidence/coverage gap 时，
+  Codey 可以跑一轮有界 planner/executor，再让模型只写新 evidence，不让它重写整篇报告；
+  新证据由本地确定性合并。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -346,6 +346,15 @@ benchmark 等论文检索词；registry 的可用状态和能力标记会真正�
 slash token 会被丢弃，`secreted`、`secretion` 也不会被当成 secret marker；connector
 遵守严格的总 deadline。Qwen 只等待 composer 可交互且页面不在生成中，再填入消息；点击后即使响应
 确认较慢，也不会重复整轮发送。浏览器 PDF 请求同样使用中性 transport metadata。
+
+0.5.7 把 Research follow-up 收口成很窄的生产路径：只有 proof review 发现明确可补的
+evidence/coverage gap 时，才会跑一轮有界 planner/executor 和一次 schema repair；
+follow-up 只能 `knowledge_write` 新证据，不能搜索、打开网页或重写整篇报告。新证据由本地
+确定性 merge 合入。最终报告会先做 citation compiler，再过滤 claim：结论/关键证据区的
+句子必须有 citation，并且能绑定到已打开来源里的 saved evidence；重要但暂时没绑定证据的
+claim 会降级到限制或待验证问题，重复或泛泛而谈的 unsupported 句子会删除。source wrapper、
+PubMed/arXiv 优先打开、浏览器等待正文稳定、宽泛首页跳过已经是默认生产行为；更重的
+batch/checklist 实验仍留在 manual harness。
 
 从 0.2.20 开始，生产 Research 使用一个很薄的 controller，而不是每轮都把完整工具菜单
 交给模型。Codey 会读取当前 Research ledger，只展示这一轮合理的 allowed tools，并给
@@ -816,7 +825,7 @@ codey/
       qwen.py               Qwen 页面驱动
       glm.py                GLM 页面驱动
   repairs/                  adapter 自修复 sandbox、repair policy/surface、journal、override 生命周期和 worker
-  research/                 Research controller/runner/pipeline、共享 citation scanner、source connector、planner dry-run/executor、done citation compiler、evidence ledger、object model、report/proof quality gate
+  research/                 Research controller/runner/pipeline、共享 citation scanner、source connector、有界 planner/executor、evidence-only follow-up、done citation compiler、evidence ledger、object model、report/proof quality gate
     context.py              狭窄的 ResearchPipeline context/config 和 trace sink
     pipeline.py             Research 生命周期 owner 和 bounded follow-up 编排
     topic_continuity.py     有界、非证据的 continuity 和 topic candidate 投影

@@ -8,6 +8,65 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## 0.5.7 Research Follow-up Quality Closure release audit (2026-09-05)
+
+Scope:
+
+```text
+release_boundary: audited production and manual changes after
+                  768cd28 release 0.5.6 prompt surface hardening.
+production_keep:  PubMed/arXiv connector priority, untrusted source wrapper,
+                  browser source settling, root landing skip, final-report
+                  citation/claim filtering, and one bounded evidence-only
+                  follow-up path for explicit actionable proof gaps.
+manual_only:      source_connector_done batch/checklist experiments and broader
+                  source-wrapper/follow-up variants remain in tests/manual.
+cleanup:          no new Research manager was added; production imports do not
+                  reach tests.manual; query planner/executor/evidence follow-up
+                  remain leaf modules with bounded inputs and trace output.
+```
+
+Code-audit fixes from the release review:
+
+- `PlanExecutor` now bounds malformed `plan.max_queries` / `plan.max_sources`
+  through the shared integer clamp before execution, so a bad model- or
+  fixture-origin plan cannot throw before the bounded loop starts.
+- Browser fetch challenge detection now applies only to short challenge-like
+  pages. Long usable article text remains usable even when it mentions cookie,
+  captcha, or JavaScript terms.
+- Research plan score payloads reject non-finite floats (`NaN`/`Inf`) and fall
+  back to `0.0`.
+- Evidence-only follow-up prompt clipping tolerates malformed context limits and
+  stays within bounded defaults.
+
+Release evidence:
+
+- Clean MiMo PubMed A/B after finalizer claim filtering:
+  `tests/manual/results/research_followup_quality_ab-mimo-pubmed-clean-20260905-after-finalizer-claim-filter.json`.
+  Baseline: `score=7`, `proof_ok=false`, `answer_status=partial`,
+  `unsupported_claim_rate=0.095`. Planner arm: `score=13`, `proof_ok=true`,
+  `answer_status=answered`, `unsupported_claim_rate=0.000`. This row had
+  `planner_stop_reason=no_actionable_gap`, so it proves final-report claim
+  filtering rather than evidence-only follow-up benefit.
+- Clean forced actionable-gap MiMo A/B:
+  `tests/manual/results/research_forced_followup_gap_ab-mimo-warehouse-quoted-gap-clean2-20260905.json`.
+  Baseline stayed at `score=5`, `proof_ok=false`, and
+  `answer_coverage_gap`. Planner ran one evidence-only follow-up, saved one new
+  evidence item, and reached `score=12`, `proof_ok=true`. This is the release
+  sample that justifies keeping the narrow production planner path.
+- Full history experiment-gate recompute:
+  `source_file_count=93`, `skipped_incomplete_files=18`, `bounded_pairs=47`,
+  `useful_pairs=17`, `safe_evidence_only_pairs=16`,
+  `safe_evidence_only_useful_pairs=12`; decision remains
+  `keep_default_with_more_live_gate`.
+
+Verification:
+
+- `python -B -m ruff check codey\research\plan_executor.py codey\research\browser_search.py codey\research\query_planner.py codey\research\evidence_followup.py tests\test_research_plan_executor.py tests\test_research.py tests\test_query_planner.py tests\test_research_evidence_followup.py` (passed)
+- `python -B -m pytest tests\test_research_plan_executor.py tests\test_query_planner.py tests\test_research_evidence_followup.py tests\test_research.py -q` (`197 passed, 7 subtests passed in 21.50s`)
+- Full pytest suite: `python -B -m pytest -q`
+  (`3549 passed, 16 skipped, 1259 subtests passed in 299.63s (0:04:59)`)
+
 ## Post-0.5.6 Research Connector Recovery + Experiment Gate (2026-09-04)
 
 Scope:

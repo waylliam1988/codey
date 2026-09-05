@@ -2,7 +2,7 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Research Connector Recovery + Experiment Gate
+## 0.5.7 - Research Follow-up Quality Closure
 
 - Restored browser-backed Research search under TUN proxy setups by allowing
   DNS-resolved `198.18.0.0/15` fake-IP answers in `NetworkPolicy` by default
@@ -115,6 +115,47 @@
   numeric citation scanner. This is a format repair that reduces wasteful done
   retries; unmapped source ids still fail closed, and the compiler never adds
   evidence or fabricates citations.
+- Browser-backed source reading now waits through short challenge/cookie
+  interstitials before giving up, accepts long readable pages even when their
+  body mentions cookie or captcha terms, and falls back to ordinary HTTP text
+  when browser-visible content is still unusable. Broad root landing pages are
+  filtered in both search-result selection and direct/redirected `open_url`
+  handling; article pages such as PubMed/PMC records remain eligible, while
+  sites such as ScienceDirect can still fail fast with bounded no-content
+  errors instead of tying up the planner.
+- Evidence-only follow-up is kept in production only as a narrow, one-round
+  repair path. The prompt now names exactly two valid exits (`knowledge_write`
+  with non-empty explicit evidence, or `done` for no relevant fresh material),
+  the controller classifies no-evidence `done` replies as no-op stop reasons
+  instead of terminal tool violations, and one schema-repair turn is allowed
+  only for malformed `knowledge_write` shapes.
+- Final-report claim filtering is now part of the production finalizer. It does
+  not invent citations, attach evidence, or ask the model for another full
+  report rewrite. Conclusion/evidence-section claims must keep citations and
+  bind to saved evidence from opened sources; unsupported but important claims
+  are downgraded into limitations/open questions, and generic or duplicate
+  unsupported lines are removed.
+- Clean 2026-09-05 MiMo PubMed A/B after finalizer claim filtering showed the
+  planner arm at `score=13`, `proof_ok=true`, `answer_status=answered`, and
+  `unsupported_claim_rate=0.000` versus baseline `score=7`, `proof_ok=false`,
+  `partial`, and `unsupported_claim_rate=0.095`. That sample had
+  `planner_stop_reason=no_actionable_gap`, so it proves the finalizer cleanup,
+  not evidence-only follow-up benefit.
+- Clean 2026-09-05 forced actionable-gap MiMo A/B then exercised the real
+  planner path: baseline stayed at `score=5`, `proof_ok=false`, and
+  `answer_coverage_gap`; planner ran one evidence-only follow-up, saved one new
+  evidence item, and reached `score=12`, `proof_ok=true`. The release decision
+  is to keep the bounded evidence-only planner in production, keep query
+  planning/execution as audited leaf modules, and leave broader batch/checklist
+  experiments manual-only.
+- Release hygiene fixes after reviewing all commits since 0.5.6: malformed
+  planner source/query limits are bounded before execution, planner scores now
+  reject non-finite values in payloads, and evidence-follow-up prompt clipping
+  tolerates malformed context limits. Added focused regression tests for each
+  boundary.
+- Testing & verification: full pytest passed with `3549 passed, 16 skipped,
+  1259 subtests passed in 299.63s (0:04:59)` after the 0.5.7 release audit,
+  focused Research regression tests, documentation updates, and version bump.
 
 ## 0.5.6 - Tool Prompt Consolidation + Prompt Surface Thin Trace v1
 

@@ -8,6 +8,7 @@ from codey.knowledge.store import KnowledgeStore
 from codey.research.evidence_followup import (
     EvidenceFollowupController,
     build_evidence_followup_prompt,
+    build_evidence_followup_repair_prompt,
     run_evidence_followup,
 )
 from codey.research.plan_executor import PlanExecutionResult
@@ -506,6 +507,35 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
             assert result.stop_reason == "written"
         finally:
             store.index.close()
+
+
+def test_evidence_followup_prompt_tolerates_malformed_context_limit() -> None:
+    plan = ResearchPlan(
+        plan_ref="plan:123",
+        query_candidates=(QueryCandidate("q:1", "fresh query"),),
+    )
+    material = PlanExecutionResult(
+        fresh_source_urls=("https://example.com/fresh",),
+        previews=("Fresh source body text excerpt",),
+    )
+
+    prompt = build_evidence_followup_prompt(
+        question="What is the fresh fact?",
+        initial_summary="Initial report summary",
+        plan=plan,
+        material=material,
+        max_context_chars="not-an-int",  # type: ignore[arg-type]
+    )
+    repair = build_evidence_followup_repair_prompt(
+        question="What is the fresh fact?",
+        plan=plan,
+        material=material,
+        validation_error="bad schema",
+        max_context_chars=float("inf"),  # type: ignore[arg-type]
+    )
+
+    assert "Allowed Fresh URLs:" in prompt
+    assert "Validation error: bad schema" in repair
 
 
 def test_run_evidence_followup_repairs_invalid_knowledge_write_schema_once() -> None:

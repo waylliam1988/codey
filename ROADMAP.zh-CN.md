@@ -3926,11 +3926,11 @@ research open_url / knowledge_write 不被改名成 read / write
 
 ## 0.5.7 - Research Follow-up Quality Closure + Source Rendering/Finalizer A/B v1
 
-状态：实验验收中，尚未 bump 运行时版本。目标仍然是把 0.4 的 bounded
-Research follow-up 和 `source_connector_done` batch/checklist 实验收成明确结论，
-并正式验证 Research untrusted source wrapper：有可测净收益的部分进入默认
-Research path；没有消费者或收益不稳的 arm 删除，或继续停留在 manual harness，
-不进入 production path。
+状态：发布收口。0.5.7 已把 0.4 遗留的 Research 实验分成明确结论：
+PubMed/arXiv connector、untrusted source wrapper、root landing skip、浏览器正文
+settling、最终报告 citation/claim filter 和一轮 bounded evidence-only follow-up
+进入默认生产路径；`source_connector_done` 的 batch/checklist 形态没有推广，继续只作为
+manual 复盘材料或删除候选，不留无消费者生产接线。
 
 0.5.6 已提前完成的预备清理：`codey.research.followup_selection` 已承接
 ResearchPipeline 的纯 candidate selection / stop decision；
@@ -3940,7 +3940,7 @@ ResearchPipeline 的纯 candidate selection / stop decision；
 `tests/manual/research_followup_quality_ab.py`，用同一套纯 scorer 复算历史结果并
 继续跑 connector-backed follow-up A/B。0.5.7 不需要新建 manager。
 
-2026-09-05 当前验收结论：
+2026-09-05 发布验收结论：
 
 ```text
 PubMed/arXiv source connector:
@@ -3949,19 +3949,28 @@ PubMed/arXiv source connector:
   真实网页搜索和 PubMed 打开路径恢复。
 
 bounded evidence-only follow-up:
-  保留 guarded 默认形态，但不扩大。gate 统计 safe_evidence_only_pairs=11、
-  useful_pairs=8，同时仍有 quality regression 样本；因此只保留
+  保留 guarded 默认形态，但不扩大。最新 gate 统计 source_file_count=93、
+  skipped_incomplete_files=18、bounded_pairs=47、useful_pairs=17、
+  safe_evidence_only_pairs=16、safe_evidence_only_useful_pairs=12，决策仍是
+  keep_default_with_more_live_gate。历史中仍有 quality regression 样本；因此只保留
   evidence-only write + deterministic merge，不恢复让模型重写整篇报告的旧形态。
   2026-09-05 MiMo PubMed archive A/B 是 complete=false：baseline 完成但 proof
   partial，planner transcript 已保存但没有 planner row / case_complete，因此不能
   当作 planner 收益或失败证据。
+  2026-09-05 forced actionable-gap MiMo clean A/B 则验证了真实收益：baseline
+  score=5/proof_ok=false/answer_coverage_gap；planner 跑一轮 evidence-only
+  follow-up，新增 1 条 evidence，达到 score=12/proof_ok=true。
 
 done citation/source finalizer:
-  保留为窄的引用/来源列表整理器。它能减少 done retry / quality retry，但
-  proof_gains=0，不能宣传成研究质量提升器，也不能推广旧 batch/checklist arm。
+  保留为窄的引用/来源列表整理器，并新增 final-report claim filter。它能减少
+  done retry / quality retry，也能删除或降级 unsupported final claims；但不能宣传成
+  新研究引擎，也不能推广旧 batch/checklist arm。
   2026-09-05 新增 common source-id 格式编译：`来源s2`、`来源 s2`、`（s2）`、
   `（来源s2、s3）`、表格 `| s2 (...) |` 和行首 `s2:` 可以归一成 `[2]`。
   这只减少格式 retry；不补 evidence、不伪造 citation。
+  finalizer claim filter 的生产原则是：结论/关键证据区必须 citation + evidence
+  support；重要但未绑定证据的 claim 降级到限制/待验证；重复或泛泛而谈的
+  unsupported 句子删除。
 
 untrusted source wrapper:
   已接入默认 open_url source rendering。MiMo + Qwen evidence-safe clean fixture
@@ -3972,28 +3981,36 @@ untrusted source wrapper:
   或 report rewrite。
 
 当前真正堵点:
-  不再是 MiMo 搜索打不开；是 final report 里的部分结论没有和 EvidenceLedger
-  中保存的证据/引用绑定得足够紧。下一轮质量提升优先做 claim-to-evidence
-  binding 和基于 proof gap 的 targeted follow-up。
+  0.5.7 已闭合“搜得到但报告不贴证据”的主要失败模式。后续质量提升不是继续堆
+  Research 功能，而是扩大真实 provider gate 覆盖，继续确认 planner 在明确
+  actionable gap 上稳定有净收益。
 ```
 
 ### 做什么
 
-已新增或继续扩展：
+0.5.7 最终保留的生产模块：
 
 ```text
-codey/research/followup_quality.py（已有纯 scorer；继续供 release gate / harness 共用）
-codey/research/followup_selection.py（已有纯 selection；只按真实失败样本调整）
-codey/research/source_finalizer_scoring.py（已有纯 scorer；供 source_connector_done gate 共用）
-tests/manual/research_experiment_gate.py（已新增；只输出 metric，不复制 raw prompt/reply/source body）
-tests/manual/research_followup_quality_ab.py（已新增；connector-backed baseline/planner A/B）
-codey/research/source_finalizer.py（只有 A/B 胜出才接入默认 finalizer；当前未新增）
-codey/research/source_rendering.py（已接入默认 open_url/source-content rendering；继续由 wrapper A/B/gate 守护）
-tests/test_research_followup_quality.py
-tests/test_source_connector_done_scorer.py
-tests/test_research_source_rendering.py
-tests/manual/source_connector_done_ab.py
+codey/research/followup_selection.py（纯 selection / stop decision，供生产和 gate 共用）
+codey/research/query_planner.py（有界、确定性计划；只在明确 proof gap 时被生产消费）
+codey/research/plan_executor.py（有界 fresh-material 执行器；不做后台递归）
+codey/research/evidence_followup.py（单轮 knowledge_write-only evidence 提取 + 一次 schema repair）
+codey/research/record_merge.py（确定性合并新 evidence，不合并 unsupported 新 claim）
+codey/research/done_finalizer.py（citation compiler + final-report claim filter）
+codey/research/source_rendering.py（默认 open_url/source-content untrusted-data wrapper）
+codey/research/source_finalizer_scoring.py（纯 scorer，只供 manual/gate；不参与生产报告生成）
+codey/research/followup_quality.py（纯 scorer，只供 manual/gate 与发布决策）
+```
+
+manual-only 仍保留为证据和复盘层，不是生产接线：
+
+```text
+tests/manual/research_experiment_gate.py
+tests/manual/research_followup_quality_ab.py
+tests/manual/research_forced_followup_gap_ab.py
 tests/manual/research_source_rendering_ab.py
+tests/manual/research_claim_support_projection.py
+tests/manual/source_connector_done_ab.py
 ```
 
 闭环对象：
@@ -5076,18 +5093,18 @@ Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性�
 
 ```text
 Research bounded follow-up -> 0.5.7：
-  当前状态：已接入生产 ResearchPipeline，安全闭环成立；2026-09-04 gate 结论为
-    keep_default_with_more_live_gate。
-  未闭环：多 provider proof-quality 净收益还没稳定证明，不能扩大到重写整篇报告。
-  收口方式：0.5.7 用 scorer + journal + live A/B 给出质量结论；保留 evidence-only 边界，
-    只根据真实失败样本改 planner / material selection / merge selection。
+  当前状态：已接入生产 ResearchPipeline，但只在明确 actionable proof gap 时跑一轮；
+    2026-09-05 gate 结论仍为 keep_default_with_more_live_gate。forced actionable-gap
+    MiMo clean A/B 已证明该路径能把 baseline proof failure 修到 proof_ok=true。
+  收口方式：保持 evidence-only / fresh URL / single-round / deterministic merge；
+    不恢复让模型重写整篇报告，不做后台递归 Research。
 
 source_connector_done batch/checklist -> 0.5.7：
   当前状态：窄 done citation/source finalizer 作为整理器保留；旧 batch/checklist arm
-    不推广，不是默认生产 completion 能力。
-  收口方式：0.5.7 先写 deterministic scorer 和 live A/B arm，证明 done quality /
-    citation quality / completion honesty 提升，且不增加 provider stalls，再收成窄 finalizer；
-    否则删除或继续 manual-only。
+    不推广，不是默认生产 completion 能力，也不继续预埋无消费者接线。
+  收口方式：已收成 `done_finalizer.py` 的 citation compiler + claim filter；
+    scorer 和 A/B harness 保持 manual/gate 层，后续没有稳定收益的 treatment 删除或
+    保留 manual-only。
 
 Protocol telemetry / contract hash -> 0.5.3 / 0.5.6 / 0.5.8：
   当前状态：RunTrace 已记录，可用于审计和 A/B。
