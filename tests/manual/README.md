@@ -255,6 +255,18 @@ challenge, but the fetch path now reports bounded `page_unavailable` failure in
 about 5.9s instead of dragging the follow-up planner. This is a browser/source
 stability fix, not planner-quality evidence.
 
+2026-09-05 clean MiMo PubMed retry after the fetch fix:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-fetchfix.json`
+was interrupted with only the baseline row written. The planner trace archived
+prompt/reply material through turn 12, and the final reply parses as `done`;
+there was no `case_complete` event. The browser was visibly on the PMC home
+page, opened by the generic follow-up material query `biomedical PubMed
+evidence`. A direct Codey fetch of `https://pmc.ncbi.nlm.nih.gov/` returned
+usable content in about 3.1s, so this is not a general PMC cookie failure.
+Production follow-up material selection now skips root landing-page URLs before
+opening them, and rejects redirects that land on such home pages. Article URLs
+such as PubMed abstracts and PMC article pages remain valid candidates.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

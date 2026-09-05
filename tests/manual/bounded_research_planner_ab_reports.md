@@ -37,6 +37,19 @@ page, but returns a bounded `page_unavailable` error in about 5.9 seconds rather
 than stalling the planner. This fixes source acquisition behavior for the live
 follow-up harness; it is not evidence that planner improves proof quality.
 
+2026-09-05 clean MiMo PubMed A/B retry:
+`research_followup_quality_ab-mimo-pubmed-clean-20260905-after-fetchfix.json`
+remained `complete=false` after manual interruption. The archived planner
+transcript reached turn 12 and parsed as a valid `done`; the missing row was
+therefore after the initial Research runner reply, during pipeline follow-up
+material selection or case finalization. The visible browser state showed
+`https://pmc.ncbi.nlm.nih.gov/` opened from the generic follow-up search
+`biomedical PubMed evidence`. A direct fetch of that PMC home page returned
+usable text in about 3.1 seconds, so the issue is not an all-PMC cookie failure.
+The production `PlanExecutor` now skips root landing-page URLs before opening
+them as follow-up evidence material, and also rejects redirects that land on a
+root home page. PMC/PubMed article URLs remain eligible.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

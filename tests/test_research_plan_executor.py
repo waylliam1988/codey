@@ -242,6 +242,142 @@ def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None
             store.index.close()
 
 
+def test_plan_executor_skips_root_landing_pages_before_opening() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+
+        class _LandingSearchBackend:
+            def __init__(self) -> None:
+                self.fetch_calls: list[str] = []
+
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                assert query == "biomedical PubMed evidence"
+                return [
+                    {
+                        "title": "PMC Home",
+                        "url": "https://pmc.ncbi.nlm.nih.gov/",
+                        "snippet": "PMC home page",
+                    },
+                    {
+                        "title": "PMC article",
+                        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/",
+                        "snippet": "article snippet",
+                    },
+                ]
+
+            def fetch(self, url: str) -> dict:
+                self.fetch_calls.append(url)
+                return {
+                    "url": url,
+                    "title": "PMC article",
+                    "text": "opened article body for direct evidence",
+                    "truncated": False,
+                }
+
+        backend = _LandingSearchBackend()
+        try:
+            tools = ResearchTools(
+                search=backend,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-landing",
+                project="project-landing",
+            )
+            plan = ResearchPlan(
+                plan_ref="research_plan:" + "e" * 16,
+                query_candidates=(
+                    QueryCandidate("research_query:" + "1" * 16, "biomedical PubMed evidence"),
+                ),
+                max_queries=1,
+                max_sources=2,
+            )
+
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=1,
+                            max_sources_per_query=2,
+                            max_total_sources=2,
+                        )
+                    ).execute(plan, tools)
+
+            assert backend.fetch_calls == ["https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"]
+            assert result.fresh_source_urls == ("https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/",)
+            assert result.fresh_source_count == 1
+            assert result.skipped_count == 1
+            assert "low_value_landing_page_url" in result.errors
+        finally:
+            store.index.close()
+
+
+def test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_material() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+
+        class _RedirectToLandingBackend:
+            def __init__(self) -> None:
+                self.fetch_calls: list[str] = []
+
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                assert query == "target evidence"
+                return [
+                    {
+                        "title": "Article",
+                        "url": "https://example.com/article",
+                        "snippet": "article snippet",
+                    },
+                ]
+
+            def fetch(self, url: str) -> dict:
+                self.fetch_calls.append(url)
+                return {
+                    "url": "https://example.com/",
+                    "title": "Example Home",
+                    "text": "opened home page body",
+                    "truncated": False,
+                }
+
+        backend = _RedirectToLandingBackend()
+        try:
+            tools = ResearchTools(
+                search=backend,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-redirect-landing",
+                project="project-redirect-landing",
+            )
+            plan = ResearchPlan(
+                plan_ref="research_plan:" + "f" * 16,
+                query_candidates=(
+                    QueryCandidate("research_query:" + "1" * 16, "target evidence"),
+                ),
+                max_queries=1,
+                max_sources=1,
+            )
+
+            with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                    result = PlanExecutor(
+                        config=ResearchPipelineConfig(
+                            max_queries_per_round=1,
+                            max_sources_per_query=1,
+                            max_total_sources=1,
+                        )
+                    ).execute(plan, tools)
+
+            assert backend.fetch_calls == ["https://example.com/article"]
+            assert result.fresh_source_urls == ()
+            assert result.fresh_source_count == 0
+            assert result.stop_reason == "no_new_material"
+            assert result.skipped_count == 1
+            assert "low_value_landing_page_url after redirect" in result.errors
+        finally:
+            store.index.close()
+
+
 def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
