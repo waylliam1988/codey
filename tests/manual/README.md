@@ -409,6 +409,24 @@ coverage and support-relation scoring remain lower-bound diagnostics. This is
 enough to justify one small clean live MiMo PubMed A/B after the commit, but it
 is not release-gate evidence.
 
+Clean MiMo PubMed rerun after final-report support filtering:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-finalizer-claim-filter.json`
+completed with a clean manifest at commit `a705a89` and
+`--transcript-mode archive`. Baseline reached `done`, `score=7`,
+`proof_ok=false`, `proof_answer_status=partial`, `proof_coverage=0.417`,
+`sources_read=3`, `evidence_count=4`, `record_claim_count=21`, and
+`unsupported_claim_rate=0.095`. Planner reached `done`, `score=13`,
+`proof_ok=true`, `proof_answer_status=answered`, `proof_coverage=0.667`,
+`sources_read=3`, `evidence_count=3`, `record_claim_count=6`, and
+`unsupported_claim_rate=0.000`. The experiment gate found one valid pair with
+`quality_gain=true`, `quality_regression=false`, `score_delta=6`,
+`coverage_delta=0.25`, `unsupported_claim_rate_delta=-0.095`, and zero target
+claim-support proof gaps across the two rows. It still records
+`useful_pair_count=0` for bounded follow-up because `followup_rounds=0` and
+`planner_stop_reason=no_actionable_gap`; this is a finalizer/initial-answer
+proof recovery sample, not evidence that the evidence-only follow-up round
+improved the answer.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen
