@@ -14,7 +14,7 @@ from codey.utils.citation_scanner import (
 from codey.utils.refs import clip
 from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.research import report_quality
-from codey.research.ledger import ResearchLedger
+from codey.research.ledger import ResearchLedger, normalize_evidence_stance
 from codey.research.object_model import ResearchClaim, build_research_record
 
 _PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
@@ -394,6 +394,18 @@ def _filter_unsupported_required_claims(
         if derived:
             updated["evidence"] = "\n".join(derived)
             changed = True
+    if (
+        not citation_ref_items(updated.get("conclusion", ""))
+        and not citation_ref_items(updated.get("evidence", ""))
+    ):
+        conclusion_lines, evidence_lines = _derive_required_lines_from_saved_evidence(
+            updated.get("sources", ""),
+            ledger,
+        )
+        if conclusion_lines and evidence_lines:
+            updated["conclusion"] = "\n".join(conclusion_lines)
+            updated["evidence"] = "\n".join(evidence_lines)
+            changed = True
 
     if downgraded:
         counter_lines = _counter_lines(updated.get("counter", ""))
@@ -485,6 +497,106 @@ def _derive_evidence_lines(conclusion_text: str) -> list[str]:
         if len(lines) >= 3:
             break
     return list(dict.fromkeys(lines))
+
+
+def _derive_required_lines_from_saved_evidence(
+    sources_text: str,
+    ledger: ResearchLedger,
+) -> tuple[list[str], list[str]]:
+    number_for_url = _source_numbers_by_url(sources_text, ledger)
+    if not number_for_url:
+        return [], []
+    conclusion_lines: list[str] = []
+    evidence_lines: list[str] = []
+    seen: set[tuple[str, int, int | None]] = set()
+    for item in ledger.evidence_items:
+        if normalize_evidence_stance(item.stance) != "supports":
+            continue
+        source_url = str(item.source_url or "").strip()
+        canonical = ledger.canonical_opened_url(source_url) or source_url
+        number = number_for_url.get(canonical) or number_for_url.get(source_url)
+        if number is None:
+            continue
+        claim_text = _saved_evidence_claim_text(item.claim, item.excerpt)
+        evidence_text = _saved_evidence_excerpt_text(item.excerpt, item.claim)
+        if not claim_text or not evidence_text:
+            continue
+        key = (claim_text.casefold(), int(number), item.page)
+        if key in seen:
+            continue
+        seen.add(key)
+        ref = _citation_label(int(number), item.page)
+        conclusion_lines.append(f"- {claim_text} {ref}")
+        evidence_lines.append(f"- {ref} {evidence_text}")
+        if len(conclusion_lines) >= 3:
+            break
+    return list(dict.fromkeys(conclusion_lines)), list(dict.fromkeys(evidence_lines))
+
+
+def _source_numbers_by_url(sources_text: str, ledger: ResearchLedger) -> dict[str, int]:
+    numbers: dict[str, int] = {}
+    for row in report_quality.parse_citation_rows(sources_text, ledger):
+        raw_url = str(row.url or "").strip()
+        if not raw_url:
+            continue
+        canonical = ledger.canonical_opened_url(raw_url) or raw_url
+        numbers[raw_url] = int(row.number)
+        numbers[canonical] = int(row.number)
+    return numbers
+
+
+def _saved_evidence_claim_text(claim: str, excerpt: str) -> str:
+    clean_claim = _saved_evidence_text(claim)
+    clean_excerpt = _saved_evidence_text(excerpt)
+    if _is_informative_saved_claim(clean_claim):
+        return clean_claim
+    return clean_excerpt
+
+
+def _saved_evidence_excerpt_text(excerpt: str, claim: str) -> str:
+    return _saved_evidence_text(excerpt) or _saved_evidence_text(claim)
+
+
+def _saved_evidence_text(text: str) -> str:
+    clean = re.sub(r"\[\d+(?:[^\]]*)?\]", "", str(text or ""))
+    clean = re.sub(r"^[-*]\s+", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip(" -*")
+    if not clean:
+        return ""
+    return clip(_first_sentence(clean), 260)
+
+
+def _first_sentence(text: str) -> str:
+    clean = str(text or "").strip()
+    if not clean:
+        return ""
+    match = re.search(r"(.+?[.!?。！？])(?:\s+|$)", clean)
+    return match.group(1).strip() if match else clean
+
+
+def _is_informative_saved_claim(text: str) -> bool:
+    clean = str(text or "").strip()
+    if len(clean) < 18:
+        return False
+    lower = clean.casefold()
+    if lower.endswith((" source", " sources", " article", " articles", " web page", " webpage", " page")):
+        return False
+    if re.search(r"[\u4e00-\u9fff]", clean):
+        return True
+    return bool(re.search(
+        r"\b("
+        r"is|are|was|were|has|have|had|can|could|may|might|must|should|"
+        r"depends|describes|frames|supports|requires|recommends|recommended|"
+        r"shows|showed|reported|includes|included|increases|decreases|reduces"
+        r")\b",
+        lower,
+    ))
+
+
+def _citation_label(number: int, page: int | None) -> str:
+    if page is not None and int(page) > 0:
+        return f"[{int(number)} p.{int(page)}]"
+    return f"[{int(number)}]"
 
 
 def _finalized_reason(changed: bool, claim_filter_changed: bool) -> str:

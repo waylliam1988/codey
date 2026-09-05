@@ -3042,10 +3042,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         url = "https://example.com/helium"
         invalid = valid_research_report(url).replace(
             "Helium supply depends on gas processing. [1]",
-            "Helium supply depends on gas processing.",
-        ).replace(
-            "- [1] The opened source says helium is separated from natural gas streams.",
-            "- The opened source says helium is separated from natural gas streams.",
+            "Helium supply depends on gas processing. [2]",
         )
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
@@ -3709,6 +3706,60 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(record.unsupported_claim_count, 0)
         proof = review_research_proof(record, question="Research helium supply")
+        self.assertTrue(proof.ok, proof.missing_evidence)
+
+    def test_done_finalizer_derives_required_sections_from_saved_evidence(self) -> None:
+        url = "https://example.com/helium"
+        ledger = ResearchLedger()
+        ledger.record_search(
+            "helium",
+            [{"title": "Helium source", "url": url, "snippet": "Helium evidence."}],
+        )
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="Helium source",
+            text="Helium is separated from natural gas.",
+        )
+        ledger.add_evidence_items([
+            EvidenceItem(
+                claim="Helium fixture source",
+                source_url=url,
+                excerpt="Helium is separated from natural gas.",
+                stance="supports",
+            )
+        ])
+        report = valid_research_report(url, conclusion="Helium data are sufficient for this fixture.")
+
+        finalized = finalize_done_answer(
+            report,
+            ledger,
+            question="Research helium",
+            enforce_claim_support=True,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.reason, "claim_support_filtered")
+        self.assertIn("- Helium is separated from natural gas. [1]", finalized.text)
+        self.assertIn("- [1] Helium is separated from natural gas.", finalized.text)
+        self.assertNotIn("Helium data are sufficient for this fixture. [1]", finalized.text)
+
+        review = review_report_quality(
+            finalized.text,
+            ledger=ledger,
+            opened_sources=ledger.final_url_set(),
+            search_result_urls={url},
+        )
+        self.assertTrue(review.ok, review.message)
+        record = build_research_record(
+            question="Research helium",
+            summary=finalized.text,
+            ledger=ledger,
+            review=review,
+            stop_reason="done",
+        )
+        self.assertEqual(record.unsupported_claim_count, 0)
+        proof = review_research_proof(record, question="Research helium")
         self.assertTrue(proof.ok, proof.missing_evidence)
 
     def test_done_finalizer_uses_parsed_numeric_source_map(self) -> None:
