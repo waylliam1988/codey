@@ -245,6 +245,16 @@ quality evidence. The transcript confirms the remaining useful tuning target:
 only trigger follow-up when proof gaps name a missing evidence need, keep the
 follow-up turn evidence-only, and avoid full-report rewrite.
 
+2026-09-05 browser-fetch follow-up: PMC article pages were not unreachable and
+did not lack cookies. The production browser fetch path was reading too early
+after `domcontentloaded`, sometimes seeing only a transient cookie/challenge
+body. The current fetch smoke waits through that state and reads
+`https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/` successfully
+(`len=19334`, about 4.6s). ScienceDirect can still present an anti-bot
+challenge, but the fetch path now reports bounded `page_unavailable` failure in
+about 5.9s instead of dragging the follow-up planner. This is a browser/source
+stability fix, not planner-quality evidence.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

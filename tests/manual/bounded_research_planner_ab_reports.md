@@ -27,6 +27,16 @@ conclusion. It does confirm that archived transcripts are now available for
 diagnosis and that the remaining live problem is claim-to-evidence binding plus
 provider/browser completion stability, not simply source search.
 
+2026-09-05 browser-fetch diagnosis: the PMC failure was a production fetch-path
+timing issue, not evidence that PMC is unreachable or that browser cookies are
+missing. A live `BrowserSearchProvider.fetch()` read of
+`https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/` now waits through the
+initial cookie/challenge body and returns the article text (`len=19334` in about
+4.6 seconds). The same smoke against ScienceDirect still reaches a challenge
+page, but returns a bounded `page_unavailable` error in about 5.9 seconds rather
+than stalling the planner. This fixes source acquisition behavior for the live
+follow-up harness; it is not evidence that planner improves proof quality.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

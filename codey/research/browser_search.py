@@ -34,6 +34,13 @@ _NAV_TIMEOUT_MS = 20_000
 _SEARCH_NAV_TIMEOUT_MS = 8_000
 _SEARCH_NAV_ATTEMPTS = 2
 _SEARCH_TOTAL_TIMEOUT_SECONDS = 24.0
+_FETCH_NAV_TIMEOUT_MS = 10_000
+_FETCH_TOTAL_TIMEOUT_SECONDS = 16.0
+_FETCH_SETTLE_TIMEOUT_SECONDS = 4.0
+_FETCH_SETTLE_TICK = 0.5
+_FETCH_HTTP_TIMEOUT = 12
+_FETCH_HTTP_MAX_BYTES = 1024 * 1024
+_CLOSE_TIMEOUT_SECONDS = 3.0
 _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2
 _MAX_PAGE_CHARS = 200_000
@@ -371,8 +378,20 @@ class BrowserSearchProvider:
             page = _download_pdf_streaming(url)
         else:
             try:
-                page = _search_browser_call(self._fetch_on_browser_thread, url)
-            except (TimeoutError, cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                page = _search_browser_call(
+                    self._fetch_on_browser_thread,
+                    url,
+                    timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
+                )
+            except TimeoutError as exc:
+                self._record_worker_health()
+                return {
+                    "url": url,
+                    "title": "",
+                    "text": f"ERROR: could not load page within {_FETCH_TOTAL_TIMEOUT_SECONDS:.0f}s: {exc}",
+                    "truncated": False,
+                }
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 self._record_worker_health()
                 raise
             if page.get("content_kind") == "pdf_download":
@@ -393,8 +412,13 @@ class BrowserSearchProvider:
         page = self._ensure_fetch_page_on_browser_thread(url)
         try:
             cancellation.check()
+            _set_navigation_timeout(page, _FETCH_NAV_TIMEOUT_MS)
             try:
-                response = page.goto(url, wait_until="domcontentloaded")
+                response = page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=_FETCH_NAV_TIMEOUT_MS,
+                )
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
@@ -423,9 +447,34 @@ class BrowserSearchProvider:
                         "truncated": False,
                     }
             cancellation.check()
-            html = _page_content_after_navigation(page)
+            try:
+                html, text = _fetch_page_content_after_settle(page)
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception as exc:
+                self._discard_fetch_page_on_browser_thread(page)
+                return {
+                    "url": final_url,
+                    "title": "",
+                    "text": f"ERROR: could not read page content: {exc}",
+                    "truncated": False,
+                }
             cancellation.check()
-            text = extract_text(html)
+            if not _usable_fetch_page_text(text):
+                title = extract_title(html)
+                fallback = _download_text_fallback(final_url)
+                fallback_text = str(fallback.get("text") or "")
+                if fallback_text and not fallback_text.startswith("ERROR:"):
+                    self._discard_fetch_page_on_browser_thread(page)
+                    return fallback
+                self._discard_fetch_page_on_browser_thread(page)
+                return {
+                    "url": final_url,
+                    "title": title,
+                    "text": "ERROR: page had no usable visible content after navigation: "
+                    + _fetch_page_failure_kind(text),
+                    "truncated": False,
+                }
             truncated = len(text) > _MAX_PAGE_CHARS
             if truncated:
                 text = text[:_MAX_PAGE_CHARS]
@@ -437,7 +486,10 @@ class BrowserSearchProvider:
     def close(self) -> None:
         if self._session is None:
             return
-        _search_browser_call(self._close_on_browser_thread)
+        try:
+            _search_browser_call(self._close_on_browser_thread, timeout=_CLOSE_TIMEOUT_SECONDS)
+        except TimeoutError:
+            self._record_worker_health()
 
     def worker_health(self) -> dict[str, object]:
         """Last passive research-browser worker health snapshot."""
@@ -522,6 +574,31 @@ def _page_content_after_navigation(page) -> str:
             except Exception:
                 pass
             cancellation.wait(_CONTENT_RETRY_TICK)
+
+
+def _fetch_page_content_after_settle(page) -> tuple[str, str]:
+    html = _page_content_after_navigation(page)
+    text = extract_text(html)
+    if _usable_fetch_page_text(text):
+        return html, text
+    stop_at = time.monotonic() + _FETCH_SETTLE_TIMEOUT_SECONDS
+    best_html = html
+    best_text = text
+    while time.monotonic() < stop_at:
+        cancellation.check()
+        try:
+            page.wait_for_load_state("networkidle", timeout=500)
+        except Exception:
+            pass
+        cancellation.wait(_FETCH_SETTLE_TICK)
+        html = _page_content_after_navigation(page)
+        text = extract_text(html)
+        if len(text) > len(best_text):
+            best_html = html
+            best_text = text
+        if _usable_fetch_page_text(text):
+            return html, text
+    return best_html, best_text
 
 
 def _content_retryable(exc: Exception) -> bool:
@@ -612,6 +689,45 @@ def _search_page_failure_kind(text: str) -> str:
     if any(marker in normalized for marker in _SEARCH_PAGE_ERROR_MARKERS):
         return "search_page_unavailable"
     return "search_page_blank"
+
+
+_FETCH_PAGE_ERROR_MARKERS = (
+    "access denied",
+    "are you a robot",
+    "captcha",
+    "checking your browser",
+    "cookies must be enabled",
+    "enable javascript",
+    "enable cookies",
+    "not automatically redirected",
+    "temporarily unavailable",
+    "unusual traffic",
+    "verify you are human",
+    "just a moment",
+)
+
+
+def _usable_fetch_page_text(text: str) -> bool:
+    normalized = _clean_space(text).casefold()
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _FETCH_PAGE_ERROR_MARKERS):
+        return False
+    return len(normalized) >= 24
+
+
+def _fetch_page_failure_kind(text: str) -> str:
+    normalized = _clean_space(text).casefold()
+    if any(marker in normalized for marker in _FETCH_PAGE_ERROR_MARKERS):
+        return "page_unavailable"
+    return "page_blank"
+
+
+def _set_navigation_timeout(page, timeout_ms: int) -> None:
+    try:
+        page.set_default_navigation_timeout(timeout_ms)
+    except Exception:
+        pass
 
 
 def _search_failure_kind(exc: Exception) -> str:
@@ -724,6 +840,105 @@ def _is_pdf_url(url: str) -> bool:
     return path.endswith(".pdf")
 
 
+def _text_response_charset(headers) -> str:
+    try:
+        charset = headers.get_content_charset()
+    except AttributeError:
+        charset = ""
+    return str(charset or "utf-8")
+
+
+def _download_text_fallback(url: str) -> dict:
+    current_url = str(url or "").strip()
+    redirects = 0
+    while True:
+        cancellation.check()
+        reason = check_fetch_url(current_url)
+        if reason:
+            return {"url": current_url, "title": "", "text": f"ERROR: {reason}", "truncated": False}
+        request = _text_request(current_url)
+        try:
+            response = _open_url_no_redirect(request, timeout=_FETCH_HTTP_TIMEOUT)
+        except urllib.error.HTTPError as exc:
+            if _is_redirect_status(exc.code):
+                next_url = _redirect_target(current_url, exc.headers)
+                _close_response(exc)
+                redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
+                if redirect.get("error"):
+                    return redirect["error"]
+                current_url = redirect["url"]
+                redirects += 1
+                continue
+            return {
+                "url": current_url,
+                "title": "",
+                "text": f"ERROR: HTTP fallback could not load page: HTTP {exc.code}",
+                "truncated": False,
+            }
+        except urllib.error.URLError as exc:
+            return {
+                "url": current_url,
+                "title": "",
+                "text": f"ERROR: HTTP fallback could not load page: {exc}",
+                "truncated": False,
+            }
+        except OSError as exc:
+            return {
+                "url": current_url,
+                "title": "",
+                "text": f"ERROR: HTTP fallback could not load page: {exc}",
+                "truncated": False,
+            }
+        with response:
+            final_url = response.geturl() or current_url
+            reason = check_fetch_url(final_url)
+            if reason:
+                return {"url": final_url, "title": "", "text": f"ERROR: {reason} (after redirect)", "truncated": False}
+            status = int(getattr(response, "status", 0) or _response_code(response))
+            if _is_redirect_status(status):
+                next_url = _redirect_target(current_url, response.headers)
+                redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
+                if redirect.get("error"):
+                    return redirect["error"]
+                current_url = redirect["url"]
+                redirects += 1
+                continue
+            headers = response.headers
+            ctype = (headers.get("content-type") or "").lower()
+            if _is_pdf_response(ctype, final_url):
+                return _pdf_download_sentinel(final_url, mime_type=ctype)
+            if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
+                return {
+                    "url": final_url,
+                    "title": "",
+                    "text": f"ERROR: unsupported content type: {ctype}",
+                    "truncated": False,
+                }
+            data = response.read(_FETCH_HTTP_MAX_BYTES + 1)
+            truncated = len(data) > _FETCH_HTTP_MAX_BYTES
+            if truncated:
+                data = data[:_FETCH_HTTP_MAX_BYTES]
+            html = data.decode(_text_response_charset(headers), errors="replace")
+            text = extract_text(html)
+            if not _usable_fetch_page_text(text):
+                return {
+                    "url": final_url,
+                    "title": extract_title(html),
+                    "text": "ERROR: HTTP fallback had no usable visible content: "
+                    + _fetch_page_failure_kind(text),
+                    "truncated": truncated,
+                }
+            text_truncated = len(text) > _MAX_PAGE_CHARS
+            if text_truncated:
+                text = text[:_MAX_PAGE_CHARS]
+            return {
+                "url": final_url,
+                "title": extract_title(html) or _title_from_url(final_url),
+                "text": text,
+                "truncated": truncated or text_truncated,
+            }
+
+
 def _content_length(headers: dict) -> int | None:
     try:
         value = headers.get("content-length")
@@ -822,6 +1037,16 @@ def _pdf_request(url: str) -> urllib.request.Request:
     )
 
 
+def _text_request(url: str) -> urllib.request.Request:
+    return urllib.request.Request(
+        url,
+        headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml,text/xml,text/plain,*/*;q=0.8",
+            "User-Agent": "Mozilla/5.0 Research Reader",
+        },
+    )
+
+
 def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int):
     opener = build_no_redirect_opener()
     return opener.open(request, timeout=timeout)
@@ -838,11 +1063,17 @@ def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict:
     }
 
 
-def _checked_redirect(current_url: str, next_url: str, redirects: int) -> dict:
+def _checked_redirect(
+    current_url: str,
+    next_url: str,
+    redirects: int,
+    *,
+    content_kind: str = "pdf",
+) -> dict:
     if not next_url:
-        return {"error": _pdf_skipped(current_url, "application/pdf", "PDF redirect did not include a Location header")}
+        return {"error": _redirect_error(current_url, content_kind, "redirect did not include a Location header")}
     if redirects >= _PDF_MAX_REDIRECTS:
-        return {"error": _pdf_skipped(current_url, "application/pdf", "PDF redirect limit exceeded")}
+        return {"error": _redirect_error(current_url, content_kind, "redirect limit exceeded")}
     reason = check_fetch_url(next_url)
     if reason:
         return {
@@ -865,6 +1096,17 @@ def _pdf_skipped(url: str, mime_type: str, message: str) -> dict:
         "text": f"SKIPPED: {message}",
         "content_kind": "pdf",
         "mime_type": mime_type or "application/pdf",
+        "truncated": False,
+    }
+
+
+def _redirect_error(url: str, content_kind: str, message: str) -> dict:
+    if str(content_kind or "").casefold() == "pdf":
+        return _pdf_skipped(url, "application/pdf", "PDF " + message)
+    return {
+        "url": url,
+        "title": _title_from_url(url),
+        "text": f"ERROR: page {message}",
         "truncated": False,
     }
 

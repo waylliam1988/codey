@@ -3940,6 +3940,235 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(page.waits, 1)
         sleep.assert_called_once()
 
+    def test_browser_search_fetch_uses_bounded_worker_timeout(self) -> None:
+        provider = BrowserSearchProvider()
+        payload = {
+            "url": "https://example.com/article",
+            "title": "Article",
+            "text": "Readable article body with enough text for research evidence.",
+            "truncated": False,
+        }
+
+        with mock.patch("codey.research.browser_search._search_browser_call", return_value=payload) as call:
+            result = provider.fetch("https://example.com/article")
+
+        self.assertEqual(result, payload)
+        call.assert_called_once_with(
+            provider._fetch_on_browser_thread,
+            "https://example.com/article",
+            timeout=browser_search._FETCH_TOTAL_TIMEOUT_SECONDS,
+        )
+
+    def test_browser_search_fetch_timeout_returns_error_and_records_worker_health(self) -> None:
+        provider = BrowserSearchProvider()
+        fake_worker = mock.Mock()
+        fake_worker.health_snapshot.return_value.to_payload.return_value = {
+            "state": "stuck",
+            "stuck_detected": True,
+            "queue_size": 1,
+        }
+
+        with (
+            mock.patch(
+                "codey.research.browser_search._search_browser_call",
+                side_effect=TimeoutError("browser worker call timed out"),
+            ),
+            mock.patch("codey.research.browser_search._search_browser_worker", return_value=fake_worker),
+        ):
+            result = provider.fetch("https://www.sciencedirect.com/science/article/pii/S2352396424000239")
+
+        self.assertTrue(result["text"].startswith("ERROR: could not load page within "))
+        self.assertEqual(
+            provider.worker_health(),
+            {"state": "stuck", "stuck_detected": True, "queue_size": 1},
+        )
+
+    def test_fetch_on_browser_thread_rejects_blank_page_and_discards_fetch_page(self) -> None:
+        class FakePage:
+            url = "https://www.sciencedirect.com/science/article/pii/S2352396424000239"
+
+            def __init__(self) -> None:
+                self.closed = False
+                self.default_timeout = None
+                self.goto_timeout = None
+
+            def set_default_navigation_timeout(self, timeout: int) -> None:
+                self.default_timeout = timeout
+
+            def goto(self, _url, wait_until="domcontentloaded", timeout=None):
+                del wait_until
+                self.goto_timeout = timeout
+                return SimpleNamespace(headers={"content-type": "text/html"})
+
+            def content(self) -> str:
+                return "<html><title>Blank</title><body></body></html>"
+
+            def unroute(self, _pattern, _handler) -> None:
+                return None
+
+            def close(self) -> None:
+                self.closed = True
+
+        provider = BrowserSearchProvider()
+        page = FakePage()
+        provider._fetch_page = page
+
+        with (
+            mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch(
+                "codey.research.browser_search._download_text_fallback",
+                return_value={
+                    "url": page.url,
+                    "title": "",
+                    "text": "ERROR: HTTP fallback had no usable visible content: page_blank",
+                    "truncated": False,
+                },
+            ),
+            mock.patch("codey.research.browser_search._FETCH_SETTLE_TIMEOUT_SECONDS", 0.0),
+        ):
+            result = provider._fetch_on_browser_thread(page.url)
+
+        self.assertEqual(page.default_timeout, browser_search._FETCH_NAV_TIMEOUT_MS)
+        self.assertEqual(page.goto_timeout, browser_search._FETCH_NAV_TIMEOUT_MS)
+        self.assertTrue(page.closed)
+        self.assertIsNone(provider._fetch_page)
+        self.assertEqual(
+            result["text"],
+            "ERROR: page had no usable visible content after navigation: page_blank",
+        )
+
+    def test_fetch_on_browser_thread_waits_through_cookie_wall_before_http_fallback(self) -> None:
+        class FakePage:
+            url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
+
+            def __init__(self) -> None:
+                self.closed = False
+                self.content_calls = 0
+
+            def set_default_navigation_timeout(self, _timeout: int) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded", timeout=None):
+                del wait_until, timeout
+                return SimpleNamespace(headers={"content-type": "text/html"})
+
+            def wait_for_load_state(self, _state: str, timeout: int) -> None:
+                del _state, timeout
+
+            def content(self) -> str:
+                self.content_calls += 1
+                if self.content_calls > 1:
+                    return (
+                        "<html><title>PMC Article</title><body>"
+                        "Full PMC article text with clinical evidence and readable abstract."
+                        "</body></html>"
+                    )
+                return (
+                    "<html><title>pmc.ncbi.nlm.nih.gov</title><body>"
+                    "Cookies must be enabled Enable cookies for pmc.ncbi.nlm.nih.gov "
+                    "and reload this page to continue.</body></html>"
+                )
+
+            def unroute(self, _pattern, _handler) -> None:
+                return None
+
+            def close(self) -> None:
+                self.closed = True
+
+        provider = BrowserSearchProvider()
+        page = FakePage()
+        provider._fetch_page = page
+
+        with (
+            mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search.cancellation.wait"),
+            mock.patch("codey.research.browser_search._download_text_fallback") as http_fallback,
+        ):
+            result = provider._fetch_on_browser_thread(page.url)
+
+        http_fallback.assert_not_called()
+        self.assertEqual(result["title"], "PMC Article")
+        self.assertIn("Full PMC article text", result["text"])
+        self.assertFalse(page.closed)
+        self.assertIs(provider._fetch_page, page)
+
+    def test_http_text_fallback_rejects_browser_challenge_page(self) -> None:
+        class Headers(dict):
+            def get_content_charset(self):
+                return "utf-8"
+
+        class ChallengeResponse:
+            status = 200
+            headers = Headers({"content-type": "text/html; charset=utf-8"})
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
+
+            def read(self, _size=-1) -> bytes:
+                return (
+                    b"<html><title>Checking your browser</title><body>"
+                    b"Checking your browser before accessing pmc.ncbi.nlm.nih.gov. "
+                    b"Click here if you are not automatically redirected after 5 seconds."
+                    b"</body></html>"
+                )
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=ChallengeResponse()),
+        ):
+            result = browser_search._download_text_fallback(
+                "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
+            )
+
+        self.assertEqual(
+            result["text"],
+            "ERROR: HTTP fallback had no usable visible content: page_unavailable",
+        )
+
+    def test_http_text_fallback_truncates_extracted_text_to_fetch_limit(self) -> None:
+        class Headers(dict):
+            def get_content_charset(self):
+                return "utf-8"
+
+        class LongTextResponse:
+            status = 200
+            headers = Headers({"content-type": "text/html; charset=utf-8"})
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://example.com/long"
+
+            def read(self, _size=-1) -> bytes:
+                return (
+                    b"<html><title>Long</title><body>"
+                    + b"Readable research article text. " * 20
+                    + b"</body></html>"
+                )
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=LongTextResponse()),
+            mock.patch("codey.research.browser_search._MAX_PAGE_CHARS", 64),
+        ):
+            result = browser_search._download_text_fallback("https://example.com/long")
+
+        self.assertEqual(len(result["text"]), 64)
+        self.assertTrue(result["text"].startswith("Readable research article text."))
+        self.assertTrue(result["truncated"])
+
     def test_browser_search_fetch_streams_known_pdf_without_opening_browser_page(self) -> None:
         class StreamingResponse:
             headers = {
@@ -4468,8 +4697,8 @@ class NetworkPolicyTests(unittest.TestCase):
             def close(self) -> None:
                 self.closed = True
 
-            def goto(self, url, wait_until="domcontentloaded"):
-                del url, wait_until
+            def goto(self, url, wait_until="domcontentloaded", timeout=None):
+                del url, wait_until, timeout
                 cancel_event.set()
                 mock_response = unittest.mock.MagicMock()
                 mock_response.headers = {"content-type": "text/html"}
