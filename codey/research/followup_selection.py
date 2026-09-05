@@ -117,17 +117,14 @@ def has_actionable_gap(review: object | None) -> bool:
         return True
     missing = set(tuple_values(getattr(review, "missing_evidence", ())))
     return bool(
-        answer_status == "partial"
-        and (
-            tuple_values(getattr(review, "coverage_gaps", ()))
-            or tuple_values(getattr(review, "followup_questions", ()))
-            or tuple_values(getattr(review, "query_rewrite_candidates", ()))
-            or missing.intersection({
-                "answer_coverage_gap",
-                "counterevidence_not_checked",
-                "partial_answer",
-            })
-        )
+        tuple_values(getattr(review, "coverage_gaps", ()))
+        or tuple_values(getattr(review, "followup_questions", ()))
+        or tuple_values(getattr(review, "query_rewrite_candidates", ()))
+        or missing.intersection({
+            "answer_coverage_gap",
+            "counterevidence_not_checked",
+            "partial_answer",
+        })
     )
 
 

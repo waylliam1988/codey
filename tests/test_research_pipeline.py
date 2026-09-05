@@ -224,6 +224,19 @@ def _review(
     )
 
 
+def test_followup_selection_treats_answered_coverage_gap_as_actionable() -> None:
+    review = _review(
+        record_id="research_record:" + "1" * 16,
+        record_digest="sha256:" + "1" * 64,
+        ok=False,
+        answer_status="answered",
+        score=0.5,
+        missing=("answer_coverage_gap",),
+    )
+
+    assert followup_selection_module.has_actionable_gap(review) is True
+
+
 def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
