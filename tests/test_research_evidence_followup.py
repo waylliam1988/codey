@@ -355,6 +355,84 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
             store.index.close()
 
 
+def test_run_evidence_followup_classifies_no_relevant_done_as_noop() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            reply = """```json
+{"tool": "done", "args": {"answer": "The fresh URLs are unrelated to the research question, so there is no relevant evidence to extract."}}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+
+            assert result.ok is False
+            assert result.has_new_evidence is False
+            assert result.stop_reason == "no_relevant_material"
+            assert result.new_source_urls == ("https://example.com/fresh",)
+            assert "no relevant evidence" in result.errors[0]
+        finally:
+            store.index.close()
+
+
+def test_run_evidence_followup_classifies_done_without_evidence_as_noop() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            reply = """```json
+{"tool": "done", "args": {"answer": "Follow-up complete."}}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+
+            assert result.ok is False
+            assert result.has_new_evidence is False
+            assert result.stop_reason == "no_evidence_extracted"
+            assert result.new_source_urls == ("https://example.com/fresh",)
+            assert "without writing evidence" in result.errors[0]
+        finally:
+            store.index.close()
+
+
 def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

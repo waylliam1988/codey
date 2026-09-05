@@ -57,6 +57,58 @@ def test_medical_question_prefers_pubmed_and_builds_stable_bounded_plan() -> Non
     assert first.query_candidates
 
 
+def test_planner_starts_with_question_terms_before_low_information_coverage_gaps() -> None:
+    plan = build_research_plan(
+        _review(
+            coverage_gaps=[
+                {"reason_code": "missing_question_term", "term_ref": "biomedical"},
+                {"reason_code": "missing_question_term", "term_ref": "evidence"},
+                {"reason_code": "missing_question_term", "term_ref": "hepatotoxicity"},
+                {"reason_code": "missing_question_term", "term_ref": "clinical"},
+                {"reason_code": "missing_question_term", "term_ref": "management"},
+                {"reason_code": "missing_question_term", "term_ref": "opened"},
+                {"reason_code": "missing_question_term", "term_ref": "sources"},
+            ],
+            followup_questions=[
+                {
+                    "text": "Find opened-source evidence for biomedical evidence hepatotoxicity clinical."
+                },
+                {
+                    "text": "Find direct supporting evidence for unsupported conclusion claims."
+                },
+            ],
+            query_rewrite_candidates=[
+                {
+                    "text": "biomedical evidence hepatotoxicity clinical primary source evidence"
+                }
+            ],
+            missing_evidence=[
+                "partial_answer",
+                "unsupported_claims",
+                "answer_coverage_gap",
+                "claim_not_evidence_backed",
+                "claim_missing_evidence_ref",
+                "claim_missing_support_relation",
+                "claim_missing_citation",
+            ],
+        ),
+        question=(
+            "Research current biomedical evidence for immune checkpoint inhibitor "
+            "hepatotoxicity clinical management. Use opened sources."
+        ),
+        max_queries=3,
+    )
+
+    previews = [item.query_preview for item in plan.query_candidates]
+
+    assert previews[0].startswith(
+        "immune checkpoint inhibitor hepatotoxicity clinical management"
+    )
+    assert "PubMed" in previews[0]
+    assert "biomedical PubMed evidence" not in previews
+    assert "evidence PubMed evidence" not in previews
+
+
 def test_ok_proof_without_required_gap_builds_noop_plan() -> None:
     plan = build_research_plan(
         _review(

@@ -81,11 +81,29 @@ or the Annals balanced-parentheses URL false blocker. Baseline stopped at
 `max_turns` with `score=3`, `proof_answer_status=not_answered`, and
 `opened_target_host=true`. The planner arm reached `done` with `score=7` and
 `proof_answer_status=partial`, but `followup_rounds=0` and
-`planner_stop_reason=invalid_tool_called`, so the evidence-only follow-up planner
-did not actually run. The experiment gate evaluated the pair as `useful=false`
-with `quality_regression=true` because unsupported-claim rate regressed. Treat
-this as validation of the URL/landing fixes and as a negative planner-quality
-sample, not as a follow-up success.
+`planner_stop_reason=invalid_tool_called`. The archived follow-up transcript
+shows that the plan executor did run, but the generated queries were too generic
+(`biomedical PubMed evidence`, `evidence PubMed evidence`, and related
+coverage-gap terms), so the fresh material was not useful for ICI hepatotoxicity
+management. MiMo then used `done` to report no relevant evidence instead of the
+strict evidence-only `knowledge_write` tool, and production classified that
+no-op as `invalid_tool_called`. The experiment gate evaluated the pair as
+`useful=false` with `quality_regression=true` because unsupported-claim rate
+regressed. Treat this as validation of the URL/landing fixes and as a negative
+planner-quality sample, not as a follow-up success.
+
+2026-09-05 follow-up planner diagnosis patch:
+`codey.research.query_planner` now starts follow-up search plans with filtered
+question terms before proof-review coverage-gap terms, and skips low-information
+coverage terms such as `biomedical`, `evidence`, `opened`, and `sources`.
+`codey.research.evidence_followup` now classifies evidence-only `done` exits as
+no-evidence no-ops instead of `invalid_tool_called` (`no_relevant_material` when
+the explanation is explicit, otherwise `no_evidence_extracted`); other
+forbidden tools remain rejected. This fixes the failure classification and the
+query drift, but does not solve claim-to-evidence binding. The same run still had
+`proof_ok=false` because most final-report claims lacked structured
+`evidence_refs` and support relations in the `ResearchRecord`, even though the
+report-format gate passed.
 
 The live runs show that a planner can add value when three conditions are true:
 

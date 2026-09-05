@@ -22,6 +22,19 @@ from codey.research.tools import ResearchTools
 
 _SOURCE_ID_FORBIDDEN_RE = re.compile(r"\b(?:s\d+|source_id|result_id|hit_id)\b", re.IGNORECASE)
 _ALLOWED_KNOWLEDGE_WRITE_ARGS = frozenset({"type", "title", "body", "sources", "evidence"})
+_DONE_NO_RELEVANT_MATERIAL_RE = re.compile(
+    r"("
+    r"no\s+(?:new\s+)?(?:relevant\s+)?evidence|"
+    r"no\s+(?:relevant\s+)?material|"
+    r"not\s+relevant|irrelevant|unrelated|"
+    r"unable\s+to\s+extract|"
+    r"does\s+not\s+support|"
+    r"\u6ca1\u6709(?:\u65b0\u7684|\u76f8\u5173)?\u8bc1\u636e|"
+    r"\u65e0(?:\u65b0\u7684|\u76f8\u5173)?\u8bc1\u636e|"
+    r"\u4e0d\u76f8\u5173|\u65e0\u5173"
+    r")",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -204,6 +217,19 @@ def run_evidence_followup(
             stop_reason="missing_tool_name",
             errors=("Evidence-only follow-up requires explicit 'tool': 'knowledge_write'",),
         )
+    if tool_name == "done":
+        no_relevant = _done_reports_no_relevant_material(first_call.get("args"))
+        error = (
+            "Model reported no relevant evidence in fresh material"
+            if no_relevant
+            else "Model exited evidence-only follow-up without writing evidence"
+        )
+        return EvidenceFollowupResult(
+            ok=False,
+            new_source_urls=fresh_urls,
+            stop_reason="no_relevant_material" if no_relevant else "no_evidence_extracted",
+            errors=(error,),
+        )
     if tool_name != "knowledge_write":
         return EvidenceFollowupResult(
             ok=False,
@@ -237,6 +263,17 @@ def run_evidence_followup(
         stop_reason="written" if (new_ev_count > 0 or written_note_ids) else "no_evidence_extracted",
         errors=tuple(errors[:10]),
     )
+
+
+def _done_reports_no_relevant_material(args: object) -> bool:
+    if not isinstance(args, dict):
+        return False
+    text = " ".join(
+        str(args.get(key) or "")
+        for key in ("answer", "message", "reason", "body")
+        if args.get(key) is not None
+    )
+    return bool(text and _DONE_NO_RELEVANT_MATERIAL_RE.search(text))
 
 
 __all__ = [

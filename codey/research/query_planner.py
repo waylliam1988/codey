@@ -59,6 +59,42 @@ _PROFILE_CONNECTOR_KINDS = {
     "data": ("csv_tsv", "json_file"),
     "local": ("local_file",),
 }
+_QUERY_CONTENT_STOP_TERMS = frozenset({
+    "answer",
+    "answers",
+    "biomedical",
+    "cited",
+    "citation",
+    "citations",
+    "claim",
+    "claims",
+    "conclusion",
+    "conclusions",
+    "current",
+    "direct",
+    "evidence",
+    "fact",
+    "facts",
+    "find",
+    "fresh",
+    "material",
+    "materials",
+    "opened",
+    "primary",
+    "question",
+    "report",
+    "reported",
+    "research",
+    "retrieved",
+    "source",
+    "sources",
+    "supporting",
+    "term",
+    "terms",
+    "unsupported",
+    "use",
+    "using",
+})
 
 
 @dataclass(frozen=True)
@@ -283,7 +319,7 @@ def _review_payload(review: ResearchProofReview | Mapping[str, object] | None) -
 
 def _signals_from_review(payload: Mapping[str, object]) -> tuple[str, ...]:
     signals: list[str] = []
-    for key in ("coverage_gaps", "followup_questions", "query_rewrite_candidates"):
+    for key in ("query_rewrite_candidates", "followup_questions", "coverage_gaps"):
         value = payload.get(key)
         if not isinstance(value, (list, tuple)):
             continue
@@ -293,6 +329,8 @@ def _signals_from_review(payload: Mapping[str, object]) -> tuple[str, ...]:
             else:
                 text = str(item or "")
             safe = _safe_signal_text(text)
+            if key == "coverage_gaps" and _low_information_signal(safe):
+                continue
             if safe and safe not in signals:
                 signals.append(safe)
             if len(signals) >= MAX_PLAN_QUERIES * 2:
@@ -389,9 +427,12 @@ def _query_candidates(
 ) -> tuple[QueryCandidate, ...]:
     connector_ids = tuple(item.connector_id for item in preferences)
     candidates: list[QueryCandidate] = []
+    question_candidate = _question_terms_query(terms, connector_ids)
+    if question_candidate:
+        candidates.append(question_candidate)
     for signal in signals:
         candidate = _candidate_query(signal, terms, connector_ids)
-        if candidate:
+        if candidate and not any(item.query_preview == candidate.query_preview for item in candidates):
             candidates.append(candidate)
         if len(candidates) >= max_queries:
             break
@@ -402,6 +443,20 @@ def _query_candidates(
         if text and not any(item.query_preview == text for item in candidates):
             candidates.append(_make_query_candidate(text, connector_ids, ("question_terms",), 0.74))
     return tuple(candidates[:max_queries])
+
+
+def _question_terms_query(
+    terms: tuple[str, ...],
+    connector_ids: tuple[str, ...],
+) -> QueryCandidate | None:
+    content_terms = _content_query_terms(terms, limit=8)
+    if not content_terms:
+        return None
+    suffix = _domain_suffix(connector_ids)
+    text = _safe_query_preview(f"{' '.join(content_terms)} {suffix}".strip())
+    if not text:
+        return None
+    return _make_query_candidate(text, connector_ids, ("question_terms",), 0.86)
 
 
 def _candidate_query(
@@ -459,6 +514,30 @@ def _safe_query_preview(text: str) -> str:
     if not tokens:
         return ""
     return clip(" ".join(tokens[:10]), MAX_QUERY_PREVIEW_CHARS)
+
+
+def _content_query_terms(terms: tuple[str, ...], *, limit: int) -> tuple[str, ...]:
+    content: list[str] = []
+    seen: set[str] = set()
+    for raw in terms:
+        term = str(raw or "").strip()
+        folded = term.casefold()
+        if not folded or folded in _QUERY_CONTENT_STOP_TERMS or len(folded) <= 1:
+            continue
+        if folded in seen:
+            continue
+        seen.add(folded)
+        content.append(term)
+        if len(content) >= limit:
+            break
+    return tuple(content)
+
+
+def _low_information_signal(value: object) -> bool:
+    text = _safe_signal_text(value)
+    if not text:
+        return True
+    return not _content_query_terms(_safe_terms(text), limit=1)
 
 
 def _safe_signal_text(value: object) -> str:

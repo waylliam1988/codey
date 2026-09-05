@@ -298,6 +298,20 @@ experiment gate marked the pair `useful=false` with
 `quality_regression=true`. This validates the URL/landing fixes but does not
 provide a successful evidence-only follow-up planner sample.
 
+Follow-up diagnosis from the archived transcript: the planner did start, but
+its query plan was polluted by low-information proof-review terms
+(`biomedical`, `evidence`, `opened`, `sources`), producing generic PubMed
+queries instead of ICI hepatotoxicity management queries. MiMo judged the fresh
+URLs unrelated and returned `done` with a no-relevant-evidence explanation;
+production then surfaced that no-op as `invalid_tool_called` because
+evidence-only mode previously allowed only `knowledge_write`. The
+2026-09-05 diagnosis patch makes the query planner start from filtered question
+terms and records evidence-only `done` replies as no-evidence no-ops
+(`no_relevant_material` when explicit, otherwise `no_evidence_extracted`); this
+is a diagnostic/planner stability fix, not a claim-support fix. The proof gate
+still fails until final-report claims carry structured `evidence_refs` and
+support relations.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen
