@@ -319,6 +319,20 @@ evidence-only writes, and added one bounded repair turn that reuses the same
 validator and URL whitelist. This specifically targets MiMo replies that fall
 back to ordinary note writes with `tags`, `relations`, or empty `evidence[]`.
 
+Clean MiMo PubMed rerun after schema repair:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-schema-repair.json`
+completed with archived transcripts and a clean manifest at commit `dbbe3de`.
+Baseline reached `done`, `score=7`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.857`. Planner reached `done`, `score=7`,
+`followup_rounds=1`, `followup_applied=true`,
+`planner_stop_reason=max_followup_rounds`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.556`; it fetched four fresh sources and merged one
+new evidence item via a successful follow-up `knowledge_write`. The experiment
+gate marked the pair `useful=true`, `quality_regression=false`,
+`safe_evidence_only_pair_count=1`, and `safe_evidence_only_useful_count=1`.
+Both arms still failed proof because final claims are not yet structurally bound
+to evidence refs and support relations.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

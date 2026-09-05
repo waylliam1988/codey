@@ -116,6 +116,24 @@ passes through the same controller. This targets the MiMo failure where the
 follow-up emitted an ordinary note shape with `tags`, `relations`, and empty
 `evidence[]`.
 
+2026-09-05 after-schema-repair clean rerun:
+`research_followup_quality_ab-mimo-pubmed-clean-20260905-after-schema-repair.json`
+completed as a clean live MiMo PubMed sample at commit `dbbe3de` with
+`--transcript-mode archive`. Baseline reached `done` with `score=7`,
+`proof_answer_status=partial`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.857`. Planner reached `done` with `score=7`,
+`followup_rounds=1`, `followup_applied=true`,
+`planner_stop_reason=max_followup_rounds`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.556`. The planner arm fetched four fresh sources,
+added one new evidence item, and ended with a successful follow-up
+`knowledge_write`. The experiment gate marked the pair `useful=true`,
+`quality_regression=false`, `safe_evidence_only_pair_count=1`, and
+`safe_evidence_only_useful_count=1`. This is the first clean MiMo PubMed signal
+that the schema repair lets evidence-only follow-up actually merge evidence.
+It is still not a proof success: both arms remain `proof_ok=false` because
+required report claims still lack structured `evidence_refs` and support
+relations.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.
