@@ -286,6 +286,18 @@ redirected root landing URLs without recording them as sources, and the
 controller no longer exposes those rows as `open_result` candidates or
 PubMed/arXiv priority results.
 
+2026-09-05 clean MiMo PubMed rerun after shared URL gating:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-url-gating.json`
+completed with a clean manifest (`git_commit=bca8b46`, `dirty_state=clean`) and
+archived transcripts. The run no longer reproduced the PMC landing-page stall or
+the Annals balanced-parentheses URL false blocker. Baseline ended at
+`max_turns`, `score=3`, and `proof_answer_status=not_answered`. Planner reached
+`done`, `score=7`, and `proof_answer_status=partial`, but
+`followup_rounds=0` with `planner_stop_reason=invalid_tool_called`; the
+experiment gate marked the pair `useful=false` with
+`quality_regression=true`. This validates the URL/landing fixes but does not
+provide a successful evidence-only follow-up planner sample.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

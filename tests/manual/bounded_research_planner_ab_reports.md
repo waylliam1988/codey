@@ -73,6 +73,20 @@ output, `ResearchTools.open_url()` skips direct or redirected root landing URLs
 without recording them as sources, and the controller does not expose them as
 `open_result` candidates or PubMed/arXiv priority results.
 
+2026-09-05 after-url-gating clean rerun:
+`research_followup_quality_ab-mimo-pubmed-clean-20260905-after-url-gating.json`
+completed as a clean manifest sample at commit `bca8b46` with
+`--transcript-mode archive`. This run no longer showed the PMC landing-page stall
+or the Annals balanced-parentheses URL false blocker. Baseline stopped at
+`max_turns` with `score=3`, `proof_answer_status=not_answered`, and
+`opened_target_host=true`. The planner arm reached `done` with `score=7` and
+`proof_answer_status=partial`, but `followup_rounds=0` and
+`planner_stop_reason=invalid_tool_called`, so the evidence-only follow-up planner
+did not actually run. The experiment gate evaluated the pair as `useful=false`
+with `quality_regression=true` because unsupported-claim rate regressed. Treat
+this as validation of the URL/landing fixes and as a negative planner-quality
+sample, not as a follow-up success.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.
