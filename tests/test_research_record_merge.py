@@ -109,8 +109,8 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             assert merged_result.stop_reason == "done"
             assert "https://example.com/followup" in merged_result.summary
             assert "## 来源" in merged_result.summary
-            assert "[1] Initial Source" in merged_result.summary
-            assert "[2] Followup Source" in merged_result.summary
+            assert "Initial Source - https://example.com/initial" in merged_result.summary
+            assert "Followup Source - https://example.com/followup" in merged_result.summary
             assert merged_result.research_record is not None
             assert merged_result.research_record.project_ref == initial_record.project_ref
             assert len(merged_result.research_record.sources) == 2
@@ -231,8 +231,8 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
             assert "Unsupported counter claim" not in merged.summary
             assert "Dangling counter claim" not in merged.summary
             assert "[99]" not in merged.summary
-            assert "[1] Source 1" in merged.summary
-            assert "[2] Source 2" in merged.summary
+            assert "Source 1 - https://example.com/source1" in merged.summary
+            assert "Source 2 - https://example.com/source2" in merged.summary
 
             # Search results preserve full payload structure
             assert len(merged.search_results) == 1

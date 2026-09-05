@@ -34,6 +34,8 @@ from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
 from codey.research.protocols import JsonToolCodec
+from codey.research.object_model import build_research_record
+from codey.research.proof_quality import review_research_proof
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument, SourcePage
@@ -3041,6 +3043,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         invalid = valid_research_report(url).replace(
             "Helium supply depends on gas processing. [1]",
             "Helium supply depends on gas processing.",
+        ).replace(
+            "- [1] The opened source says helium is separated from natural gas streams.",
+            "- The opened source says helium is separated from natural gas streams.",
         )
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
@@ -3198,8 +3203,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         assert result.research_record is not None
         self.assertEqual(result.research_record.run_id, "run-research-object")
         self.assertEqual(result.research_record.session_id, "s1")
-        self.assertEqual(result.research_record.answer_status, "partial")
-        self.assertEqual(result.research_record.unsupported_claim_count, 1)
+        self.assertEqual(result.research_record.answer_status, "answered")
+        self.assertEqual(result.research_record.unsupported_claim_count, 0)
         self.assertTrue(result.research_record.sources)
         self.assertTrue(result.research_record.evidence)
         self.assertTrue(result.research_record.claims)
@@ -3647,6 +3652,64 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(finalized.changed)
         self.assertEqual(finalized.reason, "unmapped_numeric_refs")
         self.assertNotIn("[1] Helium article - https://example.com/helium", finalized.text)
+
+    def test_done_finalizer_filters_unsupported_required_claims_when_enabled(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = (
+            "## 结论\n"
+            "- Helium supply depends on gas processing. [1]\n"
+            "- Helium rechallenge recurrence is 25-30%.\n"
+            "- **Helium critical unsupported claim**\n"
+            "- 早期识别和及时治疗很重要。\n\n"
+            "## 关键证据\n"
+            "**1. Incidence and treatment**\n"
+            "- [1] The opened source says helium is separated from natural gas streams.\n"
+            "- Unsupported mechanistic detail without citation.\n\n"
+            "## 反证与限制\n"
+            "- Existing limitation text.\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · web · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: helium\n\n"
+            "## 来源\n"
+            f"[1] Helium article - {url}"
+        )
+
+        finalized = finalize_done_answer(
+            report,
+            ledger,
+            question="Research helium supply",
+            enforce_claim_support=True,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.reason, "claim_support_filtered")
+        self.assertIn("- Helium supply depends on gas processing. [1]", finalized.text)
+        self.assertNotIn("早期识别和及时治疗很重要", finalized.text)
+        self.assertNotIn("Incidence and treatment", finalized.text)
+        self.assertIn("未能用已保存证据确认：Helium rechallenge recurrence is 25-30%.", finalized.text)
+        self.assertIn("未能用已保存证据确认：Helium critical unsupported claim", finalized.text)
+        self.assertIn("未能用已保存证据确认：Unsupported mechanistic detail without citation.", finalized.text)
+        self.assertNotIn("Helium rechallenge recurrence is 25-30%. [1]", finalized.text)
+
+        review = review_report_quality(
+            finalized.text,
+            ledger=ledger,
+            opened_sources=ledger.final_url_set(),
+            search_result_urls={url},
+        )
+        self.assertTrue(review.ok, review.message)
+        record = build_research_record(
+            question="Research helium supply",
+            summary=finalized.text,
+            ledger=ledger,
+            review=review,
+            stop_reason="done",
+        )
+        self.assertEqual(record.unsupported_claim_count, 0)
+        proof = review_research_proof(record, question="Research helium supply")
+        self.assertTrue(proof.ok, proof.missing_evidence)
 
     def test_done_finalizer_uses_parsed_numeric_source_map(self) -> None:
         first = "https://example.com/a"

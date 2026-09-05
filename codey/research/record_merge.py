@@ -65,7 +65,12 @@ def merge_evidence_patch(
     )
     preliminary_text = render_research_report_sections(merged_sections)
 
-    finalized = finalize_done_answer(preliminary_text, ledger)
+    finalized = finalize_done_answer(
+        preliminary_text,
+        ledger,
+        question=initial.question,
+        enforce_claim_support=True,
+    )
     final_text = finalized.text if finalized.text.strip() else preliminary_text
 
     quality_review: ReportQualityReview | None = None

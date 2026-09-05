@@ -169,6 +169,37 @@ parsed citation refs, so the next production lever is final-report citation
 retention or removal/downgrade of uncited claims, not looser same-source
 matching.
 
+2026-09-05 final-report support filter:
+`codey.research.done_finalizer` now has an opt-in
+`enforce_claim_support=True` path used by production Research callers. After
+source-id and numeric citations are compiled, it builds a temporary
+`ResearchRecord` and keeps required conclusion/evidence lines only when they
+are already evidence-backed. Unsupported structural or generic lines are
+removed; unsupported but potentially important lines are downgraded into
+`反证与限制` as unverified items. The filter does not invent citations, does
+not attach evidence to unsupported claims, and does not ask the provider for a
+full report rewrite.
+
+No-network old-record projection:
+`research_claim_support_projection-mimo-pubmed-clean-20260905-finalizer-offline.json`
+read the seven clean MiMo PubMed result files and found 12 record rows. Target
+proof gaps were present at `claim_missing_citation=19`,
+`claim_missing_evidence_ref=112`, `claim_missing_support_relation=112`, and
+`claim_not_evidence_backed=112`. The delete/downgrade projection improved 11
+rows and made 3 rows `proof_ok=true`; the other 9 rows became
+`insufficient_evidence`, which is the conservative and honest outcome when too
+much of the old answer was unsupported.
+
+Archive transcript replay:
+`research_finalizer_replay_projection-mimo-pubmed-clean-20260905-history.json`
+ran the current production finalizer over archived `done.answer` text without
+new web access. It found 12 rows, 10 replayable rows, 9 finalizer changes, and
+9 rows with reduced target proof gaps; those 9 rows had zero remaining target
+claim-support gaps after replay. No row reached `proof_ok=true` because the
+replay ledger is reconstructed from bounded old excerpts, so coverage and
+support-relation scoring are lower-bound diagnostics. This supports spending
+one clean live MiMo PubMed A/B run, but it is not release-gate evidence.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

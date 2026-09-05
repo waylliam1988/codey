@@ -11,12 +11,38 @@ from codey.utils.citation_scanner import (
     source_id_ref_items,
     source_id_refs,
 )
+from codey.utils.refs import clip
 from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
+from codey.research.object_model import ResearchClaim, build_research_record
 
 _PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
 _NUMERIC_REF_RE = re.compile(rf"(?<![A-Za-z0-9_!])\[(\d+)({_PAGE_REF_SUFFIX})\]", re.IGNORECASE)
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
+_NUMBERED_MARKDOWN_HEADING_RE = re.compile(
+    r"^\s*(?:\*\*|__)\s*\d+[\.)、]\s*[^*_]{1,80}\s*(?:\*\*|__)\s*$"
+)
+_NO_STRONG_COUNTER_MARKERS = ("未找到强反证", "no strong counter", "no strong contrary")
+_DELETE_UNSUPPORTED_MARKERS = (
+    "早期识别",
+    "及时治疗",
+    "需要进一步研究",
+    "需要更多研究",
+    "future research",
+    "further research",
+    "highlights the importance",
+    "underscores the importance",
+)
+_OPERATIONAL_MARKERS = (
+    "ignore previous",
+    "ignore the above",
+    "忽略前",
+    "忽略以上",
+    "调用工具",
+    "call tool",
+    "\"tool\"",
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +58,8 @@ def finalize_done_answer(
     ledger: ResearchLedger,
     *,
     source_ids: Mapping[str, str] | None = None,
+    question: str = "",
+    enforce_claim_support: bool = False,
 ) -> FinalizedAnswer:
     """Compile final citation numbers and the source table from saved evidence.
 
@@ -92,6 +120,17 @@ def finalize_done_answer(
         body = _rewrite_source_id_refs(body, source_id_to_number)
         compiled_bodies[key] = body
 
+    filter_result = _filter_unsupported_required_claims(
+        {**compiled_bodies, "sources": _render_sources(citable_urls, ledger)},
+        ledger,
+        question=question,
+    ) if enforce_claim_support else _ClaimSupportFilterResult(compiled_bodies)
+    compiled_bodies = {
+        key: body
+        for key, body in filter_result.sections.items()
+        if key != "sources" and str(body or "").strip()
+    }
+
     referenced_urls = _referenced_urls(compiled_bodies, full_url_by_number)
     if not referenced_urls:
         return FinalizedAnswer(
@@ -117,7 +156,7 @@ def finalize_done_answer(
         compiled if changed else text,
         changed=changed,
         source_count=len(referenced_urls),
-        reason="compiled_citations" if changed else "already_compiled",
+        reason=_finalized_reason(changed, filter_result.changed),
     )
 
 
@@ -284,6 +323,176 @@ def _render_report(sections: dict[str, str]) -> str:
             continue
         parts.append(f"## {section_title(key)}\n{body}".rstrip())
     return "\n\n".join(parts).strip()
+
+
+@dataclass(frozen=True)
+class _ClaimSupportFilterResult:
+    sections: dict[str, str]
+    changed: bool = False
+
+
+def _filter_unsupported_required_claims(
+    sections: Mapping[str, str],
+    ledger: ResearchLedger,
+    *,
+    question: str = "",
+) -> _ClaimSupportFilterResult:
+    """Remove required claims that cannot be bound to saved evidence.
+
+    This is intentionally narrower than a report rewriter: it only moves or
+    removes already-written lines after the citation compiler has mapped refs.
+    It never invents a citation or attaches evidence to a claim.
+    """
+
+    candidate = _render_report(dict(sections))
+    if not candidate:
+        return _ClaimSupportFilterResult(dict(sections))
+    try:
+        record = build_research_record(
+            question=question,
+            summary=candidate,
+            ledger=ledger,
+            stop_reason="done",
+        )
+    except Exception:
+        return _ClaimSupportFilterResult(dict(sections))
+    claims_by_section = {
+        section: [claim for claim in record.claims if claim.claim_section == section]
+        for section in ("conclusion", "evidence")
+    }
+    claim_index = {section: 0 for section in claims_by_section}
+    updated = dict(sections)
+    changed = False
+    downgraded: list[str] = []
+
+    for section in ("conclusion", "evidence"):
+        kept: list[str] = []
+        for raw_line in str(sections.get(section, "") or "").splitlines():
+            if not raw_line.strip():
+                continue
+            claim = _next_claim(claims_by_section, claim_index, section)
+            if claim is None:
+                kept.append(raw_line.rstrip())
+                continue
+            if claim.status == "evidence_backed" and claim.evidence_refs:
+                kept.append(raw_line.rstrip())
+                continue
+            changed = True
+            clean = str(claim.claim_text or "").strip()
+            if _should_delete_unsupported_claim(clean):
+                continue
+            downgraded.append(_downgraded_claim_line(clean))
+        updated[section] = "\n".join(dict.fromkeys(kept)).strip()
+
+    if not citation_ref_items(updated.get("conclusion", "")):
+        derived = _derive_conclusion_lines(updated.get("evidence", ""))
+        if derived:
+            updated["conclusion"] = "\n".join(derived)
+            changed = True
+    if not citation_ref_items(updated.get("evidence", "")):
+        derived = _derive_evidence_lines(updated.get("conclusion", ""))
+        if derived:
+            updated["evidence"] = "\n".join(derived)
+            changed = True
+
+    if downgraded:
+        counter_lines = _counter_lines(updated.get("counter", ""))
+        if not citation_ref_items("\n".join(counter_lines)) and not _says_no_strong_counter(counter_lines):
+            counter_lines.insert(0, "- 未找到强反证；以下事项缺少足够的已保存证据。")
+        counter_lines.extend(downgraded)
+        updated["counter"] = "\n".join(dict.fromkeys(counter_lines)).strip()
+
+    return _ClaimSupportFilterResult(updated, changed=changed)
+
+
+def _next_claim(
+    claims_by_section: Mapping[str, list[ResearchClaim]],
+    claim_index: dict[str, int],
+    section: str,
+) -> ResearchClaim | None:
+    claims = claims_by_section.get(section) or []
+    index = claim_index.get(section, 0)
+    claim_index[section] = index + 1
+    if index >= len(claims):
+        return None
+    return claims[index]
+
+
+def _should_delete_unsupported_claim(text: str) -> bool:
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return True
+    lower = clean.casefold()
+    if _TABLE_SEPARATOR_RE.match(clean):
+        return True
+    if _NUMBERED_MARKDOWN_HEADING_RE.match(clean):
+        return True
+    if any(marker in lower for marker in _OPERATIONAL_MARKERS):
+        return True
+    if any(marker in lower for marker in _DELETE_UNSUPPORTED_MARKERS):
+        return True
+    return False
+
+
+def _downgraded_claim_line(text: str) -> str:
+    clean = re.sub(r"\s+", " ", str(text or "")).strip(" -•*")
+    clean = re.sub(r"\[\d+(?:[^\]]*)?\]", "", clean).strip()
+    return f"- 未能用已保存证据确认：{clip(clean, 260)}"
+
+
+def _counter_lines(text: str) -> list[str]:
+    return [
+        line.rstrip()
+        for line in str(text or "").splitlines()
+        if line.strip()
+    ]
+
+
+def _says_no_strong_counter(lines: list[str]) -> bool:
+    lower = "\n".join(lines).casefold()
+    return any(marker in lower for marker in _NO_STRONG_COUNTER_MARKERS)
+
+
+def _derive_conclusion_lines(evidence_text: str) -> list[str]:
+    lines: list[str] = []
+    for raw in str(evidence_text or "").splitlines():
+        text = raw.strip()
+        if not text:
+            continue
+        match = re.match(r"^[-*]?\s*\[(\d+(?:[^\]]*)?)\]\s*(.+?)\s*$", text)
+        if match:
+            number, body = match.groups()
+            lines.append(f"- {body.strip()} [{number}]")
+        elif citation_ref_items(text):
+            lines.append(text)
+        if len(lines) >= 3:
+            break
+    return list(dict.fromkeys(lines))
+
+
+def _derive_evidence_lines(conclusion_text: str) -> list[str]:
+    lines: list[str] = []
+    for raw in str(conclusion_text or "").splitlines():
+        text = raw.strip()
+        if not text or not citation_ref_items(text):
+            continue
+        body = re.sub(r"\[\d+(?:[^\]]*)?\]", "", text)
+        body = re.sub(r"^[-*]\s+", "", body).strip()
+        if not body:
+            continue
+        prefix = "".join(match.group(0) for match in _NUMERIC_REF_RE.finditer(text))
+        lines.append(f"- {prefix} {body}")
+        if len(lines) >= 3:
+            break
+    return list(dict.fromkeys(lines))
+
+
+def _finalized_reason(changed: bool, claim_filter_changed: bool) -> str:
+    if not changed:
+        return "already_compiled"
+    if claim_filter_changed:
+        return "claim_support_filtered"
+    return "compiled_citations"
 
 
 def render_research_report_sections(sections: Mapping[str, str]) -> str:

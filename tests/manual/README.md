@@ -125,6 +125,23 @@ python -B tests\manual\research_claim_support_projection.py `
   --output tests\manual\results\research_claim_support_projection-mimo-smoke.json
 ```
 
+`research_finalizer_replay_projection.py` is the no-network preflight for the
+production finalizer. It reads completed manual result rows plus archived
+`done.answer` transcripts, reconstructs a minimal ledger from bounded
+`ResearchRecord` data, and runs the current
+`finalize_done_answer(..., enforce_claim_support=True)` over that archived
+answer. It omits raw prompts, replies, report text, source bodies, and evidence
+excerpts. Because the replay ledger is reconstructed from bounded excerpts, a
+failed proof result is a conservative lower bound; use it to decide whether a
+live A/B is worth spending traffic, not as release evidence by itself.
+
+```powershell
+python -B tests\manual\research_finalizer_replay_projection.py --self-test
+python -B tests\manual\research_finalizer_replay_projection.py `
+  --input "tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-*.json" `
+  --output tests\manual\results\research_finalizer_replay_projection-mimo-pubmed-clean-20260905-history.json
+```
+
 `research_source_rendering_ab.py` is the manual-only A/B for the untrusted
 source wrapper idea. It feeds the same already-opened fixture source to two
 arms: `baseline` renders raw source text, while `wrapper` marks the source as
@@ -362,6 +379,35 @@ first planner attempt failed with
 not improve and unsupported-claim reduction was too small. Both arms stayed
 `proof_ok=false`; the planner record had two support relations, while remaining
 unsupported claims had no parsed citation refs.
+
+The final-report support filter adds the next conservative production layer in
+`codey.research.done_finalizer`. It is enabled only by Research production
+callers (`runner.py` and `record_merge.py`) and keeps the direct finalizer API
+default unchanged. After citations are compiled, the filter builds a temporary
+`ResearchRecord` and treats the required answer sections strictly:
+evidence-backed conclusion/evidence lines stay, unsupported structural or
+generic lines are removed, and unsupported but potentially important lines are
+moved to `反证与限制` as unverified items. It never invents citations, never
+attaches evidence to an unsupported claim, and never asks the provider to
+rewrite the report.
+
+Offline old-record projection over the seven clean MiMo PubMed result files
+(`research_claim_support_projection-mimo-pubmed-clean-20260905-finalizer-offline.json`)
+found 12 record rows and 11 rows with reduced target proof gaps. Under the
+delete/downgrade projection, 3 rows reached `proof_ok=true`; the other 9 became
+`insufficient_evidence`, which is the expected honest outcome when the old
+answer had too few supported required claims after unsupported text was removed
+or downgraded.
+
+Archive transcript replay through the actual current finalizer
+(`research_finalizer_replay_projection-mimo-pubmed-clean-20260905-history.json`)
+found 12 rows, 10 replayable rows, 9 finalizer changes, and 9 rows with reduced
+target proof gaps; those 9 rows had zero remaining target claim-support gaps
+after replay. No row reached `proof_ok=true` in archive replay because the
+minimal ledger is rebuilt only from bounded old `ResearchRecord` excerpts, so
+coverage and support-relation scoring remain lower-bound diagnostics. This is
+enough to justify one small clean live MiMo PubMed A/B after the commit, but it
+is not release-gate evidence.
 
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally

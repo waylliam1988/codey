@@ -396,6 +396,8 @@ class ResearchRunner:
                     summary_candidate,
                     self.tools.ledger,
                     source_ids=control_state.source_urls if control_state is not None else {},
+                    question=question,
+                    enforce_claim_support=True,
                 )
                 if finalized.changed:
                     self.prompt_trace.call(
