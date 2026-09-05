@@ -979,6 +979,101 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(results[0]["url"], "https://example.com/recovered")
         self.assertEqual(results[0]["title"], "Recovered result")
 
+    def test_browser_search_rejects_wrong_host_after_search_navigation(self) -> None:
+        class FakePage:
+            url = "https://evidencenow.io"
+
+            def set_default_navigation_timeout(self, _timeout) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded") -> None:
+                del wait_until
+
+            def query_selector_all(self, _selector):
+                return []
+
+            def query_selector(self, _selector):
+                return None
+
+        provider = BrowserSearchProvider()
+
+        with self.assertRaises(browser_search.SearchUnavailableError) as ctx:
+            provider._search_page_results_on_browser_thread(
+                FakePage(),
+                "alpha",
+                3,
+                profile=provider._profile,
+                engine="bing",
+            )
+
+        self.assertEqual(ctx.exception.failure_kind, "search_wrong_host")
+
+    def test_browser_search_rejects_blank_search_page(self) -> None:
+        class FakeBody:
+            def inner_text(self) -> str:
+                return ""
+
+        class FakePage:
+            url = "https://www.bing.com/search?q=alpha"
+
+            def set_default_navigation_timeout(self, _timeout) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded") -> None:
+                del wait_until
+
+            def query_selector_all(self, _selector):
+                return []
+
+            def query_selector(self, selector):
+                return FakeBody() if selector == "body" else None
+
+        provider = BrowserSearchProvider()
+
+        with self.assertRaises(browser_search.SearchUnavailableError) as ctx:
+            provider._search_page_results_on_browser_thread(
+                FakePage(),
+                "alpha",
+                3,
+                profile=provider._profile,
+                engine="bing",
+            )
+
+        self.assertEqual(ctx.exception.failure_kind, "search_page_blank")
+
+    def test_browser_search_falls_back_to_next_engine_after_page_failures(self) -> None:
+        provider = BrowserSearchProvider()
+        provider._engine_order = ("bing", "duckduckgo")
+        pages = [object(), object(), object()]
+        engines: list[str] = []
+
+        provider._ensure_search_page_on_browser_thread = mock.Mock(return_value=pages[0])
+        provider._replace_search_page_on_browser_thread = mock.Mock(
+            side_effect=[pages[1], pages[2]]
+        )
+
+        def search_page(_page, _query, _limit, **kwargs):
+            engine = str(kwargs["engine"])
+            engines.append(engine)
+            if engine == "bing":
+                raise browser_search.SearchUnavailableError(
+                    "search_page_blank",
+                    engine=engine,
+                    detail="search page had no usable visible content",
+                )
+            return [{"title": "Recovered", "url": "https://example.com/recovered", "snippet": ""}]
+
+        with mock.patch.object(
+            provider,
+            "_search_page_results_on_browser_thread",
+            side_effect=search_page,
+        ):
+            results = provider._search_on_browser_thread("alpha", 3)
+
+        self.assertEqual(results[0]["url"], "https://example.com/recovered")
+        self.assertEqual(engines, ["bing", "bing", "duckduckgo"])
+        self.assertEqual(provider.last_search_errors[0]["failure_kind"], "search_page_blank")
+
     def test_browser_search_cancellation_discards_page_and_does_not_retry(self) -> None:
         class FakePage:
             def __init__(self) -> None:

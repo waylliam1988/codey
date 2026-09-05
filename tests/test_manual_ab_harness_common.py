@@ -473,6 +473,24 @@ def test_result_row_store_treats_terminal_error_as_failed(tmp_path: Path) -> Non
     assert resumed.pending_keys(cases=("case-a",), arms=("arm-a",), rerun_failed=True) == [("case-a", "arm-a", 1)]
 
 
+def test_row_search_failure_class_distinguishes_environment_search_stalls() -> None:
+    row = {
+        "case": "pubmed",
+        "arm": "planner",
+        "search_failures": [{
+            "engine": "bing",
+            "failure_kind": "search_wrong_host",
+            "observed_host": "evidencenow.io",
+        }],
+    }
+
+    assert common.row_search_failure_class(row) == common.AB_FAILURE_ENVIRONMENT
+    assert common.row_search_failure_class({"search_failures": []}) == common.AB_FAILURE_NONE
+    assert common.row_search_failure_class(
+        {"search_failures": [{"failure_kind": "unexpected_parser_bug"}]}
+    ) == common.AB_FAILURE_CODEY
+
+
 def test_result_row_store_pending_does_not_destroy_old_evidence(tmp_path: Path) -> None:
     output = tmp_path / "result.json"
     output.write_text(

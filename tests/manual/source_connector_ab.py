@@ -274,6 +274,7 @@ def run_case(
                 "evidence_count": len(result.evidence_items),
                 "notes_created": len(result.notes_created),
                 "connector_errors": list(getattr(search, "last_connector_errors", []))[:8],
+                "search_failures": list(getattr(search, "last_search_failures", []))[:8],
                 "proof_ok": bool(proof.ok) if proof is not None else False,
                 "proof_answer_status": proof.answer_status if proof is not None else "",
                 "proof_missing_evidence": list(proof.missing_evidence[:8]) if proof is not None else [],

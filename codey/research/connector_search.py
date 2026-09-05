@@ -45,6 +45,7 @@ from codey.policies.network import check_fetch_url
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
 CONNECTOR_RESULT_LIMIT = 2
+CONNECTOR_MIN_RESULTS = 2
 CONNECTOR_TIMEOUT_SECONDS = 4
 CONNECTOR_MIN_TIMEOUT_SECONDS = 0.2
 CONNECTOR_SEARCH_BUDGET_SECONDS = 6.0
@@ -87,17 +88,25 @@ class ConnectorAwareSearchProvider:
         self._last_request_at: dict[str, float] = {}
         self._search_deadline: float | None = None
         self.last_connector_errors: list[dict[str, str]] = []
+        self.last_search_failures: list[dict[str, str]] = []
+        self.last_search_failure: dict[str, str] = {}
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
         query = " ".join(str(query or "").split())
         if not query:
             return []
         result_limit = _bounded_limit(limit, default=8, upper=MAX_CONNECTOR_HITS)
-        base_results = self._base_search(query, limit=result_limit)
+        self.last_search_failures = []
+        self.last_search_failure = {}
+        safe_query = safe_connector_query(query, limit=12)
         connector_results = self._connector_search_results(
             query,
             limit=min(self.connector_limit, result_limit),
+            safe_query=safe_query,
         )
+        if len(connector_results) >= min(CONNECTOR_MIN_RESULTS, result_limit):
+            return _merge_results(connector_results, [], limit=result_limit)
+        base_results = self._base_search(query, limit=result_limit)
         return _merge_results(connector_results, base_results, limit=result_limit)
 
     def fetch(self, url: str) -> dict:
@@ -129,12 +138,25 @@ class ConnectorAwareSearchProvider:
         except cancellation.TaskCancelled:
             raise
         except Exception as exc:
+            failures = getattr(self.base_provider, "last_search_errors", ())
+            if isinstance(failures, (list, tuple)):
+                for item in failures[-8:]:
+                    if isinstance(item, dict):
+                        failure = {str(key): str(value)[:160] for key, value in item.items()}
+                        self.last_search_failures.append(failure)
+                        self.last_search_failure = failure
             self._record_error("browser", "search", exc)
             return []
 
-    def _connector_search_results(self, query: str, *, limit: int) -> list[dict]:
+    def _connector_search_results(
+        self,
+        query: str,
+        *,
+        limit: int,
+        safe_query: SafeConnectorQuery | None = None,
+    ) -> list[dict]:
         results: list[dict] = []
-        safe_query = safe_connector_query(query, limit=12)
+        safe_query = safe_query or safe_connector_query(query, limit=12)
         if not safe_query.terms:
             self._record_skip("connector", "search", safe_query.skip_reason or "connector_query_empty")
             return results
@@ -565,6 +587,7 @@ def _bounded_timeout(value: object) -> float:
 
 
 __all__ = [
+    "CONNECTOR_MIN_RESULTS",
     "CONNECTOR_RESULT_LIMIT",
     "CONNECTOR_SEARCH_IDS",
     "ConnectorAwareSearchProvider",

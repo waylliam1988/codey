@@ -96,6 +96,29 @@ def row_has_terminal_failure(row: Mapping[str, Any]) -> bool:
     return str(row.get("stop_reason") or "").strip().lower() == "error"
 
 
+def row_search_failure_class(row: Mapping[str, Any]) -> str:
+    """Closed class for browser/search failures captured in result rows."""
+
+    failures = row.get("search_failures")
+    if not isinstance(failures, Sequence) or isinstance(failures, (str, bytes)):
+        return AB_FAILURE_NONE
+    for failure in failures:
+        if not isinstance(failure, Mapping):
+            continue
+        kind = str(failure.get("failure_kind") or "").strip().lower()
+        if kind in {
+            "search_navigation_timeout",
+            "search_page_blank",
+            "search_page_unavailable",
+            "search_timeout",
+            "search_wrong_host",
+        }:
+            return AB_FAILURE_ENVIRONMENT
+        if kind:
+            return AB_FAILURE_CODEY
+    return AB_FAILURE_NONE
+
+
 @dataclass(frozen=True)
 class ArmRunLayout:
     """Stable file layout for one provider/suite/arm result output."""
@@ -1360,6 +1383,7 @@ __all__ = [
     "open_journal_for_output",
     "research_record_payload",
     "row_has_terminal_failure",
+    "row_search_failure_class",
     "transcript_path_for_row",
     "timestamp",
     "upsert_case_row",

@@ -41,6 +41,7 @@ from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     bind_row_evidence_refs,
     row_has_terminal_failure,
+    row_search_failure_class,
     timestamp,
     write_arm_manifest,
     build_arm_manifest,
@@ -297,6 +298,7 @@ def run_case(
                 "info": infos[:16],
                 "summary_chars": len(result.summary or ""),
                 "summary_preview": connector._clip(result.summary, 1600),
+                "search_failures": list(getattr(search, "last_search_failures", []))[:8],
             }
             attach_research_record_payload(row, result.research_record)
             row["score"] = score_followup_quality_row(row)
@@ -318,6 +320,8 @@ def run_case(
                 "model_actions": model_actions[:60],
                 "tool_calls": tool_calls[:60],
                 "info": infos[:16],
+                "connector_errors": list(getattr(search, "last_connector_errors", []))[:8],
+                "search_failures": list(getattr(search, "last_search_failures", []))[:8],
             }
             if provider_failure:
                 row["provider_failure"] = provider_failure
@@ -553,6 +557,13 @@ def main() -> int:
                 layout=layout,
             )
             ok = bool(result_payload.get("ok"))
+            codey_failure_class = AB_FAILURE_NONE if ok else AB_FAILURE_CODEY
+            for row in result_payload.get("rows") or []:
+                if isinstance(row, Mapping):
+                    row_class = row_search_failure_class(row)
+                    if row_class != AB_FAILURE_NONE:
+                        codey_failure_class = row_class
+                        break
             write_arm_manifest(
                 output,
                 build_arm_manifest(
@@ -566,7 +577,7 @@ def main() -> int:
                     started_at=str(result_payload.get("started_at") or ""),
                     finished_at=str(result_payload.get("finished_at") or timestamp()),
                     stop_reason=str(result_payload.get("stop_reason") or ("done" if ok else "unknown")),
-                    codey_failure_class=(AB_FAILURE_NONE if ok else AB_FAILURE_CODEY),
+                    codey_failure_class=codey_failure_class,
                 ),
             )
         finally:

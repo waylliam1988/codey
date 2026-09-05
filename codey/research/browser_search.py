@@ -31,7 +31,9 @@ _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
 RESEARCH_CDP_PORT = DEFAULT_PORT + 40
 _NAV_TIMEOUT_MS = 20_000
+_SEARCH_NAV_TIMEOUT_MS = 8_000
 _SEARCH_NAV_ATTEMPTS = 2
+_SEARCH_TOTAL_TIMEOUT_SECONDS = 24.0
 _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2
 _MAX_PAGE_CHARS = 200_000
@@ -41,6 +43,29 @@ _PDF_MAX_REDIRECTS = 5
 T = TypeVar("T")
 _SEARCH_WORKER_LOCK = threading.Lock()
 _SEARCH_WORKER: browser_worker.BrowserWorker | None = None
+
+
+class SearchUnavailableError(RuntimeError):
+    """A bounded, classified failure from the browser search surface."""
+
+    def __init__(
+        self,
+        failure_kind: str,
+        *,
+        engine: str = "",
+        detail: str = "",
+        observed_host: str = "",
+    ) -> None:
+        self.failure_kind = str(failure_kind or "search_unavailable")
+        self.engine = str(engine or "")
+        self.detail = str(detail or "")
+        self.observed_host = str(observed_host or "")
+        message = self.failure_kind
+        if self.engine:
+            message = f"{message} ({self.engine})"
+        if self.detail:
+            message = f"{message}: {self.detail}"
+        super().__init__(message)
 
 
 def load_profiles() -> dict:
@@ -78,10 +103,26 @@ class BrowserSearchProvider:
         bring_to_front: bool = False,
     ) -> None:
         profiles = load_profiles()
+        engine_profiles = profiles.get("engines", {})
+        if not isinstance(engine_profiles, dict):
+            engine_profiles = {}
         self.engine = engine or profiles.get("default_engine", "bing")
-        self._profile = profiles.get("engines", {}).get(self.engine)
+        self._profiles = {
+            str(name): value
+            for name, value in engine_profiles.items()
+            if isinstance(value, dict)
+        }
+        self._profile = self._profiles.get(self.engine)
         if not self._profile:
             raise ValueError(f"unknown search engine: {self.engine}")
+        if engine is None:
+            self._engine_order = tuple(
+                dict.fromkeys(
+                    [self.engine, *[name for name in self._profiles if name != self.engine]]
+                )
+            )
+        else:
+            self._engine_order = (self.engine,)
         self._reuse_url_contains = _search_host(self._profile)
         self.profile_dir = Path(profile_dir) if profile_dir else RESEARCH_PROFILE
         self.cdp_port = int(cdp_port)
@@ -93,6 +134,8 @@ class BrowserSearchProvider:
         self._search_page = None
         self._fetch_page = None
         self._last_worker_health: dict[str, object] = {}
+        self.last_search_errors: list[dict[str, str]] = []
+        self.last_search_failure: dict[str, str] = {}
 
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = ""):
         if self._session is not None:
@@ -180,6 +223,8 @@ class BrowserSearchProvider:
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
         cancellation.check()
+        self.last_search_errors = []
+        self.last_search_failure = {}
         try:
             results = _search_browser_call(self._search_on_browser_thread, query, limit)
         except (TimeoutError, cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -190,42 +235,97 @@ class BrowserSearchProvider:
 
     def _search_on_browser_thread(self, query: str, limit: int) -> list[dict]:
         last_error: Exception | None = None
-        for attempt in range(_SEARCH_NAV_ATTEMPTS):
-            page = (
-                self._ensure_search_page_on_browser_thread()
-                if attempt == 0
-                else self._replace_search_page_on_browser_thread()
+        deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
+        for engine_index, engine in enumerate(self._engine_order):
+            profile = self._profiles[engine]
+            for attempt in range(_SEARCH_NAV_ATTEMPTS):
+                if time.monotonic() >= deadline:
+                    break
+                page = (
+                    self._ensure_search_page_on_browser_thread()
+                    if engine_index == 0 and attempt == 0
+                    else self._replace_search_page_on_browser_thread()
+                )
+                try:
+                    return self._search_page_results_on_browser_thread(
+                        page,
+                        query,
+                        limit,
+                        profile=profile,
+                        engine=engine,
+                        deadline=deadline,
+                    )
+                except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                    self._discard_search_page_on_browser_thread(page)
+                    raise
+                except Exception as exc:
+                    last_error = exc
+                    self._record_search_error(engine, exc)
+                    self._discard_search_page_on_browser_thread(page)
+        if time.monotonic() >= deadline and not isinstance(last_error, SearchUnavailableError):
+            last_error = SearchUnavailableError(
+                "search_timeout",
+                engine=self._engine_order[-1] if self._engine_order else self.engine,
+                detail="search budget exhausted",
             )
-            try:
-                return self._search_page_results_on_browser_thread(page, query, limit)
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                self._discard_search_page_on_browser_thread(page)
-                raise
-            except Exception as exc:
-                last_error = exc
-                self._discard_search_page_on_browser_thread(page)
         if last_error is not None:
-            raise last_error
-        return []
+            if not self.last_search_failure:
+                self._record_search_error(
+                    getattr(last_error, "engine", "") or self.engine,
+                    last_error,
+                )
+            raise SearchUnavailableError(
+                getattr(last_error, "failure_kind", "") or _search_failure_kind(last_error),
+                engine=getattr(last_error, "engine", "") or self.engine,
+                detail=getattr(last_error, "detail", "") or _search_failure_detail(last_error),
+            )
+        raise SearchUnavailableError("search_unavailable", engine=self.engine)
 
-    def _search_page_results_on_browser_thread(self, page, query: str, limit: int) -> list[dict]:
-        url = self._profile["search_url"].format(query=quote_plus(query))
+    def _search_page_results_on_browser_thread(
+        self,
+        page,
+        query: str,
+        limit: int,
+        *,
+        profile: dict | None = None,
+        engine: str = "",
+        deadline: float | None = None,
+    ) -> list[dict]:
+        active_profile = profile or self._profile
+        active_engine = engine or self.engine
+        if deadline is None:
+            deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
+        remaining_ms = int(max(250.0, (deadline - time.monotonic()) * 1000))
+        try:
+            page.set_default_navigation_timeout(min(_SEARCH_NAV_TIMEOUT_MS, remaining_ms))
+        except Exception:
+            pass
+        url = active_profile["search_url"].format(query=quote_plus(query))
         cancellation.check()
         page.goto(url, wait_until="domcontentloaded")
         cancellation.check()
+        final_url = _page_url(page)
+        expected_host = _search_engine_host(active_profile)
+        if final_url and expected_host and not _same_host(final_url, expected_host):
+            raise SearchUnavailableError(
+                "search_wrong_host",
+                engine=active_engine,
+                detail="search page redirected to an unexpected host",
+                observed_host=_url_host(final_url),
+            )
         results: list[dict] = []
-        for block in page.query_selector_all(self._profile["result_selector"])[: limit * 2]:
+        for block in page.query_selector_all(active_profile["result_selector"])[: limit * 2]:
             cancellation.check()
-            link = block.query_selector(self._profile["link_selector"])
+            link = block.query_selector(active_profile["link_selector"])
             if link is None:
                 continue
             href = _normalize_result_url(link.get_attribute("href") or "")
             if not _looks_like_public_result_url(href):
                 continue
-            title = _best_result_title(block, link, self._profile)
+            title = _best_result_title(block, link, active_profile)
             if not title:
                 title = _title_from_url(href)
-            snippet_el = block.query_selector(self._profile["snippet_selector"])
+            snippet_el = block.query_selector(active_profile["snippet_selector"])
             snippet = _element_text(snippet_el) if snippet_el else _snippet_from_block(block, title)
             results.append({"title": title, "url": href, "snippet": snippet})
             if len(results) >= limit:
@@ -233,8 +333,18 @@ class BrowserSearchProvider:
         if not results:
             cancellation.check()
             results = self._fallback_results(page, limit)
+        if results:
+            cancellation.check()
+            return results
+        body_text = _search_page_body_text(page)
+        if not _usable_search_page_text(body_text):
+            raise SearchUnavailableError(
+                _search_page_failure_kind(body_text),
+                engine=active_engine,
+                detail="search page was blank or unavailable",
+            )
         cancellation.check()
-        return results
+        return []
 
     def _fallback_results(self, page, limit: int) -> list[dict]:
         results: list[dict] = []
@@ -340,6 +450,22 @@ class BrowserSearchProvider:
         except Exception:
             self._last_worker_health = {"state": "unavailable", "stuck_detected": False}
 
+    def _record_search_error(self, engine: str, exc: Exception) -> None:
+        failure_kind = _search_failure_kind(exc)
+        payload = {
+            "engine": str(engine or self.engine)[:40],
+            "failure_kind": failure_kind[:80],
+            "error": _search_failure_detail(exc)[:160],
+        }
+        if isinstance(exc, SearchUnavailableError) and exc.engine:
+            payload["engine"] = exc.engine[:40]
+        observed_host = getattr(exc, "observed_host", "")
+        if observed_host:
+            payload["observed_host"] = str(observed_host)[:120]
+        self.last_search_errors.append(payload)
+        del self.last_search_errors[:-8]
+        self.last_search_failure = dict(payload)
+
     def _close_on_browser_thread(self) -> None:
         try:
             seen_pages: set[int] = set()
@@ -412,6 +538,101 @@ def _search_host(profile: dict) -> str:
         return urlparse(str(profile.get("search_url") or "")).netloc
     except Exception:
         return ""
+
+
+def _page_url(page) -> str:
+    try:
+        value = page.url
+    except Exception:
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _search_engine_host(profile: dict) -> str:
+    try:
+        return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower().removeprefix("www.")
+    except Exception:
+        return ""
+
+
+def _url_host(url: str) -> str:
+    try:
+        return (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return ""
+
+
+def _same_host(url: str, expected_host: str) -> bool:
+    try:
+        actual = (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return False
+    expected = str(expected_host or "").lower().removeprefix("www.")
+    return bool(actual and expected and (actual == expected or actual.endswith("." + expected)))
+
+
+def _search_page_body_text(page) -> str:
+    try:
+        body = page.query_selector("body")
+    except Exception:
+        return ""
+    return _element_text(body)
+
+
+_SEARCH_PAGE_ERROR_MARKERS = (
+    "access denied",
+    "are you a robot",
+    "captcha",
+    "temporarily unavailable",
+    "unusual traffic",
+    "verify you are human",
+    "something went wrong",
+)
+_SEARCH_PAGE_NO_RESULT_MARKERS = (
+    "no results",
+    "no results found",
+    "didn't match any results",
+    "did not match any results",
+)
+
+
+def _usable_search_page_text(text: str) -> bool:
+    normalized = _clean_space(text).casefold()
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _SEARCH_PAGE_ERROR_MARKERS):
+        return False
+    if any(marker in normalized for marker in _SEARCH_PAGE_NO_RESULT_MARKERS):
+        return True
+    return len(normalized) >= 24
+
+
+def _search_page_failure_kind(text: str) -> str:
+    normalized = _clean_space(text).casefold()
+    if any(marker in normalized for marker in _SEARCH_PAGE_ERROR_MARKERS):
+        return "search_page_unavailable"
+    return "search_page_blank"
+
+
+def _search_failure_kind(exc: Exception) -> str:
+    if isinstance(exc, SearchUnavailableError):
+        return exc.failure_kind
+    text = f"{type(exc).__name__} {exc}".casefold()
+    if "timeout" in text or "timed out" in text:
+        return "search_navigation_timeout"
+    return "search_engine_error"
+
+
+def _search_failure_detail(exc: Exception) -> str:
+    if isinstance(exc, SearchUnavailableError) and exc.detail:
+        return _clean_space(exc.detail)
+    failure_kind = _search_failure_kind(exc)
+    return {
+        "search_navigation_timeout": "search navigation timed out",
+        "search_page_unavailable": "search page reported an availability error",
+        "search_page_blank": "search page had no usable visible content",
+        "search_engine_error": type(exc).__name__,
+    }.get(failure_kind, type(exc).__name__)
 
 
 def _element_text(element) -> str:

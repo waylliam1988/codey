@@ -89,6 +89,29 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
     assert tools.ledger.opened_sources_payload()[0]["final_url"] == results[0]["url"]
 
 
+def test_connector_search_skips_browser_when_connector_has_enough_results() -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=2)
+    connector_results = [
+        {
+            "title": "PubMed: First",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+            "snippet": "first",
+        },
+        {
+            "title": "PubMed: Second",
+            "url": "https://pubmed.ncbi.nlm.nih.gov/23456789/",
+            "snippet": "second",
+        },
+    ]
+
+    with mock.patch.object(provider, "_connector_search_results", return_value=connector_results):
+        results = provider.search("clinical hepatotoxicity", limit=4)
+
+    assert results == connector_results
+    assert base.searches == []
+
+
 def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
