@@ -91,7 +91,12 @@ _ASSUMPTION_MARKERS = (
     "没有找到",
     "需要进一步",
 )
-_MATCH_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+\-/]{1,}")
+_MATCH_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+\-/.%]{1,}")
+_MATCH_NUMERIC_RE = re.compile(
+    r"\b\d+(?:\s*-\s*\d+)+(?:%|\b)"
+    r"|\b\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?%?"
+    r"|\b\d+(?:\.\d+)?%?"
+)
 _CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
 _MATCH_STOP_TERMS = frozenset({
     "about",
@@ -728,6 +733,8 @@ def _evidence_matches_claim(
             return True
         if _content_overlap_supports(claim_norm, candidate):
             return True
+        if _numeric_overlap_supports(claim_norm, candidate):
+            return True
     return False
 
 
@@ -758,6 +765,29 @@ def _content_match_terms(text: str) -> set[str]:
             run[index:index + 2]
             for index in range(max(0, len(run) - 1))
         )
+    return terms
+
+
+def _numeric_overlap_supports(claim_text: str, evidence_text: str) -> bool:
+    claim_numbers = _numeric_match_terms(claim_text)
+    evidence_numbers = _numeric_match_terms(evidence_text)
+    if len(claim_numbers) < 2 or not evidence_numbers:
+        return False
+    overlap = claim_numbers & evidence_numbers
+    if len(overlap) < 2:
+        return False
+    return len(overlap) / max(1, len(claim_numbers)) >= 0.5
+
+
+def _numeric_match_terms(text: str) -> set[str]:
+    terms: set[str] = set()
+    for raw in _MATCH_NUMERIC_RE.findall(_normalize_for_match(text)):
+        term = re.sub(r"\s+", "", raw).strip()
+        if not term:
+            continue
+        terms.add(term.rstrip("%"))
+        if term.endswith("%"):
+            terms.add(term)
     return terms
 
 

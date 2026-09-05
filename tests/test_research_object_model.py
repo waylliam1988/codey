@@ -352,6 +352,78 @@ def test_same_citation_overlap_requires_specific_content_terms() -> None:
     )
 
 
+def test_same_citation_numeric_claim_binds_when_distinct_values_match_evidence() -> None:
+    url = "https://pubmed.ncbi.nlm.nih.gov/41972337/"
+    ledger = ResearchLedger()
+    ledger.record_search("ICI hepatotoxicity multicenter", [{
+        "title": "TOG study",
+        "url": url,
+        "snippet": "Grade 3-4 liver dysfunction in ICI hepatotoxicity.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="TOG study",
+        text=(
+            "In the cohort, 24/56 patients (42.9%) developed grade 3-4 liver "
+            "dysfunction, and 5/56 patients (8.9%) died due to liver failure."
+        ),
+    )
+    evidence = ledger.prepare_evidence_items(
+        [{
+            "claim": "24/56 patients (42.9%) developed grade 3-4 liver dysfunction.",
+            "source_url": url,
+            "excerpt": (
+                "In the cohort, 24/56 patients (42.9%) developed grade 3-4 liver "
+                "dysfunction, and 5/56 patients (8.9%) died due to liver failure."
+            ),
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim="24/56 patients (42.9%) developed grade 3-4 liver dysfunction.",
+        fallback_body="24/56 patients (42.9%) developed grade 3-4 liver dysfunction.",
+        note_type="fact",
+    )
+    assert not evidence.error
+    ledger.add_evidence_items(list(evidence.items), note_id="fact-tog")
+    summary = (
+        "## 结论\n"
+        "- 42.9%（24/56）的患者出现3-4级肝功能不全。 [1]\n\n"
+        "## 关键证据\n"
+        "- 42.9%（24/56）的患者出现3-4级肝功能不全。 [1]\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证。\n\n"
+        "## 来源质量\n"
+        "- [1] PubMed multicenter study.\n\n"
+        "## 搜索覆盖\n"
+        "- query: ICI hepatotoxicity multicenter\n\n"
+        "## 来源\n"
+        f"[1] TOG study - {url}"
+    )
+    review = _review(summary, ledger)
+    assert review.ok
+
+    record = build_research_record(
+        question="Research ICI hepatotoxicity",
+        summary=summary,
+        ledger=ledger,
+        review=review,
+        stop_reason="done",
+    )
+
+    conclusion_claim = next(
+        item for item in record.claims if item.claim_section == "conclusion"
+    )
+    assert conclusion_claim.status == "evidence_backed"
+    assert conclusion_claim.evidence_refs == (record.evidence[0].evidence_id,)
+    assert any(
+        relation.from_ref == conclusion_claim.claim_id
+        and relation.to_ref == record.evidence[0].evidence_id
+        and relation.relation_kind == "supports"
+        for relation in record.relations
+    )
+
+
 def test_contradicting_evidence_does_not_support_conclusion_claim() -> None:
     ledger = _ledger(stance="contradicting")
     summary = _report()

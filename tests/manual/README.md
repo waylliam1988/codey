@@ -338,9 +338,12 @@ The claim-to-evidence binding patch updates `codey.research.object_model` so
 building the record. Final-report claims still need an explicit citation whose
 URL maps to the same opened source, and the evidence stance must fit the report
 section. Binding now accepts exact digest matches, containment, or
-high-threshold content-term overlap against the evidence claim or excerpt; it
-does not serialize the internal evidence claim text, invent citations, or allow
-same-source evidence to support unrelated claims.
+high-threshold content-term overlap against the evidence claim or excerpt. It
+also accepts distinct numeric overlap for cited claims with multiple matching
+numbers, which covers cases such as a Chinese final report claim citing `42.9%`
+and `24/56` from an English evidence excerpt. It does not serialize the
+internal evidence claim text, invent citations, or allow same-source evidence to
+support unrelated claims.
 
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
