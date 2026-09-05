@@ -33,6 +33,7 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 DEFAULT_PATTERNS = (
     "bounded_research_planner_ab-*.json",
     "research_followup_quality_ab-*.json",
+    "research_forced_followup_gap_ab-*.json",
     "source_connector_ab-*.json",
     "source_connector_done_ab-*.json",
     "research_source_rendering_ab-*.json",
@@ -46,6 +47,7 @@ PROOF_GAP_CODES = (
 PROOF_GAP_PROBES = (
     "bounded_research_planner_ab",
     "research_followup_quality_ab",
+    "research_forced_followup_gap_ab",
     "source_connector_ab",
     "source_connector_done_ab",
     "research_source_rendering_ab",
@@ -152,7 +154,11 @@ def _bounded_followup_gate(payloads: Sequence[ResultPayload]) -> dict[str, Any]:
     rows = [
         row
         for item in payloads
-        if item.probe in {"bounded_research_planner_ab", "research_followup_quality_ab"}
+        if item.probe in {
+            "bounded_research_planner_ab",
+            "research_followup_quality_ab",
+            "research_forced_followup_gap_ab",
+        }
         for row in item.rows
     ]
     pairs = []
@@ -615,6 +621,7 @@ def _is_evidence_only_pair(pair: Mapping[str, Any]) -> bool:
         mode in {
             "connector_backed_evidence_followup",
             "evidence_only_patch_merge",
+            "forced_gap_production_evidence_followup",
             "production_evidence_followup",
         }
         and _int(pair.get("followup_rounds")) > 0

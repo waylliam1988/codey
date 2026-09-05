@@ -427,6 +427,48 @@ claim-support proof gaps across the two rows. It still records
 proof recovery sample, not evidence that the evidence-only follow-up round
 improved the answer.
 
+`research_forced_followup_gap_ab.py` is a targeted live A/B for an explicitly
+actionable coverage gap. Both arms start from the same scripted initial
+Research turn and the same source A; only after initial Research finishes does
+the harness reveal source B to the production follow-up path. The planner arm
+then uses production follow-up selection, query planning, plan execution,
+evidence-only `knowledge_write`, and deterministic merge. This is the minimal
+live check for whether a clean but incomplete answer can be improved by exactly
+one evidence-only follow-up round.
+
+```powershell
+python -B tests\manual\research_forced_followup_gap_ab.py --self-test
+python -B tests\manual\research_forced_followup_gap_ab.py `
+  --provider mimo `
+  --case warehouse_quoted_gap `
+  --arms baseline,planner `
+  --max-turns 8 `
+  --open-if-missing `
+  --rerun-failed `
+  --transcript-mode archive `
+  --output tests\manual\results\research_forced_followup_gap_ab-mimo-warehouse-quoted-gap-clean2-20260905.json
+```
+
+2026-09-05 forced actionable-gap MiMo A/B:
+`tests\manual\results\research_forced_followup_gap_ab-mimo-warehouse-quoted-gap-clean2-20260905.json`
+completed with a clean manifest at commit `e9cd261` and archived transcripts.
+Baseline fetched only source A, reached `score=5`, `proof_ok=false`,
+`proof_answer_status=answered`, `proof_coverage=0.583`, and retained the
+intentional `answer_coverage_gap`. Planner ran one evidence-only follow-up,
+fetched source B, merged one new evidence item, and reached `score=12`,
+`proof_ok=true`, `proof_answer_status=answered`, and `proof_coverage=0.833`.
+The single-input experiment gate marked the pair `useful=true`,
+`quality_regression=false`, `safe_evidence_only_pair_count=1`, and
+`safe_evidence_only_useful_count=1`. The full-history gate now includes this
+probe type; it keeps the bounded evidence-only follow-up decision at
+`keep_default_with_more_live_gate` instead of broadening planner behavior.
+
+This run also fixed a production follow-up selection gap: an answer can be
+`answered` but still fail proof because a required coverage item is missing.
+`followup_selection.has_actionable_gap()` now treats explicit coverage gaps and
+missing-evidence reason codes as actionable when proof is not ok, while still
+stopping immediately for proof-ok answers.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

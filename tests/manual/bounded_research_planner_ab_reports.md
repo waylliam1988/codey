@@ -1,15 +1,16 @@
 # Bounded Research Planner A/B Reports
 
 Generated from live manual results on 2026-08-20, 2026-08-21, and the
-2026-09-05 follow-up-quality archive attempt.
+2026-09-05 follow-up-quality and forced-gap archive attempts.
 
 This report records the 0.4.4 bounded planner experiments and later 0.5.7
 follow-up quality checks. Early rows were run with production Research code
 unchanged to validate the design before merging; the current harness now
 exercises the production evidence-only follow-up and merge path directly. The
-harness lives in
-`tests/manual/bounded_research_planner_ab.py`; result JSON and trace files are
-written under `tests/manual/results/`.
+harness lives in `tests/manual/bounded_research_planner_ab.py`; the targeted
+forced-gap production-path probe lives in
+`tests/manual/research_forced_followup_gap_ab.py`. Result JSON and trace files
+are written under `tests/manual/results/`.
 
 ## Decision
 
@@ -26,6 +27,16 @@ produce a complete baseline/planner pair, so it does not change the quality
 conclusion. It does confirm that archived transcripts are now available for
 diagnosis and that the remaining live problem is claim-to-evidence binding plus
 provider/browser completion stability, not simply source search.
+
+2026-09-05 forced-gap update: keep the evidence-only follow-up production path
+for now, but keep it narrow. The clean forced-gap MiMo run at commit `e9cd261`
+proved that when the baseline answer is clean but has an explicit actionable
+coverage gap, production follow-up selection, query planning, plan execution,
+evidence-only `knowledge_write`, and deterministic merge can recover the missing
+evidence in one round without a quality regression. This is not a license to
+restore full-report rewrite behavior. If further live gates stop showing this
+targeted value, remove the production executor/follow-up wiring instead of
+leaving inactive planner code in the default path.
 
 2026-09-05 browser-fetch diagnosis: the PMC failure was a production fetch-path
 timing issue, not evidence that PMC is unreachable or that browser cookies are
@@ -217,6 +228,33 @@ because no evidence-only follow-up round ran (`followup_rounds=0`,
 `planner_stop_reason=no_actionable_gap`). Treat this as proof that final-report
 support filtering can recover a clean planner answer, not as a bounded
 follow-up quality win.
+
+Forced actionable-gap MiMo A/B:
+`research_forced_followup_gap_ab-mimo-warehouse-quoted-gap-clean2-20260905.json`
+completed with a clean manifest at commit `e9cd261` and
+`--transcript-mode archive`. The fixture intentionally gives both arms only
+source A during initial Research, then reveals source B only to the production
+follow-up path. The question requires both quoted terms, `peak demand charges`
+and `fire-code setbacks`, so the baseline has a real actionable
+`answer_coverage_gap` even though its final claims are citation-clean.
+Baseline reached `done`, `score=5`, `proof_ok=false`,
+`proof_answer_status=answered`, `proof_coverage=0.583`,
+`expected_terms_present=false`, `followup_rounds=0`, and fetched only
+`https://source-a.test/warehouse-peak-demand`. Planner reached `done`,
+`score=12`, `proof_ok=true`, `proof_answer_status=answered`,
+`proof_coverage=0.833`, `expected_terms_present=true`,
+`followup_rounds=1`, `new_evidence_count=1`, `fresh_source_count=1`, and fetched
+`https://source-b.test/warehouse-fire-code-setbacks`. The single-input gate
+classified the pair as `useful=true`, `quality_regression=false`,
+`safe_evidence_only_pair_count=1`, and `safe_evidence_only_useful_count=1`, with
+`score_delta=7`, `coverage_delta=0.25`, and `provider_send_delta=1`.
+
+This run also exposed a production selection bug: a proof-failing answer with
+`proof_answer_status=answered` and `answer_coverage_gap` was previously treated
+as not actionable. `followup_selection.has_actionable_gap()` now treats coverage
+gaps, follow-up questions, rewrite candidates, and explicit missing-evidence
+reason codes as actionable whenever the proof review is not ok. A proof-ok
+answer still stops immediately.
 
 The live runs show that a planner can add value when three conditions are true:
 
