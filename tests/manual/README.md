@@ -345,6 +345,24 @@ and `24/56` from an English evidence excerpt. It does not serialize the
 internal evidence claim text, invent citations, or allow same-source evidence to
 support unrelated claims.
 
+Clean MiMo PubMed rerun after claim binding:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-numeric-claim-binding.json`
+was run with archived transcripts after commits `adf12a3` and `86b7073`. The
+first planner attempt failed with
+`ProviderActionError: Xiaomi MiMo Chat send failed (response_missing)`, then
+`--rerun-failed` produced a valid pair. Baseline reached `score=6`,
+`sources_read=2`, `evidence_count=2`, `record_claim_count=18`,
+`proof_coverage=0.667`, and `unsupported_claim_rate=0.611`. Planner reached
+`score=7`, `followup_rounds=1`, `followup_applied=true`,
+`planner_stop_reason=max_followup_rounds`, `sources_read=9`,
+`evidence_count=5`, `record_claim_count=10`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.600`. The gate saw material gain and no regression
+(`new_sources=7`, `new_evidence=3`, `new_fetched_sources=8`,
+`score_delta=1`), but still marked `useful=false` because proof coverage did
+not improve and unsupported-claim reduction was too small. Both arms stayed
+`proof_ok=false`; the planner record had two support relations, while remaining
+unsupported claims had no parsed citation refs.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

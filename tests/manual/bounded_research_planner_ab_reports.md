@@ -148,6 +148,27 @@ citation lookup. It does not create citations, does not treat same-source
 evidence as sufficient by itself, and does not serialize the internal evidence
 claim text into `ResearchRecord`.
 
+Clean MiMo PubMed rerun after claim-to-evidence binding:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-numeric-claim-binding.json`
+was run with `--transcript-mode archive` after commits `adf12a3` and `86b7073`.
+The first planner attempt failed before follow-up with
+`ProviderActionError: Xiaomi MiMo Chat send failed (response_missing)`, then
+`--rerun-failed` produced a complete pair. Baseline reached `done`,
+`score=6`, `sources_read=2`, `evidence_count=2`, `record_claim_count=18`,
+`proof_coverage=0.667`, and `unsupported_claim_rate=0.611`. Planner reached
+`done`, `score=7`, `followup_rounds=1`, `followup_applied=true`,
+`planner_stop_reason=max_followup_rounds`, `sources_read=9`,
+`evidence_count=5`, `record_claim_count=10`, `proof_coverage=0.667`, and
+`unsupported_claim_rate=0.600`. The gate reported `new_sources=7`,
+`new_evidence=3`, `new_fetched_sources=8`, and `score_delta=1`, with no
+quality regression; however it still marked the pair `useful=false` because
+there was no coverage gain and the unsupported-claim improvement was too small.
+Both arms remained `proof_ok=false`. In the planner record, two evidence
+claims now have support relations, but the remaining unsupported claims have no
+parsed citation refs, so the next production lever is final-report citation
+retention or removal/downgrade of uncited claims, not looser same-source
+matching.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.
