@@ -134,6 +134,17 @@ It is still not a proof success: both arms remain `proof_ok=false` because
 required report claims still lack structured `evidence_refs` and support
 relations.
 
+2026-09-05 claim-to-evidence binding patch:
+`codey.research.object_model` now keeps each `EvidenceItem.claim` as an internal
+non-serialized matcher field and uses it, plus the bounded excerpt, when binding
+final-report claims to evidence. A claim can only bind when it already cites a
+source number, that citation maps to the same opened source as the evidence,
+the evidence stance is valid for the claim section, and the claim/evidence text
+passes exact, containment, or high-threshold content-term overlap. The patch
+also maps canonical opened URLs during citation lookup. It does not create
+citations, does not treat same-source evidence as sufficient by itself, and does
+not serialize the internal evidence claim text into `ResearchRecord`.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

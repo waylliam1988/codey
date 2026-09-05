@@ -91,6 +91,87 @@ _ASSUMPTION_MARKERS = (
     "没有找到",
     "需要进一步",
 )
+_MATCH_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+\-/]{1,}")
+_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]{2,}")
+_MATCH_STOP_TERMS = frozenset({
+    "about",
+    "above",
+    "across",
+    "after",
+    "again",
+    "against",
+    "also",
+    "among",
+    "and",
+    "are",
+    "because",
+    "been",
+    "before",
+    "between",
+    "both",
+    "but",
+    "can",
+    "cannot",
+    "could",
+    "data",
+    "did",
+    "does",
+    "during",
+    "each",
+    "evidence",
+    "for",
+    "from",
+    "had",
+    "has",
+    "have",
+    "having",
+    "including",
+    "into",
+    "its",
+    "may",
+    "more",
+    "most",
+    "not",
+    "of",
+    "on",
+    "one",
+    "only",
+    "or",
+    "other",
+    "over",
+    "patients",
+    "patient",
+    "reported",
+    "research",
+    "result",
+    "results",
+    "show",
+    "showed",
+    "shown",
+    "source",
+    "study",
+    "than",
+    "that",
+    "the",
+    "their",
+    "there",
+    "these",
+    "this",
+    "those",
+    "through",
+    "to",
+    "use",
+    "used",
+    "using",
+    "was",
+    "were",
+    "when",
+    "where",
+    "which",
+    "while",
+    "with",
+    "within",
+})
 
 
 @dataclass(frozen=True)
@@ -172,6 +253,7 @@ class ResearchEvidence:
     stance: str = "supports"
     note_id: str = ""
     claim_text_digest: str = ""
+    claim_text: str = ""
 
     def to_jsonable(self) -> dict[str, object]:
         return {
@@ -519,6 +601,9 @@ def _source_ids_by_url(
             text = str(url or "").strip()
             if text:
                 mapping[text] = source.source_id
+                canonical = ledger.canonical_opened_url(text)
+                if canonical:
+                    mapping[canonical] = source.source_id
     return mapping
 
 
@@ -550,6 +635,7 @@ def _build_evidence(
             stance=stance,
             note_id=_clip(item.note_id, 120),
             claim_text_digest=_digest_text(_normalize_text(item.claim)),
+            claim_text=_clip(_normalize_text(item.claim), MAX_CLAIM_TEXT_CHARS),
         ))
     return tuple(rows)
 
@@ -634,9 +720,56 @@ def _evidence_matches_claim(
         return True
     claim_norm = _normalize_for_match(claim_text)
     excerpt_norm = _normalize_for_match(evidence.bounded_excerpt)
-    if len(excerpt_norm) < 24 or len(claim_norm) < 24:
+    evidence_claim_norm = _normalize_for_match(evidence.claim_text)
+    for candidate in (evidence_claim_norm, excerpt_norm):
+        if len(candidate) >= 24 and len(claim_norm) >= 24 and (
+            candidate in claim_norm or claim_norm in candidate
+        ):
+            return True
+        if _content_overlap_supports(claim_norm, candidate):
+            return True
+    return False
+
+
+def _content_overlap_supports(claim_text: str, evidence_text: str) -> bool:
+    claim_terms = _content_match_terms(claim_text)
+    evidence_terms = _content_match_terms(evidence_text)
+    if len(claim_terms) < 4 or len(evidence_terms) < 4:
         return False
-    return excerpt_norm in claim_norm or claim_norm in excerpt_norm
+    overlap = claim_terms & evidence_terms
+    if len(overlap) < 4:
+        return False
+    smaller = min(len(claim_terms), len(evidence_terms))
+    if len(overlap) / max(1, smaller) < 0.55:
+        return False
+    return len(overlap) / max(1, len(claim_terms)) >= 0.25
+
+
+def _content_match_terms(text: str) -> set[str]:
+    normalized = _normalize_for_match(text)
+    terms: set[str] = set()
+    for raw in _MATCH_TOKEN_RE.findall(normalized):
+        term = raw.casefold().strip("-+/")
+        _add_content_match_term(terms, term)
+        for piece in re.split(r"[-+/]", term):
+            _add_content_match_term(terms, piece)
+    for run in _CJK_RUN_RE.findall(normalized):
+        terms.update(
+            run[index:index + 2]
+            for index in range(max(0, len(run) - 1))
+        )
+    return terms
+
+
+def _add_content_match_term(terms: set[str], term: str) -> None:
+    clean = str(term or "").casefold().strip("-+/")
+    if not clean or clean in _MATCH_STOP_TERMS:
+        return
+    if clean.isdigit():
+        return
+    if len(clean) < 3 and not any(char.isdigit() for char in clean):
+        return
+    terms.add(clean)
 
 
 def _derive_answer_status(

@@ -221,6 +221,137 @@ def test_same_source_evidence_does_not_support_unmatched_claim_text() -> None:
     assert record.answer_status == "partial"
 
 
+def test_same_citation_paraphrased_claim_binds_to_evidence_claim_text() -> None:
+    url = "https://pubmed.ncbi.nlm.nih.gov/42577735/"
+    ledger = ResearchLedger()
+    ledger.record_search("ICI hepatitis MMF", [{
+        "title": "ICI hepatitis study",
+        "url": url,
+        "snippet": "Steroid refractory ICI hepatitis.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="ICI hepatitis study",
+        text="Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+    )
+    evidence = ledger.prepare_evidence_items(
+        [{
+            "claim": "MMF improved steroid refractory ICI hepatitis in treated patients.",
+            "source_url": url,
+            "excerpt": "Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim="MMF improved steroid refractory ICI hepatitis in treated patients.",
+        fallback_body="Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+        note_type="fact",
+    )
+    assert not evidence.error
+    ledger.add_evidence_items(list(evidence.items), note_id="fact-ici")
+    summary = (
+        "## 结论\n"
+        "- MMF improved steroid-refractory ICI hepatitis cases. [1]\n\n"
+        "## 关键证据\n"
+        "- MMF improved steroid-refractory ICI hepatitis cases. [1]\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证。\n\n"
+        "## 来源质量\n"
+        "- [1] PubMed abstract.\n\n"
+        "## 搜索覆盖\n"
+        "- query: ICI hepatitis MMF\n\n"
+        "## 来源\n"
+        f"[1] ICI hepatitis study - {url}"
+    )
+    review = _review(summary, ledger)
+    assert review.ok
+
+    record = build_research_record(
+        question="Research ICI hepatitis",
+        summary=summary,
+        ledger=ledger,
+        review=review,
+        stop_reason="done",
+    )
+
+    conclusion_claim = next(
+        item for item in record.claims if item.claim_section == "conclusion"
+    )
+    assert conclusion_claim.status == "evidence_backed"
+    assert conclusion_claim.evidence_refs == (record.evidence[0].evidence_id,)
+    assert "claim_text" not in record.evidence[0].to_jsonable()
+    assert any(
+        relation.from_ref == conclusion_claim.claim_id
+        and relation.to_ref == record.evidence[0].evidence_id
+        and relation.relation_kind == "supports"
+        for relation in record.relations
+    )
+
+
+def test_same_citation_overlap_requires_specific_content_terms() -> None:
+    url = "https://pubmed.ncbi.nlm.nih.gov/42577735/"
+    ledger = ResearchLedger()
+    ledger.record_search("ICI hepatitis MMF", [{
+        "title": "ICI hepatitis study",
+        "url": url,
+        "snippet": "Steroid refractory ICI hepatitis.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="ICI hepatitis study",
+        text="Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+    )
+    evidence = ledger.prepare_evidence_items(
+        [{
+            "claim": "MMF improved steroid refractory ICI hepatitis in treated patients.",
+            "source_url": url,
+            "excerpt": "Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim="MMF improved steroid refractory ICI hepatitis in treated patients.",
+        fallback_body="Of 10 steroid-refractory immune-mediated hepatitis cases, 9 improved after treatment.",
+        note_type="fact",
+    )
+    assert not evidence.error
+    ledger.add_evidence_items(list(evidence.items), note_id="fact-ici")
+    summary = (
+        "## 结论\n"
+        "- Tacrolimus prevents ICI hepatitis recurrence. [1]\n\n"
+        "## 关键证据\n"
+        "- Tacrolimus prevents ICI hepatitis recurrence. [1]\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证。\n\n"
+        "## 来源质量\n"
+        "- [1] PubMed abstract.\n\n"
+        "## 搜索覆盖\n"
+        "- query: ICI hepatitis MMF\n\n"
+        "## 来源\n"
+        f"[1] ICI hepatitis study - {url}"
+    )
+    review = _review(summary, ledger)
+    assert review.ok
+
+    record = build_research_record(
+        question="Research ICI hepatitis",
+        summary=summary,
+        ledger=ledger,
+        review=review,
+        stop_reason="done",
+    )
+
+    conclusion_claim = next(
+        item for item in record.claims if item.claim_section == "conclusion"
+    )
+    assert conclusion_claim.status == "unsupported"
+    assert conclusion_claim.evidence_refs == ()
+    assert not any(
+        relation.from_ref == conclusion_claim.claim_id and relation.relation_kind == "supports"
+        for relation in record.relations
+    )
+
+
 def test_contradicting_evidence_does_not_support_conclusion_claim() -> None:
     ledger = _ledger(stance="contradicting")
     summary = _report()

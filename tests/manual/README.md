@@ -333,6 +333,15 @@ gate marked the pair `useful=true`, `quality_regression=false`,
 Both arms still failed proof because final claims are not yet structurally bound
 to evidence refs and support relations.
 
+The claim-to-evidence binding patch updates `codey.research.object_model` so
+`EvidenceItem.claim` is available only as an internal matcher field when
+building the record. Final-report claims still need an explicit citation whose
+URL maps to the same opened source, and the evidence stance must fit the report
+section. Binding now accepts exact digest matches, containment, or
+high-threshold content-term overlap against the evidence claim or excerpt; it
+does not serialize the internal evidence claim text, invent citations, or allow
+same-source evidence to support unrelated claims.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen
