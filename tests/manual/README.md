@@ -267,6 +267,25 @@ Production follow-up material selection now skips root landing-page URLs before
 opening them, and rejects redirects that land on such home pages. Article URLs
 such as PubMed abstracts and PMC article pages remain valid candidates.
 
+2026-09-05 clean MiMo PubMed retry after the landing skip:
+`tests\manual\results\research_followup_quality_ab-mimo-pubmed-clean-20260905-after-landingskip.json`
+also remained incomplete after manual interruption. The baseline row completed
+with `score=7`, `opened_target_host=true`, `proof_ok=false`, and
+`proof_answer_status=partial`. The archived planner transcript reached turn 16;
+source acquisition had already completed by turn 10, and the remaining turns
+were repeated `done` quality-repair attempts. The repeated failure was traced to
+URL boundary parsing: the provenance and report-quality scanners truncated
+opened Annals/Elsevier URLs at balanced parentheses in the article ID, causing a
+false "URL not opened" blocker. The scanners now preserve balanced parentheses
+inside URLs and trim only unmatched closing punctuation.
+
+The landing skip is now shared by the main Research tool path as well as
+follow-up material selection. `ResearchTools.web_search()` omits root landing
+results from model-visible output, `ResearchTools.open_url()` skips direct or
+redirected root landing URLs without recording them as sources, and the
+controller no longer exposes those rows as `open_result` candidates or
+PubMed/arXiv priority results.
+
 0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
 `research_comparison_benchmark_ab.py` are deterministic-only and intentionally
 have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen

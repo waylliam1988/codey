@@ -50,6 +50,29 @@ The production `PlanExecutor` now skips root landing-page URLs before opening
 them as follow-up evidence material, and also rejects redirects that land on a
 root home page. PMC/PubMed article URLs remain eligible.
 
+2026-09-05 after-landingskip retry:
+`research_followup_quality_ab-mimo-pubmed-clean-20260905-after-landingskip.json`
+also remained `complete=false` after manual interruption. The baseline row
+completed (`score=7`, `opened_target_host=true`, `proof_ok=false`,
+`answer_status=partial`), while the planner transcript reached turn 16 without a
+persisted planner row. The planner had already finished source acquisition by
+turn 10 and then spent turns 10-16 on repeated `done`/quality-repair attempts.
+The repeated blocker was a production provenance bug: legal source URLs whose
+path contains balanced parentheses, such as Annals/Elsevier article IDs, were
+truncated at `)`, so the quality gate falsely reported an opened URL as
+unopened. The report-quality citation parser had the same boundary assumption.
+Both scanners now keep balanced parentheses inside URLs and trim only unmatched
+closing punctuation.
+
+The same retry also showed that the previous landing skip was too narrow. It was
+only attached to follow-up `PlanExecutor`, so the initial Research tool loop
+could still show or open root home-page results such as PubMed/PMC landing pages.
+The root landing filter now lives in the shared source URL selection path:
+`ResearchTools.web_search()` omits these results from model-visible search
+output, `ResearchTools.open_url()` skips direct or redirected root landing URLs
+without recording them as sources, and the controller does not expose them as
+`open_result` candidates or PubMed/arXiv priority results.
+
 The live runs show that a planner can add value when three conditions are true:
 
 1. The initial Research turn is kept to already visible material.

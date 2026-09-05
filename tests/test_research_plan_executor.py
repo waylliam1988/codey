@@ -373,7 +373,7 @@ def test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_mat
             assert result.fresh_source_count == 0
             assert result.stop_reason == "no_new_material"
             assert result.skipped_count == 1
-            assert "low_value_landing_page_url after redirect" in result.errors
+            assert any("low_value_landing_page_url after redirect" in error for error in result.errors)
         finally:
             store.index.close()
 

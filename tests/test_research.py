@@ -505,6 +505,81 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(tools.sources_read, set())
         self.assertFalse(tools.ledger.opened_sources_payload())
 
+    def test_web_search_omits_root_landing_results_from_model_output(self) -> None:
+        class LandingSearch:
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                return [
+                    {
+                        "title": "PubMed",
+                        "url": "https://pubmed.ncbi.nlm.nih.gov/",
+                        "snippet": "PubMed home page.",
+                    },
+                    {
+                        "title": "PMC Home",
+                        "url": "https://pmc.ncbi.nlm.nih.gov/",
+                        "snippet": "PMC home page.",
+                    },
+                    {
+                        "title": "Specific PMC article",
+                        "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/",
+                        "snippet": "Specific article evidence.",
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(LandingSearch(), store, KnowledgeChanges(store.root))
+
+            output = tools.web_search("biomedical PubMed evidence")
+            store.close()
+
+        self.assertNotIn("PubMed home page", output)
+        self.assertNotIn("PMC home page", output)
+        self.assertIn("1. Specific PMC article", output)
+        self.assertIn("https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/", output)
+
+    def test_open_url_skips_root_landing_without_fetching_or_recording_source(self) -> None:
+        class LandingSearch:
+            def __init__(self) -> None:
+                self.fetch_urls: list[str] = []
+
+            def fetch(self, url: str) -> dict:
+                self.fetch_urls.append(url)
+                return {"url": url, "title": "PMC Home", "text": "PMC home page"}
+
+        search = LandingSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(search, store, KnowledgeChanges(store.root))
+
+            output = tools.open_url("https://pmc.ncbi.nlm.nih.gov/")
+            store.close()
+
+        self.assertTrue(output.startswith("SKIPPED: low_value_landing_page_url"))
+        self.assertEqual(search.fetch_urls, [])
+        self.assertEqual(tools.sources_read, set())
+        self.assertFalse(tools.ledger.opened_sources_payload())
+
+    def test_open_url_skips_redirect_to_root_landing_without_recording_source(self) -> None:
+        class RedirectSearch:
+            def fetch(self, url: str) -> dict:
+                return {
+                    "url": "https://pmc.ncbi.nlm.nih.gov/",
+                    "title": "PMC Home",
+                    "text": "PMC home page",
+                }
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(RedirectSearch(), store, KnowledgeChanges(store.root))
+
+            output = tools.open_url("https://example.com/pmc-redirect")
+            store.close()
+
+        self.assertTrue(output.startswith("SKIPPED: low_value_landing_page_url after redirect"))
+        self.assertEqual(tools.sources_read, set())
+        self.assertFalse(tools.ledger.opened_sources_payload())
+
     def test_open_url_wraps_untrusted_source_text_without_polluting_ledger(self) -> None:
         url = "https://example.com/injection"
         source_text = (
@@ -1212,6 +1287,26 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIsNone(problem)
 
+    def test_provenance_preserves_balanced_parentheses_inside_opened_url(self) -> None:
+        url = "https://www.annalsofoncology.org/article/S0923-7534(22)01399-6/fulltext"
+        problem = provenance_problem(
+            f"来源: [1] ESMO guideline - {url}",
+            opened_sources={url},
+            search_result_urls=set(),
+        )
+
+        self.assertIsNone(problem)
+
+    def test_provenance_trims_unbalanced_parenthesis_after_url(self) -> None:
+        url = "https://example.com/report.pdf"
+        problem = provenance_problem(
+            f"来源为PDF ({url})",
+            opened_sources={url},
+            search_result_urls=set(),
+        )
+
+        self.assertIsNone(problem)
+
     def test_provenance_treats_backtick_as_url_boundary(self) -> None:
         url = "https://example.com/report.pdf"
         problem = provenance_problem(
@@ -1221,6 +1316,52 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
         self.assertIsNone(problem)
+
+    def test_report_quality_allows_source_url_with_balanced_parentheses(self) -> None:
+        url = "https://www.annalsofoncology.org/article/S0923-7534(22)01399-6/fulltext"
+        claim = "Hepatitis occurs during ICI monotherapy and combination therapy."
+        excerpt = "Hepatitis occurs during ICI monotherapy and combination therapy."
+        ledger = ResearchLedger()
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="ESMO guideline",
+            text=excerpt,
+        )
+        ledger.add_evidence_items(
+            [
+                EvidenceItem(
+                    claim=claim,
+                    source_url=url,
+                    excerpt=excerpt,
+                    stance="supports",
+                )
+            ]
+        )
+        report = (
+            "## 结论\n"
+            f"- {claim} [1]\n\n"
+            "## 关键证据\n"
+            f"- {excerpt} [1]\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮只覆盖已打开的 ESMO 来源。\n\n"
+            "## 来源质量\n"
+            "- [1] guideline source; opened and evidence-backed.\n\n"
+            "## 搜索覆盖\n"
+            "- search: immune checkpoint inhibitor hepatotoxicity ESMO.\n\n"
+            "## 来源\n"
+            f"[1] [ESMO guideline]({url})"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls=set(),
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].url, url)
 
     def test_report_quality_allows_source_quality_parent_domain_for_opened_subdomain(self) -> None:
         url = "https://docs.python.org/3/library/pathlib.html"
@@ -2728,6 +2869,53 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("r2: General page", provider.sent[2])
         self.assertNotIn("r1: PubMed", provider.sent[2])
 
+    def test_controller_does_not_prioritize_root_pubmed_landing_result(self) -> None:
+        class PubMedLandingSearch(FakeSearch):
+            article_url = "https://pubmed.ncbi.nlm.nih.gov/41972337/"
+
+            def __init__(self) -> None:
+                self.fetch_urls: list[str] = []
+
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                return [
+                    {
+                        "title": "PubMed",
+                        "url": "https://pubmed.ncbi.nlm.nih.gov/",
+                        "snippet": "PubMed home page.",
+                    },
+                    {
+                        "title": "PubMed: hepatotoxicity article",
+                        "url": self.article_url,
+                        "snippet": "Specific PubMed abstract.",
+                    },
+                ]
+
+            def fetch(self, url: str) -> dict:
+                self.fetch_urls.append(url)
+                return {
+                    "url": url,
+                    "title": "PubMed article",
+                    "text": "Specific PubMed abstract evidence.",
+                    "truncated": False,
+                }
+
+        provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "hepatotoxicity"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+        )
+        search = PubMedLandingSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, search, store, max_turns=2)
+
+            list(runner.run("Research hepatotoxicity"))
+            store.close()
+
+        self.assertEqual(search.fetch_urls, [PubMedLandingSearch.article_url])
+        self.assertIn("Priority source results", provider.sent[1])
+        self.assertIn("r1: PubMed: hepatotoxicity article", provider.sent[1])
+        self.assertNotIn("https://pubmed.ncbi.nlm.nih.gov/ - PubMed home", provider.sent[1])
+
     def test_research_runner_can_disable_controller_for_manual_baselines(self) -> None:
         provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
         with tempfile.TemporaryDirectory() as td:
@@ -2884,6 +3072,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("Your last done.answer did not pass", provider.sent[4])
         self.assertIn("Supported conclusions need [n]", provider.sent[4])
+        self.assertIn("remove that URL, its source row, and any claim that depends on it", provider.sent[4])
         self.assertNotIn("[no tool output]", provider.sent[4])
         self.assertNotIn("Codey", provider.sent[4])
         self.assertTrue(any(event.kind == "info" and "Report quality failed" in event.message for event in events))

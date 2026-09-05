@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable
-from urllib.parse import urlparse
 
 from codey.runtime import cancellation
 from codey.research.context import ResearchPipelineConfig
 from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
+from codey.research.url_selection import source_candidate_skip_reason
 from codey.policies.network import check_fetch_url
 
 
@@ -104,7 +104,7 @@ class PlanExecutor:
                 if not url or url in seen_urls:
                     skipped += 1
                     continue
-                skip_reason = _candidate_url_skip_reason(url)
+                skip_reason = source_candidate_skip_reason(url)
                 if skip_reason:
                     seen_urls.add(url)
                     skipped += 1
@@ -146,7 +146,7 @@ class PlanExecutor:
                     else runtime.ledger.canonical_opened_url(url)
                 ) or url
                 seen_urls.add(canonical_final)
-                final_skip_reason = _candidate_url_skip_reason(canonical_final)
+                final_skip_reason = source_candidate_skip_reason(canonical_final)
                 if final_skip_reason:
                     skipped += 1
                     errors.append(_safe_error(final_skip_reason + " after redirect"))
@@ -221,27 +221,6 @@ def _source_preview(query: str, source: dict, body: str, limit: int) -> str:
     header = " | ".join(part for part in (title, final_url) if part)
     text = clip(str(body or ""), max(500, min(4000, int(limit or 0))))
     return "\n".join(part for part in (f"query: {query}", header, text) if part)
-
-
-def _candidate_url_skip_reason(url: str) -> str:
-    if _is_root_landing_page_url(url):
-        return "low_value_landing_page_url"
-    return ""
-
-
-def _is_root_landing_page_url(url: str) -> bool:
-    try:
-        parsed = urlparse(str(url or "").strip())
-    except ValueError:
-        return False
-    if parsed.scheme.lower() not in {"http", "https"}:
-        return False
-    if not parsed.netloc:
-        return False
-    path = (parsed.path or "").strip()
-    if path not in {"", "/"}:
-        return False
-    return not (parsed.query or parsed.fragment)
 
 
 def _safe_error(value: object) -> str:

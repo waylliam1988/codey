@@ -27,6 +27,7 @@ from codey.research.source_search import (
     search_pages,
     search_text,
 )
+from codey.research.url_selection import source_candidate_skip_reason
 from codey.policies.network import check_fetch_url
 from codey.utils.text_budget import clip_middle
 
@@ -100,18 +101,29 @@ class ResearchTools:
         if not results:
             return "no results"
         lines = []
-        for i, r in enumerate(results, 1):
+        skipped = 0
+        for r in results:
             url = str(r.get("url") or "")
             if url:
                 self.search_result_urls.add(url)
+            if source_candidate_skip_reason(url):
+                skipped += 1
+                continue
             snippet = _clip_tail(str(r.get("snippet") or ""), 200)
+            i = len(lines) + 1
             lines.append(f"{i}. {r.get('title')}\n   {url}\n   {snippet}".rstrip())
+        if not lines and skipped:
+            return f"no useful non-landing results; skipped {skipped} low-value landing result(s)"
         return "\n".join(lines)
 
     def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
         url = (url or "").strip()
         if not url:
             return "ERROR: open_url needs a url"
+        skip_reason = source_candidate_skip_reason(url)
+        if skip_reason:
+            self._record_failure("browser", "open", skip_reason, url=url)
+            return f"SKIPPED: {skip_reason}. Choose a specific article, document, or readable source page."
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         reason = check_fetch_url(url, use_cache=True)
@@ -129,6 +141,10 @@ class ResearchTools:
         cancellation.check()
         page_url = str(page.get("url") or url)
         page_text = str(page.get("text") or "")
+        skip_reason = source_candidate_skip_reason(page_url)
+        if skip_reason:
+            self._record_failure("browser", "open", skip_reason + " after redirect", url=url)
+            return f"SKIPPED: {skip_reason} after redirect. Choose a specific article, document, or readable source page."
         if page_text.startswith("SKIPPED:"):
             return page_text
         if page_text.startswith("ERROR:"):

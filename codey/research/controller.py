@@ -21,6 +21,7 @@ from codey.research.tool_contract import (
     PROTOCOL_UNKNOWN_TOOL,
     tool_example,
 )
+from codey.research.url_selection import source_candidate_skip_reason
 
 CONTROLLER_DISPLAY_LIMIT = 8
 FINAL_REPORT_SECTION_MARKERS = ("结论", "关键证据", "反证与限制", "来源质量", "搜索覆盖", "来源")
@@ -350,6 +351,8 @@ class ResearchController:
                 url = str(result.url or "").strip()
                 if not url:
                     continue
+                if source_candidate_skip_reason(url):
+                    continue
                 rid = _stable_id(self._result_ids_by_url, url, "r")
                 rows.append({
                     "id": rid,
@@ -549,6 +552,8 @@ def _priority_connector_result_ids(result_rows: list[dict[str, str]], source_row
 
 
 def _is_connector_source_url(url: str) -> bool:
+    if source_candidate_skip_reason(url):
+        return False
     parsed = _parsed_url(url)
     host = (parsed.hostname or "").lower().removeprefix("www.")
     if host == "pubmed.ncbi.nlm.nih.gov":
