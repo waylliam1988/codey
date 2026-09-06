@@ -335,7 +335,7 @@ def shell_approval_response(
             "approved": False,
             "command": command,
             "cwd": pending["cwd"],
-            "output": "用户已拒绝执行该命令。",
+            "output": "Denied by user.",
             "exit_code": None,
         }
         ctx.record_shell_result(event)
@@ -375,6 +375,11 @@ def shell_approval_response(
                 ),
                 setup_context=setup_context,
                 followup_hints=followup_hints,
+                deferred_tool_calls=tuple(
+                    item
+                    for item in pending.get("deferred_tool_calls", ())
+                    if isinstance(item, dict)
+                ),
             )
             active = ctx.current_run()
             active_provider = (

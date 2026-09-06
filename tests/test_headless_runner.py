@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.agents.request import AgentRequest
+from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
@@ -167,7 +167,10 @@ class HeadlessRunnerTests(unittest.TestCase):
 
         def fake_agent(request: AgentRequest):
             assert request.on_shell_request is not None
-            request.on_shell_request(".", "python setup.py install")
+            request.on_shell_request(ShellApprovalRequest(
+                cwd=".",
+                command="python setup.py install",
+            ))
             return RunResult("shell command requires approval", "approval", 1)
 
         with tempfile.TemporaryDirectory() as td:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from codey.agents.shell_approval import ShellApprovalRequest
+
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.request import RecoveredToolOutcome
 from codey.ghost.work_queue import GhostWorkItem
@@ -85,7 +87,7 @@ class RunWork:
 @dataclass(frozen=True)
 class RunHooks:
     on_event: Callable[[RunEvent], None]
-    on_shell_request: Callable[[str, str], None]
+    on_shell_request: Callable[[ShellApprovalRequest], None]
     update_checkpoint: Callable[
         [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
         None,

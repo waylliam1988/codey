@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 import uuid
 
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.chat import run_chat_mode
 from codey.operations.conversation_plan import build_conversation_plan
@@ -437,9 +438,12 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                     update_checkpoint=update_checkpoint,
                 )
 
-        def on_shell_request(cwd_rel: str, command: str) -> None:
+        def on_shell_request(request: ShellApprovalRequest) -> None:
             if not project:
                 return
+            cwd_rel = request.cwd or "."
+            command = request.command
+            deferred_tool_calls = [item.to_payload() for item in request.deferred_calls]
             risk = classify_shell_risk(command)
             approval_id = "shell_" + uuid.uuid4().hex[:12]
             pending = {
@@ -456,6 +460,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 "provider": current_provider_id(),
                 "continue_after": True,
                 "run_id": run_id,
+                "deferred_tool_count": len(request.deferred_calls),
+                "deferred_tool_calls": deferred_tool_calls,
             }
             pending["ui_event"] = {
                 "type": "shell_request",
@@ -468,6 +474,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 "risk_label": risk.label,
                 "risk_title": risk.title,
                 "risk_detail": risk.detail,
+                "deferred_tool_count": len(request.deferred_calls),
+                "deferred_tool_calls": deferred_tool_calls,
             }
             state.add_pending_shell_approval(approval_id, pending)
             state.emit(pending["ui_event"])

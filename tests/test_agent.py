@@ -2336,13 +2336,44 @@ class RunLoopTests(unittest.TestCase):
                 Path(td),
                 "check git",
                 on_event=events.append,
-                on_shell_request=lambda cwd, command: requests.append((cwd, command)),
+                on_shell_request=lambda request: requests.append(
+                    (request.cwd, request.command)
+                ),
                 fresh_chat=False,
             )
 
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(requests, [(".", "git status --short")])
         self.assertTrue(any("shell approval requested" in render_run_event(event) for event in events))
+
+    def test_shell_action_reports_deferred_suffix_calls(self) -> None:
+        reply = (
+            '{"tool":"read_file","args":{"path":"app.py"}}\n'
+            '{"tool":"shell","args":{"path":".","command":"git status --short"}}\n'
+            '{"tool":"edit","args":{"path":"app.py","old_string":"one","new_string":"two"}}'
+        )
+        requests = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("one\n", encoding="utf-8")
+            result = run_agent(
+                FakeProvider(reply),
+                root,
+                "check git before editing",
+                on_event=lambda _event: None,
+                on_shell_request=requests.append,
+                fresh_chat=False,
+            )
+            content = (root / "app.py").read_text(encoding="utf-8")
+
+        self.assertEqual(result.stop_reason, "approval")
+        self.assertIn("1 later tool call(s) deferred", result.summary)
+        self.assertEqual(content, "one\n")
+        self.assertEqual(len(requests), 1)
+        payload = requests[0].to_payload()
+        self.assertEqual(payload["deferred_tool_count"], 1)
+        self.assertEqual(payload["deferred_tool_calls"][0]["tool_name"], "edit")
+        self.assertEqual(payload["deferred_tool_calls"][0]["path"], "app.py")
 
     def test_shell_action_without_approval_channel_is_policy_denied(self) -> None:
         shell = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'

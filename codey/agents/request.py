@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 from codey.agents.handoff import ConversationContext
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.providers import ChatProvider
@@ -45,7 +46,7 @@ class AgentRequest:
     max_turns: int = DEFAULT_MAX_TURNS
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS
     on_event: Callable[[RunEvent], None] = print_run_event
-    on_shell_request: Callable[[str, str], None] | None = None
+    on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
     stop_flag: Any = None
     fresh_chat: bool = True
     strict_fresh_chat: bool = False
@@ -87,4 +88,5 @@ __all__ = [
     "DEFAULT_MAX_TURNS",
     "DEFAULT_STAGNANT_TURNS",
     "RecoveredToolOutcome",
+    "ShellApprovalRequest",
 ]

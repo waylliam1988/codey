@@ -11,6 +11,7 @@ from codey.agents.protocol import (
     edit_blocks_from_call,
     edit_has_content,
 )
+from codey.agents.shell_approval import DeferredToolCall, ShellApprovalRequest
 from codey.agents.state import AgentLoopSession, emit
 from codey.agents.verification_driver import (
     mark_policy_denied_run,
@@ -277,9 +278,14 @@ def request_shell_approval(
     path: str,
     command: str,
     policy_decision: ActionPolicyDecision | None,
+    deferred_calls: tuple[DeferredToolCall, ...] = (),
 ) -> None:
     if policy_asks_user(policy_decision) and session.on_shell_request:
-        session.on_shell_request(path, command)
+        session.on_shell_request(ShellApprovalRequest(
+            cwd=path,
+            command=command,
+            deferred_calls=deferred_calls,
+        ))
     emit(
         session,
         RunEvent.status(

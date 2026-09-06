@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from codey.agents.state import AgentLoopSession
+from codey.agents.shell_approval import DeferredToolCall, deferred_tool_call_from_call
 from codey.agents.tool_execution import (
     TurnState,
     build_tool_call_intent,
@@ -66,6 +67,7 @@ class PlannedToolCall:
     policy_denied: bool = False
     policy_decision: Any = None
     requires_approval: bool = False
+    deferred_calls: tuple[DeferredToolCall, ...] = ()
     intent_error: Exception | None = None
 
 
@@ -126,12 +128,20 @@ def execute_turn_tools(
 
         if call.name == "shell":
             ref = f"approval:{call.name}:{tool_index}"
+            deferred_calls = tuple(
+                deferred_tool_call_from_call(deferred, tool_index=deferred_index)
+                for deferred_index, deferred in enumerate(
+                    calls[tool_index + 1:],
+                    start=tool_index + 1,
+                )
+            )
             planned.append(
                 PlannedToolCall(
                     tool_index=tool_index,
                     call=call,
                     ref=ref,
                     requires_approval=True,
+                    deferred_calls=deferred_calls,
                     replay_class_str=rclass_val,
                     policy_decision=policy_decision,
                     replay_decision=replay_decision,
@@ -277,11 +287,17 @@ def execute_turn_tools(
                 path=path,
                 command=command,
                 policy_decision=item.policy_decision,
+                deferred_calls=item.deferred_calls,
+            )
+            deferred_note = (
+                f"; {len(item.deferred_calls)} later tool call(s) deferred"
+                if item.deferred_calls
+                else ""
             )
             return TurnToolExecutionResult(
                 turn_state=turn_state,
                 stopped=True,
-                stop_summary="shell command requires approval",
+                stop_summary=f"shell command requires approval{deferred_note}",
                 stop_reason="approval",
             )
 

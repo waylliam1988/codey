@@ -9,6 +9,7 @@ from typing import Any, Callable
 from codey.agents.context import ProjectInstruction
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.request import AgentRequest, ChangeTracker
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.runtime.events import RunEvent
@@ -62,7 +63,7 @@ class AgentLoopSession:
     max_turns: int
     stagnant_turns: int
     on_event: Callable[[RunEvent], None]
-    on_shell_request: Callable[[str, str], None] | None
+    on_shell_request: Callable[[ShellApprovalRequest], None] | None
     stop_flag: Any
     fresh_chat: bool
     strict_fresh_chat: bool

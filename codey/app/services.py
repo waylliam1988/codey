@@ -27,6 +27,7 @@ from codey.reviews.core import ReviewResult, parse_review_with_repair, render_re
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime import cancellation
 from codey.runtime.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
+from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.utils.text_budget import clip_middle
@@ -434,6 +435,7 @@ def build_shell_approval_continuation(
     post_approval_instructions: str = "",
     setup_context: str = "",
     followup_hints: str = "",
+    deferred_tool_calls: tuple[dict[str, object], ...] = (),
 ) -> str:
     truncation_note = (
         "\nShell output was truncated. Do not assume omitted content "
@@ -445,6 +447,8 @@ def build_shell_approval_continuation(
     checklist_block = f"{checklist}\n\n" if checklist else ""
     setup_block = f"{setup_context.strip()}\n\n" if setup_context.strip() else ""
     followup_block = f"{followup_hints.strip()}\n\n" if followup_hints.strip() else ""
+    deferred = render_deferred_tool_calls(deferred_tool_calls)
+    deferred_block = f"{deferred}\n\n" if deferred else ""
     return (
         "Continue the interrupted task in this same conversation.\n"
         "The user approved and ran this shell command:\n"
@@ -456,6 +460,7 @@ def build_shell_approval_continuation(
         f"{setup_block}"
         f"{checklist_block}"
         f"{followup_block}"
+        f"{deferred_block}"
         "Use this result to continue the original task. If the task is complete,"
         " reply with a JSON done tool call."
     )

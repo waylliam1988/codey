@@ -259,6 +259,22 @@ def headless_event_payload(event: dict) -> dict[str, object] | None:
         }
     if event_type == "info":
         return {**common, "text": clip_event_text(event.get("text") or "")}
+    if event_type == "shell_request":
+        payload = {
+            **common,
+            "id": clip_event_text(event.get("id") or "", 80),
+            "cwd": clip_event_text(event.get("cwd") or ".", 240),
+            "command": clip_event_text(event.get("command") or ""),
+            "deferred_tool_count": _int_or_zero(event.get("deferred_tool_count")),
+        }
+        deferred = event.get("deferred_tool_calls")
+        if isinstance(deferred, list):
+            payload["deferred_tool_calls"] = [
+                _bounded_deferred_tool_call(row)
+                for row in deferred[:8]
+                if isinstance(row, dict)
+            ]
+        return payload
     if event_type == "turn":
         payload = {**common, "turn": _int_or_zero(event.get("turn"))}
         if event.get("note"):
@@ -463,6 +479,16 @@ def _bounded_receipt(receipt: dict) -> dict[str, object]:
             section["refs"] = bounded_integrity_refs
         if section:
             payload["integrity"] = section
+    return payload
+
+
+def _bounded_deferred_tool_call(row: dict) -> dict[str, object]:
+    payload = {
+        "tool_index": _int_or_zero(row.get("tool_index")),
+        "tool_name": clip_event_text(row.get("tool_name") or "", 80),
+    }
+    _copy_if_present(payload, row, "path", limit=240)
+    _copy_if_present(payload, row, "command", limit=MAX_EVENT_TEXT_CHARS)
     return payload
 
 

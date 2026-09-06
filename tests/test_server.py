@@ -453,6 +453,21 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("Do not claim tests passed", prompt)
         self.assertLess(prompt.index("Post-approval checklist"), prompt.index("Follow-up hints"))
 
+    def test_shell_approval_continuation_lists_deferred_tool_calls(self) -> None:
+        prompt = app_services.build_shell_approval_continuation(
+            command="git status --short",
+            result={"exit_code": 0, "output": "clean", "truncated": False},
+            deferred_tool_calls=({
+                "tool_index": 2,
+                "tool_name": "edit",
+                "path": "app.py",
+            },),
+        )
+
+        self.assertIn("Deferred tool calls", prompt)
+        self.assertIn("#2 edit path=app.py", prompt)
+        self.assertIn("Reissue only the calls that are still correct", prompt)
+
     def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
         with mock.patch.object(app_services, "safe_setup_context", return_value="Setup Context"):
             setup = app_services.shell_continuation_setup_context(
