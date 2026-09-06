@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from typing import Callable, Mapping
 
+from codey.utils.refs import clip, digest_text
+
 
 class GhostSleepDaemon:
     def __init__(
@@ -23,6 +25,9 @@ class GhostSleepDaemon:
         self.pending = False
         self.pending_payload: dict[str, object] | None = None
         self.thread: threading.Thread | None = None
+        self.error_count = 0
+        self.last_error = ""
+        self.last_error_ref = ""
 
     def kick(self, payload: Mapping[str, object]) -> bool:
         current_payload = dict(payload)
@@ -63,8 +68,8 @@ class GhostSleepDaemon:
         while True:
             try:
                 self.run_once(current_payload)
-            except Exception:
-                pass
+            except Exception as exc:
+                self._record_error(exc)
             with self.lock:
                 if self.pending and not self.is_busy():
                     current_payload = self.pending_payload or current_payload
@@ -77,9 +82,15 @@ class GhostSleepDaemon:
                     self.thread = None
                 return
 
+    def _record_error(self, exc: BaseException) -> None:
+        text = f"{type(exc).__name__}: {exc}"
+        with self.lock:
+            self.error_count += 1
+            self.last_error = clip(text, 240)
+            self.last_error_ref = digest_text(text)[:24]
+
     def should_cancel_current(self) -> bool:
         return self.is_busy() or self.stop_requested()
 
 
 __all__ = ["GhostSleepDaemon"]
-

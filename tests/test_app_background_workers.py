@@ -51,6 +51,23 @@ class GhostSleepDaemonTests(unittest.TestCase):
 
         self.assertEqual([payload["run_id"] for payload in calls], ["run-1", "run-3"])
 
+    def test_worker_errors_are_recorded_without_staying_running(self) -> None:
+        lock = threading.Lock()
+        daemon = GhostSleepDaemon(
+            lock=lock,
+            is_busy=lambda: False,
+            stop_requested=lambda: False,
+            run_once=lambda _payload: (_ for _ in ()).throw(RuntimeError("sleep failed")),
+        )
+
+        self.assertTrue(daemon.kick({"run_id": "run-1"}))
+        self.assertTrue(daemon.wait(2))
+
+        self.assertFalse(daemon.running)
+        self.assertEqual(daemon.error_count, 1)
+        self.assertEqual(daemon.last_error, "RuntimeError: sleep failed")
+        self.assertTrue(daemon.last_error_ref.startswith("sha256:"))
+
 
 class KnowledgeIndexerTests(unittest.TestCase):
     def test_schedule_rebuilds_once_and_runs_pending_pass(self) -> None:
