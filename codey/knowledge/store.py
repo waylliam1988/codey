@@ -18,6 +18,7 @@ class KnowledgeStore:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.index = KnowledgeIndex(self.root / ".codey" / "index.db")
+        self._rebuilt_after_index_miss = False
 
     def path_for(self, note: KnowledgeNote) -> Path:
         if not is_safe_id(note.id):
@@ -51,6 +52,7 @@ class KnowledgeStore:
         text = note.to_markdown()
         _atomic_write_text(path, text)
         self.index.upsert(note, path=rel, content_hash=_content_hash(text))
+        self._rebuilt_after_index_miss = False
         self._index_body_links(note)
         if moving and old_rel:
             self._remove_note_file(old_rel)
@@ -96,15 +98,11 @@ class KnowledgeStore:
         return f"linked: {src_id} -> {dst_id} ({kind})"
 
     def read_note(self, note_id: str) -> KnowledgeNote | None:
-        row = self.index.get(note_id)
-        if row and row.get("path"):
-            path = self.root / row["path"]
-            if path.is_file():
-                return KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-        for path in self.iter_note_paths():
-            if path.stem == note_id:
-                return KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-        return None
+        note = self._read_indexed_note(note_id)
+        if note is not None or self._rebuilt_after_index_miss:
+            return note
+        self.rebuild()
+        return self._read_indexed_note(note_id)
 
     def iter_note_paths(self):
         for path in sorted(self.root.rglob("*.md")):
@@ -125,6 +123,7 @@ class KnowledgeStore:
             notes.append(note)
         for note in notes:
             self._index_body_links(note)
+        self._rebuilt_after_index_miss = True
         return len(notes)
 
     def close(self) -> None:
@@ -139,6 +138,15 @@ class KnowledgeStore:
     def _current_path(self, note_id: str) -> str | None:
         row = self.index.get(note_id)
         return (row.get("path") or None) if row else None
+
+    def _read_indexed_note(self, note_id: str) -> KnowledgeNote | None:
+        row = self.index.get(note_id)
+        if not row or not row.get("path"):
+            return None
+        path = self.root / row["path"]
+        if not path.is_file():
+            return None
+        return KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
 
     def _remove_note_file(self, rel: str) -> None:
         stale = (self.root / rel).resolve()

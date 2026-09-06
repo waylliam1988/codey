@@ -50,6 +50,33 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertEqual(rebuilt, 1)
         self.assertEqual(rows[0]["id"], note.id)
 
+    def test_read_note_rebuilds_index_once_on_miss(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            note = KnowledgeNote.create(
+                id="external-note",
+                type="fact",
+                title="External note",
+                body="Written outside the SQLite index.",
+            )
+            path = store.root / "facts" / "external-note.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(note.to_markdown(), encoding="utf-8")
+
+            loaded = store.read_note("external-note")
+            row = store.index.get("external-note")
+            with patch.object(store, "iter_note_paths", side_effect=AssertionError("unexpected vault scan")):
+                loaded_again = store.read_note("external-note")
+                missing = store.read_note("missing-note")
+            store.close()
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.title, "External note")
+        self.assertEqual(row["path"], "facts/external-note.md")
+        self.assertIsNotNone(loaded_again)
+        self.assertEqual(loaded_again.title, "External note")
+        self.assertIsNone(missing)
+
     def test_generated_note_ids_do_not_collide_for_repeated_titles(self) -> None:
         notes = [
             KnowledgeNote.create(type="fact", title="Repeated Title", body="A", sources=["https://example.com/a"])
