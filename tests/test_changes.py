@@ -67,6 +67,28 @@ class ChangeTrackerTests(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
 
+    def test_collect_git_changes_skips_diff_commands_when_status_is_clean(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            def run_git(_cwd: Path, args: list[str]) -> subprocess.CompletedProcess:
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return subprocess.CompletedProcess(args, 0, str(root), "")
+                if args == ["status", "--short"]:
+                    return subprocess.CompletedProcess(args, 0, "", "")
+                raise AssertionError(f"unexpected git command: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git) as run:
+                data = changes.collect_git_changes(root)
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["changed_count"], 0)
+        self.assertEqual(data["diff"], "")
+        self.assertEqual(
+            [call.args[1] for call in run.call_args_list],
+            [["rev-parse", "--show-toplevel"], ["status", "--short"]],
+        )
+
     def test_collects_new_file_snapshot_diff(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

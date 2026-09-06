@@ -719,10 +719,6 @@ def collect_git_changes(project: str | Path | None) -> dict:
 
     try:
         status_proc = _run_git(git_root, ["status", "--short"])
-        unstaged_num = _run_git(git_root, ["diff", "--numstat"])
-        staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
-        unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
-        staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
 
@@ -731,6 +727,26 @@ def collect_git_changes(project: str | Path | None) -> dict:
         for file in parse_git_status(status_proc.stdout)
         if is_displayable_change_path(file["path"])
     ]
+    if not files:
+        return {
+            "ok": True,
+            "mode": "git",
+            "vcs": {"git_available": True, "is_repo": True},
+            "root": str(git_root),
+            "files": [],
+            "changed_count": 0,
+            "diff": "",
+            "truncated": False,
+        }
+
+    try:
+        unstaged_num = _run_git(git_root, ["diff", "--numstat"])
+        staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
+        unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
+        staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
+
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, unstaged_num.stdout)
     _merge_numstat(stats, staged_num.stdout)
