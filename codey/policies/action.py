@@ -361,7 +361,7 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             display="command required",
         )
     try:
-        canonical = canonical_run_command(subject.project, subject.path or ".", command)
+        canonical_run_command(subject.project, subject.path or ".", command)
     except RunCommandPolicyError as exc:
         return ActionPolicyDecision.deny(
             subject,
