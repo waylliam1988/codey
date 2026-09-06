@@ -98,6 +98,28 @@ class KnowledgeIndexerTests(unittest.TestCase):
 
         self.assertEqual(calls, 2)
 
+    def test_worker_errors_are_recorded_without_staying_running(self) -> None:
+        lock = threading.Lock()
+
+        class Store:
+            def rebuild(self) -> None:
+                raise RuntimeError("index failed")
+
+        indexer = KnowledgeIndexer(lock=lock, store=Store)
+
+        indexer.schedule()
+        for _ in range(100):
+            with lock:
+                running = indexer.running
+            if not running:
+                break
+            threading.Event().wait(0.02)
+
+        self.assertFalse(indexer.running)
+        self.assertEqual(indexer.error_count, 1)
+        self.assertEqual(indexer.last_error, "RuntimeError: index failed")
+        self.assertTrue(indexer.last_error_ref.startswith("sha256:"))
+
 
 if __name__ == "__main__":
     unittest.main()

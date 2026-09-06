@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
+from codey.utils.refs import clip, digest_text
+
 
 class KnowledgeIndexer:
     def __init__(
@@ -17,6 +19,9 @@ class KnowledgeIndexer:
         self.store = store
         self.running = False
         self.pending = False
+        self.error_count = 0
+        self.last_error = ""
+        self.last_error_ref = ""
 
     def schedule(self) -> None:
         if self.store() is None:
@@ -39,8 +44,8 @@ class KnowledgeIndexer:
             if store is not None:
                 try:
                     store.rebuild()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self._record_error(exc)
             with self.lock:
                 if self.pending:
                     self.pending = False
@@ -48,6 +53,12 @@ class KnowledgeIndexer:
                 self.running = False
                 return
 
+    def _record_error(self, exc: BaseException) -> None:
+        text = f"{type(exc).__name__}: {exc}"
+        with self.lock:
+            self.error_count += 1
+            self.last_error = clip(text, 240)
+            self.last_error_ref = digest_text(text)[:24]
+
 
 __all__ = ["KnowledgeIndexer"]
-
