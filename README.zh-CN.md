@@ -69,7 +69,6 @@ python -m codey agent --json --provider qwen --project E:\my-project "修复失�
 - [详细能力说明](docs/codey_capabilities.zh-CN.md)
 - [路线图](ROADMAP.zh-CN.md)
 - [版本更新记录](CHANGELOG.zh-CN.md)
-- [Pi-inspired runtime 方向](docs/codey_pi_v2_refactor_direction.zh-CN.md)
 - [Ghost 未来方向](docs/ghost_future_direction.zh-CN.md)
 
 ## 安全边界

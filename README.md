@@ -74,7 +74,6 @@ python -m codey agent --json --provider qwen --project E:\my-project "Fix the fa
 - [Detailed capabilities](docs/codey_capabilities.md)
 - [Roadmap](ROADMAP.zh-CN.md)
 - [Changelog](CHANGELOG.md)
-- [Pi-inspired runtime direction](docs/codey_pi_v2_refactor_direction.zh-CN.md)
 - [Ghost future direction](docs/ghost_future_direction.zh-CN.md)
 
 ## Safety Model
