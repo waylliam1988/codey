@@ -213,6 +213,27 @@ let uiStateUpdatedAt = 0;
 let uiStateRevision = 0;
 let uiStateDirtySinceBoot = false;
 
+const uid = window.CodeyUiState.uid;
+const defaultSession = window.CodeyUiState.defaultSession;
+const pathName = window.CodeyUiState.pathName;
+const pathKey = window.CodeyUiState.pathKey;
+const applyUiState = window.CodeyUiState.apply;
+const currentUiState = window.CodeyUiState.current;
+const cacheUiState = window.CodeyUiState.cache;
+const cachedUiState = window.CodeyUiState.cached;
+const hasMeaningfulUiState = window.CodeyUiState.hasMeaningful;
+const hasStoredUiState = window.CodeyUiState.hasStored;
+const isUiStateNewer = window.CodeyUiState.isNewer;
+const markUiStateDirty = window.CodeyUiState.markDirty;
+const flushUiState = window.CodeyUiState.flush;
+const persistActive = window.CodeyUiState.persist;
+const persistActiveNow = window.CodeyUiState.persistNow;
+const bindUiStatePagehide = window.CodeyUiState.bindPagehide;
+const restoreUiStateFromServer = window.CodeyUiState.restoreFromServer;
+
+const bootCachedState = cachedUiState();
+const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
+
 window.CodeyUiState.init({
   getSessions: () => sessions,
   setSessions: value => { sessions = value; },
@@ -233,26 +254,6 @@ window.CodeyUiState.init({
   syncProviderUI,
   currentProviderId,
 });
-function uid() { return window.CodeyUiState.uid(); }
-function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) { return window.CodeyUiState.defaultSession(projectId, provider); }
-function pathName(path) { return window.CodeyUiState.pathName(path); }
-function pathKey(path) { return window.CodeyUiState.pathKey(path); }
-function applyUiState(state) { window.CodeyUiState.apply(state); }
-function currentUiState() { return window.CodeyUiState.current(); }
-function cacheUiState() { window.CodeyUiState.cache(); }
-function cachedUiState() { return window.CodeyUiState.cached(); }
-function hasMeaningfulUiState(state) { return window.CodeyUiState.hasMeaningful(state); }
-function hasStoredUiState(state) { return window.CodeyUiState.hasStored(state); }
-function isUiStateNewer(a, b) { return window.CodeyUiState.isNewer(a, b); }
-function markUiStateDirty() { window.CodeyUiState.markDirty(); }
-function flushUiState() { window.CodeyUiState.flush(); }
-function persistActive() { window.CodeyUiState.persist(); }
-function persistActiveNow() { window.CodeyUiState.persistNow(); }
-function bindUiStatePagehide() { window.CodeyUiState.bindPagehide(); }
-function restoreUiStateFromServer() { return window.CodeyUiState.restoreFromServer(); }
-
-const bootCachedState = cachedUiState();
-const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
 applyUiState(bootCachedState);
 cacheUiState();
 
@@ -641,7 +642,7 @@ function appendMessageNode(chat, m) {
     chat.appendChild(standaloneToolEl(m));
   } else if (m.type === 'research_done') {
     const actions = window.CodeyRunDetails.actionsForMessage(m, [
-      { label: 'Open', onclick: () => openResearchDrawer(m.sessionId || activeId) },
+      { label: 'Open', onclick: () => window.CodeyResearchDrawer.open(m.sessionId || activeId) },
       { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject({ sendDraft: false }) },
     ]);
     chat.appendChild(statusRow('Research', m.text || 'Research saved', {
@@ -1282,50 +1283,54 @@ function handleServerEvent(data) {
   }
 }
 
-function disposeResearchGraph() {
-  window.CodeyResearchRuns.disposeGraph();
-}
+let researchDrawerTab = 'evidence';
+let researchGraphDepth = 1;
+let researchNoteFocusId = '';
 
 function recordResearchRun(sessionId, runId, research, receipt) {
-  return window.CodeyResearchRuns.record(sessionId, runId, research, receipt);
+  const item = window.CodeyResearchRuns.record(sessionId, runId, research, receipt);
+  if (!item) return null;
+  researchDrawerTab = 'evidence';
+  researchNoteFocusId = '';
+  window.CodeyResearchDrawer.invalidateNoteCache(window.CodeyResearchDrawer.noteIdsForRun(item));
+  return item;
 }
 
 function currentResearchRun(sessionId = activeId) {
   return window.CodeyResearchRuns.current(sessionId);
 }
 
-// Research drawer UI lives in /assets/research_drawer.js; these thin wrappers
-// keep existing call sites and event handlers stable.
-function openResearchDrawer(sessionId = activeId) {
-  window.CodeyResearchRuns.open(sessionId);
-}
-
-function closeResearchDrawer() {
-  window.CodeyResearchRuns.close();
-}
-
-function renderResearchDrawer(sessionId = activeId) {
-  window.CodeyResearchRuns.render(sessionId);
-}
-
-function coreNoteIdsForResearchRun(run) {
-  return window.CodeyResearchRuns.coreNoteIdsForRun(run);
-}
-
-function noteIdsForResearchRun(run) {
-  return window.CodeyResearchRuns.noteIdsForRun(run);
-}
-
-function invalidateResearchNoteCache(ids) {
-  return window.CodeyResearchRuns.invalidateNoteCache(ids);
-}
-
 async function restoreResearchRun() {
-  return window.CodeyResearchRuns.restore();
+  const restore = $('research-restore');
+  if (restore) restore.disabled = true;
+  try {
+    const result = await window.CodeyResearchRuns.restore();
+    if (!result) return;
+    const subtitle = $('research-subtitle');
+    if (subtitle) subtitle.textContent = result.message;
+    if (result.run) {
+      window.CodeyResearchDrawer.invalidateNoteCache(window.CodeyResearchDrawer.noteIdsForRun(result.run));
+    }
+    if (result.ok) {
+      addToSession(activeId, {
+        type: 'done',
+        text: `Research restored: ${result.restored.length} files`,
+        eventKey: `research-restore:${result.run.runId}`,
+      });
+    }
+    window.CodeyResearchDrawer.render(activeId);
+  } finally {
+    const current = currentResearchRun();
+    if (restore) restore.disabled = !current || !current.restoreable;
+  }
 }
 
 function markResearchRestoreAvailability(runIds) {
-  window.CodeyResearchRuns.markRestoreAvailability(runIds);
+  const changed = window.CodeyResearchRuns.markRestoreAvailability(runIds);
+  const drawer = $('research-drawer');
+  if (changed && drawer && drawer.classList.contains('open')) {
+    window.CodeyResearchDrawer.render(activeId);
+  }
 }
 
 function applyRunState(data) {
@@ -1512,7 +1517,7 @@ function handleLocalContextScopeChanged() {
 
 function closeOtherDrawers(active) {
   if (active !== 'changes') closeChangesDrawer();
-  if (active !== 'research') closeResearchDrawer();
+  if (active !== 'research') window.CodeyResearchDrawer.close();
   if (active !== 'local_context') closeLocalContextDrawer();
 }
 
@@ -1591,8 +1596,10 @@ async function continueTask(sessionId) {
   return window.CodeyComposer.continueTask(sessionId);
 }
 $('changes-close').onclick = closeChangesDrawer;
-$('research-close').onclick = closeResearchDrawer;
-$('research-restore').onclick = restoreResearchRun;
+const researchClose = $('research-close');
+if (researchClose) researchClose.onclick = () => window.CodeyResearchDrawer.close();
+const researchRestore = $('research-restore');
+if (researchRestore) researchRestore.onclick = restoreResearchRun;
 $('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sendDraft: false });
 $('changes-refresh').onclick = () => {
   if (activeChangesProject) loadChangesDrawer(activeChangesProject);
@@ -1662,25 +1669,23 @@ document.addEventListener('keydown', (e) => {
 async function boot() {
   bindUiStatePagehide();
   window.CodeyResearchRuns.init({
-    $,
     getActiveId: () => activeId,
     getSessions: () => sessions,
     activeSession,
     receiptSummary,
     persistActive,
     persistActiveNow,
-    addToSession,
   });
   window.CodeyResearchDrawer.init({
     $,
     getActiveId: () => activeId,
     getCurrentRun: currentResearchRun,
-    getResearchGraphDepth: window.CodeyResearchRuns.getGraphDepth,
-    setResearchGraphDepth: window.CodeyResearchRuns.setGraphDepth,
-    getResearchNoteFocusId: window.CodeyResearchRuns.getNoteFocusId,
-    setResearchNoteFocusId: window.CodeyResearchRuns.setNoteFocusId,
-    getResearchDrawerTab: window.CodeyResearchRuns.getDrawerTab,
-    setResearchDrawerTab: window.CodeyResearchRuns.setDrawerTab,
+    getResearchGraphDepth: () => researchGraphDepth,
+    setResearchGraphDepth: value => { researchGraphDepth = value; },
+    getResearchNoteFocusId: () => researchNoteFocusId,
+    setResearchNoteFocusId: value => { researchNoteFocusId = value; },
+    getResearchDrawerTab: () => researchDrawerTab,
+    setResearchDrawerTab: value => { researchDrawerTab = value; },
     copyText,
     closeOtherDrawers,
   });

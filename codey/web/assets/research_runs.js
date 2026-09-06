@@ -1,11 +1,8 @@
-/* Codey research run runtime: session artifacts, restore state, and drawer state. */
+/* Codey research run runtime: session artifacts and restore state. */
 (function () {
 'use strict';
 
 let deps = {};
-let researchDrawerTab = 'evidence';
-let researchGraphDepth = 1;
-let researchNoteFocusId = '';
 
 function init(nextDeps) {
   deps = nextDeps || {};
@@ -46,14 +43,11 @@ function recordResearchRun(sessionId, runId, research, receipt) {
   const s = sessions().find(x => x.id === sessionId);
   if (!s) return null;
   const item = normalizeResearchRunArtifact(runId, research, receipt);
-  researchDrawerTab = 'evidence';
-  researchNoteFocusId = '';
   s.researchRuns = Array.isArray(s.researchRuns)
     ? s.researchRuns.filter(run => run.runId !== runId)
     : [];
   s.researchRuns.push(item);
   s.researchRuns = s.researchRuns.slice(-32);
-  invalidateResearchNoteCache(noteIdsForResearchRun(item));
   if (deps.persistActive) deps.persistActive();
   return item;
 }
@@ -64,74 +58,31 @@ function currentResearchRun(sessionId = activeId()) {
   return runs.length ? runs[runs.length - 1] : null;
 }
 
-function disposeResearchGraph() {
-  window.CodeyResearchDrawer.dispose();
-}
-
-function openResearchDrawer(sessionId = activeId()) {
-  window.CodeyResearchDrawer.open(sessionId);
-}
-
-function closeResearchDrawer() {
-  window.CodeyResearchDrawer.close();
-}
-
-function renderResearchDrawer(sessionId = activeId()) {
-  window.CodeyResearchDrawer.render(sessionId);
-}
-
-function coreNoteIdsForResearchRun(run) {
-  return window.CodeyResearchDrawer.coreNoteIdsForRun(run);
-}
-
-function noteIdsForResearchRun(run) {
-  return window.CodeyResearchDrawer.noteIdsForRun(run);
-}
-
-function invalidateResearchNoteCache(ids) {
-  return window.CodeyResearchDrawer.invalidateNoteCache(ids);
-}
-
 async function restoreResearchRun() {
   const run = currentResearchRun();
-  if (!run || !run.runId) return;
-  deps.$('research-restore').disabled = true;
-  try {
-    const r = await fetch('/api/research/restore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_id: run.runId }),
-    });
-    let data = {};
-    try { data = await r.json(); } catch {}
-    if (!r.ok || !data.ok) {
-      deps.$('research-subtitle').textContent = data.error || 'Restore failed';
-      if (run && /not found/i.test(data.error || '')) {
-        run.restoreable = false;
-        if (deps.persistActiveNow) deps.persistActiveNow();
-        renderResearchDrawer(activeId());
-      }
-      return;
-    }
-    deps.$('research-subtitle').textContent = `${(data.restored || []).length} restored`;
-    invalidateResearchNoteCache(noteIdsForResearchRun(run));
-    const s = deps.activeSession ? deps.activeSession() : null;
-    if (s && Array.isArray(s.researchRuns)) {
-      s.researchRuns = s.researchRuns.filter(item => item.runId !== run.runId);
+  if (!run || !run.runId) return null;
+  const r = await fetch('/api/research/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ run_id: run.runId }),
+  });
+  let data = {};
+  try { data = await r.json(); } catch {}
+  if (!r.ok || !data.ok) {
+    const error = data.error || 'Restore failed';
+    if (/not found/i.test(error)) {
+      run.restoreable = false;
       if (deps.persistActiveNow) deps.persistActiveNow();
     }
-    if (deps.addToSession) {
-      deps.addToSession(activeId(), {
-        type: 'done',
-        text: `Research restored: ${(data.restored || []).length} files`,
-        eventKey: `research-restore:${run.runId}`,
-      });
-    }
-    renderResearchDrawer(activeId());
-  } finally {
-    const current = currentResearchRun();
-    deps.$('research-restore').disabled = !current || !current.restoreable;
+    return { ok: false, run, message: error, restored: [] };
   }
+  const restored = Array.isArray(data.restored) ? data.restored : [];
+  const s = deps.activeSession ? deps.activeSession() : null;
+  if (s && Array.isArray(s.researchRuns)) {
+    s.researchRuns = s.researchRuns.filter(item => item.runId !== run.runId);
+    if (deps.persistActiveNow) deps.persistActiveNow();
+  }
+  return { ok: true, run, message: `${restored.length} restored`, restored };
 }
 
 function markResearchRestoreAvailability(runIds) {
@@ -148,7 +99,7 @@ function markResearchRestoreAvailability(runIds) {
     }
   }
   if (changed && deps.persistActive) deps.persistActive();
-  if (deps.$('research-drawer').classList.contains('open')) renderResearchDrawer(activeId());
+  return changed;
 }
 
 window.CodeyResearchRuns = {
@@ -156,20 +107,7 @@ window.CodeyResearchRuns = {
   normalize: normalizeResearchRunArtifact,
   record: recordResearchRun,
   current: currentResearchRun,
-  disposeGraph: disposeResearchGraph,
-  open: openResearchDrawer,
-  close: closeResearchDrawer,
-  render: renderResearchDrawer,
-  coreNoteIdsForRun: coreNoteIdsForResearchRun,
-  noteIdsForRun: noteIdsForResearchRun,
-  invalidateNoteCache: invalidateResearchNoteCache,
   restore: restoreResearchRun,
   markRestoreAvailability: markResearchRestoreAvailability,
-  getGraphDepth: () => researchGraphDepth,
-  setGraphDepth: value => { researchGraphDepth = value; },
-  getNoteFocusId: () => researchNoteFocusId,
-  setNoteFocusId: value => { researchNoteFocusId = value; },
-  getDrawerTab: () => researchDrawerTab,
-  setDrawerTab: value => { researchDrawerTab = value; },
 };
 })();
