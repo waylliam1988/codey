@@ -332,6 +332,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RUN_DETAILS_JS)
+        self.assertIn("drawer-loading", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("class=\"spinner\"", LOCAL_CONTEXT_DRAWER_JS)
 
     def test_status_rows_use_continue_and_retry_links(self) -> None:
         self.assertIn(".link-btn", STYLE_SOURCE)

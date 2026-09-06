@@ -36,7 +36,7 @@ async function loadLocalContextDrawer() {
   const requestScope = currentScope();
   loadedScope = requestScope;
   $('local-context-subtitle').textContent = 'Loading...';
-  $('local-context-body').innerHTML = '<div class="changes-empty">Loading local context...</div>';
+  $('local-context-body').innerHTML = '<div class="changes-empty"><span class="drawer-loading"><span class="spinner"></span><span>Loading local context...</span></span></div>';
   try {
     const params = new URLSearchParams();
     if (requestScope.session_id) params.set('session_id', requestScope.session_id);
