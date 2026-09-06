@@ -10,7 +10,10 @@ from codey.agents.consensus import (
     run_consensus as run_consensus_core,
     run_project_audit as run_project_audit_core,
 )
+from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.automation.browser_worker import submit as submit_browser_task
+from codey.policies.limits import REVIEW_TIMEOUT, SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
+from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -27,17 +30,10 @@ from codey.reviews.core import ReviewResult, parse_review_with_repair, render_re
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime import cancellation
 from codey.runtime.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
-from codey.agents.shell_approval import render_deferred_tool_calls
-from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
 from codey.workspace.task_context import safe_verification_candidates
-
-
-SHELL_TIMEOUT = 120
-SHELL_OUTPUT_LIMIT = 24_000
-REVIEW_TIMEOUT = 300.0
 
 
 def reviewer_candidates(

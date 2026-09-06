@@ -84,6 +84,7 @@ from codey.providers import (
     connect_provider,
 )
 from codey.providers.diagnostics import capture_provider_failure
+from codey.policies.limits import REVIEW_TIMEOUT, SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.repairs.self_repair_worker import run_self_repair_worker
@@ -109,11 +110,8 @@ from codey.app.event_bus import EventBus, EventSubscriber
 from codey.storage.ui_state_store import UiStateStore
 
 FOLDER_DIALOG_LOCK = threading.Lock()
-SHELL_TIMEOUT = 120
-SHELL_OUTPUT_LIMIT = 24_000
 SHELL_CONTINUATION_IDLE_TIMEOUT = 5.0
 SHELL_CONTINUATION_IDLE_POLL = 0.02
-REVIEW_TIMEOUT = 300.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
