@@ -597,23 +597,6 @@ class GhostAffinityStore:
             sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
         )
 
-    def query_hints(
-        self,
-        kind: str,
-        targets: Iterable[Any],
-        *,
-        project: str = "",
-        session_id: str = "",
-    ) -> tuple[AffinityHint, ...]:
-        clean_kind = _clean_hint_kind(kind)
-        if clean_kind == "directive_order":
-            return self.query_directive_order_hints(targets, project=project, session_id=session_id)
-        if clean_kind == "work_priority":
-            return self.query_work_priority_hints(targets, project=project, session_id=session_id)
-        if clean_kind == "research_priority":
-            return self.query_research_priority_hints(targets, project=project, session_id=session_id)
-        return ()
-
     def query_directive_order_hints(
         self,
         nodes: Iterable[Any],

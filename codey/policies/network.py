@@ -182,10 +182,6 @@ class NetworkPolicy:
                     self._cache.pop(oldest_key, None)
             self._cache[key] = (now, reason)
 
-    def clear_cache(self) -> None:
-        with self._lock:
-            self._cache.clear()
-
 
 DEFAULT_NETWORK_POLICY = NetworkPolicy()
 

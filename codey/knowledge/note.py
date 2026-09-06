@@ -121,14 +121,6 @@ class KnowledgeNote:
     def folder(self) -> str:
         return _TYPE_FOLDERS.get(self.type, "notes")
 
-    def wikilinks(self) -> list[str]:
-        seen: list[str] = []
-        for match in _WIKILINK_RE.finditer(self.body):
-            target = match.group(1).strip()
-            if target and target not in seen:
-                seen.append(target)
-        return seen
-
     def wikilink_edges(self) -> list[tuple[str, str]]:
         edges: dict[str, str] = {}
         for match in _WIKILINK_KIND_RE.finditer(self.body):

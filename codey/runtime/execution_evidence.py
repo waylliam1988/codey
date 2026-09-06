@@ -157,11 +157,6 @@ class ExecutionEvidence:
                     ),
                 )
 
-    def set_workspace_revision(self, revision: object) -> None:
-        number = valid_workspace_revision(revision)
-        if number:
-            self.workspace_revision = number
-
     def set_workspace_state(self, revision: object, fingerprint: object) -> None:
         number = valid_workspace_revision(revision)
         if number:

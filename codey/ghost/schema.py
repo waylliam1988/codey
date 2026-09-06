@@ -65,10 +65,6 @@ class GhostSignalParseResult:
     raw_text_chars: int = 0
     provider_id: str = ""
 
-    @property
-    def has_signal(self) -> bool:
-        return bool(self.signals)
-
 
 def clip_signal_text(value: object, limit: int = MAX_SIGNAL_TEXT_CHARS) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()

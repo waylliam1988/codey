@@ -592,9 +592,6 @@ class StagedKnowledgeStore:
                 return note.id
         return None
 
-    def get_note(self, note_id: str) -> KnowledgeNote | None:
-        return self.read_note(note_id)
-
     def read_note(self, note_id: str) -> KnowledgeNote | None:
         if note_id in self._staged_notes:
             return self._staged_notes[note_id]

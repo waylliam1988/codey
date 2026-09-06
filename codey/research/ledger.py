@@ -337,10 +337,6 @@ class ResearchLedger:
         final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
         return dict(self._source_pages.get(final_url) or self._source_pages.get(str(source_url or "").strip()) or {})
 
-    def best_excerpt(self, source_url: str, hint: str = "") -> str:
-        excerpt, _page = self.best_excerpt_with_page(source_url, hint)
-        return excerpt
-
     def best_excerpt_with_page(self, source_url: str, hint: str = "", *, page: int | None = None) -> tuple[str, int | None]:
         if page is not None:
             page_text = (self._source_pages.get(source_url) or {}).get(page, "")

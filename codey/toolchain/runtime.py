@@ -23,10 +23,8 @@ from codey.policies.action import (
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
-    command_has_forbidden_tokens,
     is_allowed_run_command,
     is_suite_run_command,
-    strip_python_flags,
 )
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
@@ -317,22 +315,6 @@ def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]
 
 def _line_body_without_eol(line: str) -> str:
     return line.removesuffix("\n").removesuffix("\r")
-
-
-def _line_eol(line: str) -> str:
-    if line.endswith("\r\n"):
-        return "\r\n"
-    if line.endswith("\n"):
-        return "\n"
-    return ""
-
-
-def _leading_whitespace(line: str) -> str:
-    body = _line_body_without_eol(line)
-    return body[: len(body) - len(body.lstrip(" \t"))]
-
-
-
 
 def _bounded_failure_output(lines: list[str]) -> str:
     max_chars = EDIT_FAILURE_MAX_CHARS - len("ERROR: ")
@@ -949,14 +931,6 @@ def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
         except OSError:
             return ""
     return ""
-
-
-def _command_has_forbidden_tokens(argv: list[str]) -> bool:
-    return command_has_forbidden_tokens(argv)
-
-
-def _strip_python_flags(argv: list[str]) -> list[str]:
-    return strip_python_flags(argv)
 
 
 def _is_allowed_run_command(argv: list[str]) -> bool:

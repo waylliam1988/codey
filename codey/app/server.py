@@ -105,7 +105,7 @@ from codey.app.conversation_registry import ConversationRegistry
 from codey.app.ghost_daemon import GhostSleepDaemon
 from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
-from codey.app.run_registry import RunRegistry, RunSnapshot, same_project
+from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.app.event_bus import EventBus, EventSubscriber
@@ -450,10 +450,6 @@ class AppContext:
     def has_active_run_for_project(self, project_key: str) -> bool:
         """True when the active run writes inside the given project."""
         return self.active_run_for(project=project_key) is not None
-
-    @staticmethod
-    def _same_project(left: str, right: str) -> bool:
-        return same_project(left, right)
 
     def start_run(self, run_id: str) -> bool:
         return self.run_registry.start(run_id)

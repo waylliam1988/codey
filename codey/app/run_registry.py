@@ -72,40 +72,17 @@ class RunRegistry:
             self._sync_slot_event()
             return True
 
-    def set_active(self, run: RunSnapshot | None) -> None:
-        with self._lock:
-            self._active_run = run
-            self._busy = run is not None
-            self._sync_slot_event()
-            if run is not None:
-                self._project = run.project
-                self._task = run.task
-                self._provider_id = run.provider_id
-                self._status = run.status
-
     def project(self) -> str | None:
         with self._lock:
             return self._project
-
-    def set_project(self, value: str | None) -> None:
-        with self._lock:
-            self._project = value
 
     def task(self) -> str | None:
         with self._lock:
             return self._task
 
-    def set_task(self, value: str | None) -> None:
-        with self._lock:
-            self._task = value
-
     def provider_id(self) -> str:
         with self._lock:
             return self._provider_id
-
-    def set_provider_id(self, value: str) -> None:
-        with self._lock:
-            self._provider_id = value
 
     def status(self) -> str:
         with self._lock:

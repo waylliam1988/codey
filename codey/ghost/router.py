@@ -375,12 +375,6 @@ class GhostRouteStore:
         except (OSError, TypeError, ValueError):
             return _compact_payload(False, False, before, before, self.last_warnings)
 
-    def _load_records_unlocked(self) -> tuple[dict[str, object], ...]:
-        projection_records = self._load_projection_records_unlocked()
-        if projection_records:
-            return projection_records
-        return self._load_records_from_events_unlocked()
-
     def _load_records_for_event_rewrite_unlocked(self) -> tuple[dict[str, object], ...]:
         if self.events_path.exists():
             return self._load_records_from_events_unlocked()

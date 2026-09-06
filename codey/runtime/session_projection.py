@@ -49,13 +49,6 @@ def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:
     return RuntimeProjection(lanes=lanes, operations=operations)
 
 
-def apply_entry(
-    projection: RuntimeProjection,
-    entry: RuntimeLogEntry,
-) -> RuntimeProjection:
-    return apply_entries(projection, (entry,))
-
-
 def apply_entries(
     projection: RuntimeProjection,
     entries: Iterable[RuntimeLogEntry],
