@@ -72,6 +72,9 @@ task_run.py / recovery.py / RuntimeOperationStore / EffectStore
 分别拥有一部分“当前状态解释权”。
 ```
 
+safe batch recovery 完成后会在同一条 mutation 里把 `tool_delivery_pending`
+收敛回 `writer_running` / `repair_running`，避免下一次 restart 再重放同一批工具。
+
 Pi v2 更进一步：
 
 ```text

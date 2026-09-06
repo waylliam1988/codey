@@ -1233,13 +1233,16 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
                 )
 
                 self.assertTrue(recovery.ok)
-                self.assertEqual(
-                    tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
-                    (eff_read, eff_search),
-                )
+                if attempt == 0:
+                    self.assertEqual(
+                        tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
+                        (eff_read, eff_search),
+                    )
+                else:
+                    self.assertEqual(recovery.recovered_tool_outcomes, ())
                 state = restart_operations.load(self.session_id, self.run_id)
                 assert state is not None
-                self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+                self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
                 if expected_snapshot is None:
                     expected_snapshot = snapshot
                     expected_count = len(restart_log.entries(self.session_id))
@@ -1327,7 +1330,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(batches[0].recovered_lookups, 1)
         state = self.operations.load(self.session_id, self.run_id)
         assert state is not None
-        self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+        self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
         committed_count = len(self.log.entries(self.session_id))
         expected_snapshot = self._durable_snapshot(
             self.log,
@@ -1347,15 +1350,11 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
 
             self.assertTrue(repeated.ok)
-            self.assertEqual(len(repeated.recovered_tool_outcomes), 2)
-            self.assertEqual(
-                tuple(item.effect_id for item in repeated.recovered_tool_outcomes),
-                (eff_read, eff_search),
-            )
+            self.assertEqual(repeated.recovered_tool_outcomes, ())
             self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
             state = restart_operations.load(self.session_id, self.run_id)
             assert state is not None
-            self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+            self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
             self.assertEqual(
                 self._durable_snapshot(
                     restart_log,

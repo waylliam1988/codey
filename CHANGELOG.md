@@ -57,7 +57,9 @@
 - Added adversarial crash coverage for accept before/during/after mutation,
   repeated provider-unknown recovery, repeated safe-batch recovery with exact
   durable snapshots, corrupt latest operation state, and torn terminal
-  state/settlement tails.
+  state/settlement tails. Safe delivery recovery now settles the pending leaf
+  back to `writer_running` / `repair_running` in the same mutation, so the
+  same safe batch is not replayed again on the next resume.
 - Removed the obsolete `runtime/reducer.py`, `runtime/scheduler.py`, and
   `runtime/effects.py` runtime shapes. `RuntimeOperationStore` is now a read
   projection only; it no longer exposes `start`, `commit`, or session deletion

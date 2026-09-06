@@ -1,5 +1,34 @@
 # Codey Test Report
 
+## Durable Operation Core recovery settle fix (2026-09-06)
+
+Scope:
+
+```text
+runtime:    safe delivery recovery now settles tool_delivery_pending back to
+            writer_running / repair_running in the same mutation, so repeated
+            resume no longer replays the same safe batch.
+tests:      updated runtime mutation and tool-delivery recovery expectations to
+            reflect one-shot recovery and stable post-recovery snapshots.
+docs:       changelog, roadmap, and refactor-direction notes now describe the
+            recovery settle step explicitly.
+```
+
+Verification:
+
+- Focused runtime gate:
+  `pytest tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py -q`
+  (`38 passed, 23 subtests passed in 0.48s`)
+- Focused recovery/delivery gate:
+  `pytest tests/test_runtime_mutation_line.py tests/test_tool_result_delivery.py tests/test_project_completion_flow_enforcement.py tests/test_safe_tool_replay.py -q`
+  (`71 passed, 4 subtests passed in 6.20s`)
+- Wider contract gate:
+  `pytest tests/test_architecture.py tests/test_task_entry_operation_state.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py tests/test_tool_result_delivery.py tests/test_project_completion_flow_enforcement.py tests/test_safe_tool_replay.py -q`
+  (`223 passed, 346 subtests passed in 22.95s`)
+- Full pytest suite:
+  `pytest -q`
+  (`3663 passed, 4 skipped, 1276 subtests passed in 295.27s (0:04:55)`)
+
 ## Ghost event-file stats cleanup (2026-09-06)
 
 Scope:

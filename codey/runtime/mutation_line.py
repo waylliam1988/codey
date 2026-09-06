@@ -44,6 +44,7 @@ from codey.runtime.operation_state import (
     mark_repair_settled as state_mark_repair_settled,
     mark_terminal as state_mark_terminal,
     mark_tool_delivery_pending,
+    mark_tool_delivery_settled,
     mark_tool_effect_pending,
     mark_tool_effect_settled,
     mark_writer_running as state_mark_writer_running,
@@ -556,14 +557,35 @@ class RuntimeMutationLine:
                 session_id=session_id,
                 run_id=run_id,
             )
+            batches = batches_from_entries(entries, session_id=session_id, run_id=run_id)
+            projection_batch = next(
+                (batch for batch in batches if batch.intent.batch_id == batch_id),
+                None,
+            )
+            if projection_batch is None:
+                raise RuntimeOperationTransitionError(
+                    "delivery recovery requires matching delivery_pending state"
+                )
             if (
                 state.leaf != LEAF_TOOL_DELIVERY_PENDING
                 or state.pending_delivery_batch_id != batch_id
             ):
-                raise RuntimeOperationTransitionError(
-                    "delivery recovery requires matching delivery_pending state"
+                if not projection_batch.is_recovered:
+                    raise RuntimeOperationTransitionError(
+                        "delivery recovery requires matching delivery_pending state"
+                    )
+                entry = recovered_entry(
+                    session_id,
+                    run_id,
+                    batch_id=batch_id,
+                    recovered_effect_ids=recovered_ids,
+                    recovered_reads=recovered_reads,
+                    recovered_lookups=recovered_lookups,
+                    batches=batches,
                 )
-            batches = batches_from_entries(entries, session_id=session_id, run_id=run_id)
+                return () if entry is None else (entry,)
+            next_state = mark_tool_delivery_settled(state)
+            rows: list[dict[str, object]] = []
             entry = recovered_entry(
                 session_id,
                 run_id,
@@ -573,7 +595,10 @@ class RuntimeMutationLine:
                 recovered_lookups=recovered_lookups,
                 batches=batches,
             )
-            return () if entry is None else (entry,)
+            if entry is not None:
+                rows.append(entry)
+            rows.append(operation_state_entry(next_state))
+            return tuple(rows)
 
         self.session_log.mutate(session_id, mutation)
 

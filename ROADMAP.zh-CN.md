@@ -1670,6 +1670,8 @@ provider intent 无 settlement -> unknown outcome recovery
 provider unknown recovery 连续执行不追加重复 settlement，operation/effect/delivery snapshot 不变
 全安全、未发送的 tool batch 无 settlement -> safe batch replay
 safe batch recovery 连续 restart/recover 后 durable snapshot 不变
+safe delivery recovery 会在同一 mutation 里把 `tool_delivery_pending`
+收敛回 running leaf，不会再重放同一批工具
 不可安全重放的 pending tool effect -> synthetic interruption
 tool effect 完成但 delivery 未完成 -> tool_delivery_pending recovery
 accept mutation 前/中/后 crash 都能得到唯一 durable state

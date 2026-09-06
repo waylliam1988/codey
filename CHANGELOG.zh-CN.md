@@ -46,6 +46,8 @@
 - 新增 adversarial crash 覆盖：accept mutation 前/中/后、provider unknown recovery
   连续执行、safe-batch recovery 连续执行且 durable snapshot 完全一致、最新
   operation state 坏账，以及 terminal state/settlement torn tail 的两种排列。
+  safe delivery recovery 现在会在同一条 mutation 里把 pending leaf 收敛回
+  `writer_running` / `repair_running`，下一次 resume 不会再重放同一批 safe batch。
 - 删除旧的 `runtime/reducer.py`、`runtime/scheduler.py` 和 `runtime/effects.py` 形态。
   `RuntimeOperationStore` 现在只做读取投影，不再暴露 `start`、`commit` 或 session deletion
   这种业务写入口。
