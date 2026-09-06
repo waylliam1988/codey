@@ -2639,6 +2639,22 @@ class RunSnapshotTests(unittest.TestCase):
         inbox_cls.assert_called_once_with(state_home)
         hebbian_cls.assert_called_once_with(state_home)
 
+    def test_default_state_home_lazily_constructs_knowledge_store(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state_home = Path(td) / "state"
+            with (
+                mock.patch.object(server, "DEFAULT_STATE_HOME", state_home),
+                mock.patch.object(server, "KnowledgeStore") as store_cls,
+            ):
+                state = server.AppContext(state_home)
+
+                store_cls.assert_not_called()
+                self.assertIs(state.knowledge_indexer.store(), None)
+                self.assertIs(state.knowledge_store, store_cls.return_value)
+                self.assertIs(state.knowledge_store, store_cls.return_value)
+
+        store_cls.assert_called_once_with(state_home / "vault")
+
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.AppContext()
         first = {

@@ -176,14 +176,12 @@ class AppContext:
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
         )
         resolved_state_home = Path(state_home).expanduser().resolve() if state_home else None
-        self.knowledge_store = (
-            KnowledgeStore(Path(state_home) / "vault")
-            if resolved_state_home == DEFAULT_STATE_HOME.expanduser().resolve()
-            else None
-        )
+        self._knowledge_store_enabled = resolved_state_home == DEFAULT_STATE_HOME.expanduser().resolve()
+        self._knowledge_store: object | None = None
+        self._knowledge_root = Path(state_home) / "vault" if self._knowledge_store_enabled else None
         self.knowledge_indexer = KnowledgeIndexer(
             lock=self.lock,
-            store=lambda: self.knowledge_store,
+            store=lambda: self._knowledge_store,
         )
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
@@ -331,6 +329,24 @@ class AppContext:
     @ghost_signals.setter
     def ghost_signals(self, value: GhostSignalStore | None) -> None:
         self._ghost_signals = value
+
+    @property
+    def knowledge_store(self) -> object | None:
+        if not self._knowledge_store_enabled:
+            return self._knowledge_store
+        with self.lock:
+            if self._knowledge_store is None:
+                assert self._knowledge_root is not None
+                self._knowledge_store = KnowledgeStore(self._knowledge_root)
+            return self._knowledge_store
+
+    @knowledge_store.setter
+    def knowledge_store(self, value: object | None) -> None:
+        with self.lock:
+            self._knowledge_store = value
+            self._knowledge_store_enabled = value is not None
+            if value is not None and self._knowledge_root is None and self.state_home is not None:
+                self._knowledge_root = self.state_home / "vault"
 
     def load_ui_state(self) -> dict:
         with self.ui_state_store_lock:
