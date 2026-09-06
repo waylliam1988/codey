@@ -31,6 +31,7 @@ from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime import cancellation
 from codey.runtime.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.utils.refs import clip, digest_text
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
 from codey.workspace.task_context import safe_verification_candidates
@@ -95,8 +96,17 @@ def run_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
         raw_statuses = runner()
         statuses = provider_availability_from_statuses(ctx, raw_statuses)
         ctx.emit({"type": "providers", "providers": provider_payload(statuses)})
-    except Exception:
-        pass
+    except Exception as exc:
+        text = f"{type(exc).__name__}: {exc}"
+        try:
+            ctx.emit({
+                "type": "status",
+                "status": "Provider warmup failed",
+                "detail": clip(text, 240),
+                "error_ref": digest_text(text)[:24],
+            })
+        except Exception:
+            return
 
 
 def start_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:

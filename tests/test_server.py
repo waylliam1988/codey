@@ -653,7 +653,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertFalse(by_id["glm"]["available"])
         self.assertFalse(by_id["local"]["available"])
 
-    def test_provider_warmup_failure_does_not_emit_or_raise(self) -> None:
+    def test_provider_warmup_failure_emits_diagnostic_status(self) -> None:
         state = server.AppContext()
         events = state.subscribe()
 
@@ -662,7 +662,11 @@ class ProviderStatusTests(unittest.TestCase):
 
         app_services.run_provider_warmup(state, runner=fail)
 
-        self.assertTrue(events.empty())
+        event = events.get_nowait()
+        self.assertEqual(event["type"], "status")
+        self.assertEqual(event["status"], "Provider warmup failed")
+        self.assertEqual(event["detail"], "RuntimeError: browser unavailable")
+        self.assertTrue(event["error_ref"].startswith("sha256:"))
 
     def test_start_provider_warmup_uses_browser_worker(self) -> None:
         runner = mock.Mock()
