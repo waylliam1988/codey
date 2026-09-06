@@ -192,6 +192,7 @@
 <script src="/assets/run_details.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/ui_state.js?v=__CODEY_VERSION__"></script>
+<script src="/assets/sse.js?v=__CODEY_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -1030,9 +1031,6 @@ let runningRunId = null;
 let turnCounter = 0;
 let activeChangesProject = '';
 let lastChangesData = null;
-let reconnectTimer = null;
-let reconcilePromise = null;
-let bufferedServerEvents = [];
 
 function setStatus(text, kind) {
   const el = $('status');
@@ -1269,20 +1267,6 @@ function handleServerEvent(data) {
   }
 }
 
-function clearReconnectTimer() {
-  if (reconnectTimer === null) return;
-  clearTimeout(reconnectTimer);
-  reconnectTimer = null;
-}
-
-function scheduleReconnectStatus() {
-  if (reconnectTimer !== null) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    if (evtSrc && evtSrc.readyState !== EventSource.OPEN) setStatus('Reconnecting…', 'warn');
-  }, 5000);
-}
-
 let researchDrawerTab = 'evidence';
 let researchGraphDepth = 1;
 let researchNoteFocusId = '';
@@ -1439,62 +1423,15 @@ function applyRunState(data) {
 }
 
 function reconcileRunState() {
-  if (reconcilePromise) return reconcilePromise;
-  bufferedServerEvents = [];
-  reconcilePromise = (async () => {
-    try {
-      const response = await fetch('/api/state', { cache: 'no-store' });
-      if (!response.ok) throw new Error('state unavailable');
-      applyRunState(await response.json());
-      clearReconnectTimer();
-    } catch {
-      scheduleReconnectStatus();
-    } finally {
-      const events = bufferedServerEvents;
-      bufferedServerEvents = [];
-      reconcilePromise = null;
-      for (const event of events) handleServerEvent(event);
-    }
-  })();
-  return reconcilePromise;
-}
-
-function ingestServerEvent(data) {
-  if (reconcilePromise) {
-    bufferedServerEvents.push(data);
-    return;
-  }
-  handleServerEvent(data);
+  return window.CodeySse.reconcileRunState();
 }
 
 async function acceptRunResponse(response, sessionId) {
-  const data = await response.json();
-  runningRunId = data.run_id || null;
-  runningSessionId = runningRunId ? sessionId : null;
-  if (runningRunId) {
-    setStatus('Running', 'run');
-    $('provider-button').disabled = true;
-    updateSend();
-    updateComposerContext();
-  }
-  await reconcileRunState();
+  return window.CodeySse.acceptRunResponse(response, sessionId);
 }
 
-let evtSrc = null;
 function connectEvents() {
-  if (evtSrc) return;
-  evtSrc = new EventSource('/api/events');
-  evtSrc.onmessage = (e) => {
-    let data; try { data = JSON.parse(e.data); } catch { return; }
-    if (data.type === 'hello') {
-      clearReconnectTimer();
-      reconcileRunState();
-      refreshProviderStatus();
-      return;
-    }
-    ingestServerEvent(data);
-  };
-  evtSrc.onerror = scheduleReconnectStatus;
+  return window.CodeySse.connect();
 }
 
 function addToSession(sid, m) {
@@ -1961,6 +1898,19 @@ async function boot() {
     DEFAULT_PROVIDER,
     currentProviderId,
     setActiveProvider,
+  });
+  window.CodeySse.init({
+    setStatus,
+    applyRunState,
+    handleServerEvent,
+    refreshProviderStatus,
+    acceptRun: (runId, sessionId) => {
+      runningRunId = runId || null;
+      runningSessionId = runningRunId ? sessionId : null;
+    },
+    setProviderBusy: busy => { $('provider-button').disabled = !!busy; },
+    updateSend,
+    updateComposerContext,
   });
   renderSidebar();
   renderChat();
