@@ -33,6 +33,19 @@ recovery:    recovery reads drive.peek_next_action() and executes reducer
              settlement tails are repaired before recovery; repeated safe-batch
              recovery is idempotent at the durable fact layer. Repeated recovery
              is now checked against exact operation/effect/delivery snapshots.
+policy:      run-command policy no longer treats direct python script execution
+             as a verification command. Unknown runtime tool names now flow
+             through unknown_action_guard and are recorded as policy denials.
+             Provider fallback policy denials stop the provider switch before
+             durable run state changes.
+facts:       run ledger appends are serialized with the file lock, byte-budget
+             truncation still preserves run_finished, reopened truncated ledgers
+             refuse ordinary rows, and non-check run failures such as policy
+             denial or timeout no longer erase existing green verification
+             evidence.
+tools:       read/write/edit/list reject symlink path components before local
+             file effects. This closes stable symlink paths while keeping the
+             remaining OS-level concurrent directory-swap race explicit.
 cleanup:     removed runtime/effects.py, runtime/reducer.py and
              runtime/scheduler.py; RuntimeOperationStore is projection-only and
              RuntimeMutationLine has no generic transition_operation() surface.
@@ -62,15 +75,15 @@ Verification:
   `python -m compileall -q codey tests` (passed)
 - Ruff:
   `ruff check .` (passed)
-- Targeted runtime/entry/server suite:
-  `pytest tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_mutation_line.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
-  (`398 passed, 1 skipped in 55.93s`)
-- Focused adversarial/runtime suite:
-  `pytest tests/test_task_entry_operation_state.py tests/test_runtime_mutation_line.py tests/test_runtime_session_log.py tests/test_tool_result_delivery.py tests/test_project_completion_flow_enforcement.py tests/test_architecture.py`
-  (`177 passed in 21.16s`)
+- Targeted runtime/policy/fact/server suite:
+  `pytest tests/test_run_ledger.py tests/test_tool_runtime.py tests/test_action_policy.py tests/test_provider_preflight.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_runtime_operation_state.py tests/test_execution_evidence.py tests/test_server.py`
+  (`381 passed, 5 skipped in 44.77s`)
+- Targeted architecture/entry/server suite:
+  `pytest tests/test_architecture.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_completion_enforcement_ab.py tests/test_work_checkpoint_flow.py tests/test_task_entry_operation_state.py`
+  (`325 passed, 1 skipped in 67.06s (0:01:07)`)
 - Full pytest suite:
   `pytest`
-  (`3561 passed, 16 skipped in 286.10s (0:04:46)`)
+  (`3570 passed, 17 skipped in 289.85s (0:04:49)`)
 
 ## 0.5.7 Research Follow-up Quality Closure release audit (2026-09-05)
 

@@ -235,10 +235,20 @@ def safe_join(root: Path, rel: str) -> Path:
     return path
 
 
+def _symlink_path_error(root: Path, rel: str, *, tool: str) -> ToolOutcome | None:
+    reason = _raw_path_symlink_reason(root, rel, tool=tool)
+    if reason:
+        return ToolOutcome.error(reason, error_code="symlink_path")
+    return None
+
+
 def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     if len(content.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     path = safe_join(root, rel)
+    symlink_error = _symlink_path_error(root, rel, tool="write_file")
+    if symlink_error is not None:
+        return symlink_error
     before = ""
     if path.is_file():
         try:
@@ -523,6 +533,9 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome.error("edit SEARCH text cannot be empty")
 
     path = safe_join(root, rel)
+    symlink_error = _symlink_path_error(root, rel, tool="edit")
+    if symlink_error is not None:
+        return symlink_error
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
@@ -626,6 +639,9 @@ def read_file(
 ) -> ToolOutcome:
     cancellation.check()
     path = safe_join(root, rel)
+    symlink_error = _symlink_path_error(root, rel, tool="read_file")
+    if symlink_error is not None:
+        return symlink_error
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
@@ -718,6 +734,9 @@ def _bounded_directory_entries(path: Path, max_entries: int) -> tuple[list[Path]
 def list_directory(root: Path, rel: str) -> ToolOutcome:
     cancellation.check()
     path = safe_join(root, rel)
+    symlink_error = _symlink_path_error(root, rel, tool="list_dir")
+    if symlink_error is not None:
+        return symlink_error
     if not path.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     lines: list[str] = []

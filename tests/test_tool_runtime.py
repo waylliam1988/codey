@@ -57,6 +57,28 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(read.ok)
         self.assertEqual(read.model_text, "ok")
 
+    def test_file_tools_reject_symlink_path_components(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target"
+            target.mkdir()
+            (target / "file.txt").write_text("old\n", encoding="utf-8")
+            link = root / "link"
+            try:
+                link.symlink_to(target, target_is_directory=True)
+            except (NotImplementedError, OSError) as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+
+            outcomes = (
+                read_file(root, "link/file.txt"),
+                write_file(root, "link/new.txt", "new\n"),
+                edit_file(root, "link/file.txt", [EditBlock("old", "new")]),
+                tool_runtime.list_directory(root, "link"),
+            )
+
+        self.assertTrue(all(not outcome.ok for outcome in outcomes))
+        self.assertTrue(all(outcome.error_code == "symlink_path" for outcome in outcomes))
+
     def test_list_directory_stops_at_top_level_entry_budget(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -222,25 +244,29 @@ class ToolOutcomeTests(unittest.TestCase):
     def test_failed_check_has_exit_code_without_becoming_runtime_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "fail.py").write_text("raise SystemExit(3)\n", encoding="utf-8")
+            (root / "bad.py").write_text("def broken(:\n", encoding="utf-8")
 
             outcome = run_command(
                 root,
                 ".",
-                "python fail.py",
+                "python -m py_compile bad.py",
                 permission_profile="coding_writer",
             )
 
         self.assertFalse(outcome.ok)
-        self.assertEqual(outcome.exit_code, 3)
-        self.assertTrue(outcome.model_text.startswith("exit 3:"))
+        self.assertEqual(outcome.exit_code, 1)
+        self.assertTrue(outcome.model_text.startswith("exit 1:"))
         self.assertFalse(outcome.model_text.startswith("ERROR:"))
 
     def test_run_command_is_cancelled_without_waiting_for_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "sleep.py").write_text(
-                "import time\ntime.sleep(30)\n",
+            (root / "sleep_test.py").write_text(
+                "import time\n"
+                "import unittest\n\n"
+                "class Sleep(unittest.TestCase):\n"
+                "    def test_sleep(self):\n"
+                "        time.sleep(30)\n",
                 encoding="utf-8",
             )
             event = threading.Event()
@@ -253,7 +279,7 @@ class ToolOutcomeTests(unittest.TestCase):
                         run_command(
                             root,
                             ".",
-                            "python sleep.py",
+                            "python -m unittest sleep_test.Sleep.test_sleep",
                             permission_profile="coding_writer",
                         )
             finally:
@@ -263,7 +289,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
     def test_run_command_preserves_head_and_tail_of_large_output(self) -> None:
         completed = __import__("subprocess").CompletedProcess(
-            ["python", "large.py"],
+            ["python", "-m", "pytest", "tests/test_large.py"],
             1,
             stdout="HEAD" + ("x" * 200) + "TAIL",
             stderr="",
@@ -276,7 +302,7 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = run_command(
                 Path(td),
                 ".",
-                "python large.py",
+                "python -m pytest tests/test_large.py",
                 permission_profile="coding_writer",
             )
 
@@ -305,7 +331,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 "AssertionError: expected 42\n"
             )
             completed = __import__("subprocess").CompletedProcess(
-                ["python", "fail.py"],
+                ["python", "-m", "pytest", "tests/test_fail.py"],
                 1,
                 stdout=stdout,
                 stderr="",
@@ -321,7 +347,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = run_command(
                     root,
                     ".",
-                    "python fail.py",
+                    "python -m pytest tests/test_fail.py",
                     permission_profile="coding_writer",
                 )
 
@@ -343,7 +369,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 "AssertionError: expected 42\n"
             )
             completed = subprocess.CompletedProcess(
-                ["python", "fail.py"],
+                ["python", "-m", "pytest", "tests/test_fail.py"],
                 1,
                 stdout=stdout,
                 stderr="",
@@ -356,7 +382,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 raw = run_command_raw(
                     root,
                     ".",
-                    "python fail.py",
+                    "python -m pytest tests/test_fail.py",
                     permission_profile="coding_writer",
                 )
                 outcome = tool_runtime.project_run_command_result(root, raw)
@@ -403,6 +429,8 @@ class ToolOutcomeTests(unittest.TestCase):
             "python -m ruff check --add-noqa .",
             "python -m ruff check --output-file report.txt .",
             "python -m ruff clean",
+            "python app.py",
+            "python ./app.py",
             "deno fmt",
             "mypy --install-types --non-interactive codey",
             "python -m mypy --install-types codey",
@@ -505,6 +533,31 @@ class ToolOutcomeTests(unittest.TestCase):
         )
         run_process.assert_not_called()
 
+    def test_run_policy_denies_direct_python_script_before_process_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "evil.py").write_text(
+                "import os\nos.system('echo should-not-run')\n",
+                encoding="utf-8",
+            )
+            with mock.patch("codey.toolchain.runtime.cancellation.run_process") as run_process:
+                outcome = run_command_raw(
+                    root,
+                    ".",
+                    "python evil.py",
+                    permission_profile="coding_writer",
+                )
+
+        self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
+        assert isinstance(outcome, tool_runtime.ToolOutcome)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "policy_denied")
+        self.assertEqual(
+            outcome.audit["policy_decision"]["reason_code"],
+            "command_not_allowed",
+        )
+        run_process.assert_not_called()
+
     def test_run_policy_denies_pytest_override_escape_before_process_launch(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -587,12 +640,12 @@ class ToolOutcomeTests(unittest.TestCase):
             (root / "app.py").write_text("print('hi')\n", encoding="utf-8")
             with mock.patch(
                 "codey.toolchain.runtime.cancellation.run_process",
-                side_effect=subprocess.TimeoutExpired(cmd="python app.py", timeout=90),
+                side_effect=subprocess.TimeoutExpired(cmd="python -m py_compile app.py", timeout=90),
             ):
                 outcome = run_command(
                     root,
                     ".",
-                    "python app.py",
+                    "python -m py_compile app.py",
                     permission_profile="coding_writer",
                 )
 

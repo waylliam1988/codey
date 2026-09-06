@@ -243,6 +243,32 @@ class AgentEffectSandwichTests(unittest.TestCase):
             ),
         )
 
+    def test_unknown_tool_is_policy_denied_and_recorded(self) -> None:
+        decisions: list[object] = []
+
+        class Trace:
+            def record_policy_decision(self, decision: object) -> None:
+                decisions.append(decision)
+
+        session = self._create_session(MockProvider())
+        session.trace = FailOpenPromptTrace(Trace())
+        call = ToolCall("bash", {"command": "echo unsafe", "path": "."})
+
+        policy_decision, replay_decision = evaluate_tool_call_policy(
+            session,
+            call,
+            turn=1,
+            tool_index=0,
+        )
+
+        self.assertIsNotNone(policy_decision)
+        assert policy_decision is not None
+        self.assertTrue(policy_denied(policy_decision))
+        self.assertEqual(policy_decision.reason_code, "unknown_action")
+        self.assertEqual(policy_decision.kind, "unknown_tool")
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(getattr(replay_decision, "reason", ""), "policy_denied")
+
     def test_provider_send_intent_and_settlement_on_success(self) -> None:
         provider = MockProvider("hello model")
         session = self._create_session(provider)

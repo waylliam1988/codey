@@ -163,7 +163,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
 class ManagedRunCommandTests(unittest.TestCase):
     def test_wrapper_saves_only_when_projection_is_truncated(self) -> None:
         completed = subprocess.CompletedProcess(
-            ["python", "large.py"],
+            ["python", "-m", "pytest", "tests/test_large.py"],
             1,
             stdout="HEAD" + ("x" * 200) + "MIDDLE_SHOULD_BE_SAVED" + ("y" * 200) + "TAIL",
             stderr="",
@@ -177,7 +177,7 @@ class ManagedRunCommandTests(unittest.TestCase):
             outcome = run_command_with_managed_output(
                 Path(td),
                 ".",
-                "python large.py",
+                "python -m pytest tests/test_large.py",
                 permission_profile="coding_writer",
                 store=store,
                 session_id="session",
@@ -200,7 +200,7 @@ class ManagedRunCommandTests(unittest.TestCase):
 
     def test_wrapper_does_not_save_short_output(self) -> None:
         completed = subprocess.CompletedProcess(
-            ["python", "ok.py"],
+            ["python", "-m", "py_compile", "ok.py"],
             0,
             stdout="OK",
             stderr="",
@@ -213,7 +213,7 @@ class ManagedRunCommandTests(unittest.TestCase):
             outcome = run_command_with_managed_output(
                 Path(td),
                 ".",
-                "python ok.py",
+                "python -m py_compile ok.py",
                 permission_profile="coding_writer",
                 store=store,
                 session_id="session",

@@ -180,7 +180,14 @@ class ActionPolicyTests(unittest.TestCase):
             outside.write_text("print('outside')\n", encoding="utf-8")
             (project / "inside.py").write_text("print('inside')\n", encoding="utf-8")
 
-            allowed = evaluate_action(ActionSubject(
+            allowed_py_compile = evaluate_action(ActionSubject(
+                "run_command",
+                permission_profile="coding_writer",
+                project=str(project),
+                path=".",
+                command="python -m py_compile inside.py",
+            ))
+            denied_direct_script = evaluate_action(ActionSubject(
                 "run_command",
                 permission_profile="coding_writer",
                 project=str(project),
@@ -204,9 +211,30 @@ class ActionPolicyTests(unittest.TestCase):
                 )
             ]
 
-        self.assertEqual(allowed.decision, DECISION_ALLOW)
+        self.assertEqual(allowed_py_compile.decision, DECISION_ALLOW)
+        self.assertEqual(denied_direct_script.decision, DECISION_DENY)
+        self.assertEqual(denied_direct_script.reason_code, "command_not_allowed")
         self.assertTrue(all(decision.decision == DECISION_DENY for decision in denied))
         self.assertTrue(all(decision.reason_code == "command_path_escape" for decision in denied))
+
+    def test_run_command_guard_denies_direct_python_scripts_even_inside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "evil.py").write_text(
+                "import os\nos.system('echo should-not-run')\n",
+                encoding="utf-8",
+            )
+
+            decision = evaluate_action(ActionSubject(
+                "run_command",
+                permission_profile="coding_writer",
+                project=str(root),
+                path=".",
+                command="python evil.py",
+            ))
+
+        self.assertEqual(decision.decision, DECISION_DENY)
+        self.assertEqual(decision.reason_code, "command_not_allowed")
 
     def test_run_command_guard_denies_pytest_paths_outside_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:

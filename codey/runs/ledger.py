@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from codey.runtime.events import RunEvent
+from codey.storage.file_lock import with_file_lock
 from codey.runs.receipt import task_receipt_from_payload
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
 from codey.providers.diagnostics import ProviderFailure
@@ -45,6 +46,15 @@ def _clip(value: object, limit: int) -> str:
     return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
 
 
+def _json_line(payload: dict[str, object]) -> str:
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"
+
+
 def _safe_file_stem(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120].strip("._")
@@ -67,9 +77,18 @@ def _event_common(run_id: str, session_id: str, seq: int, event_type: str) -> di
     }
 
 
-def _last_valid_seq(path: Path) -> int:
+@dataclass(frozen=True)
+class _LedgerFileState:
+    seq: int
+    bytes_written: int
+    truncated: bool
+
+
+def _ledger_file_state(path: Path) -> _LedgerFileState:
     last_seq = 0
+    truncated = False
     try:
+        bytes_written = path.stat().st_size if path.is_file() else 0
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
                 payload = json.loads(line)
@@ -79,10 +98,16 @@ def _last_valid_seq(path: Path) -> int:
                 continue
             seq = _int_or_none(payload.get("seq"))
             if seq is not None and seq > 0:
-                last_seq = seq
+                last_seq = max(last_seq, seq)
+            if payload.get("type") == "ledger_truncated":
+                truncated = True
     except (OSError, UnicodeDecodeError):
-        return 0
-    return last_seq
+        return _LedgerFileState(seq=0, bytes_written=0, truncated=False)
+    return _LedgerFileState(
+        seq=last_seq,
+        bytes_written=bytes_written,
+        truncated=truncated,
+    )
 
 
 @dataclass(frozen=True)
@@ -134,16 +159,11 @@ class RunLedgerWriter:
         self.path = path
         self.run_id = run_id
         self.session_id = session_id
-        self.seq = _last_valid_seq(path)
-        # Reopening an existing ledger file (resume path) must count its
-        # current size, or the byte budget silently restarts from zero and
-        # the cap is exceeded.
-        try:
-            self.bytes_written = path.stat().st_size if path.is_file() else 0
-        except OSError:
-            self.bytes_written = 0
-        self.disabled = False
-        self.truncated = False
+        file_state = _ledger_file_state(path)
+        self.seq = file_state.seq
+        self.bytes_written = file_state.bytes_written
+        self.truncated = file_state.truncated
+        self.disabled = self.truncated
 
     def append(self, event_type: str, **fields: object) -> None:
         if self.disabled:
@@ -236,7 +256,15 @@ class RunLedgerWriter:
             "max_turns": _int_or_none(fields.get("max_turns")) or 0,
             "provider": _clip(fields.get("provider"), 80),
         }
-        self.append("run_finished", **bounded)
+        payload = {
+            **_event_common(self.run_id, self.session_id, self.seq + 1, "run_finished"),
+            **{key: value for key, value in bounded.items() if value is not None},
+        }
+        self._append_payload(
+            payload,
+            allow_after_truncation=True,
+            allow_over_budget=True,
+        )
 
     def _payload_from_run_event(self, event: RunEvent) -> dict[str, object] | None:
         if event.kind == "turn":
@@ -297,49 +325,57 @@ class RunLedgerWriter:
             payload["output_sha256"] = _clip(managed.get("sha256"), 80)
         return payload
 
-    def _append_payload(self, payload: dict[str, object]) -> None:
+    def _append_payload(
+        self,
+        payload: dict[str, object],
+        *,
+        allow_after_truncation: bool = False,
+        allow_over_budget: bool = False,
+    ) -> None:
+        if self.disabled and not (allow_after_truncation and self.truncated):
+            return
         try:
-            line = json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ) + "\n"
-            next_size = self.bytes_written + len(line.encode("utf-8"))
-            if next_size > MAX_LEDGER_BYTES:
-                self._append_truncated_once()
-                return
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write(line)
-            self.seq = int(payload["seq"])
-            self.bytes_written = next_size
-        except (OSError, TypeError, ValueError):
+            with with_file_lock(self.path):
+                file_state = _ledger_file_state(self.path)
+                if file_state.truncated and not allow_after_truncation:
+                    self.seq = file_state.seq
+                    self.bytes_written = file_state.bytes_written
+                    self.truncated = True
+                    self.disabled = True
+                    return
+                current_seq = file_state.seq
+                current_bytes = file_state.bytes_written
+                payload = dict(payload)
+                payload["seq"] = current_seq + 1
+                line = _json_line(payload)
+                next_size = current_bytes + len(line.encode("utf-8"))
+                if not allow_over_budget and next_size > MAX_LEDGER_BYTES:
+                    self._append_truncated_once_locked(current_seq, current_bytes)
+                    return
+                self._write_line_locked(line)
+                self.seq = int(payload["seq"])
+                self.bytes_written = next_size
+        except (OSError, TimeoutError, TypeError, ValueError):
             self.disabled = True
 
-    def _append_truncated_once(self) -> None:
-        if self.truncated or self.disabled:
+    def _append_truncated_once_locked(self, current_seq: int, current_bytes: int) -> None:
+        if self.truncated:
             return
         self.truncated = True
         payload = {
-            **_event_common(self.run_id, self.session_id, self.seq + 1, "ledger_truncated"),
+            **_event_common(self.run_id, self.session_id, current_seq + 1, "ledger_truncated"),
             "max_bytes": MAX_LEDGER_BYTES,
         }
-        try:
-            line = json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ) + "\n"
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write(line)
-            self.seq = int(payload["seq"])
-            self.bytes_written += len(line.encode("utf-8"))
-        except OSError:
-            pass
+        line = _json_line(payload)
+        self._write_line_locked(line)
+        self.seq = int(payload["seq"])
+        self.bytes_written = current_bytes + len(line.encode("utf-8"))
         self.disabled = True
+
+    def _write_line_locked(self, line: str) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(line)
 
 
 def _int_or_none(value: object) -> int | None:

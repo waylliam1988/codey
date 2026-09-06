@@ -213,6 +213,12 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 task_kind="project",
             )
             assert state is not None
+            state = line.mark_writer_running(
+                "s1",
+                "run-1",
+                provider_id="deepseek",
+            )
+            assert state is not None
             valid_entries = log.entries("s1")
             corrupt_payload = dict(valid_entries[-1].payload)
             corrupt_payload["leaf"] = "retry_wait"

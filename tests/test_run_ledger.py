@@ -13,7 +13,6 @@ from codey.agents.runner import RunResult
 from codey.runtime.events import RunEvent
 from codey.runtime.models import ToolCall
 from codey.runs.ledger import (
-    MAX_LEDGER_BYTES,
     RunLedgerStore,
     RunLedgerWriter,
     read_ledger,
@@ -204,14 +203,56 @@ class RunLedgerStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "ledger.jsonl"
             writer = RunLedgerWriter(path, run_id="run_big", session_id="session-big")
-            writer.bytes_written = MAX_LEDGER_BYTES - 1
 
-            writer.append("info", text="too large")
-            writer.append("info", text="ignored")
+            with mock.patch("codey.runs.ledger.MAX_LEDGER_BYTES", 1):
+                writer.append("info", text="too large")
+                writer.append("info", text="ignored")
 
             rows = [item.payload for item in read_ledger(path)]
             self.assertEqual([item["type"] for item in rows], ["ledger_truncated"])
             self.assertTrue(writer.disabled)
+
+    def test_finish_is_preserved_after_byte_budget_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "ledger.jsonl"
+            writer = RunLedgerWriter(path, run_id="run_big", session_id="session-big")
+
+            with mock.patch("codey.runs.ledger.MAX_LEDGER_BYTES", 1):
+                writer.append("info", text="too large")
+                writer.finish(
+                    summary="done",
+                    stop_reason="done",
+                    turns=2,
+                    max_turns=8,
+                    provider="deepseek",
+                )
+
+            rows = [item.payload for item in read_ledger(path)]
+
+        self.assertEqual([item["type"] for item in rows], ["ledger_truncated", "run_finished"])
+        self.assertEqual([item["seq"] for item in rows], [1, 2])
+        self.assertTrue(writer.disabled)
+
+    def test_reopened_truncated_writer_only_preserves_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "ledger.jsonl"
+            writer = RunLedgerWriter(path, run_id="run_big", session_id="session-big")
+            with mock.patch("codey.runs.ledger.MAX_LEDGER_BYTES", 1):
+                writer.append("info", text="too large")
+
+            reopened = RunLedgerWriter(path, run_id="run_big", session_id="session-big")
+            reopened.append("info", text="ignored")
+            reopened.finish(
+                summary="done",
+                stop_reason="done",
+                turns=2,
+                max_turns=8,
+                provider="deepseek",
+            )
+            rows = [item.payload for item in read_ledger(path)]
+
+        self.assertEqual([item["type"] for item in rows], ["ledger_truncated", "run_finished"])
+        self.assertEqual([item["seq"] for item in rows], [1, 2])
 
     def test_reopened_writer_continues_sequence(self) -> None:
         with tempfile.TemporaryDirectory() as td:

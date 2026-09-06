@@ -71,6 +71,34 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertTrue(evidence.has_successful_checks)
         self.assertEqual(evidence.failed_checks_after_edit, [])
 
+    def test_policy_denied_run_does_not_clear_green_checks(self) -> None:
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
+        args = {"path": ".", "command": "python -m pytest"}
+        evidence.record(event("run", args, ToolOutcome("ok", True, exit_code=0)))
+        evidence.record(event(
+            "run",
+            {"path": ".", "command": "python evil.py"},
+            ToolOutcome.error("command not allowed", error_code="policy_denied"),
+        ))
+
+        self.assertTrue(evidence.has_successful_checks)
+        self.assertEqual(len(evidence.failed_checks_after_edit), 1)
+        self.assertEqual(evidence.failed_checks_after_edit[0].error_code, "policy_denied")
+
+    def test_timeout_run_does_not_clear_green_checks(self) -> None:
+        evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
+        args = {"path": ".", "command": "python -m pytest"}
+        evidence.record(event("run", args, ToolOutcome("ok", True, exit_code=0)))
+        evidence.record(event(
+            "run",
+            args,
+            ToolOutcome.error("command timed out", error_code="timeout"),
+        ))
+
+        self.assertTrue(evidence.has_successful_checks)
+        self.assertEqual(len(evidence.failed_checks_after_edit), 1)
+        self.assertEqual(evidence.failed_checks_after_edit[0].error_code, "timeout")
+
     def test_workspace_drift_invalidates_all_check_evidence(self) -> None:
         evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
         evidence.seed_checks((CheckpointCheck("python -m pytest", ".", 1, FINGERPRINT),))

@@ -21,6 +21,13 @@ MAX_TRUNCATED_RESULTS = 16
 MAX_RENDER_CHARS = 5_000
 MAX_CHECK_SUMMARY_CHARS = 400
 MAX_CHECK_SUMMARY_LINES = 6
+NON_CHECK_RUN_ERROR_CODES = frozenset({
+    "command_not_found",
+    "invalid_command",
+    "path_resolution_failed",
+    "policy_denied",
+    "timeout",
+})
 
 
 def _text(value: object, limit: int = 500) -> str:
@@ -50,6 +57,10 @@ def check_failure_summary(outcome: object) -> str:
     if len(summary) > MAX_CHECK_SUMMARY_CHARS:
         summary = summary[-MAX_CHECK_SUMMARY_CHARS:].lstrip()
     return summary
+
+
+def _is_non_check_run_failure(item: "CheckEvidence") -> bool:
+    return item.exit_code is None and item.error_code in NON_CHECK_RUN_ERROR_CODES
 
 
 @dataclass(frozen=True)
@@ -311,7 +322,8 @@ class ExecutionEvidence:
             ]
             self._append_check(self.checks_after_edit, item)
             return
-        self.checks_after_edit.clear()
+        if not _is_non_check_run_failure(item):
+            self.checks_after_edit.clear()
         self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
 
     def _record_information(self, key, values: list, item, limit: int) -> None:

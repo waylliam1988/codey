@@ -44,7 +44,7 @@ from codey.operations.prompting import (
     record_secondary_input_prepared_trace as _record_secondary_input_prepared_trace,
 )
 from codey.operations.provider_preflight import (
-    provider_fallback_policy_decision as _provider_fallback_policy_decision,
+    ensure_provider_fallback_allowed as _ensure_provider_fallback_allowed,
 )
 from codey.operations.research_flow import research_payload as _research_payload
 from codey.operations.result import ModeOutcome
@@ -664,6 +664,12 @@ def _capture_writer_failure(
 
 def _on_writer_switch(ctx: _ProjectRun, next_provider_id: str) -> None:
     previous_provider_id = ctx.frame.provider_id
+    _ensure_provider_fallback_allowed(
+        FailOpenPromptTrace(ctx.hooks.trace),
+        from_provider=previous_provider_id,
+        to_provider=next_provider_id,
+        phase="writer_failover",
+    )
     ctx.state.switch_run_provider(ctx.frame.run_id, next_provider_id)
     ctx.hooks.append_ledger(
         lambda ledger: ledger.append(
@@ -680,14 +686,6 @@ def _on_writer_switch(ctx: _ProjectRun, next_provider_id: str) -> None:
         to_provider=next_provider_id,
         phase="writer_failover",
         reason_code="provider_failure",
-    )
-    FailOpenPromptTrace(ctx.hooks.trace).call(
-        "record_policy_decision",
-        _provider_fallback_policy_decision(
-            from_provider=previous_provider_id,
-            to_provider=next_provider_id,
-            phase="writer_failover",
-        ),
     )
     ctx.frame.conversation.update_snapshot(
         replace(

@@ -1186,6 +1186,68 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
             self.assertEqual(provider_observed_requests, ("sent-before-crash",))
 
+    def test_safe_batch_recovery_converges_across_repeated_restarts(self) -> None:
+        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        eff_search = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        batch_id = "batch-repeated-crash-recovery"
+        items = (
+            DeliveryBatchItem(0, "read", eff_read, "safe", False),
+            DeliveryBatchItem(1, "search", eff_search, "safe", False),
+        )
+        self._begin_tool_batch(
+            batch_id=batch_id,
+            intents=(
+                self._tool_intent(
+                    eff_read,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_args={"path": "target.py"},
+                ),
+                self._tool_intent(
+                    eff_search,
+                    tool_index=1,
+                    tool_name="search",
+                    replay_args={"path": ".", "query": "hello"},
+                ),
+            ),
+            items=items,
+        )
+
+        expected_snapshot: tuple[object, ...] | None = None
+        expected_count = 0
+        for attempt in range(4):
+            with self.subTest(attempt=attempt):
+                deps, restart_log, restart_operations = self._fresh_restart_deps()
+                recovery = recover_effects_for_resume(
+                    deps,
+                    session_id=self.session_id,
+                    run_id=self.run_id,
+                    project=str(self.project_dir),
+                    task_kind="project",
+                )
+                snapshot = self._durable_snapshot(
+                    restart_log,
+                    restart_operations,
+                    deps.runtime_effects,
+                    deps.tool_result_delivery,
+                )
+
+                self.assertTrue(recovery.ok)
+                self.assertEqual(
+                    tuple(item.effect_id for item in recovery.recovered_tool_outcomes),
+                    (eff_read, eff_search),
+                )
+                state = restart_operations.load(self.session_id, self.run_id)
+                assert state is not None
+                self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+                if expected_snapshot is None:
+                    expected_snapshot = snapshot
+                    expected_count = len(restart_log.entries(self.session_id))
+                    self.assertGreater(expected_count, 0)
+                else:
+                    self.assertEqual(snapshot, expected_snapshot)
+                    self.assertEqual(len(restart_log.entries(self.session_id)), expected_count)
+
     def test_multi_safe_tools_one_settled_one_pending_reconstructs_full_batch(self) -> None:
         # Simulate turn 1: model called read and search
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)

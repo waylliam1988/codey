@@ -88,6 +88,7 @@ DANGEROUS_ACTIONS = WRITE_ACTIONS | frozenset({
     "provider_fallback",
     "managed_output",
     "local_context_action",
+    "unknown_tool",
 })
 
 
@@ -516,7 +517,7 @@ def is_allowed_run_command(argv: list[str]) -> bool:
         args = strip_python_flags(argv)
         if len(args) >= 2 and args[0] == "-m" and args[1] in RUN_ALLOWED_PYTHON_MODULES:
             return _python_module_args_allowed(args[1], args[2:])
-        return bool(args and args[0].endswith(".py"))
+        return False
     if exe in {"pytest", "pytest.exe"}:
         return True
     if exe in {"mypy", "mypy.exe"}:

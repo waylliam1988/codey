@@ -89,7 +89,7 @@ def action_subject_for_call(
     elif call.name == "shell":
         kind = "shell"
     else:
-        return None
+        kind = "unknown_tool"
     return ActionSubject(
         kind=kind,
         phase=phase,

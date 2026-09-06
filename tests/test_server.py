@@ -3756,13 +3756,15 @@ class SessionThreadingTests(unittest.TestCase):
             root = Path(td)
             project = root / "project"
             project.mkdir()
-            (project / "large.py").write_text("print('large')\n", encoding="utf-8")
+            tests_dir = project / "tests"
+            tests_dir.mkdir()
+            (tests_dir / "test_large.py").write_text("def test_large():\n    assert False\n", encoding="utf-8")
             state = server.AppContext(root / "state")
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             completed = subprocess.CompletedProcess(
-                ["python", "large.py"],
+                ["python", "-m", "pytest", "tests/test_large.py"],
                 1,
                 stdout=("HEAD" + ("x" * 200) + "MIDDLE_MANAGED_OUTPUT" + ("y" * 200) + "TAIL"),
                 stderr="",
@@ -3775,14 +3777,14 @@ class SessionThreadingTests(unittest.TestCase):
                 outcome = tool_fns.execute_run_command(
                     project,
                     ".",
-                    "python large.py",
+                    "python -m pytest tests/test_large.py",
                     permission_profile=request.permission_profile,
                     tool_id="1:0",
                 )
                 request.on_event(
                     RunEvent.tool_finished(
                         1,
-                        ToolCall("run", {"path": ".", "command": "python large.py"}),
+                        ToolCall("run", {"path": ".", "command": "python -m pytest tests/test_large.py"}),
                         outcome,
                     )
                 )

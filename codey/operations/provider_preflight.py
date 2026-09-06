@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from codey.policies.action import ActionSubject, evaluate_action
+from codey.policies.action import DECISION_DENY, ActionSubject, evaluate_action
 from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.supervisor import run_half_open_canary
@@ -17,6 +17,10 @@ class ProviderPreflightResult:
     provider_id: str
     tried: set[str]
     switches: int
+
+
+class ProviderSwitchDenied(RuntimeError):
+    """Raised when policy denies a provider fallback before state mutation."""
 
 
 def provider_fallback_policy_decision(
@@ -59,6 +63,12 @@ def connect_provider_with_preflight(
             raise RuntimeError("selected provider is unavailable")
         previous_provider_id = provider_id
         provider_id = replacement_id
+        ensure_provider_fallback_allowed(
+            trace_sink,
+            from_provider=previous_provider_id,
+            to_provider=provider_id,
+            phase="preflight",
+        )
         state.switch_run_provider(run_id, provider_id)
         _record_switch(
             append_ledger,
@@ -108,6 +118,12 @@ def connect_provider_with_preflight(
                 raise ProviderActionError(failure) from connect_error
             previous_provider_id = provider_id
             provider_id = replacement_id
+            ensure_provider_fallback_allowed(
+                trace_sink,
+                from_provider=previous_provider_id,
+                to_provider=provider_id,
+                phase="connect",
+            )
             preflight_switches += 1
             state.switch_run_provider(run_id, provider_id)
             _record_switch(
@@ -145,6 +161,12 @@ def connect_provider_with_preflight(
             raise RuntimeError("no healthy provider available after canary failure")
         previous_provider_id = provider_id
         provider_id = replacement_id
+        ensure_provider_fallback_allowed(
+            trace_sink,
+            from_provider=previous_provider_id,
+            to_provider=provider_id,
+            phase="canary",
+        )
         preflight_switches += 1
         state.switch_run_provider(run_id, provider_id)
         _record_switch(
@@ -155,6 +177,24 @@ def connect_provider_with_preflight(
             phase="canary",
             reason="provider_failure",
         )
+
+
+def ensure_provider_fallback_allowed(
+    trace_sink: Any,
+    *,
+    from_provider: str,
+    to_provider: str,
+    phase: str,
+):
+    decision = provider_fallback_policy_decision(
+        from_provider=from_provider,
+        to_provider=to_provider,
+        phase=phase,
+    )
+    trace_sink.call("record_policy_decision", decision)
+    if decision.decision == DECISION_DENY:
+        raise ProviderSwitchDenied(decision.reason_code)
+    return decision
 
 
 def _record_switch(
@@ -182,18 +222,12 @@ def _record_switch(
         phase=phase,
         reason_code=reason,
     )
-    trace_sink.call(
-        "record_policy_decision",
-        provider_fallback_policy_decision(
-            from_provider=from_provider,
-            to_provider=to_provider,
-            phase=phase,
-        ),
-    )
 
 
 __all__ = [
     "ProviderPreflightResult",
+    "ProviderSwitchDenied",
     "connect_provider_with_preflight",
+    "ensure_provider_fallback_allowed",
     "provider_fallback_policy_decision",
 ]
