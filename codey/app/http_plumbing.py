@@ -92,6 +92,16 @@ def request_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
     return origin.rstrip("/").lower() in request_allowed_origins(handler)
 
 
+def request_explicit_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
+    host_header = str(handler.headers.get("Host") or "").strip().lower()
+    if host_header not in loopback_allowed_hosts(handler):
+        return False
+    origin = str(handler.headers.get("Origin") or "").strip()
+    if not origin:
+        return False
+    return origin.rstrip("/").lower() in request_allowed_origins(handler)
+
+
 def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -186,9 +196,9 @@ def write_sse_event(
     *,
     event_id: int = 0,
 ) -> bool:
-    data = json.dumps(dict(event), ensure_ascii=False)
-    prefix = f"id: {event_id}\n" if event_id > 0 else ""
     try:
+        data = json.dumps(dict(event), ensure_ascii=False)
+        prefix = f"id: {event_id}\n" if event_id > 0 else ""
         handler.wfile.write(f"{prefix}data: {data}\n\n".encode("utf-8"))
         handler.wfile.flush()
         return True
@@ -198,6 +208,7 @@ def write_sse_event(
 
 __all__ = [
     "WEB_DIR",
+    "request_explicit_origin_allowed",
     "request_origin_allowed",
     "resolve_web_asset",
     "send_file",

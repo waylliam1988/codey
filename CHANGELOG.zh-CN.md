@@ -46,18 +46,38 @@
   这种业务写入口。
 - Ghost、World Model、Lane、RemoteSession、RPC、CBOR 和 lease 不进入 runtime core；Ghost
   仍然只是 durable facts 的观察者/使用者。
+- 关闭本轮审计发现的 runtime/UI 加固项：stale shell approval card 现在按 run 作用域过期；
+  `/api/run` 不再为缺失 project 自动建任意目录，而是返回错误；`/api/ui_state` 的 POST
+  必须带显式允许的 Origin；shell approval continuation 失败会把 retry 状态传给 UI，
+  不再静默无动作。
+- 收紧 SSE 投递和前端 replay：EventBus 给每个 subscriber 独立 payload copy；
+  overflow `resync_required` 上报单次 drop 数；SSE JSON 序列化坏事件会跳过而不是断流；
+  turn/info/review 按 event id 去重；composer fetch/json 失败会解 spinner 并提示错误；
+  provider status refresh 按 provider freshness 合并，不再因为一个较旧全量快照丢掉其它 provider。
+- 修掉全量回归暴露的两个完整性投影问题：公开 Ghost compaction 在返回 `ok=True` 前会验证小型
+  event log，因此坏 UTF-8 日志继续显示为 unreadable；completion blocked-reason 不再把
+  `verification_unavailable` 归成环境故障，未观察到本地证明的 done claim 保持为 `unobserved`。
 
 验证：
 
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
+- targeted approval/server/UI suite：
+  `pytest tests/test_approval_registry.py tests/test_server.py tests/test_ui.py -q`
+  （`263 passed, 1 skipped`）
+- targeted completion/operation suite：
+  `pytest tests/test_completion_verification.py tests/test_completion_engine.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_operation_state.py -q`
+  （`65 passed, 24 subtests passed in 11.94s`）
+- targeted Ghost event-log suite：
+  `pytest tests/test_ghost_sleep.py tests/test_ghost_inbox.py tests/test_ghost_hebbian.py tests/test_ghost_continuity.py -q`
+  （`96 passed, 83 subtests passed in 8.01s`）
 - targeted runtime/policy/fact/server suite：
   `pytest tests/test_run_ledger.py tests/test_tool_runtime.py tests/test_action_policy.py tests/test_provider_preflight.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_runtime_operation_state.py tests/test_execution_evidence.py tests/test_server.py`
   （`381 passed, 5 skipped in 44.77s`）
 - targeted architecture/entry/server suite：
   `pytest tests/test_architecture.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_completion_enforcement_ab.py tests/test_work_checkpoint_flow.py tests/test_task_entry_operation_state.py`
   （`325 passed, 1 skipped in 67.06s (0:01:07)`）
-- 全量 pytest：`pytest`（`3570 passed, 17 skipped in 289.85s (0:04:49)`）
+- 全量 pytest：`pytest`（`3632 passed, 19 skipped in 295.06s (0:04:55)`）
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

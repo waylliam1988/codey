@@ -26,6 +26,54 @@ class ApprovalRegistryTests(unittest.TestCase):
         self.assertEqual(events[0]["command"], "pytest")
         self.assertEqual(events[0]["output"], "Task stopped; command approval expired.")
 
+    def test_expire_shell_results_can_scope_by_run(self) -> None:
+        approvals = ApprovalRegistry()
+        approvals.add_shell("shell-old", {
+            "id": "shell-old",
+            "session_id": "session-old",
+            "run_id": "run-old",
+            "command": "pytest",
+            "cwd": ".",
+        })
+        approvals.add_shell("shell-new", {
+            "id": "shell-new",
+            "session_id": "session-new",
+            "run_id": "run-new",
+            "command": "ruff",
+            "cwd": ".",
+        })
+
+        events = approvals.expire_shell_results(
+            run_id="run-old",
+            output="expired",
+        )
+
+        self.assertEqual([event["id"] for event in events], ["shell-old"])
+        self.assertEqual(events[0]["output"], "expired")
+        self.assertEqual(set(approvals.shell_snapshot()), {"shell-new"})
+
+    def test_expire_shell_results_can_keep_current_run(self) -> None:
+        approvals = ApprovalRegistry()
+        approvals.add_shell("shell-old", {
+            "id": "shell-old",
+            "session_id": "session-old",
+            "run_id": "run-old",
+            "command": "pytest",
+            "cwd": ".",
+        })
+        approvals.add_shell("shell-current", {
+            "id": "shell-current",
+            "session_id": "session-current",
+            "run_id": "run-current",
+            "command": "ruff",
+            "cwd": ".",
+        })
+
+        events = approvals.expire_shell_results(exclude_run_id="run-current")
+
+        self.assertEqual([event["id"] for event in events], ["shell-old"])
+        self.assertEqual(set(approvals.shell_snapshot()), {"shell-current"})
+
     def test_pending_ui_event_prefers_active_run_scope(self) -> None:
         approvals = ApprovalRegistry()
         approvals.add_shell("old", {

@@ -1112,6 +1112,15 @@ class BlockedReasonProjectionTests(unittest.TestCase):
         )
         self.assertEqual(
             completion_blocked_reason(
+                proof_status="blocked",
+                failure_class="verification_unavailable",
+                remaining_turns=2,
+                repair_rounds=0,
+            ),
+            BLOCKED_UNOBSERVED,
+        )
+        self.assertEqual(
+            completion_blocked_reason(
                 proof_status="failed",
                 failure_class="environment_failure",
                 remaining_turns=2,

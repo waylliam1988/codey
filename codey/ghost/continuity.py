@@ -481,6 +481,20 @@ class GhostContinuityStore:
                         "bytes_after": before["bytes"],
                         "warnings": [warning],
                     }
+                if not before["warning"]:
+                    read = self._event_log().read_locked()
+                    self._events_read_blocked = read.blocked
+                    self.last_warnings = _event_read_warnings(read.warnings)
+                    if self._events_read_blocked:
+                        return {
+                            "ok": False,
+                            "compacted": False,
+                            "events_before": before["events"],
+                            "events_after": before["events"],
+                            "bytes_before": before["bytes"],
+                            "bytes_after": before["bytes"],
+                            "warnings": list(self.last_warnings),
+                        }
                 if before["events"] <= MAX_CONTINUITY_EVENTS and before["bytes"] <= MAX_CONTINUITY_EVENTS_BYTES:
                     return {
                         "ok": True,

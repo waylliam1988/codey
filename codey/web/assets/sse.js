@@ -74,6 +74,8 @@ function connect() {
   evtSrc.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
+    const eventId = Number.parseInt(e.lastEventId || '', 10);
+    if (Number.isFinite(eventId) && eventId > 0 && data.event_id == null) data.event_id = eventId;
     if (data.type === 'hello') {
       clearReconnectTimer();
       reconcileRunState();

@@ -58,18 +58,43 @@
   as business write paths.
 - Kept Ghost, World Model, Lane, RemoteSession, RPC, CBOR, and lease concepts
   out of the runtime core. Ghost remains an observer/user of durable facts.
+- Closed the post-audit runtime/UI hardening set: stale shell approval cards
+  are expired by run scope, `/api/run` rejects missing project directories
+  instead of creating arbitrary paths, `/api/ui_state` POST requires an explicit
+  allowed Origin, and shell approval continuation failures now surface retry
+  state to the UI instead of silently doing nothing.
+- Hardened SSE delivery and frontend replay handling: each EventBus subscriber
+  receives an isolated payload copy, overflow `resync_required` reports a
+  per-overflow drop count, bad SSE JSON serialization is skipped without
+  tearing down the stream, turn/info/review events de-dupe by event id, composer
+  fetch/json failures clear the spinner with an error, and provider status
+  refreshes merge per-provider freshness instead of dropping full snapshots.
+- Tightened two integrity projections found by the full run: public Ghost
+  compaction now validates small event logs before reporting `ok=True`, so bad
+  UTF-8 event logs stay visible as unreadable; completion blocked-reason
+  projection no longer treats `verification_unavailable` as an environment
+  failure, preserving `unobserved` for done claims with no local proof.
 
 Verification:
 
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
+- Targeted approval/server/UI suite:
+  `pytest tests/test_approval_registry.py tests/test_server.py tests/test_ui.py -q`
+  (`263 passed, 1 skipped`)
+- Targeted completion/operation suite:
+  `pytest tests/test_completion_verification.py tests/test_completion_engine.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_operation_state.py -q`
+  (`65 passed, 24 subtests passed in 11.94s`)
+- Targeted Ghost event-log suite:
+  `pytest tests/test_ghost_sleep.py tests/test_ghost_inbox.py tests/test_ghost_hebbian.py tests/test_ghost_continuity.py -q`
+  (`96 passed, 83 subtests passed in 8.01s`)
 - Targeted runtime/policy/fact/server suite:
   `pytest tests/test_run_ledger.py tests/test_tool_runtime.py tests/test_action_policy.py tests/test_provider_preflight.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_runtime_operation_state.py tests/test_execution_evidence.py tests/test_server.py`
   (`381 passed, 5 skipped in 44.77s`)
 - Targeted architecture/entry/server suite:
   `pytest tests/test_architecture.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_completion_enforcement_ab.py tests/test_work_checkpoint_flow.py tests/test_task_entry_operation_state.py`
   (`325 passed, 1 skipped in 67.06s (0:01:07)`)
-- Full pytest suite: `pytest` (`3570 passed, 17 skipped in 289.85s (0:04:49)`)
+- Full pytest suite: `pytest` (`3632 passed, 19 skipped in 295.06s (0:04:55)`)
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

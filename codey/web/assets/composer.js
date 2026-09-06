@@ -76,17 +76,22 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   deps.pushMsgToSession(sessionId, { type: 'user', text });
   const project = deps.sessionProjectPath(sessionId);
   const intent = deps.currentIntentForSession(sessionId);
-  const r = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
-  });
-  if (r.status === 409) { deps.addSendError(sessionId); return true; }
-  if (!r.ok) {
+  try {
+    const r = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
+    });
+    if (r.status === 409) { deps.addSendError(sessionId); return true; }
+    if (!r.ok) {
+      deps.addSendError(sessionId);
+      return true;
+    }
+    await deps.acceptRunResponse(r, sessionId);
+  } catch {
     deps.addSendError(sessionId);
     return true;
   }
-  await deps.acceptRunResponse(r, sessionId);
   return true;
 }
 
@@ -113,23 +118,28 @@ async function continueTask(sessionId) {
     'Use the existing project context and finish the original user request.',
     'If the work is complete, reply with a JSON done tool call.'
   ].join(' ');
-  const r = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_id: sessionId,
-      project: p.path,
-      task,
-      continue_task: true,
-      provider: s.provider || DEFAULT_PROVIDER,
-      intent: 'project',
-    }),
-  });
-  if (r.status === 409 || !r.ok) {
+  try {
+    const r = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        project: p.path,
+        task,
+        continue_task: true,
+        provider: s.provider || DEFAULT_PROVIDER,
+        intent: 'project',
+      }),
+    });
+    if (r.status === 409 || !r.ok) {
+      deps.addSendError(sessionId);
+      return;
+    }
+    await deps.acceptRunResponse(r, sessionId);
+  } catch {
     deps.addSendError(sessionId);
     return;
   }
-  await deps.acceptRunResponse(r, sessionId);
 }
 
 function bindHandlers() {

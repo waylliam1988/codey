@@ -50,6 +50,7 @@ from codey.app import api as app_api
 from codey.app import services as app_services
 from codey.app.http_plumbing import (
     WEB_DIR,
+    request_explicit_origin_allowed,
     request_origin_allowed,
     resolve_web_asset,
     send_file,
@@ -111,7 +112,7 @@ from codey.app.event_bus import EventBus, EventSubscriber
 from codey.storage.ui_state_store import UiStateStore
 
 FOLDER_DIALOG_LOCK = threading.Lock()
-SHELL_CONTINUATION_IDLE_TIMEOUT = 5.0
+SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
@@ -224,13 +225,14 @@ class AppContext:
         attr_name: str,
         factory: Callable[[Path], object],
     ) -> object | None:
-        if self.state_home is None:
-            return None
         with self.lock:
             store = getattr(self, attr_name)
-            if store is None:
-                store = factory(self.state_home)
-                setattr(self, attr_name, store)
+            if store is not None:
+                return store
+            if self.state_home is None:
+                return None
+            store = factory(self.state_home)
+            setattr(self, attr_name, store)
             return store
 
     @property
@@ -469,7 +471,16 @@ class AppContext:
         payload = self.run_registry.finish(run_id, event)
         if payload is None:
             return False
+        expired: tuple[dict, ...] = ()
+        if str(payload.get("stop_reason") or "") in {"done", "max_turns", "no_progress", "stopped"}:
+            with self.lock:
+                expired = self.approvals.expire_shell_results(
+                    run_id=run_id,
+                    output="Run ended; command approval expired.",
+                )
         self.emit(payload)
+        for expired_event in expired:
+            self.record_shell_result(expired_event)
         return True
 
     def record_shell_result(self, event: dict) -> None:
@@ -486,6 +497,17 @@ class AppContext:
 
         with self.lock:
             events = self.approvals.expire_shell_results()
+        for event in events:
+            self.record_shell_result(event)
+
+    def expire_stale_shell_approvals(self, active_run_id: str) -> None:
+        """Clear approval cards left behind when the user starts new work."""
+
+        with self.lock:
+            events = self.approvals.expire_shell_results(
+                exclude_run_id=active_run_id,
+                output="A new task started; command approval expired.",
+            )
         for event in events:
             self.record_shell_result(event)
 
@@ -1020,6 +1042,7 @@ def _submit_task(
     except Exception:
         STATE.release_run(reserved.run_id)
         raise
+    STATE.expire_stale_shell_approvals(reserved.run_id)
     return reserved.run_id
 
 
@@ -1089,6 +1112,7 @@ def _shell_approval_route(ctx: AppContext, body: dict) -> tuple[int, dict]:
         ctx,
         body,
         submit_task_after_slot_release=_submit_task_after_slot_release,
+        continuation_retry_after=int(SHELL_CONTINUATION_IDLE_TIMEOUT),
     )
 
 
@@ -1193,6 +1217,9 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_foreign_origin()
             return
         url = urlparse(self.path)
+        if url.path == "/api/ui_state" and not request_explicit_origin_allowed(self):
+            self._deny_foreign_origin()
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:

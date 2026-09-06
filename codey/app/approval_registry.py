@@ -47,9 +47,21 @@ class ApprovalRegistry:
     def teach_snapshot(self) -> dict[str, dict]:
         return {key: dict(value) for key, value in self._pending_teach.items()}
 
-    def expire_shell_results(self) -> tuple[dict, ...]:
-        stale = list(self._pending_shell.values())
-        self._pending_shell.clear()
+    def expire_shell_results(
+        self,
+        *,
+        run_id: str = "",
+        exclude_run_id: str = "",
+        output: str = "Task stopped; command approval expired.",
+    ) -> tuple[dict, ...]:
+        stale: list[dict] = []
+        for approval_id, pending in list(self._pending_shell.items()):
+            pending_run_id = str(pending.get("run_id") or "")
+            if run_id and pending_run_id != run_id:
+                continue
+            if exclude_run_id and pending_run_id == exclude_run_id:
+                continue
+            stale.append(self._pending_shell.pop(approval_id))
         return tuple(
             {
                 "type": "shell_result",
@@ -59,7 +71,7 @@ class ApprovalRegistry:
                 "approved": False,
                 "command": pending.get("command") or "",
                 "cwd": pending.get("cwd") or "",
-                "output": "Task stopped; command approval expired.",
+                "output": output,
                 "exit_code": None,
             }
             for pending in stale

@@ -1069,6 +1069,11 @@ function setStatus(text, kind) {
   }
 }
 
+function sseEventKey(data, fallback = '') {
+  const eventId = Number(data.event_id || 0);
+  return Number.isFinite(eventId) && eventId > 0 ? `sse:${eventId}` : fallback;
+}
+
 function handleServerEvent(data) {
   const runId = (data.run_id || '').toString();
   const sid = data.session_id;
@@ -1090,6 +1095,7 @@ function handleServerEvent(data) {
       n: data.turn || 0,
       note: (data.note || '').toString(),
       runId,
+      eventKey: sseEventKey(data, runId ? `turn:${runId}:${data.turn || 0}` : ''),
     });
     return;
   }
@@ -1137,7 +1143,7 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'info') {
-    if (data.text) addToSession(sid, { type: 'info', text: data.text, runId });
+    if (data.text) addToSession(sid, { type: 'info', text: data.text, runId, eventKey: sseEventKey(data) });
     return;
   }
   if (data.type === 'teach_request') {
@@ -1278,7 +1284,7 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'review') {
-    if (data.text) addToSession(sid, { type: 'review', text: data.text, sessionId: sid, runId });
+    if (data.text) addToSession(sid, { type: 'review', text: data.text, sessionId: sid, runId, eventKey: sseEventKey(data) });
     return;
   }
 }
@@ -1529,6 +1535,14 @@ function showCommandApprovalError(errorEl) {
   setStatus('Could not send approval', 'err');
 }
 
+function showCommandContinuationError(errorEl) {
+  if (errorEl) {
+    errorEl.textContent = 'Run slot busy; retry after it finishes';
+    errorEl.hidden = false;
+  }
+  setStatus('Run slot busy', 'warn');
+}
+
 async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
   if (!id) return;
   approveBtn.disabled = true;
@@ -1551,6 +1565,9 @@ async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
     }
     const data = await r.json();
     if (data.event) handleServerEvent(data.event);
+    if (approved && data.continuation_requested && !data.continued && !data.stopped) {
+      showCommandContinuationError(errorEl);
+    }
   } catch (err) {
     showCommandApprovalError(errorEl);
     approveBtn.disabled = false;

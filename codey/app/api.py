@@ -62,6 +62,17 @@ def save_ui_state_response(ctx: Any, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True}
 
 
+def _project_directory_error(project: str | None) -> str:
+    if not project:
+        return ""
+    try:
+        if Path(project).expanduser().is_dir():
+            return ""
+    except (OSError, RuntimeError, ValueError):
+        pass
+    return "project not found, use pick_folder"
+
+
 def providers_response(ctx: Any) -> tuple[int, dict]:
     try:
         statuses = services.provider_availability(ctx)
@@ -294,8 +305,9 @@ def run_submit_response(
         return 400, {"error": f"unsupported provider: {provider_id}"}
     if intent == "review" and not project:
         return 400, {"error": "project required for review"}
-    if project:
-        Path(project).mkdir(parents=True, exist_ok=True)
+    project_error = _project_directory_error(project)
+    if project_error:
+        return 400, {"error": project_error}
     try:
         run_id = submit_task(
             session_id,
@@ -318,6 +330,7 @@ def shell_approval_response(
     body: dict,
     *,
     submit_task_after_slot_release: Callable[..., str | None],
+    continuation_retry_after: int = 15,
 ) -> tuple[int, dict]:
     approval_id = str(body.get("id") or "").strip()
     approved = body.get("approved") is True
@@ -358,7 +371,8 @@ def shell_approval_response(
     ctx.record_shell_result(event)
     continued = False
     continuation_stopped = False
-    if pending.get("continue_after"):
+    continuation_requested = bool(pending.get("continue_after"))
+    if continuation_requested:
         if ctx.run_registry.stop_flag.is_set():
             continuation_stopped = True
         else:
@@ -402,14 +416,18 @@ def shell_approval_response(
             )
             continued = continuation_run is not None
             continuation_stopped = not continued and ctx.run_registry.stop_flag.is_set()
-    return 200, {
+    payload = {
         "ok": True,
         "approved": True,
         "continued": continued,
+        "continuation_requested": continuation_requested,
         "stopped": continuation_stopped,
         "result": result,
         "event": event,
     }
+    if continuation_requested and not continued and not continuation_stopped:
+        payload["retry_after"] = continuation_retry_after
+    return 200, payload
 
 
 def teach_resume_response(ctx: Any, body: dict) -> tuple[int, dict]:

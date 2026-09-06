@@ -1363,6 +1363,23 @@ class ResearchServerHelperTests(unittest.TestCase):
             app_api.run_submit_response({"task": "hello", "provider": "missing"}, mock.Mock()),
             (400, {"error": "unsupported provider: missing"}),
         )
+        with tempfile.TemporaryDirectory() as td:
+            missing_project = Path(td) / "missing"
+            submit = mock.Mock(return_value="run-missing")
+
+            status, payload = app_api.run_submit_response(
+                {
+                    "task": "hello",
+                    "project": str(missing_project),
+                    "provider": "deepseek",
+                },
+                submit,
+            )
+
+            self.assertEqual(status, 400)
+            self.assertEqual(payload, {"error": "project not found, use pick_folder"})
+            self.assertFalse(missing_project.exists())
+            submit.assert_not_called()
 
         submit = mock.Mock(return_value="run-1")
         status, payload = app_api.run_submit_response(
@@ -1630,6 +1647,43 @@ class LocalProviderApiTests(unittest.TestCase):
             conn.close()
 
             self.assertEqual(response.status, 403)
+        finally:
+            httpd.shutdown()
+
+    def test_ui_state_post_requires_explicit_allowed_origin(self) -> None:
+        httpd, host, port = self._start_server()
+        state = server.AppContext()
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/ui_state",
+                    body=json.dumps({"state": {}}),
+                    headers={"Content-Type": "application/json"},
+                )
+                missing_origin = conn.getresponse()
+                missing_payload = json.loads(missing_origin.read().decode("utf-8"))
+                conn.close()
+
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/ui_state",
+                    body=json.dumps({"state": {}}),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Origin": f"http://{host}:{port}",
+                    },
+                )
+                allowed = conn.getresponse()
+                allowed_payload = json.loads(allowed.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(missing_origin.status, 403)
+            self.assertIn("refused", str(missing_payload.get("error")))
+            self.assertEqual(allowed.status, 200)
+            self.assertTrue(allowed_payload["ok"])
         finally:
             httpd.shutdown()
 
@@ -2111,6 +2165,93 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["pending_event"], pending)
         self.assertEqual(payload["last_terminal_event"]["run_id"], run.run_id)
 
+    def test_finish_non_approval_expires_same_run_shell_approval(self) -> None:
+        state = server.AppContext()
+        events = state.subscribe()
+        run = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="test",
+            provider_id="qwen",
+        )
+        assert run is not None
+        self.assertTrue(state.start_run(run.run_id))
+        state.add_pending_shell_approval("shell-1", {
+            "id": "shell-1",
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "command": "pytest",
+            "cwd": ".",
+            "ui_event": {
+                "type": "shell_request",
+                "run_id": run.run_id,
+                "session_id": run.session_id,
+                "id": "shell-1",
+            },
+        })
+
+        self.assertTrue(state.finish_run(run.run_id, {
+            "type": "task_done",
+            "session_id": run.session_id,
+            "stop_reason": "done",
+            "summary": "ok",
+        }))
+        payload = state.run_state_payload()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+
+        self.assertEqual(state.pending_shell_approvals(), {})
+        self.assertIsNone(payload["pending_event"])
+        result = next(event for event in emitted if event.get("type") == "shell_result")
+        self.assertEqual(result["id"], "shell-1")
+        self.assertEqual(result["output"], "Run ended; command approval expired.")
+
+    def test_new_task_expires_stale_shell_approval(self) -> None:
+        state = server.AppContext()
+        events = state.subscribe()
+        state.add_pending_shell_approval("shell-old", {
+            "id": "shell-old",
+            "session_id": "session-old",
+            "run_id": "run-old",
+            "command": "pytest",
+            "cwd": ".",
+        })
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            run_id = server._submit_task("session-new", None, "hello", 8, False, "deepseek")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+
+        self.assertIsNotNone(run_id)
+        submit.assert_called_once()
+        self.assertEqual(state.pending_shell_approvals(), {})
+        result = next(event for event in emitted if event.get("type") == "shell_result")
+        self.assertEqual(result["id"], "shell-old")
+        self.assertEqual(result["output"], "A new task started; command approval expired.")
+
+    def test_emit_gives_each_subscriber_an_isolated_payload(self) -> None:
+        state = server.AppContext()
+        first = state.event_bus.subscribe()
+        second = state.event_bus.subscribe()
+        try:
+            state.emit({"type": "info", "seq": 1})
+
+            first_item = first.get_nowait()
+            second_item = second.get_nowait()
+        finally:
+            state.unsubscribe(first)
+            state.unsubscribe(second)
+
+        self.assertIsNot(first_item, second_item)
+        first_item["mutated"] = True
+        self.assertNotIn("mutated", second_item)
+
     def test_emit_full_subscriber_queue_drops_oldest_and_keeps_latest(self) -> None:
         state = server.AppContext()
         q = state.event_bus.subscribe(maxsize=3)
@@ -2150,8 +2291,31 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(first["seq"], 3)
         self.assertEqual(marker["type"], "resync_required")
         self.assertEqual(marker["reason"], "sse_queue_overflow")
-        self.assertGreaterEqual(marker["dropped"], 2)
+        self.assertEqual(marker["dropped"], 2)
         self.assertEqual(last["seq"], 4)
+
+    def test_emit_overflow_reports_delta_after_resync_marker(self) -> None:
+        state = server.AppContext()
+        bounded = state.event_bus.subscribe(maxsize=3)
+        try:
+            for seq in range(1, 6):
+                state.emit({"type": "info", "seq": seq})
+
+            items = [bounded.get_nowait() for _ in range(bounded.qsize())]
+        finally:
+            state.unsubscribe(bounded)
+
+        marker = next(item for item in items if item["type"] == "resync_required")
+        self.assertEqual(marker["dropped"], 2)
+        self.assertEqual(items[-1]["seq"], 5)
+
+    def test_write_sse_event_catches_json_serialization_errors(self) -> None:
+        handler = mock.Mock()
+        handler.wfile.write = mock.Mock()
+        handler.wfile.flush = mock.Mock()
+
+        self.assertFalse(http_plumbing.write_sse_event(handler, {"bad": object()}))
+        handler.wfile.write.assert_not_called()
 
     def test_replay_events_after_cursor_returns_missed_events(self) -> None:
         state = server.AppContext()
@@ -2985,6 +3149,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertTrue(payload["continued"])
+        self.assertTrue(payload["continuation_requested"])
         self.assertEqual(submit.call_args.args[5], "qwen")
 
 

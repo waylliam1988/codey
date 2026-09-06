@@ -153,7 +153,6 @@ BLOCKED_REPAIR_NOT_ADMITTED = "repair_not_admitted"
 
 _ENVIRONMENT_FAILURE_CLASSES = frozenset((
     "environment_failure",
-    "verification_unavailable",
 ))
 
 

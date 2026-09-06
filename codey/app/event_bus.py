@@ -42,9 +42,12 @@ class EventBus:
             self._sequence += 1
             event_id = self._sequence
             self._replay.append((event_id, dict(payload)))
-            queued_payload = SsePayload(payload, event_id=event_id)
             for sub in list(self._subscribers):
-                self._put_for_subscriber(sub, queued_payload, payload)
+                self._put_for_subscriber(
+                    sub,
+                    SsePayload(dict(payload), event_id=event_id),
+                    payload,
+                )
 
     def subscribe(self, *, maxsize: int = 1000) -> EventSubscriber:
         sub = EventSubscriber(maxsize=maxsize)
@@ -111,6 +114,7 @@ class EventBus:
                     "reason": "sse_queue_overflow",
                     "dropped": sub.dropped,
                 }))
+                sub.dropped = 0
             except Exception:
                 pass
         try:

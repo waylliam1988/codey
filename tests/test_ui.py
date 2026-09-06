@@ -277,6 +277,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("function reconcileRunState()", HTML)
         self.assertIn("return window.CodeySse.reconcileRunState();", HTML)
         self.assertIn("fetch('/api/state', { cache: 'no-store' })", SSE_JS)
+        self.assertIn("Number.parseInt(e.lastEventId || '', 10)", SSE_JS)
+        self.assertIn("data.event_id = eventId", SSE_JS)
         self.assertIn("runningRunId", HTML)
         self.assertIn("data.pending_event", HTML)
         self.assertIn("data.last_terminal_event", HTML)
@@ -303,6 +305,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         block = HTML[start:end]
         self.assertIn("const data = await r.json()", block)
         self.assertIn("if (data.event) handleServerEvent(data.event)", block)
+        self.assertIn("data.continuation_requested && !data.continued && !data.stopped", block)
+        self.assertIn("showCommandContinuationError(errorEl)", block)
         self.assertIn("removeShellRequest(sid, data.id)", HTML)
         self.assertIn("function removeShellRequest(sessionId, approvalId)", HTML)
 
@@ -318,6 +322,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", PROVIDER_UI_JS)
         self.assertIn("if (data.type === 'providers')", HTML)
         self.assertIn("applyProviderStatus(data.providers)", HTML)
+        self.assertIn("providerUpdatedAt[item.id] > snapshotTime", PROVIDER_UI_JS)
+        self.assertNotIn("fetchTime < lastAppliedSSETime", PROVIDER_UI_JS)
         self.assertIn("data.provider_failure.action === 'connect'", HTML)
         self.assertIn("applyProviderStatus([{ id: data.provider, available: false }])", HTML)
         self.assertIn("addSendError(sid, terminalKey, runId)", HTML)
@@ -596,6 +602,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (r.status === 409) { deps.addSendError(sessionId); return true; }", COMPOSER_JS)
         self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
         self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
+        self.assertGreaterEqual(COMPOSER_JS.count("} catch {\n    deps.addSendError(sessionId);"), 2)
         self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", HTML)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
@@ -630,7 +637,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_review_status_is_quiet_and_has_no_switch(self) -> None:
         self.assertIn("data.type === 'review'", HTML)
-        self.assertIn("{ type: 'review', text: data.text, sessionId: sid, runId }", HTML)
+        self.assertIn(
+            "{ type: 'review', text: data.text, sessionId: sid, runId, eventKey: sseEventKey(data) }",
+            HTML,
+        )
         self.assertIn("statusRow('Review'", HTML)
         review_start = HTML.index("} else if (m.type === 'review') {")
         review_end = HTML.index("} else if (m.type === 'changes') {", review_start)

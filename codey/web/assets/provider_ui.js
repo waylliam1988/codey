@@ -9,6 +9,7 @@ let PROVIDERS = [];
 let PROVIDER_LABELS = {};
 let DEFAULT_PROVIDER = '';
 let providerStatus = {};
+let providerUpdatedAt = {};
 
 function $(id) { return deps.$(id); }
 function escapeHtml(text) { return deps.escapeHtml(text); }
@@ -21,6 +22,7 @@ function init(nextDeps) {
   PROVIDER_LABELS = deps.PROVIDER_LABELS;
   DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER;
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
+  providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, 0]));
   bindHandlers();
 }
 
@@ -40,13 +42,15 @@ function syncProviderUI(providerId) {
 }
 let refreshTimer = null;
 let lastRequestId = 0;
-let lastAppliedSSETime = 0;
 
-function applyProviderStatus(providers, isSSE) {
+function applyProviderStatus(providers, isSSE = true, snapshotTime = Date.now()) {
   if (!Array.isArray(providers)) return;
-  if (isSSE) lastAppliedSSETime = Date.now();
+  const appliedAt = Date.now();
   for (const item of providers) {
-    if (item && PROVIDERS.includes(item.id)) providerStatus[item.id] = !!item.available;
+    if (!item || !PROVIDERS.includes(item.id)) continue;
+    if (!isSSE && providerUpdatedAt[item.id] > snapshotTime) continue;
+    providerStatus[item.id] = !!item.available;
+    providerUpdatedAt[item.id] = isSSE ? appliedAt : snapshotTime;
   }
   syncProviderUI(currentProviderId());
 }
@@ -68,8 +72,8 @@ async function _doRefreshProviderStatus() {
     const r = await fetch('/api/providers');
     if (!r.ok) return;
     const data = await r.json();
-    if (reqId !== lastRequestId || fetchTime < lastAppliedSSETime) return;
-    applyProviderStatus(data.providers, false);
+    if (reqId !== lastRequestId) return;
+    applyProviderStatus(data.providers, false, fetchTime);
   } catch {}
 }
 

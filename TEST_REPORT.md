@@ -8,6 +8,52 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## Runtime/UI audit hardening follow-up (2026-09-06)
+
+Scope:
+
+```text
+approval:   pending shell approvals are expired by run scope on ordinary
+            terminal outcomes and when a newer run is reserved. Approval/error
+            continuations keep their pending card until the explicit approval
+            flow settles.
+http:       /api/run rejects missing project directories instead of creating
+            arbitrary paths. /api/ui_state POST requires an explicit allowed
+            Origin; empty Origin remains limited to safe event-stream use.
+sse:        EventBus sends an isolated SsePayload copy to each subscriber,
+            reports overflow drops as a per-overflow count, and skips bad JSON
+            serialization without closing the stream.
+ui:         turn/info/review replay de-dupes by SSE event id, shell approval
+            continuation failures show retry state, composer fetch/json errors
+            clear the pending UI state, and provider status snapshots merge by
+            provider freshness.
+ghost:      public inbox/hebbian/continuity compaction validates small event
+            logs before returning ok=true, so corrupt UTF-8 logs remain
+            unreadable instead of being reported as empty/no-op compactions.
+completion: verification_unavailable is no longer projected as an environment
+            blocked reason. A done claim with no locally observed proof remains
+            unobserved and does not enter the repair round.
+```
+
+Verification:
+
+- Syntax/import bytecode check:
+  `python -m compileall -q codey tests` (passed)
+- Ruff:
+  `ruff check .` (passed)
+- Targeted approval/server/UI suite:
+  `pytest tests/test_approval_registry.py tests/test_server.py tests/test_ui.py -q`
+  (`263 passed, 1 skipped`)
+- Targeted completion/operation suite:
+  `pytest tests/test_completion_verification.py tests/test_completion_engine.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_operation_state.py -q`
+  (`65 passed, 24 subtests passed in 11.94s`)
+- Targeted Ghost event-log suite:
+  `pytest tests/test_ghost_sleep.py tests/test_ghost_inbox.py tests/test_ghost_hebbian.py tests/test_ghost_continuity.py -q`
+  (`96 passed, 83 subtests passed in 8.01s`)
+- Full pytest suite:
+  `pytest`
+  (`3632 passed, 19 skipped in 295.06s (0:04:55)`)
+
 ## Durable Operation Core implementation audit (2026-09-06)
 
 Scope:
