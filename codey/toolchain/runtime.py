@@ -33,6 +33,7 @@ from codey.workspace.bounded_scan import (
     BoundedScanBudget,
     iter_bounded_files,
 )
+from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
 from codey.runtime.models import (
     json_safe_projection,
     model_text_with_audit_markers,
@@ -736,19 +737,6 @@ def read_file(
     )
 
 
-def _bounded_directory_entries(path: Path, max_entries: int) -> tuple[list[Path], bool]:
-    entries: list[Path] = []
-    limited = False
-    for index, entry in enumerate(path.iterdir()):
-        cancellation.check()
-        if index >= max_entries:
-            limited = True
-            break
-        if not entry.name.startswith("."):
-            entries.append(entry)
-    return sorted(entries), limited
-
-
 def list_directory(root: Path, rel: str) -> ToolOutcome:
     cancellation.check()
     path, error = _checked_tool_path(root, rel, tool="list_dir")
@@ -757,12 +745,22 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
     if not path.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     lines: list[str] = []
-    entries, entry_limited = _bounded_directory_entries(path, LIST_MAX_DIR_ENTRIES)
+    entries, entry_limited = _bounded_directory_entries(
+        path,
+        LIST_MAX_DIR_ENTRIES,
+        include_hidden=False,
+        check_cancel=cancellation.check,
+    )
     for entry in entries:
         cancellation.check()
         if entry.is_dir():
             lines.append(f"{entry.name}/")
-            sub_entries, sub_limited = _bounded_directory_entries(entry, LIST_MAX_SUBDIR_ENTRIES)
+            sub_entries, sub_limited = _bounded_directory_entries(
+                entry,
+                LIST_MAX_SUBDIR_ENTRIES,
+                include_hidden=False,
+                check_cancel=cancellation.check,
+            )
             for sub in sub_entries:
                 cancellation.check()
                 tag = "/" if sub.is_dir() else ""

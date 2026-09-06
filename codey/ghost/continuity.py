@@ -13,7 +13,12 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    count_jsonl_rows,
+    control_event as _ghost_control_event,
+    event_file_stats as _shared_event_file_stats,
+)
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -302,9 +307,10 @@ class GhostContinuityStore:
                 if changed_items:
                     events = [_item_event(item, action="upsert") for item in changed_items]
                     events.append(
-                        _control_event(
-                            "ghost_continuity_synced",
-                            {
+                        _ghost_control_event(
+                            schema_version=CONTINUITY_SCHEMA_VERSION,
+                            event_name="ghost_continuity_synced",
+                            payload={
                                 "run_id": clip_signal_text(run_id, 120),
                                 "session_id": clip_signal_text(session_id, 120),
                                 "project": _normalize_project(project),
@@ -313,6 +319,8 @@ class GhostContinuityStore:
                                 "items_changed": len(changed_items),
                                 "items_total": len(merged),
                             },
+                            now=_now(),
+                            payload_cleaner=_clean_metadata,
                         )
                     )
                     if not self._append_events(events):
@@ -423,14 +431,17 @@ class GhostContinuityStore:
             removed = len(items) - len(kept)
             if removed <= 0:
                 return 0
-            event = _control_event(
-                "ghost_continuity_scope_deleted",
-                {
+            event = _ghost_control_event(
+                schema_version=CONTINUITY_SCHEMA_VERSION,
+                event_name="ghost_continuity_scope_deleted",
+                payload={
                     "scope": normalized_scope,
                     "project": project_ref if normalized_scope == "project" else "",
                     "session_id": session_ref if normalized_scope == "session" else "",
                     "removed_count": removed,
                 },
+                now=_now(),
+                payload_cleaner=_clean_metadata,
             )
             if not self._append_events([event]):
                 return 0
@@ -468,7 +479,12 @@ class GhostContinuityStore:
     def compact_if_needed(self) -> dict[str, object]:
         try:
             with with_file_lock(self.events_path):
-                before = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+                before = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
+                    too_large_warning="continuity_events_too_large",
+                    unreadable_warning="continuity_events_unreadable",
+                )
                 if not before["readable"]:
                     warning = str(before["warning"] or "continuity_events_unreadable")
                     self.last_warnings = (warning,)
@@ -517,7 +533,12 @@ class GhostContinuityStore:
                         "warnings": list(self.last_warnings),
                     }
                 self._compact_if_needed(items)
-                after = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+                after = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_CONTINUITY_EVENTS_BYTES,
+                    too_large_warning="continuity_events_too_large",
+                    unreadable_warning="continuity_events_unreadable",
+                )
                 return {
                     "ok": True,
                     "compacted": after != before,
@@ -562,7 +583,15 @@ class GhostContinuityStore:
 
     def _rewrite_events_from_items(self, items: Iterable[GhostContinuityItem]) -> None:
         rows = [_item_event(item, action="upsert") for item in _bounded_items(items)]
-        rows.append(_control_event("ghost_continuity_events_compacted", {"items": len(rows)}))
+        rows.append(
+            _ghost_control_event(
+                schema_version=CONTINUITY_SCHEMA_VERSION,
+                event_name="ghost_continuity_events_compacted",
+                payload={"items": len(rows)},
+                now=_now(),
+                payload_cleaner=_clean_metadata,
+            )
+        )
         self._event_log().write_atomic(rows)
 
     def _compact_if_needed(self, items: Iterable[GhostContinuityItem]) -> None:
@@ -1140,15 +1169,6 @@ def _item_event(item: GhostContinuityItem, *, action: str) -> dict[str, object]:
     }
 
 
-def _control_event(event_type: str, payload: Mapping[str, object]) -> dict[str, object]:
-    return {
-        "schema_version": CONTINUITY_SCHEMA_VERSION,
-        "ts": _now(),
-        "type": clip_signal_text(event_type, 80),
-        "payload": _clean_metadata(payload),
-    }
-
-
 def _clean_context_text(value: object) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
     text = " ".join(text.split())
@@ -1268,24 +1288,6 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
 
 def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
     return tuple(-ord(ch) for ch in str(value or ""))
-
-
-def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
-    try:
-        if not path.is_file():
-            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
-        event_bytes = path.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
-            return {
-                "events": 0,
-                "bytes": event_bytes,
-                "readable": True,
-                "warning": "continuity_events_too_large",
-            }
-        event_count = count_jsonl_rows(path)
-    except OSError:
-        return {"events": 0, "bytes": 0, "readable": False, "warning": "continuity_events_unreadable"}
-    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 __all__ = [

@@ -7,6 +7,7 @@ from typing import Callable
 
 from codey.runtime import cancellation
 from codey.research.context import ResearchPipelineConfig
+from codey.research.guards import bounded_int as _bounded_int
 from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
@@ -241,14 +242,6 @@ def _source_preview(query: str, source: dict, body: str, limit: int) -> str:
 
 def _safe_error(value: object) -> str:
     return clip(" ".join(str(value or "").split()), 180)
-
-
-def _bounded_int(value: object, *, default: int, lower: int, upper: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = default
-    return max(lower, min(upper, parsed))
 
 
 __all__ = [

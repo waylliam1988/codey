@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.workspace import map as project_map
+from codey.workspace.paths import bounded_directory_entries
 
 
 def _write(path: Path, text: str) -> None:
@@ -96,7 +97,9 @@ class ProjectMapTests(unittest.TestCase):
 
         directory = FakeDirectory()
 
-        entries, truncated = project_map._bounded_directory_entries(directory, 3)
+        entries, truncated = bounded_directory_entries(
+            directory, 3, sort_key=lambda item: item.name  # type: ignore[arg-type]
+        )
 
         self.assertTrue(truncated)
         self.assertEqual(directory.seen, 4)

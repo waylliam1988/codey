@@ -21,6 +21,7 @@ from codey.utils.refs import (
     stable_ref,
 )
 from codey.research.domain_profiles import EvidenceProfile
+from codey.research.guards import bounded_int as _bounded_int
 from codey.research.proof_quality import ResearchProofReview
 from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.shape import (
@@ -602,14 +603,6 @@ def _planner_warnings(
     if not preferences:
         warnings.append("no_connector_preference")
     return tuple(dict.fromkeys(warnings))[:MAX_PLAN_WARNINGS]
-
-
-def _bounded_int(value: object, lower: int, upper: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = lower
-    return max(lower, min(upper, parsed))
 
 
 def _unit_float(value: object) -> float:

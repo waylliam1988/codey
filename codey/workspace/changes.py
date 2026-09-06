@@ -20,6 +20,13 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 from codey.utils.change_paths import change_file_paths
+from codey.workspace.paths import (
+    content_hash as _content_hash,
+    path_hash as _path_hash,
+    read_text_bounded as _read_text_bounded,
+    read_text_or_none as _read_text_or_none,
+    safe_join as _safe_join,
+)
 
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
@@ -58,42 +65,6 @@ class RestoreResult:
     restored: list[str]
     conflicts: list[str]
     error: str | None = None
-
-
-def _safe_join(root: Path, rel: str) -> Path:
-    root_resolved = root.resolve()
-    path = (root_resolved / rel).resolve()
-    if root_resolved not in path.parents and path != root_resolved:
-        raise ValueError(f"path escapes project root: {rel}")
-    return path
-
-
-def _read_text_or_none(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    if not path.is_file():
-        raise ValueError(f"not a file: {path}")
-    if path.stat().st_size > MAX_SNAPSHOT_FILE_BYTES:
-        raise ValueError(f"file too large for snapshot: {path}")
-    return path.read_text(encoding="utf-8")
-
-
-def _content_hash(content: str | None) -> str:
-    if content is None:
-        return "missing"
-    return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def _path_hash(path: Path) -> str:
-    if not path.exists():
-        return "missing"
-    if not path.is_file():
-        raise ValueError(f"not a file: {path}")
-    digest = hashlib.sha256()
-    with path.open("r", encoding="utf-8") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), ""):
-            digest.update(chunk.encode("utf-8"))
-    return "sha256:" + digest.hexdigest()
 
 
 class SnapshotStore:
@@ -179,10 +150,11 @@ class SnapshotStore:
                     if entry.get("baseline") != expected_body:
                         return {}, {}
                     try:
-                        body = self._baseline_path(resolved_root, rel).read_text(
-                            encoding="utf-8"
+                        body = _read_text_bounded(
+                            self._baseline_path(resolved_root, rel),
+                            max_bytes=MAX_SNAPSHOT_FILE_BYTES,
                         )
-                    except (OSError, UnicodeDecodeError):
+                    except (OSError, UnicodeDecodeError, ValueError):
                         return {}, {}
                     if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
                         return {}, {}
@@ -422,7 +394,7 @@ class ChangeTracker:
         with self._lock:
             if rel_posix in self._before:
                 return
-        before = _read_text_or_none(path)
+        before = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
         added = len((before or "").encode("utf-8"))
         # The file read above happens outside the lock, so another thread may
         # have captured this rel in the meantime. Re-check membership before
@@ -487,7 +459,7 @@ class ChangeTracker:
                 continue
             path = _safe_join(self.root, rel)
             try:
-                after = _read_text_or_none(path)
+                after = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
             with self._lock:
@@ -552,7 +524,7 @@ class ChangeTracker:
             if rel in ignored:
                 continue
             try:
-                current = _read_text_or_none(_safe_join(self.root, rel))
+                current = _read_text_or_none(_safe_join(self.root, rel), max_bytes=MAX_SNAPSHOT_FILE_BYTES)
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
             with self._lock:
@@ -685,8 +657,8 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
     try:
         if not path.is_file() or path.stat().st_size > MAX_UNTRACKED_DIFF_BYTES:
             return None
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        text = _read_text_bounded(path, max_bytes=MAX_UNTRACKED_DIFF_BYTES)
+    except (OSError, UnicodeDecodeError, ValueError):
         return None
     lines = text.splitlines()
     rel_posix = rel.replace("\\", "/")

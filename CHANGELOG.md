@@ -4,6 +4,12 @@
 
 ## Unreleased - Durable Operation Core
 
+- Collapsed Ghost event-file stats onto the shared `codey.ghost.event_log`
+  helper. `inbox`, `hebbian`, and `continuity` now call the shared helper
+  directly, and the old store-local `_event_file_stats` wrappers are gone.
+- Tightened the shared Ghost event-file stats gate so unreadable files stay
+  unreadable after the byte-cap check, while byte limits are still enforced
+  before decoding.
 - Split durable operation state out of the old `codey.runtime.effects` naming:
   `codey.runtime.operation_state` now owns the closed operation leaf table, and
   operation state is stored as first-class `operation_state` log entries rather

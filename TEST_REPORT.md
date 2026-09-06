@@ -1,5 +1,28 @@
 # Codey Test Report
 
+## Ghost event-file stats cleanup (2026-09-06)
+
+Scope:
+
+```text
+ghost:      removed the store-local _event_file_stats wrappers from inbox,
+            hebbian, and continuity. Those call sites now use the shared
+            codey.ghost.event_log.event_file_stats helper directly.
+tests:      ghost sleep coverage now validates the shared helper directly
+            instead of reaching through private module wrappers.
+```
+
+Verification:
+
+- Ruff:
+  `ruff check codey tests` (passed)
+- Targeted regression:
+  `pytest tests/test_ghost_sleep.py tests/test_workspace_paths.py tests/test_research_guards.py tests/test_project_map.py -q`
+  (`41 passed, 6 subtests passed in 2.44s`)
+- Full pytest suite:
+  `pytest -q`
+  (`3647 passed, 19 skipped, 1276 subtests passed in 301.12s (0:05:01)`)
+
 0.4 final stabilization 结论见:
 
 ```text

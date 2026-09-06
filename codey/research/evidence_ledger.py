@@ -11,6 +11,10 @@ from typing import Callable, Mapping
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json, session_key, write_json_atomic
+from codey.research.guards import (
+    clip_schema_ok as _clip_schema_ok,
+    identifier_schema_ok as _identifier_schema_ok,
+)
 from codey.utils.refs import (
     bounded_refs,
     clip,
@@ -1190,22 +1194,6 @@ def _stable_ref_schema_ok(prefix: str, value: object) -> bool:
         and len(suffix) == 16
         and all(char in "0123456789abcdef" for char in suffix)
     )
-
-
-def _identifier_schema_ok(value: object, limit: int, *, allow_empty: bool = True) -> bool:
-    if not isinstance(value, str):
-        return False
-    if not value:
-        return allow_empty
-    return value == identifier(value, limit)
-
-
-def _clip_schema_ok(value: object, limit: int, *, allow_empty: bool = True) -> bool:
-    if not isinstance(value, str):
-        return False
-    if not value:
-        return allow_empty
-    return value == clip(value, limit)
 
 
 def _bounded_text_schema_ok(value: object, limit: int, *, allow_empty: bool = True) -> bool:

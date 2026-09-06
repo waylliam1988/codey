@@ -17,7 +17,11 @@ import uuid
 
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    compact_result_payload as _compact_payload,
+    event_file_stats as _event_file_stats,
+)
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
@@ -1005,30 +1009,51 @@ class GhostWorkQueueStore:
             return False
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+        before = _event_file_stats(
+            self.events_path,
+            max_bytes=MAX_WORK_EVENTS_BYTES,
+            too_large_warning="work_events_too_large",
+            unreadable_warning="work_events_unreadable",
+        )
         try:
             with with_file_lock(self.events_path):
-                before = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+                before = _event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_WORK_EVENTS_BYTES,
+                    too_large_warning="work_events_too_large",
+                    unreadable_warning="work_events_unreadable",
+                )
                 if not self.events_path.exists() and self.projection_path.exists():
                     warning = "work_events_missing"
                     self.last_warnings = (warning,)
-                    return _compact_payload(False, False, before, before, (warning,))
+                    return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
                 if not before["readable"]:
                     warning = str(before["warning"] or "work_events_unreadable")
                     self.last_warnings = (warning,)
-                    return _compact_payload(False, False, before, before, (warning,))
+                    return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
                 if before["events"] <= MAX_WORK_EVENTS and before["bytes"] <= MAX_WORK_EVENTS_BYTES:
-                    return _compact_payload(True, False, before, before, self.last_warnings)
+                    return _compact_payload(
+                        True, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
+                    )
                 events = self._events_for_mutation_locked()
                 items = _bounded_items(_items_from_events(events))
                 self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
                 self._write_projection(items, warnings=[])
-                after = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
-                return _compact_payload(True, after != before, before, after, self.last_warnings)
+                after = _event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_WORK_EVENTS_BYTES,
+                    too_large_warning="work_events_too_large",
+                    unreadable_warning="work_events_unreadable",
+                )
+                return _compact_payload(
+                    True, after != before, before, after, self.last_warnings, warning_cleaner=_bounded_warnings
+                )
         except (OSError, TypeError, ValueError):
             warning = "events_read_blocked" if self._events_read_blocked else "work_compaction_failed"
             self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
-            return _compact_payload(False, False, before, before, self.last_warnings)
+            return _compact_payload(
+                False, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
+            )
 
     def _transition_item(
         self,
@@ -1239,7 +1264,12 @@ class GhostWorkQueueStore:
         self._event_log().write_atomic_locked(events)
 
     def _compact_if_needed_locked(self, items: Iterable[GhostWorkItem]) -> None:
-        stats = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+        stats = _event_file_stats(
+            self.events_path,
+            max_bytes=MAX_WORK_EVENTS_BYTES,
+            too_large_warning="work_events_too_large",
+            unreadable_warning="work_events_unreadable",
+        )
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "work_events_unreadable"),)
             return
@@ -2660,42 +2690,6 @@ def _reverse_text_sort_key(value: object) -> tuple[int, ...]:
 def _normalize_continuation_text(value: object) -> str:
     text = " ".join(str(value or "").casefold().strip().split())
     return text.strip(" 。.!！?？")
-
-
-def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
-    try:
-        if not path.is_file():
-            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
-        event_bytes = path.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
-            return {
-                "events": 0,
-                "bytes": event_bytes,
-                "readable": True,
-                "warning": "work_events_too_large",
-            }
-        event_count = count_jsonl_rows(path)
-    except OSError:
-        return {"events": 0, "bytes": 0, "readable": False, "warning": "work_events_unreadable"}
-    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
-
-
-def _compact_payload(
-    ok: bool,
-    compacted: bool,
-    before: Mapping[str, object],
-    after: Mapping[str, object],
-    warnings: Iterable[object],
-) -> dict[str, object]:
-    return {
-        "ok": bool(ok),
-        "compacted": bool(compacted),
-        "events_before": _int(before.get("events")),
-        "events_after": _int(after.get("events")),
-        "bytes_before": _int(before.get("bytes")),
-        "bytes_after": _int(after.get("bytes")),
-        "warnings": list(_bounded_warnings(warnings)),
-    }
 
 
 __all__ = [

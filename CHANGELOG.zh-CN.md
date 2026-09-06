@@ -4,6 +4,11 @@
 
 ## Unreleased - Durable Operation Core
 
+- 将 Ghost 的 event-file stats 收口到共享的 `codey.ghost.event_log`
+  helper。`inbox`、`hebbian` 和 `continuity` 现在直接调用共享 helper，
+  旧的模块级 `_event_file_stats` 包装器已删除。
+- 收紧共享 Ghost event-file stats gate：字节上限仍然在 decoding 之前生效，
+  但 unreadable 文件在 byte-cap 检查后仍会保持 unreadable。
 - 将 durable operation state 从旧的 `codey.runtime.effects` 命名中拆出：
   `codey.runtime.operation_state` 现在拥有 closed operation leaf table，operation state
   作为一等 `operation_state` log entry 写入，不再伪装成 pseudo effect record。

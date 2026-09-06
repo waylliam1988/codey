@@ -16,7 +16,11 @@ import uuid
 
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    control_event as _ghost_control_event,
+    count_jsonl_rows,
+)
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -24,6 +28,7 @@ from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.workspace.paths import read_text_bounded
 
 
 SLEEP_SCHEMA_VERSION = 1
@@ -357,14 +362,16 @@ class GhostSleepStore:
             ):
                 state_deleted = 1
             if removed:
-                control = _control_event(
-                    "ghost_sleep_scope_deleted",
-                    {
+                control = _ghost_control_event(
+                    schema_version=SLEEP_SCHEMA_VERSION,
+                    event_name="ghost_sleep_scope_deleted",
+                    payload={
                         "scope": normalized_scope,
                         "project": project_ref if normalized_scope == "project" else "",
                         "session_id": session_ref if normalized_scope == "session" else "",
                         "removed_reports": removed,
                     },
+                    now=_now(),
                 )
                 self._write_events_atomic([*kept, control])
             if state_deleted:
@@ -705,15 +712,6 @@ def _report_event(report: GhostSleepReport) -> dict[str, object]:
     }
 
 
-def _control_event(event_type: str, payload: Mapping[str, object]) -> dict[str, object]:
-    return {
-        "schema_version": SLEEP_SCHEMA_VERSION,
-        "type": event_type,
-        "ts": _now(),
-        "payload": dict(payload),
-    }
-
-
 def _latest_report_from_events(events: Iterable[dict[str, object]]) -> GhostSleepReport | None:
     latest: GhostSleepReport | None = None
     for event in events:
@@ -757,12 +755,12 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
             return "missing"
         if path.stat().st_size > max_bytes:
             return "too_large"
+        text = read_text_bounded(path, max_bytes=max_bytes)
         if kind == "json":
-            text = path.read_text(encoding="utf-8")
             if text.strip():
                 json.loads(text)
         elif kind == "jsonl":
-            for line in path.read_text(encoding="utf-8").splitlines():
+            for line in text.splitlines():
                 if line.strip():
                     json.loads(line)
         return "present"

@@ -21,6 +21,7 @@ from codey.workspace.map import (
     SECRET_NAME_PARTS,
     SECRET_SUFFIXES,
 )
+from codey.workspace.paths import is_test_path as _is_test_path
 
 
 MAX_CHANGED_FILES = 20
@@ -196,19 +197,6 @@ def _changed_paths(changes: dict) -> tuple[str, ...]:
         if value not in result:
             result.append(value)
     return tuple(result)
-
-
-def _is_test_path(rel: str) -> bool:
-    path = PurePosixPath(rel)
-    lower_parts = [part.lower() for part in path.parts]
-    name = path.name.lower()
-    return (
-        any(part in {"test", "tests", "__tests__"} for part in lower_parts[:-1])
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-        or ".test." in name
-        or ".spec." in name
-    )
 
 
 def _allowed_test_file(root: Path, path: Path) -> bool:

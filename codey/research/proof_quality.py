@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
+from codey.research.guards import status_token as _status_token
+from codey.research.object_model import ResearchRecord
+from codey.research.shape import valid_digest_ref
 from codey.research.source_trust import source_trust_warnings as _shared_source_trust_warnings
 from codey.utils.refs import (
     bounded_refs,
@@ -20,8 +23,6 @@ from codey.utils.refs import (
     nonnegative_int,
     stable_ref,
 )
-from codey.research.object_model import ResearchRecord
-from codey.research.shape import valid_digest_ref
 from codey.policies.redaction import looks_prompt_visible_secret
 
 
@@ -30,6 +31,7 @@ MAX_SIGNALS = 8
 MAX_WARNINGS = 12
 MAX_DIAGNOSTICS = 64
 MIN_QUEUE_COVERAGE_SCORE = 0.62
+ANSWER_STATUSES = frozenset({"answered", "partial", "insufficient_evidence", "not_answered"})
 DIAGNOSTIC_REF_KINDS = (
     ("claim_ref", "claim"),
     ("evidence_ref", "evidence"),
@@ -193,7 +195,7 @@ def review_research_proof(
 
     record_id = _record_id_or_empty(payload.get("record_id"))
     record_digest = valid_digest_ref(payload.get("record_digest"))
-    answer_status = _answer_status(payload.get("answer_status"))
+    answer_status = _status_token(payload.get("answer_status"), ANSWER_STATUSES, default="not_answered")
     sources = _source_map(payload.get("sources"))
     evidence = _evidence_map(payload.get("evidence"))
     claims = _claim_map(payload.get("claims"))
@@ -295,7 +297,7 @@ def proof_review_trace_payload(review: ResearchProofReview | Mapping[str, object
         "question_digest": valid_digest_ref(payload.get("question_digest")),
         "ok": bool(payload.get("ok")),
         "answers_question": bool(payload.get("answers_question")),
-        "answer_status": _answer_status(payload.get("answer_status")),
+        "answer_status": _status_token(payload.get("answer_status"), ANSWER_STATUSES, default="not_answered"),
         "answer_coverage_score": _bounded_score(payload.get("answer_coverage_score")),
         "gap_count": min(MAX_GAPS, len(payload.get("coverage_gaps", ()) or ())),
         "warning_count": min(
@@ -772,13 +774,6 @@ def _positive_ints(value: object) -> tuple[int, ...]:
         if number > 0 and number not in out:
             out.append(number)
     return tuple(out)
-
-
-def _answer_status(value: object) -> str:
-    text = identifier(value, 40)
-    if text in {"answered", "partial", "insufficient_evidence", "not_answered"}:
-        return text
-    return "not_answered"
 
 
 def _bounded_score(value: object) -> float:

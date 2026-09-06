@@ -18,6 +18,7 @@ from codey.research.ledger import (
     ResearchLedger,
     normalize_evidence_stance,
 )
+from codey.research.guards import status_token as _status_token
 from codey.utils.refs import (
     bounded_refs as _bounded_refs,
     clip as _clip,
@@ -307,7 +308,7 @@ class ResearchClaim:
             "citation_numbers": [int(value) for value in self.citation_numbers][:MAX_REF_VALUES],
             "evidence_refs": list(_bounded_refs(self.evidence_refs)),
             "assumption_refs": list(_bounded_refs(self.assumption_refs)),
-            "status": _claim_status(self.status),
+            "status": _status_token(self.status, CLAIM_STATUSES, default="unsupported"),
         }
 
 
@@ -354,7 +355,7 @@ class ResearchRecord:
             "record_id": self.record_id,
             "record_digest": content_digest(self.record_digest),
             "question": self.question.to_jsonable(),
-            "answer_status": _answer_status(self.answer_status),
+            "answer_status": _status_token(self.answer_status, ANSWER_STATUSES, default="not_answered"),
             "sources": [item.to_jsonable() for item in self.sources[:MAX_RECORD_SOURCES]],
             "evidence": [item.to_jsonable() for item in self.evidence[:MAX_RECORD_EVIDENCE]],
             "claims": [item.to_jsonable() for item in self.claims[:MAX_RECORD_CLAIMS]],
@@ -542,7 +543,7 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
     if isinstance(record, ResearchRecord):
         return {
             "record_id": record.record_id,
-            "answer_status": _answer_status(record.answer_status),
+            "answer_status": _status_token(record.answer_status, ANSWER_STATUSES, default="not_answered"),
             "source_count": len(record.sources),
             "evidence_count": len(record.evidence),
             "claim_count": len(record.claims),
@@ -552,7 +553,7 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
         }
     return {
         "record_id": _identifier(record.get("record_id"), 80),
-        "answer_status": _answer_status(record.get("answer_status")),
+        "answer_status": _status_token(record.get("answer_status"), ANSWER_STATUSES, default="not_answered"),
         "source_count": _nonnegative_int(record.get("source_count")),
         "evidence_count": _nonnegative_int(record.get("evidence_count")),
         "claim_count": _nonnegative_int(record.get("claim_count")),
@@ -904,7 +905,7 @@ def _close_claim_graph(
     claim_ids: set[str] = set()
     for claim in claims[:MAX_RECORD_CLAIMS]:
         assumption_refs = tuple(ref for ref in claim.assumption_refs if ref in assumption_ids)
-        status = _claim_status(claim.status)
+        status = _status_token(claim.status, CLAIM_STATUSES, default="unsupported")
         if status == "assumption" and not assumption_refs and not claim.evidence_refs:
             status = "unsupported"
         closed = replace(claim, assumption_refs=assumption_refs, status=status)
@@ -934,19 +935,8 @@ def _excerpt_offsets(text: str, excerpt: str) -> tuple[int, int]:
     return index, index + len(needle)
 
 
-def _answer_status(value: object) -> str:
-    text = _identifier(value, 40)
-    return text if text in ANSWER_STATUSES else "not_answered"
-
-
 def _relation_kind(value: object) -> str:
-    text = _identifier(value, 40)
-    return text if text in CLAIM_RELATION_KINDS else "limits"
-
-
-def _claim_status(value: object) -> str:
-    text = _identifier(value, 40)
-    return text if text in CLAIM_STATUSES else "unsupported"
+    return _status_token(value, CLAIM_RELATION_KINDS, default="limits")
 
 
 def _normalize_for_match(value: object) -> str:

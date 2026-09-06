@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from codey.storage.atomic_io import write_text_atomic
+from codey.workspace.paths import (
+    content_hash as _content_hash,
+    path_hash as _path_hash,
+    read_text_or_none as _read_text_or_none,
+    safe_join as _safe_join,
+)
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_SNAPSHOT_FILES = 200
@@ -36,16 +43,16 @@ class KnowledgeChanges:
     last_restore_result: RestoreResult | None = None
 
     def capture_before(self, rel: str, path: Path) -> None:
-        path = _safe_join(self.root, rel)
+        path = _safe_join(self.root, rel, label="knowledge root")
         rel = path.relative_to(Path(self.root).expanduser().resolve()).as_posix()
         if rel in self._before:
             return
-        before = _read_text_or_none(path)
+        before = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
         self._validate_capacity(rel, before)
         self._before[rel] = before
 
     def record_after(self, rel: str, path: Path) -> None:
-        path = _safe_join(self.root, rel)
+        path = _safe_join(self.root, rel, label="knowledge root")
         rel = path.relative_to(Path(self.root).expanduser().resolve()).as_posix()
         self._touched.add(rel)
         try:
@@ -87,7 +94,7 @@ class KnowledgeChanges:
         root = Path(self.root).expanduser().resolve()
         for rel in sorted(self._touched):
             try:
-                path = _safe_join(root, rel)
+                path = _safe_join(root, rel, label="knowledge root")
                 rel = path.relative_to(root).as_posix()
             except ValueError:
                 conflicts.append(rel)
@@ -111,7 +118,7 @@ class KnowledgeChanges:
                         path.unlink()
                 else:
                     path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(original, encoding="utf-8", newline="\n")
+                    write_text_atomic(path, original)
             except OSError:
                 conflicts.append(rel)
                 continue
@@ -139,39 +146,3 @@ class KnowledgeChanges:
         self._before.pop(rel, None)
         self._after_hashes.pop(rel, None)
         self._touched.discard(rel)
-
-
-def _safe_join(root: Path, rel: str) -> Path:
-    resolved_root = Path(root).expanduser().resolve()
-    path = (resolved_root / str(rel)).resolve()
-    if path != resolved_root and resolved_root not in path.parents:
-        raise ValueError(f"path escapes knowledge root: {rel}")
-    return path
-
-
-def _read_text_or_none(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    if not path.is_file():
-        raise ValueError(f"not a file: {path}")
-    if path.stat().st_size > MAX_SNAPSHOT_FILE_BYTES:
-        raise ValueError(f"file too large for snapshot: {path}")
-    return path.read_text(encoding="utf-8")
-
-
-def _content_hash(content: str | None) -> str:
-    if content is None:
-        return "missing"
-    return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def _path_hash(path: Path) -> str:
-    if not path.exists():
-        return "missing"
-    if not path.is_file():
-        raise ValueError(f"not a file: {path}")
-    digest = hashlib.sha256()
-    with path.open("r", encoding="utf-8") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), ""):
-            digest.update(chunk.encode("utf-8"))
-    return "sha256:" + digest.hexdigest()

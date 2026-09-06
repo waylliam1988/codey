@@ -6,12 +6,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import codey.ghost.continuity as continuity_module
-import codey.ghost.hebbian as hebbian_module
-import codey.ghost.inbox as inbox_module
 import codey.ghost.sleep as sleep_module
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityResult, GhostContinuityStore
+from codey.ghost.event_log import event_file_stats as ghost_event_file_stats
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
@@ -259,9 +257,33 @@ class GhostSleepTests(unittest.TestCase):
             path.write_bytes(b"\xff\xfe\xff\xfe")
 
             cases = (
-                ("events_too_large", inbox_module._event_file_stats(path, max_bytes=1)),
-                ("hebbian_events_too_large", hebbian_module._event_file_stats(path, max_bytes=1)),
-                ("continuity_events_too_large", continuity_module._event_file_stats(path, max_bytes=1)),
+                (
+                    "events_too_large",
+                    ghost_event_file_stats(
+                        path,
+                        max_bytes=1,
+                        too_large_warning="events_too_large",
+                        unreadable_warning="events_unreadable",
+                    ),
+                ),
+                (
+                    "hebbian_events_too_large",
+                    ghost_event_file_stats(
+                        path,
+                        max_bytes=1,
+                        too_large_warning="hebbian_events_too_large",
+                        unreadable_warning="hebbian_events_unreadable",
+                    ),
+                ),
+                (
+                    "continuity_events_too_large",
+                    ghost_event_file_stats(
+                        path,
+                        max_bytes=1,
+                        too_large_warning="continuity_events_too_large",
+                        unreadable_warning="continuity_events_unreadable",
+                    ),
+                ),
             )
 
         for warning, stats in cases:

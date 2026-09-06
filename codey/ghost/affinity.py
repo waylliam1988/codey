@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    compact_result_payload as _compact_payload,
+    event_file_stats as _event_file_stats,
+)
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
@@ -979,30 +983,51 @@ class GhostAffinityStore:
             }
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+        before = _event_file_stats(
+            self.events_path,
+            max_bytes=MAX_AFFINITY_EVENTS_BYTES,
+            too_large_warning="affinity_events_too_large",
+            unreadable_warning="affinity_events_unreadable",
+        )
         try:
             with with_file_lock(self.events_path):
-                before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+                before = _event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_AFFINITY_EVENTS_BYTES,
+                    too_large_warning="affinity_events_too_large",
+                    unreadable_warning="affinity_events_unreadable",
+                )
                 if not self.events_path.exists() and self.projection_path.exists():
                     warning = "affinity_events_missing"
                     self.last_warnings = (warning,)
-                    return _compact_payload(False, False, before, before, (warning,))
+                    return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
                 if not before["readable"]:
                     warning = str(before["warning"] or "affinity_events_unreadable")
                     self.last_warnings = (warning,)
-                    return _compact_payload(False, False, before, before, (warning,))
+                    return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
                 if before["events"] <= MAX_AFFINITY_EVENTS and before["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
-                    return _compact_payload(True, False, before, before, self.last_warnings)
+                    return _compact_payload(
+                        True, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
+                    )
                 events = self._events_for_mutation_locked()
                 nodes, edges = _rows_from_events(events)
                 self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
                 self._write_projection(nodes, edges, warnings=self.last_warnings)
-                after = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
-                return _compact_payload(True, after != before, before, after, self.last_warnings)
+                after = _event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_AFFINITY_EVENTS_BYTES,
+                    too_large_warning="affinity_events_too_large",
+                    unreadable_warning="affinity_events_unreadable",
+                )
+                return _compact_payload(
+                    True, after != before, before, after, self.last_warnings, warning_cleaner=_bounded_warnings
+                )
         except (OSError, TypeError, ValueError):
             warning = self._events_blocked_reason or "affinity_compaction_failed"
             self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
-            return _compact_payload(False, False, before, before, self.last_warnings)
+            return _compact_payload(
+                False, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
+            )
 
     def _source_specs(
         self,
@@ -1169,7 +1194,12 @@ class GhostAffinityStore:
             self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_projection_write_failed"))
 
     def _compact_if_needed_locked(self, nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge]) -> None:
-        stats = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+        stats = _event_file_stats(
+            self.events_path,
+            max_bytes=MAX_AFFINITY_EVENTS_BYTES,
+            too_large_warning="affinity_events_too_large",
+            unreadable_warning="affinity_events_unreadable",
+        )
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "affinity_events_unreadable"),)
             return
@@ -2648,24 +2678,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
-    try:
-        if not path.is_file():
-            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
-        event_bytes = path.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
-            return {
-                "events": 0,
-                "bytes": event_bytes,
-                "readable": True,
-                "warning": "affinity_events_too_large",
-            }
-        event_count = count_jsonl_rows(path)
-    except OSError:
-        return {"events": 0, "bytes": 0, "readable": False, "warning": "affinity_events_unreadable"}
-    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
-
-
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
     mapped: list[str] = []
     for warning in warnings:
@@ -2676,24 +2688,6 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
         else:
             mapped.append(str(warning))
     return _bounded_warnings(mapped)
-
-
-def _compact_payload(
-    ok: bool,
-    compacted: bool,
-    before: Mapping[str, object],
-    after: Mapping[str, object],
-    warnings: Iterable[str],
-) -> dict[str, object]:
-    return {
-        "ok": ok,
-        "compacted": compacted,
-        "events_before": int(before.get("events") or 0),
-        "events_after": int(after.get("events") or 0),
-        "bytes_before": int(before.get("bytes") or 0),
-        "bytes_after": int(after.get("bytes") or 0),
-        "warnings": list(_bounded_warnings(warnings)),
-    }
 
 
 __all__ = [

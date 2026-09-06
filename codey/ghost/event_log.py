@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import uuid
-from typing import Callable, Iterable, Literal
+from typing import Callable, Iterable, Literal, Mapping
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file
@@ -271,6 +271,77 @@ def count_jsonl_rows(path: str | Path) -> int:
     if last_byte and last_byte != b"\n":
         count += 1
     return count
+
+
+def event_file_stats(
+    path: str | Path,
+    *,
+    max_bytes: int,
+    too_large_warning: str,
+    unreadable_warning: str,
+) -> dict[str, object]:
+    target = Path(path)
+    event_bytes = 0
+    try:
+        if not target.is_file():
+            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
+        event_bytes = target.stat().st_size
+        if event_bytes > max(0, int(max_bytes or 0)):
+            return {
+                "events": 0,
+                "bytes": event_bytes,
+                "readable": True,
+                "warning": too_large_warning,
+            }
+        text = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return {"events": 0, "bytes": event_bytes, "readable": False, "warning": unreadable_warning}
+    except OSError:
+        return {"events": 0, "bytes": 0, "readable": False, "warning": unreadable_warning}
+    return {"events": len(text.splitlines()), "bytes": event_bytes, "readable": True, "warning": ""}
+
+
+def compact_result_payload(
+    ok: bool,
+    compacted: bool,
+    before: Mapping[str, object],
+    after: Mapping[str, object],
+    warnings: Iterable[object],
+    *,
+    warning_cleaner: Callable[[Iterable[object]], Iterable[object]] | None = None,
+) -> dict[str, object]:
+    clean_warnings = warning_cleaner(warnings) if warning_cleaner is not None else warnings
+    return {
+        "ok": bool(ok),
+        "compacted": bool(compacted),
+        "events_before": int(before.get("events") or 0),
+        "events_after": int(after.get("events") or 0),
+        "bytes_before": int(before.get("bytes") or 0),
+        "bytes_after": int(after.get("bytes") or 0),
+        "warnings": list(clean_warnings),
+    }
+
+
+def control_event(
+    *,
+    schema_version: int,
+    event_name: str,
+    payload: Mapping[str, object],
+    now: str,
+    event_field: str = "type",
+    timestamp_field: str = "ts",
+    event_id_prefix: str = "",
+    payload_cleaner: Callable[[Mapping[str, object]], Mapping[str, object]] | None = None,
+) -> dict[str, object]:
+    event: dict[str, object] = {
+        "schema_version": int(schema_version),
+        event_field: event_name,
+        timestamp_field: now,
+    }
+    if event_id_prefix:
+        event["event_id"] = f"{event_id_prefix}{uuid.uuid4().hex[:24]}"
+    event["payload"] = dict(payload_cleaner(payload) if payload_cleaner else payload)
+    return event
 
 
 def _tail_lines(path: Path, max_rows: int, size: int) -> list[str]:

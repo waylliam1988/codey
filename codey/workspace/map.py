@@ -15,6 +15,11 @@ from typing import Iterable, Sequence
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import path_matches_ignored_prefix
+from codey.workspace.paths import (
+    bounded_directory_entries as _bounded_directory_entries,
+    is_test_path as _is_test_path,
+    read_text_bounded,
+)
 
 
 MAX_PROJECT_MAP_CHARS = 7_000
@@ -224,7 +229,12 @@ def build_project_map(
         if remaining <= 0:
             truncated = True
             break
-        entries, entries_truncated = _bounded_directory_entries(current, remaining)
+        entries, entries_truncated = _bounded_directory_entries(
+            current,
+            remaining,
+            sort_key=_entry_sort_key,
+            swallow_errors=True,
+        )
         if entries_truncated:
             truncated = True
         entries_seen += len(entries)
@@ -404,21 +414,6 @@ def _extend_section(lines: list[str], title: str, items: Sequence[str]) -> None:
         lines.append(f"- {item}")
 
 
-def _bounded_directory_entries(path: Path, remaining: int) -> tuple[list[Path], bool]:
-    if remaining <= 0:
-        return [], True
-    entries: list[Path] = []
-    try:
-        iterator = path.iterdir()
-        for entry in iterator:
-            if len(entries) >= remaining:
-                return sorted(entries, key=_entry_sort_key), True
-            entries.append(entry)
-    except OSError:
-        return [], False
-    return sorted(entries, key=_entry_sort_key), False
-
-
 def _iter_symbol_source_files(root: Path, ignored_paths: Sequence[str] = ()) -> list[Path]:
     files: list[Path] = []
     total_bytes = 0
@@ -431,7 +426,12 @@ def _iter_symbol_source_files(root: Path, ignored_paths: Sequence[str] = ()) -> 
     ):
         current = stack.pop()
         directories_seen += 1
-        entries, _truncated = _bounded_directory_entries(current, MAX_DIRECTORY_ENTRIES)
+        entries, _truncated = _bounded_directory_entries(
+            current,
+            MAX_DIRECTORY_ENTRIES,
+            sort_key=_entry_sort_key,
+            swallow_errors=True,
+        )
         subdirs: list[Path] = []
         for path in entries:
             rel = _safe_relative(root, path)
@@ -530,12 +530,6 @@ def _focus_root(rel: str) -> str:
     if parts[0] in {"src", "test", "tests"}:
         return f"{parts[0]}/"
     return f"{parts[0]}/" if len(parts) > 1 else "."
-
-
-def _is_test_path(rel: str) -> bool:
-    parts = {part.lower() for part in PurePosixPath(rel).parts}
-    name = PurePosixPath(rel).name.lower()
-    return "tests" in parts or "test" in parts or name.startswith("test_")
 
 
 def _focus_modules(candidates: Sequence[FocusCandidate]) -> tuple[FocusModule, ...]:
@@ -641,8 +635,8 @@ def _symbols_for_file(path: Path) -> tuple[str, ...]:
 
 def _python_symbols(path: Path) -> tuple[str, ...]:
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError, UnicodeDecodeError):
+        tree = ast.parse(read_text_bounded(path, max_bytes=MAX_SYMBOL_FILE_BYTES), filename=str(path))
+    except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
         return ()
     symbols: list[str] = []
     for node in tree.body:
@@ -686,8 +680,8 @@ JS_SYMBOL_RE = re.compile(
 
 def _js_symbols(path: Path) -> tuple[str, ...]:
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        text = read_text_bounded(path, max_bytes=MAX_SYMBOL_FILE_BYTES)
+    except (OSError, UnicodeDecodeError, ValueError):
         return ()
     symbols: list[str] = []
     for match in JS_SYMBOL_RE.finditer(text):

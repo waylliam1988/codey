@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Callable
 
 from codey.runtime import cancellation
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.change_set import ChangeSet
 from codey.workspace.changed_symbols import ChangedSymbol, changed_symbols_from_changes
+from codey.workspace.paths import is_test_path as _is_test_path
 from codey.utils.references import REFERENCE_EXCLUDED_DIRS, find_reference_hints
 
 
@@ -350,16 +351,3 @@ def _relative(root: Path, path: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return ""
-
-
-def _is_test_path(rel: str) -> bool:
-    path = PurePosixPath(rel.replace("\\", "/"))
-    lower_parts = [part.lower() for part in path.parts]
-    name = path.name.lower()
-    return (
-        any(part in {"test", "tests", "__tests__"} for part in lower_parts[:-1])
-        or name.startswith("test_")
-        or name.endswith("_test.py")
-        or ".test." in name
-        or ".spec." in name
-    )

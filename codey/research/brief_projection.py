@@ -24,6 +24,7 @@ from typing import Iterable, Mapping
 from codey.utils.refs import clip as _clip
 from codey.utils.refs import content_digest
 from codey.utils.refs import identifier as _identifier
+from codey.research.guards import status_token as _status_token
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref as _normalize_runtime_ref,
@@ -65,7 +66,7 @@ class ClaimSummary:
         return {
             "claim_ref": self.claim_ref,
             "text": _clip(self.text, MAX_CLAIM_TEXT_CHARS),
-            "status": _claim_status(self.status),
+            "status": _status_token(self.status, CLAIM_STATUSES, default="unsupported"),
             "evidence_count": max(0, int(self.evidence_count or 0)),
         }
 
@@ -131,7 +132,7 @@ class ResearchBriefProjection:
         payload: dict[str, object] = {
             "record_ref": self.record_ref,
             "record_digest": self.record_digest,
-            "answer_status": _answer_status(self.answer_status),
+            "answer_status": _status_token(self.answer_status, ANSWER_STATUSES, default="not_answered"),
             "profile_id": _identifier(self.profile_id, 80) or "general",
             "claim_refs": list(self.claim_refs),
             "evidence_refs": list(self.evidence_refs),
@@ -223,7 +224,8 @@ def project_research_brief(
             if snapshot
             else content_digest((payload or {}).get("record_digest"))
         ),
-        answer_status=_snapshot_answer(snapshot) or _answer_status((payload or {}).get("answer_status")),
+        answer_status=_snapshot_answer(snapshot)
+        or _status_token((payload or {}).get("answer_status"), ANSWER_STATUSES, default="not_answered"),
         profile_id=_identifier(profile_id, 80) or "general",
         claim_refs=_tuple_slice(snapshot.claim_refs if snapshot else _refs_from(claims)),
         evidence_refs=_tuple_slice(snapshot.evidence_refs if snapshot else ()),
@@ -311,7 +313,7 @@ def render_handoff(
     """Render the short model-visible handoff for one projection."""
 
     lines: list[str] = []
-    status = _answer_status(projection.answer_status)
+    status = _status_token(projection.answer_status, ANSWER_STATUSES, default="not_answered")
     counts = projection.counts()
     summary = (
         f"- record: {projection.record_ref}"
@@ -382,7 +384,7 @@ def _claim_summaries(payload: Mapping[str, object]) -> list[ClaimSummary]:
         out.append(ClaimSummary(
             claim_ref=ref,
             text=_clip(row.get("claim_text"), MAX_CLAIM_TEXT_CHARS),
-            status=_claim_status(row.get("status")),
+            status=_status_token(row.get("status"), CLAIM_STATUSES, default="unsupported"),
             evidence_count=evidence_count,
         ))
     return out
@@ -510,19 +512,8 @@ def _snapshot_answer(snapshot: EvidenceRuntimeSnapshot | None) -> str:
     return snapshot.answer_status if snapshot.answer_status in ANSWER_STATUSES else ""
 
 
-def _answer_status(value: object) -> str:
-    text = _identifier(value, 40).lower()
-    return text if text in ANSWER_STATUSES else "not_answered"
-
-
-def _claim_status(value: object) -> str:
-    text = _identifier(value, 40).lower()
-    return text if text in CLAIM_STATUSES else "unsupported"
-
-
 def _support_token(value: object) -> str:
-    text = _identifier(value, 20).lower()
-    return text if text in CONSTRAINT_SUPPORTS else "verified"
+    return _status_token(value, CONSTRAINT_SUPPORTS, default="verified", limit=20)
 
 
 def _count_field(payload: Mapping[str, object], key: str) -> int:

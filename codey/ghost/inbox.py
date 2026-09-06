@@ -9,7 +9,12 @@ import re
 import uuid
 from typing import Iterable
 
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    count_jsonl_rows,
+    control_event as _ghost_control_event,
+    event_file_stats as _shared_event_file_stats,
+)
 from codey.ghost.gate import (
     CANDIDATE_STATUSES,
     CANDIDATE_TYPES,
@@ -412,14 +417,16 @@ class GhostInboxStore:
                     superseded_ids.append(superseded.id)
             events = [self._candidate_event(candidate, action=event_action) for candidate, event_action in changed]
             events.append(
-                self._control_event(
-                    "ghost_memory_candidate_reviewed",
-                    {
+                _ghost_control_event(
+                    schema_version=INBOX_SCHEMA_VERSION,
+                    event_name="ghost_memory_candidate_reviewed",
+                    payload={
                         "candidate_id": target.id,
                         "action": normalized_action,
                         "reviewed_by": reviewer,
                         "superseded_ids": superseded_ids,
                     },
+                    now=_now(),
                 )
             )
             if not self._append_events(events):
@@ -479,14 +486,16 @@ class GhostInboxStore:
                     remaining.append(candidate)
             if not removed:
                 return 0
-            control = self._control_event(
-                "ghost_memory_scope_deleted",
-                {
+            control = _ghost_control_event(
+                schema_version=INBOX_SCHEMA_VERSION,
+                event_name="ghost_memory_scope_deleted",
+                payload={
                     "scope": normalized_scope,
                     "project": normalized_project if normalized_scope == "project" else "",
                     "session_id": normalized_session if normalized_scope == "session" else "",
                     "removed_count": removed,
                 },
+                now=_now(),
             )
             self._rewrite_events_from_candidates(remaining, control_event=control)
             try:
@@ -506,9 +515,11 @@ class GhostInboxStore:
                 write_json_atomic(self.settings_path, payload, max_bytes=MAX_INBOX_BYTES)
                 audit_ok = self._append_events(
                     [
-                        self._control_event(
-                            "ghost_learning_settings_updated",
-                            {"learning_enabled": bool(enabled)},
+                        _ghost_control_event(
+                            schema_version=INBOX_SCHEMA_VERSION,
+                            event_name="ghost_learning_settings_updated",
+                            payload={"learning_enabled": bool(enabled)},
+                            now=_now(),
                         )
                     ]
                 )
@@ -523,7 +534,12 @@ class GhostInboxStore:
     def compact_if_needed(self) -> dict[str, object]:
         try:
             with with_file_lock(self.events_path):
-                before = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+                before = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_EVENTS_BYTES,
+                    too_large_warning="events_too_large",
+                    unreadable_warning="events_unreadable",
+                )
                 if not before["readable"]:
                     warning = str(before["warning"] or "events_unreadable")
                     self.last_warnings = (warning,)
@@ -572,7 +588,12 @@ class GhostInboxStore:
                         "warnings": list(self.last_warnings),
                     }
                 self._compact_if_needed(candidates)
-                after = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+                after = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_EVENTS_BYTES,
+                    too_large_warning="events_too_large",
+                    unreadable_warning="events_unreadable",
+                )
                 return {
                     "ok": True,
                     "compacted": after != before,
@@ -845,13 +866,15 @@ class GhostInboxStore:
             pass
 
     def _compacted_event(self, reason: str) -> dict[str, object]:
-        return self._control_event(
-            "ghost_memory_store_compacted",
-            {
+        return _ghost_control_event(
+            schema_version=INBOX_SCHEMA_VERSION,
+            event_name="ghost_memory_store_compacted",
+            payload={
                 "reason": clip_signal_text(reason, 80),
                 "max_events": MAX_GHOST_EVENTS,
                 "max_event_bytes": MAX_EVENTS_BYTES,
             },
+            now=_now(),
         )
 
     def _candidate_event(
@@ -883,14 +906,6 @@ class GhostInboxStore:
             "scope": clip_signal_text(getattr(signal, "scope", ""), 40),
             "gate": decision.to_payload(),
             "stored_candidate": False,
-        }
-
-    def _control_event(self, event_type: str, payload: dict[str, object]) -> dict[str, object]:
-        return {
-            "schema_version": INBOX_SCHEMA_VERSION,
-            "type": event_type,
-            "ts": _now(),
-            "payload": payload,
         }
 
     def _bounded_candidates(
@@ -951,19 +966,6 @@ def _scope_ref(candidate: GhostMemoryCandidate) -> str:
     if candidate.scope == "session":
         return candidate.session_id
     return ""
-
-
-def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
-    try:
-        if not path.is_file():
-            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
-        event_bytes = path.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
-            return {"events": 0, "bytes": event_bytes, "readable": True, "warning": "events_too_large"}
-        event_count = count_jsonl_rows(path)
-    except OSError:
-        return {"events": 0, "bytes": 0, "readable": False, "warning": "events_unreadable"}
-    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 def _scope_filter_matches(

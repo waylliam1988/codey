@@ -9,7 +9,12 @@ import math
 from pathlib import Path
 from typing import Iterable
 
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    count_jsonl_rows,
+    control_event as _ghost_control_event,
+    event_file_stats as _shared_event_file_stats,
+)
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
@@ -33,6 +38,8 @@ EDGE_HALF_LIFE_DAYS = 180.0
 MIN_NODE_WEIGHT = 0.05
 MIN_EDGE_WEIGHT = 0.01
 MAX_EDGE_OUT_DEGREE = 8
+
+
 MAX_HEBBIAN_WARNINGS = 20
 
 NODE_KINDS = SIGNAL_KINDS
@@ -363,13 +370,15 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 remaining_nodes,
                 remaining_edges,
-                control_event=_control_event(
-                    "ghost_hebbian_candidate_removed",
-                    {
+                control_event=_ghost_control_event(
+                    schema_version=HEBBIAN_SCHEMA_VERSION,
+                    event_name="ghost_hebbian_candidate_removed",
+                    payload={
                         "candidate_id": candidate.id,
                         "removed_nodes": len(removed_ids),
                         "removed_edges": len(removed_edges),
                     },
+                    now=_now(),
                 ),
             )
             # Symmetric with the reinforce path: a projection write failure
@@ -484,14 +493,16 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 remaining_nodes,
                 remaining_edges,
-                control_event=_control_event(
-                    "ghost_hebbian_scope_deleted",
-                    {
+                control_event=_ghost_control_event(
+                    schema_version=HEBBIAN_SCHEMA_VERSION,
+                    event_name="ghost_hebbian_scope_deleted",
+                    payload={
                         "scope": normalized_scope,
                         "scope_ref": scope_ref,
                         "removed_nodes": len(removed_ids),
                         "removed_edges": len(removed_edges),
                     },
+                    now=_now(),
                 ),
             )
             self._write_projection(remaining_nodes, remaining_edges)
@@ -557,14 +568,16 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 bounded_nodes,
                 bounded_edges,
-                control_event=_control_event(
-                    "ghost_hebbian_state_decayed",
-                    {
+                control_event=_ghost_control_event(
+                    schema_version=HEBBIAN_SCHEMA_VERSION,
+                    event_name="ghost_hebbian_state_decayed",
+                    payload={
                         "removed_nodes": removed_nodes,
                         "removed_edges": removed_edges,
                         "decayed_nodes": decayed_node_count,
                         "decayed_edges": decayed_edge_count,
                     },
+                    now=_now(),
                 ),
             )
             self._write_projection(bounded_nodes, bounded_edges)
@@ -579,7 +592,12 @@ class GhostHebbianStore:
     def compact_if_needed(self) -> dict[str, object]:
         try:
             with with_file_lock(self.events_path):
-                before = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+                before = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
+                    too_large_warning="hebbian_events_too_large",
+                    unreadable_warning="hebbian_events_unreadable",
+                )
                 if not before["readable"]:
                     warning = str(before["warning"] or "hebbian_events_unreadable")
                     self.last_warnings = (warning,)
@@ -628,7 +646,12 @@ class GhostHebbianStore:
                         "warnings": list(self.last_warnings),
                     }
                 self._compact_if_needed(nodes, edges)
-                after = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+                after = _shared_event_file_stats(
+                    self.events_path,
+                    max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
+                    too_large_warning="hebbian_events_too_large",
+                    unreadable_warning="hebbian_events_unreadable",
+                )
                 return {
                     "ok": True,
                     "compacted": after != before,
@@ -764,13 +787,15 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 nodes,
                 edges,
-                control_event=_control_event(
-                    "ghost_hebbian_store_compacted",
-                    {
+                control_event=_ghost_control_event(
+                    schema_version=HEBBIAN_SCHEMA_VERSION,
+                    event_name="ghost_hebbian_store_compacted",
+                    payload={
                         "reason": "event_bytes_limit",
                         "max_events": MAX_HEBBIAN_EVENTS,
                         "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
                     },
+                    now=_now(),
                 ),
             )
         except (OSError, TypeError, ValueError):
@@ -815,13 +840,15 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 nodes,
                 edges,
-                control_event=_control_event(
-                    "ghost_hebbian_store_compacted",
-                    {
+                control_event=_ghost_control_event(
+                    schema_version=HEBBIAN_SCHEMA_VERSION,
+                    event_name="ghost_hebbian_store_compacted",
+                    payload={
                         "reason": reason,
                         "max_events": MAX_HEBBIAN_EVENTS,
                         "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
                     },
+                    now=_now(),
                 ),
             )
         except (OSError, TypeError, ValueError):
@@ -1080,15 +1107,6 @@ def _edge_event(edge: GhostEdge, *, action: str) -> dict[str, object]:
     }
 
 
-def _control_event(event_type: str, payload: dict[str, object]) -> dict[str, object]:
-    return {
-        "schema_version": HEBBIAN_SCHEMA_VERSION,
-        "type": event_type,
-        "ts": _now(),
-        "payload": payload,
-    }
-
-
 def _candidate_has_provenance(candidate: GhostMemoryCandidate) -> bool:
     if not candidate.scope or candidate.scope not in SIGNAL_SCOPES:
         return False
@@ -1229,24 +1247,6 @@ def _now() -> str:
 
 def _compact_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-
-def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
-    try:
-        if not path.is_file():
-            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
-        event_bytes = path.stat().st_size
-        if event_bytes > max(0, int(max_bytes or 0)):
-            return {
-                "events": 0,
-                "bytes": event_bytes,
-                "readable": True,
-                "warning": "hebbian_events_too_large",
-            }
-        event_count = count_jsonl_rows(path)
-    except OSError:
-        return {"events": 0, "bytes": 0, "readable": False, "warning": "hebbian_events_unreadable"}
-    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

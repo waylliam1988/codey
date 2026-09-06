@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from codey.policies.redaction import looks_prompt_visible_secret
+from codey.research.guards import bounded_int
 
 
 _SNAKE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
@@ -39,13 +40,7 @@ def valid_digest_ref(value: object) -> str:
 
 
 def bounded_limit(value: object, *, default: int, upper: int) -> int:
-    if isinstance(value, bool):
-        return max(1, min(upper, int(default or 1)))
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = int(default or 1)
-    return max(1, min(upper, parsed))
+    return bounded_int(default if isinstance(value, bool) else value, 1, upper, default=int(default or 1))
 
 
 __all__ = [

@@ -5,7 +5,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
+from codey.ghost.event_log import (
+    GhostEventLog,
+    compact_result_payload,
+    control_event,
+    count_jsonl_rows,
+    event_file_stats,
+)
 
 
 class GhostEventLogTests(unittest.TestCase):
@@ -151,6 +157,63 @@ class GhostEventLogTests(unittest.TestCase):
             count = count_jsonl_rows(path)
 
         self.assertEqual(count, 2)
+
+    def test_event_file_stats_counts_rows_and_names_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "events.jsonl"
+            path.write_text(
+                '{"schema_version":1,"index":0}\n{"schema_version":1,"index":1}',
+                encoding="utf-8",
+            )
+
+            stats = event_file_stats(
+                path,
+                max_bytes=1024,
+                too_large_warning="events_too_large",
+                unreadable_warning="events_unreadable",
+            )
+            too_large = event_file_stats(
+                path,
+                max_bytes=1,
+                too_large_warning="events_too_large",
+                unreadable_warning="events_unreadable",
+            )
+
+        self.assertEqual(stats["events"], 2)
+        self.assertTrue(stats["readable"])
+        self.assertEqual(stats["warning"], "")
+        self.assertEqual(too_large["events"], 0)
+        self.assertEqual(too_large["warning"], "events_too_large")
+
+    def test_compact_result_payload_and_control_event_are_schema_neutral(self) -> None:
+        before = {"events": "3", "bytes": 40}
+        after = {"events": 1, "bytes": "20"}
+
+        payload = compact_result_payload(
+            True,
+            True,
+            before,
+            after,
+            ("a", "a", "b"),
+            warning_cleaner=lambda rows: tuple(dict.fromkeys(rows)),
+        )
+        control = control_event(
+            schema_version=7,
+            event_name="ghost_router_events_compacted",
+            payload={"records": 3},
+            now="2026-09-06T00:00:00Z",
+            event_field="kind",
+            timestamp_field="created_at",
+            event_id_prefix="grc_",
+        )
+
+        self.assertEqual(payload["events_before"], 3)
+        self.assertEqual(payload["bytes_after"], 20)
+        self.assertEqual(payload["warnings"], ["a", "b"])
+        self.assertEqual(control["schema_version"], 7)
+        self.assertEqual(control["kind"], "ghost_router_events_compacted")
+        self.assertEqual(control["created_at"], "2026-09-06T00:00:00Z")
+        self.assertTrue(str(control["event_id"]).startswith("grc_"))
 
     def test_append_rejects_nan_non_object_and_overflow(self) -> None:
         with tempfile.TemporaryDirectory() as td:
