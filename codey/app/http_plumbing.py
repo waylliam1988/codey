@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+import threading
 
 from codey import __version__
 
@@ -13,6 +15,15 @@ WEB_ASSET_TYPES = {
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
 }
+_STATIC_CACHE_LOCK = threading.Lock()
+_STATIC_CACHE: dict[tuple[str, str], "_StaticCacheEntry"] = {}
+
+
+@dataclass(frozen=True)
+class _StaticCacheEntry:
+    signature: tuple[int, int]
+    body: bytes
+    etag: str
 
 
 def resolve_web_asset(url_path: str) -> tuple[Path, str] | None:
@@ -91,23 +102,69 @@ def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> No
 
 
 def send_file(handler: BaseHTTPRequestHandler, path: Path, ctype: str) -> None:
-    data = path.read_bytes()
+    entry = _cached_file(path, transform_name="raw")
+    if _request_etag_matches(handler, entry.etag):
+        _send_not_modified(handler, entry.etag)
+        return
     handler.send_response(200)
     handler.send_header("Content-Type", ctype)
-    handler.send_header("Content-Length", str(len(data)))
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("ETag", entry.etag)
+    handler.send_header("Content-Length", str(len(entry.body)))
     handler.end_headers()
-    handler.wfile.write(data)
+    handler.wfile.write(entry.body)
 
 
 def send_index(handler: BaseHTTPRequestHandler) -> None:
-    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    html = html.replace("__CODEY_VERSION__", __version__)
-    body = html.encode("utf-8")
+    entry = _cached_file(WEB_DIR / "index.html", transform_name="index")
+    if _request_etag_matches(handler, entry.etag):
+        _send_not_modified(handler, entry.etag)
+        return
     handler.send_response(200)
     handler.send_header("Content-Type", "text/html; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("ETag", entry.etag)
+    handler.send_header("Content-Length", str(len(entry.body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    handler.wfile.write(entry.body)
+
+
+def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
+    stat = path.stat()
+    signature = (int(stat.st_mtime_ns), int(stat.st_size))
+    key = (str(path), transform_name)
+    with _STATIC_CACHE_LOCK:
+        cached = _STATIC_CACHE.get(key)
+        if cached is not None and cached.signature == signature:
+            return cached
+    body = path.read_bytes()
+    if transform_name == "index":
+        body = body.decode("utf-8").replace("__CODEY_VERSION__", __version__).encode("utf-8")
+    entry = _StaticCacheEntry(
+        signature=signature,
+        body=body,
+        etag=_static_etag(path, transform_name=transform_name, signature=signature),
+    )
+    with _STATIC_CACHE_LOCK:
+        _STATIC_CACHE[key] = entry
+    return entry
+
+
+def _static_etag(path: Path, *, transform_name: str, signature: tuple[int, int]) -> str:
+    return f'W/"codey-{__version__}-{path.name}-{transform_name}-{signature[0]:x}-{signature[1]:x}"'
+
+
+def _request_etag_matches(handler: BaseHTTPRequestHandler, etag: str) -> bool:
+    header = str(handler.headers.get("If-None-Match") or "")
+    return any(item.strip() in {"*", etag} for item in header.split(","))
+
+
+def _send_not_modified(handler: BaseHTTPRequestHandler, etag: str) -> None:
+    handler.send_response(304)
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("ETag", etag)
+    handler.send_header("Content-Length", "0")
+    handler.end_headers()
 
 
 def parse_sse_event_id(value: object) -> int:
