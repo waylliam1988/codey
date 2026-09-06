@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 
@@ -120,6 +121,24 @@ class GhostEventLogTests(unittest.TestCase):
                 {"schema_version": 1, "index": 4},
             ),
         )
+
+    def test_read_tail_does_not_count_the_full_log(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "events.jsonl"
+            log = GhostEventLog(path, schema_version=1)
+            self.assertTrue(log.append(
+                {"schema_version": 1, "index": index}
+                for index in range(10)
+            ))
+
+            with mock.patch(
+                "codey.ghost.event_log.count_jsonl_rows",
+                side_effect=AssertionError("tail read must not scan all rows"),
+            ):
+                read = log.read_tail(3)
+
+        self.assertFalse(read.blocked)
+        self.assertEqual([row["index"] for row in read.rows], [7, 8, 9])
 
     def test_count_jsonl_rows_counts_final_unterminated_row(self) -> None:
         with tempfile.TemporaryDirectory() as td:

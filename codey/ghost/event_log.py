@@ -69,18 +69,16 @@ class GhostEventLog:
                 event_bytes = self.path.stat().st_size
                 if self.max_bytes is not None and event_bytes > self.max_bytes:
                     return GhostEventRead((), (f"{self.source_name}:too_large",), True)
-                line_count = count_jsonl_rows(self.path)
                 lines = _tail_lines(self.path, count, event_bytes)
             except (OSError, UnicodeDecodeError):
                 return GhostEventRead((), (f"{self.source_name}:unreadable",), True)
 
         rows: list[dict[str, object]] = []
         warnings: list[str] = []
-        first_line = max(1, line_count - len(lines) + 1)
         for offset, line in enumerate(lines):
             if not line.strip():
                 continue
-            payload, warning = self._decode_line(line, first_line + offset)
+            payload, warning = self._decode_line(line, offset + 1)
             if warning:
                 warnings.append(warning)
                 if self.bad_row_policy != "warn":
