@@ -57,6 +57,11 @@
 - 修掉全量回归暴露的两个完整性投影问题：公开 Ghost compaction 在返回 `ok=True` 前会验证小型
   event log，因此坏 UTF-8 日志继续显示为 unreadable；completion blocked-reason 不再把
   `verification_unavailable` 归成环境故障，未观察到本地证明的 done claim 保持为 `unobserved`。
+- 将 `ghost_post_turn_warning` 接入 run-event 白名单和前端 replay 路径，后端已经 emit 的
+  post-turn warning 现在会作为安静的 info message 可见，不再卡在后端与 UI 之间。
+- 将 shell approval 续跑剩余的 prompt/provider 组装收进
+  `services.build_shell_approval_continuation_plan()`；API 层只保留分派编排，同时保持
+  active run provider 优先、pending provider 兜底的原有行为。
 
 验证：
 
@@ -77,7 +82,10 @@
 - targeted architecture/entry/server suite：
   `pytest tests/test_architecture.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_completion_enforcement_ab.py tests/test_work_checkpoint_flow.py tests/test_task_entry_operation_state.py`
   （`325 passed, 1 skipped in 67.06s (0:01:07)`）
-- 全量 pytest：`pytest`（`3632 passed, 19 skipped in 295.06s (0:04:55)`）
+- focused server suite：`pytest tests\test_server.py -q`
+  （`199 passed, 1 skipped in 28.71s`）
+- focused UI suite：`pytest tests\test_ui.py -q`（`63 passed in 0.16s`）
+- 全量 pytest：`pytest`（`3636 passed, 19 skipped in 323.47s (0:05:23)`）
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

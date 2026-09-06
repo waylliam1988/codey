@@ -310,6 +310,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("removeShellRequest(sid, data.id)", HTML)
         self.assertIn("function removeShellRequest(sessionId, approvalId)", HTML)
 
+    def test_ghost_post_turn_warning_is_rendered_as_quiet_info(self) -> None:
+        start = HTML.index("if (data.type === 'ghost_post_turn_warning')")
+        end = HTML.index("if (data.type === 'teach_request')", start)
+        block = HTML[start:end]
+        self.assertIn("type: 'info'", block)
+        self.assertIn("Post-turn warning", block)
+        self.assertIn("ghost-post-turn:", block)
+        self.assertIn("eventKey: sseEventKey(data", block)
+
     def test_shell_approval_renders_risk_explanation(self) -> None:
         self.assertIn("title.textContent = 'Approval required'", HTML)
         self.assertIn("className = 'sc-note'", HTML)

@@ -1146,6 +1146,16 @@ function handleServerEvent(data) {
     if (data.text) addToSession(sid, { type: 'info', text: data.text, runId, eventKey: sseEventKey(data) });
     return;
   }
+  if (data.type === 'ghost_post_turn_warning') {
+    addToSession(sid, {
+      type: 'info',
+      text: 'Post-turn warning',
+      sessionId: sid,
+      runId,
+      eventKey: sseEventKey(data, runId ? `ghost-post-turn:${runId}:${data.stage || ''}:${data.error_ref || ''}` : ''),
+    });
+    return;
+  }
   if (data.type === 'teach_request') {
     removeTeachMessage(sid);
     addToSession(sid, {

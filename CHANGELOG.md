@@ -74,6 +74,13 @@
   UTF-8 event logs stay visible as unreadable; completion blocked-reason
   projection no longer treats `verification_unavailable` as an environment
   failure, preserving `unobserved` for done claims with no local proof.
+- Wired `ghost_post_turn_warning` through the run-event whitelist and frontend
+  replay path so emitted post-turn warnings are visible as quiet info messages
+  instead of being dropped between the backend and UI.
+- Moved the remaining shell approval continuation assembly into
+  `services.build_shell_approval_continuation_plan()`, keeping the API layer on
+  orchestration while preserving active-run provider preference and pending
+  provider fallback behavior.
 
 Verification:
 
@@ -94,7 +101,10 @@ Verification:
 - Targeted architecture/entry/server suite:
   `pytest tests/test_architecture.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_completion_enforcement_ab.py tests/test_work_checkpoint_flow.py tests/test_task_entry_operation_state.py`
   (`325 passed, 1 skipped in 67.06s (0:01:07)`)
-- Full pytest suite: `pytest` (`3632 passed, 19 skipped in 295.06s (0:04:55)`)
+- Focused server suite: `pytest tests\test_server.py -q`
+  (`199 passed, 1 skipped in 28.71s`)
+- Focused UI suite: `pytest tests\test_ui.py -q` (`63 passed in 0.16s`)
+- Full pytest suite: `pytest` (`3636 passed, 19 skipped in 323.47s (0:05:23)`)
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

@@ -8,6 +8,38 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## Shell approval continuation and Ghost warning visibility (2026-09-06)
+
+Scope:
+
+```text
+ghost:      ghost_post_turn_warning is now part of the run-event whitelist and
+            frontend replay handling, so post-turn warnings emitted by the
+            backend are visible as quiet info messages instead of being dropped.
+approval:   shell approval continuation prompt assembly and provider selection
+            are centralized in services.build_shell_approval_continuation_plan().
+            The API layer now consumes a plan and keeps only the approval
+            response orchestration.
+mutation:   RuntimeMutationLine was reviewed as an active append/projection
+            boundary, not removed. No mutation state semantics changed here.
+```
+
+Verification:
+
+- Syntax/import bytecode check:
+  `python -m compileall -q codey tests` (passed)
+- Ruff:
+  `ruff check .` (passed)
+- Focused server suite:
+  `pytest tests\test_server.py -q`
+  (`199 passed, 1 skipped in 28.71s`)
+- Focused UI suite:
+  `pytest tests\test_ui.py -q`
+  (`63 passed in 0.16s`)
+- Full pytest suite:
+  `pytest`
+  (`3636 passed, 19 skipped in 323.47s (0:05:23)`)
+
 ## Runtime/UI audit hardening follow-up (2026-09-06)
 
 Scope:

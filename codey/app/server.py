@@ -136,6 +136,7 @@ RUN_EVENT_TYPES = {
     "review",
     "shell_request",
     "shell_result",
+    "ghost_post_turn_warning",
     "teach_request",
     "task_done",
     "status",

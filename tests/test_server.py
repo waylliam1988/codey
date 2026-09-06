@@ -3152,6 +3152,92 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["continuation_requested"])
         self.assertEqual(submit.call_args.args[5], "qwen")
 
+    def test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks(self) -> None:
+        active = server.RunSnapshot(
+            run_id="run-1",
+            session_id="session-1",
+            project="E:/demo",
+            task="request shell",
+            provider_id="qwen",
+        )
+        pending = {
+            "id": "shell-1",
+            "session_id": "session-1",
+            "run_id": "run-1",
+            "command": "pytest",
+            "cwd": ".",
+            "project": "E:/demo",
+            "continue_after": True,
+            "max_turns": 8,
+            "provider": "deepseek",
+            "risk_label": "generic",
+        }
+        result = {"ok": True, "exit_code": 0, "output": "ok", "truncated": False}
+
+        with (
+            mock.patch.object(app_services, "shell_continuation_setup_context", return_value="Setup Context") as setup,
+            mock.patch.object(app_services, "shell_followup_hints", return_value="Follow-up hints") as hints,
+            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+        ):
+            plan = app_services.build_shell_approval_continuation_plan(
+                pending=pending,
+                result=result,
+                active_run=active,
+            )
+
+        self.assertEqual(plan.continuation, "Continue prompt")
+        self.assertEqual(plan.provider_id, "qwen")
+        setup.assert_called_once_with(pending)
+        hints.assert_called_once_with(pending=pending, result=result)
+        build.assert_called_once_with(
+            command="pytest",
+            result=result,
+            post_approval_instructions="",
+            setup_context="Setup Context",
+            followup_hints="Follow-up hints",
+            deferred_tool_calls=(),
+        )
+
+    def test_shell_approval_continuation_plan_falls_back_to_pending_provider(self) -> None:
+        active = server.RunSnapshot(
+            run_id="run-2",
+            session_id="session-1",
+            project="E:/demo",
+            task="request shell",
+            provider_id="qwen",
+        )
+        pending = {
+            "id": "shell-1",
+            "session_id": "session-1",
+            "run_id": "run-1",
+            "command": "pytest",
+            "cwd": ".",
+            "project": "E:/demo",
+            "continue_after": True,
+            "max_turns": 8,
+            "provider": "deepseek",
+            "risk_label": "generic",
+        }
+
+        with (
+            mock.patch.object(app_services, "shell_continuation_setup_context", return_value="") as setup,
+            mock.patch.object(app_services, "shell_followup_hints", return_value="") as hints,
+            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+        ):
+            plan = app_services.build_shell_approval_continuation_plan(
+                pending=pending,
+                result={"ok": True, "exit_code": 0, "output": "ok", "truncated": False},
+                active_run=active,
+            )
+
+        self.assertEqual(plan.provider_id, "deepseek")
+        setup.assert_called_once_with(pending)
+        hints.assert_called_once()
+        build.assert_called_once()
+
+    def test_ghost_post_turn_warning_is_whitelisted_for_run_events(self) -> None:
+        self.assertIn("ghost_post_turn_warning", server.RUN_EVENT_TYPES)
+
 
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:

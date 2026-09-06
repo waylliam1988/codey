@@ -376,41 +376,18 @@ def shell_approval_response(
         if ctx.run_registry.stop_flag.is_set():
             continuation_stopped = True
         else:
-            setup_context = services.shell_continuation_setup_context(pending)
-            followup_hints = services.shell_followup_hints(
+            continuation_plan = services.build_shell_approval_continuation_plan(
                 pending=pending,
                 result=result,
+                active_run=ctx.current_run(),
             )
-            continuation = services.build_shell_approval_continuation(
-                command=command,
-                result=result,
-                post_approval_instructions=str(
-                    pending.get("post_approval_instructions") or ""
-                ),
-                setup_context=setup_context,
-                followup_hints=followup_hints,
-                deferred_tool_calls=tuple(
-                    item
-                    for item in pending.get("deferred_tool_calls", ())
-                    if isinstance(item, dict)
-                ),
-            )
-            active = ctx.current_run()
-            active_provider = (
-                active.provider_id
-                if active is not None
-                and active.run_id == str(pending.get("run_id") or "")
-                and active.session_id == session_id
-                else ""
-            )
-            provider_id = active_provider or pending.get("provider") or DEFAULT_PROVIDER_ID
             continuation_run = submit_task_after_slot_release(
                 session_id,
                 pending["project"],
-                continuation,
+                continuation_plan.continuation,
                 int(pending["max_turns"]),
                 True,
-                provider_id,
+                continuation_plan.provider_id,
                 "project",
                 previous_run_id=str(pending.get("run_id") or ""),
             )

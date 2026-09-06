@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +31,18 @@ from codey.reviews.core import ReviewResult, parse_review_with_repair, render_re
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime import cancellation
 from codey.runtime.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
+from codey.app.run_registry import RunSnapshot
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.utils.refs import clip, digest_text
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
 from codey.workspace.task_context import safe_verification_candidates
+
+
+@dataclass(frozen=True)
+class ShellApprovalContinuationPlan:
+    continuation: str
+    provider_id: str
 
 
 def reviewer_candidates(
@@ -472,6 +480,45 @@ def build_shell_approval_continuation(
     )
 
 
+def build_shell_approval_continuation_plan(
+    *,
+    pending: dict,
+    result: dict,
+    active_run: RunSnapshot | None = None,
+) -> ShellApprovalContinuationPlan:
+    setup_context = shell_continuation_setup_context(pending)
+    followup_hints = shell_followup_hints(
+        pending=pending,
+        result=result,
+    )
+    continuation = build_shell_approval_continuation(
+        command=str(pending.get("command") or ""),
+        result=result,
+        post_approval_instructions=str(
+            pending.get("post_approval_instructions") or ""
+        ),
+        setup_context=setup_context,
+        followup_hints=followup_hints,
+        deferred_tool_calls=tuple(
+            item
+            for item in pending.get("deferred_tool_calls", ())
+            if isinstance(item, dict)
+        ),
+    )
+    active_provider = (
+        active_run.provider_id
+        if active_run is not None
+        and active_run.run_id == str(pending.get("run_id") or "")
+        and active_run.session_id == str(pending.get("session_id") or "")
+        else ""
+    )
+    provider_id = active_provider or str(pending.get("provider") or DEFAULT_PROVIDER_ID)
+    return ShellApprovalContinuationPlan(
+        continuation=continuation,
+        provider_id=provider_id,
+    )
+
+
 def shell_continuation_setup_context(pending: dict) -> str:
     if pending.get("risk_label") not in {
         "dependency_install",
@@ -509,6 +556,7 @@ def shell_followup_hints(
 __all__ = [
     "ManagedOutputStore",
     "build_shell_approval_continuation",
+    "build_shell_approval_continuation_plan",
     "execute_approved_shell",
     "provider_availability",
     "provider_availability_from_statuses",
@@ -525,5 +573,6 @@ __all__ = [
     "shell_continuation_setup_context",
     "shell_followup_hints",
     "shell_followup_verification_candidates",
+    "ShellApprovalContinuationPlan",
     "start_provider_warmup",
 ]
