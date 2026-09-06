@@ -33,10 +33,14 @@ class AssetReferenceTests(unittest.TestCase):
         self.assertIn("/assets/render.js", names)
         self.assertIn("/assets/research_graph.js", names)
         self.assertIn("/assets/research_drawer.js", names)
+        self.assertIn("/assets/research_runs.js", names)
         self.assertIn("/assets/changes_drawer.js", names)
         self.assertIn("/assets/local_context_drawer.js", names)
         self.assertIn("/assets/run_details.js", names)
         self.assertIn("/assets/provider_ui.js", names)
+        self.assertIn("/assets/ui_state.js", names)
+        self.assertIn("/assets/sse.js", names)
+        self.assertIn("/assets/composer.js", names)
 
     def test_every_referenced_asset_file_exists(self) -> None:
         for ref in ASSET_REFS:
@@ -70,10 +74,14 @@ class AssetReferenceTests(unittest.TestCase):
                 "/assets/render.js",
                 "/assets/research_graph.js",
                 "/assets/research_drawer.js",
+                "/assets/research_runs.js",
                 "/assets/changes_drawer.js",
                 "/assets/local_context_drawer.js",
                 "/assets/run_details.js",
                 "/assets/provider_ui.js",
+                "/assets/ui_state.js",
+                "/assets/sse.js",
+                "/assets/composer.js",
             ],
         )
 

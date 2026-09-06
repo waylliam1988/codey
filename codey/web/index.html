@@ -187,6 +187,7 @@
 <script src="/assets/render.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/research_graph.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/research_drawer.js?v=__CODEY_VERSION__"></script>
+<script src="/assets/research_runs.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/changes_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/local_context_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/run_details.js?v=__CODEY_VERSION__"></script>
@@ -201,6 +202,9 @@ const $ = (id) => document.getElementById(id);
 const escapeHtml = window.CodeyRender.escapeHtml;
 const receiptSummary = window.CodeyRender.receiptSummary;
 const receiptChangedCount = window.CodeyRender.receiptChangedCount;
+const DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
+const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
+const PROVIDERS = window.CodeyUiState.PROVIDERS;
 
 let sessions = [];
 let projects = [];
@@ -208,6 +212,44 @@ let activeId = '';
 let uiStateUpdatedAt = 0;
 let uiStateRevision = 0;
 let uiStateDirtySinceBoot = false;
+
+window.CodeyUiState.init({
+  getSessions: () => sessions,
+  setSessions: value => { sessions = value; },
+  getProjects: () => projects,
+  setProjects: value => { projects = value; },
+  getActiveId: () => activeId,
+  setActiveId: value => { activeId = value; },
+  getUpdatedAt: () => uiStateUpdatedAt,
+  setUpdatedAt: value => { uiStateUpdatedAt = value; },
+  getRevision: () => uiStateRevision,
+  setRevision: value => { uiStateRevision = value; },
+  isDirtySinceBoot: () => uiStateDirtySinceBoot,
+  setDirtySinceBoot: value => { uiStateDirtySinceBoot = !!value; },
+  bootHadMeaningfulUiState: () => bootHadMeaningfulUiState,
+  renderSidebar,
+  renderChat,
+  updateComposerContext,
+  syncProviderUI,
+  currentProviderId,
+});
+function uid() { return window.CodeyUiState.uid(); }
+function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) { return window.CodeyUiState.defaultSession(projectId, provider); }
+function pathName(path) { return window.CodeyUiState.pathName(path); }
+function pathKey(path) { return window.CodeyUiState.pathKey(path); }
+function applyUiState(state) { window.CodeyUiState.apply(state); }
+function currentUiState() { return window.CodeyUiState.current(); }
+function cacheUiState() { window.CodeyUiState.cache(); }
+function cachedUiState() { return window.CodeyUiState.cached(); }
+function hasMeaningfulUiState(state) { return window.CodeyUiState.hasMeaningful(state); }
+function hasStoredUiState(state) { return window.CodeyUiState.hasStored(state); }
+function isUiStateNewer(a, b) { return window.CodeyUiState.isNewer(a, b); }
+function markUiStateDirty() { window.CodeyUiState.markDirty(); }
+function flushUiState() { window.CodeyUiState.flush(); }
+function persistActive() { window.CodeyUiState.persist(); }
+function persistActiveNow() { window.CodeyUiState.persistNow(); }
+function bindUiStatePagehide() { window.CodeyUiState.bindPagehide(); }
+function restoreUiStateFromServer() { return window.CodeyUiState.restoreFromServer(); }
 
 const bootCachedState = cachedUiState();
 const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
@@ -1240,139 +1282,50 @@ function handleServerEvent(data) {
   }
 }
 
-let researchDrawerTab = 'evidence';
-let researchGraphDepth = 1;
-let researchNoteFocusId = '';
-
 function disposeResearchGraph() {
-  window.CodeyResearchDrawer.dispose();
-}
-
-function normalizeResearchRunArtifact(runId, research, receipt) {
-  return {
-    runId,
-    synthesisId: (research.synthesis_id || '').toString(),
-    notesCreated: Array.isArray(research.notes_created) ? research.notes_created.map(String) : [],
-    notesUpdated: Array.isArray(research.notes_updated) ? research.notes_updated.map(String) : [],
-    sourceUrls: Array.isArray(research.source_urls) ? research.source_urls.map(String) : [],
-    sourcesRead: Number(research.sources_read || 0),
-    queries: Array.isArray(research.queries) ? research.queries.map(String) : [],
-    searchResults: Array.isArray(research.search_results) ? research.search_results : [],
-    openedSources: Array.isArray(research.opened_sources) ? research.opened_sources : [],
-    coverage: research.coverage && typeof research.coverage === 'object' ? research.coverage : {},
-    citationMap: Array.isArray(research.citation_map) ? research.citation_map : [],
-    evidenceItems: Array.isArray(research.evidence_items) ? research.evidence_items : [],
-    counterpoints: Array.isArray(research.counterpoints) ? research.counterpoints.map(String) : [],
-    qualityWarnings: Array.isArray(research.quality_warnings) ? research.quality_warnings.map(String) : [],
-    receipt: receiptSummary(receipt),
-    restoreable: true,
-    createdAt: Date.now(),
-  };
+  window.CodeyResearchRuns.disposeGraph();
 }
 
 function recordResearchRun(sessionId, runId, research, receipt) {
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return null;
-  const item = normalizeResearchRunArtifact(runId, research || {}, receipt || {});
-  researchDrawerTab = 'evidence';
-  researchNoteFocusId = '';
-  s.researchRuns = Array.isArray(s.researchRuns)
-    ? s.researchRuns.filter(run => run.runId !== runId)
-    : [];
-  s.researchRuns.push(item);
-  s.researchRuns = s.researchRuns.slice(-32);
-  invalidateResearchNoteCache(noteIdsForResearchRun(item));
-  persistActive();
-  return item;
+  return window.CodeyResearchRuns.record(sessionId, runId, research, receipt);
 }
 
 function currentResearchRun(sessionId = activeId) {
-  const s = sessions.find(x => x.id === sessionId);
-  const runs = s && Array.isArray(s.researchRuns) ? s.researchRuns : [];
-  return runs.length ? runs[runs.length - 1] : null;
+  return window.CodeyResearchRuns.current(sessionId);
 }
 
 // Research drawer UI lives in /assets/research_drawer.js; these thin wrappers
 // keep existing call sites and event handlers stable.
 function openResearchDrawer(sessionId = activeId) {
-  window.CodeyResearchDrawer.open(sessionId);
+  window.CodeyResearchRuns.open(sessionId);
 }
 
 function closeResearchDrawer() {
-  window.CodeyResearchDrawer.close();
+  window.CodeyResearchRuns.close();
 }
 
 function renderResearchDrawer(sessionId = activeId) {
-  window.CodeyResearchDrawer.render(sessionId);
+  window.CodeyResearchRuns.render(sessionId);
 }
 
 function coreNoteIdsForResearchRun(run) {
-  return window.CodeyResearchDrawer.coreNoteIdsForRun(run);
+  return window.CodeyResearchRuns.coreNoteIdsForRun(run);
 }
 
 function noteIdsForResearchRun(run) {
-  return window.CodeyResearchDrawer.noteIdsForRun(run);
+  return window.CodeyResearchRuns.noteIdsForRun(run);
 }
 
 function invalidateResearchNoteCache(ids) {
-  return window.CodeyResearchDrawer.invalidateNoteCache(ids);
+  return window.CodeyResearchRuns.invalidateNoteCache(ids);
 }
 
 async function restoreResearchRun() {
-  const run = currentResearchRun();
-  if (!run || !run.runId) return;
-  $('research-restore').disabled = true;
-  try {
-    const r = await fetch('/api/research/restore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ run_id: run.runId }),
-    });
-    let data = {};
-    try { data = await r.json(); } catch {}
-    if (!r.ok || !data.ok) {
-      $('research-subtitle').textContent = data.error || 'Restore failed';
-      if (run && /not found/i.test(data.error || '')) {
-        run.restoreable = false;
-        persistActiveNow();
-        renderResearchDrawer(activeId);
-      }
-      return;
-    }
-    $('research-subtitle').textContent = `${(data.restored || []).length} restored`;
-    invalidateResearchNoteCache(noteIdsForResearchRun(run));
-    const s = activeSession();
-    if (s && Array.isArray(s.researchRuns)) {
-      s.researchRuns = s.researchRuns.filter(item => item.runId !== run.runId);
-      persistActiveNow();
-    }
-    addToSession(activeId, {
-      type: 'done',
-      text: `Research restored: ${(data.restored || []).length} files`,
-      eventKey: `research-restore:${run.runId}`,
-    });
-    renderResearchDrawer(activeId);
-  } finally {
-    const current = currentResearchRun();
-    $('research-restore').disabled = !current || !current.restoreable;
-  }
+  return window.CodeyResearchRuns.restore();
 }
 
 function markResearchRestoreAvailability(runIds) {
-  const available = new Set(Array.isArray(runIds) ? runIds.map(String) : []);
-  let changed = false;
-  for (const s of sessions) {
-    const runs = Array.isArray(s.researchRuns) ? s.researchRuns : [];
-    for (const run of runs) {
-      const next = available.has(String(run.runId || ''));
-      if (!!run.restoreable !== next) {
-        run.restoreable = next;
-        changed = true;
-      }
-    }
-  }
-  if (changed) persistActive();
-  if ($('research-drawer').classList.contains('open')) renderResearchDrawer(activeId);
+  window.CodeyResearchRuns.markRestoreAvailability(runIds);
 }
 
 function applyRunState(data) {
@@ -1708,16 +1661,26 @@ document.addEventListener('keydown', (e) => {
 // ============================ boot ============================
 async function boot() {
   bindUiStatePagehide();
+  window.CodeyResearchRuns.init({
+    $,
+    getActiveId: () => activeId,
+    getSessions: () => sessions,
+    activeSession,
+    receiptSummary,
+    persistActive,
+    persistActiveNow,
+    addToSession,
+  });
   window.CodeyResearchDrawer.init({
     $,
     getActiveId: () => activeId,
     getCurrentRun: currentResearchRun,
-    getResearchGraphDepth: () => researchGraphDepth,
-    setResearchGraphDepth: value => { researchGraphDepth = value; },
-    getResearchNoteFocusId: () => researchNoteFocusId,
-    setResearchNoteFocusId: value => { researchNoteFocusId = value; },
-    getResearchDrawerTab: () => researchDrawerTab,
-    setResearchDrawerTab: value => { researchDrawerTab = value; },
+    getResearchGraphDepth: window.CodeyResearchRuns.getGraphDepth,
+    setResearchGraphDepth: window.CodeyResearchRuns.setGraphDepth,
+    getResearchNoteFocusId: window.CodeyResearchRuns.getNoteFocusId,
+    setResearchNoteFocusId: window.CodeyResearchRuns.setNoteFocusId,
+    getResearchDrawerTab: window.CodeyResearchRuns.getDrawerTab,
+    setResearchDrawerTab: window.CodeyResearchRuns.setDrawerTab,
     copyText,
     closeOtherDrawers,
   });

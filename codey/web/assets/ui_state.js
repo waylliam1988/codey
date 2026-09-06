@@ -1,3 +1,8 @@
+/* Codey UI state runtime: local cache, durable snapshot sync, and versioning. */
+(function () {
+'use strict';
+
+let deps = {};
 const LS_SESSIONS = 'codey:sessions';
 const LS_ACTIVE = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
@@ -6,6 +11,23 @@ const LS_UI_REVISION = 'codey:ui-revision';
 const DEFAULT_PROVIDER = 'deepseek';
 const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
+
+function init(nextDeps) {
+  deps = nextDeps || {};
+}
+
+function getSessions() { return deps.getSessions ? deps.getSessions() : []; }
+function setSessions(value) { if (deps.setSessions) deps.setSessions(value); }
+function getProjects() { return deps.getProjects ? deps.getProjects() : []; }
+function setProjects(value) { if (deps.setProjects) deps.setProjects(value); }
+function getActiveId() { return deps.getActiveId ? deps.getActiveId() : ''; }
+function setActiveId(value) { if (deps.setActiveId) deps.setActiveId(value); }
+function getUpdatedAt() { return deps.getUpdatedAt ? deps.getUpdatedAt() : 0; }
+function setUpdatedAt(value) { if (deps.setUpdatedAt) deps.setUpdatedAt(value); }
+function getRevision() { return deps.getRevision ? deps.getRevision() : 0; }
+function setRevision(value) { if (deps.setRevision) deps.setRevision(value); }
+function isDirtySinceBoot() { return !!(deps.isDirtySinceBoot && deps.isDirtySinceBoot()); }
+function setDirtySinceBoot(value) { if (deps.setDirtySinceBoot) deps.setDirtySinceBoot(value); }
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
@@ -73,27 +95,36 @@ function normalizeProjects(value) {
   })).filter(p => p.path);
 }
 function applyUiState(state) {
-  sessions = normalizeSessions(state && state.sessions);
-  projects = normalizeProjects(state && state.projects);
-  activeId = state && state.active_id ? String(state.active_id) : '';
-  uiStateUpdatedAt = Number(state && state.updated_at || 0) || 0;
-  uiStateRevision = Number(state && state.revision || 0) || 0;
-  if (!sessions.length) {
+  let nextSessions = normalizeSessions(state && state.sessions);
+  const nextProjects = normalizeProjects(state && state.projects);
+  let nextActiveId = state && state.active_id ? String(state.active_id) : '';
+  if (!nextSessions.length) {
     const s = defaultSession();
-    sessions = [s];
-    activeId = s.id;
+    nextSessions = [s];
+    nextActiveId = s.id;
   }
-  if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
+  if (!nextSessions.find(s => s.id === nextActiveId)) nextActiveId = nextSessions[0].id;
+  setSessions(nextSessions);
+  setProjects(nextProjects);
+  setActiveId(nextActiveId);
+  setUpdatedAt(Number(state && state.updated_at || 0) || 0);
+  setRevision(Number(state && state.revision || 0) || 0);
 }
 function currentUiState() {
-  return { active_id: activeId, sessions, projects, updated_at: uiStateUpdatedAt, revision: uiStateRevision };
+  return {
+    active_id: getActiveId(),
+    sessions: getSessions(),
+    projects: getProjects(),
+    updated_at: getUpdatedAt(),
+    revision: getRevision(),
+  };
 }
 function cacheUiState() {
-  saveSessions(sessions);
-  saveProjects(projects);
-  safeLocalSet(LS_ACTIVE, activeId);
-  safeLocalSet(LS_UI_UPDATED, String(uiStateUpdatedAt));
-  safeLocalSet(LS_UI_REVISION, String(uiStateRevision));
+  saveSessions(getSessions());
+  saveProjects(getProjects());
+  safeLocalSet(LS_ACTIVE, getActiveId());
+  safeLocalSet(LS_UI_UPDATED, String(getUpdatedAt()));
+  safeLocalSet(LS_UI_REVISION, String(getRevision()));
 }
 function cachedUiState() {
   return {
@@ -145,9 +176,9 @@ let uiStatePersistTimer = null;
 const UI_STATE_PERSIST_DELAY = 400;
 
 function markUiStateDirty() {
-  uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);
-  uiStateRevision += 1;
-  uiStateDirtySinceBoot = true;
+  setUpdatedAt(Math.max(Date.now(), getUpdatedAt()));
+  setRevision(getRevision() + 1);
+  setDirtySinceBoot(true);
 }
 
 function flushUiState() {
@@ -201,15 +232,40 @@ async function restoreUiStateFromServer() {
       saveUiStateToServer();
       return;
     }
-    if ((bootHadMeaningfulUiState || uiStateDirtySinceBoot) && isUiStateNewer(currentUiState(), data.state)) {
+    if (((deps.bootHadMeaningfulUiState && deps.bootHadMeaningfulUiState()) || isDirtySinceBoot()) && isUiStateNewer(currentUiState(), data.state)) {
       saveUiStateToServer();
       return;
     }
     applyUiState(data.state);
     cacheUiState();
-    renderSidebar();
-    renderChat();
-    updateComposerContext();
-    syncProviderUI(currentProviderId());
+    if (deps.renderSidebar) deps.renderSidebar();
+    if (deps.renderChat) deps.renderChat();
+    if (deps.updateComposerContext) deps.updateComposerContext();
+    if (deps.syncProviderUI && deps.currentProviderId) deps.syncProviderUI(deps.currentProviderId());
   } catch {}
 }
+
+window.CodeyUiState = {
+  init,
+  DEFAULT_PROVIDER,
+  PROVIDER_LABELS,
+  PROVIDERS,
+  uid,
+  defaultSession,
+  pathName,
+  pathKey,
+  apply: applyUiState,
+  current: currentUiState,
+  cache: cacheUiState,
+  cached: cachedUiState,
+  hasMeaningful: hasMeaningfulUiState,
+  hasStored: hasStoredUiState,
+  isNewer: isUiStateNewer,
+  markDirty: markUiStateDirty,
+  flush: flushUiState,
+  persist: persistActive,
+  persistNow: persistActiveNow,
+  bindPagehide: bindUiStatePagehide,
+  restoreFromServer: restoreUiStateFromServer,
+};
+})();
