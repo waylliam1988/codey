@@ -242,13 +242,42 @@ def _symlink_path_error(root: Path, rel: str, *, tool: str) -> ToolOutcome | Non
     return None
 
 
+def _checked_tool_path(
+    root: Path,
+    rel: str,
+    *,
+    tool: str,
+) -> tuple[Path | None, ToolOutcome | None]:
+    try:
+        path = safe_join(root, rel)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return None, ToolOutcome.error(str(exc), error_code="workspace_escape")
+    symlink_error = _symlink_path_error(root, rel, tool=tool)
+    if symlink_error is not None:
+        return None, symlink_error
+    return path, None
+
+
+def _write_text_after_final_path_check(
+    root: Path,
+    rel: str,
+    content: str,
+    *,
+    tool: str,
+) -> ToolOutcome | None:
+    path, error = _checked_tool_path(root, rel, tool=tool)
+    if error is not None or path is None:
+        return error or ToolOutcome.error("path could not be resolved")
+    write_text_atomic(path, content)
+    return None
+
+
 def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     if len(content.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
-    path = safe_join(root, rel)
-    symlink_error = _symlink_path_error(root, rel, tool="write_file")
-    if symlink_error is not None:
-        return symlink_error
+    path, error = _checked_tool_path(root, rel, tool="write_file")
+    if error is not None or path is None:
+        return error or ToolOutcome.error("path could not be resolved")
     before = ""
     if path.is_file():
         try:
@@ -257,7 +286,14 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
                 return ToolOutcome(f"wrote {rel} (no changes)", True)
         except UnicodeDecodeError:
             pass
-    write_text_atomic(path, content)
+    write_error = _write_text_after_final_path_check(
+        root,
+        rel,
+        content,
+        tool="write_file",
+    )
+    if write_error is not None:
+        return write_error
     syntax_hint = _python_syntax_regression_hint(rel, before, content)
     return ToolOutcome(
         f"wrote {rel} ({len(content)} chars){syntax_hint}",
@@ -532,10 +568,9 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if any(not block.search for block in blocks):
         return ToolOutcome.error("edit SEARCH text cannot be empty")
 
-    path = safe_join(root, rel)
-    symlink_error = _symlink_path_error(root, rel, tool="edit")
-    if symlink_error is not None:
-        return symlink_error
+    path, error = _checked_tool_path(root, rel, tool="edit")
+    if error is not None or path is None:
+        return error or ToolOutcome.error("path could not be resolved")
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
@@ -582,7 +617,9 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
-    write_text_atomic(path, updated)
+    write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit")
+    if write_error is not None:
+        return write_error
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     return ToolOutcome(
@@ -638,10 +675,9 @@ def read_file(
     limit: int = READ_DEFAULT_LINES,
 ) -> ToolOutcome:
     cancellation.check()
-    path = safe_join(root, rel)
-    symlink_error = _symlink_path_error(root, rel, tool="read_file")
-    if symlink_error is not None:
-        return symlink_error
+    path, error = _checked_tool_path(root, rel, tool="read_file")
+    if error is not None or path is None:
+        return error or ToolOutcome.error("path could not be resolved")
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
@@ -733,10 +769,9 @@ def _bounded_directory_entries(path: Path, max_entries: int) -> tuple[list[Path]
 
 def list_directory(root: Path, rel: str) -> ToolOutcome:
     cancellation.check()
-    path = safe_join(root, rel)
-    symlink_error = _symlink_path_error(root, rel, tool="list_dir")
-    if symlink_error is not None:
-        return symlink_error
+    path, error = _checked_tool_path(root, rel, tool="list_dir")
+    if error is not None or path is None:
+        return error or ToolOutcome.error("path could not be resolved")
     if not path.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     lines: list[str] = []
@@ -772,10 +807,9 @@ def search_files(
     query = query.strip()
     if not query:
         return ToolOutcome.error("search query required")
-    start = safe_join(root, rel or ".")
-    symlink_reason = _raw_path_symlink_reason(root, rel or ".", tool="grep")
-    if symlink_reason:
-        return ToolOutcome.error(symlink_reason)
+    start, error = _checked_tool_path(root, rel or ".", tool="grep")
+    if error is not None or start is None:
+        return error or ToolOutcome.error("path could not be resolved")
     if not start.exists():
         return ToolOutcome.error(f"path not found: {rel}")
     needle = query.lower()
@@ -883,17 +917,12 @@ def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
     symbol = str(symbol or "").strip()
     if not symbol:
         return ToolOutcome.error("symbol required")
+    start, error = _checked_tool_path(root, rel or ".", tool="find_references")
+    if error is not None or start is None:
+        return error or ToolOutcome.error("path could not be resolved")
+    if not start.exists():
+        return ToolOutcome.error(f"path not found: {rel}")
     try:
-        start = safe_join(root, rel or ".")
-        symlink_reason = _raw_path_symlink_reason(
-            root,
-            rel or ".",
-            tool="find_references",
-        )
-        if symlink_reason:
-            return ToolOutcome.error(symlink_reason)
-        if not start.exists():
-            return ToolOutcome.error(f"path not found: {rel}")
         scan = find_reference_hints(root, start, symbol)
     except ValueError as exc:
         return ToolOutcome.error(str(exc))

@@ -79,6 +79,21 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(all(not outcome.ok for outcome in outcomes))
         self.assertTrue(all(outcome.error_code == "symlink_path" for outcome in outcomes))
 
+    def test_file_tools_report_workspace_escape_as_structured_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outcomes = (
+                read_file(root, "../outside.txt"),
+                write_file(root, "../outside.txt", "new\n"),
+                edit_file(root, "../outside.txt", [EditBlock("old", "new")]),
+                tool_runtime.list_directory(root, "../outside"),
+                tool_runtime.search_files(root, "../outside", "needle"),
+                find_references(root, "../outside", "needle"),
+            )
+
+        self.assertTrue(all(not outcome.ok for outcome in outcomes))
+        self.assertTrue(all(outcome.error_code == "workspace_escape" for outcome in outcomes))
+
     def test_list_directory_stops_at_top_level_entry_budget(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
