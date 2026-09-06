@@ -417,10 +417,10 @@ def run_reviewer_matrix(
                 recent_log="",
             )
             with provider_controls.suppress_assistance():
-                reply = reviewer.send(prompt, timeout=codey_server.REVIEW_TIMEOUT)
+                reply = reviewer.send(prompt, timeout=app_services.REVIEW_TIMEOUT)
                 review = parse_review_with_repair(
                     reply,
-                    lambda repair: reviewer.send(repair, timeout=codey_server.REVIEW_TIMEOUT),
+                    lambda repair: reviewer.send(repair, timeout=app_services.REVIEW_TIMEOUT),
                 )
             item = {
                 "provider": provider_id,
