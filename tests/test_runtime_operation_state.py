@@ -23,6 +23,7 @@ from codey.runtime.operation_state import (
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     SCHEMA_VERSION,
+    LEAVES,
     mark_completion_blocked,
     mark_completion_proof_recorded,
     mark_provider_effect_pending,
@@ -393,22 +394,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
             LEAF_REPAIR_SETTLED,
             LEAF_TERMINAL,
         }
-        self.assertEqual(
-            reached,
-            {
-                LEAF_ACCEPTED,
-                LEAF_WRITER_RUNNING,
-                LEAF_PROVIDER_EFFECT_PENDING,
-                LEAF_TOOL_EFFECT_PENDING,
-                LEAF_TOOL_DELIVERY_PENDING,
-                LEAF_WRITER_SETTLED,
-                LEAF_COMPLETION_PROOF_RECORDED,
-                LEAF_REPAIR_CONTEXT_ADMITTED,
-                LEAF_REPAIR_RUNNING,
-                LEAF_REPAIR_SETTLED,
-                LEAF_TERMINAL,
-            },
-        )
+        self.assertEqual(LEAVES, reached)
         self.assertEqual(operation_id_for_run("run-1")[:5], "task:")
 
 
