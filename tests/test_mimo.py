@@ -99,6 +99,7 @@ class MimoDriverTests(unittest.TestCase):
 
         with mock.patch.object(mimo.controls, "locate_response", return_value=response):
             self.assertEqual(mimo._last_text(page), "")
+        self.assertFalse(hasattr(mimo, "_fallback_response_text"))
 
     def test_copy_last_text_uses_first_action_after_latest_answer(self) -> None:
         page = mock.Mock()

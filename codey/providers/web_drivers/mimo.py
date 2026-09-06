@@ -140,13 +140,9 @@ def _response_text(response: Locator) -> str:
     except Exception:
         pass
     try:
-        return _fallback_response_text(response.inner_text())
+        text = str(response.inner_text() or "").strip()
     except Exception:
         return ""
-
-
-def _fallback_response_text(text: str) -> str:
-    text = str(text or "").strip()
     if _starts_with_thinking_summary(text):
         return ""
     return text

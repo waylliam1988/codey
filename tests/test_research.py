@@ -1118,6 +1118,57 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.failure_kind, "search_page_blank")
 
+    def test_browser_search_anchor_scan_marks_recovered_rows_not_truncated(self) -> None:
+        class FakeLink:
+            def __init__(self, href: str, text: str) -> None:
+                self.href = href
+                self.text = text
+
+            def get_attribute(self, name: str) -> str:
+                if name == "href":
+                    return self.href
+                return ""
+
+            def inner_text(self) -> str:
+                return self.text
+
+        class FakePage:
+            url = "https://www.bing.com/search?q=alpha"
+
+            def set_default_navigation_timeout(self, _timeout) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded") -> None:
+                del wait_until
+
+            def query_selector_all(self, selector):
+                if selector == "a[href]":
+                    return [
+                        FakeLink("https://www.bing.com/search?q=next", "Search"),
+                        FakeLink("https://example.com/recovered", "Recovered"),
+                    ]
+                return []
+
+            def query_selector(self, _selector):
+                return None
+
+        provider = BrowserSearchProvider()
+
+        results = provider._search_page_results_on_browser_thread(
+            FakePage(),
+            "alpha",
+            3,
+            profile=provider._profile,
+            engine="bing",
+        )
+
+        self.assertEqual(results, [{
+            "title": "Recovered",
+            "url": "https://example.com/recovered",
+            "snippet": "",
+            "truncated": False,
+        }])
+
     def test_browser_search_falls_back_to_next_engine_after_page_failures(self) -> None:
         provider = BrowserSearchProvider()
         provider._engine_order = ("bing", "duckduckgo")

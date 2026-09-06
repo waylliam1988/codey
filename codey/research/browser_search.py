@@ -339,7 +339,7 @@ class BrowserSearchProvider:
                 break
         if not results:
             cancellation.check()
-            results = self._fallback_results(page, limit)
+            results = self._anchor_scan_results(page, limit)
         if results:
             cancellation.check()
             return results
@@ -353,7 +353,7 @@ class BrowserSearchProvider:
         cancellation.check()
         return []
 
-    def _fallback_results(self, page, limit: int) -> list[dict]:
+    def _anchor_scan_results(self, page, limit: int) -> list[dict]:
         results: list[dict] = []
         seen: set[str] = set()
         for link in page.query_selector_all("a[href]"):
@@ -367,7 +367,7 @@ class BrowserSearchProvider:
             if not title or _is_search_navigation_title(title):
                 continue
             seen.add(href)
-            results.append({"title": title, "url": href, "snippet": ""})
+            results.append({"title": title, "url": href, "snippet": "", "truncated": False})
             if len(results) >= limit:
                 break
         return results
