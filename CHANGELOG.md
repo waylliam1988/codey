@@ -16,6 +16,12 @@
   sends, tool batches, tool settlements, provider settlements, delivery
   receipts, recovered delivery facts, and terminal operation settlement are
   committed through the mutation line so intent + pending state cannot drift.
+- Tightened `RuntimeMutationLine` to expose named production mutations instead
+  of a generic `transition_operation()` surface. Writer, completion proof,
+  repair, blocked-verdict, and terminal commits now use explicit methods, and
+  task runs durable-accept the operation before recovery, routing, or Ghost
+  work-item claims. Terminal re-commits must match the existing terminal
+  identity; conflicting terminal outcomes now fail closed.
 - Added a pure `operation_reducer` and `drive.peek_next_action()` for manual
   drive tests and recovery dispatch. `recovery.py` now executes reducer actions
   for provider unknown-outcome settlement, safe tool batch replay, and
@@ -30,11 +36,12 @@
 
 Verification:
 
-- `python -m pytest tests/test_runtime_mutation_line.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_result_delivery.py -q` (`81 passed, 31 subtests passed in 1.70s`)
-- `python -m pytest tests/test_architecture.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py -q` (`325 passed, 1 skipped, 297 subtests passed in 42.73s`)
-- `python -m pytest tests/test_architecture.py -q` (`74 passed, 294 subtests passed in 10.81s`)
-- `python -m compileall -q codey` (passed)
-- Full pytest suite: `python -m pytest -q` (`3548 passed, 16 skipped, 1262 subtests passed in 308.98s (0:05:08)`)
+- `python -m compileall -q codey tests` (passed)
+- `ruff check .` (passed)
+- Targeted runtime/entry/server suite:
+  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py`
+  (`429 passed, 1 skipped in 61.16s`)
+- Full pytest suite: `pytest` (`3551 passed, 16 skipped in 296.67s (0:04:56)`)
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

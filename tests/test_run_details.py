@@ -12,8 +12,6 @@ from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
 from codey.runtime.operation_state import (
     RuntimeOperationStore,
-    mark_terminal,
-    mark_writer_running,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.session_log import RuntimeSessionLog
@@ -329,10 +327,10 @@ class RunDetailsTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             self.assertIsNotNone(started)
-            line.transition_operation(
+            line.mark_writer_running(
                 "session-progress",
                 "run-progress",
-                lambda s: mark_writer_running(s, provider_id="deepseek"),
+                provider_id="deepseek",
             )
             ledger_store.open(
                 run_id="run-progress",
@@ -357,17 +355,14 @@ class RunDetailsTests(unittest.TestCase):
             self.assertEqual(rows["Progress"]["tone"], "warning")
 
             # Terminal: the run finished normally, so no Progress row.
-            line.transition_operation(
+            line.mark_terminal(
                 "session-progress",
                 "run-progress",
-                lambda s: mark_terminal(
-                    s,
-                    stop_reason="done",
-                    summary_chars=3,
-                    turns=2,
-                    max_turns=6,
-                    provider="deepseek",
-                ),
+                stop_reason="done",
+                summary_chars=3,
+                turns=2,
+                max_turns=6,
+                provider="deepseek",
             )
             rows = {
                 row["label"]: row
@@ -397,10 +392,10 @@ class RunDetailsTests(unittest.TestCase):
                 task_kind="project",
             )
             self.assertIsNotNone(started)
-            line.transition_operation(
+            line.mark_writer_running(
                 "session-runtime-only",
                 "run-runtime-only",
-                lambda s: mark_writer_running(s, provider_id="deepseek"),
+                provider_id="deepseek",
             )
 
             summary = load_run_details(
@@ -434,17 +429,14 @@ class RunDetailsTests(unittest.TestCase):
                 task_kind="research",
             )
             self.assertIsNotNone(started)
-            line.transition_operation(
+            line.mark_terminal(
                 "session-runtime-terminal",
                 "run-runtime-terminal",
-                lambda s: mark_terminal(
-                    s,
-                    stop_reason="done",
-                    summary_chars=7,
-                    turns=1,
-                    max_turns=6,
-                    provider="deepseek",
-                ),
+                stop_reason="done",
+                summary_chars=7,
+                turns=1,
+                max_turns=6,
+                provider="deepseek",
             )
 
             summary = load_run_details(

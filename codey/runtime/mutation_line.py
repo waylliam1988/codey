@@ -34,14 +34,20 @@ from codey.runtime.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
+    mark_completion_blocked as state_mark_completion_blocked,
+    mark_completion_proof_recorded as state_mark_completion_proof_recorded,
     mark_provider_effect_pending,
     mark_provider_effect_settled,
-    mark_terminal,
+    mark_repair_context_admitted as state_mark_repair_context_admitted,
+    mark_repair_running as state_mark_repair_running,
+    mark_repair_settled as state_mark_repair_settled,
+    mark_terminal as state_mark_terminal,
     mark_tool_delivery_pending,
     mark_tool_effect_pending,
     mark_tool_effect_settled,
+    mark_writer_running as state_mark_writer_running,
+    mark_writer_settled as state_mark_writer_settled,
     new_operation_state,
-    operation_id_for_run,
     operation_is_open,
     operation_state_entry,
     operation_state_from_entries,
@@ -51,7 +57,6 @@ from codey.runtime.operation_state import (
 from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
-    DeliveryBatchProjection,
     batch_intent_entry,
     batches_from_entries,
     delivered_entry,
@@ -113,7 +118,7 @@ class RuntimeMutationLine:
         self.session_log.mutate(session_id, mutation)
         return accepted
 
-    def transition_operation(
+    def _commit_state(
         self,
         session_id: str,
         run_id: str,
@@ -127,8 +132,11 @@ class RuntimeMutationLine:
             op = projection.operations.get(current.operation_id)
             if op is not None and op.status != "open":
                 if current.leaf == LEAF_TERMINAL:
-                    committed = current
-                    return ()
+                    next_state = transition(current)
+                    if next_state == current:
+                        committed = current
+                        return ()
+                    raise RuntimeOperationTransitionError("terminal operation is immutable")
                 raise RuntimeOperationTransitionError("operation already settled")
             operation_is_open(projection, current)
             next_state = transition(current)
@@ -144,6 +152,128 @@ class RuntimeMutationLine:
         self.session_log.mutate(session_id, mutation)
         return committed
 
+    def mark_writer_running(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        provider_id: str,
+        writer_attempt: int = 1,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_writer_running(
+                state,
+                provider_id=provider_id,
+                writer_attempt=writer_attempt,
+            ),
+        )
+
+    def mark_writer_settled(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        provider_id: str,
+        turns_used: int,
+        stop_reason: str,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_writer_settled(
+                state,
+                provider_id=provider_id,
+                turns_used=turns_used,
+                stop_reason=stop_reason,
+            ),
+        )
+
+    def record_completion_proof(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        proof_ref: str,
+        proof_status: str,
+        proof_satisfied: bool,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_completion_proof_recorded(
+                state,
+                proof_ref=proof_ref,
+                proof_status=proof_status,
+                proof_satisfied=proof_satisfied,
+            ),
+        )
+
+    def admit_repair_context(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        context_ref: str,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_repair_context_admitted(
+                state,
+                context_ref=context_ref,
+            ),
+        )
+
+    def mark_repair_running(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        provider_id: str,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_repair_running(state, provider_id=provider_id),
+        )
+
+    def mark_repair_settled(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        provider_id: str,
+        stop_reason: str,
+        blocked_reason: str = "",
+        turns_used: int | None = None,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_repair_settled(
+                state,
+                provider_id=provider_id,
+                stop_reason=stop_reason,
+                blocked_reason=blocked_reason,
+                turns_used=turns_used,
+            ),
+        )
+
+    def mark_completion_blocked(
+        self,
+        session_id: str,
+        run_id: str,
+        *,
+        reason: str,
+    ) -> RuntimeOperationState | None:
+        return self._commit_state(
+            session_id,
+            run_id,
+            lambda state: state_mark_completion_blocked(state, reason=reason),
+        )
+
     def mark_terminal(
         self,
         session_id: str,
@@ -156,10 +286,10 @@ class RuntimeMutationLine:
         provider: str,
         blocked_reason: str | None = None,
     ) -> RuntimeOperationState | None:
-        return self.transition_operation(
+        return self._commit_state(
             session_id,
             run_id,
-            lambda state: mark_terminal(
+            lambda state: state_mark_terminal(
                 state,
                 stop_reason=stop_reason,
                 summary_chars=summary_chars,

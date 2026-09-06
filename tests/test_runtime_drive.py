@@ -17,7 +17,7 @@ from codey.runtime.operation_reducer import (
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     ACTION_SETTLE_PROVIDER_UNKNOWN,
 )
-from codey.runtime.operation_state import DRIVER_WRITER, mark_writer_running
+from codey.runtime.operation_state import DRIVER_WRITER
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
@@ -50,10 +50,10 @@ class RuntimeDriveTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _mark_writer_running(self) -> None:
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="mock"),
+            provider_id="mock",
         )
 
     def test_peek_continue_action_does_not_commit(self) -> None:

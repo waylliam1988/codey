@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from codey.runtime.operation import OperationContext, OperationIntent
-from codey.runtime.operation_state import lane_for_run, mark_terminal, operation_id_for_run
+from codey.runtime.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.outcome import OperationOutcome
 from codey.runtime.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
 from codey.runtime.mutation_line import RuntimeMutationLine
@@ -117,21 +117,14 @@ class TaskRuntime:
         if not request.run_id:
             return
         try:
-            current = self.mutations.transition_operation(
+            current = self.mutations.mark_terminal(
                 request.session_id,
                 request.run_id,
-                lambda state: (
-                    state
-                    if state.leaf == "terminal"
-                    else mark_terminal(
-                        state,
-                        stop_reason=_stop_reason_for_outcome(outcome),
-                        summary_chars=len(outcome.summary),
-                        turns=0,
-                        max_turns=max(0, int(request.max_turns or 0)),
-                        provider=request.provider_id,
-                    )
-                ),
+                stop_reason=_stop_reason_for_outcome(outcome),
+                summary_chars=len(outcome.summary),
+                turns=0,
+                max_turns=max(0, int(request.max_turns or 0)),
+                provider=request.provider_id,
             )
             del current
         except Exception:

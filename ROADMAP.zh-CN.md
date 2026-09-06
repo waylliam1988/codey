@@ -1642,6 +1642,8 @@ fail_invariant
 - 不重写 `TaskRuntime` 成大 manager。
 - 不把 Effect Ledger 合并进 OperationState。
 - 不保留 `RuntimeSessionLog.append()` / `append_many()` 作为业务 API；底层原子提交统一叫 `mutate()`。
+- 生产业务事实不能直接调用 `RuntimeSessionLog.mutate()`；`mutate()` 只作为 log 层原子原语，由 `RuntimeMutationLine` 使用。
+- 不暴露泛型 `RuntimeMutationLine.transition_operation()`；writer/proof/repair/terminal 都走具名 mutation。
 - 不让 `RuntimeOperationStore` 暴露 `start()` / `commit()` / `delete_session()`；它只做读取投影。
 - 不让 Event / RunTrace 成为 recovery source of truth。
 - 不新增完整 Lane 系统、RemoteSession、RPC、CBOR 或 SQLite migration。
@@ -1691,6 +1693,8 @@ Exit Gate：
 0.5.0-0.5.7 的 Verified Completion / Research proof / prompt surface tests 继续通过
 0.5.8 OperationState 是 closed/total transition table
 RuntimeAction reducer 是 pure function
+生产代码只有 RuntimeMutationLine 调用 RuntimeSessionLog.mutate()
+RuntimeMutationLine 没有泛型 transition_operation() public surface
 外部 effect 前有 intent，effect 后有 settlement
 恢复时读 durable state，不从事件缺失推断
 ToolResultDelivery / CompletionProof / Evidence source of truth 明确

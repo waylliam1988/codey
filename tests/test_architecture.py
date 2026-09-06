@@ -379,8 +379,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         session_log_source = (ROOT / "codey" / "runtime" / "session_log.py").read_text(encoding="utf-8")
         delivery_source = (ROOT / "codey" / "runtime" / "tool_result_delivery.py").read_text(encoding="utf-8")
         operation_state_source = (ROOT / "codey" / "runtime" / "operation_state.py").read_text(encoding="utf-8")
+        mutation_line_source = (ROOT / "codey" / "runtime" / "mutation_line.py").read_text(encoding="utf-8")
         self.assertNotIn("def append(", session_log_source)
         self.assertNotIn("def append_many(", session_log_source)
+        self.assertNotIn("def transition_operation(", mutation_line_source)
         for token in (
             "def start(",
             "def commit(",
@@ -408,6 +410,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if blocked or unexpected_codey:
                 offenders[path.relative_to(ROOT).as_posix()] = blocked + unexpected_codey
         self.assertEqual(offenders, {})
+
+        mutate_callers = []
+        allowed_mutate_callers = {
+            "codey/runtime/mutation_line.py",
+            "codey/runtime/session_log.py",
+        }
+        for path in (ROOT / "codey").rglob("*.py"):
+            rel = path.relative_to(ROOT).as_posix()
+            if rel in allowed_mutate_callers:
+                continue
+            source = path.read_text(encoding="utf-8")
+            if ".mutate(" in source:
+                mutate_callers.append(rel)
+        self.assertEqual(mutate_callers, [])
+
+        test_mutate_callers = []
+        allowed_test_mutate_callers = {
+            "tests/test_architecture.py",
+            "tests/test_runtime_session_log.py",
+        }
+        for path in (ROOT / "tests").rglob("*.py"):
+            rel = path.relative_to(ROOT).as_posix()
+            if rel in allowed_test_mutate_callers:
+                continue
+            source = path.read_text(encoding="utf-8")
+            if ".mutate(" in source:
+                test_mutate_callers.append(rel)
+        self.assertEqual(test_mutate_callers, [])
 
     def test_research_pipeline_owns_iteration_boundary_without_legacy_seams(self) -> None:
         pipeline = ROOT / "codey" / "research" / "pipeline.py"

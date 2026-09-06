@@ -38,7 +38,6 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import mark_writer_running
 from codey.runtime.models import ToolCall
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
@@ -306,10 +305,10 @@ def run_self_test() -> bool:
             max_repair_rounds=1,
             task_kind="project",
         )
-        mutations.transition_operation(
+        mutations.mark_writer_running(
             session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id="MockResumeProvider"),
+            provider_id="MockResumeProvider",
         )
 
 
@@ -466,10 +465,10 @@ def run_same_run_self_test() -> bool:
             task_kind="project",
         )
         assert started is not None, "expected runtime operation to start"
-        mutations.transition_operation(
+        mutations.mark_writer_running(
             session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id=provider.name),
+            provider_id=provider.name,
         )
         effect_id = _record_pending_read_batch(
             mutations,
@@ -577,10 +576,10 @@ def _run_live_resume_case(
             max_repair_rounds=1,
             task_kind="project",
         )
-        mutations.transition_operation(
+        mutations.mark_writer_running(
             session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id=provider_id),
+            provider_id=provider_id,
         )
 
         stage1_events = []

@@ -23,10 +23,9 @@ from codey.runtime.operation_state import (
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
-    mark_writer_running,
 )
 from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeLogWriteError, RuntimeSessionLog
+from codey.runtime.session_log import RuntimeLogEntry, RuntimeLogWriteError, RuntimeSessionLog
 
 
 def _commit_log_entry(
@@ -38,17 +37,17 @@ def _commit_log_entry(
     kind: str,
     payload: dict[str, object],
 ) -> None:
-    log.mutate(
-        session_id,
-        lambda _projection, _entries: (
-            {
-                "lane": lane,
-                "operation_id": operation_id,
-                "kind": kind,
-                "payload": payload,
-            },
-        ),
+    path = log.path_for(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = RuntimeLogEntry(
+        session_id=session_id,
+        lane=lane,
+        operation_id=operation_id,
+        kind=kind,
+        payload=payload,
     )
+    with path.open("ab") as handle:
+        handle.write(entry.to_json_line().encode("utf-8"))
 
 
 class RuntimeEffectRecordsTests(unittest.TestCase):
@@ -69,10 +68,10 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="deepseek"),
+            provider_id="deepseek",
         )
 
     def tearDown(self) -> None:

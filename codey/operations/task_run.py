@@ -64,7 +64,6 @@ from codey.runs.ledger_projection import event_with_projected_receipt
 from codey.runtime import cancellation
 from codey.runtime.operation_state import (
     RuntimeOperationTransitionError,
-    mark_terminal,
 )
 from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.runtime.execution_evidence import ExecutionEvidence
@@ -245,6 +244,32 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
     recovered_tool_outcomes = ()
     recovered_tool_result_batch_id = ""
     try:
+        workspace_state = _current_workspace_state(deps, project, project_config_result.config.ignored_paths)
+        work = RunWork(
+            recent_events=[],
+            evidence=ExecutionEvidence(
+                workspace_revision=workspace_state.revision,
+                workspace_fingerprint=workspace_state.fingerprint,
+            ),
+            claimed_work_item=claimed_work_item,
+            trace=trace,
+            workspace_revision=workspace_state.revision,
+            workspace_fingerprint=workspace_state.fingerprint,
+        )
+        started_ok = _start_run_operation(
+            deps,
+            work,
+            session_id=session_id,
+            run_id=run_id,
+            project=project or "",
+            provider_id=provider_id,
+            turn_budget=max_turns,
+            max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
+            task_kind=task_kind,
+        )
+        if not started_ok:
+            return _fail_early("ERROR: Runtime operation state unavailable.", current_work=work)
+
         recovery = recover_effects_for_resume(
             deps,
             session_id=session_id,
@@ -253,7 +278,10 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             task_kind=baseline_task_kind,
         )
         if not recovery.ok:
-            return _fail_early("ERROR: Runtime recovery failed to settle unconfirmed effects.")
+            return _fail_early(
+                "ERROR: Runtime recovery failed to settle unconfirmed effects.",
+                current_work=work,
+            )
         recovered_tool_outcomes = recovery.recovered_tool_outcomes
         recovered_tool_result_batch_id = recovery.recovered_tool_result_batch_id
         recovered_resume = bool(recovered_tool_outcomes)
@@ -268,6 +296,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 claim_result = maybe_claim_work_item(ghost_deps, request, run_id=run_id)
                 if claim_result is not None:
                     claimed_work_item = claim_result.item
+                    work.claimed_work_item = claimed_work_item
                     task_kind = claim_result.mode or task_kind
                     request = replace(
                         request,
@@ -337,39 +366,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             "intent": request.intent,
         })
 
-        workspace_state = _current_workspace_state(deps, project, project_config_result.config.ignored_paths)
-        work = RunWork(
-            recent_events=[],
-            evidence=ExecutionEvidence(
-                workspace_revision=workspace_state.revision,
-                workspace_fingerprint=workspace_state.fingerprint,
-            ),
-            claimed_work_item=claimed_work_item,
-            trace=trace,
-            workspace_revision=workspace_state.revision,
-            workspace_fingerprint=workspace_state.fingerprint,
-        )
-        project_completion_deps = _project_completion_deps(
-            deps,
-            lambda active_work, transition: _commit_run_operation(
-                deps,
-                active_work,
-                transition,
-            ),
-        )
-        started_ok = _start_run_operation(
-            deps,
-            work,
-            session_id=session_id,
-            run_id=run_id,
-            project=project or "",
-            provider_id=provider_id,
-            turn_budget=max_turns,
-            max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
-            task_kind=task_kind,
-        )
-        if not started_ok:
-            return _fail_early("ERROR: Runtime operation state unavailable.", current_work=work)
+        project_completion_deps = _project_completion_deps(deps)
         _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         logged_provider_failures: set[tuple[str, str, str, str]] = set()
@@ -851,10 +848,7 @@ def _ghost_deps(deps: TaskRunDeps, review_deps: ReviewFlowDeps) -> GhostTaskPoli
     )
 
 
-def _project_completion_deps(
-    deps: TaskRunDeps,
-    commit_run_operation: Callable[[RunWork, Callable], None],
-) -> ProjectCompletionDeps:
+def _project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
     return ProjectCompletionDeps(
         state=deps.state,
         agent=AgentAccess(
@@ -880,7 +874,6 @@ def _project_completion_deps(
             review_log_lines=deps.review_log_lines,
         ),
         runtime=RuntimeAccess(
-            commit_run_operation=commit_run_operation,
             mutations=deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None),
             effects=deps.runtime_effects or getattr(deps.state, "runtime_effects", None),
             tool_result_delivery=getattr(deps.state, "tool_result_delivery", None),
@@ -1034,32 +1027,18 @@ def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, obj
     if work.operation is None:
         return
     max_turns = int(event.get("max_turns") or 0)
-    _commit_run_operation(
-        deps,
-        work,
-        lambda state: mark_terminal(
-            state,
+    try:
+        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
+        if mutations is None:
+            raise RuntimeOperationTransitionError("runtime mutation line is missing")
+        work.operation = mutations.mark_terminal(
+            work.operation.session_id,
+            work.operation.run_id,
             stop_reason=str(event.get("stop_reason") or ""),
             summary_chars=len(str(event.get("summary") or "")),
             turns=terminal_turns(work, turns=event.get("turns"), max_turns=max_turns),
             max_turns=max_turns,
             provider=str(event.get("provider") or ""),
-        ),
-    )
-
-
-def _commit_run_operation(deps: TaskRunDeps, work: RunWork, transition: Callable) -> None:
-    operation = work.operation
-    if operation is None:
-        return
-    try:
-        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
-        if mutations is None:
-            raise RuntimeOperationTransitionError("runtime mutation line is missing")
-        work.operation = mutations.transition_operation(
-            operation.session_id,
-            operation.run_id,
-            transition,
         )
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None

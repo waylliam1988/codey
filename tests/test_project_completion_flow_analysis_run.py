@@ -317,7 +317,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
                 workspace_revisions=state.workspace_revisions,
             ),
             review=ReviewAccess(run=mock.Mock()),
-            runtime=RuntimeAccess(commit_run_operation=mock.Mock()),
+            runtime=RuntimeAccess(),
             persistence=PersistenceAccess(project_facts=state.project_facts),
         )
         handle_project_tool_event(deps, **kwargs)

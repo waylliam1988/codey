@@ -838,7 +838,12 @@ def mark_completion_blocked(
         raise RuntimeOperationTransitionError("completion verdict requires recorded proof")
     if not _blocked_verdict_supported(state):
         raise RuntimeOperationTransitionError("blocked verdict requires failed proof")
-    return replace(state, blocked_reason=_text(reason, "reason"), updated_at=_now())
+    verdict = _text(reason, "reason")
+    if state.blocked_reason == verdict:
+        return state
+    if state.blocked_reason:
+        raise RuntimeOperationTransitionError("blocked verdict is immutable")
+    return replace(state, blocked_reason=verdict, updated_at=_now())
 
 
 def mark_terminal(

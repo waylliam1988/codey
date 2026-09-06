@@ -44,13 +44,12 @@ from codey.runtime.operation_state import (
     RuntimeOperationStore,
     lane_for_run,
     mark_tool_effect_pending,
-    mark_writer_running,
     operation_id_for_run,
 )
 from codey.runtime.models import ToolCall
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -71,17 +70,17 @@ def _commit_log_entry(
     kind: str,
     payload: dict[str, object],
 ) -> None:
-    log.mutate(
-        session_id,
-        lambda _projection, _entries: (
-            {
-                "lane": lane,
-                "operation_id": operation_id,
-                "kind": kind,
-                "payload": payload,
-            },
-        ),
+    path = log.path_for(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = RuntimeLogEntry(
+        session_id=session_id,
+        lane=lane,
+        operation_id=operation_id,
+        kind=kind,
+        payload=payload,
     )
+    with path.open("ab") as handle:
+        handle.write(entry.to_json_line().encode("utf-8"))
 
 
 class MockProvider:
@@ -121,10 +120,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
 
     def tearDown(self) -> None:
@@ -569,34 +568,11 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
-    def test_recovery_failure_single_work_item_transition(self) -> None:
-        from codey.ghost.work_queue import GhostWorkClaimResult, GhostWorkItem
-
+    def test_runtime_start_failure_happens_before_work_item_claim(self) -> None:
         state = server.AppContext(state_home=self.temp_dir.name)
         mock_work_queue = Mock()
         state.ghost_work_queue = mock_work_queue
 
-        # Pre-gate recovery succeeds, but operation start fails
-        claimed_work_item = GhostWorkItem(
-            id="item-123",
-            kind="project",
-            status="running",
-            scope="project",
-            scope_ref="",
-            title="test task",
-            why_now="recovery",
-            priority=1.0,
-            confidence=1.0,
-            source="manual",
-            source_ref="",
-            started_run_id="run-transition-1",
-        )
-        claim_result = GhostWorkClaimResult(
-            ok=True,
-            item=claimed_work_item,
-            mode="project",
-            task="task to run",
-        )
         deps = TaskRunDeps(
             state=state,
             agent_run=Mock(),
@@ -616,7 +592,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.maybe_claim_work_item", return_value=claim_result), \
+             patch("codey.operations.task_run.maybe_claim_work_item") as claim_work_item, \
              patch.object(state.runtime_mutations, "accept_operation", return_value=None):
             run_task_submission(
                 deps,
@@ -632,8 +608,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        # Should block the item on error, not call release_item
-        mock_work_queue.block_item.assert_called_once_with("item-123", run_id="run-transition-1", blocked_reason="error")
+        claim_work_item.assert_not_called()
+        mock_work_queue.block_item.assert_not_called()
         mock_work_queue.release_item.assert_not_called()
 
     def test_recovery_fails_before_ghost_router_provider_send(self) -> None:
@@ -711,10 +687,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 task_kind="project",
             )
         )
-        state.runtime_mutations.transition_operation(
+        state.runtime_mutations.mark_writer_running(
             self.session_id,
             run_id,
-            lambda item: mark_writer_running(item, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
         items = (
@@ -819,10 +795,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 task_kind="hybrid",
             )
         )
-        state.runtime_mutations.transition_operation(
+        state.runtime_mutations.mark_writer_running(
             self.session_id,
             run_id,
-            lambda item: mark_writer_running(item, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
         effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
         items = (
@@ -1147,10 +1123,10 @@ class AgentEffectSandwichTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="planning_readonly",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
         items = (
@@ -1257,16 +1233,22 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 batch_digest=compute_batch_digest(items),
             ).to_payload(),
         )
-        self.line.transition_operation(
+        current = self.operations.load(self.session_id, self.run_id)
+        assert current is not None
+        pending = mark_tool_effect_pending(
+            current,
+            effect_ids=(eff_id,),
+            driver="writer",
+            delivery_batch_id=batch_id,
+            turn=1,
+        )
+        _commit_log_entry(
+            self.log,
             self.session_id,
-            self.run_id,
-            lambda state: mark_tool_effect_pending(
-                state,
-                effect_ids=(eff_id,),
-                driver="writer",
-                delivery_batch_id=batch_id,
-                turn=1,
-            ),
+            lane=pending.lane,
+            operation_id=pending.operation_id,
+            kind="operation_state",
+            payload=pending.to_payload(),
         )
 
         recovery = recover_effects_for_resume(

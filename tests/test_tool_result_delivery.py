@@ -37,12 +37,11 @@ from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.operation_state import (
     RuntimeOperationStore,
     lane_for_run,
-    mark_writer_running,
     operation_id_for_run,
 )
 from codey.runtime.models import ToolCall, ToolResult
 from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -63,7 +62,18 @@ def _commit_log_entries(
     session_id: str,
     entries: tuple[dict[str, object], ...],
 ) -> None:
-    log.mutate(session_id, lambda _projection, _entries: entries)
+    path = log.path_for(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as handle:
+        for entry in entries:
+            row = RuntimeLogEntry(
+                session_id=session_id,
+                lane=entry.get("lane"),
+                operation_id=entry.get("operation_id"),
+                kind=entry.get("kind"),
+                payload=entry.get("payload"),
+            )
+            handle.write(row.to_json_line().encode("utf-8"))
 
 
 def _commit_log_entry(
@@ -132,10 +142,10 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
 
     def tearDown(self) -> None:
@@ -785,18 +795,14 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         self.assertIn("recovered", open_delivery_kinds)
 
         # Settle operation
-        from codey.runtime.operation_state import mark_terminal
-        committed = self.line.transition_operation(
+        committed = self.line.mark_terminal(
             self.session_id,
             self.run_id,
-            lambda st: mark_terminal(
-                st,
-                stop_reason="done",
-                summary_chars=10,
-                turns=1,
-                max_turns=10,
-                provider="mock_provider",
-            ),
+            stop_reason="done",
+            summary_chars=10,
+            turns=1,
+            max_turns=10,
+            provider="mock_provider",
         )
         self.assertIsNotNone(committed)
         # After settlement -> compact keeps recovered fact, drops batch_intent
@@ -894,10 +900,10 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="mock_provider"),
+            provider_id="mock_provider",
         )
         # Create test file
         (self.project_dir / "target.py").write_text("print('hello')\n", encoding="utf-8")

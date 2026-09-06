@@ -29,9 +29,7 @@ from codey.runtime.operation_state import (
     mark_provider_effect_settled,
     mark_repair_context_admitted,
     mark_repair_running,
-    mark_repair_settled,
     mark_terminal,
-    mark_tool_delivery_pending,
     mark_tool_delivery_settled,
     mark_tool_effect_pending,
     mark_tool_effect_settled,
@@ -82,10 +80,10 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 task_kind="project",
             )
             assert state is not None
-            state = line.transition_operation(
+            state = line.mark_writer_running(
                 "s1",
                 "run-1",
-                lambda item: mark_writer_running(item, provider_id="deepseek"),
+                provider_id="deepseek",
             )
             entries = log.read("s1")
 
@@ -118,10 +116,10 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 task_kind="project",
             )
             assert first is not None
-            line.transition_operation(
+            line.mark_writer_running(
                 "s1",
                 "run-1",
-                lambda item: mark_writer_running(item, provider_id="deepseek"),
+                provider_id="deepseek",
             )
             resumed = line.accept_operation(
                 session_id="s1",
@@ -158,17 +156,14 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 max_repair_rounds=1,
                 task_kind="chat",
             )
-            terminal = line.transition_operation(
+            terminal = line.mark_terminal(
                 "s1",
                 "run-1",
-                lambda item: mark_terminal(
-                    item,
-                    stop_reason="done",
-                    summary_chars=4,
-                    turns=0,
-                    max_turns=5,
-                    provider="deepseek",
-                ),
+                stop_reason="done",
+                summary_chars=4,
+                turns=0,
+                max_turns=5,
+                provider="deepseek",
             )
             entries = log.read("s1")
             projection = reduce_session(entries)
@@ -308,6 +303,9 @@ class RuntimeOperationStateTests(unittest.TestCase):
             provider="deepseek",
         )
         self.assertEqual(terminal.blocked_reason, "blocked")
+        self.assertIs(mark_completion_blocked(blocked, reason="blocked"), blocked)
+        with self.assertRaises(RuntimeOperationTransitionError):
+            mark_completion_blocked(blocked, reason="different")
 
     def test_progress_text_uses_leaf_and_driver(self) -> None:
         self.assertEqual(

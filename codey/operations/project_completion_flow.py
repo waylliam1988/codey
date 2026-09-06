@@ -66,13 +66,7 @@ from codey.runs.work_checkpoint import (
 from codey.runtime import cancellation
 from codey.runtime.operation_state import (
     LEAF_COMPLETION_PROOF_RECORDED,
-    mark_completion_blocked,
-    mark_completion_proof_recorded,
-    mark_repair_context_admitted,
-    mark_repair_running,
-    mark_repair_settled,
-    mark_writer_running,
-    mark_writer_settled,
+    RuntimeOperationTransitionError,
 )
 from codey.runtime.events import RunEvent
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
@@ -132,7 +126,6 @@ class ReviewAccess:
 
 @dataclass(frozen=True)
 class RuntimeAccess:
-    commit_run_operation: Callable[[RunWork, Callable], None]
     mutations: Any = None
     effects: Any = None
     tool_result_delivery: Any = None
@@ -758,11 +751,29 @@ def _sync_failover_frame(ctx: _ProjectRun) -> None:
     ctx.frame.preflight_switches = ctx.failover.switches
 
 
+def _commit_runtime_operation(
+    ctx: _ProjectRun,
+    commit: Callable[[Any, str, str], object | None],
+) -> None:
+    operation = ctx.work.operation
+    mutations = ctx.deps.runtime.mutations
+    if operation is None or mutations is None:
+        return
+    try:
+        ctx.work.operation = commit(mutations, operation.session_id, operation.run_id)
+    except (OSError, ValueError, RuntimeOperationTransitionError):
+        ctx.work.operation = None
+
+
 def _run_writer_phase(ctx: _ProjectRun) -> None:
     ctx.failover = _build_writer_failover(ctx)
-    ctx.deps.runtime.commit_run_operation(
-        ctx.work,
-        lambda state: mark_writer_running(state, provider_id=ctx.frame.provider_id),
+    _commit_runtime_operation(
+        ctx,
+        lambda mutations, session_id, run_id: mutations.mark_writer_running(
+            session_id,
+            run_id,
+            provider_id=ctx.frame.provider_id,
+        ),
     )
     try:
         ctx.result = ctx.failover.run(
@@ -778,10 +789,11 @@ def _run_writer_phase(ctx: _ProjectRun) -> None:
         )
     finally:
         _sync_failover_frame(ctx)
-    ctx.deps.runtime.commit_run_operation(
-        ctx.work,
-        lambda state: mark_writer_settled(
-            state,
+    _commit_runtime_operation(
+        ctx,
+        lambda mutations, session_id, run_id: mutations.mark_writer_settled(
+            session_id,
+            run_id,
             provider_id=ctx.frame.provider_id,
             turns_used=ctx.result.turns,
             stop_reason=ctx.result.stop_reason,
@@ -1067,10 +1079,11 @@ def _completion_evidence(
 def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
     if proof is None:
         return
-    ctx.deps.runtime.commit_run_operation(
-        ctx.work,
-        lambda state: mark_completion_proof_recorded(
-            state,
+    _commit_runtime_operation(
+        ctx,
+        lambda mutations, session_id, run_id: mutations.record_completion_proof(
+            session_id,
+            run_id,
             proof_ref=getattr(proof, "proof_id", ""),
             proof_status=getattr(proof, "status", ""),
             proof_satisfied=getattr(proof, "satisfied", None),
@@ -1161,10 +1174,11 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         return
 
     ctx.repair_projection = projection
-    ctx.deps.runtime.commit_run_operation(
-        ctx.work,
-        lambda state: mark_repair_context_admitted(
-            state,
+    _commit_runtime_operation(
+        ctx,
+        lambda mutations, session_id, run_id: mutations.admit_repair_context(
+            session_id,
+            run_id,
             context_ref=str(projection.to_payload().get("digest") or ""),
         ),
     )
@@ -1173,9 +1187,13 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             "[runner] completion proof did not pass; running one bounded repair round."
         )
     )
-    ctx.deps.runtime.commit_run_operation(
-        ctx.work,
-        lambda state: mark_repair_running(state, provider_id=ctx.frame.provider_id),
+    _commit_runtime_operation(
+        ctx,
+        lambda mutations, session_id, run_id: mutations.mark_repair_running(
+            session_id,
+            run_id,
+            provider_id=ctx.frame.provider_id,
+        ),
     )
 
     try:
@@ -1190,10 +1208,11 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         raise
     except ProviderActionError:
         ctx.blocked_reason = "provider_failure"
-        ctx.deps.runtime.commit_run_operation(
-            ctx.work,
-            lambda state: mark_repair_settled(
-                state,
+        _commit_runtime_operation(
+            ctx,
+            lambda mutations, session_id, run_id: mutations.mark_repair_settled(
+                session_id,
+                run_id,
                 provider_id=ctx.frame.provider_id,
                 stop_reason="",
                 blocked_reason="provider_failure",
@@ -1211,10 +1230,11 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
                 remaining_turns=repair_remaining_turns,
                 repair_rounds=1,
             )
-        ctx.deps.runtime.commit_run_operation(
-            ctx.work,
-            lambda state: mark_repair_settled(
-                state,
+        _commit_runtime_operation(
+            ctx,
+            lambda mutations, session_id, run_id: mutations.mark_repair_settled(
+                session_id,
+                run_id,
                 provider_id=ctx.frame.provider_id,
                 stop_reason=repair_result.stop_reason,
                 turns_used=ctx.result.turns + repair_result.turns,
@@ -1290,9 +1310,13 @@ def _settle_blocked_completion(ctx: _ProjectRun) -> None:
         and ctx.work.operation is not None
         and ctx.work.operation.leaf == LEAF_COMPLETION_PROOF_RECORDED
     ):
-        ctx.deps.runtime.commit_run_operation(
-            ctx.work,
-            lambda state: mark_completion_blocked(state, reason=ctx.blocked_reason),
+        _commit_runtime_operation(
+            ctx,
+            lambda mutations, session_id, run_id: mutations.mark_completion_blocked(
+                session_id,
+                run_id,
+                reason=ctx.blocked_reason,
+            ),
         )
 
 

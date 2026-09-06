@@ -16,13 +16,18 @@ from codey.runtime.effect_records import (
 from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.operation_state import (
     LEAF_ACCEPTED,
+    LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_REPAIR_CONTEXT_ADMITTED,
+    LEAF_REPAIR_RUNNING,
+    LEAF_REPAIR_SETTLED,
     LEAF_TERMINAL,
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_TOOL_EFFECT_PENDING,
     LEAF_WRITER_RUNNING,
+    LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
-    mark_writer_running,
+    RuntimeOperationTransitionError,
 )
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
@@ -59,10 +64,10 @@ class RuntimeMutationLineTests(unittest.TestCase):
             max_repair_rounds=1,
             task_kind="project",
         )
-        self.line.transition_operation(
+        self.line.mark_writer_running(
             self.session_id,
             self.run_id,
-            lambda state: mark_writer_running(state, provider_id="mock"),
+            provider_id="mock",
         )
 
     def _tool_intent(self, tool_name: str, tool_index: int) -> RuntimeEffectIntent:
@@ -262,6 +267,110 @@ class RuntimeMutationLineTests(unittest.TestCase):
         projection = self.log.projection(self.session_id)
         operation_id = self.operations.load(self.session_id, self.run_id).operation_id
         self.assertEqual(projection.operations[operation_id].status, "settled")
+
+    def test_terminal_recommit_must_match_existing_terminal_identity(self) -> None:
+        self._accept_and_run_writer()
+        self.line.mark_terminal(
+            self.session_id,
+            self.run_id,
+            stop_reason="done",
+            summary_chars=4,
+            turns=1,
+            max_turns=5,
+            provider="mock",
+        )
+        before = len(self.log.entries(self.session_id))
+
+        same = self.line.mark_terminal(
+            self.session_id,
+            self.run_id,
+            stop_reason="done",
+            summary_chars=4,
+            turns=1,
+            max_turns=5,
+            provider="mock",
+        )
+
+        self.assertEqual(same.leaf, LEAF_TERMINAL)
+        self.assertEqual(len(self.log.entries(self.session_id)), before)
+        with self.assertRaises(RuntimeOperationTransitionError):
+            self.line.mark_terminal(
+                self.session_id,
+                self.run_id,
+                stop_reason="done",
+                summary_chars=5,
+                turns=1,
+                max_turns=5,
+                provider="mock",
+            )
+
+    def test_named_completion_and_repair_state_methods_commit_expected_leaves(self) -> None:
+        self._accept_and_run_writer()
+
+        settled = self.line.mark_writer_settled(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+            turns_used=2,
+            stop_reason="done",
+        )
+        proof = self.line.record_completion_proof(
+            self.session_id,
+            self.run_id,
+            proof_ref="completion_proof:" + "b" * 16,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+        admitted = self.line.admit_repair_context(
+            self.session_id,
+            self.run_id,
+            context_ref="sha256:" + "a" * 64,
+        )
+        running = self.line.mark_repair_running(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+        )
+        repair = self.line.mark_repair_settled(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+            stop_reason="done",
+            turns_used=3,
+        )
+
+        self.assertEqual(settled.leaf, LEAF_WRITER_SETTLED)
+        self.assertEqual(proof.leaf, LEAF_COMPLETION_PROOF_RECORDED)
+        self.assertEqual(admitted.leaf, LEAF_REPAIR_CONTEXT_ADMITTED)
+        self.assertEqual(running.leaf, LEAF_REPAIR_RUNNING)
+        self.assertEqual(repair.leaf, LEAF_REPAIR_SETTLED)
+        self.assertEqual(self.operations.load(self.session_id, self.run_id).leaf, LEAF_REPAIR_SETTLED)
+
+    def test_mark_completion_blocked_commits_blocked_verdict_without_new_leaf(self) -> None:
+        self._accept_and_run_writer()
+        self.line.mark_writer_settled(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+            turns_used=2,
+            stop_reason="done",
+        )
+        self.line.record_completion_proof(
+            self.session_id,
+            self.run_id,
+            proof_ref="completion_proof:" + "c" * 16,
+            proof_status="failed",
+            proof_satisfied=False,
+        )
+
+        blocked = self.line.mark_completion_blocked(
+            self.session_id,
+            self.run_id,
+            reason="verification_failed",
+        )
+
+        self.assertEqual(blocked.leaf, LEAF_COMPLETION_PROOF_RECORDED)
+        self.assertEqual(blocked.blocked_reason, "verification_failed")
 
 
 if __name__ == "__main__":

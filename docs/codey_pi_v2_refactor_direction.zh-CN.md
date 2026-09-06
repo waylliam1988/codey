@@ -477,6 +477,8 @@ OperationState 是 closed/total transition table
 RuntimeAction reducer 是 pure function
 provider/tool/delivery/recovery 的关键路径都能从 state 推出下一步
 RuntimeSessionLog 只有 mutate()，没有 append()/append_many()
+生产代码只有 RuntimeMutationLine 调用 RuntimeSessionLog.mutate()
+RuntimeMutationLine 不暴露泛型 transition_operation() public surface
 RuntimeOperationStore 是 projection-only，没有 start()/commit()/delete_session()
 task_run.py 不再新增业务外的 runtime state 分支
 EffectIntent / Settlement 没有被 OperationState 取代

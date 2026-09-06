@@ -14,6 +14,11 @@
   batch、tool settlement、provider settlement、delivery receipt、recovered delivery fact 和
   terminal operation settlement 都通过 mutation line 同批提交，避免 intent 与 pending state
   分裂。
+- 收紧 `RuntimeMutationLine`：生产代码只使用具名 mutation，不再暴露泛型
+  `transition_operation()` 写入口。Writer、completion proof、repair、blocked verdict 和
+  terminal commit 都有显式方法；task run 现在先 durable-accept operation，再做 recovery、
+  routing 或 Ghost work-item claim。terminal 二次提交必须匹配既有终态身份；冲突终态现在
+  fail closed。
 - 新增纯 `operation_reducer` 和 `drive.peek_next_action()`，支撑 manual drive 测试和恢复派发。
   `recovery.py` 现在执行 reducer action：provider unknown-outcome settlement、safe tool
   batch replay 和 interrupted-effect synthesis，不再靠缺失 event 推断恢复。
@@ -25,11 +30,12 @@
 
 验证：
 
-- `python -m pytest tests/test_runtime_mutation_line.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_result_delivery.py -q`（`81 passed, 31 subtests passed in 1.70s`）
-- `python -m pytest tests/test_architecture.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py -q`（`325 passed, 1 skipped, 297 subtests passed in 42.73s`）
-- `python -m pytest tests/test_architecture.py -q`（`74 passed, 294 subtests passed in 10.81s`）
-- `python -m compileall -q codey`（通过）
-- 全量 pytest：`python -m pytest -q`（`3548 passed, 16 skipped, 1262 subtests passed in 308.98s (0:05:08)`）
+- `python -m compileall -q codey tests`（通过）
+- `ruff check .`（通过）
+- targeted runtime/entry/server suite：
+  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py`
+  （`429 passed, 1 skipped in 61.16s`）
+- 全量 pytest：`pytest`（`3551 passed, 16 skipped in 296.67s (0:04:56)`）
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

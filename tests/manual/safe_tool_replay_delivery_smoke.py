@@ -25,7 +25,6 @@ from codey.runtime.effect_records import (
     new_effect_id,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import mark_writer_running
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
@@ -75,10 +74,10 @@ def run_self_test() -> int:
             max_repair_rounds=1,
             task_kind="project",
         )
-        mutations.transition_operation(
+        mutations.mark_writer_running(
             session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id="ScriptedProvider"),
+            provider_id="ScriptedProvider",
         )
 
         # 1. Simulate crashed turn 1:
@@ -240,10 +239,10 @@ def run_same_run_self_test() -> int:
             max_repair_rounds=1,
             task_kind="project",
         )
-        mutations.transition_operation(
+        mutations.mark_writer_running(
             session_id,
             run_id,
-            lambda state: mark_writer_running(state, provider_id="ScriptedProvider"),
+            provider_id="ScriptedProvider",
         )
 
         # 2 turns of safe tool execution then done

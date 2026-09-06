@@ -1,9 +1,9 @@
-"""Task entry commits its completion/repair lifecycle to runtime effects.
+"""Task entry commits its completion/repair lifecycle to runtime operation state.
 
-These tests prove the 0.5.1 contract end to end: the phases a project run
-passes through are visible on the durable counter while the run is alive,
-the terminal snapshot agrees with the final event and the run ledger, and
-the payload never carries raw prompt, diff, or failure output.
+These tests prove the durable operation contract end to end: the leaves a
+project run passes through are visible on the durable operation state while the
+run is alive, the terminal snapshot agrees with the final event and run ledger,
+and the payload never carries raw prompt, diff, or failure output.
 """
 
 from __future__ import annotations
@@ -34,13 +34,6 @@ from codey.runtime.operation_state import (
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
-    mark_completion_proof_recorded,
-    mark_repair_context_admitted,
-    mark_repair_running,
-    mark_repair_settled,
-    mark_terminal,
-    mark_writer_running,
-    mark_writer_settled,
     lane_for_run,
     operation_id_for_run,
 )
@@ -322,10 +315,10 @@ class CleanRunTerminalTests(unittest.TestCase):
                 task_kind="project",
             )
             assert started is not None
-            crashed_state.runtime_mutations.transition_operation(
+            crashed_state.runtime_mutations.mark_writer_running(
                 SESSION,
                 run_id,
-                lambda item: mark_writer_running(item, provider_id="deepseek"),
+                provider_id="deepseek",
             )
             crashed_state.release_run(run_id)
 
@@ -647,24 +640,37 @@ class CrashPositionTests(unittest.TestCase):
     def test_every_crash_position_reads_back_with_honest_progress(self) -> None:
         positions = [
             (
-                [lambda s: mark_writer_running(s, provider_id="deepseek")],
+                [lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek")],
                 LEAF_WRITER_RUNNING,
                 "Writing was interrupted",
             ),
             (
                 [
-                    lambda s: mark_writer_running(s, provider_id="deepseek"),
-                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
+                    lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_writer_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        turns_used=4,
+                        stop_reason="done",
+                    ),
                 ],
                 LEAF_WRITER_SETTLED,
                 "Completion check was interrupted",
             ),
             (
                 [
-                    lambda s: mark_writer_running(s, provider_id="deepseek"),
-                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
-                    lambda s: mark_completion_proof_recorded(
-                        s,
+                    lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_writer_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        turns_used=4,
+                        stop_reason="done",
+                    ),
+                    lambda line: line.record_completion_proof(
+                        SESSION,
+                        "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
@@ -675,17 +681,34 @@ class CrashPositionTests(unittest.TestCase):
             ),
             (
                 [
-                    lambda s: mark_writer_running(s, provider_id="deepseek"),
-                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
-                    lambda s: mark_completion_proof_recorded(
-                        s,
+                    lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_writer_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        turns_used=4,
+                        stop_reason="done",
+                    ),
+                    lambda line: line.record_completion_proof(
+                        SESSION,
+                        "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),
-                    lambda s: mark_repair_context_admitted(s, context_ref="sha256:" + "a" * 64),
-                    lambda s: mark_repair_running(s, provider_id="deepseek"),
-                    lambda s: mark_repair_settled(s, provider_id="deepseek", stop_reason="done", turns_used=6),
+                    lambda line: line.admit_repair_context(
+                        SESSION,
+                        "run-crash",
+                        context_ref="sha256:" + "a" * 64,
+                    ),
+                    lambda line: line.mark_repair_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_repair_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        stop_reason="done",
+                        turns_used=6,
+                    ),
                 ],
                 LEAF_REPAIR_SETTLED,
                 # The repair is over; what was interrupted is the
@@ -694,10 +717,17 @@ class CrashPositionTests(unittest.TestCase):
             ),
             (
                 [
-                    lambda s: mark_writer_running(s, provider_id="deepseek"),
-                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
-                    lambda s: mark_completion_proof_recorded(
-                        s,
+                    lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_writer_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        turns_used=4,
+                        stop_reason="done",
+                    ),
+                    lambda line: line.record_completion_proof(
+                        SESSION,
+                        "run-crash",
                         proof_ref="completion_proof:" + "a" * 16,
                         proof_status="complete",
                         proof_satisfied=True,
@@ -710,22 +740,33 @@ class CrashPositionTests(unittest.TestCase):
             ),
             (
                 [
-                    lambda s: mark_writer_running(s, provider_id="deepseek"),
-                    lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
-                    lambda s: mark_completion_proof_recorded(
-                        s,
+                    lambda line: line.mark_writer_running(SESSION, "run-crash", provider_id="deepseek"),
+                    lambda line: line.mark_writer_settled(
+                        SESSION,
+                        "run-crash",
+                        provider_id="deepseek",
+                        turns_used=4,
+                        stop_reason="done",
+                    ),
+                    lambda line: line.record_completion_proof(
+                        SESSION,
+                        "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
                         proof_satisfied=False,
                     ),
-                    lambda s: mark_repair_context_admitted(s, context_ref="sha256:" + "a" * 64),
-                    lambda s: mark_repair_running(s, provider_id="deepseek"),
+                    lambda line: line.admit_repair_context(
+                        SESSION,
+                        "run-crash",
+                        context_ref="sha256:" + "a" * 64,
+                    ),
+                    lambda line: line.mark_repair_running(SESSION, "run-crash", provider_id="deepseek"),
                 ],
                 LEAF_REPAIR_RUNNING,
                 "Stopped during repair",
             ),
         ]
-        for transitions, expected_phase, expected_text in positions:
+        for commits, expected_phase, expected_text in positions:
             with self.subTest(phase=expected_phase):
                 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                     state_home = Path(td) / "state"
@@ -741,12 +782,12 @@ class CrashPositionTests(unittest.TestCase):
                         max_repair_rounds=1,
                     )
                     assert started is not None
-                    for transition in transitions:
+                    for commit in commits:
                         # A crash means no further commits happen; the last
                         # committed phase must survive on disk.
                         current = store.load(SESSION, "run-crash")
                         assert current is not None
-                        line.transition_operation(SESSION, "run-crash", transition)
+                        commit(line)
 
                     # The run opened a ledger but never wrote run_finished.
                     ledgers = RuntimeOperationLedgersStub(state_home)
@@ -784,10 +825,10 @@ class CrashPositionTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             assert started is not None
-            line.transition_operation(
+            line.mark_writer_running(
                 SESSION,
                 "run-stale",
-                lambda s: mark_writer_running(s, provider_id="deepseek"),
+                provider_id="deepseek",
             )
 
             ledgers = RuntimeOperationLedgersStub(state_home)
@@ -827,17 +868,14 @@ class CrashPositionTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             assert started is not None
-            line.transition_operation(
+            line.mark_terminal(
                 SESSION,
                 "run-done",
-                lambda s: mark_terminal(
-                    s,
-                    stop_reason="done",
-                    summary_chars=3,
-                    turns=2,
-                    max_turns=6,
-                    provider="deepseek",
-                ),
+                stop_reason="done",
+                summary_chars=3,
+                turns=2,
+                max_turns=6,
+                provider="deepseek",
             )
 
             summary = load_run_details(

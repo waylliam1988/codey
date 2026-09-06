@@ -11,10 +11,9 @@ from codey.runtime.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
-    new_effect_id,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import RuntimeOperationStore, mark_writer_running
+from codey.runtime.operation_state import RuntimeOperationStore
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import (
     RuntimeLogCorruption,
@@ -350,7 +349,6 @@ class RuntimeSessionLogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td), max_log_bytes=16000)
             operations = RuntimeOperationStore(log)
-            effects = RuntimeEffectStore(log)
             mutations = RuntimeMutationLine(log)
             started = mutations.accept_operation(
                 session_id="s1",
@@ -362,10 +360,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 task_kind="project",
             )
             assert started is not None
-            mutations.transition_operation(
+            mutations.mark_writer_running(
                 "s1",
                 "run-1",
-                lambda state: mark_writer_running(state, provider_id="deepseek"),
+                provider_id="deepseek",
             )
 
             read_id = "eff_read_compact"
