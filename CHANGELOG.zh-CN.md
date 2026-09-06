@@ -27,6 +27,13 @@
 - operation-state projection 遇到当前 operation 最新 state entry 坏账或跨 run 边界时
   fail closed，不再回退到更旧 leaf。Delivery recovered fact 现在要求匹配
   `tool_delivery_pending` leaf，确保 recovered delivery 写入仍绑定 durable state machine。
+- project-completion 在 operation accepted 之后的 runtime mutation 现在 fail closed：
+  writer-running、writer-settled、completion-proof、repair 与 blocked-verdict commit
+  失败时会抛出具名 `ProjectRuntimeMutationError`，不再把 mutation failure 抹平成
+  `operation = None` 后继续执行后续业务 effect。
+- 新增 adversarial crash 覆盖：accept mutation 前/中/后、provider unknown recovery
+  连续执行、safe-batch recovery 连续执行且 durable snapshot 完全一致、最新
+  operation state 坏账，以及 terminal state/settlement torn tail 的两种排列。
 - 删除旧的 `runtime/reducer.py`、`runtime/scheduler.py` 和 `runtime/effects.py` 形态。
   `RuntimeOperationStore` 现在只做读取投影，不再暴露 `start`、`commit` 或 session deletion
   这种业务写入口。
@@ -38,9 +45,12 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - targeted runtime/entry/server suite：
-  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
-  （`449 passed, 1 skipped in 62.39s`）
-- 全量 pytest：`pytest`（`3555 passed, 16 skipped in 288.09s (0:04:48)`）
+  `pytest tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_mutation_line.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
+  （`398 passed, 1 skipped in 55.93s`）
+- focused adversarial/runtime suite：
+  `pytest tests/test_task_entry_operation_state.py tests/test_runtime_mutation_line.py tests/test_runtime_session_log.py tests/test_tool_result_delivery.py tests/test_project_completion_flow_enforcement.py tests/test_architecture.py`
+  （`177 passed in 21.16s`）
+- 全量 pytest：`pytest`（`3561 passed, 16 skipped in 286.10s (0:04:46)`）
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

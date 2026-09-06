@@ -70,6 +70,7 @@ from codey.runtime.operation_state import (
 )
 from codey.runtime.events import RunEvent
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.session_log import RuntimeLogError
 from codey.runtime.terminalizer import task_done_event
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
@@ -139,6 +140,10 @@ class ProjectCompletionDeps:
     review: ReviewAccess
     runtime: RuntimeAccess
     persistence: PersistenceAccess = field(default_factory=PersistenceAccess)
+
+
+class ProjectRuntimeMutationError(RuntimeError):
+    """A required project runtime fact could not be committed."""
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -753,22 +758,39 @@ def _sync_failover_frame(ctx: _ProjectRun) -> None:
 
 def _commit_runtime_operation(
     ctx: _ProjectRun,
+    step: str,
     commit: Callable[[Any, str, str], object | None],
 ) -> None:
     operation = ctx.work.operation
     mutations = ctx.deps.runtime.mutations
-    if operation is None or mutations is None:
+    if operation is None and mutations is None:
         return
+    if operation is None:
+        raise ProjectRuntimeMutationError(
+            f"runtime operation missing while committing {step}"
+        )
+    if mutations is None:
+        raise ProjectRuntimeMutationError(
+            f"runtime mutation line missing while committing {step}"
+        )
     try:
-        ctx.work.operation = commit(mutations, operation.session_id, operation.run_id)
-    except (OSError, ValueError, RuntimeOperationTransitionError):
-        ctx.work.operation = None
+        committed = commit(mutations, operation.session_id, operation.run_id)
+    except (OSError, ValueError, RuntimeOperationTransitionError, RuntimeLogError) as exc:
+        raise ProjectRuntimeMutationError(
+            f"runtime mutation failed while committing {step}: {exc}"
+        ) from exc
+    if committed is None:
+        raise ProjectRuntimeMutationError(
+            f"runtime mutation produced no operation while committing {step}"
+        )
+    ctx.work.operation = committed
 
 
 def _run_writer_phase(ctx: _ProjectRun) -> None:
     ctx.failover = _build_writer_failover(ctx)
     _commit_runtime_operation(
         ctx,
+        "mark_writer_running",
         lambda mutations, session_id, run_id: mutations.mark_writer_running(
             session_id,
             run_id,
@@ -791,6 +813,7 @@ def _run_writer_phase(ctx: _ProjectRun) -> None:
         _sync_failover_frame(ctx)
     _commit_runtime_operation(
         ctx,
+        "mark_writer_settled",
         lambda mutations, session_id, run_id: mutations.mark_writer_settled(
             session_id,
             run_id,
@@ -1081,6 +1104,7 @@ def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
         return
     _commit_runtime_operation(
         ctx,
+        "record_completion_proof",
         lambda mutations, session_id, run_id: mutations.record_completion_proof(
             session_id,
             run_id,
@@ -1176,6 +1200,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
     ctx.repair_projection = projection
     _commit_runtime_operation(
         ctx,
+        "admit_repair_context",
         lambda mutations, session_id, run_id: mutations.admit_repair_context(
             session_id,
             run_id,
@@ -1189,6 +1214,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
     )
     _commit_runtime_operation(
         ctx,
+        "mark_repair_running",
         lambda mutations, session_id, run_id: mutations.mark_repair_running(
             session_id,
             run_id,
@@ -1210,6 +1236,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         ctx.blocked_reason = "provider_failure"
         _commit_runtime_operation(
             ctx,
+            "mark_repair_settled",
             lambda mutations, session_id, run_id: mutations.mark_repair_settled(
                 session_id,
                 run_id,
@@ -1232,6 +1259,7 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             )
         _commit_runtime_operation(
             ctx,
+            "mark_repair_settled",
             lambda mutations, session_id, run_id: mutations.mark_repair_settled(
                 session_id,
                 run_id,
@@ -1312,6 +1340,7 @@ def _settle_blocked_completion(ctx: _ProjectRun) -> None:
     ):
         _commit_runtime_operation(
             ctx,
+            "mark_completion_blocked",
             lambda mutations, session_id, run_id: mutations.mark_completion_blocked(
                 session_id,
                 run_id,

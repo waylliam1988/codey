@@ -1667,9 +1667,14 @@ invalid_tool_called / max_turns / cancelled 的 terminal 分类在一个地方�
 total transition table 拒绝非法 phase / transition
 terminal 后不能继续写 business phase
 provider intent 无 settlement -> unknown outcome recovery
+provider unknown recovery 连续执行不追加重复 settlement，operation/effect/delivery snapshot 不变
 全安全、未发送的 tool batch 无 settlement -> safe batch replay
+safe batch recovery 连续 restart/recover 后 durable snapshot 不变
 不可安全重放的 pending tool effect -> synthetic interruption
 tool effect 完成但 delivery 未完成 -> tool_delivery_pending recovery
+accept mutation 前/中/后 crash 都能得到唯一 durable state
+terminal operation_state / operation_settled torn tail 会修剪回 canonical state
+project completion required runtime mutation 失败不能降级为 operation=None 后继续业务 effect
 invalid_tool_called 不会绕过 terminal/proof 分类
 completion proof failed 后，repair 是否允许由 state/action 决定
 production 不 import tests.manual

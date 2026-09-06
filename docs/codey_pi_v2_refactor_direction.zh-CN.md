@@ -446,9 +446,14 @@ completion proof 负责 done 是否可信
 
 ```text
 test_runtime_drive_provider_unknown_outcome
+test_runtime_drive_repeated_provider_unknown_outcome
 test_runtime_drive_safe_tool_replay
+test_runtime_drive_repeated_safe_tool_replay_snapshot_stability
 test_runtime_drive_unsafe_tool_interruption
 test_runtime_drive_delivery_pending_recovery
+test_runtime_mutation_line_accept_crash_matrix
+test_runtime_session_log_torn_terminal_tail
+test_project_completion_runtime_mutation_fail_closed
 test_runtime_drive_invalid_tool_no_followup
 test_runtime_drive_cancel_to_terminal
 ```
@@ -476,6 +481,11 @@ test_runtime_drive_cancel_to_terminal
 OperationState 是 closed/total transition table
 RuntimeAction reducer 是 pure function
 provider/tool/delivery/recovery 的关键路径都能从 state 推出下一步
+provider unknown outcome 重复 recovery 不追加重复 settlement
+safe tool batch 重复 recovery 不改变 durable operation/effect/delivery snapshot
+accept mutation 前/中/后 crash 能收敛到唯一 operation state
+terminal state/settled torn tail 能被修剪回 canonical state 后再 reducer dispatch
+project completion 内部 required runtime mutation 失败不会被抹平成 operation=None 后继续业务 effect
 RuntimeSessionLog 只有 mutate()，没有 append()/append_many()
 生产代码只有 RuntimeMutationLine 调用 RuntimeSessionLog.mutate()
 RuntimeMutationLine 不暴露泛型 transition_operation() public surface

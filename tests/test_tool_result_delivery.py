@@ -1086,6 +1086,41 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         deps.runtime_mutations = RuntimeMutationLine(log)
         return deps, log, RuntimeOperationStore(log)
 
+    def _durable_snapshot(
+        self,
+        log: RuntimeSessionLog,
+        operations: RuntimeOperationStore,
+        effects: RuntimeEffectStore,
+        delivery: ToolResultDeliveryStore,
+    ) -> tuple[object, ...]:
+        operation = operations.load(self.session_id, self.run_id)
+        return (
+            tuple(entry.to_payload() for entry in log.entries(self.session_id)),
+            None if operation is None else operation.to_payload(),
+            tuple(
+                (
+                    item.intent.effect_id,
+                    item.intent.to_payload(),
+                    None if item.settlement is None else item.settlement.to_payload(),
+                )
+                for item in effects.load_effects(self.session_id, self.run_id)
+            ),
+            tuple(
+                (
+                    item.intent.batch_id,
+                    item.intent.to_payload(),
+                    item.send_attempts,
+                    item.delivered_effect_ids,
+                    item.is_delivered,
+                    item.recovered_effect_ids,
+                    item.recovered_reads,
+                    item.recovered_lookups,
+                    item.is_recovered,
+                )
+                for item in delivery.load_batches(self.session_id, self.run_id)
+            ),
+        )
+
     def test_provider_unknown_outcome_recovery_records_maybe_sent_once(self) -> None:
         provider_effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
         self.line.begin_provider_effect(
@@ -1093,6 +1128,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             self.run_id,
             self._provider_intent(provider_effect_id),
         )
+        provider_observed_requests = ("sent-before-crash",)
 
         recovery = recover_effects_for_resume(
             self._deps(),
@@ -1117,6 +1153,12 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
         committed_count = len(self.log.entries(self.session_id))
+        expected_snapshot = self._durable_snapshot(
+            self.log,
+            self.operations,
+            self.effects,
+            self.delivery,
+        )
 
         for _ in range(3):
             deps, restart_log, restart_operations = self._fresh_restart_deps()
@@ -1133,6 +1175,16 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             state = restart_operations.load(self.session_id, self.run_id)
             assert state is not None
             self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+            self.assertEqual(
+                self._durable_snapshot(
+                    restart_log,
+                    restart_operations,
+                    deps.runtime_effects,
+                    deps.tool_result_delivery,
+                ),
+                expected_snapshot,
+            )
+            self.assertEqual(provider_observed_requests, ("sent-before-crash",))
 
     def test_multi_safe_tools_one_settled_one_pending_reconstructs_full_batch(self) -> None:
         # Simulate turn 1: model called read and search
@@ -1215,26 +1267,42 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
         committed_count = len(self.log.entries(self.session_id))
-
-        deps, restart_log, restart_operations = self._fresh_restart_deps()
-        repeated = recover_effects_for_resume(
-            deps,
-            session_id=self.session_id,
-            run_id=self.run_id,
-            project=str(self.project_dir),
-            task_kind="project",
+        expected_snapshot = self._durable_snapshot(
+            self.log,
+            self.operations,
+            self.effects,
+            self.delivery,
         )
 
-        self.assertTrue(repeated.ok)
-        self.assertEqual(len(repeated.recovered_tool_outcomes), 2)
-        self.assertEqual(
-            tuple(item.effect_id for item in repeated.recovered_tool_outcomes),
-            (eff_read, eff_search),
-        )
-        self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
-        state = restart_operations.load(self.session_id, self.run_id)
-        assert state is not None
-        self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+        for _ in range(3):
+            deps, restart_log, restart_operations = self._fresh_restart_deps()
+            repeated = recover_effects_for_resume(
+                deps,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                project=str(self.project_dir),
+                task_kind="project",
+            )
+
+            self.assertTrue(repeated.ok)
+            self.assertEqual(len(repeated.recovered_tool_outcomes), 2)
+            self.assertEqual(
+                tuple(item.effect_id for item in repeated.recovered_tool_outcomes),
+                (eff_read, eff_search),
+            )
+            self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
+            state = restart_operations.load(self.session_id, self.run_id)
+            assert state is not None
+            self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+            self.assertEqual(
+                self._durable_snapshot(
+                    restart_log,
+                    restart_operations,
+                    deps.runtime_effects,
+                    deps.tool_result_delivery,
+                ),
+                expected_snapshot,
+            )
 
     def test_run_details_merges_delivery_reads_and_runtime_lookups(self) -> None:
         # read settled (fact only in delivery) + search pending (replay in runtime effects)

@@ -34,6 +34,15 @@
   older leaf. Delivery recovered facts now require the matching
   `tool_delivery_pending` leaf, keeping recovered delivery writes tied to the
   durable state machine.
+- Made project-completion runtime mutations fail closed after operation accept:
+  writer-running, writer-settled, completion-proof, repair, and blocked-verdict
+  commits now raise a named `ProjectRuntimeMutationError` instead of collapsing
+  mutation failure into `operation = None` and letting later business effects
+  continue.
+- Added adversarial crash coverage for accept before/during/after mutation,
+  repeated provider-unknown recovery, repeated safe-batch recovery with exact
+  durable snapshots, corrupt latest operation state, and torn terminal
+  state/settlement tails.
 - Removed the obsolete `runtime/reducer.py`, `runtime/scheduler.py`, and
   `runtime/effects.py` runtime shapes. `RuntimeOperationStore` is now a read
   projection only; it no longer exposes `start`, `commit`, or session deletion
@@ -46,9 +55,12 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - Targeted runtime/entry/server suite:
-  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
-  (`449 passed, 1 skipped in 62.39s`)
-- Full pytest suite: `pytest` (`3555 passed, 16 skipped in 288.09s (0:04:48)`)
+  `pytest tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_mutation_line.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_project_completion_flow_enforcement.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
+  (`398 passed, 1 skipped in 55.93s`)
+- Focused adversarial/runtime suite:
+  `pytest tests/test_task_entry_operation_state.py tests/test_runtime_mutation_line.py tests/test_runtime_session_log.py tests/test_tool_result_delivery.py tests/test_project_completion_flow_enforcement.py tests/test_architecture.py`
+  (`177 passed in 21.16s`)
+- Full pytest suite: `pytest` (`3561 passed, 16 skipped in 286.10s (0:04:46)`)
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from codey.runtime.session_projection import reduce_session
+from codey.runtime.drive import peek_next_action
 from codey.runtime.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
@@ -13,7 +14,12 @@ from codey.runtime.effect_records import (
     RuntimeEffectStore,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import RuntimeOperationStore
+from codey.runtime.operation_reducer import ACTION_CONTINUE
+from codey.runtime.operation_state import (
+    LEAF_WRITER_RUNNING,
+    RuntimeOperationStore,
+    mark_terminal,
+)
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import (
     RuntimeLogCorruption,
@@ -198,6 +204,107 @@ class RuntimeSessionLogTests(unittest.TestCase):
             projection = reduce_session(log.read("s1"))
 
         self.assertEqual(projection.operations["op-1"].outcome, "aborted")
+
+    def test_torn_terminal_state_and_settlement_orders_repair_to_canonical_state(self) -> None:
+        for case, first_payloads, trailing_payload in (
+            (
+                "effect_state_then_settled",
+                ("effect", "state"),
+                "settled",
+            ),
+            (
+                "effect_settled_then_state",
+                ("effect", "settled"),
+                "state",
+            ),
+        ):
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as td:
+                    log = RuntimeSessionLog(Path(td))
+                    line = RuntimeMutationLine(log)
+                    line.accept_operation(
+                        session_id="s1",
+                        run_id="run-torn-terminal",
+                        project="",
+                        provider_id="deepseek",
+                        turn_budget=5,
+                        max_repair_rounds=1,
+                        task_kind="project",
+                    )
+                    running = line.mark_writer_running(
+                        "s1",
+                        "run-torn-terminal",
+                        provider_id="deepseek",
+                    )
+                    assert running is not None
+                    terminal = mark_terminal(
+                        running,
+                        stop_reason="error",
+                        summary_chars=5,
+                        turns=1,
+                        max_turns=5,
+                        provider="deepseek",
+                    )
+                    payloads = {
+                        "effect": (
+                            "operation_effect",
+                            {"effect_kind": "runtime_effect", "ref": "effect:torn"},
+                        ),
+                        "state": ("operation_state", terminal.to_payload()),
+                        "settled": ("operation_settled", {"outcome": "failed"}),
+                    }
+
+                    path = log.path_for("s1")
+                    batch_id = f"batch-torn-terminal-{case}"
+                    with path.open("ab") as handle:
+                        for index, name in enumerate(first_payloads):
+                            kind, payload = payloads[name]
+                            handle.write(
+                                RuntimeLogEntry(
+                                    session_id="s1",
+                                    lane=running.lane,
+                                    operation_id=running.operation_id,
+                                    kind=kind,
+                                    payload=payload,
+                                    batch_id=batch_id,
+                                    batch_index=index,
+                                    batch_count=3,
+                                ).to_json_line().encode("utf-8")
+                            )
+                        kind, payload = payloads[trailing_payload]
+                        handle.write(
+                            RuntimeLogEntry(
+                                session_id="s1",
+                                lane=running.lane,
+                                operation_id=running.operation_id,
+                                kind=kind,
+                                payload=payload,
+                                batch_id=f"batch-after-crash-{case}",
+                                batch_index=0,
+                                batch_count=1,
+                            ).to_json_line().encode("utf-8")
+                        )
+
+                    repaired_entries = log.entries("s1")
+                    recovered = RuntimeOperationStore(log).load("s1", "run-torn-terminal")
+                    assert recovered is not None
+                    action = peek_next_action(
+                        log,
+                        session_id="s1",
+                        run_id="run-torn-terminal",
+                    )
+                    projection = reduce_session(repaired_entries)
+
+                    self.assertEqual(recovered.leaf, LEAF_WRITER_RUNNING)
+                    self.assertEqual(action.kind, ACTION_CONTINUE)
+                    self.assertEqual(
+                        projection.operations[running.operation_id].status,
+                        "open",
+                    )
+                    self.assertEqual(
+                        projection.operations[running.operation_id].effect_refs,
+                        [],
+                    )
 
     def test_projection_cache_replays_after_external_append_changes_file_size(self) -> None:
         with tempfile.TemporaryDirectory() as td:

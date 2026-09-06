@@ -28,12 +28,14 @@ from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.runtime.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
+    LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
     LEAF_TERMINAL,
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
+    RuntimeOperationTransitionError,
     lane_for_run,
     operation_id_for_run,
 )
@@ -221,6 +223,16 @@ def _runtime_outcome(state: server.AppContext, run_id: str) -> str:
     return projection.operations[operation_id_for_run(run_id)].outcome
 
 
+def _operation_leaf_sequence(state: server.AppContext, run_id: str) -> list[str]:
+    assert state.runtime_log is not None
+    op_id = operation_id_for_run(run_id)
+    return [
+        str(entry.payload["leaf"])
+        for entry in state.runtime_log.read(SESSION)
+        if entry.operation_id == op_id and entry.kind == "operation_state"
+    ]
+
+
 class CleanRunTerminalTests(unittest.TestCase):
     def test_clean_success_commits_terminal_matching_event_and_ledger(self) -> None:
         writer = ObservingWriter(
@@ -398,6 +410,125 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             self.assertIsNone(state.current_run())
             self.assertFalse(state.is_busy())
 
+    def test_writer_running_mutation_failure_stops_before_agent_run(self) -> None:
+        writer = ObservingWriter(
+            ([], RunResult("should not run", "done", 1)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.AppContext(Path(td) / "state")
+
+            assert state.runtime_mutations is not None
+            with mock.patch.object(
+                state.runtime_mutations,
+                "mark_writer_running",
+                side_effect=RuntimeOperationTransitionError("disk full"),
+            ):
+                event = _run(_runner(state, writer), state, project, writer)
+
+            run_id = str(event["run_id"])
+            self.assertEqual(writer.calls, [])
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("mark_writer_running", str(event["summary"]))
+            self.assertEqual(
+                _operation_leaf_sequence(state, run_id),
+                [LEAF_ACCEPTED, LEAF_TERMINAL],
+            )
+            self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
+            self.assertFalse(state.is_busy())
+
+    def test_writer_settled_mutation_failure_skips_completion_enforcement(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.AppContext(Path(td) / "state")
+
+            assert state.runtime_mutations is not None
+            with mock.patch.object(
+                state.runtime_mutations,
+                "mark_writer_settled",
+                side_effect=RuntimeOperationTransitionError("disk full"),
+            ):
+                event = _run(_runner(state, writer), state, project, writer)
+
+            run_id = str(event["run_id"])
+            self.assertEqual(len(writer.calls), 1)
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("mark_writer_settled", str(event["summary"]))
+            self.assertEqual(
+                _operation_leaf_sequence(state, run_id),
+                [LEAF_ACCEPTED, LEAF_WRITER_RUNNING, LEAF_TERMINAL],
+            )
+            self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
+
+    def test_completion_proof_mutation_failure_skips_repair(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(False)], RunResult("done?", "done", 4)),
+            ([_edit_event(), _run_event(True)], RunResult("fixed", "done", 1)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.AppContext(Path(td) / "state")
+
+            assert state.runtime_mutations is not None
+            with mock.patch.object(
+                state.runtime_mutations,
+                "record_completion_proof",
+                side_effect=RuntimeOperationTransitionError("disk full"),
+            ):
+                event = _run(_runner(state, writer), state, project, writer)
+
+            run_id = str(event["run_id"])
+            self.assertEqual(len(writer.calls), 1)
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("record_completion_proof", str(event["summary"]))
+            self.assertEqual(
+                _operation_leaf_sequence(state, run_id),
+                [
+                    LEAF_ACCEPTED,
+                    LEAF_WRITER_RUNNING,
+                    LEAF_WRITER_SETTLED,
+                    LEAF_TERMINAL,
+                ],
+            )
+            self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
+
+    def test_repair_running_mutation_failure_stops_before_repair_agent_run(self) -> None:
+        writer = ObservingWriter(
+            ([_edit_event(), _run_event(False)], RunResult("done?", "done", 4)),
+            ([_edit_event(), _run_event(True)], RunResult("fixed", "done", 1)),
+        )
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            project = _pytest_project(Path(td))
+            state = server.AppContext(Path(td) / "state")
+
+            assert state.runtime_mutations is not None
+            with mock.patch.object(
+                state.runtime_mutations,
+                "mark_repair_running",
+                side_effect=RuntimeOperationTransitionError("disk full"),
+            ):
+                event = _run(_runner(state, writer), state, project, writer)
+
+            run_id = str(event["run_id"])
+            self.assertEqual(len(writer.calls), 1)
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("mark_repair_running", str(event["summary"]))
+            self.assertEqual(
+                _operation_leaf_sequence(state, run_id),
+                [
+                    LEAF_ACCEPTED,
+                    LEAF_WRITER_RUNNING,
+                    LEAF_WRITER_SETTLED,
+                    LEAF_COMPLETION_PROOF_RECORDED,
+                    LEAF_REPAIR_CONTEXT_ADMITTED,
+                    LEAF_TERMINAL,
+                ],
+            )
+            self.assertEqual(_operation(state, run_id).leaf, LEAF_TERMINAL)
+
     def test_research_terminal_uses_request_budget_for_runtime_phase(self) -> None:
         writer = ObservingWriter()
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -486,12 +617,11 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertEqual(runtime_outcome, "aborted")
 
 
-class NonBoolSatisfiedWiringTests(unittest.TestCase):
-    def test_fake_proof_with_int_satisfied_disables_runtime_tracking_only(self) -> None:
-        # Task entry passes the proof's facts through uncoerced: the strict
-        # helper validates them. A proof carrying satisfied=1 (an int)
-        # disables explanatory operation tracking, but it must not perturb
-        # the user-visible task result.
+class InvalidRuntimeProofWiringTests(unittest.TestCase):
+    def test_fake_proof_with_int_satisfied_fails_closed(self) -> None:
+        # Task entry passes the proof's facts through uncoerced so the strict
+        # runtime helper validates them. A bad internal proof payload is a
+        # runtime mutation failure, not a reason to continue without tracking.
         writer = ObservingWriter(
             ([_edit_event(), _run_event(True)], RunResult("implemented", "done", 3)),
         )
@@ -512,11 +642,11 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
                 event = _run(_runner(state, writer), state, project, writer)
 
             operation = _operation(state, str(event["run_id"]))
-            self.assertEqual(event["stop_reason"], "done")
-            self.assertEqual(event["summary"], "implemented")
+            self.assertEqual(event["stop_reason"], "error")
+            self.assertIn("record_completion_proof", str(event["summary"]))
             self.assertEqual(operation.leaf, LEAF_TERMINAL)
             assert operation.terminal is not None
-            self.assertEqual(operation.terminal.stop_reason, "done")
+            self.assertEqual(operation.terminal.stop_reason, "error")
             self.assertIsNone(operation.completion_proof_satisfied)
 
 

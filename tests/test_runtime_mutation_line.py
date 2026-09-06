@@ -28,9 +28,11 @@ from codey.runtime.operation_state import (
     LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
+    new_operation_state,
+    operation_started_entry,
 )
 from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -104,6 +106,71 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertEqual(self.operations.load(self.session_id, self.run_id).leaf, LEAF_ACCEPTED)
         projection = self.log.projection(self.session_id)
         self.assertEqual(projection.operations[state.operation_id].status, "open")
+
+    def test_accept_operation_crash_matrix_converges_to_one_open_state(self) -> None:
+        # Crash before mutation: no durable fact exists yet.
+        self.assertIsNone(self.operations.load(self.session_id, "run-accept-before"))
+
+        # Crash during mutation: an incomplete accept batch is tail-repaired
+        # away, so the next accept can commit one canonical operation.
+        torn_state = new_operation_state(
+            session_id=self.session_id,
+            run_id="run-accept-during",
+            project="",
+            provider_id="mock",
+            turn_budget=5,
+            max_repair_rounds=1,
+            task_kind="project",
+        )
+        torn_started = operation_started_entry(torn_state)
+        torn_row = RuntimeLogEntry(
+            session_id=self.session_id,
+            lane=str(torn_started["lane"]),
+            operation_id=str(torn_started["operation_id"]),
+            kind=str(torn_started["kind"]),
+            payload=dict(torn_started["payload"]),
+            batch_id="batch-torn-accept",
+            batch_index=0,
+            batch_count=2,
+        )
+        path = self.log.path_for(self.session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("ab") as handle:
+            handle.write(torn_row.to_json_line().encode("utf-8"))
+
+        restarted_log = RuntimeSessionLog(Path(self.temp_dir.name))
+        restarted_line = RuntimeMutationLine(restarted_log)
+        self.assertEqual(restarted_log.entries(self.session_id), ())
+        accepted = restarted_line.accept_operation(
+            session_id=self.session_id,
+            run_id="run-accept-during",
+            project="",
+            provider_id="mock",
+            turn_budget=5,
+            max_repair_rounds=1,
+            task_kind="project",
+        )
+        self.assertIsNotNone(accepted)
+        self.assertEqual(
+            [entry.kind for entry in restarted_log.entries(self.session_id)],
+            ["operation_started", "operation_state"],
+        )
+
+        # Crash after mutation: the next accept is idempotent and appends no
+        # extra rows.
+        before = len(restarted_log.entries(self.session_id))
+        same = restarted_line.accept_operation(
+            session_id=self.session_id,
+            run_id="run-accept-during",
+            project="",
+            provider_id="mock",
+            turn_budget=5,
+            max_repair_rounds=1,
+            task_kind="project",
+        )
+        self.assertIsNotNone(same)
+        self.assertEqual(same.leaf, LEAF_ACCEPTED)
+        self.assertEqual(len(restarted_log.entries(self.session_id)), before)
 
     def test_begin_tool_batch_commits_effects_delivery_and_pending_state(self) -> None:
         self._accept_and_run_writer()
