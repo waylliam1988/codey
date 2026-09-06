@@ -500,6 +500,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("affinity", repair_source.casefold())
         self.assertNotIn("codey.ghost", tool_runtime_imports)
 
+    def test_ghost_package_root_has_small_public_surface(self) -> None:
+        source = (ROOT / "codey" / "ghost" / "__init__.py").read_text(encoding="utf-8")
+
+        self.assertIn('"GhostControlSurface"', source)
+        self.assertNotIn("GhostHebbianStore", source)
+        self.assertNotIn("GhostAffinityStore", source)
+        self.assertNotIn("GhostSleepStore", source)
+        self.assertNotIn("GhostRouter", source)
+
     def test_context_epoch_is_projection_only_leaf(self) -> None:
         # Context Epoch projects admission metadata over already-rendered
         # sources; it must stay a stdlib-only leaf with no runtime imports
