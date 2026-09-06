@@ -306,9 +306,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const data = await r.json()", block)
         self.assertIn("if (data.event) handleServerEvent(data.event)", block)
         self.assertIn("data.continuation_requested && !data.continued && !data.stopped", block)
-        self.assertIn("showCommandContinuationError(errorEl)", block)
+        self.assertIn("showCommandContinuationError(errorEl, data.retry_after)", block)
         self.assertIn("removeShellRequest(sid, data.id)", HTML)
         self.assertIn("function removeShellRequest(sessionId, approvalId)", HTML)
+        self.assertIn("Run slot busy; retry after ${retryAfter}s", HTML)
 
     def test_ghost_post_turn_warning_is_rendered_as_quiet_info(self) -> None:
         start = HTML.index("if (data.type === 'ghost_post_turn_warning')")
@@ -332,6 +333,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (data.type === 'providers')", HTML)
         self.assertIn("applyProviderStatus(data.providers)", HTML)
         self.assertIn("providerUpdatedAt[item.id] > snapshotTime", PROVIDER_UI_JS)
+        self.assertIn("providerUpdatedAt.local = Date.now()", PROVIDER_UI_JS)
         self.assertNotIn("fetchTime < lastAppliedSSETime", PROVIDER_UI_JS)
         self.assertIn("data.provider_failure.action === 'connect'", HTML)
         self.assertIn("applyProviderStatus([{ id: data.provider, available: false }])", HTML)
@@ -679,6 +681,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("reason === 'stopped'", done_block)
         self.assertIn("Stopped after ${turns} turn", done_block)
         self.assertIn("type: 'pause', text: label", done_block)
+
+    def test_error_terminal_event_renders_error_row(self) -> None:
+        done_start = HTML.index("if (data.type === 'task_done')")
+        done_end = HTML.index("if (data.type === 'shell_request')", done_start)
+        done_block = HTML[done_start:done_end]
+
+        self.assertIn("reason === 'error'", done_block)
+        self.assertIn("const text = summary || 'Task failed';", done_block)
+        self.assertIn("type: 'err', text, sessionId: sid, runId, eventKey: terminalKey", done_block)
 
     def test_consensus_has_no_visible_ui_mode(self) -> None:
         self.assertNotIn("MoA", HTML)

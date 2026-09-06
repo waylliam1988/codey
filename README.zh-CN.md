@@ -2,13 +2,13 @@
 
 **让你已经能用的网页 AI，安全地在本地帮你写代码、查资料、跑验证。**
 
-[![版本](https://img.shields.io/badge/version-0.5.7-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.5.8-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全边界)
 
 [English](README.md)
 
-版本：`0.5.7`
+版本：`0.5.8`
 
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
 GLM，也可以连接本地 OpenAI-compatible 模型，然后把它们接到你电脑上的受控工作区。

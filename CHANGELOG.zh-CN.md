@@ -2,8 +2,17 @@
 
 [English version](CHANGELOG.md)
 
-## Unreleased - Durable Operation Core
+## 0.5.8 - Durable Operation Core
 
+- 让 `POST /api/ui_state` 接受同源但不带 `Origin` 的 `sendBeacon()` 请求，
+  并移除了已经变成死代码的 `request_explicit_origin_allowed` helper。
+- 当 `stop_reason == "error"` 时也会清掉 pending shell approvals，同时把
+  shell approval continuation 收紧为对缺失的 pending `project` / `max_turns`
+  使用安全默认值，避免直接 500。
+- terminal `error` 现在在 UI 里按错误行渲染，不再混成 done；continuation
+  slot busy 也会直接显示 `retry_after` 文案。
+- 保存 local provider config 时会刷新 `providerUpdatedAt.local`，避免后来的
+  stale snapshot 把本地 provider 状态盖回去。
 - 将 Ghost 的 event-file stats 收口到共享的 `codey.ghost.event_log`
   helper。`inbox`、`hebbian` 和 `continuity` 现在直接调用共享 helper，
   旧的模块级 `_event_file_stats` 包装器已删除。

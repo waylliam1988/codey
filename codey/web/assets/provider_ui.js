@@ -127,6 +127,7 @@ async function saveLocalProviderConfig() {
       return;
     }
     providerStatus.local = true;
+    providerUpdatedAt.local = Date.now();
     syncProviderUI(currentProviderId());
     closeLocalProviderConfig();
     refreshProviderStatus();

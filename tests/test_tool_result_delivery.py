@@ -36,7 +36,6 @@ from codey.runtime.effect_records import (
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.operation_state import (
-    LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,

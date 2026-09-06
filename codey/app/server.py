@@ -50,7 +50,6 @@ from codey.app import api as app_api
 from codey.app import services as app_services
 from codey.app.http_plumbing import (
     WEB_DIR,
-    request_explicit_origin_allowed,
     request_origin_allowed,
     resolve_web_asset,
     send_file,
@@ -469,7 +468,7 @@ class AppContext:
         if payload is None:
             return False
         expired: tuple[dict, ...] = ()
-        if str(payload.get("stop_reason") or "") in {"done", "max_turns", "no_progress", "stopped"}:
+        if str(payload.get("stop_reason") or "") in {"done", "error", "max_turns", "no_progress", "stopped"}:
             with self.lock:
                 expired = self.approvals.expire_shell_results(
                     run_id=run_id,
@@ -1214,9 +1213,6 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_foreign_origin()
             return
         url = urlparse(self.path)
-        if url.path == "/api/ui_state" and not request_explicit_origin_allowed(self):
-            self._deny_foreign_origin()
-            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:

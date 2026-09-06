@@ -527,7 +527,10 @@ def shell_continuation_setup_context(pending: dict) -> str:
         "dev_server",
     }:
         return ""
-    return safe_setup_context(pending["project"])
+    project = str(pending.get("project") or "").strip()
+    if not project:
+        return ""
+    return safe_setup_context(project)
 
 
 def shell_followup_verification_candidates(project: str | Path, risk_label: object):
@@ -541,13 +544,14 @@ def shell_followup_hints(
     pending: dict,
     result: dict,
 ) -> str:
+    project = str(pending.get("project") or "").strip()
     return render_shell_followup(ShellFollowupInput(
         risk_label=str(pending.get("risk_label") or "generic"),
         exit_code=result.get("exit_code"),
         output=str(result.get("output") or result.get("error") or ""),
         truncated=bool(result.get("truncated")),
         verification_candidates=shell_followup_verification_candidates(
-            pending["project"],
+            project,
             pending.get("risk_label"),
         ),
     ))

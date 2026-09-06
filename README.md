@@ -2,13 +2,13 @@
 
 **Local-first AI coding and research for people who already have web AI access.**
 
-[![Version](https://img.shields.io/badge/version-0.5.7-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.8-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Version: `0.5.7`
+Version: `0.5.8`
 
 Codey connects browser AI accounts you already use, such as DeepSeek, MiMo,
 StepFun, Qwen, and GLM, or a local OpenAI-compatible model, to a controlled

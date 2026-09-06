@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## UI state beacon and approval cleanup fix (2026-09-06)
+
+Scope:
+
+```text
+app/web:    ui_state POST now accepts same-origin sendBeacon posts that omit
+            Origin; shell approval error terminal events now expire pending
+            approvals, show explicit retry_after busy text, and keep local
+            provider timestamps fresh.
+runtime:    shell approval continuation now tolerates missing pending project
+            / max_turns fields with safe defaults instead of 500ing.
+tests:      server and UI coverage were updated for beacon origin handling,
+            error expiry, retry_after surfacing, provider timestamp refresh,
+            and error terminal rendering.
+docs:       changelog and test report were updated after the full suite.
+```
+
+Verification:
+
+- Focused server gate:
+  `pytest tests/test_server.py -k "ui_state_post_allows_missing_origin_for_same_origin_beacon or error_expires_pending_shell_approvals_so_allow_cannot_execute or shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing or shell_approval_continuation_uses_current_active_provider"`
+  (`4 passed in 2.17s`)
+- Focused UI gate:
+  `pytest tests/test_ui.py -k "shell_approval_applies_http_result_without_waiting_for_sse or provider_status_is_quiet_and_refreshes_on_menu_open or error_terminal_event_renders_error_row or stopped_terminal_event_renders_status_row"`
+  (`4 passed in 0.11s`)
+- Full server file:
+  `pytest tests/test_server.py`
+  (`202 passed in 29.79s`)
+- Full UI file:
+  `pytest tests/test_ui.py`
+  (`64 passed in 0.15s`)
+- Full pytest suite:
+  `pytest`
+  (`3666 passed, 4 skipped, 1276 subtests passed in 338.55s`)
+
 ## Durable Operation Core recovery settle fix (2026-09-06)
 
 Scope:

@@ -2,8 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Durable Operation Core
+## 0.5.8 - Durable Operation Core
 
+- Let `POST /api/ui_state` accept same-origin `sendBeacon()` posts that omit
+  `Origin`, and removed the now-dead `request_explicit_origin_allowed` helper.
+- Expired pending shell approvals on `stop_reason == "error"` as well, and
+  hardened shell-approval continuation so missing pending `project` / `max_turns`
+  values no longer 500 the run.
+- Render terminal `error` as an error row in the UI instead of a done row, and
+  surface continuation slot contention with explicit `retry_after` text.
+- Refresh `providerUpdatedAt.local` when saving local provider config so a
+  later stale snapshot cannot revert the local provider state.
 - Collapsed Ghost event-file stats onto the shared `codey.ghost.event_log`
   helper. `inbox`, `hebbian`, and `continuity` now call the shared helper
   directly, and the old store-local `_event_file_stats` wrappers are gone.

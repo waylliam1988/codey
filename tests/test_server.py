@@ -1606,7 +1606,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.5.7")
+        self.assertEqual(__version__, "0.5.8")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -1650,7 +1650,7 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
-    def test_ui_state_post_requires_explicit_allowed_origin(self) -> None:
+    def test_ui_state_post_allows_missing_origin_for_same_origin_beacon(self) -> None:
         httpd, host, port = self._start_server()
         state = server.AppContext()
         try:
@@ -1680,8 +1680,8 @@ class LocalProviderApiTests(unittest.TestCase):
                 allowed_payload = json.loads(allowed.read().decode("utf-8"))
                 conn.close()
 
-            self.assertEqual(missing_origin.status, 403)
-            self.assertIn("refused", str(missing_payload.get("error")))
+            self.assertEqual(missing_origin.status, 200)
+            self.assertTrue(missing_payload["ok"])
             self.assertEqual(allowed.status, 200)
             self.assertTrue(allowed_payload["ok"])
         finally:
@@ -2129,6 +2129,43 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(results[0]["command"], "rm -rf /")
         # A later Allow POST finds nothing to execute: the id is gone.
         self.assertIsNone(state.pop_pending_shell_approval("shell-9"))
+
+    def test_error_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
+        state = server.AppContext()
+        events = state.subscribe()
+        run = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="test",
+            provider_id="qwen",
+        )
+        assert run is not None
+        self.assertTrue(state.start_run(run.run_id))
+        state.add_pending_shell_approval("shell-err", {
+            "id": "shell-err",
+            "session_id": run.session_id,
+            "run_id": run.run_id,
+            "command": "pytest",
+            "cwd": ".",
+            "project": run.project,
+        })
+
+        self.assertTrue(state.finish_run(run.run_id, {
+            "type": "task_done",
+            "session_id": run.session_id,
+            "stop_reason": "error",
+            "summary": "boom",
+        }))
+        payload = state.run_state_payload()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+
+        self.assertEqual(state.pending_shell_approvals(), {})
+        self.assertIsNone(payload["pending_event"])
+        result = next(event for event in emitted if event.get("type") == "shell_result")
+        self.assertEqual(result["id"], "shell-err")
+        self.assertEqual(result["output"], "Run ended; command approval expired.")
 
     def test_state_snapshot_keeps_pending_action_and_terminal_event(self) -> None:
         state = server.AppContext()
@@ -3151,6 +3188,49 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["continued"])
         self.assertTrue(payload["continuation_requested"])
         self.assertEqual(submit.call_args.args[5], "qwen")
+
+    def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
+        state = server.AppContext()
+        state.add_pending_shell_approval("shell-1", {
+            "id": "shell-1",
+            "session_id": "session-1",
+            "run_id": "run-1",
+            "command": "pytest",
+            "cwd": ".",
+            "continue_after": True,
+            "risk_label": "dependency_install",
+        })
+        submit = mock.Mock(return_value=None)
+
+        with (
+            mock.patch.object(app_services, "execute_approved_shell", return_value={
+                "ok": True,
+                "exit_code": 0,
+                "output": "ok",
+                "truncated": False,
+            }) as execute,
+            mock.patch.object(app_services, "safe_setup_context", return_value="Setup Context") as setup,
+            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+        ):
+            status, payload = app_api.shell_approval_response(
+                state,
+                {"id": "shell-1", "approved": True},
+                submit_task_after_slot_release=submit,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["continuation_requested"])
+        self.assertFalse(payload["continued"])
+        self.assertEqual(payload["retry_after"], 15)
+        execute.assert_called_once_with(state, "", ".", "pytest")
+        setup.assert_not_called()
+        build.assert_called_once()
+        self.assertEqual(submit.call_args.args[0], "session-1")
+        self.assertIsNone(submit.call_args.args[1])
+        self.assertEqual(submit.call_args.args[2], "Continue prompt")
+        self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
+        self.assertEqual(submit.call_args.args[5], app_services.DEFAULT_PROVIDER_ID)
 
     def test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks(self) -> None:
         active = server.RunSnapshot(
@@ -4410,11 +4490,6 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
             server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
-
-        pending = next(iter(state.pending_shell_approvals().values()))
-        self.assertEqual(pending["risk_label"], "dependency_install")
-        self.assertIn("download packages", pending["risk_detail"])
-        self.assertIn("Post-approval checklist", pending["post_approval_instructions"])
 
         emitted = []
         while not events.empty():

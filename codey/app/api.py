@@ -337,6 +337,8 @@ def shell_approval_response(
     pending = ctx.pop_pending_shell_approval(approval_id)
     if not pending:
         return 404, {"error": "approval not found"}
+    project = str(pending.get("project") or "").strip()
+    max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
     session_id = pending["session_id"]
     command = pending["command"]
     if not approved:
@@ -354,7 +356,7 @@ def shell_approval_response(
         ctx.record_shell_result(event)
         return 200, {"ok": True, "approved": False, "event": event}
 
-    result = services.execute_approved_shell(ctx, pending["project"], pending["cwd"], command)
+    result = services.execute_approved_shell(ctx, project, pending["cwd"], command)
     event = {
         "type": "shell_result",
         "run_id": pending.get("run_id") or "",
@@ -383,9 +385,9 @@ def shell_approval_response(
             )
             continuation_run = submit_task_after_slot_release(
                 session_id,
-                pending["project"],
+                project or None,
                 continuation_plan.continuation,
-                int(pending["max_turns"]),
+                max_turns,
                 True,
                 continuation_plan.provider_id,
                 "project",

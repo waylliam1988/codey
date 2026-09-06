@@ -1216,6 +1216,9 @@ function handleServerEvent(data) {
       const turns = data.turns || 0;
       const label = turns ? `Stopped after ${turns} turn${turns === 1 ? '' : 's'}` : 'Stopped';
       addToSession(sid, { type: 'pause', text: label, sessionId: sid, runId, eventKey: terminalKey });
+    } else if (reason === 'error') {
+      const text = summary || 'Task failed';
+      addToSession(sid, { type: 'err', text, sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'done') {
       if (data.mode === 'research') {
         if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
@@ -1545,12 +1548,14 @@ function showCommandApprovalError(errorEl) {
   setStatus('Could not send approval', 'err');
 }
 
-function showCommandContinuationError(errorEl) {
+function showCommandContinuationError(errorEl, retryAfterSeconds = 15) {
+  const retryAfter = Number(retryAfterSeconds) || 15;
+  const message = `Run slot busy; retry after ${retryAfter}s`;
   if (errorEl) {
-    errorEl.textContent = 'Run slot busy; retry after it finishes';
+    errorEl.textContent = message;
     errorEl.hidden = false;
   }
-  setStatus('Run slot busy', 'warn');
+  setStatus(message, 'warn');
 }
 
 async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
@@ -1576,7 +1581,7 @@ async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
     const data = await r.json();
     if (data.event) handleServerEvent(data.event);
     if (approved && data.continuation_requested && !data.continued && !data.stopped) {
-      showCommandContinuationError(errorEl);
+      showCommandContinuationError(errorEl, data.retry_after);
     }
   } catch (err) {
     showCommandApprovalError(errorEl);
