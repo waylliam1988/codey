@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -2703,9 +2702,10 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNotNone(previous)
         assert previous is not None
         self.assertTrue(state.start_run(previous.run_id))
+        release_gate = threading.Event()
 
         def release_previous() -> None:
-            time.sleep(0.05)
+            release_gate.wait(0.05)
             state.finish_run(
                 previous.run_id,
                 {
@@ -2718,6 +2718,8 @@ class RunSnapshotTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(server.time, "sleep", side_effect=AssertionError("polling sleep")),
+            mock.patch.object(state.run_registry, "wait_for_slot", wraps=state.run_registry.wait_for_slot) as wait_for_slot,
         ):
             thread = threading.Thread(target=release_previous)
             thread.start()
@@ -2738,6 +2740,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         self.assertIsNotNone(run_id)
         self.assertNotEqual(run_id, previous.run_id)
+        wait_for_slot.assert_called()
         submit.assert_called_once()
         self.assertEqual(submit.call_args.args[-1], run_id)
 

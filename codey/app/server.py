@@ -84,7 +84,6 @@ from codey.providers import (
     connect_provider,
 )
 from codey.providers.diagnostics import capture_provider_failure
-from codey.policies.limits import REVIEW_TIMEOUT, SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.repairs.self_repair_worker import run_self_repair_worker
@@ -111,7 +110,6 @@ from codey.storage.ui_state_store import UiStateStore
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = 5.0
-SHELL_CONTINUATION_IDLE_POLL = 0.02
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
@@ -936,7 +934,8 @@ def _submit_task_after_slot_release(
             return None
         if time.monotonic() >= deadline:
             return None
-        time.sleep(SHELL_CONTINUATION_IDLE_POLL)
+        remaining = max(0.0, deadline - time.monotonic())
+        STATE.run_registry.wait_for_slot(remaining)
 
 
 def _pick_folder_response(_ctx: AppContext, body: dict) -> tuple[int, dict]:

@@ -68,6 +68,29 @@ class RunRegistryTests(unittest.TestCase):
         self.assertIsNone(registry.current())
         self.assertFalse(registry.is_busy())
 
+    def test_wait_for_slot_tracks_authoritative_slot_state(self) -> None:
+        registry = RunRegistry()
+
+        self.assertTrue(registry.wait_for_slot(0.0))
+        registry.set_busy(True)
+        self.assertFalse(registry.wait_for_slot(0.0))
+        registry.set_busy(False)
+        self.assertTrue(registry.wait_for_slot(0.0))
+
+        run = registry.reserve(
+            session_id="session-1",
+            project=None,
+            task="hello",
+            provider_id="deepseek",
+        )
+        assert run is not None
+        self.assertFalse(registry.wait_for_slot(0.0))
+
+        registry.set_busy(False)
+        self.assertFalse(registry.wait_for_slot(0.0))
+        registry.release(run.run_id)
+        self.assertTrue(registry.wait_for_slot(0.0))
+
     def test_finish_returns_terminal_payload_and_releases_slot(self) -> None:
         registry = RunRegistry()
         run = registry.reserve(

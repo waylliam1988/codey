@@ -26,6 +26,8 @@ class RunRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.stop_flag = threading.Event()
+        self._slot_available = threading.Event()
+        self._slot_available.set()
         self._busy = False
         self._active_run: RunSnapshot | None = None
         self._project: str | None = None
@@ -38,6 +40,12 @@ class RunRegistry:
         self._last_terminal_event: dict | None = None
         self._last_shell_result: dict | None = None
 
+    def _sync_slot_event(self) -> None:
+        if self._active_run is None and not self._busy:
+            self._slot_available.set()
+        else:
+            self._slot_available.clear()
+
     def is_busy(self) -> bool:
         with self._lock:
             return self._busy
@@ -45,6 +53,7 @@ class RunRegistry:
     def set_busy(self, value: bool) -> None:
         with self._lock:
             self._busy = bool(value)
+            self._sync_slot_event()
 
     def current(self) -> RunSnapshot | None:
         with self._lock:
@@ -60,12 +69,14 @@ class RunRegistry:
             self._provider_id = run.provider_id
             self._status = run.status
             self._busy = True
+            self._sync_slot_event()
             return True
 
     def set_active(self, run: RunSnapshot | None) -> None:
         with self._lock:
             self._active_run = run
             self._busy = run is not None
+            self._sync_slot_event()
             if run is not None:
                 self._project = run.project
                 self._task = run.task
@@ -167,6 +178,7 @@ class RunRegistry:
             )
             self._active_run = run
             self._busy = True
+            self._sync_slot_event()
             self._project = project
             self._task = task
             self._provider_id = provider_id
@@ -217,6 +229,7 @@ class RunRegistry:
                 return
             self._active_run = None
             self._busy = False
+            self._sync_slot_event()
             self._status = "idle"
 
     def finish(self, run_id: str, event: dict) -> dict | None:
@@ -229,6 +242,7 @@ class RunRegistry:
             payload.setdefault("session_id", run.session_id)
             self._active_run = None
             self._busy = False
+            self._sync_slot_event()
             self._last_terminal_event = payload
             self._last_summary = str(payload.get("summary") or "")
             self._last_stop_reason = str(payload.get("stop_reason") or "done")
@@ -286,6 +300,9 @@ class RunRegistry:
             }
         payload["pending_event"] = pending_event(active)
         return payload
+
+    def wait_for_slot(self, timeout: float | None = None) -> bool:
+        return self._slot_available.wait(timeout)
 
 
 def same_project(left: str, right: str) -> bool:
