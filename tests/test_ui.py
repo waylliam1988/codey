@@ -16,6 +16,7 @@ RENDER_JS = (ASSET_DIR / "render.js").read_text(encoding="utf-8")
 PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
 UI_STATE_JS = (ASSET_DIR / "ui_state.js").read_text(encoding="utf-8")
 SSE_JS = (ASSET_DIR / "sse.js").read_text(encoding="utf-8")
+COMPOSER_JS = (ASSET_DIR / "composer.js").read_text(encoding="utf-8")
 TOKENS_CSS = (ASSET_DIR / "tokens.css").read_text(encoding="utf-8")
 APP_CSS = (ASSET_DIR / "app.css").read_text(encoding="utf-8")
 STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
@@ -66,6 +67,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", UI_SOURCE)
         self.assertIn('<script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn('<script src="/assets/ui_state.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn('<script src="/assets/composer.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyProviderUI.init({", HTML)
         self.assertIn("window.CodeyProviderUI = {", PROVIDER_UI_JS)
         self.assertIn("function applyProviderStatus(providers, isSSE = true)", HTML)
@@ -74,6 +76,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("window.CodeyProviderUI.refreshStatus(immediate)", HTML)
         self.assertIn('<script src="/assets/sse.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn("window.CodeySse = {", SSE_JS)
+        self.assertIn("window.CodeyComposer = {", COMPOSER_JS)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
@@ -90,13 +93,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertLess(glm, local)
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", HTML)
-        send_click = HTML[HTML.index("$('send').onclick"):HTML.index("async function continueTask")]
+        self.assertIn("window.CodeyComposer.init({", HTML)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
+        send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
-        self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
-        self.assertIn("intent: 'project'", HTML)
+        self.assertIn("provider: s.provider || DEFAULT_PROVIDER", COMPOSER_JS)
+        self.assertIn("intent: 'project'", COMPOSER_JS)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", UI_STATE_JS)
-        self.assertIn("Continue the unfinished task in this same conversation.", HTML)
+        self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
         self.assertNotIn("Continue the unfinished Codey task", HTML)
 
     def test_context_handoff_stays_hidden(self) -> None:
@@ -261,7 +265,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         retry_block = HTML[retry_start:retry_end]
         self.assertIn("syncProviderUI(s.provider || DEFAULT_PROVIDER)", retry_block)
         self.assertIn("$('send').click()", retry_block)
-        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", HTML)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", COMPOSER_JS)
 
     def test_provider_selector_is_enabled_when_idle(self) -> None:
         self.assertIn("$('provider-button').disabled = busy", HTML)
@@ -381,7 +385,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('<strong>Research</strong>', HTML)
         self.assertIn("function currentIntentForSession(sessionId)", HTML)
         self.assertIn("return sessionProjectPath(sessionId) ? 'hybrid' : 'research';", HTML)
-        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", HTML)
+        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", COMPOSER_JS)
         self.assertIn("type: 'research_done'", HTML)
         self.assertIn("Research restored:", HTML)
         self.assertIn("$('research-restore').disabled = !current || !current.restoreable;", HTML)
@@ -582,9 +586,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
         self.assertIn("Could not send the message", HTML)
-        self.assertIn("if (r.status === 409) { addSendError(sessionId); return true; }", HTML)
-        self.assertIn("if (r.status === 409 || !r.ok) {", HTML)
-        self.assertIn("await acceptRunResponse(r, sessionId)", HTML)
+        self.assertIn("if (r.status === 409) { deps.addSendError(sessionId); return true; }", COMPOSER_JS)
+        self.assertIn("if (r.status === 409 || !r.ok) {", COMPOSER_JS)
+        self.assertIn("await deps.acceptRunResponse(r, sessionId)", COMPOSER_JS)
         self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", HTML)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
@@ -601,10 +605,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_composer_enter_sends_and_shift_enter_keeps_newline(self) -> None:
         self.assertIn('id="send-hint">Enter</span>', HTML)
-        self.assertIn("e.key === 'Enter' && !e.shiftKey", HTML)
-        self.assertIn("!e.isComposing", HTML)
-        self.assertIn("e.keyCode !== 229", HTML)
-        self.assertNotIn("e.key === 'Enter' && (e.ctrlKey || e.metaKey)", HTML)
+        self.assertIn("e.key === 'Enter' && !e.shiftKey", COMPOSER_JS)
+        self.assertIn("!e.isComposing", COMPOSER_JS)
+        self.assertIn("e.keyCode !== 229", COMPOSER_JS)
+        self.assertNotIn("e.key === 'Enter' && (e.ctrlKey || e.metaKey)", UI_SOURCE)
         self.assertNotIn('id="send-hint">Ctrl ↵</span>', HTML)
 
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
@@ -689,9 +693,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         slot = HTML[slot_start:slot_end]
         self.assertIn('id="stop"', slot)
         self.assertIn('id="send"', slot)
-        update_start = HTML.index("function updateSend()")
-        update_end = HTML.index("$('task').addEventListener", update_start)
-        update_block = HTML[update_start:update_end]
+        update_start = COMPOSER_JS.index("function updateSend()")
+        update_end = COMPOSER_JS.index("function toggleResearchForActive()", update_start)
+        update_block = COMPOSER_JS[update_start:update_end]
         self.assertIn("$('send').style.display = running ? 'none' : ''", update_block)
         self.assertIn("$('stop').style.display = running ? '' : 'none'", update_block)
         self.assertIn("$('send-hint').textContent = running ? 'Stop' : 'Enter'", update_block)
@@ -883,9 +887,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         new_end = HTML.index("async function forgetSessionState(id)", new_start)
         self.assertIn("persistActiveNow();", HTML[new_start:new_end])
 
-        prov_start = HTML.index("function setActiveProvider(id)")
-        prov_end = HTML.index("// Provider menu handlers are bound by window.CodeyProviderUI.init().", prov_start)
-        self.assertIn("persistActiveNow();", HTML[prov_start:prov_end])
+        prov_start = COMPOSER_JS.index("function setActiveProvider(id)")
+        prov_end = COMPOSER_JS.index("function clearDraftIfUnchanged", prov_start)
+        self.assertIn("persistActiveNow();", COMPOSER_JS[prov_start:prov_end])
 
         # The debounced path is still used where coalescing matters: the SSE hot
         # path (addToSession) and low-signal toggles like ensureProject / expand.
@@ -899,7 +903,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("return sessionProject(activeSession());", HTML)
         self.assertIn("const loose = sessions.filter(s => !sessionProject(s));", HTML)
         self.assertIn("const p = sessionProject(s);", HTML[HTML.index("function sessionProjectPath"):HTML.index("async function fetchChanges")])
-        self.assertIn("const p = sessionProject(s);", HTML[HTML.index("async function continueTask"):HTML.index("$('stop').onclick")])
+        self.assertIn("const p = deps.sessionProject(s);", COMPOSER_JS[COMPOSER_JS.index("async function continueTask"):COMPOSER_JS.index("function bindHandlers")])
         self.assertIn("function attachSessionToProject(projectId, sessionId = activeId)", HTML)
         attach_start = HTML.index("function attachSessionToProject")
         attach_end = HTML.index("async function pickProject", attach_start)
@@ -928,49 +932,52 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("function providerLabel(id)", HTML)
         self.assertNotIn("ctx-provider", PROVIDER_UI_JS)
         self.assertIn('id="provider-button"', HTML)
-        self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });", HTML)
+        self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); deps.updateComposerContext(); });", COMPOSER_JS)
 
-        context_start = HTML.index("$('composer-context').onclick")
-        context_end = HTML.index("function setActiveProvider", context_start)
-        context_block = HTML[context_start:context_end]
+        context_start = COMPOSER_JS.index("$('composer-context').onclick")
+        context_end = COMPOSER_JS.index("$('composer-context').addEventListener", context_start)
+        context_block = COMPOSER_JS[context_start:context_end]
         self.assertIn("const target = e.target.closest('.ctx-token');", context_block)
         self.assertIn("if (target.id === 'ctx-folder')", context_block)
-        self.assertIn("attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
+        self.assertIn("deps.attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
         self.assertIn("toggleResearchForActive();", context_block)
         self.assertNotIn("ctx-provider", context_block)
         self.assertNotIn("openLocalProviderConfig();", context_block)
-        self.assertIn("e.key !== 'Enter' && e.key !== ' '", context_block)
-        self.assertIn("target.click();", context_block)
+        key_context_start = COMPOSER_JS.index("$('composer-context').addEventListener", context_start)
+        key_context_end = COMPOSER_JS.index("$('send').onclick", key_context_start)
+        key_context_block = COMPOSER_JS[key_context_start:key_context_end]
+        self.assertIn("e.key !== 'Enter' && e.key !== ' '", key_context_block)
+        self.assertIn("target.click();", key_context_block)
 
-        key_start = HTML.index("$('task').addEventListener('keydown'")
-        key_end = HTML.index("$('composer-context').onclick", key_start)
-        key_block = HTML[key_start:key_end]
+        key_start = COMPOSER_JS.index("$('task').addEventListener('keydown'")
+        key_end = COMPOSER_JS.index("$('composer-context').onclick", key_start)
+        key_block = COMPOSER_JS[key_start:key_end]
         self.assertIn("$('send').click()", key_block)
         self.assertNotIn("pickProjectPath", key_block)
         self.assertNotIn("attachCurrentChatToPickedProject", key_block)
 
-        send_start = HTML.index("$('send').onclick")
-        send_end = HTML.index("async function continueTask", send_start)
-        send_block = HTML[send_start:send_end]
-        self.assertIn("const sessionId = activeId;", send_block)
+        send_start = COMPOSER_JS.index("async function sendActiveDraft()")
+        send_end = COMPOSER_JS.index("async function continueTask", send_start)
+        send_block = COMPOSER_JS[send_start:send_end]
+        self.assertIn("const sessionId = activeId();", send_block)
         self.assertIn("const provider = currentProviderId();", send_block)
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_block)
         self.assertNotIn("pickProjectPath", send_block)
         self.assertNotIn("attachCurrentChatToPickedProject", send_block)
 
     def test_draft_to_project_send_uses_stable_session_id(self) -> None:
-        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null)", HTML)
-        self.assertIn("function clearDraftIfUnchanged(sessionId, draft)", HTML)
-        send_start = HTML.index("async function sendTaskFromSession")
-        send_end = HTML.index("$('send').onclick", send_start)
-        send_block = HTML[send_start:send_end]
-        self.assertIn("if (!text || runningSessionId) return false;", send_block)
+        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null)", COMPOSER_JS)
+        self.assertIn("function clearDraftIfUnchanged(sessionId, draft)", COMPOSER_JS)
+        send_start = COMPOSER_JS.index("async function sendTaskFromSession")
+        send_end = COMPOSER_JS.index("async function sendActiveDraft", send_start)
+        send_block = COMPOSER_JS[send_start:send_end]
+        self.assertIn("if (!text || runningSessionId()) return false;", send_block)
         self.assertIn("if (!s) return false;", send_block)
         self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
-        self.assertIn("pushMsgToSession(sessionId, { type: 'user', text });", send_block)
-        self.assertIn("const project = sessionProjectPath(sessionId);", send_block)
+        self.assertIn("deps.pushMsgToSession(sessionId, { type: 'user', text });", send_block)
+        self.assertIn("const project = deps.sessionProjectPath(sessionId);", send_block)
         self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", send_block)
-        self.assertIn("await acceptRunResponse(r, sessionId);", send_block)
+        self.assertIn("await deps.acceptRunResponse(r, sessionId);", send_block)
         self.assertIn("return true;", send_block)
 
         attach_start = HTML.index("async function attachCurrentChatToPickedProject")
@@ -989,13 +996,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         attach_session_block = HTML[attach_session_start:attach_session_end]
         self.assertIn("s.research = false;", attach_session_block)
 
-        clear_start = HTML.index("function clearDraftIfUnchanged")
-        clear_end = HTML.index("async function sendTaskFromSession", clear_start)
-        clear_block = HTML[clear_start:clear_end]
-        self.assertIn("if (activeId !== sessionId || $('task').value.trim() !== draft) return;", clear_block)
+        clear_start = COMPOSER_JS.index("function clearDraftIfUnchanged")
+        clear_end = COMPOSER_JS.index("async function sendTaskFromSession", clear_start)
+        clear_block = COMPOSER_JS[clear_start:clear_end]
+        self.assertIn("if (activeId() !== sessionId || $('task').value.trim() !== draft) return;", clear_block)
         self.assertIn("$('task').value = '';", clear_block)
 
-        send_click = HTML[HTML.index("$('send').onclick"):HTML.index("async function continueTask")]
+        send_click = COMPOSER_JS[COMPOSER_JS.index("async function sendActiveDraft()"):COMPOSER_JS.index("async function continueTask")]
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_click)
         self.assertNotIn("$('task').value = '';", send_click)
 
@@ -1005,9 +1012,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("detectImplementation", HTML)
         self.assertNotIn("startBuilding", HTML)
 
-        send_start = HTML.index("$('send').onclick")
-        send_end = HTML.index("async function continueTask", send_start)
-        send_block = HTML[send_start:send_end]
+        send_start = COMPOSER_JS.index("async function sendActiveDraft()")
+        send_end = COMPOSER_JS.index("async function continueTask", send_start)
+        send_block = COMPOSER_JS[send_start:send_end]
         self.assertNotIn("RegExp", send_block)
         self.assertNotIn(".match(", send_block)
         self.assertNotIn(".includes(", send_block)

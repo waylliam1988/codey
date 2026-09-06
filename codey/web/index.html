@@ -193,6 +193,7 @@
 <script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/ui_state.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/sse.js?v=__CODEY_VERSION__"></script>
+<script src="/assets/composer.js?v=__CODEY_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -1629,27 +1630,14 @@ async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
 
 // ============================ composer ============================
 function resizeTask() {
-  const t = $('task');
-  t.style.height = 'auto';
-  t.style.height = Math.min(220, Math.max(40, t.scrollHeight)) + 'px';
+  return window.CodeyComposer.resizeTask();
 }
 function updateSend() {
-  const has = $('task').value.trim();
-  const running = !!runningSessionId;
-  $('send').disabled = !has || running;
-  $('send').style.display = running ? 'none' : '';
-  $('stop').style.display = running ? '' : 'none';
-  $('send-hint').textContent = running ? 'Stop' : 'Enter';
+  return window.CodeyComposer.updateSend();
 }
 
 function toggleResearchForActive() {
-  if (runningSessionId) return;
-  const s = activeSession();
-  if (!s) return;
-  s.research = !s.research;
-  persistActiveNow();
-  updateComposerContext();
-  renderChat();
+  return window.CodeyComposer.toggleResearchForActive();
 }
 
 // Local provider config popover lives in /assets/provider_ui.js.
@@ -1661,118 +1649,22 @@ function closeLocalProviderConfig() {
   window.CodeyProviderUI.closeLocalConfig();
 }
 
-$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });
-$('task').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
-    e.preventDefault();
-    if (!$('send').disabled) $('send').click();
-  }
-});
-$('composer-context').onclick = (e) => {
-  const target = e.target.closest('.ctx-token');
-  if (!target || runningSessionId) return;
-  if (target.id === 'ctx-folder') {
-    const s = activeSession();
-    if (!s || sessionProject(s) || projectPickerBusy) return;
-    attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
-  } else if (target.id === 'ctx-research') {
-    toggleResearchForActive();
-  }
-};
-$('composer-context').addEventListener('keydown', (e) => {
-  if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId) return;
-  const target = e.target.closest('.ctx-token');
-  if (!target) return;
-  e.preventDefault();
-  target.click();
-});
 function setActiveProvider(id) {
-  const provider = PROVIDERS.includes(id) ? id : DEFAULT_PROVIDER;
-  const s = activeSession();
-  if (!s) return;
-  s.provider = provider;
-  persistActiveNow();
-  syncProviderUI(provider);
-  updateComposerContext();
-  if (provider === 'local') openLocalProviderConfig();
+  return window.CodeyComposer.setActiveProvider(id);
 }
 // Provider menu handlers are bound by window.CodeyProviderUI.init().
 
 function clearDraftIfUnchanged(sessionId, draft) {
-  if (activeId !== sessionId || $('task').value.trim() !== draft) return;
-  $('task').value = '';
-  resizeTask();
-  updateSend();
-  updateComposerContext();
+  return window.CodeyComposer.clearDraftIfUnchanged(sessionId, draft);
 }
 
 async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
-  const text = String(task || '').trim();
-  if (!text || runningSessionId) return false;
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return false;
-  const provider = PROVIDERS.includes(providerId)
-    ? providerId
-    : (PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER);
-  if (typeof onSendStarted === 'function') onSendStarted();
-  pushMsgToSession(sessionId, { type: 'user', text });
-  const project = sessionProjectPath(sessionId);
-  const intent = currentIntentForSession(sessionId);
-  const r = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
-  });
-  if (r.status === 409) { addSendError(sessionId); return true; }
-  if (!r.ok) {
-    addSendError(sessionId);
-    return true;
-  }
-  await acceptRunResponse(r, sessionId);
-  return true;
+  return window.CodeyComposer.sendTaskFromSession(sessionId, task, providerId, onSendStarted);
 }
 
-$('send').onclick = async () => {
-  const sessionId = activeId;
-  const task = $('task').value.trim();
-  const provider = currentProviderId();
-  if (!task) return;
-  await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));
-};
 async function continueTask(sessionId) {
-  if (runningSessionId) return;
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return;
-  const p = sessionProject(s);
-  if (!p) {
-    addToSession(sessionId, { type: 'err', text: 'Only project tasks can be continued; plain chats have no tool loop.', sessionId });
-    return;
-  }
-  addToSession(sessionId, { type: 'info', text: 'continue task' });
-  const task = [
-    'Continue the unfinished task in this same conversation.',
-    'Use the existing project context and finish the original user request.',
-    'If the work is complete, reply with a JSON done tool call.'
-  ].join(' ');
-  const r = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      session_id: sessionId,
-      project: p.path,
-      task,
-      continue_task: true,
-      provider: s.provider || DEFAULT_PROVIDER,
-      intent: 'project',
-    }),
-  });
-  if (r.status === 409 || !r.ok) {
-    addSendError(sessionId);
-    return;
-  }
-  await acceptRunResponse(r, sessionId);
+  return window.CodeyComposer.continueTask(sessionId);
 }
-$('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('changes-close').onclick = closeChangesDrawer;
 $('research-close').onclick = closeResearchDrawer;
 $('research-restore').onclick = restoreResearchRun;
@@ -1911,6 +1803,30 @@ async function boot() {
     setProviderBusy: busy => { $('provider-button').disabled = !!busy; },
     updateSend,
     updateComposerContext,
+  });
+  window.CodeyComposer.init({
+    $,
+    PROVIDERS,
+    DEFAULT_PROVIDER,
+    getActiveId: () => activeId,
+    getRunningSessionId: () => runningSessionId,
+    activeSession,
+    findSession: sessionId => sessions.find(x => x.id === sessionId),
+    sessionProject,
+    sessionProjectPath,
+    currentIntentForSession,
+    currentProviderId,
+    persistActiveNow,
+    updateComposerContext,
+    renderChat,
+    pushMsgToSession,
+    addToSession,
+    addSendError,
+    acceptRunResponse,
+    syncProviderUI,
+    openLocalProviderConfig,
+    projectPickerBusy: () => projectPickerBusy,
+    attachCurrentChatToPickedProject,
   });
   renderSidebar();
   renderChat();
