@@ -236,6 +236,28 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertEqual(decision.decision, DECISION_DENY)
         self.assertEqual(decision.reason_code, "command_not_allowed")
 
+    def test_run_command_guard_denies_pytest_code_loading_options(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            decisions = [
+                evaluate_action(ActionSubject(
+                    "run_command",
+                    permission_profile="coding_writer",
+                    project=td,
+                    path=".",
+                    command=command,
+                ))
+                for command in (
+                    "pytest -p evil_plugin",
+                    "pytest -pevil_plugin",
+                    "pytest --pyargs evil_package",
+                    "python -m pytest -p evil_plugin",
+                    "pytest -o addopts=-p",
+                )
+            ]
+
+        self.assertTrue(all(decision.decision == DECISION_DENY for decision in decisions))
+        self.assertTrue(all(decision.reason_code == "command_not_allowed" for decision in decisions))
+
     def test_run_command_guard_denies_pytest_paths_outside_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)

@@ -444,6 +444,11 @@ class ToolOutcomeTests(unittest.TestCase):
             "ruff check --unsafe-fixes=true .",
             "mypy --install-types=1 codey",
             "python -m mypy --install-types=1 codey",
+            "pytest -p evil_plugin",
+            "pytest -pevil_plugin",
+            "pytest --pyargs evil_package",
+            "python -m pytest -p evil_plugin",
+            "pytest -o addopts=-p",
         ):
             argv = command.split()
             self.assertFalse(
@@ -545,6 +550,26 @@ class ToolOutcomeTests(unittest.TestCase):
                     root,
                     ".",
                     "python evil.py",
+                    permission_profile="coding_writer",
+                )
+
+        self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
+        assert isinstance(outcome, tool_runtime.ToolOutcome)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "policy_denied")
+        self.assertEqual(
+            outcome.audit["policy_decision"]["reason_code"],
+            "command_not_allowed",
+        )
+        run_process.assert_not_called()
+
+    def test_run_policy_denies_pytest_plugin_loading_before_process_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch("codey.toolchain.runtime.cancellation.run_process") as run_process:
+                outcome = run_command_raw(
+                    Path(td),
+                    ".",
+                    "pytest -p evil_plugin",
                     permission_profile="coding_writer",
                 )
 

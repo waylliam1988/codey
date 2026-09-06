@@ -95,6 +95,7 @@ _PYTEST_OVERRIDE_NON_PATH_KEYS = frozenset({
     "xfail_strict",
 })
 _PYTEST_ADDOPTS_MAX_DEPTH = 4
+_PYTEST_CODE_LOADING_OPTIONS = frozenset({"--pyargs"})
 _PYTEST_PATH_VALUE_OPTIONS = frozenset({
     "-c",
     "--basetemp",
@@ -254,7 +255,7 @@ def is_allowed_run_command(argv: list[str]) -> bool:
             return _python_module_args_allowed(args[1], args[2:])
         return False
     if exe in {"pytest", "pytest.exe"}:
-        return True
+        return _pytest_args_allowed(argv[1:])
     if exe in {"mypy", "mypy.exe"}:
         return _mypy_args_allowed(argv[1:])
     if exe in {"ruff", "ruff.exe"}:
@@ -353,7 +354,48 @@ def _python_module_args_allowed(module: str, args: list[str]) -> bool:
         return _ruff_args_allowed(args)
     if module == "mypy":
         return _mypy_args_allowed(args)
+    if module == "pytest":
+        return _pytest_args_allowed(args)
     return True
+
+
+def _pytest_args_allowed(args: Sequence[str], *, addopts_depth: int = 0) -> bool:
+    values = list(args)
+    index = 0
+    while index < len(values):
+        arg = values[index]
+        if arg == "--":
+            break
+        override_token = _pytest_override_token(values, index)
+        if override_token is not None:
+            token, consumed = override_token
+            if not _pytest_override_args_allowed(token, addopts_depth=addopts_depth):
+                return False
+            index += consumed
+        elif _pytest_code_loading_option(arg):
+            return False
+        index += 1
+    return True
+
+
+def _pytest_override_args_allowed(token: str, *, addopts_depth: int) -> bool:
+    key, sep, raw = token.partition("=")
+    if not sep or key.strip().lower() != "addopts":
+        return True
+    if addopts_depth >= _PYTEST_ADDOPTS_MAX_DEPTH:
+        return False
+    try:
+        nested = _split_pytest_override_value(raw, platform=None)
+    except RunCommandPolicyError:
+        return False
+    return _pytest_args_allowed(nested, addopts_depth=addopts_depth + 1)
+
+
+def _pytest_code_loading_option(arg: str) -> bool:
+    option, _sep, _value = str(arg or "").partition("=")
+    if option in _PYTEST_CODE_LOADING_OPTIONS:
+        return True
+    return option == "-p" or (option.startswith("-p") and not option.startswith("--") and len(option) > 2)
 
 
 def _project_root(project: str | Path) -> Path:
