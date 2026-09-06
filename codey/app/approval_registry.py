@@ -59,7 +59,7 @@ class ApprovalRegistry:
                 "approved": False,
                 "command": pending.get("command") or "",
                 "cwd": pending.get("cwd") or "",
-                "output": "任务已停止，该命令的执行批准已过期。",
+                "output": "Task stopped; command approval expired.",
                 "exit_code": None,
             }
             for pending in stale

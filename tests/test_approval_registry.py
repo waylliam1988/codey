@@ -24,6 +24,7 @@ class ApprovalRegistryTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "shell_result")
         self.assertFalse(events[0]["approved"])
         self.assertEqual(events[0]["command"], "pytest")
+        self.assertEqual(events[0]["output"], "Task stopped; command approval expired.")
 
     def test_pending_ui_event_prefers_active_run_scope(self) -> None:
         approvals = ApprovalRegistry()

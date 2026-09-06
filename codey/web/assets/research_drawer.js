@@ -399,10 +399,18 @@ function researchNoteCard(noteId, run, sessionId, sourceIndex) {
 
 function researchNoteStateCard(id, note) {
   const state = note && note.__state;
-  const text = state === 'missing'
-    ? 'Note no longer exists'
-    : (state === 'error' ? 'Could not load note' : 'Loading note...');
-  return researchCard(id || 'Note', text, '');
+  if (state === 'missing') return researchCard(id || 'Note', 'Note no longer exists', '');
+  if (state === 'error') return researchCard(id || 'Note', 'Could not load note', '');
+  const card = researchCard(id || 'Note', '', '');
+  const status = document.createElement('div');
+  status.className = 'research-card-meta drawer-loading';
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  const label = document.createElement('span');
+  label.textContent = 'Loading note...';
+  status.append(spinner, label);
+  card.appendChild(status);
+  return card;
 }
 
 function researchSourceChips(note, sourceIndex) {

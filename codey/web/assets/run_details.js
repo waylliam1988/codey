@@ -42,7 +42,7 @@ async function toggle(button, message) {
   }
   panel = document.createElement('div');
   panel.className = 'run-details';
-  panel.textContent = 'Loading details...';
+  renderLoading(panel);
   container.appendChild(panel);
   button.setAttribute('aria-expanded', 'true');
 
@@ -100,6 +100,24 @@ function renderUnavailable(panel) {
   title.textContent = 'Run details';
   panel.appendChild(title);
   appendRow(panel, 'Status', 'Details unavailable', 'warning');
+}
+
+function renderLoading(panel) {
+  panel.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'run-details-row';
+  const labelEl = document.createElement('div');
+  labelEl.className = 'run-details-label';
+  labelEl.textContent = 'Status';
+  const valueEl = document.createElement('div');
+  valueEl.className = 'run-details-value drawer-loading';
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  const label = document.createElement('span');
+  label.textContent = 'Loading details...';
+  valueEl.append(spinner, label);
+  row.append(labelEl, valueEl);
+  panel.appendChild(row);
 }
 
 function appendRow(panel, label, value, tone) {

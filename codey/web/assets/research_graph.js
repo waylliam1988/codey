@@ -180,12 +180,12 @@ function openNode(node, options) {
 function draw(canvas, graph, detail, options) {
   const css = getComputedStyle(document.documentElement);
   const colors = {
-    bg: css.getPropertyValue('--bg').trim() || '#181818',
-    faint: css.getPropertyValue('--faint').trim() || '#4a4a4a',
-    muted: css.getPropertyValue('--muted').trim() || '#6b6b6b',
-    text: css.getPropertyValue('--text').trim() || '#e6e6e6',
-    textDim: css.getPropertyValue('--text-dim').trim() || '#a0a0a0',
-    ok: css.getPropertyValue('--ok-dot').trim() || '#4ec9b0',
+    bg: css.getPropertyValue('--bg').trim() || 'Canvas',
+    faint: css.getPropertyValue('--faint').trim() || 'GrayText',
+    muted: css.getPropertyValue('--muted').trim() || 'GrayText',
+    text: css.getPropertyValue('--text').trim() || 'CanvasText',
+    textDim: css.getPropertyValue('--text-dim').trim() || 'GrayText',
+    ok: css.getPropertyValue('--ok-dot').trim() || 'Highlight',
   };
   const nodes = (graph.nodes || []).map((node, index) => {
     const seed = hashUnit(node.id || String(index));

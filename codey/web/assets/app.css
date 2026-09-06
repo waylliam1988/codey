@@ -15,8 +15,8 @@
   }
   button { font-family: inherit; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
-  ::-webkit-scrollbar-thumb:hover { background: #444; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* ============================== sidebar ============================== */
@@ -753,7 +753,7 @@
   .local-config-error {
     min-height: 16px;
     margin-top: 6px;
-    color: #ff8f8f;
+    color: var(--err-text);
     font-size: 12px;
   }
 
@@ -825,6 +825,11 @@
   .changes-body { overflow-y: auto; padding: 8px 12px 18px; }
   .changes-empty, .changes-error {
     color: var(--muted); padding: 20px 4px; font-size: 13px;
+  }
+  .drawer-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
   .changes-error { color: var(--err-text); }
   .change-file {

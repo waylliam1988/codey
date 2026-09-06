@@ -26,8 +26,9 @@ async function openChangesDrawer(project) {
 
 async function loadChangesDrawer(project) {
   $('changes-subtitle').textContent = 'Loading…';
+  $('changes-restore').hidden = false;
   $('changes-restore').disabled = true;
-  $('changes-body').innerHTML = '<div class="changes-empty">Reading changes…</div>';
+  $('changes-body').innerHTML = '<div class="changes-empty"><span class="drawer-loading"><span class="spinner"></span><span>Reading changes...</span></span></div>';
   try {
     const data = await fetchChanges(project);
     deps.setLastData(data);
@@ -54,6 +55,7 @@ function renderChangesDrawer(data) {
   const files = Array.isArray(data.files) ? data.files : [];
   const mode = data.mode === 'git' ? 'Git' : 'Snapshot';
   $('changes-subtitle').textContent = `${files.length} file${files.length === 1 ? '' : 's'} changed · ${mode}`;
+  $('changes-restore').hidden = data.mode === 'git';
   $('changes-restore').disabled = data.mode === 'git' || !files.length;
   if (!files.length) {
     body.innerHTML = '<div class="changes-empty">No changes</div>';

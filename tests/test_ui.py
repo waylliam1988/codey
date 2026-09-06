@@ -24,6 +24,18 @@ UI_SOURCE = HTML + "\n" + STYLE_SOURCE + "\n" + JS_ASSETS
 
 
 class ProviderSelectorUiTests(unittest.TestCase):
+    def test_visible_ui_uses_english_document_language(self) -> None:
+        self.assertIn('<html lang="en">', HTML)
+        self.assertNotRegex(UI_SOURCE, r"[\u4e00-\u9fff]")
+
+    def test_web_colors_stay_in_tokens(self) -> None:
+        non_token_ui = HTML + "\n" + APP_CSS + "\n" + JS_ASSETS
+        self.assertRegex(TOKENS_CSS, r"#[0-9a-fA-F]{3,6}")
+        self.assertNotRegex(non_token_ui, r"#[0-9a-fA-F]{3,6}")
+        self.assertIn("--scrollbar-thumb:", TOKENS_CSS)
+        self.assertIn("background: var(--scrollbar-thumb)", APP_CSS)
+        self.assertIn("color: var(--err-text)", APP_CSS)
+
     def test_provider_selector_lists_supported_providers(self) -> None:
         self.assertIn('id="provider-button"', HTML)
         self.assertIn('id="provider-menu"', HTML)
@@ -310,6 +322,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
         self.assertIn("setStatus('Running', 'run')", HTML)
+        self.assertIn("drawer-loading", STYLE_SOURCE)
+        self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
+        self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
+        self.assertIn("spinner.className = 'spinner';", RUN_DETAILS_JS)
 
     def test_status_rows_use_continue_and_retry_links(self) -> None:
         self.assertIn(".link-btn", STYLE_SOURCE)
@@ -639,6 +655,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="changes-restore"', HTML)
         self.assertIn("Reading changes", CHANGES_DRAWER_JS)
         self.assertIn("data.mode === 'git' ? 'Git' : 'Snapshot'", CHANGES_DRAWER_JS)
+        self.assertIn("$('changes-restore').hidden = data.mode === 'git';", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
         self.assertIn('<script src="/assets/changes_drawer.js?v=__CODEY_VERSION__"></script>', HTML)
