@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
+from codey.storage.file_lock import LockTimeout, with_file_lock
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
     WorkspaceRevisionCorruption,
@@ -84,6 +87,41 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
             with self.assertRaises(WorkspaceRevisionCorruption):
                 store.current(project)
 
+    def test_current_state_computes_fingerprint_outside_revision_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkspaceRevisionStore(Path(td) / "state")
+            store.bump(project)
+            path = store.path_for(project)
+
+            def fingerprint(_project: object, *, ignored_paths: object = ()) -> str:
+                self.assertTrue(_lock_can_be_acquired_from_another_thread(path))
+                return "sha256:" + ("a" * 64)
+
+            with mock.patch("codey.workspace.revision.workspace_fingerprint", fingerprint):
+                state = store.current_state(project)
+
+        self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION + 1)
+        self.assertEqual(state.fingerprint, "sha256:" + ("a" * 64))
+
+    def test_bump_state_computes_fingerprint_outside_revision_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkspaceRevisionStore(Path(td) / "state")
+            path = store.path_for(project)
+
+            def fingerprint(_project: object, *, ignored_paths: object = ()) -> str:
+                self.assertTrue(_lock_can_be_acquired_from_another_thread(path))
+                return "sha256:" + ("b" * 64)
+
+            with mock.patch("codey.workspace.revision.workspace_fingerprint", fingerprint):
+                state = store.bump_state(project)
+
+        self.assertEqual(state.revision, INITIAL_WORKSPACE_REVISION + 1)
+        self.assertEqual(state.fingerprint, "sha256:" + ("b" * 64))
+
     def test_workspace_fingerprint_tracks_external_content_changes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"
@@ -131,6 +169,25 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
         self.assertEqual(valid_workspace_revision(True), 0)
         self.assertEqual(workspace_revision_ref(project, 0), "")
         self.assertEqual(workspace_fingerprint_ref(project, "bad"), "")
+
+
+def _lock_can_be_acquired_from_another_thread(path: Path) -> bool:
+    acquired = False
+
+    def worker() -> None:
+        nonlocal acquired
+        try:
+            with with_file_lock(path, timeout_seconds=0.25):
+                acquired = True
+        except LockTimeout:
+            acquired = False
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=1.0)
+    if thread.is_alive():
+        return False
+    return acquired
 
 
 if __name__ == "__main__":

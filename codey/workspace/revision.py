@@ -197,10 +197,11 @@ class WorkspaceRevisionStore:
                 fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
             )
         with with_file_lock(path):
-            return WorkspaceState(
-                revision=self._read_revision_unlocked(path),
-                fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-            )
+            revision = self._read_revision_unlocked(path)
+        return WorkspaceState(
+            revision=revision,
+            fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
+        )
 
     def bump(self, project: str | Path) -> int:
         return self.bump_state(project).revision
@@ -219,10 +220,10 @@ class WorkspaceRevisionStore:
                 {"schema_version": SCHEMA_VERSION, "revision": revision},
                 max_bytes=MAX_REVISION_BYTES,
             )
-            return WorkspaceState(
-                revision=revision,
-                fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
-            )
+        return WorkspaceState(
+            revision=revision,
+            fingerprint=workspace_fingerprint(project, ignored_paths=ignored_paths),
+        )
 
     @staticmethod
     def _read_revision_unlocked(path: Path) -> int:
