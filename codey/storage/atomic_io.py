@@ -21,10 +21,7 @@ MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 def encode_with_original_eol(target: Path, text: str, *, encoding: str = "utf-8") -> bytes:
     """Encode ``text`` matching the target file's recorded newline style."""
 
-    try:
-        raw = target.read_bytes()
-    except (OSError, ValueError):
-        raw = b""
+    raw = _read_existing_bytes_no_follow(target)
     if b"\r\n" in raw:
         normalized = str(text or "").replace("\r\n", "\n")
         return normalized.replace("\n", "\r\n").encode(encoding)
@@ -52,6 +49,8 @@ def write_bytes_atomic(
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         if hasattr(os, "O_BINARY"):
             flags |= os.O_BINARY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
         fd = os.open(tmp, flags, creation_mode)
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
@@ -137,9 +136,31 @@ def write_json_atomic(
 
 def _existing_mode(target: Path) -> int | None:
     try:
-        return stat.S_IMODE(target.stat().st_mode)
-    except OSError:
+        info = target.lstat()
+    except (OSError, ValueError):
         return None
+    if stat.S_ISLNK(info.st_mode):
+        return None
+    return stat.S_IMODE(info.st_mode)
+
+
+def _read_existing_bytes_no_follow(target: Path) -> bytes:
+    try:
+        if target.is_symlink():
+            return b""
+        flags = os.O_RDONLY
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(target, flags)
+    except (OSError, ValueError):
+        return b""
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return b""
 
 
 def _cleanup_temp_file(path: Path) -> None:

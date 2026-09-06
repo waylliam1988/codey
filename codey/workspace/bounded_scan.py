@@ -6,6 +6,7 @@ index, cache results, or infer semantics.
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
@@ -64,12 +65,15 @@ class BoundedScanBudget:
         if self.files_seen >= self.max_files:
             self.file_limited = True
             return False
+        try:
+            info = path.lstat()
+        except OSError:
+            return False
+        if stat.S_ISLNK(info.st_mode):
+            return False
         size = 0
         if self.max_bytes is not None:
-            try:
-                size = path.stat().st_size
-            except OSError:
-                return False
+            size = info.st_size
             if self.bytes_seen + size > self.max_bytes:
                 self.byte_limited = True
                 return False
@@ -102,14 +106,20 @@ def iter_bounded_files(
 ) -> Iterator[Path]:
     cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
-    if start.is_symlink():
+    try:
+        start_mode = start.lstat().st_mode
+    except OSError:
         return
-    if start.is_file():
+    if stat.S_ISLNK(start_mode):
+        return
+    if stat.S_ISREG(start_mode):
         if allow_file is not None and not allow_file(start):
             return
         if not budget.consume_file(start):
             return
         yield start
+        return
+    if not stat.S_ISDIR(start_mode):
         return
     if skip_start_if_excluded and start.name.lower() in excluded_lower:
         return
@@ -137,15 +147,16 @@ def iter_bounded_files(
         for entry in sorted(entries, key=lambda path: path.name.lower()):
             cancellation.check()
             try:
-                if entry.is_symlink():
+                entry_mode = entry.lstat().st_mode
+                if stat.S_ISLNK(entry_mode):
                     continue
-                if entry.is_dir():
+                if stat.S_ISDIR(entry_mode):
                     if entry.name.lower() in excluded_lower:
                         continue
                     if allow_dir is not None and not allow_dir(entry):
                         continue
                     dirs.append(entry)
-                elif entry.is_file():
+                elif stat.S_ISREG(entry_mode):
                     if allow_file is not None and not allow_file(entry):
                         continue
                     if not budget.consume_file(entry):

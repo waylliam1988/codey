@@ -59,6 +59,23 @@ class BoundedScanTests(unittest.TestCase):
         self.assertEqual(budget.bytes_seen, 3)
         self.assertTrue(budget.byte_limited)
 
+    def test_iter_provided_files_skips_symlink_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.py"
+            link = root / "link.py"
+            target.write_text("print('target')\n", encoding="utf-8")
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+            budget = BoundedScanBudget(max_files=10, max_bytes=100)
+
+            files = list(iter_provided_files((link, target), budget))
+
+        self.assertEqual([path.name for path in files], ["target.py"])
+        self.assertEqual(budget.files_seen, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

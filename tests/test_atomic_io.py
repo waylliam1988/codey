@@ -63,6 +63,21 @@ class AtomicWriteTests(unittest.TestCase):
 
             self.assertNotIn(b"\r\n", lf_path.read_bytes())
 
+    def test_eol_detection_does_not_follow_symlink_target(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.txt"
+            target.write_bytes(b"line1\r\nline2\r\n")
+            link = root / "link.txt"
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+
+            encoded = encode_with_original_eol(link, "line1\nline2\n")
+
+        self.assertEqual(encoded, b"line1\nline2\n")
+
     @unittest.skipIf(os.name == "nt", "POSIX executable bits are not stable on Windows")
     def test_existing_file_mode_is_preserved_on_replace(self) -> None:
         with tempfile.TemporaryDirectory() as td:
