@@ -1321,8 +1321,81 @@ def test_append_rotates_full_ledger_and_preserves_current_record() -> None:
     assert "ledger_rotated_full" in result.warnings
     assert snapshot.available is True
     assert snapshot.payload is not None
-    assert snapshot.payload["records"][0]["record_id"] == second.record_id
+    assert [row["record_id"] for row in snapshot.payload["records"]] == [
+        first.record_id,
+        second.record_id,
+    ]
     assert archives
+
+
+def test_load_reads_full_archive_when_active_ledger_exists() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        path = store.path_for("session-ledger", None)
+        first = _record(
+            url="https://example.com/secure/path?case=full-archive-visible",
+            run_id="run-ledger-full-archive-visible",
+        )
+        second = _record(
+            url="https://example.com/secure/path?case=full-archive-active",
+            run_id="run-ledger-full-archive-active",
+        )
+        assert store.append_record(first, session_id="session-ledger").ok is True
+        archive = path.with_name(f"{path.stem}-full-1{path.suffix}")
+        path.replace(archive)
+        assert store.append_record(second, session_id="session-ledger").ok is True
+
+        snapshot = store.load(session_id="session-ledger")
+
+    assert snapshot.available is True
+    assert [row["record_id"] for row in snapshot.payload["records"]] == [
+        first.record_id,
+        second.record_id,
+    ]
+
+
+def test_load_reads_full_archive_when_active_ledger_is_missing_after_rotation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        path = store.path_for("session-ledger", None)
+        record = _record(
+            url="https://example.com/secure/path?case=full-archive-no-active",
+            run_id="run-ledger-full-archive-no-active",
+        )
+        assert store.append_record(record, session_id="session-ledger").ok is True
+        archive = path.with_name(f"{path.stem}-full-1{path.suffix}")
+        path.replace(archive)
+
+        snapshot = store.load(session_id="session-ledger")
+
+    assert snapshot.available is True
+    assert [row["record_id"] for row in snapshot.payload["records"]] == [record.record_id]
+
+
+def test_load_fails_closed_when_full_archive_is_tampered() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        path = store.path_for("session-ledger", None)
+        first = _record(
+            url="https://example.com/secure/path?case=full-archive-tamper",
+            run_id="run-ledger-full-archive-tamper",
+        )
+        second = _record(
+            url="https://example.com/secure/path?case=full-archive-after-tamper",
+            run_id="run-ledger-full-archive-after-tamper",
+        )
+        assert store.append_record(first, session_id="session-ledger").ok is True
+        archive = path.with_name(f"{path.stem}-full-1{path.suffix}")
+        path.replace(archive)
+        assert store.append_record(second, session_id="session-ledger").ok is True
+        payload = json.loads(archive.read_text(encoding="utf-8"))
+        payload["records"][0]["counts"]["claims"] += 1
+        archive.write_text(json.dumps(payload), encoding="utf-8")
+
+        snapshot = store.load(session_id="session-ledger")
+
+    assert snapshot.available is False
+    assert snapshot.reason_code == "ledger_unavailable"
 
 
 def test_write_failure_returns_skipped_without_raising() -> None:

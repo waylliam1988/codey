@@ -365,8 +365,16 @@ class EvidenceLedgerStore:
         try:
             path = self.path_for(session_id, project)
             payload = self._load_payload(path)
+            archives = self._load_full_archive_payloads(path)
         except (OSError, RuntimeError, TypeError, ValueError):
             return EvidenceLedgerSnapshot(False, self.root, reason_code="ledger_unavailable")
+        if payload is None or archives is None:
+            return EvidenceLedgerSnapshot(False, path, reason_code="ledger_unavailable")
+        payload = self._combine_payloads(
+            (*archives, payload),
+            session_id=session_id,
+            project=project,
+        )
         if payload is None:
             return EvidenceLedgerSnapshot(False, path, reason_code="ledger_unavailable")
         if not payload:
@@ -395,6 +403,19 @@ class EvidenceLedgerStore:
         if not _records_integrity_ok(payload):
             return None
         return dict(payload)
+
+    def _load_full_archive_payloads(self, path: Path) -> tuple[dict[str, object], ...] | None:
+        payloads: list[dict[str, object]] = []
+        for archive_path in _full_archive_paths(path):
+            try:
+                payload = self._load_payload(archive_path)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                return None
+            if payload is None:
+                return None
+            if payload:
+                payloads.append(payload)
+        return tuple(payloads)
 
     def _rotate_active_ledger(self, path: Path, reason: str) -> bool:
         if not path.exists():
@@ -436,6 +457,78 @@ class EvidenceLedgerStore:
             "relations": {},
             "warnings": [],
         }
+
+    def _combine_payloads(
+        self,
+        payloads: tuple[dict[str, object], ...],
+        *,
+        session_id: str,
+        project: str | Path | None,
+    ) -> dict[str, object] | None:
+        rows = tuple(payload for payload in payloads if payload)
+        if not rows:
+            return {}
+        combined = self._new_payload(session_id=session_id, project=project)
+        record_order: list[str] = []
+        records_by_id: dict[str, dict[str, object]] = {}
+        for payload in rows:
+            if not _canonical_ledger_payload(payload) or not _records_integrity_ok(payload):
+                return None
+            for key in _CAPSULE_MAP_KEYS:
+                target = _dict_map(combined, key)
+                merge = _merge_source_row if key == "sources" else None
+                for row_id, entry in _mapping(payload.get(key)).items():
+                    if not _put_ledger_row(
+                        target,
+                        row_id,
+                        deepcopy(entry),
+                        merge=merge,
+                    ):
+                        return None
+            for record in _records(payload):
+                record_id = _record_id(record.get("record_id"))
+                if not record_id:
+                    return None
+                existing = records_by_id.get(record_id)
+                if (
+                    existing is not None
+                    and existing.get("record_digest") != record.get("record_digest")
+                ):
+                    return None
+                if record_id in records_by_id:
+                    record_order = [item for item in record_order if item != record_id]
+                records_by_id[record_id] = deepcopy(record)
+                record_order.append(record_id)
+            for warning in _list_values(payload.get("warnings")):
+                _add_warning(combined, str(warning))
+        combined["records"] = [
+            records_by_id[record_id]
+            for record_id in record_order[-MAX_LEDGER_RECORDS:]
+        ]
+        combined["updated_at"] = str(rows[-1].get("updated_at") or _now())
+        _trim_maps(combined)
+        _stamp_record_integrities(combined)
+        if not _canonical_ledger_payload(combined) or not _records_integrity_ok(combined):
+            return None
+        return combined
+
+
+def _full_archive_paths(path: Path) -> tuple[Path, ...]:
+    suffix = path.suffix or ".json"
+    prefix = f"{path.stem}-full-"
+    rows: list[tuple[int, Path]] = []
+    for candidate in path.parent.glob(f"{prefix}*{suffix}"):
+        name = candidate.name
+        if not name.startswith(prefix) or not name.endswith(suffix):
+            continue
+        raw_index = name[len(prefix): -len(suffix)]
+        try:
+            index = int(raw_index)
+        except ValueError:
+            continue
+        if index > 0:
+            rows.append((index, candidate))
+    return tuple(path for _index, path in sorted(rows))
 
 
 def _record_payload(record: object) -> dict[str, object]:
