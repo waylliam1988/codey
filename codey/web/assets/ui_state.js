@@ -140,6 +140,58 @@ function saveUiStateToServer() {
     body: JSON.stringify({ state: currentUiState() }),
   }).catch(() => {});
 }
+
+let uiStatePersistTimer = null;
+const UI_STATE_PERSIST_DELAY = 400;
+
+function markUiStateDirty() {
+  uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);
+  uiStateRevision += 1;
+  uiStateDirtySinceBoot = true;
+}
+
+function flushUiState() {
+  if (uiStatePersistTimer !== null) {
+    clearTimeout(uiStatePersistTimer);
+    uiStatePersistTimer = null;
+  }
+  cacheUiState();
+  saveUiStateToServer();
+}
+
+function persistActive() {
+  markUiStateDirty();
+  if (uiStatePersistTimer !== null) return;
+  uiStatePersistTimer = setTimeout(() => {
+    uiStatePersistTimer = null;
+    cacheUiState();
+    saveUiStateToServer();
+  }, UI_STATE_PERSIST_DELAY);
+}
+
+function persistActiveNow() {
+  markUiStateDirty();
+  flushUiState();
+}
+
+function bindUiStatePagehide() {
+  window.addEventListener('pagehide', () => {
+    if (uiStatePersistTimer !== null) {
+      clearTimeout(uiStatePersistTimer);
+      uiStatePersistTimer = null;
+    }
+    cacheUiState();
+    const payload = JSON.stringify({ state: currentUiState() });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/ui_state', new Blob([payload], { type: 'application/json' }));
+        return;
+      }
+    } catch {}
+    saveUiStateToServer();
+  });
+}
+
 async function restoreUiStateFromServer() {
   try {
     const r = await fetch('/api/ui_state', { cache: 'no-store' });

@@ -744,17 +744,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("function cacheUiState()", UI_STATE_JS)
         self.assertIn("function saveUiStateToServer()", UI_STATE_JS)
         self.assertIn("async function restoreUiStateFromServer()", UI_STATE_JS)
+        self.assertIn("function bindUiStatePagehide()", UI_STATE_JS)
         self.assertIn("const LS_UI_REVISION = 'codey:ui-revision';", UI_STATE_JS)
         self.assertIn("revision: uiStateRevision", UI_STATE_JS)
         self.assertIn("function isUiStateNewer(a, b)", UI_STATE_JS)
-        self.assertIn("uiStateRevision += 1", HTML)
+        self.assertIn("uiStateRevision += 1", UI_STATE_JS)
         self.assertIn("function hasMeaningfulUiState(state)", UI_STATE_JS)
         self.assertIn("const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState)", HTML)
         self.assertIn("fetch('/api/ui_state'", UI_STATE_JS)
         self.assertIn("method: 'POST'", UI_STATE_JS)
         self.assertIn("body: JSON.stringify({ state: currentUiState() })", UI_STATE_JS)
-        self.assertIn("navigator.sendBeacon('/api/ui_state'", HTML)
+        self.assertIn("navigator.sendBeacon('/api/ui_state'", UI_STATE_JS)
         self.assertIn("function connectEvents()", HTML)
+        self.assertIn("bindUiStatePagehide();", HTML)
         self.assertIn("await restoreUiStateFromServer();", HTML)
         boot_start = HTML.index("async function boot()")
         boot_block = HTML[boot_start:HTML.index("boot();", boot_start)]
@@ -815,40 +817,40 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_ui_state_persistence_is_debounced_with_immediate_flush_helpers(self) -> None:
         # A-1: hot-path persistence is coalesced behind a debounce timer, while
         # discrete/terminal moments flush immediately. Data shape is unchanged.
-        self.assertIn("function markUiStateDirty()", HTML)
-        self.assertIn("function flushUiState()", HTML)
-        self.assertIn("function persistActive()", HTML)
-        self.assertIn("function persistActiveNow()", HTML)
-        self.assertIn("let uiStatePersistTimer = null;", HTML)
-        self.assertIn("const UI_STATE_PERSIST_DELAY = 400;", HTML)
+        self.assertIn("function markUiStateDirty()", UI_STATE_JS)
+        self.assertIn("function flushUiState()", UI_STATE_JS)
+        self.assertIn("function persistActive()", UI_STATE_JS)
+        self.assertIn("function persistActiveNow()", UI_STATE_JS)
+        self.assertIn("let uiStatePersistTimer = null;", UI_STATE_JS)
+        self.assertIn("const UI_STATE_PERSIST_DELAY = 400;", UI_STATE_JS)
         # revision bump preserved (relied on by isUiStateNewer ordering).
-        self.assertIn("uiStateRevision += 1", HTML)
+        self.assertIn("uiStateRevision += 1", UI_STATE_JS)
 
-        dirty_start = HTML.index("function markUiStateDirty()")
-        dirty_end = HTML.index("function flushUiState()", dirty_start)
-        dirty_block = HTML[dirty_start:dirty_end]
+        dirty_start = UI_STATE_JS.index("function markUiStateDirty()")
+        dirty_end = UI_STATE_JS.index("function flushUiState()", dirty_start)
+        dirty_block = UI_STATE_JS[dirty_start:dirty_end]
         self.assertIn("uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);", dirty_block)
         self.assertIn("uiStateRevision += 1;", dirty_block)
         self.assertIn("uiStateDirtySinceBoot = true;", dirty_block)
 
-        flush_start = HTML.index("function flushUiState()")
-        flush_end = HTML.index("function persistActive()", flush_start)
-        flush_block = HTML[flush_start:flush_end]
+        flush_start = UI_STATE_JS.index("function flushUiState()")
+        flush_end = UI_STATE_JS.index("function persistActive()", flush_start)
+        flush_block = UI_STATE_JS[flush_start:flush_end]
         self.assertIn("clearTimeout(uiStatePersistTimer)", flush_block)
         self.assertIn("cacheUiState();", flush_block)
         self.assertIn("saveUiStateToServer();", flush_block)
 
-        persist_start = HTML.index("function persistActive()")
-        persist_end = HTML.index("function persistActiveNow()", persist_start)
-        persist_block = HTML[persist_start:persist_end]
+        persist_start = UI_STATE_JS.index("function persistActive()")
+        persist_end = UI_STATE_JS.index("function persistActiveNow()", persist_start)
+        persist_block = UI_STATE_JS[persist_start:persist_end]
         self.assertIn("markUiStateDirty();", persist_block)
         self.assertIn("if (uiStatePersistTimer !== null) return;", persist_block)
         self.assertIn("uiStatePersistTimer = setTimeout(", persist_block)
         self.assertIn("UI_STATE_PERSIST_DELAY", persist_block)
 
-        now_start = HTML.index("function persistActiveNow()")
-        now_end = HTML.index("function updateComposerContext()", now_start)
-        now_block = HTML[now_start:now_end]
+        now_start = UI_STATE_JS.index("function persistActiveNow()")
+        now_end = UI_STATE_JS.index("function bindUiStatePagehide()", now_start)
+        now_block = UI_STATE_JS[now_start:now_end]
         self.assertIn("markUiStateDirty();", now_block)
         self.assertIn("flushUiState();", now_block)
 
@@ -1020,9 +1022,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn(".includes(", send_block)
 
     def test_pagehide_flushes_pending_ui_state_before_beacon(self) -> None:
-        page_start = HTML.index("window.addEventListener('pagehide'")
-        page_end = HTML.index("async function boot()", page_start)
-        page_block = HTML[page_start:page_end]
+        page_start = UI_STATE_JS.index("window.addEventListener('pagehide'")
+        page_end = UI_STATE_JS.index("async function restoreUiStateFromServer()", page_start)
+        page_block = UI_STATE_JS[page_start:page_end]
         self.assertIn("clearTimeout(uiStatePersistTimer)", page_block)
         self.assertIn("cacheUiState();", page_block)
         self.assertIn("navigator.sendBeacon('/api/ui_state'", page_block)

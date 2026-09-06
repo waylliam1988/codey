@@ -242,34 +242,6 @@ function refreshProviderStatus(immediate = false) {
   return window.CodeyProviderUI.refreshStatus(immediate);
 }
 
-let uiStatePersistTimer = null;
-const UI_STATE_PERSIST_DELAY = 400;
-function markUiStateDirty() {
-  uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);
-  uiStateRevision += 1;
-  uiStateDirtySinceBoot = true;
-}
-function flushUiState() {
-  if (uiStatePersistTimer !== null) {
-    clearTimeout(uiStatePersistTimer);
-    uiStatePersistTimer = null;
-  }
-  cacheUiState();
-  saveUiStateToServer();
-}
-function persistActive() {
-  markUiStateDirty();
-  if (uiStatePersistTimer !== null) return;
-  uiStatePersistTimer = setTimeout(() => {
-    uiStatePersistTimer = null;
-    cacheUiState();
-    saveUiStateToServer();
-  }, UI_STATE_PERSIST_DELAY);
-}
-function persistActiveNow() {
-  markUiStateDirty();
-  flushUiState();
-}
 function updateComposerContext() {
   const el = $('composer-context');
   const s = activeSession();
@@ -1733,24 +1705,9 @@ document.addEventListener('keydown', (e) => {
     newSession(p ? p.id : null);
   }
 });
-window.addEventListener('pagehide', () => {
-  if (uiStatePersistTimer !== null) {
-    clearTimeout(uiStatePersistTimer);
-    uiStatePersistTimer = null;
-  }
-  cacheUiState();
-  const payload = JSON.stringify({ state: currentUiState() });
-  try {
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon('/api/ui_state', new Blob([payload], { type: 'application/json' }));
-      return;
-    }
-  } catch {}
-  saveUiStateToServer();
-});
-
 // ============================ boot ============================
 async function boot() {
+  bindUiStatePagehide();
   window.CodeyResearchDrawer.init({
     $,
     getActiveId: () => activeId,
