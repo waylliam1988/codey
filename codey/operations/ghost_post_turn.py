@@ -42,6 +42,7 @@ from codey.providers import controls as provider_controls
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.runs.ledger_projection import load_run_projection
 from codey.runtime import cancellation
+from codey.utils.refs import digest_text
 
 
 PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
@@ -93,7 +94,14 @@ def maybe_claim_work_item(
                     project=request.project or "",
                     session_id=request.session_id,
                 )
-            except Exception:
+            except Exception as exc:
+                _record_ghost_warning(
+                    deps,
+                    "work_priority_hints",
+                    exc,
+                    request=request,
+                    run_id=run_id,
+                )
                 affinity_hints = ()
         result = store.claim_next(
             session_id=request.session_id,
@@ -102,7 +110,8 @@ def maybe_claim_work_item(
             user_request=request.task,
             affinity_hints=affinity_hints,
         )
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "work_claim", exc, request=request, run_id=run_id)
         return None
     return result if getattr(result, "ok", False) and getattr(result, "item", None) is not None else None
 
@@ -146,7 +155,8 @@ def maybe_route_auto(
             )
     except cancellation.TaskCancelled:
         raise
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "route_auto", exc, request=request, run_id=run_id)
         return None
 
 
@@ -164,7 +174,8 @@ def release_work_item(
         return
     try:
         store.release_item(item.id, run_id=run_id, reason=reason)
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "work_release", exc, run_id=run_id)
         return
 
 
@@ -237,7 +248,8 @@ def maybe_run_learning(
             new_chat_timeout=DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
         )
         deps.state.emit(result.to_event(run_id=frame.run_id, session_id=frame.request.session_id))
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "learning", exc, frame=frame, event=event)
         return
 
 
@@ -266,8 +278,14 @@ def maybe_sync_continuity(
                 "total_items": 0,
                 "warnings": [],
             })
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_ghost_warning(
+                deps,
+                "continuity_learning_disabled_emit",
+                exc,
+                frame=frame,
+                event=event,
+            )
         return
     try:
         result = store.sync_from_sources(
@@ -281,7 +299,8 @@ def maybe_sync_continuity(
             mode=mode,
         )
         deps.state.emit(result.to_event(run_id=frame.run_id, session_id=frame.request.session_id))
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "continuity_sync", exc, frame=frame, event=event)
         return
 
 
@@ -305,7 +324,8 @@ def maybe_kick_sleep(
             project=frame.project_text,
             run_projection=run_projection,
         )
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "sleep_kick", exc, frame=frame, event=event)
         return
 
 
@@ -360,7 +380,8 @@ def maybe_sync_work_queue(
                 session_id=frame.request.session_id,
                 project=frame.project_text,
             )
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "work_queue_sync", exc, frame=frame, event=event)
         return
 
 
@@ -387,7 +408,8 @@ def sync_affinity_terminal_event(
             session_id=session_id,
             project=project_text,
         )
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "affinity_sync", exc, event=event, request=request, run_id=run_id)
         return
 
 
@@ -460,7 +482,8 @@ def complete_or_block_work_item(
                 run_id=frame.run_id,
                 blocked_reason=str(event.get("stop_reason") or "run_not_done"),
             )
-    except Exception:
+    except Exception as exc:
+        _record_ghost_warning(deps, "work_completion", exc, frame=frame, event=event)
         return
 
 
@@ -472,6 +495,46 @@ def _ghost_learning_enabled(state: Any) -> bool:
         return bool(inbox_store.learning_enabled())
     except Exception:
         return False
+
+
+def _record_ghost_warning(
+    deps: GhostTaskPolicyDeps,
+    stage: str,
+    exc: Exception,
+    *,
+    frame: RunFrame | None = None,
+    event: dict[str, object] | None = None,
+    request: Any | None = None,
+    run_id: str = "",
+) -> None:
+    emit = getattr(deps.state, "emit", None)
+    if not callable(emit):
+        return
+    source_event = event or {}
+    request = request or getattr(frame, "request", None)
+    session_id = str(
+        source_event.get("session_id")
+        or getattr(request, "session_id", "")
+        or ""
+    )
+    resolved_run_id = str(
+        source_event.get("run_id")
+        or run_id
+        or getattr(frame, "run_id", "")
+        or ""
+    )
+    error_text = f"{stage}:{type(exc).__name__}:{exc}"
+    try:
+        emit({
+            "type": "ghost_post_turn_warning",
+            "stage": str(stage or "unknown"),
+            "run_id": resolved_run_id,
+            "session_id": session_id,
+            "error_type": type(exc).__name__,
+            "error_ref": digest_text(error_text)[:24],
+        })
+    except Exception:
+        return
 
 
 def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str):
