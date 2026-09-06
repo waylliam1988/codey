@@ -15,6 +15,7 @@ from codey.completion.edit_integrity import (
     EditIntegrityObservation,
     observe_edit_integrity,
 )
+from codey.completion.verification import build_coding_completion_proof
 from codey.runtime.execution_evidence import ExecutionEvidence
 
 
@@ -108,16 +109,15 @@ class CompletionEngine:
             run_id=run_id,
         )
         if integrity.diagnostic_refs:
-            decision = self._decision(
+            decision = self._with_diagnostic_refs(
+                decision,
                 run_id=run_id,
                 stop_reason=stop_reason,
                 task_changed=task_changed,
-                scope_files=scope_files,
                 selected_check=selected_check,
                 evidence=evidence,
-                analysis_run_payloads=analysis_run_payloads,
+                scope_files=scope_files,
                 project=project,
-                checkpoint_green=checkpoint_green,
                 verification_forbidden=verification_forbidden,
                 diagnostic_refs=integrity.diagnostic_refs,
             )
@@ -165,4 +165,40 @@ class CompletionEngine:
             checkpoint_green=checkpoint_green,
             verification_forbidden=verification_forbidden,
             diagnostic_refs=diagnostic_refs,
+        )
+
+    @staticmethod
+    def _with_diagnostic_refs(
+        decision: CompletionDecision,
+        *,
+        run_id: str,
+        stop_reason: str,
+        task_changed: bool,
+        selected_check: object,
+        evidence: ExecutionEvidence,
+        scope_files: tuple[str, ...],
+        project: str | Path | None,
+        verification_forbidden: bool,
+        diagnostic_refs: tuple[str, ...],
+    ) -> CompletionDecision:
+        proof = build_coding_completion_proof(
+            run_id=run_id,
+            stop_reason=stop_reason,
+            task_changed=task_changed,
+            files=scope_files,
+            selected_check_present=selected_check is not None,
+            provenance=decision.provenance,
+            analysis_run_refs=decision.analysis_run_refs,
+            verification_forbidden=verification_forbidden,
+            diagnostic_refs=diagnostic_refs,
+            workspace_revision=getattr(evidence, "workspace_revision", 0),
+            workspace_fingerprint=getattr(evidence, "workspace_fingerprint", ""),
+            project=project,
+        )
+        return CompletionDecision(
+            proof=proof,
+            provenance=decision.provenance,
+            analysis_run_refs=decision.analysis_run_refs,
+            failure_class=decision.failure_class,
+            local_state=decision.local_state,
         )
