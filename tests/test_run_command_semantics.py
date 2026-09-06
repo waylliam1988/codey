@@ -38,14 +38,12 @@ class CanonicalRunCommandTests(unittest.TestCase):
 
     # --- accepted inside references -------------------------------------
 
-    def test_accepts_inside_script_and_test_paths(self) -> None:
+    def test_accepts_authorized_verification_paths(self) -> None:
         for command in (
-            "python app.py",
-            "python app.py --fixture tests/data.json",
-            "python -B ./app.py",
-            "python tests/run.py",
+            "python -m py_compile app.py",
             "pytest -q tests",
             "python -m pytest -q tests",
+            "python -B -m pytest -q tests",
             'pytest -o "addopts=-q tests"',
             "pytest -o pythonpath=src -o testpaths=tests",
             "ruff check .",
@@ -67,6 +65,18 @@ class CanonicalRunCommandTests(unittest.TestCase):
                         or ref.resolved == self.root.resolve(),
                         msg=f"{ref.raw} resolved outside root",
                     )
+
+    def test_rejects_direct_python_scripts_inside_project(self) -> None:
+        for command in (
+            "python app.py",
+            "python app.py --fixture tests/data.json",
+            "python -B ./app.py",
+            "python tests/run.py",
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(RunCommandPolicyError) as ctx:
+                    self.canonical(command)
+                self.assertEqual(ctx.exception.reason_code, "command_not_allowed")
 
     def test_argv_matches_plain_tokenization(self) -> None:
         canonical = self.canonical("python -m pytest -q 'tests/test x.py'")

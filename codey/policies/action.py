@@ -18,8 +18,6 @@ from codey.policies.permissions import PermissionProfile, profile_for_name
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
-    command_has_forbidden_tokens,
-    is_allowed_run_command,
 )
 
 
@@ -370,14 +368,6 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             guard_id="run_command_guard",
             reason_code=exc.reason_code,
             display=exc.display,
-        )
-    argv = list(canonical.argv)
-    if command_has_forbidden_tokens(argv) or not is_allowed_run_command(argv):
-        return ActionPolicyDecision.deny(
-            subject,
-            guard_id="run_command_guard",
-            reason_code="command_not_allowed",
-            display=f"command not allowed: {command}",
         )
     return None
 

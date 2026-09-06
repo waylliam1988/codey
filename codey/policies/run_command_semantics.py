@@ -231,6 +231,12 @@ def canonical_run_command(
         cwd,
         _referenced_path_args(argv, platform=platform),
     ))
+    argv_list = list(argv)
+    if command_has_forbidden_tokens(argv_list) or not is_allowed_run_command(argv_list):
+        raise RunCommandPolicyError(
+            "command_not_allowed",
+            f"command not allowed: {command}",
+        )
     return CanonicalRunCommand(argv=argv, cwd=cwd, referenced_paths=refs)
 
 

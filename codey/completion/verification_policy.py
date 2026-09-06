@@ -17,7 +17,6 @@ from codey.policies.run_command_semantics import (
 )
 from codey.completion.edit_scope import is_document_path
 from codey.workspace.config import path_matches_ignored_prefix
-from codey.toolchain.runtime import _is_allowed_run_command
 
 
 MAX_SCAN_DIRS = 160
@@ -85,11 +84,7 @@ def _allowed_and_available(root: str | Path, cwd: str, command: str) -> bool:
     except RunCommandPolicyError:
         return False
     argv = list(canonical.argv)
-    return (
-        bool(argv)
-        and shutil.which(argv[0]) is not None
-        and _is_allowed_run_command(argv)
-    )
+    return bool(argv) and shutil.which(argv[0]) is not None
 
 
 def _candidate(
