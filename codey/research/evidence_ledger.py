@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json, session_key, write_json_atomic
@@ -513,31 +513,31 @@ def _append_payload(
     for item in _list(record.get("sources"))[:MAX_LEDGER_SOURCES]:
         source_id = identifier(item.get("source_id"), 80)
         if source_id:
-            if not _put_source_row(sources, source_id, _source_entry(item)):
+            if not _put_ledger_row(sources, source_id, _source_entry(item), merge=_merge_source_row):
                 return False
             source_ids.append(source_id)
     for item in _list(record.get("evidence"))[:MAX_LEDGER_EVIDENCE]:
         evidence_id = identifier(item.get("evidence_id"), 80)
         if evidence_id:
-            if not _put_capsule_row(evidence, evidence_id, _evidence_entry(item)):
+            if not _put_ledger_row(evidence, evidence_id, _evidence_entry(item)):
                 return False
             evidence_ids.append(evidence_id)
     for item in _list(record.get("claims"))[:MAX_LEDGER_CLAIMS]:
         claim_id = identifier(item.get("claim_id"), 80)
         if claim_id:
-            if not _put_capsule_row(claims, claim_id, _claim_entry(item)):
+            if not _put_ledger_row(claims, claim_id, _claim_entry(item)):
                 return False
             claim_ids.append(claim_id)
     for item in _list(record.get("assumptions"))[:MAX_LEDGER_ASSUMPTIONS]:
         assumption_id = identifier(item.get("assumption_id"), 80)
         if assumption_id:
-            if not _put_capsule_row(assumptions, assumption_id, _assumption_entry(item)):
+            if not _put_ledger_row(assumptions, assumption_id, _assumption_entry(item)):
                 return False
             assumption_ids.append(assumption_id)
     for item in _list(record.get("relations"))[:MAX_LEDGER_RELATIONS]:
         relation_id = identifier(item.get("relation_id"), 80)
         if relation_id:
-            if not _put_capsule_row(relations, relation_id, _relation_entry(item)):
+            if not _put_ledger_row(relations, relation_id, _relation_entry(item)):
                 return False
             relation_ids.append(relation_id)
 
@@ -583,23 +583,12 @@ def _stamp_record_integrities(payload: Mapping[str, object]) -> None:
         record["record_integrity"] = _record_integrity(payload, record)
 
 
-def _put_capsule_row(
+def _put_ledger_row(
     rows: dict[str, object],
     row_id: str,
     entry: Mapping[str, object],
-) -> bool:
-    existing = rows.get(row_id)
-    normalized = dict(entry)
-    if existing is not None and existing != normalized:
-        return False
-    rows[row_id] = normalized
-    return True
-
-
-def _put_source_row(
-    rows: dict[str, object],
-    row_id: str,
-    entry: Mapping[str, object],
+    *,
+    merge: Callable[[Mapping[str, object], Mapping[str, object]], dict[str, object] | None] | None = None,
 ) -> bool:
     existing = rows.get(row_id)
     normalized = dict(entry)
@@ -608,10 +597,25 @@ def _put_source_row(
         return True
     if not isinstance(existing, dict):
         return False
-    if not _source_rows_compatible(existing, normalized):
+    if merge is None:
+        if existing != normalized:
+            return False
+        rows[row_id] = normalized
+        return True
+    merged = merge(existing, normalized)
+    if merged is None:
         return False
-    rows[row_id] = _merge_source_entry(existing, normalized)
+    rows[row_id] = merged
     return True
+
+
+def _merge_source_row(
+    existing: Mapping[str, object],
+    incoming: Mapping[str, object],
+) -> dict[str, object] | None:
+    if not _source_rows_compatible(existing, incoming):
+        return None
+    return _merge_source_entry(existing, incoming)
 
 
 def _source_rows_compatible(
