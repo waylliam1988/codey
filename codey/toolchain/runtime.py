@@ -18,15 +18,15 @@ from codey.storage.atomic_io import write_text_atomic
 from codey.policies.action import (
     ActionSubject,
     DECISION_DENY,
-    command_has_forbidden_tokens,
     evaluate_action,
-    is_allowed_run_command,
-    is_suite_run_command,
-    strip_python_flags,
 )
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
+    command_has_forbidden_tokens,
+    is_allowed_run_command,
+    is_suite_run_command,
+    strip_python_flags,
 )
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,

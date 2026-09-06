@@ -160,6 +160,31 @@ _DOTNET_PATH_VALUE_OPTIONS = frozenset({
     "--results-directory",
     "--settings",
 })
+RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
+RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
+RUN_ALLOWED_PYTHON_MODULES = {
+    "unittest",
+    "pytest",
+    "py_compile",
+    "mypy",
+    "ruff",
+}
+RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
+RUN_ALLOWED_MAKE_TARGETS = {"test", "build", "lint", "check", "typecheck"}
+RUN_ALLOWED_DENO_TASKS = {"test", "lint", "check"}
+RUN_ALLOWED_RUFF_SUBCOMMANDS = {"check", "format"}
+RUN_NODE_PACKAGE_MANAGERS = {
+    "npm",
+    "npm.cmd",
+    "npm.exe",
+    "pnpm",
+    "pnpm.cmd",
+    "pnpm.exe",
+    "yarn",
+    "yarn.cmd",
+    "yarn.exe",
+}
+RUN_BUN_EXECUTABLES = {"bun", "bun.cmd", "bun.exe"}
 
 
 @dataclass(frozen=True)
@@ -206,6 +231,129 @@ def canonical_run_command(
         _referenced_path_args(argv, platform=platform),
     ))
     return CanonicalRunCommand(argv=argv, cwd=cwd, referenced_paths=refs)
+
+
+def command_has_forbidden_tokens(argv: list[str]) -> bool:
+    return any(token in arg for arg in argv for token in RUN_FORBIDDEN_TOKENS)
+
+
+def strip_python_flags(argv: list[str]) -> list[str]:
+    args = argv[1:]
+    while args and args[0] in RUN_ALLOWED_PYTHON_FLAGS:
+        args = args[1:]
+    return args
+
+
+def is_allowed_run_command(argv: list[str]) -> bool:
+    if not argv:
+        return False
+    exe = Path(argv[0]).name.lower()
+    if exe in {"python", "python.exe", "py", "py.exe"}:
+        args = strip_python_flags(argv)
+        if len(args) >= 2 and args[0] == "-m" and args[1] in RUN_ALLOWED_PYTHON_MODULES:
+            return _python_module_args_allowed(args[1], args[2:])
+        return False
+    if exe in {"pytest", "pytest.exe"}:
+        return True
+    if exe in {"mypy", "mypy.exe"}:
+        return _mypy_args_allowed(argv[1:])
+    if exe in {"ruff", "ruff.exe"}:
+        return _ruff_args_allowed(argv[1:])
+    if exe in RUN_NODE_PACKAGE_MANAGERS:
+        return _node_script_allowed(argv)
+    if exe in RUN_BUN_EXECUTABLES:
+        return _bun_args_allowed(argv)
+    if exe in {"deno", "deno.exe"}:
+        return _deno_args_allowed(argv[1:])
+    if exe in {"go", "go.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build", "vet"}
+    if exe in {"cargo", "cargo.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build", "check"}
+    if exe in {"dotnet", "dotnet.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build"}
+    if exe in {"make", "make.exe", "gmake", "gmake.exe"}:
+        return len(argv) >= 2 and all(arg in RUN_ALLOWED_MAKE_TARGETS for arg in argv[1:])
+    return False
+
+
+def is_suite_run_command(argv: list[str]) -> bool:
+    if not is_allowed_run_command(argv):
+        return False
+    exe = Path(argv[0]).name.lower()
+    if exe in {"pytest", "pytest.exe", "mypy", "mypy.exe"}:
+        return True
+    if exe in {"python", "python.exe", "py", "py.exe"}:
+        args = strip_python_flags(argv)
+        return len(args) >= 2 and args[0] == "-m" and args[1] in {
+            "unittest",
+            "pytest",
+            "mypy",
+        }
+    if exe in {"go", "go.exe", "cargo", "cargo.exe", "dotnet", "dotnet.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build"}
+    if exe in {"make", "make.exe", "gmake", "gmake.exe"}:
+        return True
+    if exe in {"deno", "deno.exe"}:
+        return len(argv) >= 2 and argv[1] == "test"
+    if exe in RUN_NODE_PACKAGE_MANAGERS or exe in RUN_BUN_EXECUTABLES:
+        return len(argv) >= 2 and (
+            argv[1] in {"test", "build"}
+            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in {"test", "build"})
+        )
+    return False
+
+
+def _node_script_allowed(argv: list[str]) -> bool:
+    return len(argv) >= 2 and (
+        argv[1] in RUN_ALLOWED_NPM_SCRIPTS
+        or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
+    )
+
+
+def _bun_args_allowed(argv: list[str]) -> bool:
+    if len(argv) < 2:
+        return False
+    if argv[1] == "test":
+        return True
+    return len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS
+
+
+def _ruff_arg_mutates(arg: str) -> bool:
+    return (
+        arg.startswith("--fix")
+        or arg.startswith("--unsafe-fixes")
+        or arg.startswith("--add-noqa")
+        or arg.startswith("--output-file")
+    )
+
+
+def _ruff_args_allowed(args: list[str]) -> bool:
+    if not args or args[0] not in RUN_ALLOWED_RUFF_SUBCOMMANDS:
+        return False
+    rest = args[1:]
+    if args[0] == "format":
+        return "--check" in rest
+    return not any(_ruff_arg_mutates(arg) for arg in rest)
+
+
+def _mypy_args_allowed(args: list[str]) -> bool:
+    return not any(arg.startswith("--install-types") for arg in args)
+
+
+def _deno_args_allowed(args: list[str]) -> bool:
+    if not args:
+        return False
+    if args[0] == "fmt":
+        return "--check" in args[1:]
+    return args[0] in RUN_ALLOWED_DENO_TASKS
+
+
+def _python_module_args_allowed(module: str, args: list[str]) -> bool:
+    if module == "ruff":
+        return _ruff_args_allowed(args)
+    if module == "mypy":
+        return _mypy_args_allowed(args)
+    return True
 
 
 def _project_root(project: str | Path) -> Path:
