@@ -15,6 +15,11 @@ from codey.completion.contract import (
     CHECK_NOT_RUN,
     CHECK_PASS,
 )
+from codey.completion.decision import (
+    BLOCKED_ENVIRONMENT_FAILURE,
+    build_completion_decision,
+    completion_blocked_reason,
+)
 from codey.completion.verification import (
     ENVIRONMENT_FAILURE_REASON_CODES,
     ENVIRONMENT_FAILURE_SIGNATURES,
@@ -41,6 +46,7 @@ from codey.completion.verification import (
     classify_verification_failure,
     coding_completion_checks,
     coding_verification_state,
+    decisive_environment_failure_fact,
     decisive_failure_fact,
     match_environment_failure,
     matching_analysis_run_refs,
@@ -48,6 +54,10 @@ from codey.completion.verification import (
     repairable_failure_class,
     verification_provenance,
 )
+from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.events import RunEvent
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
 
 
 FINGERPRINT = "sha256:" + ("1" * 64)
@@ -80,12 +90,14 @@ class _StubEvidence:
         self,
         successful=(),
         failed=(),
+        environment_failures=(),
         observed_tool_events: int = 0,
         workspace_revision: int = 1,
         workspace_fingerprint: str = FINGERPRINT,
     ) -> None:
         self.successful_checks = list(successful)
         self.failed_checks_after_edit = list(failed)
+        self.environment_failures_after_edit = list(environment_failures)
         self.observed_tool_events = observed_tool_events
         self.workspace_revision = workspace_revision
         self.workspace_fingerprint = workspace_fingerprint
@@ -138,6 +150,71 @@ class TriStateTests(unittest.TestCase):
                 root=_ROOT,
             ),
             VERIFICATION_FRESH_FAIL,
+        )
+
+    def test_non_check_run_failure_does_not_override_fresh_pass(self) -> None:
+        selected = _selected()
+        files = ("src/mod.py",)
+        evidence = ExecutionEvidence(
+            workspace_revision=1,
+            workspace_fingerprint=FINGERPRINT,
+        )
+        args = {"path": ".", "command": "pytest -q"}
+        evidence.record(RunEvent.tool_finished(
+            1,
+            ToolCall("run", args),
+            ToolOutcome("ok", True, exit_code=0),
+        ))
+        evidence.record(RunEvent.tool_finished(
+            2,
+            ToolCall("run", args),
+            ToolOutcome.error("command timed out", error_code="timeout"),
+        ))
+
+        self.assertEqual(
+            coding_verification_state(selected, evidence, files, root=_ROOT),
+            VERIFICATION_FRESH_PASS,
+        )
+        self.assertIsNone(decisive_failure_fact(selected, evidence, files, root=_ROOT))
+        self.assertIsNotNone(
+            decisive_environment_failure_fact(selected, evidence, files, root=_ROOT)
+        )
+
+    def test_non_check_run_failure_reports_environment_block_when_no_green_exists(self) -> None:
+        selected = _selected()
+        files = ("src/mod.py",)
+        evidence = ExecutionEvidence(
+            workspace_revision=1,
+            workspace_fingerprint=FINGERPRINT,
+        )
+        args = {"path": ".", "command": "pytest -q"}
+        evidence.record(RunEvent.tool_finished(
+            1,
+            ToolCall("run", args),
+            ToolOutcome.error("command timed out", error_code="timeout"),
+        ))
+
+        decision = build_completion_decision(
+            run_id="run-timeout",
+            stop_reason="done",
+            task_changed=True,
+            files=files,
+            selected_check=selected,
+            evidence=evidence,
+            project=_ROOT,
+        )
+
+        self.assertEqual(decision.local_state, VERIFICATION_UNOBSERVED)
+        self.assertEqual(decision.failure_class, FAILURE_ENVIRONMENT)
+        assert decision.proof is not None
+        self.assertEqual(
+            completion_blocked_reason(
+                proof_status=decision.proof.status,
+                failure_class=decision.failure_class,
+                remaining_turns=2,
+                repair_rounds=0,
+            ),
+            BLOCKED_ENVIRONMENT_FAILURE,
         )
 
     def test_stale_workspace_revision_green_cannot_back_current_proof(self) -> None:

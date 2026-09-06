@@ -24,6 +24,7 @@ from codey.completion.verification import (
     build_coding_completion_proof,
     classify_verification_failure,
     coding_verification_state,
+    decisive_environment_failure_fact,
     decisive_failure_fact,
     matching_analysis_run_refs,
     relevant_verification_pairs,
@@ -106,19 +107,35 @@ def build_completion_decision(
     )
     failure_class = ""
     if proof is not None and not proof.satisfied:
+        environment = decisive_environment_failure_fact(
+            selected_check,
+            evidence,
+            files,
+            root=project or ".",
+        )
         decisive = decisive_failure_fact(
             selected_check,
             evidence,
             files,
             root=project or ".",
         )
-        failure_class = classify_verification_failure(
-            proof_status=proof.status,
-            selected_check_present=selected_check is not None,
-            decisive_error_code=str(getattr(decisive, "error_code", "") or ""),
-            decisive_exit_code=getattr(decisive, "exit_code", None),
-            decisive_result_summary=str(getattr(decisive, "result_summary", "") or ""),
-        )
+        failure = environment or decisive
+        if environment is not None:
+            failure_class = classify_verification_failure(
+                proof_status="failed",
+                selected_check_present=selected_check is not None,
+                decisive_error_code=str(getattr(failure, "error_code", "") or ""),
+                decisive_exit_code=getattr(failure, "exit_code", None),
+                decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
+            )
+        else:
+            failure_class = classify_verification_failure(
+                proof_status=proof.status,
+                selected_check_present=selected_check is not None,
+                decisive_error_code=str(getattr(failure, "error_code", "") or ""),
+                decisive_exit_code=getattr(failure, "exit_code", None),
+                decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
+            )
     return CompletionDecision(
         proof=proof,
         provenance=provenance,
@@ -155,10 +172,10 @@ def completion_blocked_reason(
     admitted.
     """
 
-    if str(proof_status or "") == "blocked":
-        return BLOCKED_UNOBSERVED
     if str(failure_class or "") in _ENVIRONMENT_FAILURE_CLASSES:
         return BLOCKED_ENVIRONMENT_FAILURE
+    if str(proof_status or "") == "blocked":
+        return BLOCKED_UNOBSERVED
     if int(remaining_turns) <= 0:
         return BLOCKED_TURN_BUDGET_EXHAUSTED
     if int(repair_rounds) > 0:

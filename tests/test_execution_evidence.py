@@ -82,8 +82,9 @@ class ExecutionEvidenceTests(unittest.TestCase):
         ))
 
         self.assertTrue(evidence.has_successful_checks)
-        self.assertEqual(len(evidence.failed_checks_after_edit), 1)
-        self.assertEqual(evidence.failed_checks_after_edit[0].error_code, "policy_denied")
+        self.assertEqual(evidence.failed_checks_after_edit, [])
+        self.assertEqual(len(evidence.environment_failures_after_edit), 1)
+        self.assertEqual(evidence.environment_failures_after_edit[0].error_code, "policy_denied")
 
     def test_timeout_run_does_not_clear_green_checks(self) -> None:
         evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
@@ -96,8 +97,9 @@ class ExecutionEvidenceTests(unittest.TestCase):
         ))
 
         self.assertTrue(evidence.has_successful_checks)
-        self.assertEqual(len(evidence.failed_checks_after_edit), 1)
-        self.assertEqual(evidence.failed_checks_after_edit[0].error_code, "timeout")
+        self.assertEqual(evidence.failed_checks_after_edit, [])
+        self.assertEqual(len(evidence.environment_failures_after_edit), 1)
+        self.assertEqual(evidence.environment_failures_after_edit[0].error_code, "timeout")
 
     def test_workspace_drift_invalidates_all_check_evidence(self) -> None:
         evidence = ExecutionEvidence(workspace_fingerprint=FINGERPRINT)
@@ -110,6 +112,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
 
         self.assertFalse(evidence.has_successful_checks)
         self.assertEqual(evidence.failed_checks_after_edit, [])
+        self.assertEqual(evidence.environment_failures_after_edit, [])
 
     def test_failure_summary_screens_markers_shapes_and_entropy(self) -> None:
         class Outcome:

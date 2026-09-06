@@ -350,6 +350,21 @@ def _current_failed_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, 
     )
 
 
+def _current_environment_failures(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
+    rows = getattr(evidence, "environment_failures", None)
+    if rows is not None:
+        return tuple(
+            item
+            for item in rows
+            if _check_matches_current_workspace(evidence, item)
+        )
+    return tuple(
+        item
+        for item in getattr(evidence, "environment_failures_after_edit", ())
+        if _check_matches_current_workspace(evidence, item)
+    )
+
+
 def _check_matches_current_workspace(
     evidence: ExecutionEvidence,
     item: CheckEvidence,
@@ -682,6 +697,29 @@ def decisive_failure_fact(
     return None
 
 
+def decisive_environment_failure_fact(
+    selected_check: object,
+    evidence: ExecutionEvidence,
+    files: tuple[str, ...],
+    *,
+    root: str | Path,
+) -> CheckEvidence | None:
+    """The first environment failure that covers the selected candidate."""
+
+    if selected_check is None:
+        return None
+    for item in _current_environment_failures(evidence):
+        if check_covers_selected_candidate(
+            selected_check,
+            item.command,
+            item.cwd,
+            files,
+            root=root,
+        ):
+            return item
+    return None
+
+
 def repairable_failure_class(failure_class: str) -> bool:
     """Only observed product failures may become repair candidates."""
 
@@ -723,6 +761,7 @@ __all__ = [
     "coding_completion_limitations",
     "coding_verification_state",
     "decisive_failure_fact",
+    "decisive_environment_failure_fact",
     "matching_analysis_run_refs",
     "match_environment_failure",
     "relevant_verification_pairs",
