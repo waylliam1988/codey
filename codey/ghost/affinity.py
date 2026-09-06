@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
@@ -2677,8 +2677,8 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
                 "readable": True,
                 "warning": "affinity_events_too_large",
             }
-        event_count = len(path.read_text(encoding="utf-8").splitlines())
-    except (OSError, UnicodeDecodeError):
+        event_count = count_jsonl_rows(path)
+    except OSError:
         return {"events": 0, "bytes": 0, "readable": False, "warning": "affinity_events_unreadable"}
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 

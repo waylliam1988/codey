@@ -57,6 +57,39 @@ class GhostEventLog:
         with with_file_lock(self.path):
             return self.read_locked()
 
+    def read_tail(self, max_rows: int) -> GhostEventRead:
+        """Read and validate the last JSONL rows without parsing the full log."""
+        count = max(0, int(max_rows or 0))
+        if count == 0:
+            return GhostEventRead(())
+        with with_file_lock(self.path):
+            try:
+                if not self.path.is_file():
+                    return GhostEventRead(())
+                event_bytes = self.path.stat().st_size
+                if self.max_bytes is not None and event_bytes > self.max_bytes:
+                    return GhostEventRead((), (f"{self.source_name}:too_large",), True)
+                line_count = count_jsonl_rows(self.path)
+                lines = _tail_lines(self.path, count, event_bytes)
+            except (OSError, UnicodeDecodeError):
+                return GhostEventRead((), (f"{self.source_name}:unreadable",), True)
+
+        rows: list[dict[str, object]] = []
+        warnings: list[str] = []
+        first_line = max(1, line_count - len(lines) + 1)
+        for offset, line in enumerate(lines):
+            if not line.strip():
+                continue
+            payload, warning = self._decode_line(line, first_line + offset)
+            if warning:
+                warnings.append(warning)
+                if self.bad_row_policy != "warn":
+                    return GhostEventRead((), tuple(warnings[: self.max_warnings]), True)
+                continue
+            assert payload is not None
+            rows.append(payload)
+        return GhostEventRead(tuple(rows), tuple(warnings[: self.max_warnings]))
+
     def read_locked(self) -> GhostEventRead:
         """Read events when the caller already holds this log's file lock."""
         try:
@@ -144,10 +177,16 @@ class GhostEventLog:
 
     def prune_tail(self, max_rows: int) -> None:
         count = max(0, int(max_rows))
-        read = self.read()
-        if read.blocked or len(read.rows) <= count:
-            return
-        self.write_atomic(read.rows[-count:])
+        with with_file_lock(self.path):
+            try:
+                if not self.path.is_file() or count_jsonl_rows(self.path) <= count:
+                    return
+            except OSError:
+                return
+            read = self.read_locked()
+            if read.blocked or len(read.rows) <= count:
+                return
+            self.write_atomic_locked(read.rows[-count:])
 
     def delete(self) -> None:
         with with_file_lock(self.path):
@@ -219,3 +258,37 @@ def json_line(value: dict[str, object]) -> str:
         sort_keys=True,
         allow_nan=False,
     ) + "\n"
+
+
+def count_jsonl_rows(path: str | Path) -> int:
+    count = 0
+    last_byte = b""
+    with Path(path).open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            count += chunk.count(b"\n")
+            last_byte = chunk[-1:]
+    if last_byte and last_byte != b"\n":
+        count += 1
+    return count
+
+
+def _tail_lines(path: Path, max_rows: int, size: int) -> list[str]:
+    chunks: list[bytes] = []
+    remaining = max(0, int(size))
+    newlines = 0
+    with path.open("rb") as handle:
+        while remaining > 0 and newlines <= max_rows:
+            step = min(8192, remaining)
+            remaining -= step
+            handle.seek(remaining)
+            chunk = handle.read(step)
+            chunks.append(chunk)
+            newlines += chunk.count(b"\n")
+    data = b"".join(reversed(chunks))
+    return [
+        line.decode("utf-8")
+        for line in data.splitlines()[-max_rows:]
+    ]

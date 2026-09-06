@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -557,8 +557,8 @@ class GhostContinuityStore:
             if event_bytes > MAX_CONTINUITY_EVENTS_BYTES:
                 event_count = MAX_CONTINUITY_EVENTS + 1
             else:
-                event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):
+                event_count = count_jsonl_rows(self.events_path)
+        except OSError:
             return
         if event_count <= MAX_CONTINUITY_EVENTS and event_bytes <= MAX_CONTINUITY_EVENTS_BYTES:
             return
@@ -1268,8 +1268,8 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
                 "readable": True,
                 "warning": "continuity_events_too_large",
             }
-        event_count = len(path.read_text(encoding="utf-8").splitlines())
-    except (OSError, UnicodeDecodeError):
+        event_count = count_jsonl_rows(path)
+    except OSError:
         return {"events": 0, "bytes": 0, "readable": False, "warning": "continuity_events_unreadable"}
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 

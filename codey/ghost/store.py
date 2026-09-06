@@ -73,11 +73,12 @@ class GhostSignalStore:
         return True
 
     def read_recent(self, limit: int = 20) -> tuple[dict[str, object], ...]:
-        rows = self._read_rows()
         count = max(0, int(limit or 0))
         if count == 0:
             return ()
-        return tuple(rows[-count:])
+        read = self.log.read_tail(count)
+        self.last_warnings = read.warnings
+        return tuple(read.rows)
 
     def read_all(self) -> tuple[dict[str, object], ...]:
         return tuple(self._read_rows())

@@ -16,7 +16,7 @@ import uuid
 
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -643,8 +643,8 @@ class GhostSleepStore:
                 if event_bytes > MAX_SLEEP_EVENTS_BYTES:
                     event_count = MAX_SLEEP_EVENTS + 1
                 else:
-                    event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
-            except (OSError, UnicodeDecodeError):
+                    event_count = count_jsonl_rows(self.events_path)
+            except OSError:
                 return
             if event_count <= MAX_SLEEP_EVENTS and event_bytes <= MAX_SLEEP_EVENTS_BYTES:
                 return

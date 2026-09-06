@@ -9,7 +9,7 @@ import re
 import uuid
 from typing import Iterable
 
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 from codey.ghost.gate import (
     CANDIDATE_STATUSES,
     CANDIDATE_TYPES,
@@ -816,8 +816,8 @@ class GhostInboxStore:
             if event_bytes > MAX_EVENTS_BYTES:
                 line_count = MAX_GHOST_EVENTS + 1
             else:
-                line_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):
+                line_count = count_jsonl_rows(self.events_path)
+        except OSError:
             return
         if line_count <= MAX_GHOST_EVENTS and event_bytes <= MAX_EVENTS_BYTES:
             return
@@ -946,8 +946,8 @@ def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
         event_bytes = path.stat().st_size
         if event_bytes > max(0, int(max_bytes or 0)):
             return {"events": 0, "bytes": event_bytes, "readable": True, "warning": "events_too_large"}
-        event_count = len(path.read_text(encoding="utf-8").splitlines())
-    except (OSError, UnicodeDecodeError):
+        event_count = count_jsonl_rows(path)
+    except OSError:
         return {"events": 0, "bytes": 0, "readable": False, "warning": "events_unreadable"}
     return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 

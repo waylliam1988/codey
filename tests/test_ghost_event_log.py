@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from codey.ghost.event_log import GhostEventLog
+from codey.ghost.event_log import GhostEventLog, count_jsonl_rows
 
 
 class GhostEventLogTests(unittest.TestCase):
@@ -99,6 +99,39 @@ class GhostEventLogTests(unittest.TestCase):
 
             log.delete()
             self.assertFalse(path.exists())
+
+    def test_read_tail_returns_recent_valid_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "events.jsonl"
+            log = GhostEventLog(path, schema_version=1)
+            self.assertTrue(log.append(
+                {"schema_version": 1, "index": index}
+                for index in range(5)
+            ))
+
+            read = log.read_tail(2)
+
+        self.assertFalse(read.blocked)
+        self.assertEqual(read.warnings, ())
+        self.assertEqual(
+            read.rows,
+            (
+                {"schema_version": 1, "index": 3},
+                {"schema_version": 1, "index": 4},
+            ),
+        )
+
+    def test_count_jsonl_rows_counts_final_unterminated_row(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "events.jsonl"
+            path.write_text(
+                '{"schema_version":1,"index":0}\n{"schema_version":1,"index":1}',
+                encoding="utf-8",
+            )
+
+            count = count_jsonl_rows(path)
+
+        self.assertEqual(count, 2)
 
     def test_append_rejects_nan_non_object_and_overflow(self) -> None:
         with tempfile.TemporaryDirectory() as td:
