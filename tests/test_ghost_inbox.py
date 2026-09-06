@@ -12,7 +12,12 @@ from unittest import mock
 
 import codey.app.cli as cli
 from codey.ghost.hebbian import GhostHebbianStore
-from codey.ghost.inbox import GhostInboxStore, conflict_key_for_signal, value_key_for_signal
+from codey.ghost.inbox import (
+    GhostInboxStore,
+    GhostMemoryCandidate,
+    conflict_key_for_signal,
+    value_key_for_signal,
+)
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
 from codey.app.server import AppContext
@@ -474,6 +479,30 @@ class GhostInboxStoreTests(unittest.TestCase):
 
         self.assertEqual(conflict_key_for_signal(signal), "style_preference:reply_structure")
         self.assertEqual(value_key_for_signal(signal), "answer_first")
+
+    def test_untyped_signal_derives_value_key_but_payload_requires_it(self) -> None:
+        signal = _signal(
+            "correction",
+            scope="session",
+            summary="Prefer the existing runtime core.",
+            quote="继续保留 runtime core",
+        )
+        derived = value_key_for_signal(signal)
+
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            created = store.ingest_signals(
+                _result(signal),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+                user_text="继续保留 runtime core",
+            )
+
+        self.assertEqual(created[0].value_key, derived)
+        payload = created[0].to_payload()
+        payload.pop("value_key")
+        self.assertIsNone(GhostMemoryCandidate.from_payload(payload))
 
     def test_applicable_candidates_order_session_project_user(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -243,7 +243,7 @@ class RunLedgerWriter:
             checks_passed=bool(checks_passed) if checks_passed is not None else None,
             # The receipt enters the durable stream only in full schema-v1
             # shape: the projection layer rebuilds the user-visible receipt
-            # from this row, so a legacy or malformed payload must never
+            # from this row, so a schema-incomplete or malformed payload must never
             # land here.
             receipt=validated_receipt.to_dict() if validated_receipt is not None else None,
         )

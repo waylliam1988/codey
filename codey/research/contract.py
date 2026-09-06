@@ -48,7 +48,7 @@ BLOCKING_FINDINGS_REASON = "open_blocking_findings"
 
 
 def research_blocked_reason(review: ResearchProofReview | None) -> str:
-    """The queue gate's legacy reason codes, now owned by the projection."""
+    """The queue gate's reason codes, owned by the projection."""
 
     if review is None:
         return "research_proof_missing_research_record"

@@ -158,8 +158,8 @@ class FailOpenPromptTrace:
             if _is_trace_cancellation(exc):
                 raise
             return
-        # Admission metadata is appended only when present so legacy trace
-        # sinks keep receiving the exact same keyword contract as before.
+        # Admission metadata is appended only when present so sparse trace
+        # payloads stay compact.
         admission_kwargs: dict[str, str] = {}
         if epoch_id:
             admission_kwargs["epoch_id"] = epoch_id

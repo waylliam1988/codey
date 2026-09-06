@@ -133,7 +133,9 @@ class GhostMemoryCandidate:
         if confidence is None:
             return None
         reinforcement_count = max(1, _int_or_default(payload.get("reinforcement_count"), 1))
-        value_key = clip_signal_text(payload.get("value_key"), 180) or _legacy_value_key(summary, evidence_quote)
+        value_key = clip_signal_text(payload.get("value_key"), 180)
+        if not value_key:
+            return None
         return cls(
             id=candidate_id,
             candidate_type=candidate_type,
@@ -906,7 +908,7 @@ def value_key_for_signal(signal: GhostSignal) -> str:
     metadata_key = _metadata_value_key(getattr(signal, "metadata", {}) or {})
     if metadata_key:
         return metadata_key
-    return _legacy_value_key(signal.summary, signal.evidence_quote)
+    return _derived_value_key(signal.summary, signal.evidence_quote)
 
 
 def _metadata_conflict_key(metadata: object) -> str:
@@ -917,7 +919,7 @@ def _metadata_value_key(metadata: object) -> str:
     return metadata_value_key(metadata)
 
 
-def _legacy_value_key(summary: object, evidence_quote: object) -> str:
+def _derived_value_key(summary: object, evidence_quote: object) -> str:
     text = f"{summary} {evidence_quote}".casefold()
     return _token_slug(text)
 
