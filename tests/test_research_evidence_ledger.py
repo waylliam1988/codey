@@ -1276,6 +1276,16 @@ def test_bad_or_oversized_ledger_is_unavailable_and_append_rotates_bad_active_fi
     assert oversized.reason_code == "ledger_unavailable"
 
 
+def test_load_path_failure_is_unavailable_without_raising() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        with mock.patch.object(store, "path_for", side_effect=ValueError("bad path")):
+            snapshot = store.load(session_id="session-ledger")
+
+    assert snapshot.available is False
+    assert snapshot.reason_code == "ledger_unavailable"
+
+
 def test_append_rotates_full_ledger_and_preserves_current_record() -> None:
     with tempfile.TemporaryDirectory() as td:
         store = EvidenceLedgerStore(Path(td) / "state")

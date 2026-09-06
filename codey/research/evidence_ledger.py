@@ -362,8 +362,11 @@ class EvidenceLedgerStore:
         session_id: str = "",
         project: str | Path | None = None,
     ) -> EvidenceLedgerSnapshot:
-        path = self.path_for(session_id, project)
-        payload = self._load_payload(path)
+        try:
+            path = self.path_for(session_id, project)
+            payload = self._load_payload(path)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return EvidenceLedgerSnapshot(False, self.root, reason_code="ledger_unavailable")
         if payload is None:
             return EvidenceLedgerSnapshot(False, path, reason_code="ledger_unavailable")
         if not payload:
