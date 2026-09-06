@@ -10,11 +10,12 @@ from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
-from codey.runtime.effects import (
+from codey.runtime.operation_state import (
     RuntimeOperationStore,
     mark_terminal,
     mark_writer_running,
 )
+from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.session_log import RuntimeSessionLog
 
 
@@ -316,8 +317,10 @@ class RunDetailsTests(unittest.TestCase):
             state = Path(td)
             ledger_store = RunLedgerStore(state)
             trace_store = RunTraceStore(state)
-            store = RuntimeOperationStore(RuntimeSessionLog(state))
-            started = store.start(
+            log = RuntimeSessionLog(state)
+            store = RuntimeOperationStore(log)
+            line = RuntimeMutationLine(log)
+            started = line.accept_operation(
                 session_id="session-progress",
                 run_id="run-progress",
                 project="",
@@ -326,7 +329,7 @@ class RunDetailsTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             self.assertIsNotNone(started)
-            store.commit(
+            line.transition_operation(
                 "session-progress",
                 "run-progress",
                 lambda s: mark_writer_running(s, provider_id="deepseek"),
@@ -354,7 +357,7 @@ class RunDetailsTests(unittest.TestCase):
             self.assertEqual(rows["Progress"]["tone"], "warning")
 
             # Terminal: the run finished normally, so no Progress row.
-            store.commit(
+            line.transition_operation(
                 "session-progress",
                 "run-progress",
                 lambda s: mark_terminal(
@@ -381,8 +384,10 @@ class RunDetailsTests(unittest.TestCase):
     def test_runtime_only_interrupted_operation_makes_details_available(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)
-            store = RuntimeOperationStore(RuntimeSessionLog(state))
-            started = store.start(
+            log = RuntimeSessionLog(state)
+            store = RuntimeOperationStore(log)
+            line = RuntimeMutationLine(log)
+            started = line.accept_operation(
                 session_id="session-runtime-only",
                 run_id="run-runtime-only",
                 project="",
@@ -392,7 +397,7 @@ class RunDetailsTests(unittest.TestCase):
                 task_kind="project",
             )
             self.assertIsNotNone(started)
-            store.commit(
+            line.transition_operation(
                 "session-runtime-only",
                 "run-runtime-only",
                 lambda s: mark_writer_running(s, provider_id="deepseek"),
@@ -416,8 +421,10 @@ class RunDetailsTests(unittest.TestCase):
     def test_runtime_only_terminal_operation_makes_details_available_without_progress(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = Path(td)
-            store = RuntimeOperationStore(RuntimeSessionLog(state))
-            started = store.start(
+            log = RuntimeSessionLog(state)
+            store = RuntimeOperationStore(log)
+            line = RuntimeMutationLine(log)
+            started = line.accept_operation(
                 session_id="session-runtime-terminal",
                 run_id="run-runtime-terminal",
                 project="",
@@ -427,7 +434,7 @@ class RunDetailsTests(unittest.TestCase):
                 task_kind="research",
             )
             self.assertIsNotNone(started)
-            store.commit(
+            line.transition_operation(
                 "session-runtime-terminal",
                 "run-runtime-terminal",
                 lambda s: mark_terminal(

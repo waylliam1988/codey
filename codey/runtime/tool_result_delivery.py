@@ -22,7 +22,7 @@ import hashlib
 from typing import Any
 import uuid
 
-from codey.runtime.effects import lane_for_run, operation_id_for_run
+from codey.runtime.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.replay_policy import is_replayable_safe_tool
 from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 
@@ -398,8 +398,372 @@ class DeliveryBatchProjection:
         )
 
 
+def prepare_batch_intent(
+    session_id: str,
+    run_id: str,
+    intent: DeliveryBatchIntent,
+) -> DeliveryBatchIntent:
+    expected_lane = lane_for_run(run_id)
+    expected_op = operation_id_for_run(run_id)
+    if intent.session_id and intent.session_id != session_id:
+        raise ToolResultDeliveryError(
+            f"intent session_id mismatch: expected {session_id!r}, got {intent.session_id!r}"
+        )
+    if intent.run_id and intent.run_id != run_id:
+        raise ToolResultDeliveryError(
+            f"intent run_id mismatch: expected {run_id!r}, got {intent.run_id!r}"
+        )
+    if intent.lane and intent.lane != expected_lane:
+        raise ToolResultDeliveryError(
+            f"intent lane mismatch: expected {expected_lane!r}, got {intent.lane!r}"
+        )
+    if intent.operation_id and intent.operation_id != expected_op:
+        raise ToolResultDeliveryError(
+            f"intent operation_id mismatch: expected {expected_op!r}, got {intent.operation_id!r}"
+        )
+    return DeliveryBatchIntent(
+        batch_id=intent.batch_id,
+        session_id=session_id,
+        run_id=run_id,
+        lane=expected_lane,
+        operation_id=expected_op,
+        turn=intent.turn,
+        items=intent.items,
+        batch_digest=intent.batch_digest,
+        created_at=intent.created_at,
+    )
+
+
+def delivery_record_entry(payload: dict[str, Any]) -> dict[str, object]:
+    lane = _require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS)
+    operation_id = _require_bounded_str(
+        payload.get("operation_id"),
+        "operation_id",
+        MAX_REF_CHARS,
+    )
+    return {
+        "lane": lane,
+        "operation_id": operation_id,
+        "kind": "operation_effect",
+        "payload": payload,
+    }
+
+
+def batch_intent_entry(intent: DeliveryBatchIntent) -> dict[str, object]:
+    payload = intent.to_payload()
+    _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def send_attempt_entry(
+    session_id: str,
+    run_id: str,
+    *,
+    batch_id: str,
+    provider_effect_id: str,
+    batches: tuple[DeliveryBatchProjection, ...],
+) -> dict[str, object] | None:
+    clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+    clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
+    projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
+    if projection is None:
+        raise ToolResultDeliveryError(f"cannot record send_attempt for unknown batch: {clean_batch_id!r}")
+    if projection.is_delivered:
+        raise ToolResultDeliveryError(f"cannot record send_attempt for delivered batch: {clean_batch_id!r}")
+    if clean_peid in projection.send_attempts:
+        return None
+    if projection.send_attempts:
+        raise ToolResultDeliveryError(f"batch already has a send_attempt: {clean_batch_id!r}")
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "effect_kind": EFFECT_KIND,
+        "record_kind": RECORD_KIND_SEND_ATTEMPT,
+        "ref": f"delivery_attempt:{clean_batch_id}:{clean_peid}",
+        "batch_id": clean_batch_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "lane": lane_for_run(run_id),
+        "operation_id": operation_id_for_run(run_id),
+        "provider_effect_id": clean_peid,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def delivered_entry(
+    session_id: str,
+    run_id: str,
+    *,
+    batch_id: str,
+    provider_effect_id: str,
+    batches: tuple[DeliveryBatchProjection, ...],
+) -> dict[str, object] | None:
+    clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+    clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
+    projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
+    if projection is None:
+        raise ToolResultDeliveryError(f"cannot record delivered for unknown batch: {clean_batch_id!r}")
+    if clean_peid in projection.delivered_effect_ids:
+        return None
+    if projection.delivered_effect_ids:
+        raise ToolResultDeliveryError(f"batch already has a delivered receipt: {clean_batch_id!r}")
+    if clean_peid not in projection.send_attempts:
+        raise ToolResultDeliveryError(
+            f"cannot record delivered without matching send_attempt: {clean_batch_id!r}"
+        )
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "effect_kind": EFFECT_KIND,
+        "record_kind": RECORD_KIND_DELIVERED,
+        "ref": f"delivery_delivered:{clean_batch_id}:{clean_peid}",
+        "batch_id": clean_batch_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "lane": lane_for_run(run_id),
+        "operation_id": operation_id_for_run(run_id),
+        "provider_effect_id": clean_peid,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def recovered_entry(
+    session_id: str,
+    run_id: str,
+    *,
+    batch_id: str,
+    recovered_effect_ids: Sequence[str],
+    recovered_reads: int = 0,
+    recovered_lookups: int = 0,
+    batches: tuple[DeliveryBatchProjection, ...],
+) -> dict[str, object] | None:
+    clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+    if not isinstance(recovered_effect_ids, (list, tuple)):
+        raise ToolResultDeliveryError("recovered_effect_ids must be a sequence")
+    clean_effect_ids = [
+        _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
+        for eid in recovered_effect_ids
+    ]
+    rec_reads = _require_nonnegative_int(recovered_reads, "recovered_reads")
+    rec_lookups = _require_nonnegative_int(recovered_lookups, "recovered_lookups")
+    projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
+    if projection is None:
+        raise ToolResultDeliveryError(f"cannot record recovered for unknown batch: {clean_batch_id!r}")
+    if projection.is_recovered:
+        if (
+            list(projection.recovered_effect_ids) == clean_effect_ids
+            and projection.recovered_reads == rec_reads
+            and projection.recovered_lookups == rec_lookups
+        ):
+            return None
+        raise ToolResultDeliveryError(f"conflicting recovered record for batch {clean_batch_id!r}")
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "effect_kind": EFFECT_KIND,
+        "record_kind": RECORD_KIND_RECOVERED,
+        "ref": f"delivery_recovered:{clean_batch_id}",
+        "batch_id": clean_batch_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "lane": lane_for_run(run_id),
+        "operation_id": operation_id_for_run(run_id),
+        "recovered_effect_ids": clean_effect_ids,
+        "recovered_reads": rec_reads,
+        "recovered_lookups": rec_lookups,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def iter_delivery_records_from_entries(
+    entries: tuple[RuntimeLogEntry, ...],
+    *,
+    session_id: str,
+    run_id: str,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Iterate and strictly validate all delivery records for this run."""
+    for entry in entries:
+        if entry.kind != "operation_effect":
+            continue
+        payload = entry.payload
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("effect_kind") != EFFECT_KIND:
+            continue
+
+        if not _validate_run_boundary(entry, payload, session_id, run_id):
+            continue
+
+        rkind = payload.get("record_kind")
+        if rkind not in RECORD_KINDS:
+            raise ToolResultDeliveryError(f"unknown delivery record_kind: {rkind!r}")
+
+        batch_id = payload.get("batch_id")
+        _require_bounded_str(batch_id, "batch_id in delivery record", MAX_BATCH_ID_CHARS)
+
+        if rkind == RECORD_KIND_BATCH_INTENT:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
+        elif rkind == RECORD_KIND_SEND_ATTEMPT:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
+            peid = payload.get("provider_effect_id")
+            _require_bounded_str(peid, "provider_effect_id in send_attempt", MAX_EFFECT_ID_CHARS)
+        elif rkind == RECORD_KIND_DELIVERED:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
+            peid = payload.get("provider_effect_id")
+            _require_bounded_str(peid, "provider_effect_id in delivered", MAX_EFFECT_ID_CHARS)
+        elif rkind == RECORD_KIND_RECOVERED:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
+            _require_nonnegative_int(payload.get("recovered_reads"), "recovered_reads")
+            _require_nonnegative_int(payload.get("recovered_lookups"), "recovered_lookups")
+            effect_ids = payload.get("recovered_effect_ids")
+            if not isinstance(effect_ids, list):
+                raise ToolResultDeliveryError("recovered_effect_ids must be a list")
+            for eid in effect_ids:
+                _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
+
+        yield rkind, payload
+
+
+def batches_from_entries(
+    entries: tuple[RuntimeLogEntry, ...],
+    *,
+    session_id: str,
+    run_id: str,
+) -> tuple[DeliveryBatchProjection, ...]:
+    intents: dict[str, DeliveryBatchIntent] = {}
+    ordered_batch_ids: list[str] = []
+    send_attempts: dict[str, list[str]] = {}
+    delivered: dict[str, list[str]] = {}
+    recovered_facts: dict[str, dict[str, Any]] = {}
+
+    for rkind, payload in iter_delivery_records_from_entries(
+        entries,
+        session_id=session_id,
+        run_id=run_id,
+    ):
+        batch_id = payload["batch_id"]
+
+        if rkind == RECORD_KIND_BATCH_INTENT:
+            raw_items = payload.get("items")
+            if not isinstance(raw_items, list) or not raw_items:
+                raise ToolResultDeliveryError(
+                    f"batch_intent missing or invalid items in batch {batch_id!r}"
+                )
+            items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
+            turn = _require_nonnegative_int(payload.get("turn"), "turn")
+            intent = DeliveryBatchIntent(
+                batch_id=batch_id,
+                session_id=str(payload.get("session_id") or ""),
+                run_id=str(payload.get("run_id") or ""),
+                lane=str(payload.get("lane") or ""),
+                operation_id=str(payload.get("operation_id") or ""),
+                turn=turn,
+                items=items,
+                batch_digest=str(payload.get("batch_digest") or ""),
+                created_at=str(payload.get("created_at") or ""),
+            )
+            intent.validate()
+
+            if batch_id in intents:
+                existing = intents[batch_id]
+                if (
+                    existing.turn != intent.turn
+                    or existing.items != intent.items
+                    or existing.batch_digest != intent.batch_digest
+                ):
+                    raise ToolResultDeliveryError(
+                        f"conflicting duplicate batch intent for batch_id {batch_id!r}"
+                    )
+            else:
+                intents[batch_id] = intent
+                ordered_batch_ids.append(batch_id)
+
+        elif rkind == RECORD_KIND_SEND_ATTEMPT:
+            send_attempts.setdefault(batch_id, []).append(payload["provider_effect_id"])
+
+        elif rkind == RECORD_KIND_DELIVERED:
+            delivered.setdefault(batch_id, []).append(payload["provider_effect_id"])
+
+        elif rkind == RECORD_KIND_RECOVERED:
+            if batch_id in recovered_facts:
+                existing = recovered_facts[batch_id]
+                if (
+                    list(existing.get("recovered_effect_ids", [])) != list(payload.get("recovered_effect_ids", []))
+                    or existing.get("recovered_reads") != payload.get("recovered_reads")
+                    or existing.get("recovered_lookups") != payload.get("recovered_lookups")
+                ):
+                    raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
+            else:
+                recovered_facts[batch_id] = payload
+
+    known_intent_ids = set(intents.keys())
+    orphan_attempts = set(send_attempts.keys()) - known_intent_ids
+    if orphan_attempts:
+        raise ToolResultDeliveryError(
+            f"orphan send_attempt records without corresponding batch_intent: {orphan_attempts}"
+        )
+    orphan_delivered = set(delivered.keys()) - known_intent_ids
+    if orphan_delivered:
+        raise ToolResultDeliveryError(
+            f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
+        )
+    conflicting_attempts = {
+        bid: ids
+        for bid, ids in send_attempts.items()
+        if len(ids) != 1 or len(set(ids)) != 1
+    }
+    if conflicting_attempts:
+        raise ToolResultDeliveryError(
+            f"batch has conflicting send_attempt records: {conflicting_attempts}"
+        )
+    conflicting_delivered = {
+        bid: ids
+        for bid, ids in delivered.items()
+        if len(ids) != 1 or len(set(ids)) != 1
+    }
+    if conflicting_delivered:
+        raise ToolResultDeliveryError(
+            f"batch has conflicting delivered records: {conflicting_delivered}"
+        )
+    delivered_without_attempt: dict[str, list[str]] = {}
+    for bid, delivered_ids in delivered.items():
+        attempted = set(send_attempts.get(bid, ()))
+        missing = [peid for peid in delivered_ids if peid not in attempted]
+        if missing:
+            delivered_without_attempt[bid] = missing
+    if delivered_without_attempt:
+        raise ToolResultDeliveryError(
+            f"delivered records without matching send_attempt: {delivered_without_attempt}"
+        )
+
+    projections: list[DeliveryBatchProjection] = []
+    for bid in ordered_batch_ids:
+        intent = intents[bid]
+        attempts = tuple(send_attempts.get(bid, ()))
+        delivered_ids = tuple(delivered.get(bid, ()))
+        rec = recovered_facts.get(bid)
+
+        projections.append(
+            DeliveryBatchProjection(
+                intent=intent,
+                send_attempts=attempts,
+                delivered_effect_ids=delivered_ids,
+                is_delivered=bool(delivered_ids),
+                recovered_effect_ids=tuple(rec.get("recovered_effect_ids", ())) if rec else (),
+                recovered_reads=int(rec.get("recovered_reads", 0)) if rec else 0,
+                recovered_lookups=int(rec.get("recovered_lookups", 0)) if rec else 0,
+                is_recovered=rec is not None,
+            )
+        )
+
+    return tuple(projections)
+
+
 class ToolResultDeliveryStore:
-    """Appends delivery receipts to session log and projects batch states."""
+    """Read projection for tool-result delivery receipts."""
 
     def __init__(self, session_log: RuntimeSessionLog) -> None:
         self._session_log = session_log
@@ -408,444 +772,28 @@ class ToolResultDeliveryStore:
     def session_log(self) -> RuntimeSessionLog:
         return self._session_log
 
-    def _projection_for_batch(
-        self,
-        session_id: str,
-        run_id: str,
-        batch_id: str,
-    ) -> DeliveryBatchProjection | None:
-        for batch in self.load_batches(session_id, run_id):
-            if batch.intent.batch_id == batch_id:
-                return batch
-        return None
-
-    def _append_delivery_record(
-        self,
-        session_id: str,
-        lane: str,
-        operation_id: str,
-        payload: dict[str, Any],
-        allowed_keys: frozenset[str],
-    ) -> None:
-        _check_no_forbidden_keys(payload)
-        if not allowed_keys.issuperset(payload.keys()):
-            extra = set(payload.keys()) - allowed_keys
-            raise ToolResultDeliveryError(f"unknown payload fields: {extra}")
-        self._session_log.append(
-            session_id=session_id,
-            lane=lane,
-            operation_id=operation_id,
-            kind="operation_effect",
-            payload=payload,
-        )
-
-    def record_batch_intent(
-        self,
-        session_id: str,
-        run_id: str,
-        intent: DeliveryBatchIntent,
-    ) -> None:
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-
-        # Reject mismatched coordinates strictly
-        if intent.session_id and intent.session_id != session_id:
-            raise ToolResultDeliveryError(
-                f"intent session_id mismatch: expected {session_id!r}, got {intent.session_id!r}"
-            )
-        if intent.run_id and intent.run_id != run_id:
-            raise ToolResultDeliveryError(
-                f"intent run_id mismatch: expected {run_id!r}, got {intent.run_id!r}"
-            )
-        if intent.lane and intent.lane != expected_lane:
-            raise ToolResultDeliveryError(
-                f"intent lane mismatch: expected {expected_lane!r}, got {intent.lane!r}"
-            )
-        if intent.operation_id and intent.operation_id != expected_op:
-            raise ToolResultDeliveryError(
-                f"intent operation_id mismatch: expected {expected_op!r}, got {intent.operation_id!r}"
-            )
-
-        complete_intent = DeliveryBatchIntent(
-            batch_id=intent.batch_id,
-            session_id=session_id,
-            run_id=run_id,
-            lane=expected_lane,
-            operation_id=expected_op,
-            turn=intent.turn,
-            items=intent.items,
-            batch_digest=intent.batch_digest,
-            created_at=intent.created_at,
-        )
-        self._append_delivery_record(
-            session_id=session_id,
-            lane=expected_lane,
-            operation_id=expected_op,
-            payload=complete_intent.to_payload(),
-            allowed_keys=_INTENT_PAYLOAD_KEYS,
-        )
-
-    def record_send_attempt(
-        self,
-        session_id: str,
-        run_id: str,
-        *,
-        batch_id: str,
-        provider_effect_id: str,
-        lane: str = "",
-        operation_id: str = "",
-    ) -> None:
-        clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
-        clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
-
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        if lane and lane != expected_lane:
-            raise ToolResultDeliveryError(f"lane mismatch: expected {expected_lane!r}, got {lane!r}")
-        if operation_id and operation_id != expected_op:
-            raise ToolResultDeliveryError(f"operation_id mismatch: expected {expected_op!r}, got {operation_id!r}")
-
-        projection = self._projection_for_batch(session_id, run_id, clean_batch_id)
-        if projection is None:
-            raise ToolResultDeliveryError(f"cannot record send_attempt for unknown batch: {clean_batch_id!r}")
-        if projection.is_delivered:
-            raise ToolResultDeliveryError(f"cannot record send_attempt for delivered batch: {clean_batch_id!r}")
-        if clean_peid in projection.send_attempts:
-            return
-        if projection.send_attempts:
-            raise ToolResultDeliveryError(f"batch already has a send_attempt: {clean_batch_id!r}")
-
-        payload = {
-            "schema_version": SCHEMA_VERSION,
-            "effect_kind": EFFECT_KIND,
-            "record_kind": RECORD_KIND_SEND_ATTEMPT,
-            "ref": f"delivery_attempt:{clean_batch_id}:{clean_peid}",
-            "batch_id": clean_batch_id,
-            "session_id": session_id,
-            "run_id": run_id,
-            "lane": expected_lane,
-            "operation_id": expected_op,
-            "provider_effect_id": clean_peid,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._append_delivery_record(
-            session_id=session_id,
-            lane=expected_lane,
-            operation_id=expected_op,
-            payload=payload,
-            allowed_keys=_SEND_ATTEMPT_PAYLOAD_KEYS,
-        )
-
-    def record_delivered(
-        self,
-        session_id: str,
-        run_id: str,
-        *,
-        batch_id: str,
-        provider_effect_id: str,
-        lane: str = "",
-        operation_id: str = "",
-    ) -> None:
-        clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
-        clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
-
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        if lane and lane != expected_lane:
-            raise ToolResultDeliveryError(f"lane mismatch: expected {expected_lane!r}, got {lane!r}")
-        if operation_id and operation_id != expected_op:
-            raise ToolResultDeliveryError(f"operation_id mismatch: expected {expected_op!r}, got {operation_id!r}")
-
-        projection = self._projection_for_batch(session_id, run_id, clean_batch_id)
-        if projection is None:
-            raise ToolResultDeliveryError(f"cannot record delivered for unknown batch: {clean_batch_id!r}")
-        if clean_peid in projection.delivered_effect_ids:
-            return
-        if projection.delivered_effect_ids:
-            raise ToolResultDeliveryError(f"batch already has a delivered receipt: {clean_batch_id!r}")
-        if clean_peid not in projection.send_attempts:
-            raise ToolResultDeliveryError(
-                f"cannot record delivered without matching send_attempt: {clean_batch_id!r}"
-            )
-
-        payload = {
-            "schema_version": SCHEMA_VERSION,
-            "effect_kind": EFFECT_KIND,
-            "record_kind": RECORD_KIND_DELIVERED,
-            "ref": f"delivery_delivered:{clean_batch_id}:{clean_peid}",
-            "batch_id": clean_batch_id,
-            "session_id": session_id,
-            "run_id": run_id,
-            "lane": expected_lane,
-            "operation_id": expected_op,
-            "provider_effect_id": clean_peid,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._append_delivery_record(
-            session_id=session_id,
-            lane=expected_lane,
-            operation_id=expected_op,
-            payload=payload,
-            allowed_keys=_DELIVERED_PAYLOAD_KEYS,
-        )
-
-    def record_recovered(
-        self,
-        session_id: str,
-        run_id: str,
-        *,
-        batch_id: str,
-        recovered_effect_ids: Sequence[str],
-        recovered_reads: int = 0,
-        recovered_lookups: int = 0,
-        lane: str = "",
-        operation_id: str = "",
-    ) -> None:
-        clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        if lane and lane != expected_lane:
-            raise ToolResultDeliveryError(f"lane mismatch: expected {expected_lane!r}, got {lane!r}")
-        if operation_id and operation_id != expected_op:
-            raise ToolResultDeliveryError(f"operation_id mismatch: expected {expected_op!r}, got {operation_id!r}")
-
-        if not isinstance(recovered_effect_ids, (list, tuple)):
-            raise ToolResultDeliveryError("recovered_effect_ids must be a sequence")
-        clean_effect_ids = [
-            _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
-            for eid in recovered_effect_ids
-        ]
-        rec_reads = _require_nonnegative_int(recovered_reads, "recovered_reads")
-        rec_lookups = _require_nonnegative_int(recovered_lookups, "recovered_lookups")
-
-        # Check existing recovered records for this batch in current operation for idempotency
-        for rkind, payload in self._iter_validated_delivery_records(session_id, run_id):
-            if (
-                rkind == RECORD_KIND_RECOVERED
-                and payload.get("batch_id") == clean_batch_id
-            ):
-                existing_eids = payload.get("recovered_effect_ids")
-                existing_reads = payload.get("recovered_reads")
-                existing_lookups = payload.get("recovered_lookups")
-                if (
-                    existing_eids == clean_effect_ids
-                    and existing_reads == rec_reads
-                    and existing_lookups == rec_lookups
-                ):
-                    return  # Idempotent no-op
-                raise ToolResultDeliveryError(
-                    f"conflicting recovered record for batch {clean_batch_id!r}"
-                )
-
-        payload = {
-            "schema_version": SCHEMA_VERSION,
-            "effect_kind": EFFECT_KIND,
-            "record_kind": RECORD_KIND_RECOVERED,
-            "ref": f"delivery_recovered:{clean_batch_id}",
-            "batch_id": clean_batch_id,
-            "session_id": session_id,
-            "run_id": run_id,
-            "lane": expected_lane,
-            "operation_id": expected_op,
-            "recovered_effect_ids": clean_effect_ids,
-            "recovered_reads": rec_reads,
-            "recovered_lookups": rec_lookups,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self._append_delivery_record(
-            session_id=session_id,
-            lane=expected_lane,
-            operation_id=expected_op,
-            payload=payload,
-            allowed_keys=_RECOVERED_PAYLOAD_KEYS,
-        )
-
     def _iter_validated_delivery_records(
         self,
         session_id: str,
         run_id: str,
     ) -> Iterator[tuple[str, dict[str, Any]]]:
         """Iterate and strictly validate all delivery records for this run."""
-        entries = self._session_log.read(session_id)
-        for entry in entries:
-            if entry.kind != "operation_effect":
-                continue
-            payload = entry.payload
-            if not isinstance(payload, dict):
-                continue
-            if payload.get("effect_kind") != EFFECT_KIND:
-                continue
-
-            # Validate run boundaries strictly
-            if not _validate_run_boundary(entry, payload, session_id, run_id):
-                continue
-
-            rkind = payload.get("record_kind")
-            if rkind not in RECORD_KINDS:
-                raise ToolResultDeliveryError(f"unknown delivery record_kind: {rkind!r}")
-
-            batch_id = payload.get("batch_id")
-            _require_bounded_str(batch_id, "batch_id in delivery record", MAX_BATCH_ID_CHARS)
-
-            if rkind == RECORD_KIND_BATCH_INTENT:
-                _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
-            elif rkind == RECORD_KIND_SEND_ATTEMPT:
-                _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
-                peid = payload.get("provider_effect_id")
-                _require_bounded_str(peid, "provider_effect_id in send_attempt", MAX_EFFECT_ID_CHARS)
-            elif rkind == RECORD_KIND_DELIVERED:
-                _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
-                peid = payload.get("provider_effect_id")
-                _require_bounded_str(peid, "provider_effect_id in delivered", MAX_EFFECT_ID_CHARS)
-            elif rkind == RECORD_KIND_RECOVERED:
-                _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
-                _require_nonnegative_int(payload.get("recovered_reads"), "recovered_reads")
-                _require_nonnegative_int(payload.get("recovered_lookups"), "recovered_lookups")
-                effect_ids = payload.get("recovered_effect_ids")
-                if not isinstance(effect_ids, list):
-                    raise ToolResultDeliveryError("recovered_effect_ids must be a list")
-                for eid in effect_ids:
-                    _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
-
-            yield rkind, payload
+        yield from iter_delivery_records_from_entries(
+            self._session_log.entries(session_id),
+            session_id=session_id,
+            run_id=run_id,
+        )
 
     def load_batches(
         self,
         session_id: str,
         run_id: str,
     ) -> tuple[DeliveryBatchProjection, ...]:
-        intents: dict[str, DeliveryBatchIntent] = {}
-        ordered_batch_ids: list[str] = []
-        send_attempts: dict[str, list[str]] = {}
-        delivered: dict[str, list[str]] = {}
-        recovered_facts: dict[str, dict[str, Any]] = {}
-
-        for rkind, payload in self._iter_validated_delivery_records(session_id, run_id):
-            batch_id = payload["batch_id"]
-
-            if rkind == RECORD_KIND_BATCH_INTENT:
-                raw_items = payload.get("items")
-                if not isinstance(raw_items, list) or not raw_items:
-                    raise ToolResultDeliveryError(
-                        f"batch_intent missing or invalid items in batch {batch_id!r}"
-                    )
-                items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
-                turn = _require_nonnegative_int(payload.get("turn"), "turn")
-                intent = DeliveryBatchIntent(
-                    batch_id=batch_id,
-                    session_id=str(payload.get("session_id") or ""),
-                    run_id=str(payload.get("run_id") or ""),
-                    lane=str(payload.get("lane") or ""),
-                    operation_id=str(payload.get("operation_id") or ""),
-                    turn=turn,
-                    items=items,
-                    batch_digest=str(payload.get("batch_digest") or ""),
-                    created_at=str(payload.get("created_at") or ""),
-                )
-                intent.validate()
-
-                if batch_id in intents:
-                    existing = intents[batch_id]
-                    if (
-                        existing.turn != intent.turn
-                        or existing.items != intent.items
-                        or existing.batch_digest != intent.batch_digest
-                    ):
-                        raise ToolResultDeliveryError(
-                            f"conflicting duplicate batch intent for batch_id {batch_id!r}"
-                        )
-                else:
-                    intents[batch_id] = intent
-                    ordered_batch_ids.append(batch_id)
-
-            elif rkind == RECORD_KIND_SEND_ATTEMPT:
-                peid = payload["provider_effect_id"]
-                send_attempts.setdefault(batch_id, []).append(peid)
-
-            elif rkind == RECORD_KIND_DELIVERED:
-                peid = payload["provider_effect_id"]
-                delivered.setdefault(batch_id, []).append(peid)
-
-            elif rkind == RECORD_KIND_RECOVERED:
-                if batch_id in recovered_facts:
-                    existing = recovered_facts[batch_id]
-                    if (
-                        list(existing.get("recovered_effect_ids", [])) != list(payload.get("recovered_effect_ids", []))
-                        or existing.get("recovered_reads") != payload.get("recovered_reads")
-                        or existing.get("recovered_lookups") != payload.get("recovered_lookups")
-                    ):
-                        raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
-                else:
-                    recovered_facts[batch_id] = payload
-
-        # Strictly reject orphan send_attempt and delivered records
-        known_intent_ids = set(intents.keys())
-        orphan_attempts = set(send_attempts.keys()) - known_intent_ids
-        if orphan_attempts:
-            raise ToolResultDeliveryError(
-                f"orphan send_attempt records without corresponding batch_intent: {orphan_attempts}"
-            )
-        orphan_delivered = set(delivered.keys()) - known_intent_ids
-        if orphan_delivered:
-            raise ToolResultDeliveryError(
-                f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
-            )
-        conflicting_attempts = {
-            bid: ids
-            for bid, ids in send_attempts.items()
-            if len(ids) != 1 or len(set(ids)) != 1
-        }
-        if conflicting_attempts:
-            raise ToolResultDeliveryError(
-                f"batch has conflicting send_attempt records: {conflicting_attempts}"
-            )
-        conflicting_delivered = {
-            bid: ids
-            for bid, ids in delivered.items()
-            if len(ids) != 1 or len(set(ids)) != 1
-        }
-        if conflicting_delivered:
-            raise ToolResultDeliveryError(
-                f"batch has conflicting delivered records: {conflicting_delivered}"
-            )
-        delivered_without_attempt: dict[str, list[str]] = {}
-        for bid, delivered_ids in delivered.items():
-            attempted = set(send_attempts.get(bid, ()))
-            missing = [peid for peid in delivered_ids if peid not in attempted]
-            if missing:
-                delivered_without_attempt[bid] = missing
-        if delivered_without_attempt:
-            raise ToolResultDeliveryError(
-                f"delivered records without matching send_attempt: {delivered_without_attempt}"
-            )
-
-        projections: list[DeliveryBatchProjection] = []
-        for bid in ordered_batch_ids:
-            intent = intents[bid]
-            attempts = tuple(send_attempts.get(bid, ()))
-            deliv_ids = tuple(delivered.get(bid, ()))
-            rec = recovered_facts.get(bid)
-
-            is_deliv = bool(deliv_ids)
-            rec_ids = tuple(rec.get("recovered_effect_ids", ())) if rec else ()
-            rec_reads = int(rec.get("recovered_reads", 0)) if rec else 0
-            rec_lookups = int(rec.get("recovered_lookups", 0)) if rec else 0
-            is_rec = rec is not None
-
-            projections.append(
-                DeliveryBatchProjection(
-                    intent=intent,
-                    send_attempts=attempts,
-                    delivered_effect_ids=deliv_ids,
-                    is_delivered=is_deliv,
-                    recovered_effect_ids=rec_ids,
-                    recovered_reads=rec_reads,
-                    recovered_lookups=rec_lookups,
-                    is_recovered=is_rec,
-                )
-            )
-
-        return tuple(projections)
+        return batches_from_entries(
+            self._session_log.entries(session_id),
+            session_id=session_id,
+            run_id=run_id,
+        )
 
     def load_recovered_facts(
         self,
@@ -908,6 +856,14 @@ __all__ = [
     "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",
+    "batch_intent_entry",
+    "batches_from_entries",
     "compute_batch_digest",
+    "delivered_entry",
+    "delivery_record_entry",
+    "iter_delivery_records_from_entries",
     "new_batch_id",
+    "prepare_batch_intent",
+    "recovered_entry",
+    "send_attempt_entry",
 ]

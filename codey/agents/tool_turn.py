@@ -23,6 +23,7 @@ from typing import Any, Sequence
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import (
     TurnState,
+    build_tool_call_intent,
     call_arg,
     emit_tool_started_after_intent,
     evaluate_tool_call_policy,
@@ -30,10 +31,9 @@ from codey.agents.tool_execution import (
     mark_policy_denied_run,
     policy_denied,
     policy_error_outcome,
-    record_tool_call_intent,
-    record_tool_call_settlement,
     record_tool_outcome,
     request_shell_approval,
+    settle_tool_call_effect,
     tool_error_outcome,
 )
 from codey.runtime import cancellation
@@ -60,6 +60,7 @@ class PlannedToolCall:
     call: ToolCall
     ref: str = ""
     effect_id: str = ""
+    effect_intent: Any = None
     replay_decision: Any = None
     replay_class_str: str = "unsafe"
     policy_denied: bool = False
@@ -149,13 +150,14 @@ def execute_turn_tools(
             break
 
         try:
-            effect_id = record_tool_call_intent(
+            effect_intent = build_tool_call_intent(
                 session,
                 call,
                 turn=turn,
                 tool_index=tool_index,
                 replay_decision=replay_decision,
             )
+            effect_id = str(getattr(effect_intent, "effect_id", "") or "")
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
@@ -189,6 +191,7 @@ def execute_turn_tools(
                 call=call,
                 ref=ref,
                 effect_id=effect_id,
+                effect_intent=effect_intent,
                 replay_class_str=rclass_val,
                 replay_decision=replay_decision,
                 policy_decision=policy_decision,
@@ -204,8 +207,8 @@ def execute_turn_tools(
             )
         )
 
-    # Record turn-level batch intent covering ALL planned results (fail-closed)
-    if batch_items and session.tool_result_delivery is not None and session.session_id and session.run_id:
+    # Record turn-level batch intent plus all tool effect intents as one mutation.
+    if batch_items and session.runtime_mutations is not None and session.session_id and session.run_id:
         batch_id = new_batch_id(session.run_id, turn)
         items_tuple = tuple(batch_items)
         digest = compute_batch_digest(items_tuple)
@@ -217,10 +220,15 @@ def execute_turn_tools(
             items=items_tuple,
             batch_digest=digest,
         )
-        session.tool_result_delivery.record_batch_intent(
+        session.runtime_mutations.begin_tool_batch(
             session.session_id,
             session.run_id,
-            intent,
+            intents=tuple(
+                item.effect_intent
+                for item in planned
+                if item.effect_intent is not None
+            ),
+            delivery_intent=intent,
         )
         turn_state.delivery_batch_id = batch_id
         turn_state.delivery_batch_digest = digest
@@ -295,7 +303,7 @@ def execute_turn_tools(
                 )
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
                 if effect_id:
-                    record_tool_call_settlement(
+                    settle_tool_call_effect(
                         session,
                         effect_id,
                         outcome=tool_error_outcome(exc),
@@ -324,7 +332,7 @@ def execute_turn_tools(
             )
         finally:
             if effect_id:
-                record_tool_call_settlement(
+                settle_tool_call_effect(
                     session,
                     effect_id,
                     outcome=outcome,

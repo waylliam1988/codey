@@ -2,6 +2,40 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Durable Operation Core
+
+- Split durable operation state out of the old `codey.runtime.effects` naming:
+  `codey.runtime.operation_state` now owns the closed operation leaf table, and
+  operation state is stored as first-class `operation_state` log entries rather
+  than as a pseudo effect record.
+- Replaced the semi-public `RuntimeSessionLog.append()` / `append_many()` write
+  surface with `RuntimeSessionLog.mutate()`, which commits one bounded batch
+  under the session lock and immediately publishes the same process-local
+  projection. Production runtime facts now go through `RuntimeMutationLine`.
+- Made effect and delivery stores projection-only on production paths. Provider
+  sends, tool batches, tool settlements, provider settlements, delivery
+  receipts, recovered delivery facts, and terminal operation settlement are
+  committed through the mutation line so intent + pending state cannot drift.
+- Added a pure `operation_reducer` and `drive.peek_next_action()` for manual
+  drive tests and recovery dispatch. `recovery.py` now executes reducer actions
+  for provider unknown-outcome settlement, safe tool batch replay, and
+  interrupted-effect synthesis instead of inferring recovery from missing
+  events.
+- Removed the obsolete `runtime/reducer.py`, `runtime/scheduler.py`, and
+  `runtime/effects.py` runtime shapes. `RuntimeOperationStore` is now a read
+  projection only; it no longer exposes `start`, `commit`, or session deletion
+  as business write paths.
+- Kept Ghost, World Model, Lane, RemoteSession, RPC, CBOR, and lease concepts
+  out of the runtime core. Ghost remains an observer/user of durable facts.
+
+Verification:
+
+- `python -m pytest tests/test_runtime_mutation_line.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_result_delivery.py -q` (`81 passed, 31 subtests passed in 1.70s`)
+- `python -m pytest tests/test_architecture.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py -q` (`325 passed, 1 skipped, 297 subtests passed in 42.73s`)
+- `python -m pytest tests/test_architecture.py -q` (`74 passed, 294 subtests passed in 10.81s`)
+- `python -m compileall -q codey` (passed)
+- Full pytest suite: `python -m pytest -q` (`3548 passed, 16 skipped, 1262 subtests passed in 308.98s (0:05:08)`)
+
 ## 0.5.7 - Research Follow-up Quality Closure
 
 - Restored browser-backed Research search under TUN proxy setups by allowing
@@ -453,7 +487,7 @@
     reviewable.
 - Runtime operation facts are now session-log native. The previous standalone
   `codey/run_operation.py` register was deleted before release; the only
-  durable source is `RuntimeSessionLog`, and `codey.runtime.effects`
+  durable source is `RuntimeSessionLog`, and `codey.runtime.operation_state`
   projects the latest bounded run phase from `operation_effect` rows.
   - `RuntimeOperationStore.start()` appends `operation_started` and the
     initial phase atomically to the runtime log; later phase commits append

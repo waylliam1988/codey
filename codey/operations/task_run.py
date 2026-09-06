@@ -62,8 +62,7 @@ from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.ledger_projection import event_with_projected_receipt
 from codey.runtime import cancellation
-from codey.runtime.effects import (
-    RuntimeOperationStore,
+from codey.runtime.operation_state import (
     RuntimeOperationTransitionError,
     mark_terminal,
 )
@@ -118,6 +117,7 @@ class TaskRunDeps:
     ghost_learning_provider_factory: Callable[[str], Any] | None = None
     ghost_learning_modes: tuple[str, ...] = ("chat",)
     ghost_router_provider_factory: Callable[[str], Any] | None = None
+    runtime_mutations: Any = None
     runtime_effects: Any = None
 
 
@@ -351,7 +351,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         project_completion_deps = _project_completion_deps(
             deps,
-            lambda active_work, transition: _commit_run_operation_with_store(
+            lambda active_work, transition: _commit_run_operation(
                 deps,
                 active_work,
                 transition,
@@ -881,6 +881,7 @@ def _project_completion_deps(
         ),
         runtime=RuntimeAccess(
             commit_run_operation=commit_run_operation,
+            mutations=deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None),
             effects=deps.runtime_effects or getattr(deps.state, "runtime_effects", None),
             tool_result_delivery=getattr(deps.state, "tool_result_delivery", None),
         ),
@@ -1008,9 +1009,11 @@ def _start_run_operation(
     max_repair_rounds: int,
     task_kind: str,
 ) -> bool:
-    runtime_operations: RuntimeOperationStore = deps.state.runtime_operations
     try:
-        work.operation = runtime_operations.start(
+        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
+        if mutations is None:
+            raise RuntimeOperationTransitionError("runtime mutation line is missing")
+        work.operation = mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=project,
@@ -1031,7 +1034,7 @@ def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, obj
     if work.operation is None:
         return
     max_turns = int(event.get("max_turns") or 0)
-    _commit_run_operation_with_store(
+    _commit_run_operation(
         deps,
         work,
         lambda state: mark_terminal(
@@ -1045,13 +1048,15 @@ def _finish_run_operation(deps: TaskRunDeps, work: RunWork, event: dict[str, obj
     )
 
 
-def _commit_run_operation_with_store(deps: TaskRunDeps, work: RunWork, transition: Callable) -> None:
+def _commit_run_operation(deps: TaskRunDeps, work: RunWork, transition: Callable) -> None:
     operation = work.operation
-    runtime_operations: RuntimeOperationStore = deps.state.runtime_operations
     if operation is None:
         return
     try:
-        work.operation = runtime_operations.commit(
+        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
+        if mutations is None:
+            raise RuntimeOperationTransitionError("runtime mutation line is missing")
+        work.operation = mutations.transition_operation(
             operation.session_id,
             operation.run_id,
             transition,

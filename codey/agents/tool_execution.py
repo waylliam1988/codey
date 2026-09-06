@@ -152,17 +152,16 @@ def evaluate_tool_call_policy(
     return policy_decision, replay_decision
 
 
-def record_tool_call_intent(
+def build_tool_call_intent(
     session: AgentLoopSession,
     call: ToolCall,
     *,
     turn: int,
     tool_index: int,
     replay_decision: Any,
-) -> str:
-    effects = session.runtime_effects
-    if effects is None or not session.session_id or not session.run_id:
-        return ""
+) -> Any | None:
+    if session.runtime_mutations is None or not session.session_id or not session.run_id:
+        return None
     from codey.runtime.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
         RuntimeEffectIntent,
@@ -195,26 +194,24 @@ def record_tool_call_intent(
         replay_class=replay_class,
         replay_args=replay_args,
     )
-    effects.record_intent(session.session_id, session.run_id, intent)
-    return effect_id
+    return intent
 
 
-def record_tool_call_settlement(
+def settle_tool_call_effect(
     session: AgentLoopSession,
     effect_id: str,
     *,
     outcome: ToolOutcome,
     replay_decision: Any,
 ) -> None:
-    effects = session.runtime_effects
-    if effects is None or not effect_id or not session.session_id or not session.run_id:
+    mutations = session.runtime_mutations
+    if mutations is None or not effect_id or not session.session_id or not session.run_id:
         return
     from codey.runtime.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
         RuntimeEffectSettlement,
         SETTLEMENT_STATUS_ERROR,
         SETTLEMENT_STATUS_OK,
-        record_settlement_safely,
     )
     status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
     error_code = str(outcome.error_code or ("" if outcome.ok else "error"))
@@ -228,7 +225,7 @@ def record_tool_call_settlement(
         error_code=error_code[:80],
         replay_class=replay_class,
     )
-    record_settlement_safely(effects, session.session_id, session.run_id, settlement)
+    mutations.settle_tool_effect(session.session_id, session.run_id, settlement)
 
 
 def emit_tool_started_after_intent(
@@ -492,10 +489,10 @@ __all__ = [
     "policy_asks_user",
     "policy_denied",
     "policy_error_outcome",
-    "record_tool_call_intent",
-    "record_tool_call_settlement",
+    "build_tool_call_intent",
     "record_tool_outcome",
     "request_shell_approval",
+    "settle_tool_call_effect",
     "tool_error_outcome",
     "tool_result_from_outcome",
 ]

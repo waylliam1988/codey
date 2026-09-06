@@ -1,9 +1,9 @@
 """Runtime external effect intent, settlement, and recovery projection.
 
-The session log is the durable fact source. This module records bounded intents
-before executing real external effects (provider sends, tool executions, repair
-rounds) and records settlements after completion or error. On crash recovery,
-pending intents are projected and settled with synthetic recovery records.
+The session log is the durable fact source. This module owns bounded effect
+record schemas and projections. Production writes go through
+``runtime.mutation_line`` so effect records and operation-state leaves commit
+together.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import json
 from typing import Any
 import uuid
 
-from codey.runtime.effects import lane_for_run, operation_id_for_run
+from codey.runtime.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
@@ -33,11 +33,9 @@ RECORD_KINDS = frozenset({RECORD_KIND_INTENT, RECORD_KIND_SETTLEMENT})
 
 EFFECT_CATEGORY_PROVIDER_SEND = "provider_send"
 EFFECT_CATEGORY_TOOL_CALL = "tool_call"
-EFFECT_CATEGORY_REPAIR_ROUND = "repair_round"
 EFFECT_CATEGORIES = frozenset({
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
-    EFFECT_CATEGORY_REPAIR_ROUND,
 })
 
 SETTLEMENT_STATUS_OK = "ok"
@@ -455,159 +453,235 @@ class RecoverySummary:
     explanation_lines: tuple[str, ...] = ()
 
 
+def prepare_intent(
+    session_id: str,
+    run_id: str,
+    intent: RuntimeEffectIntent,
+) -> RuntimeEffectIntent:
+    """Return an intent with canonical lane/op/timestamp for a run."""
+    if intent.session_id != session_id:
+        raise RuntimeEffectError(
+            f"intent session_id '{intent.session_id}' does not match expected session_id '{session_id}'"
+        )
+    if intent.run_id != run_id:
+        raise RuntimeEffectError(
+            f"intent run_id '{intent.run_id}' does not match expected run_id '{run_id}'"
+        )
+    expected_lane = lane_for_run(run_id)
+    expected_op = operation_id_for_run(run_id)
+    if intent.lane and intent.lane != expected_lane:
+        raise RuntimeEffectError(
+            f"intent lane '{intent.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+        )
+    if intent.operation_id and intent.operation_id != expected_op:
+        raise RuntimeEffectError(
+            f"intent operation_id '{intent.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+        )
+    return RuntimeEffectIntent(
+        effect_id=intent.effect_id,
+        effect_category=intent.effect_category,
+        session_id=session_id,
+        run_id=run_id,
+        lane=expected_lane,
+        operation_id=expected_op,
+        phase=intent.phase,
+        provider_id=intent.provider_id,
+        turn=intent.turn,
+        tool_index=intent.tool_index,
+        tool_name=intent.tool_name,
+        tool_id=intent.tool_id,
+        args_digest=intent.args_digest,
+        display_ref=intent.display_ref,
+        replay_class=intent.replay_class,
+        replay_args=intent.replay_args,
+        created_at=intent.created_at or _now(),
+    )
 
-def record_settlement_safely(
-    store: Any,
+
+def effect_intent_entry(intent: RuntimeEffectIntent) -> dict[str, object]:
+    return {
+        "lane": intent.lane,
+        "operation_id": intent.operation_id,
+        "kind": "operation_effect",
+        "payload": intent.to_payload(),
+    }
+
+
+def prepare_settlement(
     session_id: str,
     run_id: str,
     settlement: RuntimeEffectSettlement,
-) -> RuntimeEffectSettlement | None:
-    """Safely record settlement without masking real business outcomes/errors."""
-    if store is None or not session_id or not run_id or not settlement.effect_id:
-        return None
-    try:
-        return store.record_settlement(session_id, run_id, settlement)
-    except Exception:
-        return None
+    effects: tuple[RuntimeEffectProjection, ...],
+) -> RuntimeEffectSettlement:
+    """Return a canonical settlement validated against projected intents."""
+    if settlement.session_id != session_id:
+        raise RuntimeEffectError(
+            f"settlement session_id '{settlement.session_id}' does not match expected session_id '{session_id}'"
+        )
+    if settlement.run_id != run_id:
+        raise RuntimeEffectError(
+            f"settlement run_id '{settlement.run_id}' does not match expected run_id '{run_id}'"
+        )
+    expected_lane = lane_for_run(run_id)
+    expected_op = operation_id_for_run(run_id)
+    if settlement.lane and settlement.lane != expected_lane:
+        raise RuntimeEffectError(
+            f"settlement lane '{settlement.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+        )
+    if settlement.operation_id and settlement.operation_id != expected_op:
+        raise RuntimeEffectError(
+            f"settlement operation_id '{settlement.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+        )
+    matching = next((p for p in effects if p.intent.effect_id == settlement.effect_id), None)
+    if matching is None:
+        raise RuntimeEffectError(f"cannot record settlement for unknown intent: {settlement.effect_id}")
+    if settlement.effect_category != matching.intent.effect_category:
+        raise RuntimeEffectError(
+            f"settlement category '{settlement.effect_category}' does not match intent category '{matching.intent.effect_category}'"
+        )
+    if matching.settlement is not None:
+        existing = matching.settlement
+        if (
+            existing.status == settlement.status
+            and existing.error_code == settlement.error_code
+            and existing.sent_state == settlement.sent_state
+            and existing.replay_class == settlement.replay_class
+            and existing.replay_count == settlement.replay_count
+            and existing.replayed_from_effect_id == settlement.replayed_from_effect_id
+        ):
+            return existing
+        raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
+    return RuntimeEffectSettlement(
+        effect_id=settlement.effect_id,
+        effect_category=matching.intent.effect_category,
+        session_id=session_id,
+        run_id=run_id,
+        status=settlement.status,
+        lane=expected_lane,
+        operation_id=expected_op,
+        error_code=settlement.error_code,
+        sent_state=settlement.sent_state,
+        replay_class=matching.intent.replay_class,
+        replay_count=settlement.replay_count,
+        replayed_from_effect_id=settlement.replayed_from_effect_id,
+        created_at=settlement.created_at or _now(),
+    )
 
+
+def effect_settlement_entry(settlement: RuntimeEffectSettlement) -> dict[str, object]:
+    return {
+        "lane": settlement.lane,
+        "operation_id": settlement.operation_id,
+        "kind": "operation_effect",
+        "payload": settlement.to_payload(),
+    }
+
+
+def effects_from_entries(
+    entries: tuple[Any, ...],
+    *,
+    session_id: str,
+    run_id: str,
+) -> tuple[RuntimeEffectProjection, ...]:
+    """Project effect intent/settlement pairs from already-read log entries."""
+    expected_lane = lane_for_run(run_id)
+    expected_op = operation_id_for_run(run_id)
+    intents: dict[str, RuntimeEffectIntent] = {}
+    settlements: dict[str, RuntimeEffectSettlement] = {}
+    ordered_effect_ids: list[str] = []
+
+    for entry in entries:
+        if entry.kind != "operation_effect":
+            continue
+        payload = entry.payload
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("effect_kind") != EFFECT_KIND:
+            continue
+
+        is_current_operation = (entry.lane == expected_lane or entry.operation_id == expected_op)
+        is_current_run = (payload.get("run_id") == run_id)
+        if not is_current_operation and not is_current_run:
+            continue
+
+        if entry.lane != expected_lane:
+            raise RuntimeEffectError(
+                f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+            )
+        if entry.operation_id != expected_op:
+            raise RuntimeEffectError(
+                f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
+            )
+        payload_session_id = payload.get("session_id")
+        if not payload_session_id or payload_session_id != session_id:
+            raise RuntimeEffectError(
+                f"payload session_id '{payload_session_id}' does not match expected session_id '{session_id}' for run {run_id}"
+            )
+        payload_run_id = payload.get("run_id")
+        if not payload_run_id or payload_run_id != run_id:
+            raise RuntimeEffectError(
+                f"payload run_id '{payload_run_id}' does not match expected run_id '{run_id}'"
+            )
+        payload_lane = payload.get("lane")
+        if not payload_lane or payload_lane != expected_lane:
+            raise RuntimeEffectError(
+                f"payload lane '{payload_lane}' does not match expected lane '{expected_lane}' for run {run_id}"
+            )
+        payload_op = payload.get("operation_id")
+        if not payload_op or payload_op != expected_op:
+            raise RuntimeEffectError(
+                f"payload operation_id '{payload_op}' does not match expected operation_id '{expected_op}'"
+            )
+
+        record_kind = payload.get("record_kind")
+        effect_id = str(payload.get("effect_id") or "")
+        if not effect_id:
+            raise RuntimeEffectError("missing effect_id in effect payload")
+
+        if record_kind == RECORD_KIND_INTENT:
+            if effect_id in intents:
+                raise RuntimeEffectError(f"duplicate intent in session log: {effect_id}")
+            ordered_effect_ids.append(effect_id)
+            intents[effect_id] = RuntimeEffectIntent.from_payload(payload)
+            continue
+
+        if record_kind == RECORD_KIND_SETTLEMENT:
+            if effect_id not in intents:
+                raise RuntimeEffectError(f"orphan settlement without intent in session log: {effect_id}")
+            new_settlement = RuntimeEffectSettlement.from_payload(payload)
+            if new_settlement.effect_category != intents[effect_id].effect_category:
+                raise RuntimeEffectError(
+                    f"settlement category '{new_settlement.effect_category}' does not match intent category '{intents[effect_id].effect_category}'"
+                )
+            if effect_id in settlements:
+                existing = settlements[effect_id]
+                if (
+                    existing.status == new_settlement.status
+                    and existing.error_code == new_settlement.error_code
+                    and existing.sent_state == new_settlement.sent_state
+                    and existing.effect_category == new_settlement.effect_category
+                    and existing.replay_class == new_settlement.replay_class
+                    and existing.replay_count == new_settlement.replay_count
+                    and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
+                ):
+                    continue
+                raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")
+            settlements[effect_id] = new_settlement
+            continue
+
+        raise RuntimeEffectError(f"unknown record_kind: {record_kind}")
+
+    return tuple(
+        RuntimeEffectProjection(intent=intent, settlement=settlements.get(eid))
+        for eid in ordered_effect_ids
+        if (intent := intents.get(eid)) is not None
+    )
 
 class RuntimeEffectStore:
-    """Store and recovery projection for external effect intents and settlements."""
+    """Projection store for external effect intents and settlements."""
 
     def __init__(self, session_log: RuntimeSessionLog) -> None:
         self.session_log = session_log
-
-    def record_intent(
-        self,
-        session_id: str,
-        run_id: str,
-        intent: RuntimeEffectIntent,
-    ) -> RuntimeEffectIntent:
-        """Record an intent before executing a real effect."""
-        if intent.session_id != session_id:
-            raise RuntimeEffectError(
-                f"intent session_id '{intent.session_id}' does not match expected session_id '{session_id}'"
-            )
-        if intent.run_id != run_id:
-            raise RuntimeEffectError(
-                f"intent run_id '{intent.run_id}' does not match expected run_id '{run_id}'"
-            )
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        if intent.lane and intent.lane != expected_lane:
-            raise RuntimeEffectError(
-                f"intent lane '{intent.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-            )
-        if intent.operation_id and intent.operation_id != expected_op:
-            raise RuntimeEffectError(
-                f"intent operation_id '{intent.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
-            )
-        lane = intent.lane or expected_lane
-        op_id = intent.operation_id or expected_op
-        created_at = intent.created_at or _now()
-        prepared = RuntimeEffectIntent(
-            effect_id=intent.effect_id,
-            effect_category=intent.effect_category,
-            session_id=session_id,
-            run_id=run_id,
-            lane=lane,
-            operation_id=op_id,
-            phase=intent.phase,
-            provider_id=intent.provider_id,
-            turn=intent.turn,
-            tool_index=intent.tool_index,
-            tool_name=intent.tool_name,
-            tool_id=intent.tool_id,
-            args_digest=intent.args_digest,
-            display_ref=intent.display_ref,
-            replay_class=intent.replay_class,
-            replay_args=intent.replay_args,
-            created_at=created_at,
-        )
-        self.session_log.append(
-            session_id=session_id,
-            lane=prepared.lane,
-            operation_id=prepared.operation_id,
-            kind="operation_effect",
-            payload=prepared.to_payload(),
-        )
-        return prepared
-
-    def record_settlement(
-        self,
-        session_id: str,
-        run_id: str,
-        settlement: RuntimeEffectSettlement,
-    ) -> RuntimeEffectSettlement:
-        """Record a settlement after an effect has completed or failed."""
-        if settlement.session_id != session_id:
-            raise RuntimeEffectError(
-                f"settlement session_id '{settlement.session_id}' does not match expected session_id '{session_id}'"
-            )
-        if settlement.run_id != run_id:
-            raise RuntimeEffectError(
-                f"settlement run_id '{settlement.run_id}' does not match expected run_id '{run_id}'"
-            )
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        if settlement.lane and settlement.lane != expected_lane:
-            raise RuntimeEffectError(
-                f"settlement lane '{settlement.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-            )
-        if settlement.operation_id and settlement.operation_id != expected_op:
-            raise RuntimeEffectError(
-                f"settlement operation_id '{settlement.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
-            )
-
-        effects = self.load_effects(session_id, run_id)
-        matching = next((p for p in effects if p.intent.effect_id == settlement.effect_id), None)
-        if matching is None:
-            raise RuntimeEffectError(f"cannot record settlement for unknown intent: {settlement.effect_id}")
-
-        if settlement.effect_category != matching.intent.effect_category:
-            raise RuntimeEffectError(
-                f"settlement category '{settlement.effect_category}' does not match intent category '{matching.intent.effect_category}'"
-            )
-
-        if matching.settlement is not None:
-            # Already settled: idempotent return if identical, else raise
-            if (
-                matching.settlement.status == settlement.status
-                and matching.settlement.error_code == settlement.error_code
-                and matching.settlement.sent_state == settlement.sent_state
-                and matching.settlement.replay_class == settlement.replay_class
-                and matching.settlement.replay_count == settlement.replay_count
-                and matching.settlement.replayed_from_effect_id == settlement.replayed_from_effect_id
-            ):
-                return matching.settlement
-            raise RuntimeEffectError(f"effect already settled: {settlement.effect_id}")
-
-        lane = settlement.lane or matching.intent.lane or expected_lane
-        op_id = settlement.operation_id or matching.intent.operation_id or expected_op
-        created_at = settlement.created_at or _now()
-        prepared = RuntimeEffectSettlement(
-            effect_id=settlement.effect_id,
-            effect_category=matching.intent.effect_category,
-            session_id=session_id,
-            run_id=run_id,
-            status=settlement.status,
-            lane=lane,
-            operation_id=op_id,
-            error_code=settlement.error_code,
-            sent_state=settlement.sent_state,
-            replay_class=matching.intent.replay_class,
-            replay_count=settlement.replay_count,
-            replayed_from_effect_id=settlement.replayed_from_effect_id,
-            created_at=created_at,
-        )
-        self.session_log.append(
-            session_id=session_id,
-            lane=prepared.lane,
-            operation_id=prepared.operation_id,
-            kind="operation_effect",
-            payload=prepared.to_payload(),
-        )
-        return prepared
 
     def load_effects(
         self,
@@ -615,103 +689,11 @@ class RuntimeEffectStore:
         run_id: str,
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Load and aggregate all effect intent/settlement pairs for a run in strict chronological order."""
-        entries = self.session_log.entries(session_id)
-        expected_lane = lane_for_run(run_id)
-        expected_op = operation_id_for_run(run_id)
-        intents: dict[str, RuntimeEffectIntent] = {}
-        settlements: dict[str, RuntimeEffectSettlement] = {}
-        ordered_effect_ids: list[str] = []
-
-        for entry in entries:
-            if entry.kind != "operation_effect":
-                continue
-            payload = entry.payload
-            if not isinstance(payload, dict):
-                continue
-            if payload.get("effect_kind") != EFFECT_KIND:
-                continue
-
-            # Strict validation against run operation lane, operation_id, and session_id boundary
-            is_current_operation = (entry.lane == expected_lane or entry.operation_id == expected_op)
-            is_current_run = (payload.get("run_id") == run_id)
-            if not is_current_operation and not is_current_run:
-                continue
-
-            if entry.lane != expected_lane:
-                raise RuntimeEffectError(
-                    f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-                )
-            if entry.operation_id != expected_op:
-                raise RuntimeEffectError(
-                    f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
-                )
-            payload_session_id = payload.get("session_id")
-            if not payload_session_id or payload_session_id != session_id:
-                raise RuntimeEffectError(
-                    f"payload session_id '{payload_session_id}' does not match expected session_id '{session_id}' for run {run_id}"
-                )
-            payload_run_id = payload.get("run_id")
-            if not payload_run_id or payload_run_id != run_id:
-                raise RuntimeEffectError(
-                    f"payload run_id '{payload_run_id}' does not match expected run_id '{run_id}'"
-                )
-            payload_lane = payload.get("lane")
-            if not payload_lane or payload_lane != expected_lane:
-                raise RuntimeEffectError(
-                    f"payload lane '{payload_lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-                )
-            payload_op = payload.get("operation_id")
-            if not payload_op or payload_op != expected_op:
-                raise RuntimeEffectError(
-                    f"payload operation_id '{payload_op}' does not match expected operation_id '{expected_op}' for run {run_id}"
-                )
-
-            record_kind = payload.get("record_kind")
-            effect_id = str(payload.get("effect_id") or "")
-            if not effect_id:
-                raise RuntimeEffectError("missing effect_id in effect payload")
-
-            if record_kind == RECORD_KIND_INTENT:
-                if effect_id in intents:
-                    raise RuntimeEffectError(f"duplicate intent in session log: {effect_id}")
-                ordered_effect_ids.append(effect_id)
-                intents[effect_id] = RuntimeEffectIntent.from_payload(payload)
-
-            elif record_kind == RECORD_KIND_SETTLEMENT:
-                if effect_id not in intents:
-                    raise RuntimeEffectError(f"orphan settlement without intent in session log: {effect_id}")
-                new_settlement = RuntimeEffectSettlement.from_payload(payload)
-                if new_settlement.effect_category != intents[effect_id].effect_category:
-                    raise RuntimeEffectError(
-                        f"settlement category '{new_settlement.effect_category}' does not match intent category '{intents[effect_id].effect_category}'"
-                    )
-                if effect_id in settlements:
-                    existing = settlements[effect_id]
-                    if (
-                        existing.status == new_settlement.status
-                        and existing.error_code == new_settlement.error_code
-                        and existing.sent_state == new_settlement.sent_state
-                        and existing.effect_category == new_settlement.effect_category
-                        and existing.replay_class == new_settlement.replay_class
-                        and existing.replay_count == new_settlement.replay_count
-                        and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
-                    ):
-                        continue
-                    raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")
-                settlements[effect_id] = new_settlement
-
-            else:
-                raise RuntimeEffectError(f"unknown record_kind: {record_kind}")
-
-        projections: list[RuntimeEffectProjection] = []
-        for eid in ordered_effect_ids:
-            intent = intents.get(eid)
-            if intent is not None:
-                projections.append(RuntimeEffectProjection(
-                    intent=intent,
-                    settlement=settlements.get(eid),
-                ))
-        return tuple(projections)
+        return effects_from_entries(
+            self.session_log.entries(session_id),
+            session_id=session_id,
+            run_id=run_id,
+        )
 
     def pending_effects(
         self,
@@ -720,47 +702,6 @@ class RuntimeEffectStore:
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Return all effects that have an intent but no settlement yet."""
         return tuple(p for p in self.load_effects(session_id, run_id) if p.is_pending)
-
-    def synthesize_interrupted(
-        self,
-        session_id: str,
-        run_id: str,
-        effect_id: str,
-        reason: str = "interrupted_by_crash",
-        *,
-        replay_class: str = ReplayClass.UNSAFE,
-        sent_state: str = SENT_STATE_MAYBE_SENT,
-    ) -> RuntimeEffectSettlement:
-        """Synthesize an interrupted settlement for an unclosed effect intent."""
-        effects = self.load_effects(session_id, run_id)
-        matching = next((p for p in effects if p.intent.effect_id == effect_id), None)
-        if matching is None:
-            raise RuntimeEffectError(f"intent not found for effect_id: {effect_id}")
-        if matching.settlement is not None:
-            return matching.settlement
-
-        category = matching.intent.effect_category
-        resolved_sent_state = (
-            sent_state
-            if category == EFFECT_CATEGORY_PROVIDER_SEND
-            else SENT_STATE_SETTLED
-        )
-        resolved_replay_class = matching.intent.replay_class or replay_class
-
-        settlement = RuntimeEffectSettlement(
-            effect_id=effect_id,
-            effect_category=category,
-            session_id=session_id,
-            run_id=run_id,
-            status=SETTLEMENT_STATUS_INTERRUPTED,
-            lane=matching.intent.lane,
-            operation_id=matching.intent.operation_id,
-            error_code=reason,
-            sent_state=resolved_sent_state,
-            replay_class=resolved_replay_class,
-            created_at=_now(),
-        )
-        return self.record_settlement(session_id, run_id, settlement)
 
     def recovery_summary(
         self,
@@ -794,8 +735,6 @@ class RuntimeEffectStore:
 
             if intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND:
                 unconfirmed_provider_calls += 1
-            elif intent.effect_category == EFFECT_CATEGORY_REPAIR_ROUND:
-                interrupted_repairs += 1
             elif intent.effect_category == EFFECT_CATEGORY_TOOL_CALL:
                 if intent.replay_class == ReplayClass.SAFE:
                     retryable_read_only += 1
@@ -813,8 +752,6 @@ class RuntimeEffectStore:
             lines.append("Local write was interrupted and was not repeated")
         if unconfirmed_provider_calls > 0:
             lines.append("Provider response was not confirmed")
-        if interrupted_repairs > 0:
-            lines.append("Repair round was interrupted")
 
         return RecoverySummary(
             interrupted_writes=interrupted_writes,
@@ -830,7 +767,6 @@ class RuntimeEffectStore:
 __all__ = [
     "EFFECT_CATEGORIES",
     "EFFECT_CATEGORY_PROVIDER_SEND",
-    "EFFECT_CATEGORY_REPAIR_ROUND",
     "EFFECT_CATEGORY_TOOL_CALL",
     "EFFECT_KIND",
     "RECORD_KINDS",
@@ -850,6 +786,10 @@ __all__ = [
     "SETTLEMENT_STATUS_INTERRUPTED",
     "SETTLEMENT_STATUS_OK",
     "compute_args_digest",
+    "effect_intent_entry",
+    "effect_settlement_entry",
+    "effects_from_entries",
     "new_effect_id",
-    "record_settlement_safely",
+    "prepare_intent",
+    "prepare_settlement",
 ]

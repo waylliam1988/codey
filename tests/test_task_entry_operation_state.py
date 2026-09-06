@@ -25,13 +25,14 @@ from codey.completion.decision import (
     completion_blocked_reason,
 )
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
-from codey.runtime.effects import (
-    PHASE_COMPLETION_PROOF_RECORDED,
-    PHASE_REPAIR_RUNNING,
-    PHASE_REPAIR_SETTLED,
-    PHASE_TERMINAL,
-    PHASE_WRITER_RUNNING,
-    PHASE_WRITER_SETTLED,
+from codey.runtime.operation_state import (
+    LEAF_ACCEPTED,
+    LEAF_COMPLETION_PROOF_RECORDED,
+    LEAF_REPAIR_RUNNING,
+    LEAF_REPAIR_SETTLED,
+    LEAF_TERMINAL,
+    LEAF_WRITER_RUNNING,
+    LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
     mark_completion_proof_recorded,
     mark_repair_context_admitted,
@@ -46,8 +47,9 @@ from codey.runtime.effects import (
 from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
 from codey.runtime.events import RunEvent
+from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.models import ToolCall
-from codey.runtime.reducer import reduce_session
+from codey.runtime.session_projection import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
@@ -106,7 +108,7 @@ class ObservingWriter:
         run_id = state.run_registry.current().run_id if state.run_registry.current() is not None else ""
         store = state.runtime_operations
         observed = store.load(SESSION, run_id) if store is not None else None
-        self.observed_phases.append(observed.phase if observed is not None else None)
+        self.observed_phases.append(observed.leaf if observed is not None else None)
         step = self.steps.pop(0)
         if isinstance(step, BaseException):
             raise step
@@ -239,8 +241,8 @@ class CleanRunTerminalTests(unittest.TestCase):
             run_id = str(event["run_id"])
             operation = _operation(state, run_id)
 
-            self.assertEqual(operation.phase, PHASE_TERMINAL)
-            self.assertEqual(writer.observed_phases, [PHASE_WRITER_RUNNING])
+            self.assertEqual(operation.leaf, LEAF_TERMINAL)
+            self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING])
             assert operation.terminal is not None
             self.assertEqual(operation.terminal.stop_reason, "done")
             self.assertEqual(operation.terminal.turns, 3)
@@ -309,8 +311,8 @@ class CleanRunTerminalTests(unittest.TestCase):
                     replace(reserved, run_id=run_id),
                 )
             )
-            assert crashed_state.runtime_operations is not None
-            started = crashed_state.runtime_operations.start(
+            assert crashed_state.runtime_mutations is not None
+            started = crashed_state.runtime_mutations.accept_operation(
                 session_id=SESSION,
                 run_id=run_id,
                 project=str(project),
@@ -320,7 +322,7 @@ class CleanRunTerminalTests(unittest.TestCase):
                 task_kind="project",
             )
             assert started is not None
-            crashed_state.runtime_operations.commit(
+            crashed_state.runtime_mutations.transition_operation(
                 SESSION,
                 run_id,
                 lambda item: mark_writer_running(item, provider_id="deepseek"),
@@ -341,18 +343,17 @@ class CleanRunTerminalTests(unittest.TestCase):
             op_id = operation_id_for_run(run_id)
             self.assertEqual(
                 [
-                    entry.payload["ref"]
+                    entry.payload["leaf"]
                     for entry in entries
                     if entry.operation_id == op_id
-                    and entry.kind == "operation_effect"
-                    and entry.payload.get("effect_kind") == "run_phase"
+                    and entry.kind == "operation_state"
                 ],
                 [
-                    "run_phase:accepted",
-                    "run_phase:writer_running",
-                    "run_phase:writer_settled",
-                    "run_phase:completion_proof_recorded",
-                    "run_phase:terminal",
+                    LEAF_ACCEPTED,
+                    LEAF_WRITER_RUNNING,
+                    LEAF_WRITER_SETTLED,
+                    LEAF_COMPLETION_PROOF_RECORDED,
+                    LEAF_TERMINAL,
                 ],
             )
             self.assertEqual(
@@ -367,9 +368,9 @@ class CleanRunTerminalTests(unittest.TestCase):
                 ),
                 1,
             )
-            self.assertEqual(writer.observed_phases, [PHASE_WRITER_RUNNING])
+            self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING])
             self.assertEqual(event["stop_reason"], "done")
-            self.assertEqual(_operation(resumed_state, run_id).phase, PHASE_TERMINAL)
+            self.assertEqual(_operation(resumed_state, run_id).leaf, LEAF_TERMINAL)
 
 
 class RuntimeEnvelopeTests(unittest.TestCase):
@@ -384,7 +385,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             with (
                 mock.patch.object(
                     state.runtime_log,
-                    "append_many",
+                    "mutate",
                     side_effect=RuntimeError("runtime log unavailable"),
                 ),
                 self.assertRaises(RuntimeError),
@@ -520,8 +521,9 @@ class NonBoolSatisfiedWiringTests(unittest.TestCase):
             operation = _operation(state, str(event["run_id"]))
             self.assertEqual(event["stop_reason"], "done")
             self.assertEqual(event["summary"], "implemented")
-            self.assertEqual(operation.phase, PHASE_WRITER_SETTLED)
-            self.assertIsNone(operation.terminal)
+            self.assertEqual(operation.leaf, LEAF_TERMINAL)
+            assert operation.terminal is not None
+            self.assertEqual(operation.terminal.stop_reason, "done")
             self.assertIsNone(operation.completion_proof_satisfied)
 
 
@@ -539,7 +541,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
             operation = _operation(state, str(event["run_id"]))
 
             # The repair attempt ran while the counter said repair_running.
-            self.assertEqual(writer.observed_phases, [PHASE_WRITER_RUNNING, PHASE_REPAIR_RUNNING])
+            self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING])
             self.assertEqual(len(writer.calls), 2)
             self.assertEqual(writer.calls[1]["task"], COMPLETION_REPAIR_FOLLOWUP)
             self.assertEqual(operation.repair_rounds, 1)
@@ -573,12 +575,12 @@ class RepairRoundPhaseTests(unittest.TestCase):
             operation = _operation(state, str(event["run_id"]))
 
             self.assertEqual(event["stop_reason"], "blocked")
-            self.assertEqual(writer.observed_phases, [PHASE_WRITER_RUNNING, PHASE_REPAIR_RUNNING])
+            self.assertEqual(writer.observed_phases, [LEAF_WRITER_RUNNING, LEAF_REPAIR_RUNNING])
             assert operation.terminal is not None
             self.assertEqual(operation.terminal.stop_reason, "blocked")
             self.assertEqual(operation.terminal.blocked_reason, "provider_failure")
             self.assertEqual(operation.repair_rounds, 1)
-            self.assertEqual(operation.phase, PHASE_TERMINAL)
+            self.assertEqual(operation.leaf, LEAF_TERMINAL)
             self.assertEqual(_runtime_outcome(state, str(event["run_id"])), "failed")
 
     def test_user_stop_during_repair_keeps_stopped_terminal(self) -> None:
@@ -646,7 +648,7 @@ class CrashPositionTests(unittest.TestCase):
         positions = [
             (
                 [lambda s: mark_writer_running(s, provider_id="deepseek")],
-                PHASE_WRITER_RUNNING,
+                LEAF_WRITER_RUNNING,
                 "Writing was interrupted",
             ),
             (
@@ -654,7 +656,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_writer_running(s, provider_id="deepseek"),
                     lambda s: mark_writer_settled(s, provider_id="deepseek", turns_used=4, stop_reason="done"),
                 ],
-                PHASE_WRITER_SETTLED,
+                LEAF_WRITER_SETTLED,
                 "Completion check was interrupted",
             ),
             (
@@ -668,7 +670,7 @@ class CrashPositionTests(unittest.TestCase):
                         proof_satisfied=False,
                     ),
                 ],
-                PHASE_COMPLETION_PROOF_RECORDED,
+                LEAF_COMPLETION_PROOF_RECORDED,
                 "Completion check was interrupted",
             ),
             (
@@ -685,7 +687,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_repair_running(s, provider_id="deepseek"),
                     lambda s: mark_repair_settled(s, provider_id="deepseek", stop_reason="done", turns_used=6),
                 ],
-                PHASE_REPAIR_SETTLED,
+                LEAF_REPAIR_SETTLED,
                 # The repair is over; what was interrupted is the
                 # post-repair completion check.
                 "Completion check was interrupted",
@@ -701,7 +703,7 @@ class CrashPositionTests(unittest.TestCase):
                         proof_satisfied=True,
                     ),
                 ],
-                PHASE_COMPLETION_PROOF_RECORDED,
+                LEAF_COMPLETION_PROOF_RECORDED,
                 # A satisfied proof means the run was finishing, not
                 # still waiting on a check.
                 "Finishing was interrupted",
@@ -719,7 +721,7 @@ class CrashPositionTests(unittest.TestCase):
                     lambda s: mark_repair_context_admitted(s, context_ref="sha256:" + "a" * 64),
                     lambda s: mark_repair_running(s, provider_id="deepseek"),
                 ],
-                PHASE_REPAIR_RUNNING,
+                LEAF_REPAIR_RUNNING,
                 "Stopped during repair",
             ),
         ]
@@ -727,8 +729,10 @@ class CrashPositionTests(unittest.TestCase):
             with self.subTest(phase=expected_phase):
                 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                     state_home = Path(td) / "state"
-                    store = RuntimeOperationStore(RuntimeSessionLog(state_home))
-                    started = store.start(
+                    log = RuntimeSessionLog(state_home)
+                    store = RuntimeOperationStore(log)
+                    line = RuntimeMutationLine(log)
+                    started = line.accept_operation(
                         session_id=SESSION,
                         run_id="run-crash",
                         project=str(Path(td) / "project"),
@@ -742,7 +746,7 @@ class CrashPositionTests(unittest.TestCase):
                         # committed phase must survive on disk.
                         current = store.load(SESSION, "run-crash")
                         assert current is not None
-                        store.commit(SESSION, "run-crash", transition)
+                        line.transition_operation(SESSION, "run-crash", transition)
 
                     # The run opened a ledger but never wrote run_finished.
                     ledgers = RuntimeOperationLedgersStub(state_home)
@@ -752,7 +756,7 @@ class CrashPositionTests(unittest.TestCase):
                     recovered_store = RuntimeOperationStore(RuntimeSessionLog(state_home))
                     recovered = recovered_store.load(SESSION, "run-crash")
                     assert recovered is not None
-                    self.assertEqual(recovered.phase, expected_phase)
+                    self.assertEqual(recovered.leaf, expected_phase)
 
                     summary = load_run_details(
                         run_ledgers=ledgers,
@@ -768,8 +772,10 @@ class CrashPositionTests(unittest.TestCase):
     def test_stale_non_terminal_snapshot_never_shows_progress_after_finished_run(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            store = RuntimeOperationStore(RuntimeSessionLog(state_home))
-            started = store.start(
+            log = RuntimeSessionLog(state_home)
+            store = RuntimeOperationStore(log)
+            line = RuntimeMutationLine(log)
+            started = line.accept_operation(
                 session_id=SESSION,
                 run_id="run-stale",
                 project="",
@@ -778,7 +784,7 @@ class CrashPositionTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             assert started is not None
-            store.commit(
+            line.transition_operation(
                 SESSION,
                 "run-stale",
                 lambda s: mark_writer_running(s, provider_id="deepseek"),
@@ -809,8 +815,10 @@ class CrashPositionTests(unittest.TestCase):
     def test_terminal_operation_shows_no_progress_line(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
             state_home = Path(td) / "state"
-            store = RuntimeOperationStore(RuntimeSessionLog(state_home))
-            started = store.start(
+            log = RuntimeSessionLog(state_home)
+            store = RuntimeOperationStore(log)
+            line = RuntimeMutationLine(log)
+            started = line.accept_operation(
                 session_id=SESSION,
                 run_id="run-done",
                 project="",
@@ -819,7 +827,7 @@ class CrashPositionTests(unittest.TestCase):
                 max_repair_rounds=1,
             )
             assert started is not None
-            store.commit(
+            line.transition_operation(
                 SESSION,
                 "run-done",
                 lambda s: mark_terminal(

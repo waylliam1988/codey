@@ -64,8 +64,8 @@ from codey.runs.work_checkpoint import (
     WorkCheckpointStore,
 )
 from codey.runtime import cancellation
-from codey.runtime.effects import (
-    PHASE_COMPLETION_PROOF_RECORDED,
+from codey.runtime.operation_state import (
+    LEAF_COMPLETION_PROOF_RECORDED,
     mark_completion_blocked,
     mark_completion_proof_recorded,
     mark_repair_context_admitted,
@@ -74,19 +74,8 @@ from codey.runtime.effects import (
     mark_writer_running,
     mark_writer_settled,
 )
-from codey.runtime.effect_records import (
-    EFFECT_CATEGORY_REPAIR_ROUND,
-    RuntimeEffectIntent,
-    RuntimeEffectSettlement,
-    SETTLEMENT_STATUS_ERROR,
-    SETTLEMENT_STATUS_OK,
-    compute_args_digest,
-    new_effect_id,
-    record_settlement_safely,
-)
 from codey.runtime.events import RunEvent
 from codey.runtime.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.replay_policy import repair_replay_policy
 from codey.runtime.terminalizer import task_done_event
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
@@ -144,6 +133,7 @@ class ReviewAccess:
 @dataclass(frozen=True)
 class RuntimeAccess:
     commit_run_operation: Callable[[RunWork, Callable], None]
+    mutations: Any = None
     effects: Any = None
     tool_result_delivery: Any = None
 
@@ -636,6 +626,7 @@ def _run_one_writer_attempt(
         run_id=ctx.frame.run_id,
         runtime_effects=ctx.deps.runtime.effects,
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
+        runtime_mutations=ctx.deps.runtime.mutations,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
     ))
@@ -1135,54 +1126,6 @@ def _prepare_completion_enforcement(ctx: _ProjectRun) -> None:
     ctx.completion_engine = CompletionEngine()
 
 
-def _record_repair_round_intent(ctx: _ProjectRun, projection: RepairContextProjection) -> str:
-    effects = ctx.deps.runtime.effects
-    if effects is None or not ctx.request.session_id or not ctx.frame.run_id:
-        return ""
-    replay_decision = repair_replay_policy()
-    payload = projection.to_payload()
-    effect_id = new_effect_id(EFFECT_CATEGORY_REPAIR_ROUND, ctx.frame.run_id)
-    intent = RuntimeEffectIntent(
-        effect_id=effect_id,
-        effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-        session_id=ctx.request.session_id,
-        run_id=ctx.frame.run_id,
-        phase="repair_running",
-        provider_id=ctx.frame.provider_id,
-        turn=1,
-        display_ref=str(payload.get("digest") or "")[:100],
-        args_digest=compute_args_digest(payload),
-        replay_class=replay_decision.replay_class,
-    )
-    effects.record_intent(ctx.request.session_id, ctx.frame.run_id, intent)
-    return effect_id
-
-
-def _settle_repair_round_effect(
-    ctx: _ProjectRun,
-    effect_id: str,
-    *,
-    status: str,
-    error_code: str = "",
-) -> None:
-    effects = ctx.deps.runtime.effects
-    if effects is None or not effect_id or not ctx.request.session_id or not ctx.frame.run_id:
-        return
-    record_settlement_safely(
-        effects,
-        ctx.request.session_id,
-        ctx.frame.run_id,
-        RuntimeEffectSettlement(
-            effect_id=effect_id,
-            effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-            session_id=ctx.request.session_id,
-            run_id=ctx.frame.run_id,
-            status=status,
-            error_code=error_code[:80],
-        ),
-    )
-
-
 def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
     assert ctx.result is not None
     assert ctx.completion_engine is not None
@@ -1234,7 +1177,6 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
         ctx.work,
         lambda state: mark_repair_running(state, provider_id=ctx.frame.provider_id),
     )
-    effect_id = _record_repair_round_intent(ctx, projection)
 
     try:
         repair_result = ctx.failover.run(
@@ -1245,20 +1187,8 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             checkpoint=_refresh_checkpoint_view(ctx),
         )
     except cancellation.TaskCancelled:
-        _settle_repair_round_effect(
-            ctx,
-            effect_id,
-            status=SETTLEMENT_STATUS_ERROR,
-            error_code="task_cancelled",
-        )
         raise
     except ProviderActionError:
-        _settle_repair_round_effect(
-            ctx,
-            effect_id,
-            status=SETTLEMENT_STATUS_ERROR,
-            error_code="provider_failure",
-        )
         ctx.blocked_reason = "provider_failure"
         ctx.deps.runtime.commit_run_operation(
             ctx.work,
@@ -1270,18 +1200,6 @@ def _maybe_run_completion_repair(ctx: _ProjectRun) -> None:
             ),
         )
     else:
-        status = (
-            SETTLEMENT_STATUS_OK
-            if repair_result.stop_reason in {"done", "approval", "stopped"}
-            else SETTLEMENT_STATUS_ERROR
-        )
-        error_code = "" if repair_result.stop_reason == "done" else repair_result.stop_reason
-        _settle_repair_round_effect(
-            ctx,
-            effect_id,
-            status=status,
-            error_code=error_code,
-        )
         repair_blocked_reason = ""
         if repair_result.stop_reason not in {"done", "approval", "stopped"}:
             repair_remaining_turns = (
@@ -1370,7 +1288,7 @@ def _settle_blocked_completion(ctx: _ProjectRun) -> None:
     if (
         ctx.blocked_reason
         and ctx.work.operation is not None
-        and ctx.work.operation.phase == PHASE_COMPLETION_PROOF_RECORDED
+        and ctx.work.operation.leaf == LEAF_COMPLETION_PROOF_RECORDED
     ):
         ctx.deps.runtime.commit_run_operation(
             ctx.work,

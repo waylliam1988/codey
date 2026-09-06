@@ -11,7 +11,6 @@ from __future__ import annotations
 from codey.agents.prompt_context import append_coding_context, send_prompt
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState
-from codey.runtime.effects import lane_for_run, operation_id_for_run
 from codey.runtime.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
@@ -28,6 +27,7 @@ def ensure_result_batch_intent(
 ) -> str:
     """Find existing matching batch intent or record durable batch intent (fail-closed)."""
     delivery_store = session.tool_result_delivery
+    mutations = session.runtime_mutations
     if (
         delivery_store is None
         or not session.session_id
@@ -80,18 +80,23 @@ def ensure_result_batch_intent(
             # provider attempt in this turn that failed or timed out. A new writer/failover run
             # may record a fresh batch for recovery tracking.
 
+    if mutations is None:
+        return ""
     batch_id = new_batch_id(session.run_id, turn)
     intent = DeliveryBatchIntent(
         batch_id=batch_id,
         session_id=session.session_id,
         run_id=session.run_id,
-        lane=lane_for_run(session.run_id),
-        operation_id=operation_id_for_run(session.run_id),
         turn=turn,
         items=items,
         batch_digest=expected_digest,
     )
-    delivery_store.record_batch_intent(session.session_id, session.run_id, intent)
+    mutations.begin_tool_batch(
+        session.session_id,
+        session.run_id,
+        intents=(),
+        delivery_intent=intent,
+    )
     turn_state.delivery_batch_id = batch_id
     turn_state.delivery_batch_digest = expected_digest
     return batch_id

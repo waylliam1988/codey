@@ -2579,13 +2579,13 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
     def test_state_owns_runtime_operation_store_and_forget_deletes_it(self) -> None:
-        from codey.runtime.effects import RuntimeOperationStore
+        from codey.runtime.operation_state import RuntimeOperationStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
             assert state.runtime_operations is not None
-            started = state.runtime_operations.start(
+            started = state.runtime_mutations.accept_operation(
                 session_id="session-forget",
                 run_id="run-forget",
                 project="",
@@ -2600,7 +2600,7 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertIsNone(state.runtime_operations.load("session-forget", "run-forget"))
 
     def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
-        from codey.runtime.effects import RuntimeOperationStore
+        from codey.runtime.operation_state import RuntimeOperationStore
 
         state = server.AppContext()
         self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)

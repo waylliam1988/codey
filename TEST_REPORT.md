@@ -8,6 +8,42 @@ docs/0.4_mimo_provider_baseline.zh-CN.md
 docs/0.4_qwen_provider_baseline.zh-CN.md
 docs/0.4_deepseek_provider_baseline.zh-CN.md
 ```
+## Durable Operation Core implementation audit (2026-09-06)
+
+Scope:
+
+```text
+runtime:     operation_state is now first-class durable state, not a pseudo
+             effect record. session_log exposes mutate() as the atomic write
+             boundary and publishes the same process-local projection after
+             commit.
+mutation:    RuntimeMutationLine is the production writer for operation state,
+             effect intent/settlement, tool-result delivery receipt/recovery,
+             and terminal operation settlement.
+recovery:    recovery reads drive.peek_next_action() and executes reducer
+             actions instead of inferring from missing events.
+cleanup:     removed runtime/effects.py, runtime/reducer.py and
+             runtime/scheduler.py; RuntimeOperationStore is projection-only.
+out_of_scope: Ghost, World Model, Lane, RemoteSession, RPC, CBOR and lease.
+```
+
+Verification:
+
+- Runtime core targeted suite:
+  `python -m pytest tests/test_runtime_mutation_line.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_result_delivery.py -q`
+  (`81 passed, 31 subtests passed in 1.70s`)
+- Entry/recovery/UI targeted suite:
+  `python -m pytest tests/test_architecture.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py -q`
+  (`325 passed, 1 skipped, 297 subtests passed in 42.73s`)
+- Architecture guard rerun:
+  `python -m pytest tests/test_architecture.py -q`
+  (`74 passed, 294 subtests passed in 10.81s`)
+- Syntax/import bytecode check:
+  `python -m compileall -q codey` (passed)
+- Full pytest suite:
+  `python -m pytest -q`
+  (`3548 passed, 16 skipped, 1262 subtests passed in 308.98s (0:05:08)`)
+
 ## 0.5.7 Research Follow-up Quality Closure release audit (2026-09-05)
 
 Scope:
@@ -829,7 +865,7 @@ Scope:
 
 ```text
 production: deleted the standalone codey/run_operation.py register and moved
-            run phase facts onto RuntimeSessionLog via codey.runtime.effects;
+            run phase facts onto RuntimeSessionLog via codey.runtime.operation_state;
             TaskFlow now runs through TaskRuntime when runtime logging is
             available; TaskRuntime schedules the reserved run_* identity used
             by the phase projection and terminal event; codey/task/service.py

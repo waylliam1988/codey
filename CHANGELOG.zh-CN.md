@@ -2,6 +2,35 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Durable Operation Core
+
+- 将 durable operation state 从旧的 `codey.runtime.effects` 命名中拆出：
+  `codey.runtime.operation_state` 现在拥有 closed operation leaf table，operation state
+  作为一等 `operation_state` log entry 写入，不再伪装成 pseudo effect record。
+- 用 `RuntimeSessionLog.mutate()` 取代半公开的 `RuntimeSessionLog.append()` /
+  `append_many()` 写入面。`mutate()` 在 session lock 内提交一个有界 batch，并立刻发布同一份
+  process-local projection。生产 runtime facts 统一经过 `RuntimeMutationLine`。
+- Effect store 和 delivery store 在生产路径上变成 projection-only。Provider send、tool
+  batch、tool settlement、provider settlement、delivery receipt、recovered delivery fact 和
+  terminal operation settlement 都通过 mutation line 同批提交，避免 intent 与 pending state
+  分裂。
+- 新增纯 `operation_reducer` 和 `drive.peek_next_action()`，支撑 manual drive 测试和恢复派发。
+  `recovery.py` 现在执行 reducer action：provider unknown-outcome settlement、safe tool
+  batch replay 和 interrupted-effect synthesis，不再靠缺失 event 推断恢复。
+- 删除旧的 `runtime/reducer.py`、`runtime/scheduler.py` 和 `runtime/effects.py` 形态。
+  `RuntimeOperationStore` 现在只做读取投影，不再暴露 `start`、`commit` 或 session deletion
+  这种业务写入口。
+- Ghost、World Model、Lane、RemoteSession、RPC、CBOR 和 lease 不进入 runtime core；Ghost
+  仍然只是 durable facts 的观察者/使用者。
+
+验证：
+
+- `python -m pytest tests/test_runtime_mutation_line.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_tool_result_delivery.py -q`（`81 passed, 31 subtests passed in 1.70s`）
+- `python -m pytest tests/test_architecture.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py -q`（`325 passed, 1 skipped, 297 subtests passed in 42.73s`）
+- `python -m pytest tests/test_architecture.py -q`（`74 passed, 294 subtests passed in 10.81s`）
+- `python -m compileall -q codey`（通过）
+- 全量 pytest：`python -m pytest -q`（`3548 passed, 16 skipped, 1262 subtests passed in 308.98s (0:05:08)`）
+
 ## 0.5.7 - Research Follow-up Quality Closure
 
 - 恢复 TUN 代理场景下的浏览器 Research 搜索：`NetworkPolicy` 默认允许 DNS
@@ -388,7 +417,7 @@
     提交变成难审的大迁移。
 - Runtime operation 事实现在只来自 session log。此前开发中的独立
   `codey/run_operation.py` 寄存器在发布前删除；唯一 durable source 是
-  `RuntimeSessionLog`，`codey.runtime.effects` 从 `operation_effect` 行投影
+  `RuntimeSessionLog`，`codey.runtime.operation_state` 从 `operation_effect` 行投影
   最新的有界 run phase。
   - `RuntimeOperationStore.start()` 会把 `operation_started` 和初始 phase
     原子追加到 runtime log；后续 phase commit 只追加一个 `run_phase`

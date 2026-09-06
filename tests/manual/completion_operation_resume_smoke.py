@@ -1,13 +1,11 @@
-"""Stop / crash resume smoke for runtime operation effects (0.5.1).
+"""Stop / crash resume smoke for durable operation state.
 
-Roadmap 0.5.1 requires deterministic crash-position tests plus one manual
-stop/resume smoke. This script is that smoke entry: it runs the production
-headless spine (``run_headless``), hard-kills the process mid-run the way a
-crash would, and then reads the last committed runtime phase with a fresh
-store -- recovery must switch on the log projection, never on missing events.
+This script runs the production headless spine (``run_headless``), hard-kills
+the process mid-run the way a crash would, and then reads the last committed
+operation-state leaf with a fresh store.
 
     --self-test   deterministic and offline: the parent waits until the run's
-                  runtime phase reaches the writer_running phase, hard-kills the
+                  operation leaf reaches writer_running, hard-kills the
                   process the way a crash would, checks the recovered register,
                   then resumes the same run_id to terminal. This is the release
                   gate.
@@ -31,13 +29,14 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.runtime.effects import (
-    PHASE_WRITER_RUNNING,
+from codey.runtime.operation_state import (
+    LEAF_TERMINAL,
+    LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
 )
-from codey.runtime.reducer import reduce_session
+from codey.runtime.session_projection import reduce_session
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runs.details import load_run_details
 
@@ -140,11 +139,10 @@ def _self_test() -> int:
             deadline = time.monotonic() + KILL_TIMEOUT_SECONDS
             while time.monotonic() < deadline:
                 register = store.load(SESSION, RUN)
-                # Wait for the writer phase itself: killing at accepted
+                # Wait for the writer leaf itself: killing at accepted
                 # would make the smoke pass without ever entering the
-                # writer. (accepted is covered by the deterministic
-                # crash-position unit tests instead.)
-                if register is not None and register.phase == PHASE_WRITER_RUNNING:
+                # writer. (accepted is covered by deterministic unit tests.)
+                if register is not None and register.leaf == LEAF_WRITER_RUNNING:
                     break
                 if child.poll() is not None:
                     print("FAIL: child exited before entering the writer phase")
@@ -167,8 +165,8 @@ def _self_test() -> int:
         if recovered is None:
             print("FAIL: register did not survive the crash")
             return 1
-        if recovered.phase != PHASE_WRITER_RUNNING:
-            print(f"FAIL: unexpected phase after crash: {recovered.phase}")
+        if recovered.leaf != LEAF_WRITER_RUNNING:
+            print(f"FAIL: unexpected leaf after crash: {recovered.leaf}")
             return 1
 
         summary = load_run_details(
@@ -180,7 +178,7 @@ def _self_test() -> int:
         )
         progress = [row for row in summary.rows if row.label == "Progress"]
         print("recovered register:")
-        print(f"  phase        {recovered.phase}")
+        print(f"  leaf         {recovered.leaf}")
         print(f"  project_ref  {recovered.project_ref}")
         for row in summary.rows:
             payload = row.to_jsonable()
@@ -195,7 +193,7 @@ def _self_test() -> int:
         resumed = _resume_same_run(state_home, project)
         if resumed != 0:
             return resumed
-        print("ok: crash resume reports the last committed phase and resumes the same run")
+        print("ok: crash resume reports the last committed leaf and resumes the same run")
         return 0
 
 
@@ -228,9 +226,9 @@ def _resume_same_run(state_home: Path, project: Path) -> int:
         return 1
     store = RuntimeOperationStore(RuntimeSessionLog(state_home))
     terminal = store.load(SESSION, RUN)
-    if terminal is None or terminal.phase != "terminal":
-        phase = None if terminal is None else terminal.phase
-        print(f"FAIL: resumed register is not terminal: {phase}")
+    if terminal is None or terminal.leaf != LEAF_TERMINAL:
+        leaf = None if terminal is None else terminal.leaf
+        print(f"FAIL: resumed register is not terminal: {leaf}")
         return 1
     projection = reduce_session(RuntimeSessionLog(state_home).read(SESSION))
     op_id = operation_id_for_run(RUN)

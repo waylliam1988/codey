@@ -164,6 +164,7 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         project_instructions=project_instructions,
         session_id=request.session_id,
         run_id=request.run_id,
+        runtime_mutations=request.runtime_mutations,
         runtime_effects=request.runtime_effects,
         tool_result_delivery=request.tool_result_delivery,
     )

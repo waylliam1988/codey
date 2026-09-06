@@ -74,6 +74,7 @@ class AgentRequest:
     trace_recorder: Any = None
     session_id: str = ""
     run_id: str = ""
+    runtime_mutations: Any = None
     runtime_effects: Any = None
     tool_result_delivery: Any = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()

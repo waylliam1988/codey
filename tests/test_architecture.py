@@ -341,14 +341,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.cancellation",
             "codey.runtime.events",
             "codey.runtime.execution_evidence",
+            "codey.runtime.effect_records",
+            "codey.runtime.mutation_line",
             "codey.runtime.models",
             "codey.runtime.operation",
+            "codey.runtime.operation_reducer",
+            "codey.runtime.operation_state",
             "codey.runtime.outcome",
             "codey.runtime.prompt_envelope",
-            "codey.runtime.reducer",
-            "codey.runtime.scheduler",
+            "codey.runtime.replay_args",
+            "codey.runtime.replay_policy",
+            "codey.runtime.session_projection",
             "codey.runtime.session_log",
             "codey.runtime.terminalizer",
+            "codey.runtime.tool_result_delivery",
             "codey.storage.atomic_io",
             "codey.storage.file_lock",
             "codey.storage.local_store",
@@ -356,14 +362,40 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         offenders: dict[str, list[str]] = {}
         kernel_files = (
             "operation.py",
+            "operation_state.py",
+            "operation_reducer.py",
+            "mutation_line.py",
+            "drive.py",
             "outcome.py",
-            "reducer.py",
-            "scheduler.py",
+            "session_projection.py",
             "session_log.py",
             "terminalizer.py",
         )
+        self.assertFalse((ROOT / "codey" / "runtime" / "effects.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "reducer.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "scheduler.py").exists())
         self.assertFalse((ROOT / "codey" / "runtime" / "lane.py").exists())
         self.assertFalse((ROOT / "codey" / "runtime" / "suspension.py").exists())
+        session_log_source = (ROOT / "codey" / "runtime" / "session_log.py").read_text(encoding="utf-8")
+        delivery_source = (ROOT / "codey" / "runtime" / "tool_result_delivery.py").read_text(encoding="utf-8")
+        operation_state_source = (ROOT / "codey" / "runtime" / "operation_state.py").read_text(encoding="utf-8")
+        self.assertNotIn("def append(", session_log_source)
+        self.assertNotIn("def append_many(", session_log_source)
+        for token in (
+            "def start(",
+            "def commit(",
+            "def delete_session(",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, operation_state_source)
+        for token in (
+            "def record_batch_intent(",
+            "def record_send_attempt(",
+            "def record_delivered(",
+            "def record_recovered(",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, delivery_source)
         for name in kernel_files:
             path = ROOT / "codey" / "runtime" / name
             imports = imported_modules(path)

@@ -10,7 +10,7 @@ from codey.agents.request import RecoveredToolOutcome
 from codey.ghost.work_queue import GhostWorkItem
 
 from codey.providers.diagnostics import ProviderFailure
-from codey.runtime.effects import RuntimeOperationState
+from codey.runtime.operation_state import RuntimeOperationState
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
 from codey.runtime.events import RunEvent

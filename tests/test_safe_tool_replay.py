@@ -6,7 +6,6 @@ import unittest
 
 from codey.runtime.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
-    EFFECT_CATEGORY_REPAIR_ROUND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
     RuntimeEffectIntent,
@@ -172,14 +171,13 @@ class SafeToolReplayTests(unittest.TestCase):
         )
         self.assertIsNone(candidate_from_effect(RuntimeEffectProjection(intent=intent_prov)))
 
-        # Repair round category
-        intent_rep = RuntimeEffectIntent(
-            effect_id="eff_4",
-            effect_category=EFFECT_CATEGORY_REPAIR_ROUND,
-            session_id="sess_1",
-            run_id="run_1",
-        )
-        self.assertIsNone(candidate_from_effect(RuntimeEffectProjection(intent=intent_rep)))
+        with self.assertRaises(RuntimeEffectError):
+            RuntimeEffectIntent(
+                effect_id="eff_4",
+                effect_category="repair_round",
+                session_id="sess_1",
+                run_id="run_1",
+            )
 
         # Safe tool with None replay_args (e.g. legacy intent)
         intent_legacy = RuntimeEffectIntent(

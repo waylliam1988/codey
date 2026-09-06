@@ -191,6 +191,7 @@ def run_headless(
             if _request_intent(request.intent) == "auto"
             else None
         ),
+        runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
     try:

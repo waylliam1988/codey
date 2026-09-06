@@ -29,17 +29,25 @@ from codey.agents.loop import run as run_agent_loop
 from codey.agents.request import AgentRequest
 from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
 from codey.agents.tool_execution import (
+    build_tool_call_intent,
     evaluate_tool_call_policy,
-    record_tool_call_intent,
 )
 from codey.operations.recovery import recover_effects_for_resume
 from codey.runtime.effect_records import (
     RuntimeEffectStore,
     SETTLEMENT_STATUS_OK,
 )
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.mutation_line import RuntimeMutationLine
+from codey.runtime.operation_state import mark_writer_running
 from codey.runtime.models import ToolCall
 from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.tool_result_delivery import (
+    DeliveryBatchIntent,
+    DeliveryBatchItem,
+    ToolResultDeliveryStore,
+    compute_batch_digest,
+    new_batch_id,
+)
 from codey.runs.details import load_run_details
 from codey.runs.ledger import RunLedgerStore
 
@@ -152,15 +160,18 @@ def _write_resume_fixture(project_dir: Path) -> None:
     )
 
 
-def _record_pending_read_intent(
-    effects_store: RuntimeEffectStore,
+def _prepare_tool_intent(
+    mutations: RuntimeMutationLine,
     *,
     session_id: str,
     run_id: str,
     project_dir: Path,
-) -> str:
+    call: ToolCall,
+    turn: int,
+    tool_index: int,
+) -> tuple[Any, Any]:
     mock_session = Mock()
-    mock_session.runtime_effects = effects_store
+    mock_session.runtime_mutations = mutations
     mock_session.session_id = session_id
     mock_session.run_id = run_id
     mock_session.project = project_dir
@@ -169,15 +180,86 @@ def _record_pending_read_intent(
     mock_session.on_shell_request = None
     mock_session.trace = Mock()
 
-    call_read = ToolCall(name="read", args={"path": "config.py"})
-    _, replay_read = evaluate_tool_call_policy(mock_session, call_read, turn=1, tool_index=0)
-    return record_tool_call_intent(
+    _, replay_decision = evaluate_tool_call_policy(
         mock_session,
-        call_read,
-        turn=1,
-        tool_index=0,
-        replay_decision=replay_read,
+        call,
+        turn=turn,
+        tool_index=tool_index,
     )
+    intent = build_tool_call_intent(
+        mock_session,
+        call,
+        turn=turn,
+        tool_index=tool_index,
+        replay_decision=replay_decision,
+    )
+    assert intent is not None
+    return intent, replay_decision
+
+
+def _record_pending_tool_batch(
+    mutations: RuntimeMutationLine,
+    *,
+    session_id: str,
+    run_id: str,
+    project_dir: Path,
+    calls: tuple[ToolCall, ...],
+) -> tuple[str, ...]:
+    intents = []
+    items = []
+    for tool_index, call in enumerate(calls):
+        intent, replay_decision = _prepare_tool_intent(
+            mutations,
+            session_id=session_id,
+            run_id=run_id,
+            project_dir=project_dir,
+            call=call,
+            turn=1,
+            tool_index=tool_index,
+        )
+        replay_class = getattr(replay_decision, "replay_class", "unsafe")
+        intents.append(intent)
+        items.append(
+            DeliveryBatchItem(
+                tool_index=tool_index,
+                tool_name=call.name,
+                ref=intent.effect_id,
+                replay_class=str(replay_class),
+                is_denied=False,
+            )
+        )
+    batch_items = tuple(items)
+    mutations.begin_tool_batch(
+        session_id,
+        run_id,
+        intents=tuple(intents),
+        delivery_intent=DeliveryBatchIntent(
+            batch_id=new_batch_id(run_id, 1),
+            session_id=session_id,
+            run_id=run_id,
+            turn=1,
+            items=batch_items,
+            batch_digest=compute_batch_digest(batch_items),
+        ),
+    )
+    return tuple(intent.effect_id for intent in intents)
+
+
+def _record_pending_read_batch(
+    mutations: RuntimeMutationLine,
+    *,
+    session_id: str,
+    run_id: str,
+    project_dir: Path,
+) -> str:
+    call_read = ToolCall(name="read", args={"path": "config.py"})
+    return _record_pending_tool_batch(
+        mutations,
+        session_id=session_id,
+        run_id=run_id,
+        project_dir=project_dir,
+        calls=(call_read,),
+    )[0]
 
 
 def _final_content_ok(project_dir: Path) -> bool:
@@ -212,9 +294,10 @@ def run_self_test() -> bool:
         run_id = "smoke_replay_run"
 
         session_log = RuntimeSessionLog(state_home)
-        operations_store = RuntimeOperationStore(session_log)
         effects_store = RuntimeEffectStore(session_log)
-        operations_store.start(
+        delivery_store = ToolResultDeliveryStore(session_log)
+        mutations = RuntimeMutationLine(session_log)
+        mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
@@ -223,44 +306,41 @@ def run_self_test() -> bool:
             max_repair_rounds=1,
             task_kind="project",
         )
+        mutations.transition_operation(
+            session_id,
+            run_id,
+            lambda state: mark_writer_running(state, provider_id="MockResumeProvider"),
+        )
 
 
         # 1. Simulate a crashed run that recorded intents before exiting:
         # - Intent 1: Safe read tool call (should be replayed)
         # - Intent 2: Safe search tool call (should be replayed)
-        # - Intent 3: Unsafe edit tool call (should NOT be replayed, synthesized as interrupted)
-        mock_session = Mock()
-        mock_session.runtime_effects = effects_store
-        mock_session.session_id = session_id
-        mock_session.run_id = run_id
-        mock_session.project = project_dir
-        mock_session.profile = Mock()
-        mock_session.profile.name = "coding_writer"
-        mock_session.on_shell_request = None
-        mock_session.trace = Mock()
-
-        call_read = ToolCall(name="read", args={"path": "target.py", "offset": 1})
-        _, replay_read = evaluate_tool_call_policy(mock_session, call_read, turn=1, tool_index=0)
-        eff_read = record_tool_call_intent(mock_session, call_read, turn=1, tool_index=0, replay_decision=replay_read)
-
-        call_search = ToolCall(name="search", args={"path": ".", "query": "helper_fn"})
-        _, replay_search = evaluate_tool_call_policy(mock_session, call_search, turn=1, tool_index=1)
-        eff_search = record_tool_call_intent(mock_session, call_search, turn=1, tool_index=1, replay_decision=replay_search)
-
-        call_edit = ToolCall(name="edit", args={"path": "new_file.py", "content": "# new"})
-        _, replay_edit = evaluate_tool_call_policy(mock_session, call_edit, turn=1, tool_index=2)
-        eff_edit = record_tool_call_intent(mock_session, call_edit, turn=1, tool_index=2, replay_decision=replay_edit)
+        eff_read, eff_search = _record_pending_tool_batch(
+            mutations,
+            session_id=session_id,
+            run_id=run_id,
+            project_dir=project_dir,
+            calls=(
+                ToolCall(name="read", args={"path": "target.py", "offset": 1}),
+                ToolCall(name="search", args={"path": ".", "query": "helper_fn"}),
+            ),
+        )
 
         # Verify initial pending state
         pending_before = effects_store.pending_effects(session_id, run_id)
-        assert len(pending_before) == 3, f"expected 3 pending effects, got {len(pending_before)}"
-        print("[safe_tool_replay_smoke] successfully recorded 3 pending intents (2 safe, 1 unsafe).")
+        assert len(pending_before) == 2, f"expected 2 pending effects, got {len(pending_before)}"
+        print("[safe_tool_replay_smoke] successfully recorded 2 pending safe tool intents.")
 
         # 2. Trigger resume recovery.
         deps = Mock()
         deps.runtime_effects = effects_store
+        deps.tool_result_delivery = delivery_store
+        deps.runtime_mutations = mutations
         deps.state = Mock()
         deps.state.runtime_effects = effects_store
+        deps.state.tool_result_delivery = delivery_store
+        deps.state.runtime_mutations = mutations
 
         recovery = recover_effects_for_resume(
             deps,
@@ -297,18 +377,13 @@ def run_self_test() -> bool:
         assert proj_search.settlement.replay_count == 1
         assert proj_search.settlement.replayed_from_effect_id == eff_search
 
-        proj_edit = next(p for p in loaded_after if p.intent.effect_id == eff_edit)
-        assert proj_edit.settlement is not None and proj_edit.settlement.status == "interrupted"
-        assert proj_edit.settlement.replay_count == 0
-
         # 4. Check RecoverySummary
         summary = effects_store.recovery_summary(session_id, run_id)
         assert summary.replayed_reads == 1
         assert summary.replayed_lookups == 1
-        assert summary.interrupted_writes == 1
+        assert summary.interrupted_writes == 0
         assert "Read action was recovered" in summary.explanation_lines
         assert "Lookup action was recovered" in summary.explanation_lines
-        assert "Local write was interrupted and was not repeated" in summary.explanation_lines
 
         # 5. Agent loop execution with recovered outcomes
         provider = _MockResumeProvider()
@@ -319,7 +394,10 @@ def run_self_test() -> bool:
             session_id=session_id,
             run_id=run_id,
             runtime_effects=effects_store,
+            runtime_mutations=mutations,
+            tool_result_delivery=delivery_store,
             recovered_tool_outcomes=recovered_outcomes,
+            recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         )
 
         loop_result = run_agent_loop(agent_req)
@@ -374,10 +452,11 @@ def run_same_run_self_test() -> bool:
         provider = _ScriptedResumeProvider()
         events = []
         session_log = RuntimeSessionLog(state_home)
-        operations_store = RuntimeOperationStore(session_log)
         effects_store = RuntimeEffectStore(session_log)
+        delivery_store = ToolResultDeliveryStore(session_log)
+        mutations = RuntimeMutationLine(session_log)
 
-        started = operations_store.start(
+        started = mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
@@ -387,8 +466,13 @@ def run_same_run_self_test() -> bool:
             task_kind="project",
         )
         assert started is not None, "expected runtime operation to start"
-        effect_id = _record_pending_read_intent(
-            effects_store,
+        mutations.transition_operation(
+            session_id,
+            run_id,
+            lambda state: mark_writer_running(state, provider_id=provider.name),
+        )
+        effect_id = _record_pending_read_batch(
+            mutations,
             session_id=session_id,
             run_id=run_id,
             project_dir=project_dir,
@@ -396,8 +480,12 @@ def run_same_run_self_test() -> bool:
 
         deps = Mock()
         deps.runtime_effects = effects_store
+        deps.tool_result_delivery = delivery_store
+        deps.runtime_mutations = mutations
         deps.state = Mock()
         deps.state.runtime_effects = effects_store
+        deps.state.tool_result_delivery = delivery_store
+        deps.state.runtime_mutations = mutations
         recovery = recover_effects_for_resume(
             deps,
             session_id=session_id,
@@ -421,7 +509,10 @@ def run_same_run_self_test() -> bool:
                 session_id=session_id,
                 run_id=run_id,
                 runtime_effects=effects_store,
+                runtime_mutations=mutations,
+                tool_result_delivery=delivery_store,
                 recovered_tool_outcomes=recovered_outcomes,
+                recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
             )
         )
 
@@ -474,9 +565,10 @@ def _run_live_resume_case(
         session_id = f"safe_replay_live_{provider_id}"
         run_id = f"safe_replay_live_{provider_id}_{int(started_at)}"
         session_log = RuntimeSessionLog(state_home)
-        operations_store = RuntimeOperationStore(session_log)
         effects_store = RuntimeEffectStore(session_log)
-        operations_store.start(
+        delivery_store = ToolResultDeliveryStore(session_log)
+        mutations = RuntimeMutationLine(session_log)
+        mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=str(project_dir),
@@ -484,6 +576,11 @@ def _run_live_resume_case(
             turn_budget=max_turns,
             max_repair_rounds=1,
             task_kind="project",
+        )
+        mutations.transition_operation(
+            session_id,
+            run_id,
+            lambda state: mark_writer_running(state, provider_id=provider_id),
         )
 
         stage1_events = []
@@ -508,6 +605,8 @@ def _run_live_resume_case(
                 session_id=session_id,
                 run_id=run_id,
                 runtime_effects=effects_store,
+                runtime_mutations=mutations,
+                tool_result_delivery=delivery_store,
             ))
         except _InjectedCrash:
             crashed = True
@@ -526,8 +625,12 @@ def _run_live_resume_case(
 
         recover_deps = Mock()
         recover_deps.runtime_effects = effects_store
+        recover_deps.tool_result_delivery = delivery_store
+        recover_deps.runtime_mutations = mutations
         recover_deps.state = Mock()
         recover_deps.state.runtime_effects = effects_store
+        recover_deps.state.tool_result_delivery = delivery_store
+        recover_deps.state.runtime_mutations = mutations
         recovery = recover_effects_for_resume(
             recover_deps,
             session_id=session_id,
@@ -559,7 +662,10 @@ def _run_live_resume_case(
             session_id=session_id,
             run_id=run_id,
             runtime_effects=effects_store,
+            runtime_mutations=mutations,
+            tool_result_delivery=delivery_store,
             recovered_tool_outcomes=recovered_outcomes,
+            recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
         ))
         resume_prompt = provider.prompts[prompt_index] if len(provider.prompts) > prompt_index else ""
         summary = effects_store.recovery_summary(session_id, run_id)

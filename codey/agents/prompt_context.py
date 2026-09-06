@@ -205,10 +205,9 @@ def _send_provider_with_effect(
     name: str = "coding_outbound_prompt",
     delivery_batch_id: str = "",
 ) -> str:
-    effects = session.runtime_effects
-    delivery_store = session.tool_result_delivery
+    mutations = session.runtime_mutations
     effect_id = ""
-    if effects is not None and session.session_id and session.run_id:
+    if mutations is not None and session.session_id and session.run_id:
         session.provider_send_index += 1
         from codey.runtime.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
@@ -220,25 +219,33 @@ def _send_provider_with_effect(
             SENT_STATE_SETTLED,
             compute_args_digest,
             new_effect_id,
-            record_settlement_safely,
         )
+        from codey.runtime.operation_state import DRIVER_REPAIR, DRIVER_WRITER
         from codey.runtime.replay_policy import provider_replay_policy
 
         replay_decision = provider_replay_policy(purpose)
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.run_id)
+        driver = DRIVER_REPAIR if session.completion_repair_context else DRIVER_WRITER
         intent = RuntimeEffectIntent(
             effect_id=effect_id,
             effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
             session_id=session.session_id,
             run_id=session.run_id,
-            phase="writer",
+            phase=driver,
             provider_id=session.active_provider_id,
             turn=session.provider_send_index,
             display_ref=source_ref[:120],
             args_digest=compute_args_digest(prompt),
             replay_class=replay_decision.replay_class,
         )
-        effects.record_intent(session.session_id, session.run_id, intent)
+        committed = mutations.begin_provider_effect(
+            session.session_id,
+            session.run_id,
+            intent,
+            driver=driver,
+            delivery_batch_id=delivery_batch_id,
+        )
+        effect_id = committed.effect_id
 
     # Prompt surface is bound to the exact outbound bytes and the effect that
     # carries them, so the trace row proves what was sent together.
@@ -260,18 +267,12 @@ def _send_provider_with_effect(
         runtime_tool_contract_hash="",
     )
 
-    if delivery_store is not None and delivery_batch_id and effect_id and session.session_id and session.run_id:
-        try:
-            delivery_store.record_send_attempt(
-                session.session_id,
-                session.run_id,
-                batch_id=delivery_batch_id,
-                provider_effect_id=effect_id,
-            )
-        except Exception as exc:
-            if effects is not None and effect_id:
-                record_settlement_safely(
-                    effects,
+    try:
+        reply_text = session.provider.send(prompt)
+    except Exception as exc:
+        if mutations is not None and effect_id:
+            try:
+                mutations.settle_provider_effect(
                     session.session_id,
                     session.run_id,
                     RuntimeEffectSettlement(
@@ -280,38 +281,16 @@ def _send_provider_with_effect(
                         session_id=session.session_id,
                         run_id=session.run_id,
                         status=SETTLEMENT_STATUS_ERROR,
-                        error_code="delivery_attempt_failed",
-                        sent_state="settled",
+                        error_code=type(exc).__name__[:80],
+                        sent_state=SENT_STATE_MAYBE_SENT,
                     ),
                 )
-            from codey.runtime.tool_result_delivery import ToolResultDeliveryError
-            if isinstance(exc, ToolResultDeliveryError):
-                raise
-            raise ToolResultDeliveryError(f"delivery receipt write failed: {exc}") from exc
-
-    try:
-        reply_text = session.provider.send(prompt)
-    except Exception as exc:
-        if effects is not None and effect_id:
-            record_settlement_safely(
-                effects,
-                session.session_id,
-                session.run_id,
-                RuntimeEffectSettlement(
-                    effect_id=effect_id,
-                    effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                    session_id=session.session_id,
-                    run_id=session.run_id,
-                    status=SETTLEMENT_STATUS_ERROR,
-                    error_code=type(exc).__name__[:80],
-                    sent_state=SENT_STATE_MAYBE_SENT,
-                ),
-            )
+            except Exception:
+                pass
         raise
 
-    if effects is not None and effect_id:
-        record_settlement_safely(
-            effects,
+    if mutations is not None and effect_id:
+        mutations.settle_provider_effect(
             session.session_id,
             session.run_id,
             RuntimeEffectSettlement(
@@ -323,20 +302,6 @@ def _send_provider_with_effect(
                 sent_state=SENT_STATE_SETTLED,
             ),
         )
-    if delivery_store is not None and delivery_batch_id and effect_id and session.session_id and session.run_id:
-        try:
-            delivery_store.record_delivered(
-                session.session_id,
-                session.run_id,
-                batch_id=delivery_batch_id,
-                provider_effect_id=effect_id,
-            )
-        except Exception as exc:
-            if getattr(session, "trace", None) is not None:
-                try:
-                    session.trace.call("record_delivery_warning", f"failed to record delivered receipt: {exc}")
-                except Exception:
-                    pass
 
     return reply_text
 

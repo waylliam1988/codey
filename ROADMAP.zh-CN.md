@@ -685,7 +685,7 @@ delete/degrade:
 
 ## 0.5.1 - Runtime Session Log Operation State + TaskFlow Deletion
 
-状态：已发布（2026-08-31，compileall、ruff、focused gates、deterministic crash-position tests、same-run crash/resume smoke、headed clean UI smoke 和全量 pytest `3278 passed, 16 skipped in 283.92s (0:04:43)` 完成）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；run phase 事实直接挂到 `RuntimeSessionLog`：runtime log 是唯一 durable source，`RuntimeOperationStore` 只是从 `operation_effect` 行投影最新 phase。
+状态：已发布（2026-08-31，compileall、ruff、focused gates、deterministic crash-position tests、same-run crash/resume smoke、headed clean UI smoke 和全量 pytest `3278 passed, 16 skipped in 283.92s (0:04:43)` 完成）。0.5.1 的最终切口不再新增独立 `codey/run_operation.py` register，也不保留生产 `TaskFlow` 概念；0.5.8 之后 run phase 已升级为 first-class `operation_state`，`RuntimeOperationStore` 只读取投影。
 
 ### 已落地的核心形态
 
@@ -693,9 +693,9 @@ delete/degrade:
 TaskSubmission
   -> task_entry.run_task_submission
   -> TaskRuntime
-  -> OperationScheduler
-  -> RuntimeSessionLog operation_started/effect/settled
-  -> RuntimeOperationStore phase projection
+  -> RuntimeMutationLine
+  -> RuntimeSessionLog operation_started/operation_state/effect/settled
+  -> RuntimeOperationStore read projection
   -> Run Details / ledger / terminal event
 ```
 
@@ -810,9 +810,9 @@ ephemeral runtime log / operation store / workspace revision store，让测试�
 6. 验证只有一条 operation_started、同一 lane terminal settled、Details 不显示 stale Progress
 ```
 
-`RuntimeSessionLog.append_many()` 带 batch metadata；reader 忽略不完整尾 batch，下一次 append 会先修剪坏尾，避免 crash mid-batch 留下永久 open lane。
+`RuntimeSessionLog.mutate()` 带 batch metadata；reader 忽略不完整尾 batch，下一次 mutate 会先修剪坏尾，避免 crash mid-batch 留下永久 open lane。`append()` / `append_many()` 不再作为半公开业务 API 存在；业务 runtime facts 必须经过 mutation line。
 
-runtime log 还会在同一把文件锁下做 replay 等价 compaction，只保留每条 operation 的 `operation_started`、最新 `run_phase` effect 和已存在的 `operation_settled`，避免长生命周期 session 写满 4 MB 后永久 brick。
+runtime log 还会在同一把文件锁下做 replay 等价 compaction，只保留每条 operation 的 `operation_started`、最新 `operation_state`、必要 effect / delivery recovery facts 和已存在的 `operation_settled`，避免长生命周期 session 写满 4 MB 后永久 brick。
 
 ### 冷启动删除项
 
@@ -877,9 +877,11 @@ provider send、tool execution、completion repair round。每个真实外部效
 
 ```text
 codey/runtime/session_log.py
-codey/runtime/effects.py
+codey/runtime/operation_state.py
+codey/runtime/effect_records.py
 codey/runtime/replay_policy.py
-tests/test_runtime_effects.py
+tests/test_runtime_operation_state.py
+tests/test_runtime_effect_records.py
 tests/test_tool_replay_policy.py
 tests/test_agent_effect_sandwich.py
 ```
@@ -891,8 +893,6 @@ provider_send_intent
 provider_send_settlement
 tool_call_intent
 tool_call_settlement
-repair_round_intent
-repair_round_settlement
 synthetic_interrupted_settlement
 ```
 
@@ -952,10 +952,10 @@ RuntimeSessionLog 服务恢复语义，不新增第二套 durable effect log
 ```text
 任何 provider/tool/repair effect 开始前必须已有 intent
 settlement 只能引用已存在 intent
-safe tool effect_pending 恢复生成 retryable recovery projection，不注入模型上下文
+safe tool effect_pending 在 0.5.8 后按全安全 batch replay，不做半批重放
 unsafe tool effect_pending 恢复生成 interrupted settlement，不重复执行
 provider maybe_sent 恢复不会伪造 done
-RunOperationState phase 与 RuntimeEffectStore 最新 settlement 一致
+RuntimeOperationState leaf 与 RuntimeEffectStore 最新 settlement 一致
 policy denied tool 没有真实 external-effect record，只保留普通 tool outcome
 tool args digest 稳定且不含 raw secret
 未知工具默认 unsafe
@@ -1539,7 +1539,7 @@ source wrapper 已胜出并接入默认 open_url/source-content rendering；后�
 
 ## 0.5.8 - Pi Agent v2-inspired Durable Operation Core v1
 
-状态：计划。目标不是继续加 Ghost / World Model / provider learning，而是把 0.5.1-0.5.7
+状态：实现候选已落地，待 review / release。目标不是继续加 Ghost / World Model / provider learning，而是把 0.5.1-0.5.7
 已经做出来的 durable runtime、effect intent/settlement、safe replay、delivery receipt、
 prompt surface hardening 和 Research proof gate 收成一个更明确的 operation state machine。
 
@@ -1569,26 +1569,17 @@ snapshot/state 是事实源，event/trace 是观察面
 
 ### 做什么
 
-新增或收紧：
+当前落点：
 
 ```text
-codey/runtime/operation.py
-codey/runtime/effects.py
-codey/runtime/effect_records.py
-codey/runtime/reducer.py
-codey/runtime/session_log.py
-codey/runtime/scheduler.py
-codey/runtime/task_runtime.py
-codey/runtime/tool_result_delivery.py
-```
-
-如果职责已经存在，优先改现有文件，不新建 manager。只有当现有命名无法表达边界时，才允许新增小模块：
-
-```text
-codey/runtime/operation_state.py      # total durable operation state
-codey/runtime/operation_reducer.py    # pure state -> next action
-codey/runtime/drive.py                # peek / execute one runtime action
-codey/runtime/mutation_line.py        # serialized mutation boundary
+codey/runtime/operation_state.py      # total durable operation state; first-class operation_state log entry
+codey/runtime/operation_reducer.py    # pure state + durable facts -> RuntimeAction
+codey/runtime/drive.py                # peek_next_action(), no side effects
+codey/runtime/mutation_line.py        # serialized production mutation boundary
+codey/runtime/effect_records.py       # effect intent / settlement ledger, projection + entry builders
+codey/runtime/tool_result_delivery.py # delivery receipt ledger, projection + entry builders
+codey/runtime/session_projection.py   # session-log projection, renamed from reducer.py
+codey/runtime/session_log.py          # mutate() + repair/compaction storage adapter
 ```
 
 目标形态：
@@ -1609,16 +1600,14 @@ TaskRuntime accepts Operation
 ```text
 accepted
 writer_running
+provider_effect_pending
+tool_effect_pending
+tool_delivery_pending
 writer_settled
 completion_proof_recorded
 repair_context_admitted
 repair_running
 repair_settled
-effect_pending
-delivery_pending
-retry_wait
-suspended
-cancelling
 terminal
 ```
 
@@ -1627,37 +1616,33 @@ terminal
 ```text
 operation_id
 lane
-phase
-control
-attempt
-pending_effect_ref
-proof_ref
+leaf
+driver = writer | repair
+pending_effect_ids
+pending_delivery_batch_id
+turn/tool_index
+completion_proof_ref
 repair_context_ref
-delivery_ref
 terminal outcome
 ```
 
 `RuntimeAction` 第一版只覆盖真实失败点：
 
 ```text
-continue_writer
-record_provider_intent
+continue_operation
 settle_provider_unknown
-replay_safe_tool
-synthesize_unsafe_interruption
-deliver_tool_result
-record_completion_proof
-admit_repair_context
-run_repair
-retry_after
-finish_operation
-wait_for_user_or_provider
+replay_safe_tool_batch
+synthesize_interrupted_effects
+terminal
+fail_invariant
 ```
 
 ### 边界
 
 - 不重写 `TaskRuntime` 成大 manager。
 - 不把 Effect Ledger 合并进 OperationState。
+- 不保留 `RuntimeSessionLog.append()` / `append_many()` 作为业务 API；底层原子提交统一叫 `mutate()`。
+- 不让 `RuntimeOperationStore` 暴露 `start()` / `commit()` / `delete_session()`；它只做读取投影。
 - 不让 Event / RunTrace 成为 recovery source of truth。
 - 不新增完整 Lane 系统、RemoteSession、RPC、CBOR 或 SQLite migration。
 - 不改变 PermissionProfile / ToolContract / PromptEnvelope 语义。
@@ -1680,19 +1665,20 @@ invalid_tool_called / max_turns / cancelled 的 terminal 分类在一个地方�
 total transition table 拒绝非法 phase / transition
 terminal 后不能继续写 business phase
 provider intent 无 settlement -> unknown outcome recovery
-safe tool intent 无 settlement -> safe replay
-unsafe tool intent 无 settlement -> synthetic interruption
-outcome ready 但 delivery 未完成 -> delivery_pending recovery
+全安全、未发送的 tool batch 无 settlement -> safe batch replay
+不可安全重放的 pending tool effect -> synthetic interruption
+tool effect 完成但 delivery 未完成 -> tool_delivery_pending recovery
 invalid_tool_called 不会绕过 terminal/proof 分类
 completion proof failed 后，repair 是否允许由 state/action 决定
 production 不 import tests.manual
 Ghost / World Model / protocol learning 不 import runtime internals 执行 effect
+runtime core 不 import agents / operations / providers / research / app / ghost
 ```
 
 ### A/B
 
 0.5.8 本身不需要 live provider A/B，因为它不应该改变模型可见能力。它需要 deterministic
-state-machine tests、crash-injection style tests 和全量 pytest。
+state-machine tests、manual drive tests、crash-injection style tests 和全量 pytest。
 
 如果 0.5.8 顺手改变 prompt、tool surface、Research follow-up 或 provider repair prompt，则该改动必须另开 A/B，不能混进 runtime refactor release gate。
 

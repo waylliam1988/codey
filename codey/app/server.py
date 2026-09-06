@@ -92,7 +92,8 @@ from codey.workspace.revision import WorkspaceRevisionStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
 from codey.runtime.effect_records import RuntimeEffectStore
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.mutation_line import RuntimeMutationLine
+from codey.runtime.operation_state import RuntimeOperationStore
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import ToolResultDeliveryStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -193,6 +194,7 @@ class AppContext:
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.runtime_log = RuntimeSessionLog(runtime_state_home)
+        self.runtime_mutations = RuntimeMutationLine(self.runtime_log)
         self.runtime_operations = RuntimeOperationStore(self.runtime_log)
         self.runtime_effects = RuntimeEffectStore(self.runtime_log)
         self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
@@ -586,7 +588,7 @@ class AppContext:
             ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("run_traces", "run_traces", lambda s: s.delete_session(session_id)),
-            ("runtime_operations", "runtime_operations", lambda s: s.delete_session(session_id)),
+            ("runtime_log", "runtime_log", lambda s: s.delete_session(session_id)),
         ):
             target = getattr(self, attr_name, None)
             if target is not None:
@@ -836,6 +838,7 @@ def _run_task(
         review_log_lines=REVIEW_LOG_LINES,
         ghost_learning_provider_factory=STATE.providers.ghost_learning_provider_factory,
         ghost_router_provider_factory=STATE.providers.ghost_router_provider_factory,
+        runtime_mutations=STATE.runtime_mutations,
         runtime_effects=STATE.runtime_effects,
     )
     try:

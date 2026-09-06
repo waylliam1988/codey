@@ -24,12 +24,14 @@ DEFAULT_MAX_ENTRY_BYTES = 64 * 1024
 DEFAULT_MAX_LOG_BYTES = 4 * 1024 * 1024
 RuntimeEntryKind = Literal[
     "operation_started",
+    "operation_state",
     "operation_effect",
     "operation_settled",
 ]
 
 _ENTRY_KINDS = {
     "operation_started",
+    "operation_state",
     "operation_effect",
     "operation_settled",
 }
@@ -277,7 +279,7 @@ class RuntimeSessionLog:
             return cached
 
         entries = self._read_unlocked(session_id, repair_tail=True)
-        from codey.runtime.reducer import reduce_session
+        from codey.runtime.session_projection import reduce_session
 
         cache = _ProjectionCache(
             stamp=_file_stamp(path),
@@ -337,57 +339,22 @@ class RuntimeSessionLog:
             self._projection_cache.pop(session_id, None)
         return tuple(valid)
 
-    def append(
+    def mutate(
         self,
         session_id: str,
-        *,
-        lane: str,
-        operation_id: str,
-        kind: RuntimeEntryKind | str,
-        payload: dict[str, Any] | None = None,
-    ) -> RuntimeLogEntry:
-        return self.append_many(
-            session_id,
-            (
-                {
-                    "lane": lane,
-                    "operation_id": operation_id,
-                    "kind": kind,
-                    "payload": {} if payload is None else payload,
-                },
-            ),
-        )[0]
-
-    def append_many(
-        self,
-        session_id: str,
-        entries: Iterable[dict[str, Any]],
+        mutation: Any,
     ) -> tuple[RuntimeLogEntry, ...]:
-        incoming = tuple(entries)
-        if not incoming:
-            return ()
+        """Run one read/decide/commit pass under the session mutation line.
+
+        The callback receives the current process-local projection and valid
+        entries while the log lock is held. It must return the bounded entries
+        to commit and must not perform external effects.
+        """
         batch_id = f"batch-{uuid.uuid4().hex}"
-        batch_count = len(incoming)
-        rows = tuple(
-            RuntimeLogEntry(
-                session_id=session_id,
-                lane=entry.get("lane"),
-                operation_id=entry.get("operation_id"),
-                kind=entry.get("kind"),
-                payload=entry.get("payload"),
-                batch_id=batch_id,
-                batch_index=index,
-                batch_count=batch_count,
-            )
-            for index, entry in enumerate(incoming)
-        )
-        encoded_rows = tuple(row.to_json_line().encode("utf-8") for row in rows)
-        if any(len(encoded) > self.max_entry_bytes for encoded in encoded_rows):
-            raise RuntimeLogWriteError("runtime log entry exceeds size limit")
         path = self.path_for(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with with_file_lock(path):
-            from codey.runtime.reducer import apply_entries, reduce_session
+            from codey.runtime.session_projection import apply_entries, reduce_session
 
             current_stamp = _file_stamp(path)
             current_size = current_stamp.file_size
@@ -402,6 +369,26 @@ class RuntimeSessionLog:
 
                 base_projection = reduce_session(base_entries)
 
+            incoming = tuple(mutation(base_projection, base_entries))
+            if not incoming:
+                return ()
+            batch_count = len(incoming)
+            rows = tuple(
+                RuntimeLogEntry(
+                    session_id=session_id,
+                    lane=entry.get("lane"),
+                    operation_id=entry.get("operation_id"),
+                    kind=entry.get("kind"),
+                    payload=entry.get("payload"),
+                    batch_id=batch_id,
+                    batch_index=index,
+                    batch_count=batch_count,
+                )
+                for index, entry in enumerate(incoming)
+            )
+            encoded_rows = tuple(row.to_json_line().encode("utf-8") for row in rows)
+            if any(len(encoded) > self.max_entry_bytes for encoded in encoded_rows):
+                raise RuntimeLogWriteError("runtime log entry exceeds size limit")
             candidate_projection = apply_entries(base_projection, rows)
             total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
             if current_size + total_new_bytes > max(0, self.max_log_bytes // 2):
@@ -486,7 +473,7 @@ def _compact_entries(
     """Keep the replay-equivalent task-operation spine and recovery facts."""
     ordered_operations: list[str] = []
     started: dict[str, RuntimeLogEntry] = {}
-    latest_phase: dict[str, RuntimeLogEntry] = {}
+    latest_state: dict[str, RuntimeLogEntry] = {}
     settled: dict[str, RuntimeLogEntry] = {}
     operation_effects: dict[str, list[RuntimeLogEntry]] = {}
     delivery_effects: dict[str, list[RuntimeLogEntry]] = {}
@@ -497,11 +484,12 @@ def _compact_entries(
                 ordered_operations.append(entry.operation_id)
             started[entry.operation_id] = entry
             continue
+        if entry.kind == "operation_state":
+            latest_state[entry.operation_id] = entry
+            continue
         if entry.kind == "operation_effect":
             effect_kind = entry.payload.get("effect_kind")
-            if effect_kind == "run_phase":
-                latest_phase[entry.operation_id] = entry
-            elif effect_kind == "runtime_effect":
+            if effect_kind == "runtime_effect":
                 operation_effects.setdefault(entry.operation_id, []).append(entry)
             elif effect_kind == "tool_result_delivery":
                 delivery_effects.setdefault(entry.operation_id, []).append(entry)
@@ -514,9 +502,9 @@ def _compact_entries(
         if start is None:
             continue
         compacted.append(start)
-        phase = latest_phase.get(operation_id)
-        if phase is not None:
-            compacted.append(phase)
+        state = latest_state.get(operation_id)
+        if state is not None:
+            compacted.append(state)
 
         is_open = operation_id not in settled
         raw_effects = operation_effects.get(operation_id, [])

@@ -3,21 +3,18 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from dataclasses import dataclass, field
 from pathlib import Path
 
-from codey.runtime.operation import OperationContext, OperationIntent
-from codey.runtime.outcome import OperationOutcome
-from codey.runtime.reducer import reduce_session
-from codey.runtime.scheduler import OperationScheduler
-from codey.runtime import cancellation
+from codey.runtime.session_projection import reduce_session
 from codey.runtime.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
+    new_effect_id,
 )
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.mutation_line import RuntimeMutationLine
+from codey.runtime.operation_state import RuntimeOperationStore, mark_writer_running
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import (
     RuntimeLogCorruption,
@@ -26,28 +23,65 @@ from codey.runtime.session_log import (
     RuntimeSessionLog,
     _compact_entries,
 )
+from codey.runtime.tool_result_delivery import (
+    DeliveryBatchIntent,
+    DeliveryBatchItem,
+    compute_batch_digest,
+)
+
+
+def _commit_entries_via_mutate(
+    log: RuntimeSessionLog,
+    session_id: str,
+    entries: tuple[dict[str, object], ...],
+) -> tuple[RuntimeLogEntry, ...]:
+    return log.mutate(session_id, lambda _projection, _entries: entries)
+
+
+def _commit_entry_via_mutate(
+    log: RuntimeSessionLog,
+    session_id: str,
+    *,
+    lane: str,
+    operation_id: str,
+    kind: str,
+    payload: dict[str, object] | tuple[tuple[str, str], ...] | None = None,
+) -> RuntimeLogEntry:
+    rows = _commit_entries_via_mutate(
+        log,
+        session_id,
+        (
+            {
+                "lane": lane,
+                "operation_id": operation_id,
+                "kind": kind,
+                "payload": {} if payload is None else payload,
+            },
+        ),
+    )
+    return rows[0]
 
 
 class RuntimeSessionLogTests(unittest.TestCase):
-    def test_append_and_reduce_operation_lifecycle(self) -> None:
+    def test_mutate_and_reduce_operation_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
 
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
                 kind="operation_started",
                 payload={"operation_kind": "agent"},
             )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
                 kind="operation_effect",
-                payload={"effect_kind": "run_phase", "ref": "phase:1"},
+                payload={"effect_kind": "runtime_effect", "ref": "effect:1"},
             )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -60,13 +94,13 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual(projection.lanes["current"].open_operation_id, "")
         self.assertEqual(projection.lanes["current"].settled_operation_ids, ["op-1"])
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
-        self.assertEqual(projection.operations["op-1"].effect_refs, ["phase:1"])
+        self.assertEqual(projection.operations["op-1"].effect_refs, ["effect:1"])
 
-    def test_append_many_rows_share_one_complete_batch(self) -> None:
+    def test_mutate_rows_share_one_complete_batch(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
 
-            rows = log.append_many(
+            rows = _commit_entries_via_mutate(log,
                 "s1",
                 (
                     {
@@ -89,10 +123,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual([row.batch_index for row in rows], [0, 1])
         self.assertEqual([row.batch_count for row in rows], [2, 2])
 
-    def test_append_repairs_incomplete_tail_batch_before_new_write(self) -> None:
+    def test_mutate_repairs_incomplete_tail_batch_before_new_write(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
-            log.append_many(
+            _commit_entries_via_mutate(log,
                 "s1",
                 (
                     {
@@ -127,7 +161,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 [entry.operation_id for entry in log.read("s1")],
                 ["op-1", "op-1"],
             )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-2",
@@ -140,10 +174,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertNotIn("op-tail", raw)
         self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
 
-    def test_append_repairs_partial_json_tail_before_new_write(self) -> None:
+    def test_mutate_repairs_partial_json_tail_before_new_write(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -155,7 +189,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 handle.write(b'{"schema_version":1')
 
             self.assertEqual(len(log.read("s1")), 1)
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -169,7 +203,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
     def test_projection_cache_replays_after_external_append_changes_file_size(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -190,7 +224,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
             with path.open("ab") as handle:
                 handle.write(externally_written.to_json_line().encode("utf-8"))
 
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-2",
@@ -205,7 +239,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
     def test_projection_cache_replays_after_same_size_external_rewrite(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -235,7 +269,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
             self.assertEqual(log.projection("s1").operations, {})
 
             with self.assertRaises(RuntimeLogCorruption):
-                log.append(
+                _commit_entry_via_mutate(log,
                     "s1",
                     lane="current",
                     operation_id="op-missing",
@@ -243,7 +277,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                     payload={"outcome": "completed"},
                 )
 
-            log.append_many(
+            _commit_entries_via_mutate(log,
                 "s1",
                 (
                     {
@@ -265,10 +299,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
         self.assertEqual(projection.lanes["current"].open_operation_id, "")
 
-    def test_append_uses_cache_after_compaction(self) -> None:
+    def test_mutate_uses_cache_after_compaction(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td), max_log_bytes=1800)
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -276,18 +310,18 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 payload={"operation_kind": "task"},
             )
             for index in range(12):
-                log.append(
+                del index
+                _commit_entry_via_mutate(log,
                     "s1",
                     lane="current",
                     operation_id="op-1",
-                    kind="operation_effect",
+                    kind="operation_state",
                     payload={
-                        "effect_kind": "run_phase",
-                        "ref": f"phase:{index}",
+                        "kind": "runtime_operation_state",
                         "padding": "x" * 80,
                     },
                 )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -297,10 +331,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
             compacted_entries = log.entries("s1")
             self.assertEqual(
                 [entry.kind for entry in compacted_entries if entry.operation_id == "op-1"],
-                ["operation_started", "operation_effect", "operation_settled"],
+                ["operation_started", "operation_state", "operation_settled"],
             )
 
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-2",
@@ -317,7 +351,8 @@ class RuntimeSessionLogTests(unittest.TestCase):
             log = RuntimeSessionLog(Path(td), max_log_bytes=16000)
             operations = RuntimeOperationStore(log)
             effects = RuntimeEffectStore(log)
-            started = operations.start(
+            mutations = RuntimeMutationLine(log)
+            started = mutations.accept_operation(
                 session_id="s1",
                 run_id="run-1",
                 project="",
@@ -327,23 +362,68 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 task_kind="project",
             )
             assert started is not None
-
-            read_id = "eff_read_compact"
-            effects.record_intent(
+            mutations.transition_operation(
                 "s1",
                 "run-1",
-                RuntimeEffectIntent(
-                    effect_id=read_id,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                lambda state: mark_writer_running(state, provider_id="deepseek"),
+            )
+
+            read_id = "eff_read_compact"
+            edit_id = "eff_edit_compact"
+            items = (
+                DeliveryBatchItem(
+                    tool_index=0,
+                    tool_name="read",
+                    ref=read_id,
+                    replay_class="safe",
+                    is_denied=False,
+                ),
+                DeliveryBatchItem(
+                    tool_index=1,
+                    tool_name="edit",
+                    ref=edit_id,
+                    replay_class="unsafe",
+                    is_denied=False,
+                ),
+            )
+            mutations.begin_tool_batch(
+                "s1",
+                "run-1",
+                intents=(
+                    RuntimeEffectIntent(
+                        effect_id=read_id,
+                        effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                        session_id="s1",
+                        run_id="run-1",
+                        phase="writer",
+                        turn=1,
+                        tool_index=0,
+                        tool_name="read",
+                        replay_class=ReplayClass.SAFE,
+                        replay_args={"path": "target.py"},
+                    ),
+                    RuntimeEffectIntent(
+                        effect_id=edit_id,
+                        effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                        session_id="s1",
+                        run_id="run-1",
+                        phase="writer",
+                        turn=1,
+                        tool_index=1,
+                        tool_name="edit",
+                        replay_class=ReplayClass.UNSAFE,
+                    ),
+                ),
+                delivery_intent=DeliveryBatchIntent(
+                    batch_id="batch-compact",
                     session_id="s1",
                     run_id="run-1",
                     turn=1,
-                    tool_index=0,
-                    tool_name="read",
-                    replay_class=ReplayClass.SAFE,
+                    items=items,
+                    batch_digest=compute_batch_digest(items),
                 ),
             )
-            effects.record_settlement(
+            mutations.settle_tool_effect(
                 "s1",
                 "run-1",
                 RuntimeEffectSettlement(
@@ -351,37 +431,21 @@ class RuntimeSessionLogTests(unittest.TestCase):
                     effect_category=EFFECT_CATEGORY_TOOL_CALL,
                     session_id="s1",
                     run_id="run-1",
+                    status="ok",
+                    sent_state="settled",
                     replay_class=ReplayClass.SAFE,
                 ),
             )
 
-            edit_id = "eff_edit_compact"
-            effects.record_intent(
-                "s1",
-                "run-1",
-                RuntimeEffectIntent(
-                    effect_id=edit_id,
-                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                    session_id="s1",
-                    run_id="run-1",
-                    turn=1,
-                    tool_index=1,
-                    tool_name="edit",
-                    replay_class=ReplayClass.UNSAFE,
-                ),
-            )
-
             for index in range(30):
-                log.append(
+                current = operations.load("s1", "run-1")
+                assert current is not None
+                _commit_entry_via_mutate(log,
                     "s1",
-                    lane=started.lane,
-                    operation_id=started.operation_id,
-                    kind="operation_effect",
-                    payload={
-                        "effect_kind": "run_phase",
-                        "ref": f"phase:{index}",
-                        "padding": "x" * 150,
-                    },
+                    lane=current.lane,
+                    operation_id=current.operation_id,
+                    kind="operation_state",
+                    payload=current.to_payload(),
                 )
 
             recovered = RuntimeEffectStore(log).load_effects("s1", "run-1")
@@ -464,7 +528,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
     def test_rejects_second_open_operation_in_lane(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -473,7 +537,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
             )
 
             with self.assertRaises(RuntimeLogCorruption):
-                log.append(
+                _commit_entry_via_mutate(log,
                     "s1",
                     lane="current",
                     operation_id="op-2",
@@ -516,7 +580,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 lane="current",
                 operation_id="op-1",
                 kind="operation_effect",
-                payload={"effect_kind": "run_phase", "ref": "phase:late"},
+                payload={"effect_kind": "runtime_effect", "ref": "effect:late"},
             ),
         )
 
@@ -569,7 +633,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                     lane="current",
                     operation_id="op-1",
                     kind="operation_effect",
-                    payload={"effect_kind": "run_phase"},
+                    payload={"effect_kind": "runtime_effect"},
                 ),
             ),
         )
@@ -579,10 +643,10 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 with self.assertRaises(RuntimeLogCorruption):
                     reduce_session(entries)
 
-    def test_append_compacts_phase_history_before_log_limit_bricks_session(self) -> None:
+    def test_mutate_compacts_state_history_before_log_limit_bricks_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td), max_log_bytes=1800)
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
@@ -590,25 +654,25 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 payload={"operation_kind": "task"},
             )
             for index in range(12):
-                log.append(
+                del index
+                _commit_entry_via_mutate(log,
                     "s1",
                     lane="current",
                     operation_id="op-1",
-                    kind="operation_effect",
+                    kind="operation_state",
                     payload={
-                        "effect_kind": "run_phase",
-                        "ref": f"phase:{index}",
+                        "kind": "runtime_operation_state",
                         "padding": "x" * 80,
                     },
                 )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-1",
                 kind="operation_settled",
                 payload={"outcome": "completed"},
             )
-            log.append(
+            _commit_entry_via_mutate(log,
                 "s1",
                 lane="current",
                 operation_id="op-2",
@@ -618,7 +682,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
             projection = reduce_session(log.read("s1"))
             kinds = [entry.kind for entry in log.read("s1") if entry.operation_id == "op-1"]
 
-        self.assertEqual(kinds, ["operation_started", "operation_effect", "operation_settled"])
+        self.assertEqual(kinds, ["operation_started", "operation_state", "operation_settled"])
         self.assertEqual(projection.operations["op-1"].outcome, "completed")
         self.assertEqual(projection.lanes["current"].open_operation_id, "op-2")
 
@@ -640,12 +704,12 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 payload={"nested": {"stdout": "raw output"}},
             )
 
-    def test_append_refuses_non_object_payload_without_coercion(self) -> None:
+    def test_mutate_refuses_non_object_payload_without_coercion(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             log = RuntimeSessionLog(Path(td))
 
             with self.assertRaises(RuntimeLogCorruption):
-                log.append(
+                _commit_entry_via_mutate(log,
                     "s1",
                     lane="current",
                     operation_id="op-1",
@@ -654,129 +718,6 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 )
 
             self.assertEqual(log.read("s1"), ())
-
-    def test_scheduler_records_started_and_settled_operation(self) -> None:
-        @dataclass
-        class FakeOperation:
-            operation_id: str = "op-1"
-            kind: str = "agent"
-            lane: str = "current"
-            intent: OperationIntent = field(
-                default_factory=lambda: OperationIntent("task:1")
-            )
-
-            def run(self, context: OperationContext) -> OperationOutcome:
-                self.seen_context = context
-                return OperationOutcome.completed(summary="done")
-
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td))
-            operation = FakeOperation()
-
-            outcome = OperationScheduler(log).run("s1", "run-1", operation)
-            projection = reduce_session(log.read("s1"))
-
-        self.assertEqual(outcome.status, "completed")
-        self.assertEqual(operation.seen_context.run_id, "run-1")
-        self.assertEqual(projection.operations["op-1"].outcome, "completed")
-
-    def test_scheduler_resumes_existing_open_operation_without_second_start(self) -> None:
-        @dataclass
-        class ResumedOperation:
-            operation_id: str = "op-1"
-            kind: str = "agent"
-            lane: str = "current"
-            intent: OperationIntent = field(
-                default_factory=lambda: OperationIntent("task:1")
-            )
-
-            def run(self, context: OperationContext) -> OperationOutcome:
-                self.seen_context = context
-                return OperationOutcome.aborted(reason="stopped")
-
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td))
-            log.append(
-                "s1",
-                lane="current",
-                operation_id="op-1",
-                kind="operation_started",
-                payload={"operation_kind": "agent"},
-            )
-            operation = ResumedOperation()
-
-            outcome = OperationScheduler(log).run("s1", "run-1", operation)
-            entries = log.read("s1")
-            projection = reduce_session(entries)
-
-        self.assertEqual(outcome.status, "aborted")
-        self.assertEqual(operation.seen_context.run_id, "run-1")
-        self.assertEqual(
-            [entry.kind for entry in entries if entry.operation_id == "op-1"],
-            ["operation_started", "operation_settled"],
-        )
-        self.assertEqual(projection.operations["op-1"].outcome, "aborted")
-
-    def test_scheduler_settles_failed_operation_before_reraising(self) -> None:
-        @dataclass
-        class FailingOperation:
-            operation_id: str = "op-1"
-            kind: str = "agent"
-            lane: str = "current"
-            intent: OperationIntent = field(
-                default_factory=lambda: OperationIntent("task:1")
-            )
-
-            def run(self, context: OperationContext) -> OperationOutcome:
-                raise ValueError("bad operation")
-
-        @dataclass
-        class NextOperation:
-            operation_id: str = "op-2"
-            kind: str = "repair"
-            lane: str = "current"
-            intent: OperationIntent = field(
-                default_factory=lambda: OperationIntent("task:2")
-            )
-
-            def run(self, context: OperationContext) -> OperationOutcome:
-                return OperationOutcome.completed(summary="recovered")
-
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td))
-            scheduler = OperationScheduler(log)
-            with self.assertRaises(ValueError):
-                scheduler.run("s1", "run-1", FailingOperation())
-
-            outcome = scheduler.run("s1", "run-2", NextOperation())
-            projection = reduce_session(log.read("s1"))
-
-        self.assertEqual(outcome.status, "completed")
-        self.assertEqual(projection.operations["op-1"].outcome, "failed")
-        self.assertEqual(projection.operations["op-2"].outcome, "completed")
-        self.assertEqual(projection.lanes["current"].open_operation_id, "")
-
-    def test_scheduler_settles_cancelled_operation_before_reraising(self) -> None:
-        @dataclass
-        class CancelledOperation:
-            operation_id: str = "op-1"
-            kind: str = "agent"
-            lane: str = "current"
-            intent: OperationIntent = field(
-                default_factory=lambda: OperationIntent("task:1")
-            )
-
-            def run(self, context: OperationContext) -> OperationOutcome:
-                raise cancellation.TaskCancelled("stopped")
-
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(Path(td))
-            with self.assertRaises(cancellation.TaskCancelled):
-                OperationScheduler(log).run("s1", "run-1", CancelledOperation())
-            projection = reduce_session(log.read("s1"))
-
-        self.assertEqual(projection.operations["op-1"].outcome, "aborted")
-        self.assertEqual(projection.lanes["current"].open_operation_id, "")
 
     def test_entry_payload_bad_created_at_reports_corruption(self) -> None:
         payload = {

@@ -1,4 +1,9 @@
-"""Replay runtime session logs into operation state."""
+"""Project runtime session logs into the session/lane operation spine.
+
+Detailed durable operation state is a first-class log record, not an external
+effect. This projection only tracks which operations are open/settled and
+which external ledger refs belong to each operation.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +14,7 @@ from codey.runtime.outcome import OperationOutcomeStatus
 from codey.runtime.session_log import RuntimeLogCorruption, RuntimeLogEntry
 
 _OUTCOMES = {"completed", "failed", "aborted", "suspended"}
-_KNOWN_EFFECT_KINDS = {"run_phase", "runtime_effect", "tool_result_delivery"}
+_KNOWN_EFFECT_KINDS = {"runtime_effect", "tool_result_delivery"}
 
 
 @dataclass
@@ -112,6 +117,11 @@ def _apply_entry_to(
         raise RuntimeLogCorruption("operation record without start")
     if operation.status != "open":
         raise RuntimeLogCorruption("operation record after settlement")
+
+    if entry.kind == "operation_state":
+        if entry.payload.get("kind") != "runtime_operation_state":
+            raise RuntimeLogCorruption("unknown operation state payload")
+        return
 
     if entry.kind == "operation_effect":
         effect_kind = _required_payload_text(entry, "effect_kind")

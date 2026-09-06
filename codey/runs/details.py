@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.storage.local_store import read_json
-from codey.runtime.effects import (
-    PHASE_TERMINAL,
+from codey.runtime.operation_state import (
+    LEAF_TERMINAL,
     RuntimeOperationState,
     operation_progress_text,
 )
@@ -293,7 +293,7 @@ def _operation_progress_row(
     # completed, so the interrupted-position line would be a lie.
     if (
         operation is None
-        or operation.phase == PHASE_TERMINAL
+        or operation.leaf == LEAF_TERMINAL
         or (projection is not None and projection.has_run_finished)
     ):
         return ""

@@ -1,6 +1,6 @@
 # Codey Pi v2-inspired 重构方向
 
-> 面向 Codey 0.5.8 的架构设计备忘录。
+> 面向 Codey 0.5.8 的架构设计备忘录；当前实现候选已落地，待 review / release。
 > 结论：Codey 应该学习 Pi v2 的内核纪律，但不应该照着 Pi 重写。
 
 ## 参考来源
@@ -109,7 +109,7 @@ starting point
 current state
 ```
 
-Codey 0.5.8 应把这个原则收紧到现有 `TaskRuntime` / `OperationScheduler`：
+Codey 0.5.8 应把这个原则收紧到现有 `TaskRuntime` / `RuntimeMutationLine`：
 
 ```text
 run_id -> operation_id
@@ -233,18 +233,19 @@ PermissionProfile、tool contract、prompt surface hardening 和 completion proo
 ```text
 codey/runtime/
   operation.py              # Operation identity / intent / outcome contracts
-  operation_state.py        # total durable operation state, phase, control
-  operation_reducer.py      # pure: state + durable facts -> next action
-  drive.py                  # peek / execute one runtime action
-  mutation_line.py          # serialized mutation boundary
-  effects.py                # runtime phase effect records, retained
-  effect_records.py         # intent / settlement, retained
-  replay_policy.py          # safe/unsafe replay, retained
-  tool_result_delivery.py   # delivery receipt, retained
-  session_log.py            # durable append-only log / state storage adapter
+  operation_state.py        # total durable operation state; operation_state log entry
+  operation_reducer.py      # pure: state + durable facts -> RuntimeAction
+  drive.py                  # peek_next_action(), no side effects
+  mutation_line.py          # serialized production mutation boundary
+  effect_records.py         # intent / settlement ledger, projection + entry builders
+  replay_policy.py          # safe/unsafe replay policy
+  tool_result_delivery.py   # delivery receipt ledger, projection + entry builders
+  session_projection.py     # session-log projection; renamed from reducer.py
+  session_log.py            # mutate() + repair/compaction storage adapter
 ```
 
-如果现有文件已经承担相同职责，优先沿用现名；只有当职责不清时才新增文件。
+冷启动实现不保留 `runtime/effects.py`、`runtime/reducer.py`、`runtime/scheduler.py`
+兼容壳；这些名字会误导未来维护者。
 
 `task_run.py` 的目标形态：
 
@@ -275,16 +276,14 @@ Ghost / World Model state
 ```text
 accepted
 writer_running
+provider_effect_pending
+tool_effect_pending
+tool_delivery_pending
 writer_settled
 completion_proof_recorded
 repair_context_admitted
 repair_running
 repair_settled
-delivery_pending
-effect_pending
-retry_wait
-suspended
-cancelling
 terminal
 ```
 
@@ -293,10 +292,11 @@ terminal
 ```text
 operation_id 是谁
 lane 是谁
-当前 phase 是什么
-control 是否 cancel_requested
-下一步允许 action 是什么
-pending effect ref 是什么
+leaf 是什么
+driver 是 writer 还是 repair
+pending_effect_ids 是哪些
+pending_delivery_batch_id 是谁
+turn / tool_index 到哪里
 proof / repair / delivery 的最小 refs 是什么
 terminal 是否已经不可逆
 ```
@@ -320,11 +320,9 @@ terminal 是否已经不可逆
 
 ```text
 OperationState
-RuntimeProjection
 pending Effect intents/settlements
 delivery receipts
-completion proof summary
-cancel marker
+completion proof refs
 ```
 
 输出：
@@ -337,17 +335,12 @@ RuntimeAction
 
 ```text
 continue_writer
-record_provider_intent
+continue_operation
 settle_provider_unknown
-replay_safe_tool
-synthesize_unsafe_interruption
-record_completion_proof
-admit_repair_context
-run_repair
-retry_after
-deliver_tool_result
-finish_operation
-wait_for_user_or_provider
+replay_safe_tool_batch
+synthesize_interrupted_effects
+terminal
+fail_invariant
 ```
 
 Reducer 不能：
@@ -366,22 +359,22 @@ Reducer 不能：
 Drive 只做一件事：
 
 ```text
-peek_action(state)
-execute_action(action)
-commit_new_state_or_settlement
+peek_next_action(session_log, session_id, run_id)
+  -> RuntimeAction
 ```
 
-第一版可以只开放给 tests/manual/fault-injection，不急着做用户 API。
+第一版不做庞大的 public action interpreter。`recovery.py` 读取 `RuntimeAction` 后执行
+provider unknown-outcome settlement、safe tool batch replay 或 interrupted synthesis。
 
 这样以后测试可以写成：
 
 ```text
 accept operation
-peek -> provider_send_intent
-execute until effect_pending
+peek -> continue_operation
+execute until provider_effect_pending / tool_effect_pending
 simulate crash
 restore
-peek -> settle_provider_unknown or safe_replay
+peek -> settle_provider_unknown or replay_safe_tool_batch
 execute
 assert terminal/proof/delivery
 ```
@@ -397,6 +390,7 @@ assert terminal/proof/delivery
 ```text
 RuntimeSessionLog
 RuntimeOperationState
+RuntimeMutationLine
 RuntimeEffectIntent / Settlement
 ToolResultDelivery
 CompletionProof
@@ -416,6 +410,9 @@ RunLedger
 非法 transition 拒绝
 terminal 后不能再写 business phase
 state payload 不存 raw prompt/reply/stdout/source body
+operation state 是 operation_state entry，不是 operation_effect(run_phase)
+RuntimeSessionLog 只暴露 mutate()，不暴露 append()/append_many()
+RuntimeOperationStore 只读，不暴露 start()/commit()/delete_session()
 ```
 
 ### Phase 3：补 reducer
@@ -425,9 +422,9 @@ state payload 不存 raw prompt/reply/stdout/source body
 ```text
 provider intent 已写但 settlement 缺失
 tool intent 已写但 settlement 缺失
-safe replay args 可用
-unsafe tool interrupted
-delivery pending
+全安全、未发送的 tool batch 可重放
+不可安全重放的 pending tool effect 诚实中断
+tool_delivery_pending
 completion proof failed 后 repair 是否允许
 max_turns / invalid_tool_called / cancelled 的 terminal 分类
 ```
@@ -479,6 +476,8 @@ test_runtime_drive_cancel_to_terminal
 OperationState 是 closed/total transition table
 RuntimeAction reducer 是 pure function
 provider/tool/delivery/recovery 的关键路径都能从 state 推出下一步
+RuntimeSessionLog 只有 mutate()，没有 append()/append_many()
+RuntimeOperationStore 是 projection-only，没有 start()/commit()/delete_session()
 task_run.py 不再新增业务外的 runtime state 分支
 EffectIntent / Settlement 没有被 OperationState 取代
 CompletionProof / Evidence 的边界不变

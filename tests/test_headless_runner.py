@@ -9,7 +9,7 @@ from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.operation_state import RuntimeOperationStore
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
@@ -121,7 +121,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertIsNotNone(operation)
         assert operation is not None
-        self.assertEqual(operation.phase, "terminal")
+        self.assertEqual(operation.leaf, "terminal")
         assert operation.terminal is not None
         self.assertEqual(operation.terminal.stop_reason, "done")
         self.assertEqual(operation.terminal.provider, "qwen")

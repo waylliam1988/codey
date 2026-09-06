@@ -24,7 +24,8 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime.effects import RuntimeOperationStore
+from codey.runtime.mutation_line import RuntimeMutationLine
+from codey.runtime.operation_state import mark_writer_running
 from codey.runtime.replay_policy import ReplayClass
 from codey.runtime.session_log import RuntimeSessionLog
 from codey.runtime.tool_result_delivery import (
@@ -59,13 +60,13 @@ def run_self_test() -> int:
 
         state_dir = root / "state"
         log = RuntimeSessionLog(state_dir)
-        operations = RuntimeOperationStore(log)
         effects = RuntimeEffectStore(log)
         delivery = ToolResultDeliveryStore(log)
+        mutations = RuntimeMutationLine(log)
 
         session_id = "smoke-sess-1"
         run_id = "smoke-run-1"
-        operations.start(
+        mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=str(root),
@@ -74,60 +75,16 @@ def run_self_test() -> int:
             max_repair_rounds=1,
             task_kind="project",
         )
+        mutations.transition_operation(
+            session_id,
+            run_id,
+            lambda state: mark_writer_running(state, provider_id="ScriptedProvider"),
+        )
 
         # 1. Simulate crashed turn 1:
-        # Tool 0: read (settled)
+        # Tool 0: read (settled); tool 1: search (pending, crash before settlement).
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
-        effects.record_intent(
-            session_id,
-            run_id,
-            RuntimeEffectIntent(
-                effect_id=eff_read,
-                effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                session_id=session_id,
-                run_id=run_id,
-                phase="writer",
-                turn=1,
-                tool_index=0,
-                tool_name="read",
-                replay_class=ReplayClass.SAFE,
-                replay_args={"path": "module.py"},
-            ),
-        )
-        effects.record_settlement(
-            session_id,
-            run_id,
-            RuntimeEffectSettlement(
-                effect_id=eff_read,
-                effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                session_id=session_id,
-                run_id=run_id,
-                status=SETTLEMENT_STATUS_OK,
-                sent_state="settled",
-                replay_class=ReplayClass.SAFE,
-            ),
-        )
-
-        # Tool 1: search (pending, crash before settlement)
         eff_search = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, run_id)
-        effects.record_intent(
-            session_id,
-            run_id,
-            RuntimeEffectIntent(
-                effect_id=eff_search,
-                effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                session_id=session_id,
-                run_id=run_id,
-                phase="writer",
-                turn=1,
-                tool_index=1,
-                tool_name="search",
-                replay_class=ReplayClass.SAFE,
-                replay_args={"path": ".", "query": "def add"},
-            ),
-        )
-
-        # Delivery batch recorded before prompt was sent
         batch_id = new_batch_id(run_id, 1)
         items = (
             DeliveryBatchItem(
@@ -145,10 +102,36 @@ def run_self_test() -> int:
                 is_denied=False,
             ),
         )
-        delivery.record_batch_intent(
+        mutations.begin_tool_batch(
             session_id,
             run_id,
-            DeliveryBatchIntent(
+            intents=(
+                RuntimeEffectIntent(
+                    effect_id=eff_read,
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id=session_id,
+                    run_id=run_id,
+                    phase="writer",
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_class=ReplayClass.SAFE,
+                    replay_args={"path": "module.py"},
+                ),
+                RuntimeEffectIntent(
+                    effect_id=eff_search,
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id=session_id,
+                    run_id=run_id,
+                    phase="writer",
+                    turn=1,
+                    tool_index=1,
+                    tool_name="search",
+                    replay_class=ReplayClass.SAFE,
+                    replay_args={"path": ".", "query": "def add"},
+                ),
+            ),
+            delivery_intent=DeliveryBatchIntent(
                 batch_id=batch_id,
                 session_id=session_id,
                 run_id=run_id,
@@ -157,11 +140,25 @@ def run_self_test() -> int:
                 batch_digest=compute_batch_digest(items),
             ),
         )
+        mutations.settle_tool_effect(
+            session_id,
+            run_id,
+            RuntimeEffectSettlement(
+                effect_id=eff_read,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=session_id,
+                run_id=run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+            ),
+        )
 
         # 2. Perform recovery
         class RecoveryDeps:
             runtime_effects = effects
             tool_result_delivery = delivery
+            runtime_mutations = mutations
 
         recovery = recover_effects_for_resume(
             RecoveryDeps(),
@@ -187,6 +184,7 @@ def run_self_test() -> int:
             run_id=run_id,
             permission_profile="coding_writer",
             runtime_effects=effects,
+            runtime_mutations=mutations,
             tool_result_delivery=delivery,
             recovered_tool_outcomes=recovery.recovered_tool_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
@@ -227,13 +225,13 @@ def run_same_run_self_test() -> int:
 
         state_dir = root / "state"
         log = RuntimeSessionLog(state_dir)
-        operations = RuntimeOperationStore(log)
         effects = RuntimeEffectStore(log)
         delivery = ToolResultDeliveryStore(log)
+        mutations = RuntimeMutationLine(log)
 
         session_id = "smoke-same-run-1"
         run_id = "smoke-same-run-1"
-        operations.start(
+        mutations.accept_operation(
             session_id=session_id,
             run_id=run_id,
             project=str(root),
@@ -241,6 +239,11 @@ def run_same_run_self_test() -> int:
             turn_budget=10,
             max_repair_rounds=1,
             task_kind="project",
+        )
+        mutations.transition_operation(
+            session_id,
+            run_id,
+            lambda state: mark_writer_running(state, provider_id="ScriptedProvider"),
         )
 
         # 2 turns of safe tool execution then done
@@ -257,6 +260,7 @@ def run_same_run_self_test() -> int:
             run_id=run_id,
             permission_profile="coding_writer",
             runtime_effects=effects,
+            runtime_mutations=mutations,
             tool_result_delivery=delivery,
         )
         result = run_agent_loop(request)
