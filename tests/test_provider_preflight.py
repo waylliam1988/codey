@@ -6,6 +6,7 @@ from codey.operations.provider_preflight import (
     ProviderSwitchDenied,
     connect_provider_with_preflight,
 )
+from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 
 
 class _Provider:
@@ -21,6 +22,11 @@ class _State:
 
     def switch_run_provider(self, run_id: str, provider_id: str) -> None:
         self.switched.append((run_id, provider_id))
+
+
+class _FailingState(_State):
+    def get_provider(self, _provider_id: str) -> _Provider:
+        raise RuntimeError("connect failed")
 
 
 class _SameProviderSupervisor:
@@ -82,6 +88,39 @@ class ProviderPreflightTests(unittest.TestCase):
         decision = trace.decisions[0]
         self.assertEqual(getattr(decision, "decision", ""), "deny")
         self.assertEqual(getattr(decision, "reason_code", ""), "same_provider")
+
+    def test_connect_failure_without_supervisor_does_not_auto_switch(self) -> None:
+        state = _FailingState()
+        trace = _Trace()
+        rows: list[tuple[str, dict[str, object]]] = []
+        failures: list[tuple[str, ProviderFailure]] = []
+
+        with self.assertRaises(ProviderActionError):
+            connect_provider_with_preflight(
+                state=state,
+                run_id="run-1",
+                provider_id="deepseek",
+                supervisor=None,
+                ranked_failover_order=lambda: ("deepseek", "qwen"),
+                capture_provider_failure=lambda **_kwargs: ProviderFailure(
+                    model="DeepSeek",
+                    action="connect",
+                    url="",
+                    title="",
+                    message="connect failed",
+                    time="2026-01-01T00:00:00+00:00",
+                ),
+                record_provider_failure=lambda provider_id, failure: failures.append(
+                    (provider_id, failure)
+                ),
+                append_ledger=lambda fn: fn(_Ledger(rows)),
+                trace_sink=trace,
+            )
+
+        self.assertEqual(state.switched, [])
+        self.assertEqual(rows, [])
+        self.assertEqual(trace.decisions, [])
+        self.assertEqual([provider_id for provider_id, _failure in failures], ["deepseek"])
 
 
 if __name__ == "__main__":

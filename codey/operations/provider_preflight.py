@@ -98,21 +98,12 @@ def connect_provider_with_preflight(
             record_provider_failure(provider_id, failure)
             if preflight_switches >= 2:
                 raise ProviderActionError(failure) from connect_error
-            replacement_id = (
-                supervisor.select(
-                    "",
-                    ranked_failover_order(),
-                    excluded=preflight_tried,
-                )
-                if supervisor is not None
-                else next(
-                    (
-                        item
-                        for item in ranked_failover_order()
-                        if item not in preflight_tried
-                    ),
-                    None,
-                )
+            if supervisor is None:
+                raise ProviderActionError(failure) from connect_error
+            replacement_id = supervisor.select(
+                "",
+                ranked_failover_order(),
+                excluded=preflight_tried,
             )
             if replacement_id is None:
                 raise ProviderActionError(failure) from connect_error
