@@ -21,9 +21,14 @@ mutation:    RuntimeMutationLine is the production writer for operation state,
              effect intent/settlement, tool-result delivery receipt/recovery,
              completion proof, repair, blocked verdict, and terminal operation
              settlement. Production code does not call RuntimeSessionLog.mutate()
-             directly. Conflicting terminal re-commits fail closed.
+             directly. Conflicting terminal re-commits fail closed, and
+             recovered delivery writes require a matching tool_delivery_pending
+             leaf.
 recovery:    recovery reads drive.peek_next_action() and executes reducer
-             actions instead of inferring from missing events.
+             actions instead of inferring from missing events. Provider unknown
+             outcomes are settled as interrupted + maybe_sent; torn provider
+             settlement tails are repaired before recovery; repeated safe-batch
+             recovery is idempotent at the durable fact layer.
 cleanup:     removed runtime/effects.py, runtime/reducer.py and
              runtime/scheduler.py; RuntimeOperationStore is projection-only and
              RuntimeMutationLine has no generic transition_operation() surface.
@@ -37,11 +42,11 @@ Verification:
 - Ruff:
   `ruff check .` (passed)
 - Targeted runtime/entry/server suite:
-  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py`
-  (`429 passed, 1 skipped in 61.16s`)
+  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
+  (`449 passed, 1 skipped in 62.39s`)
 - Full pytest suite:
   `pytest`
-  (`3551 passed, 16 skipped in 296.67s (0:04:56)`)
+  (`3555 passed, 16 skipped in 288.09s (0:04:48)`)
 
 ## 0.5.7 Research Follow-up Quality Closure release audit (2026-09-05)
 

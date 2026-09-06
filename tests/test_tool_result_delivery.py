@@ -30,11 +30,14 @@ from codey.runtime.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     RuntimeEffectStore,
+    SENT_STATE_MAYBE_SENT,
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
 from codey.runtime.mutation_line import RuntimeMutationLine
 from codey.runtime.operation_state import (
+    LEAF_TOOL_DELIVERY_PENDING,
+    LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
@@ -608,17 +611,43 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
     def test_record_recovered_idempotency_and_conflict_rejection(self) -> None:
         batch_id = "batch-idempotent-1"
         items = (DeliveryBatchItem(0, "read", "eff-1", "safe", False),)
-        _commit_delivery_batch_intent(
-            self.log,
+        self.line.begin_tool_batch(
             self.session_id,
             self.run_id,
-            DeliveryBatchIntent(
+            intents=(
+                RuntimeEffectIntent(
+                    effect_id="eff-1",
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id=self.session_id,
+                    run_id=self.run_id,
+                    phase="writer",
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_class=ReplayClass.SAFE,
+                    replay_args={"path": "target.py"},
+                ),
+            ),
+            delivery_intent=DeliveryBatchIntent(
                 batch_id=batch_id,
                 session_id=self.session_id,
                 run_id=self.run_id,
                 turn=1,
                 items=items,
                 batch_digest=compute_batch_digest(items),
+            ),
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id="eff-1",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
             ),
         )
         self.line.record_delivery_recovered(
@@ -773,14 +802,17 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             batch_digest=compute_batch_digest(items),
         )
         _commit_delivery_batch_intent(self.log, self.session_id, self.run_id, intent)
-        self.line.record_delivery_recovered(
+        recovered = recovered_entry(
             self.session_id,
             self.run_id,
             batch_id=batch_id,
             recovered_effect_ids=("eff-1",),
             recovered_reads=1,
             recovered_lookups=0,
+            batches=self.store.load_batches(self.session_id, self.run_id),
         )
+        assert recovered is not None
+        _commit_log_entries(self.log, self.session_id, (recovered,))
 
         # Before settlement (open op) -> compact retains both intent and recovered
         from codey.runtime.session_log import _compact_entries
@@ -855,6 +887,47 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
     def test_delivery_recovered_fails_closed_when_existing_recovered_entry_is_malformed(self) -> None:
         expected_op = operation_id_for_run(self.run_id)
         expected_lane = lane_for_run(self.run_id)
+        batch_id = "b1"
+        items = (DeliveryBatchItem(0, "read", "eff-1", "safe", False),)
+        self.line.begin_tool_batch(
+            self.session_id,
+            self.run_id,
+            intents=(
+                RuntimeEffectIntent(
+                    effect_id="eff-1",
+                    effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                    session_id=self.session_id,
+                    run_id=self.run_id,
+                    phase="writer",
+                    turn=1,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_class=ReplayClass.SAFE,
+                    replay_args={"path": "target.py"},
+                ),
+            ),
+            delivery_intent=DeliveryBatchIntent(
+                batch_id=batch_id,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id="eff-1",
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+            ),
+        )
         # Inject malformed recovered entry with missing required fields
         _commit_log_entry(self.log,
             session_id=self.session_id,
@@ -873,7 +946,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
             self.line.record_delivery_recovered(
                 self.session_id,
                 self.run_id,
-                batch_id="b1",
+                batch_id=batch_id,
                 recovered_effect_ids=["eff-1"],
                 recovered_reads=1,
                 recovered_lookups=0,
@@ -1005,6 +1078,62 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         deps.runtime_mutations = self.line
         return deps
 
+    def _fresh_restart_deps(self) -> tuple[Mock, RuntimeSessionLog, RuntimeOperationStore]:
+        log = RuntimeSessionLog(self.project_dir / "state")
+        deps = Mock()
+        deps.runtime_effects = RuntimeEffectStore(log)
+        deps.tool_result_delivery = ToolResultDeliveryStore(log)
+        deps.runtime_mutations = RuntimeMutationLine(log)
+        return deps, log, RuntimeOperationStore(log)
+
+    def test_provider_unknown_outcome_recovery_records_maybe_sent_once(self) -> None:
+        provider_effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
+        self.line.begin_provider_effect(
+            self.session_id,
+            self.run_id,
+            self._provider_intent(provider_effect_id),
+        )
+
+        recovery = recover_effects_for_resume(
+            self._deps(),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
+        projection = next(
+            item
+            for item in self.effects.load_effects(self.session_id, self.run_id)
+            if item.intent.effect_id == provider_effect_id
+        )
+        assert projection.settlement is not None
+        self.assertEqual(projection.settlement.status, "interrupted")
+        self.assertEqual(projection.settlement.sent_state, SENT_STATE_MAYBE_SENT)
+        self.assertEqual(projection.settlement.replay_count, 0)
+        state = self.operations.load(self.session_id, self.run_id)
+        assert state is not None
+        self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+        committed_count = len(self.log.entries(self.session_id))
+
+        for _ in range(3):
+            deps, restart_log, restart_operations = self._fresh_restart_deps()
+            repeated = recover_effects_for_resume(
+                deps,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                project=str(self.project_dir),
+                task_kind="project",
+            )
+            self.assertTrue(repeated.ok)
+            self.assertEqual(repeated.recovered_tool_outcomes, ())
+            self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
+            state = restart_operations.load(self.session_id, self.run_id)
+            assert state is not None
+            self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
+
     def test_multi_safe_tools_one_settled_one_pending_reconstructs_full_batch(self) -> None:
         # Simulate turn 1: model called read and search
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
@@ -1082,6 +1211,30 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertTrue(batches[0].is_recovered)
         self.assertEqual(batches[0].recovered_reads, 1)
         self.assertEqual(batches[0].recovered_lookups, 1)
+        state = self.operations.load(self.session_id, self.run_id)
+        assert state is not None
+        self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
+        committed_count = len(self.log.entries(self.session_id))
+
+        deps, restart_log, restart_operations = self._fresh_restart_deps()
+        repeated = recover_effects_for_resume(
+            deps,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+
+        self.assertTrue(repeated.ok)
+        self.assertEqual(len(repeated.recovered_tool_outcomes), 2)
+        self.assertEqual(
+            tuple(item.effect_id for item in repeated.recovered_tool_outcomes),
+            (eff_read, eff_search),
+        )
+        self.assertEqual(len(restart_log.entries(self.session_id)), committed_count)
+        state = restart_operations.load(self.session_id, self.run_id)
+        assert state is not None
+        self.assertEqual(state.leaf, LEAF_TOOL_DELIVERY_PENDING)
 
     def test_run_details_merges_delivery_reads_and_runtime_lookups(self) -> None:
         # read settled (fact only in delivery) + search pending (replay in runtime effects)
@@ -1665,6 +1818,115 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertEqual(len(recovery.recovered_tool_outcomes), 0)
         pending = self.effects.pending_effects(self.session_id, self.run_id)
         self.assertEqual(len(pending), 0)
+        provider_projection = next(
+            item
+            for item in self.effects.load_effects(self.session_id, self.run_id)
+            if item.intent.effect_id == provider_effect_id
+        )
+        assert provider_projection.settlement is not None
+        self.assertEqual(provider_projection.settlement.status, "interrupted")
+        self.assertEqual(provider_projection.settlement.sent_state, SENT_STATE_MAYBE_SENT)
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0].send_attempts, (provider_effect_id,))
+        self.assertFalse(batches[0].is_delivered)
+        committed_count = len(self.log.entries(self.session_id))
+
+        repeated = recover_effects_for_resume(
+            self._deps(),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(repeated.ok)
+        self.assertEqual(repeated.recovered_tool_outcomes, ())
+        self.assertEqual(len(self.log.entries(self.session_id)), committed_count)
+
+    def test_torn_provider_settlement_batch_recovers_as_unknown_outcome(self) -> None:
+        eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        batch_id = "batch-torn-provider-settlement"
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_read,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self._begin_tool_batch(
+            batch_id=batch_id,
+            intents=(
+                self._tool_intent(
+                    eff_read,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_args={"path": "target.py"},
+                ),
+            ),
+            items=items,
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            self._tool_settlement(eff_read),
+        )
+        provider_effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
+        self.line.begin_provider_effect(
+            self.session_id,
+            self.run_id,
+            self._provider_intent(provider_effect_id),
+            delivery_batch_id=batch_id,
+        )
+        before_torn = len(self.log.entries(self.session_id))
+        torn_settlement = RuntimeEffectSettlement(
+            effect_id=provider_effect_id,
+            effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+            session_id=self.session_id,
+            run_id=self.run_id,
+            lane=lane_for_run(self.run_id),
+            operation_id=operation_id_for_run(self.run_id),
+            status=SETTLEMENT_STATUS_OK,
+            sent_state="settled",
+            replay_class=ReplayClass.UNSAFE,
+        )
+        torn_row = RuntimeLogEntry(
+            session_id=self.session_id,
+            lane=lane_for_run(self.run_id),
+            operation_id=operation_id_for_run(self.run_id),
+            kind="operation_effect",
+            payload=torn_settlement.to_payload(),
+            batch_id="batch-crash-provider-settlement",
+            batch_index=0,
+            batch_count=3,
+        )
+        with self.log.path_for(self.session_id).open("ab") as handle:
+            handle.write(torn_row.to_json_line().encode("utf-8"))
+
+        recovery = recover_effects_for_resume(
+            self._deps(),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_outcomes, ())
+        self.assertGreater(len(self.log.entries(self.session_id)), before_torn)
+        provider_projection = next(
+            item
+            for item in self.effects.load_effects(self.session_id, self.run_id)
+            if item.intent.effect_id == provider_effect_id
+        )
+        assert provider_projection.settlement is not None
+        self.assertEqual(provider_projection.settlement.status, "interrupted")
+        self.assertEqual(provider_projection.settlement.sent_state, SENT_STATE_MAYBE_SENT)
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0].send_attempts, (provider_effect_id,))
+        self.assertFalse(batches[0].is_delivered)
 
     def test_mixed_batch_blocks_pending_safe_effect_from_single_replay(self) -> None:
         eff_edit = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)

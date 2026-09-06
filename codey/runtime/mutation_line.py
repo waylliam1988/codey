@@ -32,6 +32,7 @@ from codey.runtime.operation_state import (
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
     LEAF_TERMINAL,
+    LEAF_TOOL_DELIVERY_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     mark_completion_blocked as state_mark_completion_blocked,
@@ -546,13 +547,28 @@ class RuntimeMutationLine:
         recovered_reads: int = 0,
         recovered_lookups: int = 0,
     ) -> None:
-        def mutation(_projection, entries):
+        recovered_ids = tuple(recovered_effect_ids)
+
+        def mutation(projection, entries):
+            state = _require_open_state(
+                projection,
+                entries,
+                session_id=session_id,
+                run_id=run_id,
+            )
+            if (
+                state.leaf != LEAF_TOOL_DELIVERY_PENDING
+                or state.pending_delivery_batch_id != batch_id
+            ):
+                raise RuntimeOperationTransitionError(
+                    "delivery recovery requires matching delivery_pending state"
+                )
             batches = batches_from_entries(entries, session_id=session_id, run_id=run_id)
             entry = recovered_entry(
                 session_id,
                 run_id,
                 batch_id=batch_id,
-                recovered_effect_ids=tuple(recovered_effect_ids),
+                recovered_effect_ids=recovered_ids,
                 recovered_reads=recovered_reads,
                 recovered_lookups=recovered_lookups,
                 batches=batches,

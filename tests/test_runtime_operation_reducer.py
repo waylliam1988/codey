@@ -225,7 +225,7 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
         self.assertEqual(action.reason, "missing_provider_effect_intent")
 
-    def test_provider_pending_with_existing_settlement_continues(self) -> None:
+    def test_provider_pending_with_existing_settlement_fails_invariant(self) -> None:
         state = _state(
             LEAF_PROVIDER_EFFECT_PENDING,
             driver=DRIVER_WRITER,
@@ -238,8 +238,8 @@ class RuntimeOperationReducerTests(unittest.TestCase):
             effects=(_provider_projection("eff-provider", settled=True),),
         )
 
-        self.assertEqual(action.kind, ACTION_CONTINUE)
-        self.assertEqual(action.reason, "provider_already_settled")
+        self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
+        self.assertEqual(action.reason, "settled_provider_effect_still_pending")
 
     def test_tool_pending_replays_all_safe_batch_before_provider_send(self) -> None:
         items = (

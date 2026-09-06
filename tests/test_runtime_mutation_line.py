@@ -178,6 +178,57 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertEqual({row.batch_id for row in rows}, {rows[0].batch_id})
         self.assertEqual(self.operations.load(self.session_id, self.run_id).leaf, LEAF_TOOL_DELIVERY_PENDING)
 
+    def test_record_delivery_recovered_requires_matching_delivery_pending_state(self) -> None:
+        self._accept_and_run_writer()
+
+        with self.assertRaises(RuntimeOperationTransitionError):
+            self.line.record_delivery_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id="batch-not-pending",
+                recovered_effect_ids=("eff-read",),
+                recovered_reads=1,
+            )
+
+        read = self._tool_intent("read", 0)
+        batch_id = new_batch_id(self.run_id, 1)
+        items = (DeliveryBatchItem(0, "read", read.effect_id, "safe", False),)
+        self.line.begin_tool_batch(
+            self.session_id,
+            self.run_id,
+            intents=(read,),
+            delivery_intent=DeliveryBatchIntent(
+                batch_id=batch_id,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=read.effect_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+            ),
+        )
+
+        with self.assertRaises(RuntimeOperationTransitionError):
+            self.line.record_delivery_recovered(
+                self.session_id,
+                self.run_id,
+                batch_id="batch-other",
+                recovered_effect_ids=(read.effect_id,),
+                recovered_reads=1,
+            )
+
     def test_provider_delivery_receipt_commits_with_provider_settlement(self) -> None:
         self._accept_and_run_writer()
         read = self._tool_intent("read", 0)

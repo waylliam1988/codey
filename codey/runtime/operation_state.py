@@ -553,17 +553,21 @@ def operation_state_from_entries(
     lane = lane_for_run(str(run_id or ""))
     latest: RuntimeOperationState | None = None
     for entry in entries:
-        if entry.operation_id != operation_id or entry.kind != "operation_state":
+        if entry.kind != "operation_state" or entry.operation_id != operation_id:
             continue
+        if entry.lane != lane:
+            raise RuntimeOperationTransitionError("operation state entry boundary mismatch")
         state = RuntimeOperationState.from_payload(entry.payload)
+        if state is None:
+            raise RuntimeOperationTransitionError("invalid operation state payload")
         if (
-            state is not None
-            and state.session_id == session_id
-            and state.run_id == run_id
-            and state.operation_id == operation_id
-            and state.lane == lane
+            state.session_id != session_id
+            or state.run_id != run_id
+            or state.operation_id != operation_id
+            or state.lane != lane
         ):
-            latest = state
+            raise RuntimeOperationTransitionError("operation state payload boundary mismatch")
+        latest = state
     return latest
 
 

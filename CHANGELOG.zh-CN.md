@@ -21,7 +21,12 @@
   fail closed。
 - 新增纯 `operation_reducer` 和 `drive.peek_next_action()`，支撑 manual drive 测试和恢复派发。
   `recovery.py` 现在执行 reducer action：provider unknown-outcome settlement、safe tool
-  batch replay 和 interrupted-effect synthesis，不再靠缺失 event 推断恢复。
+  batch replay 和 interrupted-effect synthesis，不再靠缺失 event 推断恢复。Provider
+  unknown outcome 会结算为 `interrupted` + `maybe_sent`；torn provider-settlement batch
+  会先被修剪再恢复；重复 safe-batch recovery 不会追加重复 durable facts。
+- operation-state projection 遇到当前 operation 最新 state entry 坏账或跨 run 边界时
+  fail closed，不再回退到更旧 leaf。Delivery recovered fact 现在要求匹配
+  `tool_delivery_pending` leaf，确保 recovered delivery 写入仍绑定 durable state machine。
 - 删除旧的 `runtime/reducer.py`、`runtime/scheduler.py` 和 `runtime/effects.py` 形态。
   `RuntimeOperationStore` 现在只做读取投影，不再暴露 `start`、`commit` 或 session deletion
   这种业务写入口。
@@ -33,9 +38,9 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - targeted runtime/entry/server suite：
-  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py`
-  （`429 passed, 1 skipped in 61.16s`）
-- 全量 pytest：`pytest`（`3551 passed, 16 skipped in 296.67s (0:04:56)`）
+  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
+  （`449 passed, 1 skipped in 62.39s`）
+- 全量 pytest：`pytest`（`3555 passed, 16 skipped in 288.09s (0:04:48)`）
 
 ## 0.5.7 - Research Follow-up Quality Closure
 

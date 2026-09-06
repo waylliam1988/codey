@@ -73,9 +73,9 @@ def next_runtime_action(
             )
         if projection.settlement is not None:
             return RuntimeAction(
-                ACTION_CONTINUE,
+                ACTION_FAIL_INVARIANT,
                 leaf=state.leaf,
-                reason="provider_already_settled",
+                reason="settled_provider_effect_still_pending",
                 effect_id=effect_id,
                 driver=state.driver,
             )

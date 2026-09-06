@@ -37,8 +37,9 @@ from codey.runtime.operation_state import (
     mark_writer_settled,
     operation_id_for_run,
     operation_progress_text,
+    operation_state_from_entries,
 )
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.session_projection import reduce_session
 
 PROOF_OK = "completion_proof:0123456789abcdef"
@@ -197,6 +198,38 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 mutated = dict(payload)
                 mutated[key] = value
                 self.assertIsNone(RuntimeOperationState.from_payload(mutated))
+
+    def test_operation_state_projection_fails_closed_on_corrupt_latest_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            line = RuntimeMutationLine(log)
+            state = line.accept_operation(
+                session_id="s1",
+                run_id="run-1",
+                project="",
+                provider_id="deepseek",
+                turn_budget=5,
+                max_repair_rounds=1,
+                task_kind="project",
+            )
+            assert state is not None
+            valid_entries = log.entries("s1")
+            corrupt_payload = dict(valid_entries[-1].payload)
+            corrupt_payload["leaf"] = "retry_wait"
+            corrupt_entry = RuntimeLogEntry(
+                session_id="s1",
+                lane=state.lane,
+                operation_id=state.operation_id,
+                kind="operation_state",
+                payload=corrupt_payload,
+            )
+
+        with self.assertRaises(RuntimeOperationTransitionError):
+            operation_state_from_entries(
+                (*valid_entries, corrupt_entry),
+                session_id="s1",
+                run_id="run-1",
+            )
 
     def test_pending_provider_state_requires_one_effect_and_driver(self) -> None:
         state = mark_provider_effect_pending(

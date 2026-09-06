@@ -26,7 +26,14 @@
   drive tests and recovery dispatch. `recovery.py` now executes reducer actions
   for provider unknown-outcome settlement, safe tool batch replay, and
   interrupted-effect synthesis instead of inferring recovery from missing
-  events.
+  events. Provider unknown outcomes settle as `interrupted` + `maybe_sent`;
+  torn provider-settlement batches are repaired before recovery, and repeated
+  safe-batch recovery does not append duplicate durable facts.
+- Made operation-state projection fail closed when the latest matching state
+  entry is corrupt or crosses run boundaries, instead of falling back to an
+  older leaf. Delivery recovered facts now require the matching
+  `tool_delivery_pending` leaf, keeping recovered delivery writes tied to the
+  durable state machine.
 - Removed the obsolete `runtime/reducer.py`, `runtime/scheduler.py`, and
   `runtime/effects.py` runtime shapes. `RuntimeOperationStore` is now a read
   projection only; it no longer exposes `start`, `commit`, or session deletion
@@ -39,9 +46,9 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - Targeted runtime/entry/server suite:
-  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py`
-  (`429 passed, 1 skipped in 61.16s`)
-- Full pytest suite: `pytest` (`3551 passed, 16 skipped in 296.67s (0:04:56)`)
+  `pytest tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_operation_state.py tests/test_runtime_operation_reducer.py tests/test_runtime_drive.py tests/test_runtime_effect_records.py tests/test_runtime_session_log.py tests/test_agent_effect_sandwich.py tests/test_tool_result_delivery.py tests/test_task_entry_operation_state.py tests/test_run_details.py tests/test_project_completion_flow_analysis_run.py tests/test_task_entry_provider_preference.py tests/test_task_entry_run_trace.py tests/test_server.py tests/test_headless_runner.py tests/test_safe_tool_replay.py`
+  (`449 passed, 1 skipped in 62.39s`)
+- Full pytest suite: `pytest` (`3555 passed, 16 skipped in 288.09s (0:04:48)`)
 
 ## 0.5.7 - Research Follow-up Quality Closure
 
