@@ -139,8 +139,14 @@ def connect_provider_with_preflight(
             )
         try:
             provider.close()
-        except Exception:
-            pass
+        except Exception as close_error:
+            failure = capture_provider_failure(
+                model=PROVIDER_LABELS.get(provider_id, provider_id),
+                action="close",
+                page=None,
+                error=close_error,
+            )
+            record_provider_failure(provider_id, failure)
         if preflight_switches >= 2:
             raise RuntimeError("no healthy provider available after canary failure")
         replacement_id = supervisor.select(
