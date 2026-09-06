@@ -2621,6 +2621,24 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNotNone(state.runtime_log)
         self.assertIsNone(state.ghost_inbox)
 
+    def test_state_home_lazily_constructs_ghost_stores(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state_home = Path(td)
+            with (
+                mock.patch.object(server, "GhostInboxStore") as inbox_cls,
+                mock.patch.object(server, "GhostHebbianStore") as hebbian_cls,
+            ):
+                state = server.AppContext(state_home)
+
+                inbox_cls.assert_not_called()
+                hebbian_cls.assert_not_called()
+                self.assertIs(state.ghost_inbox, inbox_cls.return_value)
+                self.assertIs(state.ghost_inbox, inbox_cls.return_value)
+                self.assertIs(state.ghost_hebbian, hebbian_cls.return_value)
+
+        inbox_cls.assert_called_once_with(state_home)
+        hebbian_cls.assert_called_once_with(state_home)
+
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.AppContext()
         first = {

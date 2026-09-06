@@ -35,8 +35,10 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from codey.runtime import cancellation
@@ -196,14 +198,14 @@ class AppContext:
         self.tool_result_delivery = ToolResultDeliveryStore(self.runtime_log)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
-        self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
-        self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
-        self.ghost_continuity = GhostContinuityStore(state_home) if state_home else None
-        self.ghost_router = GhostRouteStore(state_home) if state_home else None
-        self.ghost_sleep = GhostSleepStore(state_home) if state_home else None
-        self.ghost_work_queue = GhostWorkQueueStore(state_home) if state_home else None
-        self.ghost_affinity = GhostAffinityStore(state_home) if state_home else None
-        self.ghost_signals = GhostSignalStore(state_home) if state_home else None
+        self._ghost_inbox: GhostInboxStore | None = None
+        self._ghost_hebbian: GhostHebbianStore | None = None
+        self._ghost_continuity: GhostContinuityStore | None = None
+        self._ghost_router: GhostRouteStore | None = None
+        self._ghost_sleep: GhostSleepStore | None = None
+        self._ghost_work_queue: GhostWorkQueueStore | None = None
+        self._ghost_affinity: GhostAffinityStore | None = None
+        self._ghost_signals: GhostSignalStore | None = None
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
@@ -227,6 +229,108 @@ class AppContext:
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
+
+    def _ghost_store(
+        self,
+        attr_name: str,
+        factory: Callable[[Path], object],
+    ) -> object | None:
+        if self.state_home is None:
+            return None
+        with self.lock:
+            store = getattr(self, attr_name)
+            if store is None:
+                store = factory(self.state_home)
+                setattr(self, attr_name, store)
+            return store
+
+    @property
+    def ghost_inbox(self) -> GhostInboxStore | None:
+        return cast(
+            GhostInboxStore | None,
+            self._ghost_store("_ghost_inbox", GhostInboxStore),
+        )
+
+    @ghost_inbox.setter
+    def ghost_inbox(self, value: GhostInboxStore | None) -> None:
+        self._ghost_inbox = value
+
+    @property
+    def ghost_hebbian(self) -> GhostHebbianStore | None:
+        return cast(
+            GhostHebbianStore | None,
+            self._ghost_store("_ghost_hebbian", GhostHebbianStore),
+        )
+
+    @ghost_hebbian.setter
+    def ghost_hebbian(self, value: GhostHebbianStore | None) -> None:
+        self._ghost_hebbian = value
+
+    @property
+    def ghost_continuity(self) -> GhostContinuityStore | None:
+        return cast(
+            GhostContinuityStore | None,
+            self._ghost_store("_ghost_continuity", GhostContinuityStore),
+        )
+
+    @ghost_continuity.setter
+    def ghost_continuity(self, value: GhostContinuityStore | None) -> None:
+        self._ghost_continuity = value
+
+    @property
+    def ghost_router(self) -> GhostRouteStore | None:
+        return cast(
+            GhostRouteStore | None,
+            self._ghost_store("_ghost_router", GhostRouteStore),
+        )
+
+    @ghost_router.setter
+    def ghost_router(self, value: GhostRouteStore | None) -> None:
+        self._ghost_router = value
+
+    @property
+    def ghost_sleep(self) -> GhostSleepStore | None:
+        return cast(
+            GhostSleepStore | None,
+            self._ghost_store("_ghost_sleep", GhostSleepStore),
+        )
+
+    @ghost_sleep.setter
+    def ghost_sleep(self, value: GhostSleepStore | None) -> None:
+        self._ghost_sleep = value
+
+    @property
+    def ghost_work_queue(self) -> GhostWorkQueueStore | None:
+        return cast(
+            GhostWorkQueueStore | None,
+            self._ghost_store("_ghost_work_queue", GhostWorkQueueStore),
+        )
+
+    @ghost_work_queue.setter
+    def ghost_work_queue(self, value: GhostWorkQueueStore | None) -> None:
+        self._ghost_work_queue = value
+
+    @property
+    def ghost_affinity(self) -> GhostAffinityStore | None:
+        return cast(
+            GhostAffinityStore | None,
+            self._ghost_store("_ghost_affinity", GhostAffinityStore),
+        )
+
+    @ghost_affinity.setter
+    def ghost_affinity(self, value: GhostAffinityStore | None) -> None:
+        self._ghost_affinity = value
+
+    @property
+    def ghost_signals(self) -> GhostSignalStore | None:
+        return cast(
+            GhostSignalStore | None,
+            self._ghost_store("_ghost_signals", GhostSignalStore),
+        )
+
+    @ghost_signals.setter
+    def ghost_signals(self, value: GhostSignalStore | None) -> None:
+        self._ghost_signals = value
 
     def load_ui_state(self) -> dict:
         with self.ui_state_store_lock:
