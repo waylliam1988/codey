@@ -210,16 +210,7 @@ class AppContext:
             stop_requested=lambda: self.run_registry.stop_flag.is_set(),
             run_once=self._run_ghost_sleep_once,
         )
-        repair_runner = (
-            self._run_self_repair_job
-            if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME
-            else None
-        )
-        self.self_repair = (
-            SelfRepairSupervisor(state_home, runner=repair_runner)
-            if state_home
-            else SelfRepairSupervisor(None)
-        )
+        self._self_repair: SelfRepairSupervisor | None = None
         self._self_repair_running = False
         self.snapshot_store = (
             SnapshotStore(state_home) if state_home else SnapshotStore()
@@ -347,6 +338,23 @@ class AppContext:
             self._knowledge_store_enabled = value is not None
             if value is not None and self._knowledge_root is None and self.state_home is not None:
                 self._knowledge_root = self.state_home / "vault"
+
+    @property
+    def self_repair(self) -> SelfRepairSupervisor:
+        with self.lock:
+            if self._self_repair is None:
+                repair_runner = (
+                    self._run_self_repair_job
+                    if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME
+                    else None
+                )
+                self._self_repair = SelfRepairSupervisor(self.state_home, runner=repair_runner)
+            return self._self_repair
+
+    @self_repair.setter
+    def self_repair(self, value: SelfRepairSupervisor | None) -> None:
+        with self.lock:
+            self._self_repair = value
 
     def load_ui_state(self) -> dict:
         with self.ui_state_store_lock:

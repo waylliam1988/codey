@@ -2659,6 +2659,18 @@ class RunSnapshotTests(unittest.TestCase):
 
         store_cls.assert_called_once_with(state_home / "vault")
 
+    def test_app_context_lazily_constructs_self_repair_supervisor(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state_home = Path(td) / "state"
+            with mock.patch.object(server, "SelfRepairSupervisor") as supervisor_cls:
+                state = server.AppContext(state_home)
+
+                supervisor_cls.assert_not_called()
+                self.assertIs(state.self_repair, supervisor_cls.return_value)
+                self.assertIs(state.self_repair, supervisor_cls.return_value)
+
+        supervisor_cls.assert_called_once_with(state_home, runner=None)
+
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.AppContext()
         first = {
