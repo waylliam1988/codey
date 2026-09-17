@@ -700,18 +700,6 @@ def _require_state(
     return state
 
 
-def _require_open_state(
-    projection,
-    entries: tuple[RuntimeLogEntry, ...],
-    *,
-    session_id: str,
-    run_id: str,
-) -> RuntimeOperationState:
-    state = _require_state(entries, session_id=session_id, run_id=run_id)
-    operation_is_open(projection, state)
-    return state
-
-
 def _require_open_view(projection, view: SessionView) -> RuntimeOperationState:
     if view.state is None:
         raise RuntimeOperationTransitionError("operation state is missing")

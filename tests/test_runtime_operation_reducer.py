@@ -148,6 +148,7 @@ def _batch(
     batch_id: str,
     items: tuple[DeliveryBatchItem, ...],
     *,
+    turn: int = 1,
     send_attempts: tuple[str, ...] = (),
     delivered_effect_ids: tuple[str, ...] = (),
 ) -> DeliveryBatchProjection:
@@ -157,7 +158,7 @@ def _batch(
         run_id=RUN_ID,
         lane=LANE,
         operation_id=OPERATION_ID,
-        turn=1,
+        turn=turn,
         items=items,
         batch_digest=compute_batch_digest(items),
     )
@@ -208,6 +209,7 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_PROVIDER_EFFECT_PENDING,
             driver=DRIVER_WRITER,
+            turn=1,
         )
 
         action = next_runtime_action(
@@ -240,6 +242,7 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_PROVIDER_EFFECT_PENDING,
             driver=DRIVER_WRITER,
+            turn=1,
         )
 
         action = next_runtime_action(
@@ -380,6 +383,29 @@ class RuntimeOperationReducerTests(unittest.TestCase):
 
         self.assertEqual(action.kind, ACTION_CONTINUE)
         self.assertEqual(action.reason, "tool_delivery_not_recoverable")
+
+    def test_delivery_pending_ignores_stale_attempted_batch_from_older_turn(self) -> None:
+        old_items = (DeliveryBatchItem(0, "read", "eff-old", "safe", False),)
+        new_items = (DeliveryBatchItem(0, "read", "eff-new", "safe", False),)
+        state = _state(
+            LEAF_TOOL_DELIVERY_PENDING,
+            driver=DRIVER_WRITER,
+            turn=2,
+        )
+
+        action = next_runtime_action(
+            _view(
+                state,
+                batches=(
+                    _batch("batch-old", old_items, turn=1, send_attempts=("eff-provider",)),
+                    _batch("batch-new", new_items, turn=2),
+                ),
+            )
+        )
+
+        self.assertEqual(action.kind, ACTION_REPLAY_SAFE_TOOL_BATCH)
+        self.assertEqual(action.effect_ids, ("eff-new",))
+        self.assertEqual(action.delivery_batch_id, "batch-new")
 
     def test_all_known_leaves_have_total_dispatch(self) -> None:
         fixtures: dict[str, dict[str, object]] = {

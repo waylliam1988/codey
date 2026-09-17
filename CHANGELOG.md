@@ -37,13 +37,21 @@
   `write/` and `observe/` must not import each other, flat
   `codey/runtime/*.py` leftovers are asserted gone, and the event matrix
   module cells track the new paths.
+- Fixed derived pending facts to use the state's current turn as the
+  coordinate: `pending_for()` now ignores records from older turns, and an
+  ambiguous delivery-pending batch set fails closed instead of grabbing the
+  first undelivered batch. Added a multi-batch reducer regression test and
+  a real-log recovery test proving a stale attempted batch never shadows
+  the current turn's safe replay. Also removed the dead
+  `_require_open_state()` helper and moved compaction policy imports to
+  module top level.
 
 Verification:
 
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3669 passed, 4 skipped, 1289 subtests passed in 330.61s (0:05:30)`)
+  (`3671 passed, 4 skipped, 1289 subtests passed in 306.79s (0:05:06)`)
 
 ## 0.5.8 - Durable Operation Core
 

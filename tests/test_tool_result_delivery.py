@@ -31,10 +31,12 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectSettlement,
     RuntimeEffectStore,
     SENT_STATE_MAYBE_SENT,
+    SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.core.operation_state import (
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
@@ -991,6 +993,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         tool_name: str,
         replay_class: str = ReplayClass.SAFE,
         replay_args: dict[str, object] | None = None,
+        turn: int = 1,
     ) -> RuntimeEffectIntent:
         return RuntimeEffectIntent(
             effect_id=effect_id,
@@ -998,7 +1001,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             phase="writer",
-            turn=1,
+            turn=turn,
             tool_index=tool_index,
             tool_name=tool_name,
             replay_class=replay_class,
@@ -1061,12 +1064,13 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         batch_id: str,
         intents: tuple[RuntimeEffectIntent, ...],
         items: tuple[DeliveryBatchItem, ...],
+        turn: int = 1,
     ) -> str:
         self.line.begin_tool_batch(
             self.session_id,
             self.run_id,
             intents=intents,
-            delivery_intent=self._batch_intent(batch_id, items),
+            delivery_intent=self._batch_intent(batch_id, items, turn=turn),
         )
         return batch_id
 
@@ -1970,6 +1974,110 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         self.assertTrue(repeated.ok)
         self.assertEqual(repeated.recovered_tool_outcomes, ())
         self.assertEqual(len(self.log.entries(self.session_id)), committed_count)
+
+    def test_stale_attempted_batch_does_not_shadow_current_turn_replay(self) -> None:
+        # Turn 1: safe batch settles, provider send is attempted but the
+        # provider call errors, so no delivered receipt exists and the run
+        # returns to writer. Turn 2 then opens a new safe batch.
+        eff_old = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        old_items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_old,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self._begin_tool_batch(
+            batch_id="batch-old-turn",
+            intents=(
+                self._tool_intent(
+                    eff_old,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_args={"path": "target.py"},
+                ),
+            ),
+            items=old_items,
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            self._tool_settlement(eff_old),
+        )
+        provider_old = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
+        self.line.begin_provider_effect(
+            self.session_id,
+            self.run_id,
+            self._provider_intent(provider_old),
+            delivery_batch_id="batch-old-turn",
+        )
+        self.line.settle_provider_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=provider_old,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_ERROR,
+                sent_state=SENT_STATE_MAYBE_SENT,
+                replay_class=ReplayClass.UNSAFE,
+            ),
+        )
+        eff_new = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        new_items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff_new,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self._begin_tool_batch(
+            batch_id="batch-new-turn",
+            intents=(
+                self._tool_intent(
+                    eff_new,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_args={"path": "target.py"},
+                    turn=2,
+                ),
+            ),
+            items=new_items,
+            turn=2,
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            self._tool_settlement(eff_new),
+        )
+
+        # The derived pending batch must be the current turn's batch, not
+        # the stale attempted one.
+        view = load_session_view(
+            self.log.entries(self.session_id),
+            session_id=self.session_id,
+            run_id=self.run_id,
+        )
+        self.assertEqual(pending_for(view).delivery_batch_id, "batch-new-turn")
+
+        recovery = recover_effects_for_resume(
+            self._deps(),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_result_batch_id, "batch-new-turn")
+        self.assertEqual(
+            [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
+            [eff_new],
+        )
 
     def test_torn_provider_settlement_batch_recovers_as_unknown_outcome(self) -> None:
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)

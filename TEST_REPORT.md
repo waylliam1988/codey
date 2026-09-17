@@ -1,5 +1,34 @@
 # Codey Test Report
 
+## Pending derivation turn-coordinate fix (2026-09-18)
+
+Scope:
+
+```text
+log/session_view: pending_for() now scopes unsettled effects and batches
+          to state.turn; ambiguous delivery-pending candidates fail closed
+tests:    reducer multi-batch regression
+          (stale attempted turn-1 batch + current turn-2 safe batch replays
+          turn 2) and real-log recovery test proving the stale batch never
+          shadows the current replay
+cleanup:  removed dead _require_open_state(), moved compaction policy
+          imports to module top, fixed session_log.py EOF blank line
+docs:     CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries (no release)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed)
+- Focused gates (all green before the full run):
+  `pytest tests/test_architecture.py tests/test_events.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py tests/test_runtime_operation_reducer.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_runtime_operation_state.py tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_safe_tool_replay.py -q`
+  (`237 passed, 365 subtests passed`)
+- Full pytest suite:
+  `pytest -q`
+  (`3671 passed, 4 skipped, 1289 subtests passed in 306.79s (0:05:06)`)
+
 ## Runtime subtraction P0-P4 (2026-09-18)
 
 Scope:

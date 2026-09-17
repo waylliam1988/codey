@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import uuid
 
+from codey.runtime.effects.effect_records import keep_effect_pair_for_compaction
+from codey.runtime.effects.tool_result_delivery import keep_delivery_entry_for_compaction
 from codey.runtime.log.session_log import RuntimeLogCorruption, RuntimeLogEntry
 
 
@@ -97,9 +99,6 @@ def _compact_entries(
                 intents[eid] = eff
             elif rkind == "settlement":
                 settlements[eid] = eff
-
-        from codey.runtime.effects.effect_records import keep_effect_pair_for_compaction
-        from codey.runtime.effects.tool_result_delivery import keep_delivery_entry_for_compaction
 
         for eid in ordered_effect_ids:
             intent_entry = intents.get(eid)

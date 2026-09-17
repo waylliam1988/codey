@@ -40,8 +40,10 @@ class SessionView:
 class PendingRuntimeFacts:
     """In-flight facts derived from the canonical view, never stored.
 
-    Pending ids are unsettled effect intents; the pending batch is the
-    batch that references them. Non-pending leaves derive empty facts.
+    Pending ids are unsettled effect intents at the state's current turn;
+    the pending batch is the current-turn batch that references them.
+    Records from older turns are stale history, never current pending
+    facts. Non-pending leaves derive empty facts.
     """
 
     effect_category: str = ""
@@ -53,19 +55,22 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     state = view.state
     if state is None:
         return PendingRuntimeFacts()
+    turn = state.turn
     unsettled = tuple(effect for effect in view.effects if effect.settlement is None)
+    current_batches = tuple(batch for batch in view.batches if batch.intent.turn == turn)
     if state.leaf == LEAF_PROVIDER_EFFECT_PENDING:
         ids = tuple(
             effect.intent.effect_id
             for effect in unsettled
             if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+            and effect.intent.turn == turn
         )
         batch_id = ""
         if ids:
             batch_id = next(
                 (
                     batch.intent.batch_id
-                    for batch in view.batches
+                    for batch in current_batches
                     if ids[0] in batch.send_attempts
                 ),
                 "",
@@ -80,6 +85,7 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
             effect.intent.effect_id
             for effect in unsettled
             if effect.intent.effect_category == EFFECT_CATEGORY_TOOL_CALL
+            and effect.intent.turn == turn
         )
         batch_id = ""
         if ids:
@@ -87,13 +93,13 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
             batch_id = next(
                 (
                     batch.intent.batch_id
-                    for batch in view.batches
+                    for batch in current_batches
                     if wanted <= set(batch.intent.tool_refs)
                 ),
                 next(
                     (
                         batch.intent.batch_id
-                        for batch in view.batches
+                        for batch in current_batches
                         if ids[0] in batch.intent.tool_refs
                     ),
                     "",
@@ -105,14 +111,13 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
             delivery_batch_id=batch_id,
         )
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        batch_id = next(
-            (
-                batch.intent.batch_id
-                for batch in view.batches
-                if not batch.is_delivered and not batch.is_recovered
-            ),
-            "",
+        candidates = tuple(
+            batch.intent.batch_id
+            for batch in current_batches
+            if not batch.is_delivered and not batch.is_recovered
         )
+        # Ambiguous history must fail closed, never grab an arbitrary batch.
+        batch_id = candidates[0] if len(candidates) == 1 else ""
         return PendingRuntimeFacts(delivery_batch_id=batch_id)
     return PendingRuntimeFacts()
 

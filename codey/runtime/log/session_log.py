@@ -429,4 +429,3 @@ def _file_stamp(path: Path) -> _FileStamp:
     except FileNotFoundError:
         return _FileStamp(file_size=0, mtime_ns=0)
     return _FileStamp(file_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
-

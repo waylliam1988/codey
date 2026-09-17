@@ -33,13 +33,18 @@
 - 收紧架构门禁：`SessionView` 锁死三字段，`write/` 与 `observe/` 互禁
   import，平铺残留 `codey/runtime/*.py` 断言不存在，event matrix 的模块
   单元格同步到新路径。
+- 修复派生 pending 按 state 当前 turn 做坐标：`pending_for()` 忽略旧 turn
+  记录，多候选 delivery batch 直接 fail closed，不再随便拿第一个。新增
+  multi-batch reducer 回归测试和真实 log recovery 测试，证明 stale
+  attempted batch 不会遮住当前 turn 的 safe replay。顺手删掉已死的
+  `_require_open_state()`，compaction policy import 提到模块顶层。
 
 验证：
 
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - `python -m pytest -q`
-  （`3669 passed, 4 skipped, 1289 subtests passed in 330.61s (0:05:30)`）
+  （`3671 passed, 4 skipped, 1289 subtests passed in 306.79s (0:05:06)`）
 
 ## 0.5.8 - Durable Operation Core
 
