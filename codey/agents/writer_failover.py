@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Callable
 
-from codey.runtime.cancellation import TaskCancelled
+from codey.runtime.core.cancellation import TaskCancelled
 from codey.providers.diagnostics import ProviderActionError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only

@@ -26,7 +26,7 @@ from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
-from codey.runtime.events import RunEvent, render_run_event
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.utils.references import find_reference_hints
 from codey.reviews.scan_report import render_scan_coverage

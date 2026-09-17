@@ -45,7 +45,7 @@ from codey.completion.contract import (
     safe_run_ref,
 )
 from codey.completion.edit_scope import is_document_path
-from codey.runtime.execution_evidence import CheckEvidence, ExecutionEvidence
+from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.completion.verification_policy import (
     check_covers_selected_candidate,

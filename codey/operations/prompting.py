@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.runtime.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 
 
 def prepend_ghost_directive(prompt: str, directive: str) -> str:

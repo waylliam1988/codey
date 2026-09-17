@@ -14,7 +14,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
 from codey.app import services as app_services
 from codey.app import server as codey_server

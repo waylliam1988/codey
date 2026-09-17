@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import flow as flow
 
 

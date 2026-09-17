@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.diagnostics import (
     ProviderActionError,
     ResponseMissing,

@@ -2,6 +2,45 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Runtime 减法（P0-P4，未发布）
+
+- 把 `codey/runtime/` 拆成五个包，依赖只准单向：
+  `core/`（operation 状态机、纯 reducer、契约）、
+  `log/`（session log、投影、标准 `SessionView`、compaction）、
+  `effects/`（effect/delivery 账本、replay policy）、
+  `write/`（mutation line、drive 探针、task runtime）、
+  `observe/`（events、evidence、prompt surface、terminalizer）。
+  冷启动不保留任何兼容 shim，生产、测试、manual harness 和 tools 的
+  import 在同一改动里全部迁到新路径。
+- 新增标准运行时读模型 `log/session_view.py`：
+  `load_session_view()` 把 durable entries 只解析一次成
+  `SessionView(state, effects, batches)`。`write/drive.py` 和所有 mutation
+  builder 只读 view，不再各自解析。
+- 把 `write/mutation_line.py` 的闭包掏成纯 `_build_*_rows()` helper。
+  公开方法名、参数顺序、抛出的异常全部不变；`SessionLog.mutate()` 仍然只能
+  从 mutation line 和 session log 到达（`tests/test_architecture.py` 锁死）。
+- Compaction 保留策略下沉：保留规则归
+  `effects/effect_records.keep_effect_pair_for_compaction()` 和
+  `effects/tool_result_delivery.keep_delivery_entry_for_compaction()` 所有；
+  `log/compaction.py` 只做分组、open 判断和 rebatch。
+- 迁移 in-flight 事实的 Source of Truth（冷启动，无兼容）：
+  `RuntimeOperationState` 不再存储 `pending_effect_*` /
+  `pending_delivery_batch_id`，`completion_proof_satisfied` 改为从 proof
+  status 派生（`complete` 即满足）。派生 pending 经由
+  `log/session_view.pending_for()`；operation payload 升到 schema version 2，
+  v1 payload fail closed。畸形 completion proof 的校验移到 project
+  completion 提交边界，仍然 fail closed。
+- 收紧架构门禁：`SessionView` 锁死三字段，`write/` 与 `observe/` 互禁
+  import，平铺残留 `codey/runtime/*.py` 断言不存在，event matrix 的模块
+  单元格同步到新路径。
+
+验证：
+
+- `python -m compileall -q codey tests`（通过）
+- `ruff check .`（通过）
+- `python -m pytest -q`
+  （`3669 passed, 4 skipped, 1289 subtests passed in 330.61s (0:05:30)`）
+
 ## 0.5.8 - Durable Operation Core
 
 - 让 `POST /api/ui_state` 接受同源但不带 `Origin` 的 `sendBeacon()` 请求，

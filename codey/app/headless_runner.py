@@ -17,7 +17,7 @@ from typing import Any, Callable
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.runner import run as default_agent_run
 from codey.workspace.changes import collect_changes as default_collect_changes
-from codey.runtime.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
+from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers import (

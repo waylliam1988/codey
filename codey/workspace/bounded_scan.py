@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 
 
 DEFAULT_MAX_SCAN_FILES = 1_000

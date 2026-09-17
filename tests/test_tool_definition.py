@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.runtime.models import ToolCall
+from codey.runtime.core.models import ToolCall
 from codey.protocols import JsonToolCodec
 from codey.tool_prompt import render_coding_tool_contract_text as render_tool_contract
 

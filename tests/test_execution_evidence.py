@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.events import RunEvent
-from codey.runtime.execution_evidence import ExecutionEvidence, check_failure_summary
-from codey.runtime.models import ToolCall
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.execution_evidence import ExecutionEvidence, check_failure_summary
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 from codey.runs.work_checkpoint import CheckpointCheck
 

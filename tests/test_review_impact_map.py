@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.reviews.impact_map import render_review_impact_map, safe_review_impact_map
 
 

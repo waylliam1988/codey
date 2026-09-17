@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.replay_policy import (
+from codey.runtime.effects.replay_policy import (
     REPLAYABLE_SAFE_TOOL_NAMES,
     ReplayClass,
     SAFE_RUNTIME_TOOL_NAMES,
@@ -14,7 +14,7 @@ from codey.runtime.replay_policy import (
     repair_replay_policy,
     tool_replay_policy,
 )
-from codey.runtime.replay_args import REPLAY_ARG_TOOL_NAMES
+from codey.runtime.effects.replay_args import REPLAY_ARG_TOOL_NAMES
 from codey.toolchain.definition import (
     READ_ONLY_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,

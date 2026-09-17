@@ -17,7 +17,7 @@ import re
 from typing import Callable, Iterable, Protocol
 import uuid
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.ghost.event_log import (
     GhostEventLog,
     compact_result_payload as _compact_payload,

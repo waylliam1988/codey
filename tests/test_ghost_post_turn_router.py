@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
 from codey.agents.runner import RunResult
 from codey.workspace.changes import collect_changes as collect_project_changes

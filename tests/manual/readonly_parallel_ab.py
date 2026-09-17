@@ -35,7 +35,7 @@ if str(ROOT) not in sys.path:
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
-from codey.runtime.models import ToolCall
+from codey.runtime.core.models import ToolCall
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers.registry import connect_provider, provider_ids
 from codey.toolchain.runtime import ToolOutcome

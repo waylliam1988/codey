@@ -21,7 +21,7 @@ if __package__ in (None, ""):
 
 from codey.agents.protocol import protocol_repair_prompt
 from codey.providers import controls as provider_controls
-from codey.runtime.models import ToolPlan
+from codey.runtime.core.models import ToolPlan
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import _balanced_json_objects
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids

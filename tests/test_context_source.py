@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.workspace.context_source import (
     FAILURE_POLICY_RAISE,
     ContextSource,

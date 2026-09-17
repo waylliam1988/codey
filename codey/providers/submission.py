@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
 
 

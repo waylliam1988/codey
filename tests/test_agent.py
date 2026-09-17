@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.agents import context as agent_context
 from codey.agents import protocol as agent_protocol
 from codey.agents import runner as agent
@@ -14,7 +14,7 @@ from codey.agents.request import DEFAULT_MAX_TURNS, AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.protocols import JsonToolCodec
-from codey.runtime.events import render_run_event
+from codey.runtime.observe.events import render_run_event
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.runs.trace import RunTraceStore
 from codey.toolchain import runtime as tool_runtime

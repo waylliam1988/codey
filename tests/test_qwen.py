@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import revival as provider_revival
 from codey.storage.local_store import read_json, write_json_atomic
 from codey.providers.diagnostics import ControlMissing

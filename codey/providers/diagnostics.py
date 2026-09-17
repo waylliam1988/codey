@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.flow import (
     STAGE_COMPLETION,
     STAGE_INPUT,

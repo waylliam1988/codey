@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.automation.browser import DEFAULT_PORT
 from codey.providers.diagnostics import sanitize_failure_facts

@@ -30,7 +30,7 @@ from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_STATUSES as _EDIT_INTEGRITY_STATUSES,
 )
 from codey.workspace.context_epoch import admission_from_rendered_source, valid_context_epoch_ref
-from codey.runtime.prompt_envelope import is_model_boundary_freshness
+from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
@@ -624,7 +624,7 @@ class RunTraceRecorder:
 
     def _append_prompt_surface(self, payload: Mapping[str, object]) -> bool:
         try:
-            from codey.runtime.prompt_surface import validate_prompt_surface_payload
+            from codey.runtime.observe.prompt_surface import validate_prompt_surface_payload
         except Exception:
             return False
         if not isinstance(payload, Mapping):

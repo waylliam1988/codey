@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.utils.text_budget import clip_middle
 
 FAILURE_POLICY_OMIT = "omit"

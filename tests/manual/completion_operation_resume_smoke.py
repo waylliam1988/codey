@@ -29,15 +29,15 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.runtime.operation_state import (
+from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
 )
-from codey.runtime.session_projection import reduce_session
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.log.session_projection import reduce_session
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runs.details import load_run_details
 
 
@@ -76,7 +76,7 @@ def _resuming_writer(_request):
 
 
 def _writer_event():
-    from codey.runtime.events import RunEvent
+    from codey.runtime.observe.events import RunEvent
 
     return RunEvent.status("[smoke] writer running")
 

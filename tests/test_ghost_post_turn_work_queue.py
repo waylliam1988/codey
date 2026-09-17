@@ -478,8 +478,8 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         # Real observable facts (edit + passing check): under 0.4.13 a
         # claimed green with no local observation would block this run.
         def _fake_agent_run(request: AgentRequest):
-            from codey.runtime.events import RunEvent
-            from codey.runtime.models import ToolCall
+            from codey.runtime.observe.events import RunEvent
+            from codey.runtime.core.models import ToolCall
             from codey.toolchain.runtime import ToolOutcome
 
             request.on_event(RunEvent.tool_finished(

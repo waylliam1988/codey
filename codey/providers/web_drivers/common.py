@@ -12,7 +12,7 @@ import re
 import time
 from typing import Any, Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.controls import (
     CONTROL_MESSAGE_BOX,
     locate_control,

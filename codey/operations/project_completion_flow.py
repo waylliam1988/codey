@@ -63,15 +63,15 @@ from codey.runs.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
 )
-from codey.runtime import cancellation
-from codey.runtime.operation_state import (
+from codey.runtime.core import cancellation
+from codey.runtime.core.operation_state import (
     LEAF_COMPLETION_PROOF_RECORDED,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.events import RunEvent
-from codey.runtime.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.session_log import RuntimeLogError
-from codey.runtime.terminalizer import task_done_event
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.log.session_log import RuntimeLogError
+from codey.runtime.observe.terminalizer import task_done_event
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
@@ -1100,6 +1100,11 @@ def _completion_evidence(
 def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
     if proof is None:
         return
+    if not isinstance(getattr(proof, "satisfied", None), bool):
+        raise ProjectRuntimeMutationError(
+            "runtime mutation failed while committing record_completion_proof: "
+            "proof_satisfied must be a bool"
+        )
     _commit_runtime_operation(
         ctx,
         "record_completion_proof",
@@ -1108,7 +1113,6 @@ def _commit_operation_proof(ctx: _ProjectRun, proof: object) -> None:
             run_id,
             proof_ref=getattr(proof, "proof_id", ""),
             proof_status=getattr(proof, "status", ""),
-            proof_satisfied=getattr(proof, "satisfied", None),
         ),
     )
 

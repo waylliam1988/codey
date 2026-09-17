@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.workspace.context_epoch import (
     PROVIDER_TURN_ADMISSION,
     PROVIDER_TURN_BOUNDARY,
@@ -217,7 +217,7 @@ def _build_validated_surface_payload(
     try:
         import hashlib
 
-        from codey.runtime.prompt_surface import (
+        from codey.runtime.observe.prompt_surface import (
             PromptSurfaceSection,
             build_prompt_surface_record,
             validate_prompt_surface_payload,

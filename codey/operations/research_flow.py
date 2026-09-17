@@ -31,8 +31,8 @@ from codey.research.topic_continuity import (
     MAX_TOPIC_CLAIM_REFS,
     project_topic_continuity,
 )
-from codey.runtime import cancellation
-from codey.runtime.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.core import cancellation
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 
 
 @dataclass(frozen=True)

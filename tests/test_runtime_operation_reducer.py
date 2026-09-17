@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
     RuntimeEffectProjection,
     RuntimeEffectSettlement,
 )
-from codey.runtime.operation_reducer import (
+from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
     ACTION_FAIL_INVARIANT,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
@@ -18,7 +18,7 @@ from codey.runtime.operation_reducer import (
     ACTION_TERMINAL,
     next_runtime_action,
 )
-from codey.runtime.operation_state import (
+from codey.runtime.core.operation_state import (
     DRIVER_WRITER,
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
@@ -36,8 +36,9 @@ from codey.runtime.operation_state import (
     lane_for_run,
     operation_id_for_run,
 )
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_view import SessionView
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     DeliveryBatchProjection,
@@ -168,9 +169,18 @@ def _batch(
     )
 
 
+def _view(
+    state: RuntimeOperationState | None,
+    *,
+    effects: tuple[RuntimeEffectProjection, ...] = (),
+    batches: tuple[DeliveryBatchProjection, ...] = (),
+) -> SessionView:
+    return SessionView(state=state, effects=effects, batches=batches)
+
+
 class RuntimeOperationReducerTests(unittest.TestCase):
     def test_missing_state_fails_closed(self) -> None:
-        action = next_runtime_action(None)
+        action = next_runtime_action(_view(None))
 
         self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
         self.assertEqual(action.reason, "missing_operation_state")
@@ -189,22 +199,23 @@ class RuntimeOperationReducerTests(unittest.TestCase):
 
         for leaf, kind in expected.items():
             with self.subTest(leaf=leaf):
-                action = next_runtime_action(_state(leaf))
+                action = next_runtime_action(_view(_state(leaf)))
                 self.assertEqual(action.kind, kind)
                 self.assertEqual(action.leaf, leaf)
 
     def test_provider_pending_without_settlement_records_unknown_provider_outcome(self) -> None:
+        items = (DeliveryBatchItem(0, "read", "eff-read", "safe", False),)
         state = _state(
             LEAF_PROVIDER_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-            pending_effect_ids=("eff-provider",),
-            pending_delivery_batch_id="batch-1",
         )
 
         action = next_runtime_action(
-            state,
-            effects=(_provider_projection("eff-provider"),),
+            _view(
+                state,
+                effects=(_provider_projection("eff-provider"),),
+                batches=(_batch("batch-1", items, send_attempts=("eff-provider",)),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_SETTLE_PROVIDER_UNKNOWN)
@@ -214,11 +225,11 @@ class RuntimeOperationReducerTests(unittest.TestCase):
 
     def test_provider_pending_missing_intent_fails_invariant(self) -> None:
         action = next_runtime_action(
-            _state(
-                LEAF_PROVIDER_EFFECT_PENDING,
-                driver=DRIVER_WRITER,
-                pending_effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                pending_effect_ids=("missing-provider",),
+            _view(
+                _state(
+                    LEAF_PROVIDER_EFFECT_PENDING,
+                    driver=DRIVER_WRITER,
+                )
             )
         )
 
@@ -229,13 +240,13 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_PROVIDER_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-            pending_effect_ids=("eff-provider",),
         )
 
         action = next_runtime_action(
-            state,
-            effects=(_provider_projection("eff-provider", settled=True),),
+            _view(
+                state,
+                effects=(_provider_projection("eff-provider", settled=True),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
@@ -249,23 +260,22 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_TOOL_CALL,
-            pending_effect_ids=("eff-read", "eff-search"),
-            pending_delivery_batch_id="batch-safe",
             turn=1,
         )
 
         action = next_runtime_action(
-            state,
-            effects=(
-                _tool_projection("eff-read", tool_name="read", replay_args={"path": "target.py"}),
-                _tool_projection(
-                    "eff-search",
-                    tool_name="search",
-                    replay_args={"path": ".", "query": "target"},
+            _view(
+                state,
+                effects=(
+                    _tool_projection("eff-read", tool_name="read", replay_args={"path": "target.py"}),
+                    _tool_projection(
+                        "eff-search",
+                        tool_name="search",
+                        replay_args={"path": ".", "query": "target"},
+                    ),
                 ),
-            ),
-            delivery_batches=(_batch("batch-safe", items),),
+                batches=(_batch("batch-safe", items),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_REPLAY_SAFE_TOOL_BATCH)
@@ -274,15 +284,14 @@ class RuntimeOperationReducerTests(unittest.TestCase):
 
     def test_tool_pending_fails_when_delivery_batch_is_missing(self) -> None:
         action = next_runtime_action(
-            _state(
-                LEAF_TOOL_EFFECT_PENDING,
-                driver=DRIVER_WRITER,
-                pending_effect_category=EFFECT_CATEGORY_TOOL_CALL,
-                pending_effect_ids=("eff-read",),
-                pending_delivery_batch_id="missing-batch",
-                turn=1,
-            ),
-            effects=(_tool_projection("eff-read"),),
+            _view(
+                _state(
+                    LEAF_TOOL_EFFECT_PENDING,
+                    driver=DRIVER_WRITER,
+                    turn=1,
+                ),
+                effects=(_tool_projection("eff-read"),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
@@ -296,16 +305,15 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_TOOL_CALL,
-            pending_effect_ids=("eff-read",),
-            pending_delivery_batch_id="batch-denied",
             turn=1,
         )
 
         action = next_runtime_action(
-            state,
-            effects=(_tool_projection("eff-read"),),
-            delivery_batches=(_batch("batch-denied", items),),
+            _view(
+                state,
+                effects=(_tool_projection("eff-read"),),
+                batches=(_batch("batch-denied", items),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS)
@@ -316,14 +324,11 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_TOOL_CALL,
-            pending_effect_ids=("eff-read",),
-            pending_delivery_batch_id="batch-safe",
             task_kind="chat",
             turn=1,
         )
 
-        action = next_runtime_action(state, effects=(_tool_projection("eff-read"),))
+        action = next_runtime_action(_view(state, effects=(_tool_projection("eff-read"),)))
 
         self.assertEqual(action.kind, ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS)
         self.assertEqual(action.reason, "task_kind_not_replayable")
@@ -332,13 +337,10 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_EFFECT_PENDING,
             driver=DRIVER_WRITER,
-            pending_effect_category=EFFECT_CATEGORY_TOOL_CALL,
-            pending_effect_ids=("eff-read",),
-            pending_delivery_batch_id="batch-safe",
             turn=1,
         )
 
-        action = next_runtime_action(state, effects=(_tool_projection("eff-read", settled=True),))
+        action = next_runtime_action(_view(state, effects=(_tool_projection("eff-read", settled=True),)))
 
         self.assertEqual(action.kind, ACTION_FAIL_INVARIANT)
         self.assertEqual(action.reason, "settled_tool_effect_still_pending")
@@ -348,13 +350,14 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_DELIVERY_PENDING,
             driver=DRIVER_WRITER,
-            pending_delivery_batch_id="batch-safe",
             turn=1,
         )
 
         action = next_runtime_action(
-            state,
-            delivery_batches=(_batch("batch-safe", items),),
+            _view(
+                state,
+                batches=(_batch("batch-safe", items),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_REPLAY_SAFE_TOOL_BATCH)
@@ -365,13 +368,14 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         state = _state(
             LEAF_TOOL_DELIVERY_PENDING,
             driver=DRIVER_WRITER,
-            pending_delivery_batch_id="batch-safe",
             turn=1,
         )
 
         action = next_runtime_action(
-            state,
-            delivery_batches=(_batch("batch-safe", items, send_attempts=("eff-provider",)),),
+            _view(
+                state,
+                batches=(_batch("batch-safe", items, send_attempts=("eff-provider",)),),
+            )
         )
 
         self.assertEqual(action.kind, ACTION_CONTINUE)
@@ -381,26 +385,20 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         fixtures: dict[str, dict[str, object]] = {
             LEAF_PROVIDER_EFFECT_PENDING: {
                 "driver": DRIVER_WRITER,
-                "pending_effect_category": EFFECT_CATEGORY_PROVIDER_SEND,
-                "pending_effect_ids": ("missing-provider",),
             },
             LEAF_TOOL_EFFECT_PENDING: {
                 "driver": DRIVER_WRITER,
-                "pending_effect_category": EFFECT_CATEGORY_TOOL_CALL,
-                "pending_effect_ids": ("missing-tool",),
-                "pending_delivery_batch_id": "missing-batch",
                 "turn": 1,
             },
             LEAF_TOOL_DELIVERY_PENDING: {
                 "driver": DRIVER_WRITER,
-                "pending_delivery_batch_id": "missing-batch",
                 "turn": 1,
             },
         }
 
         for leaf in sorted(LEAVES):
             with self.subTest(leaf=leaf):
-                action = next_runtime_action(_state(leaf, **fixtures.get(leaf, {})))
+                action = next_runtime_action(_view(_state(leaf, **fixtures.get(leaf, {}))))
                 self.assertNotEqual(action.reason, "unhandled_leaf")
 
 

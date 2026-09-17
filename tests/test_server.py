@@ -21,14 +21,14 @@ from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers import profile_doctor
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.workspace.changes import ChangeTracker
 from codey.workspace import changes
 from codey.agents.consensus import ConsensusAdvice, ConsensusResult
-from codey.runtime.events import RunEvent, run_event_payload, run_event_ui_payload
+from codey.runtime.observe.events import RunEvent, run_event_payload, run_event_ui_payload
 from codey.agents.handoff import ConversationSnapshot
 from codey.knowledge import KnowledgeNote, KnowledgeStore
-from codey.runtime.models import ToolCall
+from codey.runtime.core.models import ToolCall
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
@@ -2798,7 +2798,7 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
     def test_state_owns_runtime_operation_store_and_forget_deletes_it(self) -> None:
-        from codey.runtime.operation_state import RuntimeOperationStore
+        from codey.runtime.core.operation_state import RuntimeOperationStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
@@ -2819,7 +2819,7 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertIsNone(state.runtime_operations.load("session-forget", "run-forget"))
 
     def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
-        from codey.runtime.operation_state import RuntimeOperationStore
+        from codey.runtime.core.operation_state import RuntimeOperationStore
 
         state = server.AppContext()
         self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)

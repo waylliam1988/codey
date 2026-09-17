@@ -14,8 +14,8 @@ if __package__ in (None, ""):
 from codey.agents.runner import run
 from codey.providers import controls as provider_controls
 from codey.workspace.changes import ChangeTracker, collect_changes
-from codey.runtime.events import render_run_event
-from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.events import render_run_event
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import (
     has_reviewable_changes,

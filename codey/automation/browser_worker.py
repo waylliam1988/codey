@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any, Callable, TypeVar
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 
 T = TypeVar("T")
 _POLL_INTERVAL = 0.05

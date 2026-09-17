@@ -13,9 +13,9 @@ from codey.operations.project_completion_flow import record_review_input_prepare
 from codey.operations.result import ModeOutcome
 from codey.reviews.core import has_reviewable_changes
 from codey.reviews.impact_map import safe_review_impact_map
-from codey.runtime import cancellation
-from codey.runtime.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
-from codey.runtime.terminalizer import task_done_event
+from codey.runtime.core import cancellation
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
+from codey.runtime.observe.terminalizer import task_done_event
 
 
 @dataclass(frozen=True)

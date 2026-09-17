@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codey.runtime.events import RunEvent
+from codey.runtime.observe.events import RunEvent
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,

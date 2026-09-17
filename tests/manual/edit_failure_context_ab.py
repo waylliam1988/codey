@@ -23,7 +23,7 @@ from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
-from codey.runtime.events import RunEvent, render_run_event
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from tests.manual.project_task_context import render_production_project_map
 

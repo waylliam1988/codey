@@ -25,8 +25,8 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
 )
-from codey.runtime.events import RunEvent
-from codey.runtime.models import ToolCall, ToolResult
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
@@ -123,7 +123,7 @@ def evaluate_tool_call_policy_for(
         if policy_subject is not None
         else None
     )
-    from codey.runtime.replay_policy import tool_replay_policy
+    from codey.runtime.effects.replay_policy import tool_replay_policy
     is_denied = policy_denied(policy_decision)
     is_approval = (call.name == "shell") and policy_asks_user(policy_decision)
     replay_decision = tool_replay_policy(
@@ -163,14 +163,14 @@ def build_tool_call_intent(
 ) -> Any | None:
     if session.runtime_mutations is None or not session.session_id or not session.run_id:
         return None
-    from codey.runtime.effect_records import (
+    from codey.runtime.effects.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
         RuntimeEffectIntent,
         compute_args_digest,
         new_effect_id,
     )
-    from codey.runtime.replay_policy import ReplayClass, is_replayable_safe_tool
-    from codey.runtime.safe_tool_replay import replay_args_for_tool_call
+    from codey.runtime.effects.replay_policy import ReplayClass, is_replayable_safe_tool
+    from codey.runtime.effects.safe_tool_replay import replay_args_for_tool_call
 
     effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.run_id)
     display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
@@ -208,7 +208,7 @@ def settle_tool_call_effect(
     mutations = session.runtime_mutations
     if mutations is None or not effect_id or not session.session_id or not session.run_id:
         return
-    from codey.runtime.effect_records import (
+    from codey.runtime.effects.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
         RuntimeEffectSettlement,
         SETTLEMENT_STATUS_ERROR,

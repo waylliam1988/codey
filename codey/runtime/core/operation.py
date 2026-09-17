@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from codey.runtime.outcome import OperationOutcome
+from codey.runtime.core.outcome import OperationOutcome
 
 @dataclass(frozen=True)
 class OperationIntent:

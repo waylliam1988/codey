@@ -9,7 +9,7 @@ from codey.tool_prompt import (
 )
 from codey.toolchain import definition as tool_defs
 from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
-from codey.runtime.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.tool_args_repair import (
     ToolArgLimits,
     ToolArgsRepairError,

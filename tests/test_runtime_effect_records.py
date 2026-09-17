@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
@@ -16,16 +16,17 @@ from codey.runtime.effect_records import (
     compute_args_digest,
     new_effect_id,
 )
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import (
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.operation_state import (
     DRIVER_WRITER,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
 )
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeLogWriteError, RuntimeSessionLog
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeLogWriteError, RuntimeSessionLog
+from codey.runtime.log.session_view import load_session_view, pending_for
 
 
 def _commit_log_entry(
@@ -98,7 +99,14 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         pending = self.operations.load(self.session_id, self.run_id)
         assert pending is not None
         self.assertEqual(pending.leaf, LEAF_PROVIDER_EFFECT_PENDING)
-        self.assertEqual(pending.pending_effect_ids, (effect_id,))
+        derived = pending_for(
+            load_session_view(
+                self.log.entries(self.session_id),
+                session_id=self.session_id,
+                run_id=self.run_id,
+            )
+        )
+        self.assertEqual(derived.effect_ids, (effect_id,))
 
         self.line.settle_provider_effect(
             self.session_id,
@@ -123,7 +131,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.assertEqual(effects[0].settlement.status, SETTLEMENT_STATUS_OK)
 
     def test_tool_intent_and_settlement_commit_with_delivery_pending(self) -> None:
-        from codey.runtime.tool_result_delivery import (
+        from codey.runtime.effects.tool_result_delivery import (
             DeliveryBatchIntent,
             DeliveryBatchItem,
             compute_batch_digest,
@@ -221,7 +229,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             replay_class=ReplayClass.SAFE,
             replay_args={"path": "foo/bar.py", "offset": 10},
         )
-        from codey.runtime.tool_result_delivery import (
+        from codey.runtime.effects.tool_result_delivery import (
             DeliveryBatchIntent,
             DeliveryBatchItem,
             compute_batch_digest,
@@ -258,7 +266,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             )
 
     def test_projection_rejects_duplicate_and_orphan_records(self) -> None:
-        from codey.runtime.operation_state import lane_for_run, operation_id_for_run
+        from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 
         lane = lane_for_run(self.run_id)
         op_id = operation_id_for_run(self.run_id)
@@ -319,7 +327,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
             ),
         )
 
-        from codey.runtime.tool_result_delivery import (
+        from codey.runtime.effects.tool_result_delivery import (
             DeliveryBatchIntent,
             DeliveryBatchItem,
             compute_batch_digest,

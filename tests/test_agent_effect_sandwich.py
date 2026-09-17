@@ -30,7 +30,7 @@ from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps, _start_run_operation
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
     RuntimeEffectStore,
@@ -38,19 +38,19 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime import cancellation
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import (
+from codey.runtime.core import cancellation
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
     lane_for_run,
     mark_tool_effect_pending,
     operation_id_for_run,
 )
-from codey.runtime.models import ToolCall
-from codey.runtime.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     ToolResultDeliveryStore,
@@ -1085,7 +1085,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(proj.settlement.replayed_from_effect_id, eff_read)
 
     def test_resume_replay_uses_writer_profile_for_task_kind(self) -> None:
-        from codey.runtime.replay_policy import tool_replay_policy
+        from codey.runtime.effects.replay_policy import tool_replay_policy
 
         test_file = self.project_dir / "target.txt"
         test_file.write_text("file content to read", encoding="utf-8")
@@ -1263,9 +1263,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         assert current is not None
         pending = mark_tool_effect_pending(
             current,
-            effect_ids=(eff_id,),
             driver="writer",
-            delivery_batch_id=batch_id,
             turn=1,
         )
         _commit_log_entry(

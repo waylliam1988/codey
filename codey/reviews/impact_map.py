@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.change_set import ChangeSet
 from codey.workspace.changed_symbols import ChangedSymbol, changed_symbols_from_changes

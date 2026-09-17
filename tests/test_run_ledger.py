@@ -10,8 +10,8 @@ from codey.app import server
 from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.runtime.events import RunEvent
-from codey.runtime.models import ToolCall
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.core.models import ToolCall
 from codey.runs.ledger import (
     RunLedgerStore,
     RunLedgerWriter,

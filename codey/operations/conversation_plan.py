@@ -10,7 +10,7 @@ from codey.agents.handoff import (
     render_recovered_handoff,
 )
 from codey.task.kind import conversation_mode
-from codey.runtime.prompt_envelope import record_provider_send_prompt
+from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 
 
 @dataclass(frozen=True)

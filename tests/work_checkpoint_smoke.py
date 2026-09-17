@@ -19,7 +19,7 @@ if __package__ in (None, ""):
 
 from codey.agents.runner import run
 from codey.workspace.changes import ChangeTracker, collect_changes
-from codey.runtime.events import RunEvent, render_run_event
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import (
     parse_review_with_repair,

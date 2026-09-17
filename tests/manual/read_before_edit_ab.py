@@ -17,7 +17,7 @@ from codey.agents import loop as agent_loop
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
-from codey.runtime.events import RunEvent, render_run_event
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from tests.manual.project_task_context import render_production_project_map
 

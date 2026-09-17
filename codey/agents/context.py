@@ -11,7 +11,7 @@ from codey.completion.repair_context import (
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
 )
 from codey.policies.permissions import allows_context_source
-from codey.runtime.prompt_envelope import (
+from codey.runtime.observe.prompt_envelope import (
     PromptEnvelope,
     PromptEnvelopeSection,
     RenderedPromptSection,

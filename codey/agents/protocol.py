@@ -18,7 +18,7 @@ from codey.protocols.json_codec import (
     PROTOCOL_UNKNOWN_TOOL,
     _balanced_json_objects,
 )
-from codey.runtime.models import ToolCall, ToolPlan
+from codey.runtime.core.models import ToolCall, ToolPlan
 from codey.toolchain.runtime import EditBlock, safe_join
 
 VERIFICATION_REQUEST_RE = re.compile(

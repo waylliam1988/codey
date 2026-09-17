@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.profiles import ProviderProfile
 
 

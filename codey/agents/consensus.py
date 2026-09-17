@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.agents.handoff import ConversationSnapshot
-from codey.runtime.models import ToolCall, ToolResult
-from codey.runtime.prompt_envelope import record_provider_send_prompt
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.protocols import JsonToolCodec
 from codey.utils.references import find_reference_hints
 from codey.toolchain.runtime import (

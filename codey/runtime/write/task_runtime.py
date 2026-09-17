@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from codey.runtime.operation import OperationContext, OperationIntent
-from codey.runtime.operation_state import lane_for_run, operation_id_for_run
-from codey.runtime.outcome import OperationOutcome
-from codey.runtime.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.core.operation import OperationContext, OperationIntent
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
+from codey.runtime.core.outcome import OperationOutcome
+from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.task.kind import resolve_task_kind
 from codey.task.model import TaskSubmission
 

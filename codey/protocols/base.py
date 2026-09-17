@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from codey.runtime.models import ToolPlan, ToolResult
+from codey.runtime.core.models import ToolPlan, ToolResult
 
 
 class ProtocolCodec(Protocol):

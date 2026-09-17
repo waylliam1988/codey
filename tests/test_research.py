@@ -13,11 +13,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.automation import browser_worker
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.agents.consensus import ConsensusAdvice
-from codey.runtime.events import RunEvent, run_event_payload
+from codey.runtime.observe.events import RunEvent, run_event_payload
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
-from codey.runtime.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
 from codey.research import browser_search
 from codey.research.browser_search import BrowserSearchProvider, RESEARCH_CDP_PORT, RESEARCH_PROFILE
@@ -5022,7 +5022,7 @@ class NetworkPolicyTests(unittest.TestCase):
 
     def test_fetch_on_browser_thread_discards_page_on_cancellation(self) -> None:
         from codey.research.browser_search import BrowserSearchProvider
-        from codey.runtime import cancellation
+        from codey.runtime.core import cancellation
 
         provider = BrowserSearchProvider()
         mock_page = unittest.mock.MagicMock()
@@ -5040,7 +5040,7 @@ class NetworkPolicyTests(unittest.TestCase):
 
     def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
         from codey.research.browser_search import BrowserSearchProvider
-        from codey.runtime import cancellation
+        from codey.runtime.core import cancellation
 
         class FakeCloseablePage:
             def __init__(self) -> None:

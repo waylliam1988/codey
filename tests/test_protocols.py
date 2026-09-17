@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from codey.agents.runner import SUPPORTED_TOOL_NAMES
-from codey.runtime.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
     PROTOCOL_DISALLOWED_TOOL,

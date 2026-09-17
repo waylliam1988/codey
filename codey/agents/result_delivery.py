@@ -11,7 +11,7 @@ from __future__ import annotations
 from codey.agents.prompt_context import append_coding_context, send_prompt
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     ToolResultDeliveryError,

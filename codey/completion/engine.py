@@ -16,7 +16,7 @@ from codey.completion.edit_integrity import (
     observe_edit_integrity,
 )
 from codey.completion.verification import build_coding_completion_proof
-from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 
 COMPLETION_BLOCKED_NOTES = {

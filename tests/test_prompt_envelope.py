@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.workspace.context_source import ContextSource, render_context_sources_with_metadata
-from codey.runtime.prompt_envelope import (
+from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,

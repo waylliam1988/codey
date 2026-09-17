@@ -12,15 +12,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectProjection,
 )
-from codey.runtime.models import ToolCall
-from codey.runtime.replay_args import validate_replay_args_shape
-from codey.runtime.replay_policy import (
+from codey.runtime.core.models import ToolCall
+from codey.runtime.effects.replay_args import validate_replay_args_shape
+from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
 )

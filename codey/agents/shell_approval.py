@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
-from codey.runtime.models import ToolCall
+from codey.runtime.core.models import ToolCall
 
 
 MAX_DEFERRED_TOOL_CALLS = 8

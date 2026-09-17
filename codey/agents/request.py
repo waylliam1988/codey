@@ -12,8 +12,8 @@ from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.providers import ChatProvider
 from codey.protocols import ProtocolCodec
-from codey.runtime.events import RunEvent, print_run_event
-from codey.runtime.models import ToolCall
+from codey.runtime.observe.events import RunEvent, print_run_event
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
 DEFAULT_MAX_TURNS = 50

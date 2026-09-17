@@ -11,7 +11,7 @@ from codey.providers import send_loop
 from codey.providers.diagnostics import ResponseMissing
 from codey.providers.submission import SendAttempt, confirm_submission
 from codey.providers.submission import SubmissionUncertain
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 
 
 def wait_for_stable_completion(

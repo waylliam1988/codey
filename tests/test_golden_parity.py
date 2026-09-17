@@ -73,7 +73,7 @@ class GoldenParityTests(unittest.TestCase):
         from codey.research.controller import ResearchController, ResearchControlState
         from codey.research.protocols import JsonToolCodec as ResearchCodec
         from codey.research.runner import render_research_repair_prompt
-        from codey.runtime.models import ToolPlan
+        from codey.runtime.core.models import ToolPlan
 
         state = ResearchControlState(
             allowed_tools=("knowledge_search", "knowledge_read", "web_search", "open_result", "done"),

@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import (
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.operation_state import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
     KIND,
@@ -24,6 +24,7 @@ from codey.runtime.operation_state import (
     RuntimeOperationTransitionError,
     SCHEMA_VERSION,
     LEAVES,
+    completion_proof_satisfied,
     mark_completion_blocked,
     mark_completion_proof_recorded,
     mark_provider_effect_pending,
@@ -40,8 +41,8 @@ from codey.runtime.operation_state import (
     operation_progress_text,
     operation_state_from_entries,
 )
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.session_projection import reduce_session
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.session_projection import reduce_session
 
 PROOF_OK = "completion_proof:0123456789abcdef"
 PROOF_FAIL = "completion_proof:fedcba9876543210"
@@ -183,17 +184,21 @@ class RuntimeOperationStateTests(unittest.TestCase):
         self.assertEqual(projection.operations[terminal.operation_id].outcome, "completed")
         self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
 
-    def test_operation_state_payload_is_closed_schema_v1(self) -> None:
+    def test_operation_state_payload_is_closed_schema_v2(self) -> None:
         payload = _state(LEAF_ACCEPTED).to_payload()
         self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
         self.assertEqual(payload["kind"], KIND)
         self.assertEqual(RuntimeOperationState.from_payload(payload), _state(LEAF_ACCEPTED))
+        self.assertNotIn("pending_effect_ids", payload)
+        self.assertNotIn("pending_delivery_batch_id", payload)
+        self.assertNotIn("completion_proof_satisfied", payload)
 
         for key, value in (
-            ("schema_version", 2),
+            ("schema_version", SCHEMA_VERSION + 1),
             ("kind", "legacy"),
             ("raw_prompt", "never"),
             ("leaf", "retry_wait"),
+            ("pending_effect_ids", ["eff-1"]),
         ):
             with self.subTest(key=key):
                 mutated = dict(payload)
@@ -238,36 +243,31 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 run_id="run-1",
             )
 
-    def test_pending_provider_state_requires_one_effect_and_driver(self) -> None:
+    def test_pending_provider_state_requires_driver(self) -> None:
         state = mark_provider_effect_pending(
             mark_writer_running(_state(LEAF_ACCEPTED), provider_id="deepseek"),
-            effect_id="eff-provider",
             driver=DRIVER_WRITER,
             provider_id="deepseek",
             turn=1,
-            delivery_batch_id="batch-1",
         )
         self.assertEqual(state.leaf, LEAF_PROVIDER_EFFECT_PENDING)
-        self.assertEqual(state.pending_effect_ids, ("eff-provider",))
-        self.assertEqual(state.pending_delivery_batch_id, "batch-1")
+        self.assertNotIn("pending_effect_ids", state.to_payload())
+        self.assertNotIn("pending_delivery_batch_id", state.to_payload())
         self.assertEqual(
-            mark_provider_effect_settled(state, effect_id="eff-provider").leaf,
+            mark_provider_effect_settled(state).leaf,
             LEAF_WRITER_RUNNING,
         )
 
-    def test_pending_tool_state_tracks_remaining_effect_ids(self) -> None:
+    def test_pending_tool_state_advances_by_remaining_flag(self) -> None:
         state = mark_tool_effect_pending(
             mark_writer_running(_state(LEAF_ACCEPTED), provider_id="deepseek"),
-            effect_ids=("eff-read", "eff-edit"),
             driver=DRIVER_WRITER,
-            delivery_batch_id="batch-1",
             turn=2,
         )
         self.assertEqual(state.leaf, LEAF_TOOL_EFFECT_PENDING)
-        first = mark_tool_effect_settled(state, effect_id="eff-read")
+        first = mark_tool_effect_settled(state, has_remaining=True)
         self.assertEqual(first.leaf, LEAF_TOOL_EFFECT_PENDING)
-        self.assertEqual(first.pending_effect_ids, ("eff-edit",))
-        final = mark_tool_effect_settled(first, effect_id="eff-edit")
+        final = mark_tool_effect_settled(first, has_remaining=False)
         self.assertEqual(final.leaf, LEAF_TOOL_DELIVERY_PENDING)
         self.assertEqual(
             mark_tool_delivery_settled(final).leaf,
@@ -286,7 +286,6 @@ class RuntimeOperationStateTests(unittest.TestCase):
                     ),
                     proof_ref=PROOF_FAIL,
                     proof_status="failed",
-                    proof_satisfied=False,
                 ),
                 context_ref=CONTEXT_REF,
             ),
@@ -294,26 +293,23 @@ class RuntimeOperationStateTests(unittest.TestCase):
         )
         provider_pending = mark_provider_effect_pending(
             repair,
-            effect_id="eff-repair-provider",
             driver=DRIVER_REPAIR,
             provider_id="deepseek",
             turn=1,
         )
         self.assertEqual(provider_pending.leaf, LEAF_PROVIDER_EFFECT_PENDING)
         self.assertEqual(
-            mark_provider_effect_settled(provider_pending, effect_id="eff-repair-provider").leaf,
+            mark_provider_effect_settled(provider_pending).leaf,
             LEAF_REPAIR_RUNNING,
         )
         tool_pending = mark_tool_effect_pending(
             repair,
-            effect_ids=("eff-repair-read",),
             driver=DRIVER_REPAIR,
-            delivery_batch_id="batch-repair",
             turn=1,
         )
         self.assertEqual(
             mark_tool_delivery_settled(
-                mark_tool_effect_settled(tool_pending, effect_id="eff-repair-read")
+                mark_tool_effect_settled(tool_pending, has_remaining=False)
             ).leaf,
             LEAF_REPAIR_RUNNING,
         )
@@ -331,7 +327,6 @@ class RuntimeOperationStateTests(unittest.TestCase):
             ),
             proof_ref=PROOF_FAIL,
             proof_status="failed",
-            proof_satisfied=False,
         )
         blocked = mark_completion_blocked(proof, reason="blocked")
         terminal = mark_terminal(
@@ -361,7 +356,6 @@ class RuntimeOperationStateTests(unittest.TestCase):
             ),
             proof_ref=PROOF_OK,
             proof_status="complete",
-            proof_satisfied=True,
         )
         self.assertEqual(operation_progress_text(proof), "Finishing was interrupted")
         repair = mark_repair_context_admitted(
@@ -374,11 +368,36 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 ),
                 proof_ref=PROOF_FAIL,
                 proof_status="failed",
-                proof_satisfied=False,
             ),
             context_ref=CONTEXT_REF,
         )
         self.assertEqual(operation_progress_text(repair), "Stopped during repair")
+
+    def test_proof_satisfaction_derives_from_status(self) -> None:
+        self.assertIsNone(completion_proof_satisfied(_state(LEAF_WRITER_SETTLED)))
+        complete = mark_completion_proof_recorded(
+            mark_writer_settled(
+                mark_writer_running(_state(LEAF_ACCEPTED), provider_id="deepseek"),
+                provider_id="deepseek",
+                turns_used=1,
+                stop_reason="done",
+            ),
+            proof_ref=PROOF_OK,
+            proof_status="complete",
+        )
+        self.assertIs(completion_proof_satisfied(complete), True)
+        failed = mark_completion_proof_recorded(
+            mark_writer_settled(
+                mark_writer_running(_state(LEAF_ACCEPTED), provider_id="deepseek"),
+                provider_id="deepseek",
+                turns_used=1,
+                stop_reason="done",
+            ),
+            proof_ref=PROOF_FAIL,
+            proof_status="failed",
+        )
+        self.assertIs(completion_proof_satisfied(failed), False)
+        self.assertNotIn("completion_proof_satisfied", complete.to_payload())
 
     def test_all_v1_leaves_have_real_transition_coverage(self) -> None:
         reached = {

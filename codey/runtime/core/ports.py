@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from codey.runtime.outcome import OperationOutcome
+from codey.runtime.core.outcome import OperationOutcome
 from codey.task.model import TaskSubmission
 
 

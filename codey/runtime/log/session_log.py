@@ -278,7 +278,7 @@ class RuntimeSessionLog:
             return cached
 
         entries = self._read_unlocked(session_id, repair_tail=True)
-        from codey.runtime.session_projection import reduce_session
+        from codey.runtime.log.session_projection import reduce_session
 
         cache = _ProjectionCache(
             stamp=_file_stamp(path),
@@ -332,6 +332,8 @@ class RuntimeSessionLog:
             if entry.session_id != session_id:
                 raise RuntimeLogCorruption("runtime log entry session mismatch")
             entries.append(entry)
+        from codey.runtime.log.compaction import _complete_batch_prefix
+
         valid = _complete_batch_prefix(entries)
         if repair_tail and (bad_tail or len(valid) < len(entries)):
             write_bytes_atomic(path, b"".join(entry.to_json_line().encode("utf-8") for entry in valid))
@@ -353,7 +355,7 @@ class RuntimeSessionLog:
         path = self.path_for(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with with_file_lock(path):
-            from codey.runtime.session_projection import apply_entries, reduce_session
+            from codey.runtime.log.session_projection import apply_entries, reduce_session
 
             current_stamp = _file_stamp(path)
             current_size = current_stamp.file_size
@@ -391,6 +393,8 @@ class RuntimeSessionLog:
             candidate_projection = apply_entries(base_projection, rows)
             total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
             if current_size + total_new_bytes > max(0, self.max_log_bytes // 2):
+                from codey.runtime.log.compaction import _compact_entries
+
                 candidate = (*base_entries, *rows)
                 compacted = _compact_entries(candidate)
                 compacted_projection = reduce_session(compacted)
@@ -426,156 +430,3 @@ def _file_stamp(path: Path) -> _FileStamp:
         return _FileStamp(file_size=0, mtime_ns=0)
     return _FileStamp(file_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
 
-
-def _nonnegative_payload_int(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(value, 0)
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
-    return 0
-
-
-def _complete_batch_prefix(
-    entries: list[RuntimeLogEntry],
-) -> list[RuntimeLogEntry]:
-    valid: list[RuntimeLogEntry] = []
-    index = 0
-    while index < len(entries):
-        first = entries[index]
-        batch_id = first.batch_id
-        batch_count = first.batch_count
-        batch: list[RuntimeLogEntry] = []
-        for offset in range(batch_count):
-            row_index = index + offset
-            if row_index >= len(entries):
-                return valid
-            entry = entries[row_index]
-            if (
-                entry.batch_id != batch_id
-                or entry.batch_count != batch_count
-                or entry.batch_index != offset
-            ):
-                if row_index >= len(entries) - 1:
-                    return valid
-                raise RuntimeLogCorruption("runtime log batch is not contiguous")
-            batch.append(entry)
-        valid.extend(batch)
-        index += batch_count
-    return valid
-
-
-def _compact_entries(
-    entries: tuple[RuntimeLogEntry, ...],
-) -> tuple[RuntimeLogEntry, ...]:
-    """Keep the replay-equivalent task-operation spine and recovery facts."""
-    ordered_operations: list[str] = []
-    started: dict[str, RuntimeLogEntry] = {}
-    latest_state: dict[str, RuntimeLogEntry] = {}
-    settled: dict[str, RuntimeLogEntry] = {}
-    operation_effects: dict[str, list[RuntimeLogEntry]] = {}
-    delivery_effects: dict[str, list[RuntimeLogEntry]] = {}
-
-    for entry in entries:
-        if entry.kind == "operation_started":
-            if entry.operation_id not in started:
-                ordered_operations.append(entry.operation_id)
-            started[entry.operation_id] = entry
-            continue
-        if entry.kind == "operation_state":
-            latest_state[entry.operation_id] = entry
-            continue
-        if entry.kind == "operation_effect":
-            effect_kind = entry.payload.get("effect_kind")
-            if effect_kind == "runtime_effect":
-                operation_effects.setdefault(entry.operation_id, []).append(entry)
-            elif effect_kind == "tool_result_delivery":
-                delivery_effects.setdefault(entry.operation_id, []).append(entry)
-            continue
-        if entry.kind == "operation_settled":
-            settled[entry.operation_id] = entry
-    compacted: list[RuntimeLogEntry] = []
-    for operation_id in ordered_operations:
-        start = started.get(operation_id)
-        if start is None:
-            continue
-        compacted.append(start)
-        state = latest_state.get(operation_id)
-        if state is not None:
-            compacted.append(state)
-
-        is_open = operation_id not in settled
-        raw_effects = operation_effects.get(operation_id, [])
-        intents: dict[str, RuntimeLogEntry] = {}
-        settlements: dict[str, RuntimeLogEntry] = {}
-        ordered_effect_ids: list[str] = []
-
-        for eff in raw_effects:
-            eid = str(eff.payload.get("effect_id") or "")
-            rkind = eff.payload.get("record_kind")
-            if not eid:
-                continue
-            if rkind == "intent":
-                if eid not in intents:
-                    ordered_effect_ids.append(eid)
-                intents[eid] = eff
-            elif rkind == "settlement":
-                settlements[eid] = eff
-
-        for eid in ordered_effect_ids:
-            intent_entry = intents.get(eid)
-            settlement_entry = settlements.get(eid)
-            if intent_entry is None:
-                continue
-            if is_open:
-                compacted.append(intent_entry)
-                if settlement_entry is not None:
-                    compacted.append(settlement_entry)
-            else:
-                if settlement_entry is not None:
-                    status = settlement_entry.payload.get("status")
-                    sent_state = settlement_entry.payload.get("sent_state")
-                    replay_count = _nonnegative_payload_int(settlement_entry.payload.get("replay_count"))
-                    if status in {"interrupted", "error"} or sent_state == "maybe_sent" or replay_count > 0:
-                        compacted.append(intent_entry)
-                        compacted.append(settlement_entry)
-
-        raw_deliveries = delivery_effects.get(operation_id, [])
-        for deliv in raw_deliveries:
-            rkind = deliv.payload.get("record_kind")
-            bid = str(deliv.payload.get("batch_id") or "")
-            if not bid or not rkind:
-                continue
-            if is_open:
-                compacted.append(deliv)
-            else:
-                if rkind == "recovered":
-                    compacted.append(deliv)
-
-        finish = settled.get(operation_id)
-        if finish is not None:
-            compacted.append(finish)
-    return _rebatch(compacted)
-
-
-def _rebatch(entries: list[RuntimeLogEntry]) -> tuple[RuntimeLogEntry, ...]:
-    if not entries:
-        return ()
-    batch_id = f"batch-{uuid.uuid4().hex}"
-    batch_count = len(entries)
-    return tuple(
-        RuntimeLogEntry(
-            session_id=entry.session_id,
-            lane=entry.lane,
-            operation_id=entry.operation_id,
-            kind=entry.kind,
-            payload=dict(entry.payload),
-            entry_id=entry.entry_id,
-            created_at=entry.created_at,
-            batch_id=batch_id,
-            batch_index=index,
-            batch_count=batch_count,
-        )
-        for index, entry in enumerate(entries)
-    )

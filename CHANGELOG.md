@@ -2,6 +2,49 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Runtime subtraction (P0-P4, no release)
+
+- Split `codey/runtime/` into five packages with one-way instincts:
+  `core/` (operation state machine, pure reducer, contracts),
+  `log/` (session log, projection, canonical `SessionView`, compaction),
+  `effects/` (effect/delivery ledgers, replay policy),
+  `write/` (mutation line, drive probe, task runtime),
+  `observe/` (events, evidence, prompt surface, terminalizer).
+  No compatibility shims were kept; all production, test, manual-harness,
+  and tool imports moved to the new paths in the same change.
+- Added the canonical runtime read model `log/session_view.py`:
+  `load_session_view()` parses durable entries exactly once into
+  `SessionView(state, effects, batches)`. `write/drive.py` and every
+  mutation builder consume the view instead of re-parsing entries.
+- Slimmed `write/mutation_line.py` closures into pure `_build_*_rows()`
+  helpers. Public method names, argument order, and raised errors are
+  unchanged; `SessionLog.mutate()` stays reachable only from the mutation
+  line and the session log (enforced by `tests/test_architecture.py`).
+- Sank compaction retention policy out of the session log:
+  `effects/effect_records.keep_effect_pair_for_compaction()` and
+  `effects/tool_result_delivery.keep_delivery_entry_for_compaction()`
+  own the rules; `log/compaction.py` only groups, checks open state, and
+  rebatches.
+- Migrated the source of truth for in-flight facts (cold start, no
+  back-compat): `pending_effect_*` / `pending_delivery_batch_id` are no
+  longer stored on `RuntimeOperationState` and `completion_proof_satisfied`
+  is derived from proof status (`complete` satisfies). Derived pending facts
+  come from `log/session_view.pending_for()`; operation payloads are now
+  schema version 2 and v1 payloads fail closed. Proof-fact validation for
+  malformed completion proofs moved to the project completion commit
+  boundary, which still fails closed.
+- Hardened architecture gates: `SessionView` is locked to three fields,
+  `write/` and `observe/` must not import each other, flat
+  `codey/runtime/*.py` leftovers are asserted gone, and the event matrix
+  module cells track the new paths.
+
+Verification:
+
+- `python -m compileall -q codey tests` (passed)
+- `ruff check .` (passed)
+- `python -m pytest -q`
+  (`3669 passed, 4 skipped, 1289 subtests passed in 330.61s (0:05:30)`)
+
 ## 0.5.8 - Durable Operation Core
 
 - Let `POST /api/ui_state` accept same-origin `sendBeacon()` posts that omit

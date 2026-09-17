@@ -11,7 +11,7 @@ from codey.agents.request import AgentRequest
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
-from codey.runtime.events import RunEvent, render_run_event, run_event_ui_payload
+from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.workspace.config import ProjectConfigLoadResult
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.task_context import ProjectTaskContextBuilder

@@ -22,9 +22,9 @@ import hashlib
 from typing import Any
 import uuid
 
-from codey.runtime.operation_state import lane_for_run, operation_id_for_run
-from codey.runtime.replay_policy import is_replayable_safe_tool
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
+from codey.runtime.effects.replay_policy import is_replayable_safe_tool
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
 
 SCHEMA_VERSION = 1
 EFFECT_KIND = "tool_result_delivery"
@@ -396,6 +396,17 @@ class DeliveryBatchProjection:
             and not bool(self.send_attempts)
             and self.is_all_safe
         )
+
+
+def keep_delivery_entry_for_compaction(*, record_kind: str, is_open: bool) -> bool:
+    """Compaction retention policy for one delivery record.
+
+    Open operations keep every delivery record so resume can finish the
+    batch. Settled operations keep only recovered facts.
+    """
+    if is_open:
+        return True
+    return record_kind == RECORD_KIND_RECOVERED
 
 
 def prepare_batch_intent(
@@ -862,6 +873,7 @@ __all__ = [
     "delivered_entry",
     "delivery_record_entry",
     "iter_delivery_records_from_entries",
+    "keep_delivery_entry_for_compaction",
     "new_batch_id",
     "prepare_batch_intent",
     "recovered_entry",

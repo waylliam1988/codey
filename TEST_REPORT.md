@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Runtime subtraction P0-P4 (2026-09-18)
+
+Scope:
+
+```text
+P0:       architecture gates first (SessionView 3 fields, drive read-model
+          rule, mutate() two-file lock, write/observe separation)
+P1:       mutation_line closures slimmed into pure _build_*_rows helpers,
+          same signatures and errors, no read-path optimization
+P2:       canonical log/session_view.py SessionView; drive and all mutation
+          builders consume the view (single parse of durable entries)
+P3a:      compaction retention sunk to effects keep_* policies;
+          log/compaction.py only groups, checks open, rebatches
+P3b:      source-of-truth migration, cold start without compat:
+          pending_* removed from RuntimeOperationState, proof satisfaction
+          derived from status, payload schema v2, malformed-proof check at
+          the project completion commit boundary (still fail closed)
+P4:       physical move to runtime/{core,log,effects,write,observe} with no
+          shims; 173 files re-imported; event matrix cells track new paths
+docs:     CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries (no release)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+- Focused runtime gates (all green before the full run):
+  `pytest tests/test_architecture.py tests/test_events.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py tests/test_runtime_operation_reducer.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_runtime_operation_state.py tests/test_tool_result_delivery.py -q`
+  (`183 passed, 359 subtests passed`)
+  `pytest tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_safe_tool_replay.py tests/test_run_details.py tests/test_run_ledger.py tests/test_completion_verification.py tests/test_completion_engine.py tests/test_project_completion_flow_enforcement.py tests/test_execution_evidence.py tests/test_prompt_envelope.py tests/test_prompt_surface.py -q`
+  (`162 passed, 61 subtests passed`)
+- Full pytest suite:
+  `pytest -q`
+  (`3669 passed, 4 skipped, 1289 subtests passed in 330.61s (0:05:30)`)
+
 ## UI state beacon and approval cleanup fix (2026-09-06)
 
 Scope:

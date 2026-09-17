@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.storage.atomic_io import write_text_atomic
 from codey.policies.action import (
     ActionSubject,
@@ -34,7 +34,7 @@ from codey.workspace.bounded_scan import (
     iter_bounded_files,
 )
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
-from codey.runtime.models import (
+from codey.runtime.core.models import (
     json_safe_projection,
     model_text_with_audit_markers,
     normalized_managed_output,

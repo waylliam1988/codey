@@ -357,7 +357,7 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
 def test_cancellation_is_never_swallowed_by_the_builder() -> None:
     # Stop/cancel semantics must not depend on luck: the fail-open guard
     # covers projection failures only.
-    from codey.runtime import cancellation
+    from codey.runtime.core import cancellation
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

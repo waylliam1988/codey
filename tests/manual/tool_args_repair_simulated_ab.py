@@ -17,7 +17,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.protocols.json_codec import JsonToolCodec
-from codey.runtime.models import ToolPlan
+from codey.runtime.core.models import ToolPlan
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from codey.runtime.events import RunEvent
+from codey.runtime.observe.events import RunEvent
 from codey.storage.file_lock import with_file_lock
 from codey.runs.receipt import task_receipt_from_payload
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key

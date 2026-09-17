@@ -12,8 +12,8 @@ from codey.agents.request import AgentRequest, ChangeTracker
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
-from codey.runtime.events import RunEvent
-from codey.runtime.prompt_envelope import FailOpenPromptTrace, RenderedPromptSection
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, RenderedPromptSection
 from codey.workspace.context_source import RenderedContextSource
 
 

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
@@ -13,8 +13,8 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import (
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
@@ -31,9 +31,10 @@ from codey.runtime.operation_state import (
     new_operation_state,
     operation_started_entry,
 )
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.session_view import load_session_view, pending_for
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     ToolResultDeliveryStore,
@@ -204,7 +205,14 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertEqual({row.batch_id for row in rows}, {rows[0].batch_id})
         state = self.operations.load(self.session_id, self.run_id)
         self.assertEqual(state.leaf, LEAF_TOOL_EFFECT_PENDING)
-        self.assertEqual(state.pending_effect_ids, (read.effect_id, edit.effect_id))
+        pending = pending_for(
+            load_session_view(
+                self.log.entries(self.session_id),
+                session_id=self.session_id,
+                run_id=self.run_id,
+            )
+        )
+        self.assertEqual(pending.effect_ids, (read.effect_id, edit.effect_id))
         self.assertEqual(len(self.delivery.load_batches(self.session_id, self.run_id)), 1)
 
     def test_settling_tool_effects_advances_to_delivery_pending(self) -> None:
@@ -483,7 +491,6 @@ class RuntimeMutationLineTests(unittest.TestCase):
             self.run_id,
             proof_ref="completion_proof:" + "b" * 16,
             proof_status="failed",
-            proof_satisfied=False,
         )
         admitted = self.line.admit_repair_context(
             self.session_id,
@@ -524,7 +531,6 @@ class RuntimeMutationLineTests(unittest.TestCase):
             self.run_id,
             proof_ref="completion_proof:" + "c" * 16,
             proof_status="failed",
-            proof_satisfied=False,
         )
 
         blocked = self.line.mark_completion_blocked(

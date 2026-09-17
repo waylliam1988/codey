@@ -54,9 +54,9 @@ from codey.completion.verification import (
     repairable_failure_class,
     verification_provenance,
 )
-from codey.runtime.execution_evidence import ExecutionEvidence
-from codey.runtime.events import RunEvent
-from codey.runtime.models import ToolCall
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -65,7 +65,7 @@ OTHER_FINGERPRINT = "sha256:" + ("2" * 64)
 
 
 def _check(command: str, cwd: str = ".", **extra):
-    from codey.runtime.execution_evidence import CheckEvidence
+    from codey.runtime.observe.execution_evidence import CheckEvidence
 
     extra.setdefault("workspace_fingerprint", FINGERPRINT)
     return CheckEvidence(command, cwd, **extra)

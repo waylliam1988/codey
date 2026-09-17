@@ -28,8 +28,8 @@ from codey.protocols.json_codec import (
     JsonToolCodec,
     _balanced_json_objects,
 )
-from codey.runtime.events import render_run_event
-from codey.runtime.models import ToolPlan
+from codey.runtime.observe.events import render_run_event
+from codey.runtime.core.models import ToolPlan
 from codey.runs.trace import RunTraceStore
 
 

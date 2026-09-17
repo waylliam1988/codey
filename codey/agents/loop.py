@@ -47,9 +47,9 @@ from codey.agents.verification_driver import (
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.protocols.json_codec import PROTOCOL_NO_JSON
-from codey.runtime.events import RunEvent
-from codey.runtime.models import ToolPlan
-from codey.runtime.prompt_envelope import (
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.core.models import ToolPlan
+from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelopeSection,
 )

@@ -16,7 +16,7 @@ import tempfile
 from codey.agents.loop import run as run_agent_loop
 from codey.agents.request import AgentRequest
 from codey.operations.recovery import recover_effects_for_resume
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
@@ -24,10 +24,10 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeSessionLog
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_log import RuntimeSessionLog
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     ToolResultDeliveryStore,

@@ -7,7 +7,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Iterable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.discovery import Discovery
 
 

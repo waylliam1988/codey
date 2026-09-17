@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 
 DEFAULT_HARD_CONTEXT_TOKENS = 200_000
 SOFT_CONTEXT_NUMERATOR = 3

@@ -8,7 +8,7 @@ from unittest import mock
 from codey.completion.decision import CompletionDecision
 from codey.completion.engine import CompletionEngine
 from codey.completion.verification import VerificationProvenance
-from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 
 @dataclass(frozen=True)

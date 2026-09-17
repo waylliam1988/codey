@@ -12,11 +12,11 @@ from codey.agents.request import RecoveredToolOutcome
 from codey.ghost.work_queue import GhostWorkItem
 
 from codey.providers.diagnostics import ProviderFailure
-from codey.runtime.operation_state import RuntimeOperationState
+from codey.runtime.core.operation_state import RuntimeOperationState
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
-from codey.runtime.events import RunEvent
-from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION
 

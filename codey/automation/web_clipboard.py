@@ -7,7 +7,7 @@ import uuid
 
 from playwright.sync_api import Locator, Page
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 
 
 def copy_action_text(

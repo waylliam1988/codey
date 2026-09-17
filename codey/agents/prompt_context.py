@@ -19,9 +19,9 @@ from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY as COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
 )
 from codey.policies.permissions import allows_context_source
-from codey.runtime import cancellation
-from codey.runtime.events import RunEvent
-from codey.runtime.prompt_envelope import (
+from codey.runtime.core import cancellation
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.prompt_envelope import (
     PromptEnvelope,
     PromptEnvelopeSection,
     record_provider_send_prompt,
@@ -209,7 +209,7 @@ def _send_provider_with_effect(
     effect_id = ""
     if mutations is not None and session.session_id and session.run_id:
         session.provider_send_index += 1
-        from codey.runtime.effect_records import (
+        from codey.runtime.effects.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
             RuntimeEffectIntent,
             RuntimeEffectSettlement,
@@ -220,8 +220,8 @@ def _send_provider_with_effect(
             compute_args_digest,
             new_effect_id,
         )
-        from codey.runtime.operation_state import DRIVER_REPAIR, DRIVER_WRITER
-        from codey.runtime.replay_policy import provider_replay_policy
+        from codey.runtime.core.operation_state import DRIVER_REPAIR, DRIVER_WRITER
+        from codey.runtime.effects.replay_policy import provider_replay_policy
 
         replay_decision = provider_replay_policy(purpose)
         effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.run_id)

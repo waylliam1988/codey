@@ -24,7 +24,7 @@ from codey.operations.recovery import recover_effects_for_resume
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,
@@ -34,17 +34,17 @@ from codey.runtime.effect_records import (
     SETTLEMENT_STATUS_OK,
     new_effect_id,
 )
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.operation_state import (
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.operation_state import (
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
 )
-from codey.runtime.models import ToolCall, ToolResult
-from codey.runtime.replay_policy import ReplayClass
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.tool_result_delivery import (
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     ToolResultDeliveryError,
@@ -190,7 +190,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         raw_payload = intent.to_payload()
         raw_payload["raw_result"] = "some secret code text"
         with self.assertRaises(ToolResultDeliveryError):
-            from codey.runtime.tool_result_delivery import _check_no_forbidden_keys
+            from codey.runtime.effects.tool_result_delivery import _check_no_forbidden_keys
             _check_no_forbidden_keys(raw_payload)
 
     def test_schema_hygiene_strict_checks(self) -> None:
@@ -220,7 +220,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
 
         # Unknown delivery envelope fields are rejected before a record can be built.
         with self.assertRaises(ToolResultDeliveryError):
-            from codey.runtime.tool_result_delivery import _validate_delivery_record_envelope
+            from codey.runtime.effects.tool_result_delivery import _validate_delivery_record_envelope
 
             _validate_delivery_record_envelope(
                 {"schema_version": 1, "extra_bad_field": 123},
@@ -814,7 +814,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
         _commit_log_entries(self.log, self.session_id, (recovered,))
 
         # Before settlement (open op) -> compact retains both intent and recovered
-        from codey.runtime.session_log import _compact_entries
+        from codey.runtime.log.compaction import _compact_entries
         compacted_open = _compact_entries(self.log.read(self.session_id))
         open_delivery_kinds = [
             e.payload.get("record_kind")

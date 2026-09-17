@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.toolchain import runtime as tool_runtime
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.utils.references import find_reference_hints

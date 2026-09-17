@@ -8,7 +8,7 @@ from codey.operations.task_run import (
     prepare_submission,
     release_unstarted_submission,
 )
-from codey.runtime.task_runtime import TaskRuntime
+from codey.runtime.write.task_runtime import TaskRuntime
 from codey.task.model import TaskSubmission
 
 

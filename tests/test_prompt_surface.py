@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 import tempfile
 
-from codey.runtime import cancellation
-from codey.runtime.prompt_envelope import record_provider_send_prompt
-from codey.runtime.prompt_surface import (
+from codey.runtime.core import cancellation
+from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
+from codey.runtime.observe.prompt_surface import (
     PROMPT_SURFACE_SCHEMA_VERSION,
     PromptSurfaceSection,
     build_prompt_surface_record,

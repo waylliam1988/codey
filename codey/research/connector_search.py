@@ -14,7 +14,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode, urlparse
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.research.connector_domains import preferred_connector_ids
 from codey.research.http_redirects import (
     build_no_redirect_opener,

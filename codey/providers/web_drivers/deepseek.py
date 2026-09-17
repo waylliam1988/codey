@@ -18,7 +18,7 @@ import time
 
 from playwright.sync_api import Page
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as controls
 from codey.providers import flow as provider_flow
 from codey.providers import send_loop as send_loop

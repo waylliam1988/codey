@@ -26,7 +26,7 @@ from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.runtime.events import RunEvent, render_run_event
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.toolchain.runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file

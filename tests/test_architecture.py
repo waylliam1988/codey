@@ -91,7 +91,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_runtime_package_does_not_import_business_layers(self) -> None:
         forbidden = {"codey.agents", "codey.ghost", "codey.operations"}
         offenders: dict[str, list[str]] = {}
-        for path in codey_python_files("runtime"):
+        for path in sorted((ROOT / "codey" / "runtime").rglob("*.py")):
             blocked = imports_with_forbidden_prefixes(path, forbidden)
             if blocked:
                 offenders[path.relative_to(ROOT).as_posix()] = blocked
@@ -338,29 +338,52 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "playwright.sync_api",
         }
         allowed = {
-            "codey.runtime.cancellation",
-            "codey.runtime.events",
-            "codey.runtime.execution_evidence",
-            "codey.runtime.effect_records",
-            "codey.runtime.mutation_line",
-            "codey.runtime.models",
-            "codey.runtime.operation",
-            "codey.runtime.operation_reducer",
-            "codey.runtime.operation_state",
-            "codey.runtime.outcome",
-            "codey.runtime.prompt_envelope",
-            "codey.runtime.replay_args",
-            "codey.runtime.replay_policy",
-            "codey.runtime.session_projection",
-            "codey.runtime.session_log",
-            "codey.runtime.terminalizer",
-            "codey.runtime.tool_result_delivery",
+            "codey.runtime.core.cancellation",
+            "codey.runtime.observe.events",
+            "codey.runtime.observe.execution_evidence",
+            "codey.runtime.effects.effect_records",
+            "codey.runtime.write.mutation_line",
+            "codey.runtime.core.models",
+            "codey.runtime.core.operation",
+            "codey.runtime.core.operation_reducer",
+            "codey.runtime.core.operation_state",
+            "codey.runtime.core.outcome",
+            "codey.runtime.observe.prompt_envelope",
+            "codey.runtime.effects.replay_args",
+            "codey.runtime.effects.replay_policy",
+            "codey.runtime.log.compaction",
+            "codey.runtime.log.session_projection",
+            "codey.runtime.log.session_log",
+            "codey.runtime.log.session_view",
+            "codey.runtime.observe.terminalizer",
+            "codey.runtime.write.drive",
+            "codey.runtime.effects.tool_result_delivery",
             "codey.storage.atomic_io",
             "codey.storage.file_lock",
             "codey.storage.local_store",
         }
         offenders: dict[str, list[str]] = {}
         kernel_files = (
+            "core/operation.py",
+            "core/operation_state.py",
+            "core/operation_reducer.py",
+            "core/outcome.py",
+            "core/models.py",
+            "core/cancellation.py",
+            "write/mutation_line.py",
+            "write/drive.py",
+            "log/session_log.py",
+            "log/session_projection.py",
+            "log/session_view.py",
+            "log/compaction.py",
+            "observe/terminalizer.py",
+        )
+        self.assertFalse((ROOT / "codey" / "runtime" / "effects.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "reducer.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "scheduler.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "lane.py").exists())
+        self.assertFalse((ROOT / "codey" / "runtime" / "suspension.py").exists())
+        for flat in (
             "operation.py",
             "operation_state.py",
             "operation_reducer.py",
@@ -369,17 +392,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "outcome.py",
             "session_projection.py",
             "session_log.py",
+            "session_view.py",
+            "effect_records.py",
+            "tool_result_delivery.py",
             "terminalizer.py",
+        ):
+            with self.subTest(flat=flat):
+                self.assertFalse((ROOT / "codey" / "runtime" / flat).exists())
+        session_log_source = (ROOT / "codey" / "runtime" / "log" / "session_log.py").read_text(encoding="utf-8")
+        delivery_source = (ROOT / "codey" / "runtime" / "effects" / "tool_result_delivery.py").read_text(
+            encoding="utf-8"
         )
-        self.assertFalse((ROOT / "codey" / "runtime" / "effects.py").exists())
-        self.assertFalse((ROOT / "codey" / "runtime" / "reducer.py").exists())
-        self.assertFalse((ROOT / "codey" / "runtime" / "scheduler.py").exists())
-        self.assertFalse((ROOT / "codey" / "runtime" / "lane.py").exists())
-        self.assertFalse((ROOT / "codey" / "runtime" / "suspension.py").exists())
-        session_log_source = (ROOT / "codey" / "runtime" / "session_log.py").read_text(encoding="utf-8")
-        delivery_source = (ROOT / "codey" / "runtime" / "tool_result_delivery.py").read_text(encoding="utf-8")
-        operation_state_source = (ROOT / "codey" / "runtime" / "operation_state.py").read_text(encoding="utf-8")
-        mutation_line_source = (ROOT / "codey" / "runtime" / "mutation_line.py").read_text(encoding="utf-8")
+        operation_state_source = (ROOT / "codey" / "runtime" / "core" / "operation_state.py").read_text(
+            encoding="utf-8"
+        )
+        mutation_line_source = (ROOT / "codey" / "runtime" / "write" / "mutation_line.py").read_text(
+            encoding="utf-8"
+        )
         self.assertNotIn("def append(", session_log_source)
         self.assertNotIn("def append_many(", session_log_source)
         self.assertNotIn("def transition_operation(", mutation_line_source)
@@ -413,8 +442,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         mutate_callers = []
         allowed_mutate_callers = {
-            "codey/runtime/mutation_line.py",
-            "codey/runtime/session_log.py",
+            "codey/runtime/write/mutation_line.py",
+            "codey/runtime/log/session_log.py",
         }
         for path in (ROOT / "codey").rglob("*.py"):
             rel = path.relative_to(ROOT).as_posix()
@@ -438,6 +467,49 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if ".mutate(" in source:
                 test_mutate_callers.append(rel)
         self.assertEqual(test_mutate_callers, [])
+
+    def test_runtime_write_and_observe_stay_separated(self) -> None:
+        write_offenders: dict[str, list[str]] = {}
+        for path in sorted((ROOT / "codey" / "runtime" / "write").rglob("*.py")):
+            blocked = imports_with_forbidden_prefixes(path, {"codey.runtime.observe"})
+            if blocked:
+                write_offenders[path.relative_to(ROOT).as_posix()] = blocked
+        self.assertEqual(write_offenders, {})
+        observe_offenders: dict[str, list[str]] = {}
+        for path in sorted((ROOT / "codey" / "runtime" / "observe").rglob("*.py")):
+            blocked = imports_with_forbidden_prefixes(path, {"codey.runtime.write"})
+            if blocked:
+                observe_offenders[path.relative_to(ROOT).as_posix()] = blocked
+        self.assertEqual(observe_offenders, {})
+
+    def test_session_view_is_canonical_runtime_read_model(self) -> None:
+        view_path = ROOT / "codey" / "runtime" / "log" / "session_view.py"
+        self.assertTrue(view_path.exists(), "missing codey/runtime/log/session_view.py")
+        tree = ast.parse(view_path.read_text(encoding="utf-8"), filename=str(view_path))
+        fields: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == "SessionView":
+                for item in node.body:
+                    if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                        fields.append(item.target.id)
+        self.assertEqual(fields, ["state", "effects", "batches"])
+        forbidden_view = {
+            "codey.completion",
+            "codey.research",
+            "codey.ghost",
+            "codey.providers",
+            "codey.app",
+            "codey.agents",
+            "codey.evidence",
+        }
+        self.assertEqual(imports_with_forbidden_prefixes(view_path, forbidden_view), [])
+        drive_imports = imported_modules(ROOT / "codey" / "runtime" / "write" / "drive.py")
+        for token in (
+            "codey.runtime.effects.effect_records",
+            "codey.runtime.effects.tool_result_delivery",
+            "codey.runtime.core.operation_state",
+        ):
+            self.assertNotIn(token, drive_imports)
 
     def test_research_pipeline_owns_iteration_boundary_without_legacy_seams(self) -> None:
         pipeline = ROOT / "codey" / "research" / "pipeline.py"
@@ -534,7 +606,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_prompt_envelope_is_not_a_provider_or_tool_runtime_seam(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "runtime" / "prompt_envelope.py")
+        imports = imported_modules(ROOT / "codey" / "runtime" / "observe" / "prompt_envelope.py")
         forbidden = {
             "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
@@ -814,7 +886,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         lineage_imports = imported_modules(ROOT / "codey" / "research" / "artifact_lineage.py")
         capsule_imports = imported_modules(ROOT / "codey" / "research" / "reproducibility.py")
         forbidden = {
-            "codey.runtime.events",
+            "codey.runtime.observe.events",
             "codey.toolchain.runtime",
             "codey.storage.managed_outputs",
             "codey.operations.task_flow",
@@ -936,7 +1008,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.providers.controls",
             "codey.toolchain.runtime",
             "codey.storage.managed_outputs",
-            "codey.runtime.events",
+            "codey.runtime.observe.events",
             "codey.app.server",
             "codey.operations.task_flow",
             "codey.ghost",
@@ -1026,7 +1098,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.providers.controls",
             "codey.toolchain.runtime",
             "codey.storage.managed_outputs",
-            "codey.runtime.events",
+            "codey.runtime.observe.events",
             "codey.app.server",
             "codey.operations.task_flow",
             "codey.ghost",
@@ -1059,7 +1131,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn(token, source)
 
     def test_prompt_surface_source_has_no_dead_epoch_helper(self) -> None:
-        source = (ROOT / "codey" / "runtime" / "prompt_surface.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "runtime" / "observe" / "prompt_surface.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         functions = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
 
@@ -1135,7 +1207,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.providers.controls",
             "codey.toolchain.runtime",
             "codey.storage.managed_outputs",
-            "codey.runtime.events",
+            "codey.runtime.observe.events",
             "codey.app.server",
             "codey.operations.task_flow",
             "codey.ghost",

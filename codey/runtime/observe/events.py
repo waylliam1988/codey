@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from codey.runtime.models import ToolCall
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
 

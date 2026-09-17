@@ -41,7 +41,7 @@ from codey.operations.research_flow import (
 from codey.providers import controls as provider_controls
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.runs.ledger_projection import load_run_projection
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.utils.refs import digest_text
 
 

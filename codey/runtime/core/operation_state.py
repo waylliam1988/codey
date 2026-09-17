@@ -13,12 +13,12 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Iterable
 
-from codey.runtime.outcome import OperationOutcome, operation_outcome_from_stop_reason
-from codey.runtime.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.session_projection import RuntimeProjection
+from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
+from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 KIND = "runtime_operation_state"
 
 LEAF_ACCEPTED = "accepted"
@@ -103,7 +103,6 @@ MAX_TEXT_CHARS = 80
 MAX_REF_CHARS = 160
 MAX_PROJECT_REF_CHARS = 240
 MAX_ID_CHARS = 200
-MAX_PENDING_EFFECT_IDS = 64
 
 INTERRUPTED_WRITING = "Writing was interrupted"
 INTERRUPTED_COMPLETION_CHECK = "Completion check was interrupted"
@@ -148,14 +147,10 @@ _KNOWN_PAYLOAD_KEYS = frozenset(
         "stop_reason",
         "completion_proof_ref",
         "completion_proof_status",
-        "completion_proof_satisfied",
         "repair_rounds",
         "repair_context_ref",
         "blocked_reason",
         "driver",
-        "pending_effect_category",
-        "pending_effect_ids",
-        "pending_delivery_batch_id",
         "turn",
         "tool_index",
         "terminal",
@@ -249,14 +244,10 @@ class RuntimeOperationState:
     stop_reason: str = ""
     completion_proof_ref: str = ""
     completion_proof_status: str = ""
-    completion_proof_satisfied: bool | None = None
     repair_rounds: int = 0
     repair_context_ref: str = ""
     blocked_reason: str = ""
     driver: str = ""
-    pending_effect_category: str = ""
-    pending_effect_ids: tuple[str, ...] = ()
-    pending_delivery_batch_id: str = ""
     turn: int = 0
     tool_index: int = 0
     terminal: RuntimeOperationTerminal | None = None
@@ -286,14 +277,9 @@ class RuntimeOperationState:
             "repair_context_ref": self.repair_context_ref,
             "blocked_reason": self.blocked_reason,
             "driver": self.driver,
-            "pending_effect_category": self.pending_effect_category,
-            "pending_effect_ids": list(self.pending_effect_ids),
-            "pending_delivery_batch_id": self.pending_delivery_batch_id,
             "turn": self.turn,
             "tool_index": self.tool_index,
         }
-        if self.completion_proof_satisfied is not None:
-            payload["completion_proof_satisfied"] = self.completion_proof_satisfied
         if self.terminal is not None:
             payload["terminal"] = self.terminal.to_payload()
         return payload
@@ -325,14 +311,6 @@ class RuntimeOperationState:
             )
             turn = _count(payload.get("turn"), "turn")
             tool_index = _count(payload.get("tool_index"), "tool_index")
-            pending_effect_ids = _pending_effect_ids(payload.get("pending_effect_ids", ()))
-
-            if "completion_proof_satisfied" in payload:
-                satisfied = payload["completion_proof_satisfied"]
-                if not isinstance(satisfied, bool):
-                    raise RuntimeOperationTransitionError("completion_proof_satisfied must be bool")
-            else:
-                satisfied = None
 
             project_ref = _text(
                 payload.get("project_ref"),
@@ -359,6 +337,7 @@ class RuntimeOperationState:
                 raise RuntimeOperationTransitionError("completion_proof_ref must be completion proof ref")
             if proof_status and proof_status not in _RECORDED_PROOF_STATUSES:
                 raise RuntimeOperationTransitionError("unknown proof status")
+            satisfied = (proof_status == "complete") if proof_ref else None
             repair_context_ref = _text(
                 payload.get("repair_context_ref"),
                 "repair_context_ref",
@@ -368,23 +347,9 @@ class RuntimeOperationState:
             if repair_context_ref and not _SHA256_REF_RE.match(repair_context_ref):
                 raise RuntimeOperationTransitionError("repair_context_ref must be sha256 digest")
             driver = _text(payload.get("driver"), "driver", allow_empty=True)
-            pending_category = _text(
-                payload.get("pending_effect_category"),
-                "pending_effect_category",
-                allow_empty=True,
-            )
-            pending_delivery_batch_id = _text(
-                payload.get("pending_delivery_batch_id"),
-                "pending_delivery_batch_id",
-                limit=MAX_REF_CHARS,
-                allow_empty=True,
-            )
             _validate_pending_leaf(
                 leaf=leaf,
                 driver=driver,
-                pending_category=pending_category,
-                pending_effect_ids=pending_effect_ids,
-                pending_delivery_batch_id=pending_delivery_batch_id,
                 turn=turn,
                 tool_index=tool_index,
             )
@@ -406,8 +371,6 @@ class RuntimeOperationState:
             elif leaf in _POST_PROOF_BASE_LEAVES or repair_leaf:
                 if not _proof_facts_complete(proof_ref, proof_status, satisfied):
                     raise RuntimeOperationTransitionError("post-proof leaf requires proof facts")
-                if satisfied != (proof_status == "complete"):
-                    raise RuntimeOperationTransitionError("proof_satisfied must match proof status")
                 if leaf == LEAF_COMPLETION_PROOF_RECORDED and _repair_facts_claimed(
                     repair_rounds,
                     repair_context_ref,
@@ -424,8 +387,6 @@ class RuntimeOperationState:
                     raise RuntimeOperationTransitionError("terminal carries rounds without context")
                 if repair_context_ref and repair_rounds == 0 and proof_status != "failed":
                     raise RuntimeOperationTransitionError("terminal admitted context requires failed proof")
-                if proof_complete and satisfied != (proof_status == "complete"):
-                    raise RuntimeOperationTransitionError("terminal proof_satisfied must match status")
 
             blocked_reason = _text(payload.get("blocked_reason"), "blocked_reason", allow_empty=True)
             if blocked_reason and leaf not in _VERDICT_LEAVES:
@@ -473,14 +434,10 @@ class RuntimeOperationState:
                 stop_reason=stop_reason,
                 completion_proof_ref=proof_ref,
                 completion_proof_status=proof_status,
-                completion_proof_satisfied=satisfied,
                 repair_rounds=repair_rounds,
                 repair_context_ref=repair_context_ref,
                 blocked_reason=blocked_reason,
                 driver=driver,
-                pending_effect_category=pending_category,
-                pending_effect_ids=pending_effect_ids,
-                pending_delivery_batch_id=pending_delivery_batch_id,
                 turn=turn,
                 tool_index=tool_index,
                 terminal=terminal,
@@ -590,7 +547,7 @@ def operation_progress_text(state: RuntimeOperationState | None) -> str:
         LEAF_TOOL_DELIVERY_PENDING,
     } and _is_repair_leaf(state.leaf, state.driver):
         return INTERRUPTED_REPAIR
-    if state.leaf == LEAF_COMPLETION_PROOF_RECORDED and state.completion_proof_satisfied:
+    if state.leaf == LEAF_COMPLETION_PROOF_RECORDED and completion_proof_satisfied(state):
         return INTERRUPTED_FINISHING
     return INTERRUPTED_COMPLETION_CHECK
 
@@ -636,11 +593,9 @@ def mark_writer_settled(
 def mark_provider_effect_pending(
     state: RuntimeOperationState,
     *,
-    effect_id: str,
     driver: str,
     provider_id: str,
     turn: int,
-    delivery_batch_id: str = "",
 ) -> RuntimeOperationState:
     if driver not in DRIVERS:
         raise RuntimeOperationTransitionError("provider effect driver must be writer or repair")
@@ -649,14 +604,6 @@ def mark_provider_effect_pending(
         LEAF_PROVIDER_EFFECT_PENDING,
         provider_id=_text(provider_id, "provider_id"),
         driver=driver,
-        pending_effect_category="provider_send",
-        pending_effect_ids=(_text(effect_id, "effect_id", limit=MAX_REF_CHARS),),
-        pending_delivery_batch_id=_text(
-            delivery_batch_id,
-            "delivery_batch_id",
-            limit=MAX_REF_CHARS,
-            allow_empty=True,
-        ),
         turn=_count(turn, "turn"),
         tool_index=0,
     )
@@ -664,10 +611,9 @@ def mark_provider_effect_pending(
 
 def mark_provider_effect_settled(
     state: RuntimeOperationState,
-    *,
-    effect_id: str,
 ) -> RuntimeOperationState:
-    _require_pending_effect(state, leaf=LEAF_PROVIDER_EFFECT_PENDING, effect_id=effect_id)
+    if state.leaf != LEAF_PROVIDER_EFFECT_PENDING:
+        raise RuntimeOperationTransitionError(f"expected {LEAF_PROVIDER_EFFECT_PENDING}")
     if state.driver == DRIVER_REPAIR:
         return _transition(state, LEAF_REPAIR_RUNNING)
     return _transition(state, LEAF_WRITER_RUNNING)
@@ -676,24 +622,16 @@ def mark_provider_effect_settled(
 def mark_tool_effect_pending(
     state: RuntimeOperationState,
     *,
-    effect_ids: tuple[str, ...],
     driver: str,
-    delivery_batch_id: str,
     turn: int,
     tool_index: int = 0,
 ) -> RuntimeOperationState:
     if driver not in DRIVERS:
         raise RuntimeOperationTransitionError("tool effect driver must be writer or repair")
-    ids = _pending_effect_ids(effect_ids)
-    if not ids:
-        raise RuntimeOperationTransitionError("tool effect pending requires at least one effect")
     return _transition(
         state,
         LEAF_TOOL_EFFECT_PENDING,
         driver=driver,
-        pending_effect_category="tool_call",
-        pending_effect_ids=ids,
-        pending_delivery_batch_id=_text(delivery_batch_id, "delivery_batch_id", limit=MAX_REF_CHARS),
         turn=_count(turn, "turn"),
         tool_index=_count(tool_index, "tool_index"),
     )
@@ -702,25 +640,21 @@ def mark_tool_effect_pending(
 def mark_tool_effect_settled(
     state: RuntimeOperationState,
     *,
-    effect_id: str,
+    has_remaining: bool,
 ) -> RuntimeOperationState:
-    _require_pending_effect(state, leaf=LEAF_TOOL_EFFECT_PENDING, effect_id=effect_id)
-    remaining = tuple(eid for eid in state.pending_effect_ids if eid != effect_id)
-    if remaining:
+    if state.leaf != LEAF_TOOL_EFFECT_PENDING:
+        raise RuntimeOperationTransitionError(f"expected {LEAF_TOOL_EFFECT_PENDING}")
+    if has_remaining:
         return _transition(
             state,
             LEAF_TOOL_EFFECT_PENDING,
             driver=state.driver,
-            pending_effect_category="tool_call",
-            pending_effect_ids=remaining,
-            pending_delivery_batch_id=state.pending_delivery_batch_id,
             turn=state.turn,
             tool_index=state.tool_index,
         )
     return mark_tool_delivery_pending(
         state,
         driver=state.driver,
-        delivery_batch_id=state.pending_delivery_batch_id,
         turn=state.turn,
     )
 
@@ -729,7 +663,6 @@ def mark_tool_delivery_pending(
     state: RuntimeOperationState,
     *,
     driver: str,
-    delivery_batch_id: str,
     turn: int,
 ) -> RuntimeOperationState:
     if driver not in DRIVERS:
@@ -738,9 +671,6 @@ def mark_tool_delivery_pending(
         state,
         LEAF_TOOL_DELIVERY_PENDING,
         driver=driver,
-        pending_effect_category="",
-        pending_effect_ids=(),
-        pending_delivery_batch_id=_text(delivery_batch_id, "delivery_batch_id", limit=MAX_REF_CHARS),
         turn=_count(turn, "turn"),
         tool_index=0,
     )
@@ -754,29 +684,35 @@ def mark_tool_delivery_settled(state: RuntimeOperationState) -> RuntimeOperation
     return _transition(state, LEAF_WRITER_RUNNING)
 
 
+def completion_proof_satisfied(state: RuntimeOperationState) -> bool | None:
+    """Derive proof satisfaction from the recorded status.
+
+    Satisfaction is a judgment over the durable ref/status facts, never a
+    stored fact itself: a recorded `complete` status satisfies, any other
+    recorded status does not, and no ref means unobserved.
+    """
+    if not state.completion_proof_ref:
+        return None
+    return state.completion_proof_status == "complete"
+
+
 def mark_completion_proof_recorded(
     state: RuntimeOperationState,
     *,
     proof_ref: str,
     proof_status: str,
-    proof_satisfied: bool,
 ) -> RuntimeOperationState:
     ref = _text(proof_ref, "proof_ref", limit=MAX_REF_CHARS)
     status = _text(proof_status, "proof_status")
-    if not isinstance(proof_satisfied, bool):
-        raise RuntimeOperationTransitionError("proof_satisfied must be a bool")
     if not _COMPLETION_PROOF_REF_RE.match(ref):
         raise RuntimeOperationTransitionError("proof_ref must be completion proof ref")
     if status not in _RECORDED_PROOF_STATUSES:
         raise RuntimeOperationTransitionError("unknown proof status")
-    if proof_satisfied != (status == "complete"):
-        raise RuntimeOperationTransitionError("proof_satisfied must match proof status")
     return _transition(
         state,
         LEAF_COMPLETION_PROOF_RECORDED,
         completion_proof_ref=ref,
         completion_proof_status=status,
-        completion_proof_satisfied=proof_satisfied,
     )
 
 
@@ -952,72 +888,26 @@ def _transition(
         raise RuntimeOperationTransitionError("blocked verdict may only finish")
     if next_leaf not in _PENDING_LEAVES:
         updates.setdefault("driver", "")
-        updates.setdefault("pending_effect_category", "")
-        updates.setdefault("pending_effect_ids", ())
-        updates.setdefault("pending_delivery_batch_id", "")
         updates.setdefault("turn", 0)
         updates.setdefault("tool_index", 0)
     return replace(state, leaf=next_leaf, updated_at=_now(), **updates)  # type: ignore[arg-type]
-
-
-def _require_pending_effect(
-    state: RuntimeOperationState,
-    *,
-    leaf: str,
-    effect_id: str,
-) -> None:
-    clean = _text(effect_id, "effect_id", limit=MAX_REF_CHARS)
-    if state.leaf != leaf:
-        raise RuntimeOperationTransitionError(f"expected {leaf}")
-    if clean not in state.pending_effect_ids:
-        raise RuntimeOperationTransitionError("effect is not pending on operation state")
 
 
 def _validate_pending_leaf(
     *,
     leaf: str,
     driver: str,
-    pending_category: str,
-    pending_effect_ids: tuple[str, ...],
-    pending_delivery_batch_id: str,
     turn: int,
     tool_index: int,
 ) -> None:
     if leaf not in _PENDING_LEAVES:
-        if driver or pending_category or pending_effect_ids or pending_delivery_batch_id or turn or tool_index:
+        if driver or turn or tool_index:
             raise RuntimeOperationTransitionError("non-pending leaf carries pending effect facts")
         return
     if driver not in DRIVERS:
         raise RuntimeOperationTransitionError("pending leaf requires driver")
-    if leaf == LEAF_PROVIDER_EFFECT_PENDING:
-        if pending_category != "provider_send" or len(pending_effect_ids) != 1:
-            raise RuntimeOperationTransitionError("provider pending requires one provider effect")
-        if tool_index:
-            raise RuntimeOperationTransitionError("provider pending cannot carry tool index")
-        return
-    if leaf == LEAF_TOOL_EFFECT_PENDING:
-        if pending_category != "tool_call" or not pending_effect_ids:
-            raise RuntimeOperationTransitionError("tool pending requires tool effect ids")
-        if not pending_delivery_batch_id:
-            raise RuntimeOperationTransitionError("tool pending requires delivery batch id")
-        return
-    if leaf == LEAF_TOOL_DELIVERY_PENDING:
-        if pending_category or pending_effect_ids or not pending_delivery_batch_id or tool_index:
-            raise RuntimeOperationTransitionError("delivery pending carries invalid effect facts")
-
-
-def _pending_effect_ids(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)):
-        raise RuntimeOperationTransitionError("pending_effect_ids must be a list")
-    if len(value) > MAX_PENDING_EFFECT_IDS:
-        raise RuntimeOperationTransitionError("too many pending effect ids")
-    out: list[str] = []
-    for item in value:
-        effect_id = _text(item, "pending_effect_id", limit=MAX_REF_CHARS)
-        if effect_id in out:
-            raise RuntimeOperationTransitionError("duplicate pending effect id")
-        out.append(effect_id)
-    return tuple(out)
+    if leaf == LEAF_PROVIDER_EFFECT_PENDING and tool_index:
+        raise RuntimeOperationTransitionError("provider pending cannot carry tool index")
 
 
 def _is_repair_leaf(leaf: str, driver: str) -> bool:
@@ -1070,7 +960,7 @@ def _repair_candidate_proof(state: RuntimeOperationState) -> bool:
     return (
         bool(state.completion_proof_ref)
         and state.completion_proof_status in _REPAIR_SOURCE_PROOF_STATUSES
-        and state.completion_proof_satisfied is False
+        and completion_proof_satisfied(state) is False
     )
 
 
@@ -1078,7 +968,7 @@ def _blocked_verdict_supported(state: RuntimeOperationState) -> bool:
     return (
         bool(state.completion_proof_ref)
         and state.completion_proof_status in _BLOCKABLE_PROOF_STATUSES
-        and state.completion_proof_satisfied is False
+        and completion_proof_satisfied(state) is False
     )
 
 
@@ -1150,6 +1040,7 @@ __all__ = [
     "LEAF_WRITER_SETTLED",
     "LEAVES",
     "SCHEMA_VERSION",
+    "completion_proof_satisfied",
     "RuntimeOperationState",
     "RuntimeOperationStore",
     "RuntimeOperationTerminal",

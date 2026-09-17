@@ -8,7 +8,7 @@ from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.supervisor import run_half_open_canary
 from codey.runs.ledger import RunLedgerWriter
-from codey.runtime.cancellation import TaskCancelled
+from codey.runtime.core.cancellation import TaskCancelled
 
 
 @dataclass(frozen=True)

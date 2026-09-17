@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.effect_records import (
+from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
@@ -13,14 +13,14 @@ from codey.runtime.effect_records import (
     RuntimeEffectSettlement,
     SETTLEMENT_STATUS_OK,
 )
-from codey.runtime.models import ToolCall
-from codey.runtime.replay_policy import (
+from codey.runtime.core.models import ToolCall
+from codey.runtime.effects.replay_policy import (
     REPLAYABLE_SAFE_TOOL_NAMES,
     ReplayClass,
     SAFE_RUNTIME_TOOL_NAMES,
     is_replayable_safe_tool,
 )
-from codey.runtime.safe_tool_replay import (
+from codey.runtime.effects.safe_tool_replay import (
     candidate_from_effect,
     replay_args_for_tool_call,
     validate_replay_args,

@@ -20,7 +20,7 @@ from urllib.request import urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"

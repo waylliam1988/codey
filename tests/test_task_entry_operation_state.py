@@ -25,7 +25,7 @@ from codey.completion.decision import (
     completion_blocked_reason,
 )
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
-from codey.runtime.operation_state import (
+from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_REPAIR_CONTEXT_ADMITTED,
@@ -36,16 +36,17 @@ from codey.runtime.operation_state import (
     LEAF_WRITER_SETTLED,
     RuntimeOperationStore,
     RuntimeOperationTransitionError,
+    completion_proof_satisfied,
     lane_for_run,
     operation_id_for_run,
 )
 from codey.runs.details import load_run_details
 from codey.runs.ledger import read_ledger
-from codey.runtime.events import RunEvent
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.models import ToolCall
-from codey.runtime.session_projection import reduce_session
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.core.models import ToolCall
+from codey.runtime.log.session_projection import reduce_session
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.task.model import TaskSubmission
@@ -266,7 +267,7 @@ class CleanRunTerminalTests(unittest.TestCase):
                 operation.terminal.summary_chars,
                 len(str(event.get("summary") or "")),
             )
-            self.assertIs(operation.completion_proof_satisfied, True)
+            self.assertIs(completion_proof_satisfied(operation), True)
             assert state.runtime_log is not None
             runtime_starts = [
                 entry
@@ -647,7 +648,7 @@ class InvalidRuntimeProofWiringTests(unittest.TestCase):
             self.assertEqual(operation.leaf, LEAF_TERMINAL)
             assert operation.terminal is not None
             self.assertEqual(operation.terminal.stop_reason, "error")
-            self.assertIsNone(operation.completion_proof_satisfied)
+            self.assertIsNone(completion_proof_satisfied(operation))
 
 
 class RepairRoundPhaseTests(unittest.TestCase):
@@ -669,7 +670,7 @@ class RepairRoundPhaseTests(unittest.TestCase):
             self.assertEqual(writer.calls[1]["task"], COMPLETION_REPAIR_FOLLOWUP)
             self.assertEqual(operation.repair_rounds, 1)
             self.assertTrue(operation.repair_context_ref.startswith("sha256:"))
-            self.assertIs(operation.completion_proof_satisfied, True)
+            self.assertIs(completion_proof_satisfied(operation), True)
             assert operation.terminal is not None
             self.assertEqual(operation.terminal.stop_reason, "done")
             self.assertEqual(operation.terminal.blocked_reason, "")
@@ -803,7 +804,6 @@ class CrashPositionTests(unittest.TestCase):
                         "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
-                        proof_satisfied=False,
                     ),
                 ],
                 LEAF_COMPLETION_PROOF_RECORDED,
@@ -824,7 +824,6 @@ class CrashPositionTests(unittest.TestCase):
                         "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
-                        proof_satisfied=False,
                     ),
                     lambda line: line.admit_repair_context(
                         SESSION,
@@ -860,7 +859,6 @@ class CrashPositionTests(unittest.TestCase):
                         "run-crash",
                         proof_ref="completion_proof:" + "a" * 16,
                         proof_status="complete",
-                        proof_satisfied=True,
                     ),
                 ],
                 LEAF_COMPLETION_PROOF_RECORDED,
@@ -883,7 +881,6 @@ class CrashPositionTests(unittest.TestCase):
                         "run-crash",
                         proof_ref="completion_proof:" + "b" * 16,
                         proof_status="failed",
-                        proof_satisfied=False,
                     ),
                     lambda line: line.admit_repair_context(
                         SESSION,

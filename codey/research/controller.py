@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
-from codey.runtime.models import Control, ToolPlan, ToolResult
+from codey.runtime.core.models import Control, ToolPlan, ToolResult
 from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (

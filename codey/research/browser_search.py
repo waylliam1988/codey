@@ -13,7 +13,7 @@ import urllib.error
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.automation import browser_worker
 from codey.automation.browser import DEFAULT_PORT, open_chat_page
 from codey.storage.local_store import DEFAULT_STATE_HOME

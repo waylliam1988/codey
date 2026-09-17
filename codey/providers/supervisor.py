@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from codey.storage.local_store import read_json, write_json_atomic
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CHALLENGE_REQUIRED,

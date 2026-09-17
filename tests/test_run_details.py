@@ -10,11 +10,11 @@ from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
-from codey.runtime.operation_state import (
+from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
 )
-from codey.runtime.mutation_line import RuntimeMutationLine
-from codey.runtime.session_log import RuntimeSessionLog
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.runtime.log.session_log import RuntimeSessionLog
 
 
 CLEAN_SOURCE_DIFF = (

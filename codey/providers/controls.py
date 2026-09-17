@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import profile_doctor
 from codey.providers import discovery as discovery
 from codey.providers import flow as provider_flow

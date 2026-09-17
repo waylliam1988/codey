@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.runtime.events import RunEvent, display_tool, run_event_ui_payload
-from codey.runtime.models import ToolCall
+from codey.runtime.observe.events import RunEvent, display_tool, run_event_ui_payload
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
 
@@ -71,7 +71,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
 
     def test_task_run_no_longer_owns_ui_event_projection(self) -> None:
         task_run_source = (ROOT / "codey" / "operations" / "task_run.py").read_text(encoding="utf-8")
-        events_source = (ROOT / "codey" / "runtime" / "events.py").read_text(encoding="utf-8")
+        events_source = (ROOT / "codey" / "runtime" / "observe" / "events.py").read_text(encoding="utf-8")
 
         self.assertFalse((ROOT / "codey" / "task" / "service.py").exists())
         self.assertFalse((ROOT / "codey" / "operations" / "task_flow.py").exists())

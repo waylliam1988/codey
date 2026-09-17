@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.research.context import ResearchPipelineConfig
 from codey.research.guards import bounded_int as _bounded_int
 from codey.utils.refs import clip

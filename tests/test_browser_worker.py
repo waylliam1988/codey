@@ -31,7 +31,7 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertTrue(done.wait(2.0))
 
     def test_reentrant_call_honors_timeout_and_scopes(self) -> None:
-        from codey.runtime import cancellation
+        from codey.runtime.core import cancellation
 
         worker = browser_worker.BrowserWorker(name="test-reentrant-worker")
 
@@ -77,7 +77,7 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertFalse(queued_job_executed)
 
     def test_running_job_observes_cancellation_scope(self) -> None:
-        from codey.runtime import cancellation
+        from codey.runtime.core import cancellation
 
         worker = browser_worker.BrowserWorker(name="test-cancel-worker")
         job_started = threading.Event()

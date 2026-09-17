@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
 from codey.ghost import router as router_module
 from codey.ghost.router import (

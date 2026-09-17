@@ -89,7 +89,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
     from codey.providers import controls as provider_controls
     from codey.agents.runner import run
-    from codey.runtime.events import render_run_event
+    from codey.runtime.observe.events import render_run_event
     from codey.providers import connect_provider
 
     project.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.storage.local_store import read_json
-from codey.runtime.operation_state import (
+from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
     operation_progress_text,
@@ -159,7 +159,7 @@ def _load_recovery_summary(
 
     if not has_runtime_recovery and delivery_reads == 0 and delivery_lookups == 0:
         if delivery_error:
-            from codey.runtime.effect_records import RecoverySummary
+            from codey.runtime.effects.effect_records import RecoverySummary
             return RecoverySummary(
                 replayed_reads=0,
                 replayed_lookups=0,
@@ -167,7 +167,7 @@ def _load_recovery_summary(
             )
         return None
 
-    from codey.runtime.effect_records import RecoverySummary
+    from codey.runtime.effects.effect_records import RecoverySummary
 
     if not has_runtime_recovery or summary is None:
         lines: list[str] = []

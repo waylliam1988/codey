@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
 
-from codey.runtime import cancellation
+from codey.runtime.core import cancellation
 from codey.repairs.adapter_overrides import AdapterOverride, record_failure, record_success
 from codey.automation.browser import DEFAULT_PORT
 from codey.storage.local_store import DEFAULT_STATE_HOME

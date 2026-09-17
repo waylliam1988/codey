@@ -30,7 +30,7 @@ from codey.completion.verification import (
     relevant_verification_pairs,
     verification_provenance,
 )
-from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 
 @dataclass(frozen=True)

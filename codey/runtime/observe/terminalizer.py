@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from codey.runtime.outcome import OperationOutcome, operation_outcome_from_stop_reason
+from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
 
 
 def nonnegative_event_count(value: object) -> int:
