@@ -39,15 +39,15 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
-from codey.runtime.write.delivery_recovery import _build_delivery_recovered_rows
+from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
 from codey.runtime.write.provider_effects import (
-    _build_provider_begin_rows,
-    _build_provider_settle_rows,
+    build_provider_begin_rows,
+    build_provider_settle_rows,
 )
 from codey.runtime.write.tool_batches import (
     ToolBatchCommit,
-    _build_tool_batch_rows,
-    _build_tool_settle_rows,
+    build_tool_batch_rows,
+    build_tool_settle_rows,
 )
 
 
@@ -290,7 +290,7 @@ class RuntimeMutationLine:
         def mutation(projection, entries):
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = _build_provider_begin_rows(
+            rows, prepared = build_provider_begin_rows(
                 projection,
                 view,
                 session_id=session_id,
@@ -318,7 +318,7 @@ class RuntimeMutationLine:
         def mutation(projection, entries):
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = _build_provider_settle_rows(
+            rows, prepared = build_provider_settle_rows(
                 projection,
                 view,
                 session_id=session_id,
@@ -347,7 +347,7 @@ class RuntimeMutationLine:
         def mutation(projection, entries):
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, batch_commit = _build_tool_batch_rows(
+            rows, batch_commit = build_tool_batch_rows(
                 projection,
                 view,
                 session_id=session_id,
@@ -375,7 +375,7 @@ class RuntimeMutationLine:
         def mutation(projection, entries):
             nonlocal committed
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = _build_tool_settle_rows(
+            rows, prepared = build_tool_settle_rows(
                 projection,
                 view,
                 session_id=session_id,
@@ -416,7 +416,7 @@ class RuntimeMutationLine:
 
         def mutation(projection, entries):
             view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            return _build_delivery_recovered_rows(
+            return build_delivery_recovered_rows(
                 projection,
                 view,
                 session_id=session_id,

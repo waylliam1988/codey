@@ -137,14 +137,14 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     return PendingRuntimeFacts()
 
 
-def _require_open_view(projection, view: SessionView) -> RuntimeOperationState:
+def require_open_view(projection, view: SessionView) -> RuntimeOperationState:
     if view.state is None:
         raise RuntimeOperationTransitionError("operation state is missing")
     operation_is_open(projection, view.state)
     return view.state
 
 
-def _driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str:
+def driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str:
     if explicit:
         if explicit not in {DRIVER_WRITER, DRIVER_REPAIR}:
             raise RuntimeOperationTransitionError("driver must be writer or repair")
@@ -184,4 +184,11 @@ def load_session_view(
     )
 
 
-__all__ = ["PendingRuntimeFacts", "SessionView", "load_session_view", "pending_for"]
+__all__ = [
+    "PendingRuntimeFacts",
+    "SessionView",
+    "driver_for_state",
+    "load_session_view",
+    "pending_for",
+    "require_open_view",
+]

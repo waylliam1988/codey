@@ -20,12 +20,12 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
-    _find_effect,
-    _require_new_effect_id,
     effect_intent_entry,
     effect_settlement_entry,
+    find_effect,
     prepare_intent,
     prepare_settlement,
+    require_new_effect_id,
 )
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
@@ -34,9 +34,9 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.session_view import (
     SessionView,
-    _driver_for_state,
-    _require_open_view,
+    driver_for_state,
     pending_for,
+    require_open_view,
 )
 
 
@@ -47,7 +47,7 @@ class ToolBatchCommit:
     driver: str
 
 
-def _build_tool_batch_rows(
+def build_tool_batch_rows(
     projection,
     view: SessionView,
     *,
@@ -57,14 +57,14 @@ def _build_tool_batch_rows(
     delivery_intent: DeliveryBatchIntent,
     driver: str = "",
 ) -> tuple[tuple[dict[str, object], ...], ToolBatchCommit]:
-    state = _require_open_view(projection, view)
-    effect_driver = _driver_for_state(state, explicit=driver)
+    state = require_open_view(projection, view)
+    effect_driver = driver_for_state(state, explicit=driver)
     existing_effects = view.effects
     prepared_intents = tuple(
         prepare_intent(session_id, run_id, intent) for intent in intents
     )
     for intent in prepared_intents:
-        _require_new_effect_id(existing_effects, intent.effect_id)
+        require_new_effect_id(existing_effects, intent.effect_id)
     prepared_delivery = prepare_batch_intent(session_id, run_id, delivery_intent)
     batches = view.batches
     existing_batch = next(
@@ -107,7 +107,7 @@ def _build_tool_batch_rows(
     return tuple(rows), batch_commit
 
 
-def _build_tool_settle_rows(
+def build_tool_settle_rows(
     projection,
     view: SessionView,
     *,
@@ -115,9 +115,9 @@ def _build_tool_settle_rows(
     run_id: str,
     settlement: RuntimeEffectSettlement,
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = _require_open_view(projection, view)
+    state = require_open_view(projection, view)
     effects = view.effects
-    matching = _find_effect(effects, settlement.effect_id)
+    matching = find_effect(effects, settlement.effect_id)
     prepared = prepare_settlement(session_id, run_id, settlement, effects)
     if matching.settlement is not None:
         return (), prepared
@@ -132,3 +132,10 @@ def _build_tool_settle_rows(
         )
     )
     return tuple(rows), prepared
+
+
+__all__ = [
+    "ToolBatchCommit",
+    "build_tool_batch_rows",
+    "build_tool_settle_rows",
+]

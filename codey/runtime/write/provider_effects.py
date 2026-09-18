@@ -16,12 +16,12 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     SENT_STATE_SETTLED,
-    _find_effect,
-    _require_new_effect_id,
     effect_intent_entry,
     effect_settlement_entry,
+    find_effect,
     prepare_intent,
     prepare_settlement,
+    require_new_effect_id,
 )
 from codey.runtime.effects.tool_result_delivery import (
     delivered_entry,
@@ -29,13 +29,13 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.session_view import (
     SessionView,
-    _driver_for_state,
-    _require_open_view,
+    driver_for_state,
     pending_for,
+    require_open_view,
 )
 
 
-def _build_provider_begin_rows(
+def build_provider_begin_rows(
     projection,
     view: SessionView,
     *,
@@ -45,10 +45,10 @@ def _build_provider_begin_rows(
     driver: str = "",
     delivery_batch_id: str = "",
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
-    state = _require_open_view(projection, view)
+    state = require_open_view(projection, view)
     prepared = prepare_intent(session_id, run_id, intent)
-    _require_new_effect_id(view.effects, prepared.effect_id)
-    effect_driver = _driver_for_state(state, explicit=driver)
+    require_new_effect_id(view.effects, prepared.effect_id)
+    effect_driver = driver_for_state(state, explicit=driver)
     batches = view.batches
     rows = [effect_intent_entry(prepared)]
     if delivery_batch_id:
@@ -74,7 +74,7 @@ def _build_provider_begin_rows(
     return tuple(rows), prepared
 
 
-def _build_provider_settle_rows(
+def build_provider_settle_rows(
     projection,
     view: SessionView,
     *,
@@ -82,9 +82,9 @@ def _build_provider_settle_rows(
     run_id: str,
     settlement: RuntimeEffectSettlement,
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = _require_open_view(projection, view)
+    state = require_open_view(projection, view)
     effects = view.effects
-    matching = _find_effect(effects, settlement.effect_id)
+    matching = find_effect(effects, settlement.effect_id)
     prepared = prepare_settlement(session_id, run_id, settlement, effects)
     if matching.settlement is not None:
         return (), prepared
@@ -111,3 +111,9 @@ def _build_provider_settle_rows(
         )
     )
     return tuple(rows), prepared
+
+
+__all__ = [
+    "build_provider_begin_rows",
+    "build_provider_settle_rows",
+]

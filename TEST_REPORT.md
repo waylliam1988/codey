@@ -1,12 +1,38 @@
 # Codey Test Report
 
+## Write-builder API naming cleanup (2026-09-18)
+
+Scope:
+
+```text
+write/:    renamed cross-module row builders from private-looking
+           _build_*_rows names to explicit package-internal APIs
+           (build_provider_*_rows, build_tool_*_rows,
+           build_delivery_recovered_rows)
+effects:  renamed shared write guards to find_effect() and
+           require_new_effect_id()
+log:      renamed shared SessionView guards to require_open_view() and
+           driver_for_state()
+docs:     CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+```
+
+Verification:
+
+- Static gates:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; Git reported only line-ending normalization warnings)
+- Focused gates:
+  `python -m pytest -q tests/test_architecture.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py tests/test_runtime_operation_reducer.py tests/test_tool_result_delivery.py`
+  (`143 passed, 334 subtests passed in 12.55s`)
+
 ## P5 write-builder split + living architecture doc (2026-09-18)
 
 Scope:
 
 ```text
 write/:    mutation_line.py slimmed to a 461-line facade; five
-           _build_*_rows() helpers moved to provider_effects.py,
+           named row builders moved to provider_effects.py,
            tool_batches.py (also home to ToolBatchCommit), and
            delivery_recovery.py; shared guards homed to their domains
            with no import cycles; public API, error texts, call order

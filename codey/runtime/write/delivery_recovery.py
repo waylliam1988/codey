@@ -16,12 +16,12 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.effects.tool_result_delivery import recovered_entry
 from codey.runtime.log.session_view import (
     SessionView,
-    _require_open_view,
     pending_for,
+    require_open_view,
 )
 
 
-def _build_delivery_recovered_rows(
+def build_delivery_recovered_rows(
     projection,
     view: SessionView,
     *,
@@ -32,7 +32,7 @@ def _build_delivery_recovered_rows(
     recovered_reads: int = 0,
     recovered_lookups: int = 0,
 ) -> tuple[dict[str, object], ...]:
-    state = _require_open_view(projection, view)
+    state = require_open_view(projection, view)
     batches = view.batches
     projection_batch = next(
         (batch for batch in batches if batch.intent.batch_id == batch_id),
@@ -76,3 +76,6 @@ def _build_delivery_recovered_rows(
         rows.append(entry)
     rows.append(operation_state_entry(next_state))
     return tuple(rows)
+
+
+__all__ = ["build_delivery_recovered_rows"]

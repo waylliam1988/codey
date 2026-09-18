@@ -678,7 +678,7 @@ def effects_from_entries(
     )
 
 
-def _require_new_effect_id(
+def require_new_effect_id(
     effects: tuple[RuntimeEffectProjection, ...],
     effect_id: str,
 ) -> None:
@@ -686,7 +686,7 @@ def _require_new_effect_id(
         raise RuntimeEffectError(f"duplicate effect id: {effect_id}")
 
 
-def _find_effect(
+def find_effect(
     effects: tuple[RuntimeEffectProjection, ...],
     effect_id: str,
 ) -> RuntimeEffectProjection:
@@ -831,8 +831,10 @@ __all__ = [
     "effect_intent_entry",
     "effect_settlement_entry",
     "effects_from_entries",
+    "find_effect",
     "keep_effect_pair_for_compaction",
     "new_effect_id",
     "prepare_intent",
     "prepare_settlement",
+    "require_new_effect_id",
 ]

@@ -16,7 +16,7 @@
   `load_session_view()` 把 durable entries 只解析一次成
   `SessionView(state, effects, batches)`。`write/drive.py` 和所有 mutation
   builder 只读 view，不再各自解析。
-- 把 `write/mutation_line.py` 的闭包掏成纯 `_build_*_rows()` helper。
+- 把 `write/mutation_line.py` 的闭包掏成纯 write-row builder。
   公开方法名、参数顺序、抛出的异常全部不变；`SessionLog.mutate()` 仍然只能
   从 mutation line 和 session log 到达（`tests/test_architecture.py` 锁死）。
 - Compaction 保留策略下沉：保留规则归
@@ -33,13 +33,14 @@
 - 收紧架构门禁：`SessionView` 锁死三字段，`write/` 与 `observe/` 互禁
   import，平铺残留 `codey/runtime/*.py` 断言不存在，event matrix 的模块
   单元格同步到新路径。
-- `write/mutation_line.py` 瘦成 facade（461 行）：五个 `_build_*_rows()`
+- `write/mutation_line.py` 瘦成 facade（461 行）：五个具名 row builder
   搬到 `write/provider_effects.py`、`write/tool_batches.py`
   （`ToolBatchCommit` 也搬过去）和 `write/delivery_recovery.py`；共享
-  guard 回到各自 domain（`_find_effect` / `_require_new_effect_id` 进
-  effects，`_require_open_view` / `_driver_for_state` 进 session view）。
+  guard 回到各自 domain（`find_effect` / `require_new_effect_id` 进
+  effects，`require_open_view` / `driver_for_state` 进 session view）。
   公开 API、异常文本、调用顺序全不变，mutation line 仍是唯一生产
-  `.mutate()` 调用方。
+  `.mutate()` 调用方。builder / guard 名称现在是显式的 package-internal
+  API，不再跨模块 import 私有下划线 helper。
 - 新增 living 架构文档 `docs/runtime_architecture.zh-CN.md`，只写当前真相
   （五包、三字段 view、派生 pending、mutation 边界、write/observe 互斥）。
 - 修复派生 pending 按 state 当前 turn 做坐标：`pending_for()` 忽略旧 turn

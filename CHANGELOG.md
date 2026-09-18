@@ -16,8 +16,8 @@
   `load_session_view()` parses durable entries exactly once into
   `SessionView(state, effects, batches)`. `write/drive.py` and every
   mutation builder consume the view instead of re-parsing entries.
-- Slimmed `write/mutation_line.py` closures into pure `_build_*_rows()`
-  helpers. Public method names, argument order, and raised errors are
+- Slimmed `write/mutation_line.py` closures into pure write-row builders.
+  Public method names, argument order, and raised errors are
   unchanged; `SessionLog.mutate()` stays reachable only from the mutation
   line and the session log (enforced by `tests/test_architecture.py`).
 - Sank compaction retention policy out of the session log:
@@ -38,13 +38,14 @@
   `codey/runtime/*.py` leftovers are asserted gone, and the event matrix
   module cells track the new paths.
 - Slimmed `write/mutation_line.py` into a facade (461 lines): the five
-  `_build_*_rows()` helpers moved to `write/provider_effects.py`,
+  named row builders moved to `write/provider_effects.py`,
   `write/tool_batches.py` (now also home to `ToolBatchCommit`), and
   `write/delivery_recovery.py`; shared guards moved to their domains
-  (`_find_effect` / `_require_new_effect_id` to effects,
-  `_require_open_view` / `_driver_for_state` to the session view). Public
+  (`find_effect` / `require_new_effect_id` to effects,
+  `require_open_view` / `driver_for_state` to the session view). Public
   API, error texts, and call order are unchanged, and the mutation line
-  stays the only production `.mutate()` caller.
+  stays the only production `.mutate()` caller. The builder/guard names are
+  explicit package-internal APIs, not cross-module private imports.
 - Added living architecture doc `docs/runtime_architecture.zh-CN.md`
   describing only the current truth (five packages, three-field view,
   derived pending, mutation boundary, write/observe exclusion).
