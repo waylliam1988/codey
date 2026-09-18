@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+import logging
 from pathlib import Path
 from typing import Any
 import uuid
@@ -92,6 +93,9 @@ from codey.workspace.config import (
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(frozen=True)
 class TaskRunDeps:
     state: Any
@@ -119,6 +123,27 @@ class TaskRunDeps:
     ghost_router_provider_factory: Callable[[str], Any] | None = None
     runtime_mutations: Any = None
     runtime_effects: Any = None
+
+
+def record_provider_failure_event(
+    append_ledger_provider_failure: Callable[[str, ProviderFailure], None],
+    trace_sink: Any,
+    supervisor: Any,
+    self_repair: Any,
+    pid: str,
+    failure: ProviderFailure,
+) -> None:
+    """Fan out one provider failure to ledger, trace, supervisor, self-repair."""
+    append_ledger_provider_failure(pid, failure)
+    trace_sink.call("record_provider_failure", pid, failure)
+    if supervisor is None:
+        return
+    health = supervisor.record_failure(pid, failure)
+    if self_repair is not None:
+        try:
+            self_repair.maybe_enqueue(pid, failure, health)
+        except Exception:
+            logger.exception("self-repair enqueue failed for provider %s", pid)
 
 
 def prepare_submission(state: Any, request: TaskSubmission) -> TaskSubmission | None:
@@ -489,16 +514,14 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         self_repair = getattr(state, "self_repair", None)
 
         def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
-            append_ledger_provider_failure(pid, failure)
-            trace_sink.call("record_provider_failure", pid, failure)
-            if supervisor is None:
-                return
-            health = supervisor.record_failure(pid, failure)
-            if self_repair is not None:
-                try:
-                    self_repair.maybe_enqueue(pid, failure, health)
-                except Exception:
-                    pass
+            record_provider_failure_event(
+                append_ledger_provider_failure,
+                trace_sink,
+                supervisor,
+                self_repair,
+                pid,
+                failure,
+            )
 
         def provider_failover_order() -> tuple[str, ...]:
             loader = getattr(state, "provider_failover_order", None)

@@ -453,14 +453,14 @@ class RuntimeOperationStore:
         self.session_log = session_log
 
     def load(self, session_id: str, run_id: str) -> RuntimeOperationState | None:
-        try:
-            return operation_state_from_entries(
-                self.session_log.entries(session_id),
-                session_id=session_id,
-                run_id=run_id,
-            )
-        except Exception:
-            return None
+        # Missing log -> None (entries() is empty). Corrupt log must raise
+        # RuntimeOperationTransitionError so callers fail closed instead of
+        # silently starting a fresh operation and replaying settled effects.
+        return operation_state_from_entries(
+            self.session_log.entries(session_id),
+            session_id=session_id,
+            run_id=run_id,
+        )
 
 
 def operation_id_for_run(run_id: str) -> str:

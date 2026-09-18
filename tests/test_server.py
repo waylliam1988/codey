@@ -2380,10 +2380,14 @@ class RunSnapshotTests(unittest.TestCase):
 
         replay = state.replay_events_after(1)
 
-        self.assertEqual(replay[0][0], 0)
+        # The marker carries the oldest retained cursor so the client can
+        # advance past the expired window instead of looping on an id-less row.
+        self.assertEqual(replay[0][0], 1)
         self.assertEqual(replay[0][1]["type"], "resync_required")
         self.assertEqual(replay[0][1]["reason"], "sse_replay_window_expired")
         self.assertEqual([item["seq"] for _, item in replay[1:]], [2, 3])
+        follow_up = state.replay_events_after(replay[0][0])
+        self.assertEqual([item["seq"] for _, item in follow_up[1:]], [2, 3])
 
     def test_sse_replay_cursor_requires_positive_header(self) -> None:
         self.assertIsNone(http_plumbing.sse_replay_cursor(None))

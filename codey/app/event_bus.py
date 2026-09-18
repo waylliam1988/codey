@@ -80,8 +80,12 @@ class EventBus:
                 if start < event_id <= cutoff
             ]
             if start > 0 and self._replay and start < self._replay[0][0]:
+                # Advance the cursor past the expired window: the next
+                # Last-Event-ID returns the oldest retained row instead of
+                # looping on an id-less marker.
+                marker_id = max(1, self._replay[0][0] - 1)
                 rows.insert(0, (
-                    0,
+                    marker_id,
                     {
                         "type": "resync_required",
                         "reason": "sse_replay_window_expired",
@@ -114,21 +118,30 @@ class EventBus:
             except queue.Empty:
                 break
             sub.dropped += 1
-        if limit >= 2 and payload.get("type") != "resync_required":
+        pending_dropped = sub.dropped
+        marker_enqueued = payload.get("type") == "resync_required"
+        if limit >= 2 and not marker_enqueued:
             try:
                 sub.put_nowait(SsePayload({
                     "type": "resync_required",
                     "reason": "sse_queue_overflow",
-                    "dropped": sub.dropped,
+                    "dropped": pending_dropped,
                 }))
-                sub.dropped = 0
+                marker_enqueued = True
             except queue.Full:
-                pass
+                marker_enqueued = False
             except Exception:
                 logger.exception("event bus overflow marker put failed")
+                marker_enqueued = False
         try:
             sub.put_nowait(queued_payload)
         except queue.Full:
-            pass
+            # Keep the loss observable: the next emit retries the marker
+            # with the retained count instead of silently resetting it.
+            sub.dropped = pending_dropped + 1
+            return
         except Exception:
             logger.exception("event bus subscriber retry put failed")
+            return
+        if marker_enqueued or limit < 2 or payload.get("type") == "resync_required":
+            sub.dropped = 0

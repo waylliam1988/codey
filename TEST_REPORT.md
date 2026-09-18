@@ -1,5 +1,62 @@
 # Codey Test Report
 
+## Cold-start hardening batch (2026-09-18)
+
+Scope:
+
+```text
+runtime/write/task_runtime.py:  _settle_if_open fail-closed (no swallow) +
+                                already-terminal early return + _turn_budget min 1
+runtime/core/operation_state.py: RuntimeOperationStore.load fail-closed on corrupt tail
+app/event_bus.py:               overflow drop retention + resync marker cursor id
+providers/worker.py:            _ensure_running_locked + _drain_responses, single-lock _request
+app/api.py + provider_registry: probe_error signal + probe exception logging
+app/server.py:                  POST_BODY_READ_TIMEOUT + _read_post_body (408)
+storage/conversation_store.py:  per-file stat in _prune
+research/controller.py:         _result_rows keyed on _result_url_key(url) or url
+app/headless_runner.py:         expire_pending_shell_approvals on shell_request
+operations/task_run.py:         record_provider_failure_event module-level + logging
+web:                            drop unused markUiStateDirty alias, Esc/Ctrl+N,
+                                600->500 weights, SVG checks, warning stage/ref,
+                                inline-script ratchet 1950->1650
+pyproject.toml:                 ruff select +W (tests/ W291/W292 autofixed)
+tests:                          new tests/test_coldstart_hardening.py (18 tests);
+                                test_server.py resync expectation updated
+docs:                           CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed; tests/ W291/W292 fixed by --fix under new W rule)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `tests/test_coldstart_hardening.py tests/test_headless_runner.py`
+  (`26 passed`)
+  `tests/test_runtime_operation_state.py tests/test_runtime_mutation_line.py`
+  `tests/test_task_entry_operation_state.py tests/test_events.py`
+  `tests/test_http_plumbing.py tests/test_conversation_store.py`
+  `tests/test_research_controller.py tests/test_provider_registry_app.py`
+  `tests/test_ui_architecture.py tests/test_server.py`
+  (`307 passed, 17 subtests passed`; one resync expectation updated to the
+  new cursor-carrying marker, then re-green)
+  `tests/test_adapter_self_repair.py tests/test_providers.py tests/test_research.py`
+  (`272 passed, 18 subtests passed`)
+  `tests/test_ui.py tests/test_ui_architecture.py tests/test_coldstart_hardening.py`
+  `tests/test_task_entry_operation_state.py tests/test_task_entry_provider_preference.py`
+  `tests/test_ghost_post_turn.py`
+  (`120 passed, 6 subtests passed`)
+  `tests/test_coldstart_hardening.py tests/test_task_entry_operation_state.py`
+  `tests/test_task_entry_run_trace.py`
+  (`54 passed, 6 subtests passed` after the tests/ whitespace autofix)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3739 passed, 6 skipped, 1300 subtests passed in 306.17s (0:05:06)`)
+- Note: the full run landed before the tests/ W291/W292 whitespace autofix;
+  the autofix is whitespace-only, re-verified by `ruff check codey tests`
+  plus the 54-test focused re-run above. No release (batch stays Unreleased).
+
 ## Hermetic AppContext test helper (2026-09-18)
 
 Scope:

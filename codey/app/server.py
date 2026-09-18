@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import queue
+import socket
 import sys
 import tempfile
 import threading
@@ -117,6 +118,7 @@ REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
 PROFILE_DOCTOR_TIMEOUT = 90.0
 MAX_POST_BODY_BYTES = 16 * 1024 * 1024
+POST_BODY_READ_TIMEOUT = 10.0
 SSE_REPLAY_LIMIT = 512
 
 
@@ -1222,6 +1224,38 @@ class Handler(BaseHTTPRequestHandler):
     def _send_index(self) -> None:
         send_index(self)
 
+    def _read_post_body(self, length: int) -> bytes | None:
+        """Bounded body read: slow clients get 408 instead of a thread."""
+        if not length:
+            return b""
+        connection = getattr(self, "connection", None)
+        set_timeout = getattr(connection, "settimeout", None)
+        previous_timeout: object = None
+        if callable(set_timeout):
+            try:
+                previous_timeout = connection.gettimeout()
+            except Exception:
+                previous_timeout = None
+            try:
+                connection.settimeout(POST_BODY_READ_TIMEOUT)
+            except Exception:
+                set_timeout = None
+        try:
+            try:
+                return self.rfile.read(length)
+            except (TimeoutError, socket.timeout):
+                self._send_json(408, {"error": "request body timeout"})
+                return None
+            except Exception:
+                self._send_json(400, {"error": "request body unreadable"})
+                return None
+        finally:
+            if callable(set_timeout):
+                try:
+                    connection.settimeout(previous_timeout)
+                except Exception:
+                    pass
+
     def do_GET(self) -> None:  # noqa: N802
         if not self._request_origin_allowed():
             self._deny_foreign_origin()
@@ -1273,7 +1307,9 @@ class Handler(BaseHTTPRequestHandler):
         if length > MAX_POST_BODY_BYTES:
             self._send_json(413, {"error": "request body too large"})
             return
-        raw = self.rfile.read(length) if length else b""
+        raw = self._read_post_body(length)
+        if raw is None:
+            return
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
         except Exception:

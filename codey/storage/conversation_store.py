@@ -142,12 +142,17 @@ class ConversationStore:
 
     def _prune(self, keep: Path) -> None:
         try:
-            paths = sorted(
-                (path for path in self.directory.glob("*.json") if path != keep),
-                key=lambda path: path.stat().st_mtime,
-                reverse=True,
-            )
+            candidates = [
+                path for path in self.directory.glob("*.json") if path != keep
+            ]
         except OSError:
             return
-        for path in paths[MAX_PERSISTED_CONVERSATIONS - 1:]:
+        stamped: list[tuple[float, Path]] = []
+        for path in candidates:
+            try:
+                stamped.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        stamped.sort(key=lambda row: row[0], reverse=True)
+        for _, path in stamped[MAX_PERSISTED_CONVERSATIONS - 1:]:
             delete_file(path)

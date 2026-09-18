@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable
 
 from codey.providers import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderRegistry:
@@ -28,6 +32,7 @@ class ProviderRegistry:
         try:
             statuses = tab_availability()
         except Exception:
+            logger.exception("provider tab availability probe failed")
             statuses = {}
         opened = tuple(
             provider_id

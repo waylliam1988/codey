@@ -78,9 +78,13 @@ def providers_response(ctx: Any) -> tuple[int, dict]:
         statuses = services.provider_availability(ctx)
     except Exception:
         statuses = {}
+        probe_error = True
+    else:
+        probe_error = False
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
         "providers": services.provider_payload(statuses),
+        "probe_error": probe_error,
     }
 
 

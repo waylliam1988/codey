@@ -16,7 +16,7 @@ HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
 
 # Ratchet budgets. Lower these as checkpoints land; never increase.
 INLINE_STYLE_LINE_BUDGET = 0
-INLINE_SCRIPT_LINE_BUDGET = 1950
+INLINE_SCRIPT_LINE_BUDGET = 1650
 
 VERSION_SUFFIX = "?v=__CODEY_VERSION__"
 

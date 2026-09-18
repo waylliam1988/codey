@@ -4,6 +4,55 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 冷启动 hardening 批次，fail closed，不新增兼容或 fallback：
+  `task_runtime.py:_settle_if_open` 不再吞 `mark_terminal` 异常（真正的结算
+  不一致现在会冒泡，而不是 operation 还 open 着、UI 却显示 done）；先检查
+  内层是否已结算，terminal 直接返回，正常 double-settle 仍是 no-op。
+  Turn budget 收敛到 `_turn_budget()`（最小 1，与 `api.py:max(1, …)` 一致）。
+  `operation_state.py:load` 不再 `except Exception → None`：缺日志仍返回
+  `None`，腐坏的 `operation_state` 尾巴改为抛
+  `RuntimeOperationTransitionError`（以前会被当成“无状态”而起新 operation
+  重放已结算副作用；`mutation_line.accept_operation` 本来就会抛，现在两边一致）。
+- EventBus/SSE resync 可观测：`_put_for_subscriber` 只有 marker + 当前事件
+  都入队成功才清零 `dropped`（第二次 `Full` 会保留计数到下次 emit）；
+  `replay_events_after` 给 `resync_required` 打上 `oldest_retained - 1` 的
+  id 而不是 0，客户端 cursor 能推进，`write_sse_event` 也会写 `id:` 前缀
+  （id 0 如 `hello` 仍不写 id）。
+- Provider worker 自愈：新增 `_ensure_running_locked()`（child 死了或为
+  `None` 就重启，先排空错配 id 的旧响应）+ 超时/退出/stdin 失败时
+  `_drain_responses()`，一次超时不再把后面的 `send` 全卡成
+  `not running`。请求路径改为 `_request → _request_locked`（只拿一次锁，
+  去掉原来嵌套的 `with self._lock`）。
+- P1 可观测性修复：`providers_response` 探测抛错时返回 `probe_error: True`
+ （UI 能区分“探测崩了”和“全离线”；`failover_order` 保持默认顺序但记日志）；
+  POST body 在 `POST_BODY_READ_TIMEOUT` 下读取（`_read_post_body`，慢客户端
+  回 408，读完恢复 timeout）；`ConversationStore._prune` 逐文件 `stat`，
+  单个坏文件不再导致整个 prune 放弃；research 结果 id 按归一化
+  `_result_url_key(url) or url` 分配（堵住大小写/`www.`/尾斜杠产生重复 `rN`
+  绕过 priority 的洞）；headless `shell_request` 补
+  `expire_pending_shell_approvals()`（无悬空 approval，保留
+  `shell_rejected` JSONL）。
+- 小卫生切片（大拆分排到本批之后，见下）：删 `index.html` 未使用的
+  `markUiStateDirty` 别名；全局 `Escape` 关菜单/抽屉/provider 弹窗
+  （rename 输入保留自己的处理），`Ctrl+N` 在 composer 聚焦时也生效；
+  `.md-h`/local-config `h4` 按 DESIGN.md §3 从 `600 → 500`（shell-card 标题
+  保留允许的 `600`）；provider 菜单 `✓` 字符换成 stroke SVG；ghost warning
+  信息行保留 `stage · error_ref`；`task_run.record_provider_failure` 抽到
+  模块级（self-repair 入队失败记 `logger.exception` 而不是 `pass`）；ruff
+  增加 `W`（`tests/` 历史 `W291/W292` 已 autofix；`B/UP/I/SIM` 暂不开，
+  当前债 `B:16 UP:186 I:175 SIM:~100`）；inline-script ratchet
+  `1950 → 1650`（实际 `1611`）。
+- 新增回归测试（`tests/test_coldstart_hardening.py`，18 个）：
+  budget 钳制、结算冒泡 + 已 terminal no-op、腐坏尾巴 fail-closed、溢出
+  marker + 计数保留 + resync cursor 推进、worker 重启 + 旧响应排空、
+  `probe_error` 信号、坏 `stat` 下 prune、URL-key 去重、headless 审批过期、
+  POST 408。`test_server.py` resync 期望已更新为带 cursor 的 marker。
+- 有意排到本批之后（不是忘记）：`execute_task_run` 完整拆分（第一刀已落下）、
+  Ghost 瘦身（Hebbian/Affinity 二选一，去 `work_queue`/`sleep`）、teach 文案
+ 措辞（依赖外部页面的指代，需要产品定夺）、`TOOL_DELIVERY_PENDING`
+  replay-class 断言加固（delivery 路径已要求全 safe + `recovery.py` 校验
+  args）、`B/UP/I/SIM` ruff 历史债。
+
 - 新增统一的 hermetic 测试 helper（`tests/app_state.py:make_app_state`），
   落盘类测试不再依赖真实 `~/.codey`：纯内存与行为 pin 测试保留裸
   `AppContext()`，conversation/approval/research 测试走 helper。已迁移

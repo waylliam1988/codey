@@ -183,64 +183,88 @@ class WorkerChatProvider:
             self._cdp_port = 0
         self._target_id = str(payload.get("target_id") or "")
 
-    def _request(self, method: str, params: dict, timeout: float | None):
+    def _drain_responses(self) -> None:
+        while True:
+            try:
+                self._responses.get_nowait()
+            except queue.Empty:
+                return
+
+    def _ensure_running_locked(self) -> subprocess.Popen[str]:
+        proc = self._proc
+        if proc is not None and proc.poll() is None and proc.stdin is not None:
+            return proc
+        self._drain_responses()
+        self._terminate()
+        self._start()
         proc = self._proc
         if proc is None or proc.stdin is None:
             raise RuntimeError("provider worker is not running")
+        return proc
+
+    def _request(self, method: str, params: dict, timeout: float | None):
+        with self._lock:
+            return self._request_locked(method, params, timeout)
+
+    def _request_locked(self, method: str, params: dict, timeout: float | None):
+        proc = self._ensure_running_locked()
         request_id = uuid.uuid4().hex
         payload = {"id": request_id, "method": method, "params": params}
-        with self._lock:
-            try:
-                proc.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-                proc.stdin.flush()
-            except OSError as exc:
+        try:
+            proc.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+            proc.stdin.flush()
+        except (OSError, ValueError, AttributeError) as exc:
+            self._terminate()
+            self._drain_responses()
+            raise RuntimeError("provider worker stdin is unavailable") from exc
+        deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + WORKER_TIMEOUT_GRACE
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 self._terminate()
-                raise RuntimeError("provider worker stdin is unavailable") from exc
-            deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + WORKER_TIMEOUT_GRACE
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    self._terminate()
-                    failure = ProviderFailure(
-                        self.provider_id,
-                        method,
-                        "",
-                        "",
-                        "provider worker timed out",
-                        "",
-                        FAILURE_RESPONSE_MISSING,
-                    )
-                    self.last_failure = failure
-                    raise ProviderActionError(failure)
-                if proc.poll() is not None:
-                    failure = ProviderFailure(
-                        self.provider_id,
-                        method,
-                        "",
-                        "",
-                        "provider worker exited" + self._worker_error_suffix(),
-                        "",
-                        FAILURE_RESPONSE_MISSING,
-                    )
-                    self.last_failure = failure
-                    raise ProviderActionError(failure)
-                # Small-step polling keeps Stop responsive: waiting on the
-                # full remaining budget would pin the run until timeout even
-                # after the user cancelled.
-                try:
-                    response = self._responses.get(
-                        timeout=min(cancellation.POLL_INTERVAL, remaining)
-                    )
-                except queue.Empty:
-                    cancellation.check()
-                    continue
-                if response.get("id") != request_id:
-                    continue
-                if response.get("ok") is True:
-                    return response.get("result")
-                failure = _failure_from_response(self.provider_id, method, response)
+                self._drain_responses()
+                failure = ProviderFailure(
+                    self.provider_id,
+                    method,
+                    "",
+                    "",
+                    "provider worker timed out",
+                    "",
+                    FAILURE_RESPONSE_MISSING,
+                )
                 self.last_failure = failure
                 raise ProviderActionError(failure)
+            if proc.poll() is not None:
+                self._terminate()
+                self._drain_responses()
+                failure = ProviderFailure(
+                    self.provider_id,
+                    method,
+                    "",
+                    "",
+                    "provider worker exited" + self._worker_error_suffix(),
+                    "",
+                    FAILURE_RESPONSE_MISSING,
+                )
+                self.last_failure = failure
+                raise ProviderActionError(failure)
+            # Small-step polling keeps Stop responsive: waiting on the
+            # full remaining budget would pin the run until timeout even
+            # after the user cancelled.
+            try:
+                response = self._responses.get(
+                    timeout=min(cancellation.POLL_INTERVAL, remaining)
+                )
+            except queue.Empty:
+                cancellation.check()
+                continue
+            if response.get("id") != request_id:
+                continue
+            if response.get("ok") is True:
+                return response.get("result")
+            failure = _failure_from_response(self.provider_id, method, response)
+            self.last_failure = failure
+            raise ProviderActionError(failure)
 
     def _terminate(self) -> None:
         proc = self._proc

@@ -353,7 +353,9 @@ class ResearchController:
                     continue
                 if source_candidate_skip_reason(url):
                     continue
-                rid = _stable_id(self._result_ids_by_url, url, "r")
+                rid = _stable_id(
+                    self._result_ids_by_url, _result_url_key(url) or url, "r"
+                )
                 rows.append({
                     "id": rid,
                     "title": str(result.title or ""),

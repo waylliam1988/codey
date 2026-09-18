@@ -299,7 +299,7 @@
   .msg .body.md > :last-child { margin-bottom: 0; }
   .md-p { margin: 0 0 10px; white-space: pre-wrap; }
   .md-h {
-    font-weight: 600; color: var(--text);
+    font-weight: 500; color: var(--text);
     font-size: 13px; margin: 14px 0 8px;
   }
   .md-list { margin: 0 0 10px; padding-left: 20px; }
@@ -678,10 +678,11 @@
   .provider-item .label { flex: 1; min-width: 0; }
   .provider-item .check {
     width: 12px;
+    height: 12px;
+    display: inline-flex;
     color: var(--text-dim);
     opacity: 0;
     flex-shrink: 0;
-    font-size: 11px;
   }
   .provider-item.active .check { opacity: 1; }
   .provider-item.active { color: var(--text); }
@@ -704,7 +705,7 @@
   .local-config-pop h4 {
     margin: 0 0 5px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--text);
   }
   .local-config-pop p {

@@ -4,6 +4,73 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Cold-start hardening batch, fail closed with no new compat or fallback:
+  `runtime/write/task_runtime.py:_settle_if_open` no longer swallows
+  `mark_terminal` errors (a real settle mismatch now propagates instead of
+  leaving the operation open while the UI reports done); it first checks
+  whether the inner flow already settled and returns early on terminal, so
+  the normal double-settle path stays a no-op. Turn budget is clamped once
+  in `_turn_budget()` (`min 1`, matching `app/api.py:max(1, …)`).
+  `runtime/core/operation_state.py:RuntimeOperationStore.load` no longer
+  catches `Exception → None`: a missing log still returns `None`, a corrupt
+  `operation_state` tail now raises `RuntimeOperationTransitionError`
+  (previously it looked like “no state” and a fresh operation could replay
+  settled effects; `mutation_line.py:accept_operation` already raises on the
+  same input, so load now agrees with it).
+- EventBus/SSE resync made observable: `app/event_bus.py:_put_for_subscriber`
+  only resets `dropped` after both the overflow marker and the current event
+  are enqueued (a second `Full` retains the count for the next emit instead
+  of silently zeroing it); `replay_events_after` stamps the
+  `resync_required` marker with `oldest_retained - 1` instead of `0`, so the
+  client cursor advances and `write_sse_event` actually writes the `id:`
+  prefix (id `0` rows stay id-less, e.g. `hello`).
+- Provider worker self-heals: `providers/worker.py` gained
+  `_ensure_running_locked()` (restarts a dead/`None` child and drains stale
+  `id`-mismatched responses first) plus `_drain_responses()` on
+  timeout/exit/stdin-failure, so one timeout no longer wedges every later
+  `send` behind `provider worker is not running`. The request path is now
+  `_request → _request_locked` (single lock acquisition; the old nested
+  `with self._lock` is gone).
+- P1 observability fixes: `app/api.py:providers_response` returns
+  `probe_error: True` when the availability probe raises (UI can finally tell
+  “probe crashed” apart from “all offline”; `ProviderRegistry.failover_order`
+  keeps its default order but logs the exception); `POST` bodies read under
+  `POST_BODY_READ_TIMEOUT` (`server.py:_read_post_body`, 408 on slow
+  clients, timeout restored afterwards); `ConversationStore._prune` stats
+  each file individually so one bad `stat` no longer abandons the whole
+  prune; research result ids key on `_result_url_key(url) or url`
+  (`research/controller.py:_result_rows`), closing the
+  case/`www.`/trailing-slash duplicate-`rN` + priority-bypass hole;
+  headless `shell_request` now calls `expire_pending_shell_approvals()`
+  (no more dangling approvals; `shell_rejected` JSONL kept).
+- Small hygiene slices (big splits sequenced after this batch, see below):
+  removed the unused `markUiStateDirty` alias in `web/index.html`;
+  global `Escape` closes menus/drawers/provider popups (rename inputs keep
+  their own handler), `Ctrl+N` now works with the composer focused;
+  `.md-h`/local-config `h4` drop `600 → 500` per DESIGN.md §3 (shell-card
+  title keeps its allowed `600`); provider-menu `✓` chars become stroke SVG
+  checks; ghost warning info rows keep `stage · error_ref`
+  (`Post-turn warning (…)`); `task_run.record_provider_failure` moved to
+  module level (`record_provider_failure_event`) with `logger.exception`
+  instead of bare `pass` on self-repair enqueue failure; ruff lint adds `W`
+  (pre-existing `W291/W292` in `tests/` fixed by autofix; `B/UP/I/SIM`
+  stay off with current counts `B:16 UP:186 I:175 SIM:~100` until that debt
+  is paid); inline-script ratchet `1950 → 1650` (actual `1611`).
+- Added regression tests (`tests/test_coldstart_hardening.py`, 18 tests):
+  budget clamp, settle propagation + already-terminal no-op, load
+  fail-closed on a corrupt tail, overflow marker + drop retention +
+  resync cursor advance, worker restart + stale drain, `probe_error`
+  signal, prune with a failing `stat`, URL-key dedup, headless approval
+  expiry, POST 408. Updated `test_server.py` resync expectation to the new
+  cursor-carrying marker.
+- Deliberately sequenced after this batch (not forgotten): full
+  `execute_task_run` decomposition (first slice landed above), Ghost
+  slim-down (Hebbian/Affinity二选一, drop `work_queue`/`sleep`), teach-copy
+  wording (needs a product decision on the external-page reference),
+  `TOOL_DELIVERY_PENDING` replay-class assertion hardening (delivery path
+  already requires all-safe + arg check in `recovery.py`), and the `B/UP/I/SIM`
+  ruff debt.
+
 - Added a shared hermetic test helper (`tests/app_state.py:make_app_state`)
   so persistence-touching tests no longer depend on the real `~/.codey`:
   bare `AppContext()` stays valid for pure in-memory and behavior-pinning

@@ -185,7 +185,7 @@ def _run(
 
     runner = replace(runner, agent_run=observed_agent_run)
     with mock.patch.object(state, "get_provider", return_value=_Provider()):
-        run_task_submission(runner, 
+        run_task_submission(runner,
             TaskSubmission(
                 SESSION,
                 str(project),
@@ -396,7 +396,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 ),
                 self.assertRaises(RuntimeError),
             ):
-                run_task_submission(runner, 
+                run_task_submission(runner,
                     TaskSubmission(
                         SESSION,
                         str(project),
@@ -551,7 +551,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
                 mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
-                run_task_submission(runner, 
+                run_task_submission(runner,
                     TaskSubmission(
                         SESSION,
                         "",
@@ -595,7 +595,7 @@ class RuntimeEnvelopeTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=_Provider()),
                 mock.patch(RESEARCH_ITERATION, research_iteration),
             ):
-                run_task_submission(runner, 
+                run_task_submission(runner,
                     TaskSubmission(
                         SESSION,
                         str(project),

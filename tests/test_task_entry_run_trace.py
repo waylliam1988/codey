@@ -206,7 +206,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, agent_run=fake_agent)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-trace",
                     str(project),
@@ -278,7 +278,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
             runner = _runner(state, router_provider_factory=router_factory)
             research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
             with mock.patch(RESEARCH_ITERATION, research_iteration):
-                run_task_submission(runner, 
+                run_task_submission(runner,
                     TaskSubmission(
                         "session-research-trace",
                         None,
@@ -357,7 +357,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             runner = _runner(state)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-evidence-ledger",
                     str(project),
@@ -485,7 +485,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
 
             research_iteration = mock.Mock(side_effect=fake_research_task)
             with mock.patch(RESEARCH_ITERATION, research_iteration):
-                run_task_submission(runner, 
+                run_task_submission(runner,
                     TaskSubmission(
                         "session-hybrid-trace",
                         str(project),
@@ -555,7 +555,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                 collect_changes=mock.Mock(return_value=changes),
                 run_review=run_review,
             )
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-secondary-trace",
                     str(project),
@@ -599,7 +599,7 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-consensus-trace",
                     None,
@@ -635,7 +635,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_consensus=consensus)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-chat-provenance",
                     None,
@@ -677,7 +677,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=provider):
             runner = _runner(state, run_consensus=mock.Mock(return_value=None))
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     session_id,
                     None,
@@ -721,7 +721,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state, run_project_audit=project_audit)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-project-audit-prepared",
                     str(project),
@@ -755,7 +755,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
-            run_task_submission(runner, 
+            run_task_submission(runner,
                 TaskSubmission(
                     "session-fallback-trace",
                     str(project),
@@ -819,7 +819,7 @@ def _run_project_task(state: server.AppContext, project: Path, session_id: str, 
             state,
             collect_changes=mock.Mock(return_value=changes),
         )
-        run_task_submission(runner, 
+        run_task_submission(runner,
             TaskSubmission(
                 session_id,
                 str(project),

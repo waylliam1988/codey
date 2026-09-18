@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from codey.runtime.core.operation import OperationContext, OperationIntent
-from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
+from codey.runtime.core.operation_state import (
+    LEAF_TERMINAL,
+    RuntimeOperationStore,
+    lane_for_run,
+    operation_id_for_run,
+)
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -74,7 +79,7 @@ class TaskRuntime:
                 run_id=run_id,
                 project=request.project or "",
                 provider_id=request.provider_id,
-                turn_budget=max(0, int(request.max_turns or 0)),
+                turn_budget=_turn_budget(request),
                 max_repair_rounds=1,
                 task_kind=resolve_task_kind(request),
             )
@@ -116,19 +121,33 @@ class TaskRuntime:
     ) -> None:
         if not request.run_id:
             return
-        try:
-            current = self.mutations.mark_terminal(
-                request.session_id,
-                request.run_id,
-                stop_reason=_stop_reason_for_outcome(outcome),
-                summary_chars=len(outcome.summary),
-                turns=0,
-                max_turns=max(0, int(request.max_turns or 0)),
-                provider=request.provider_id,
-            )
-            del current
-        except Exception:
+        # The inner task flow usually settles the operation first; this is a
+        # backstop for executors that return without a terminal. Settle errors
+        # propagate -- only an already-terminal operation is a clean no-op.
+        current = RuntimeOperationStore(self.session_log).load(
+            request.session_id,
+            request.run_id,
+        )
+        if current is not None and current.leaf == LEAF_TERMINAL:
             return
+        settled = self.mutations.mark_terminal(
+            request.session_id,
+            request.run_id,
+            stop_reason=_stop_reason_for_outcome(outcome),
+            summary_chars=len(outcome.summary),
+            turns=0,
+            max_turns=_turn_budget(request),
+            provider=request.provider_id,
+        )
+        del settled
+
+
+def _turn_budget(request: TaskSubmission) -> int:
+    """Clamp the durable turn budget to the API contract (min 1)."""
+    try:
+        return max(1, int(request.max_turns or 0))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _stop_reason_for_outcome(outcome: OperationOutcome) -> str:

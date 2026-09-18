@@ -65,32 +65,32 @@
             <button class="provider-item" data-provider="deepseek">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">DeepSeek</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
             <button class="provider-item" data-provider="mimo">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">MiMo</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
             <button class="provider-item" data-provider="stepfun">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">StepFun</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
             <button class="provider-item" data-provider="qwen">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">Qwen</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
             <button class="provider-item" data-provider="glm">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">GLM</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
             <button class="provider-item" data-provider="local">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">Local</span>
-              <span class="check">✓</span>
+              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
             </button>
           </div>
         </div>
@@ -224,7 +224,6 @@ const cachedUiState = window.CodeyUiState.cached;
 const hasMeaningfulUiState = window.CodeyUiState.hasMeaningful;
 const hasStoredUiState = window.CodeyUiState.hasStored;
 const isUiStateNewer = window.CodeyUiState.isNewer;
-const markUiStateDirty = window.CodeyUiState.markDirty;
 const flushUiState = window.CodeyUiState.flush;
 const persistActive = window.CodeyUiState.persist;
 const persistActiveNow = window.CodeyUiState.persistNow;
@@ -1147,9 +1146,10 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'ghost_post_turn_warning') {
+    const warningDetail = [data.stage, data.error_ref].filter(Boolean).join(' · ');
     addToSession(sid, {
       type: 'info',
-      text: 'Post-turn warning',
+      text: warningDetail ? `Post-turn warning (${warningDetail})` : 'Post-turn warning',
       sessionId: sid,
       runId,
       eventKey: sseEventKey(data, runId ? `ghost-post-turn:${runId}:${data.stage || ''}:${data.error_ref || ''}` : ''),
@@ -1691,10 +1691,19 @@ $('topbar-more').onclick = (e) => {
 
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
-    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.target.closest && e.target.closest('.rename-input')) return;
     e.preventDefault();
     const p = activeProject();
     newSession(p ? p.id : null);
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (e.target.closest && e.target.closest('.rename-input')) return;
+    closeAllMenus();
+    closeOtherDrawers();
+    $('provider-menu').classList.remove('open');
+    $('provider-button').classList.remove('open');
+    if (window.CodeyProviderUI) window.CodeyProviderUI.closeLocalConfig();
   }
 });
 // ============================ boot ============================

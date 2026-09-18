@@ -94,6 +94,10 @@ class HeadlessAppContext(AppContext):
         if payload_event.get("type") == "shell_request":
             self.shell_rejected = True
             self.run_registry.stop_flag.set()
+            try:
+                self.expire_pending_shell_approvals()
+            except Exception:
+                pass
             rejected = {
                 "schema_version": SCHEMA_VERSION,
                 "type": "shell_rejected",
