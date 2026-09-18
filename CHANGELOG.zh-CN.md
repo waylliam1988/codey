@@ -4,6 +4,11 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 新增统一的 hermetic 测试 helper（`tests/app_state.py:make_app_state`），
+  落盘类测试不再依赖真实 `~/.codey`：纯内存与行为 pin 测试保留裸
+  `AppContext()`，conversation/approval/research 测试走 helper。已迁移
+  forget、research-session、有界 conversation 测试，并新增隔离证明测试。
+
 - `forget_conversation` 改为失败隔离（fail closed，不新增兼容）：
   conversation、provider-session、run-output 三个阶段各自把失败记入
   `failures` 而不是短路，后面的 shell 审批过期与 research 清理一定执行。

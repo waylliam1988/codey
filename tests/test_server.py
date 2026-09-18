@@ -38,6 +38,7 @@ from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
 from codey.operations.project_completion_flow import project_has_user_files
 from codey.toolchain.runtime import ToolOutcome
+from tests.app_state import make_app_state
 from codey.completion.verification_policy import VerificationCandidate
 
 
@@ -3361,7 +3362,7 @@ class SessionThreadingTests(unittest.TestCase):
         return state
 
     def test_conversation_state_is_bounded(self) -> None:
-        state = server.AppContext()
+        state = make_app_state(self)
 
         for index in range(server.MAX_CONVERSATION_STATES + 1):
             state.conversation_for(f"session-{index}")

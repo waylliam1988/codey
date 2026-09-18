@@ -4,6 +4,13 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Added a shared hermetic test helper (`tests/app_state.py:make_app_state`)
+  so persistence-touching tests no longer depend on the real `~/.codey`:
+  bare `AppContext()` stays valid for pure in-memory and behavior-pinning
+  tests, while conversation/approval/research tests use the helper. Migrated
+  the forget/research-session/bounded-conversation tests and added a proof
+  test that persistence lands under the temp dir, not home.
+
 - Made `forget_conversation` failure-isolated (fail closed, no new compat):
   the conversation, provider-session, and run-output phases each record into
   `failures` instead of short-circuiting, so a failing conversation delete

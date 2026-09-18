@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.app import server as server_module
+from tests.app_state import make_app_state
 from codey.research.pipeline import ResearchPipeline
 
 
@@ -36,14 +34,13 @@ class ResearchChangesSessionTests(unittest.TestCase):
         self.assertEqual(session_id, "session-9")
 
     def test_explicit_session_record_is_forgettable_without_active_run(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server_module.AppContext(Path(td) / "state")
-            state.record_research_changes("run-x", object(), session_id="session-x")
+        state = make_app_state(self)
+        state.record_research_changes("run-x", object(), session_id="session-x")
 
-            failures = state.forget_conversation("session-x")
+        failures = state.forget_conversation("session-x")
 
-            self.assertNotIn("approvals", failures)
-            self.assertNotIn("run-x", state.research_changes)
+        self.assertNotIn("approvals", failures)
+        self.assertNotIn("run-x", state.research_changes)
 
 
 if __name__ == "__main__":

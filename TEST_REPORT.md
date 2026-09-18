@@ -1,5 +1,31 @@
 # Codey Test Report
 
+## Hermetic AppContext test helper (2026-09-18)
+
+Scope:
+
+```text
+tests/app_state.py:   new make_app_state() (temp dir + addCleanup);
+                      convention documented (persistence -> helper,
+                      in-memory pin tests keep bare AppContext())
+tests:                forget, research-session, bounded-conversation
+                      migrated; new hermeticity proof test
+docs:                 CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_app_state_helper.py tests/test_forget_session_cleanup.py tests/test_research_changes_session.py tests/test_server.py`
+  (`207 passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3721 passed, 6 skipped, 1300 subtests passed in 333.18s (0:05:33)`)
+
 ## Forget failure isolation + hermetic forget tests (2026-09-18)
 
 Scope:
