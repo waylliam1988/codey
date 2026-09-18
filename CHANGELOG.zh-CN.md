@@ -4,6 +4,12 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- `forget_conversation` 改为失败隔离（fail closed，不新增兼容）：
+  conversation、provider-session、run-output 三个阶段各自把失败记入
+  `failures` 而不是短路，后面的 shell 审批过期与 research 清理一定执行。
+  forget 相关测试改用隔离的临时 state home，并新增注入 `PermissionError`
+  的测试证明清理不受影响。
+
 - 把 no-follow 文件边界收敛为单一 choke point（不新增兼容）：
   `workspace/paths.py` 新增 `_open_regular_no_follow()`（`lstat` 拒绝
   symlink/非常规文件，`os.open` 按平台带 `O_NOFOLLOW`，`fstat` 重验已打开的

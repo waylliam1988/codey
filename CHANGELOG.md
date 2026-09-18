@@ -4,6 +4,13 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Made `forget_conversation` failure-isolated (fail closed, no new compat):
+  the conversation, provider-session, and run-output phases each record into
+  `failures` instead of short-circuiting, so a failing conversation delete
+  can no longer skip shell-approval expiry or research-change cleanup.
+  Forget-path tests now use an isolated temp state home, plus an injected
+  `PermissionError` test proving cleanup still runs.
+
 - Hardened the no-follow file boundary into one choke point (no new compat):
   `workspace/paths.py` gained `_open_regular_no_follow()` (`lstat` rejects
   links/non-regulars, `os.open` carries `O_NOFOLLOW` where available, `fstat`

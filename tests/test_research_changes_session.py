@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -34,13 +36,14 @@ class ResearchChangesSessionTests(unittest.TestCase):
         self.assertEqual(session_id, "session-9")
 
     def test_explicit_session_record_is_forgettable_without_active_run(self) -> None:
-        state = server_module.AppContext()
-        state.record_research_changes("run-x", object(), session_id="session-x")
+        with tempfile.TemporaryDirectory() as td:
+            state = server_module.AppContext(Path(td) / "state")
+            state.record_research_changes("run-x", object(), session_id="session-x")
 
-        failures = state.forget_conversation("session-x")
+            failures = state.forget_conversation("session-x")
 
-        self.assertNotIn("approvals", failures)
-        self.assertNotIn("run-x", state.research_changes)
+            self.assertNotIn("approvals", failures)
+            self.assertNotIn("run-x", state.research_changes)
 
 
 if __name__ == "__main__":

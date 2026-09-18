@@ -1,5 +1,31 @@
 # Codey Test Report
 
+## Forget failure isolation + hermetic forget tests (2026-09-18)
+
+Scope:
+
+```text
+app/server.py:   forget_conversation isolates the conversation,
+                 provider-session, and run-output phases into failures
+                 instead of short-circuiting approval/research cleanup
+tests:           forget + research-session tests use an isolated temp
+                 state home; injected PermissionError proves cleanup runs
+docs:            CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_forget_session_cleanup.py tests/test_research_changes_session.py tests/test_server.py`
+  (`206 passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3720 passed, 6 skipped, 1300 subtests passed in 310.91s (0:05:10)`)
+
 ## No-follow choke point + numbered corrupt backups (2026-09-18)
 
 Scope:

@@ -738,10 +738,21 @@ class AppContext:
 
     def forget_conversation(self, session_id: str) -> dict[str, str]:
         failures: dict[str, str] = {}
-        self.conversation_registry.forget(session_id)
-        with self.lock:
-            self.providers.forget_session(session_id)
-        self.run_registry.clear_session_outputs(session_id)
+        # No phase may short-circuit the rest: executable pending state must
+        # be cleared even when an earlier store fails (fail closed).
+        try:
+            self.conversation_registry.forget(session_id)
+        except Exception as exc:
+            failures["conversation"] = str(exc)
+        try:
+            with self.lock:
+                self.providers.forget_session(session_id)
+        except Exception as exc:
+            failures["providers"] = str(exc)
+        try:
+            self.run_registry.clear_session_outputs(session_id)
+        except Exception as exc:
+            failures["run_outputs"] = str(exc)
         # Executable pending state must not outlive the chat: expire this
         # session's shell approvals (denied) and drop its restorable research
         # changes. Audit artifacts (run ledgers, managed outputs) are kept.
