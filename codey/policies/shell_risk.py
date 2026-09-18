@@ -28,11 +28,26 @@ GENERIC_RISK = ShellRisk(
 )
 
 
+# Chained commands (display-only): a second command after a chain operator
+# must never hide behind the first command's single-purpose label.
+# Substring markers catch attached forms (`install;curl`); the lone `&`
+# is exact-token only so URL query strings (`?a=1&b=2`) stay precise.
+_SHELL_CHAIN_SUBSTRINGS = ("&&", "||", ";", "|")
+
+
+def _has_shell_chain(text: str, argv: list[str]) -> bool:
+    if any(marker in text for marker in _SHELL_CHAIN_SUBSTRINGS):
+        return True
+    return "&" in argv
+
+
 def classify_shell_risk(command: str) -> ShellRisk:
     """Classify a shell command for explanation only, not authorization."""
 
     argv = _argv(command)
     text = " ".join(argv)
+    if _has_shell_chain(text, argv):
+        return GENERIC_RISK
     if _is_dependency_install(argv):
         return ShellRisk(
             label="dependency_install",

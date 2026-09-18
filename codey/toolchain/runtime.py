@@ -257,6 +257,95 @@ def _checked_tool_path(
     return path, None
 
 
+def _verify_file_for_use(
+    root: Path,
+    rel: str,
+    path: Path,
+    *,
+    tool: str,
+) -> ToolOutcome | None:
+    """Final fail-closed file check immediately before use.
+
+    Re-verifies the symlink walk (narrows the check-use gap) and maps any
+    ``lstat``/stat failure to a structured denial. File tools must never
+    let a bare ``OSError``/``ValueError`` escape to the caller.
+    """
+
+    symlink_error = _symlink_path_error(root, rel, tool=tool)
+    if symlink_error is not None:
+        return symlink_error
+    try:
+        if path.is_symlink():
+            return ToolOutcome.error(
+                f"symlink paths are not supported for {tool}: {rel}",
+                error_code="symlink_path",
+            )
+        if not path.is_file():
+            return ToolOutcome.error(f"not a file: {rel}")
+    except (OSError, ValueError):
+        return ToolOutcome.error(
+            f"path check failed for {tool}: {rel}",
+            error_code="symlink_path",
+        )
+    return None
+
+
+def _verify_dir_for_use(
+    root: Path,
+    rel: str,
+    path: Path,
+    *,
+    tool: str,
+) -> ToolOutcome | None:
+    """Final fail-closed directory check immediately before use."""
+
+    symlink_error = _symlink_path_error(root, rel, tool=tool)
+    if symlink_error is not None:
+        return symlink_error
+    try:
+        if path.is_symlink():
+            return ToolOutcome.error(
+                f"symlink paths are not supported for {tool}: {rel}",
+                error_code="symlink_path",
+            )
+        if not path.is_dir():
+            return ToolOutcome.error(f"not a directory: {rel}")
+    except (OSError, ValueError):
+        return ToolOutcome.error(
+            f"path check failed for {tool}: {rel}",
+            error_code="symlink_path",
+        )
+    return None
+
+
+def _verify_path_exists(
+    root: Path,
+    rel: str,
+    path: Path,
+    *,
+    tool: str,
+) -> ToolOutcome | None:
+    """Final fail-closed existence check immediately before scanning."""
+
+    symlink_error = _symlink_path_error(root, rel, tool=tool)
+    if symlink_error is not None:
+        return symlink_error
+    try:
+        if path.is_symlink():
+            return ToolOutcome.error(
+                f"symlink paths are not supported for {tool}: {rel}",
+                error_code="symlink_path",
+            )
+        if not path.exists():
+            return ToolOutcome.error(f"path not found: {rel}")
+    except (OSError, ValueError):
+        return ToolOutcome.error(
+            f"path check failed for {tool}: {rel}",
+            error_code="symlink_path",
+        )
+    return None
+
+
 def _write_text_after_final_path_check(
     root: Path,
     rel: str,
@@ -559,8 +648,9 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     path, error = _checked_tool_path(root, rel, tool="edit")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
-    if not path.is_file():
-        return ToolOutcome.error(f"not a file: {rel}")
+    verify_error = _verify_file_for_use(root, rel, path, tool="edit")
+    if verify_error is not None:
+        return verify_error
     try:
         content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -668,25 +758,11 @@ def read_file(
     path, error = _checked_tool_path(root, rel, tool="read_file")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
-    # Final fail-closed check immediately before use: narrows the
-    # check-use gap and denies when lstat itself cannot be verified
-    # (Windows has no O_NOFOLLOW; any verification failure denies).
-    symlink_error = _symlink_path_error(root, rel, tool="read_file")
-    if symlink_error is not None:
-        return symlink_error
-    try:
-        if path.is_symlink():
-            return ToolOutcome.error(
-                f"symlink paths are not supported for read_file: {rel}",
-                error_code="symlink_path",
-            )
-        if not path.is_file():
-            return ToolOutcome.error(f"not a file: {rel}")
-    except OSError:
-        return ToolOutcome.error(
-            f"path check failed for read_file: {rel}",
-            error_code="symlink_path",
-        )
+    # Final fail-closed check immediately before use (Windows has no
+    # O_NOFOLLOW; any verification failure denies).
+    verify_error = _verify_file_for_use(root, rel, path, tool="read_file")
+    if verify_error is not None:
+        return verify_error
     try:
         start_line = bounded_positive_int(offset, "offset")
         line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
@@ -768,8 +844,9 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
     path, error = _checked_tool_path(root, rel, tool="list_dir")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
-    if not path.is_dir():
-        return ToolOutcome.error(f"not a directory: {rel}")
+    verify_error = _verify_dir_for_use(root, rel, path, tool="list_dir")
+    if verify_error is not None:
+        return verify_error
     lines: list[str] = []
     entries, entry_limited = _bounded_directory_entries(
         path,
@@ -816,8 +893,9 @@ def search_files(
     start, error = _checked_tool_path(root, rel or ".", tool="grep")
     if error is not None or start is None:
         return error or ToolOutcome.error("path could not be resolved")
-    if not start.exists():
-        return ToolOutcome.error(f"path not found: {rel}")
+    verify_error = _verify_path_exists(root, rel or ".", start, tool="grep")
+    if verify_error is not None:
+        return verify_error
     needle = query.lower()
     matches: list[str] = []
     result_limited = False
@@ -926,8 +1004,9 @@ def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
     start, error = _checked_tool_path(root, rel or ".", tool="find_references")
     if error is not None or start is None:
         return error or ToolOutcome.error("path could not be resolved")
-    if not start.exists():
-        return ToolOutcome.error(f"path not found: {rel}")
+    verify_error = _verify_path_exists(root, rel or ".", start, tool="find_references")
+    if verify_error is not None:
+        return verify_error
     try:
         scan = find_reference_hints(root, start, symbol)
     except ValueError as exc:

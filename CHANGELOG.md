@@ -26,6 +26,15 @@
   reason, lowercase-hex/query/bearer-slash contextual redaction plus CamelCase
   clean, shell unwrap/pip-prefix/chained-generic approval cards, and pipeline
   `append_record`-raise surfacing as trace + sink `write_failed`.
+- Closed the remaining boundary tails with shared helpers (no compat shims):
+  `toolchain/runtime.py` gained `_verify_file_for_use` / `_verify_dir_for_use`
+  / `_verify_path_exists`, so `read_file`, `edit_file`, `list_directory`,
+  `search_files`, and `find_references` all re-verify the symlink walk before
+  use and map `is_file` / `is_dir` / `exists` / `lstat` failures to structured
+  denials instead of raising bare `OSError`; `policies/shell_risk.py` treats
+  any chained command (`&&`, `||`, `;`, `|`, lone `&`) as `generic`
+  (display-only), so `cmd /c "npm install && curl ..."` no longer renders as a
+  single-purpose install while `curl ...?a=1&b=2` query URLs stay precise.
 
 - Split `codey/runtime/` into five packages with one-way instincts:
   `core/` (operation state machine, pure reducer, contracts),
@@ -89,7 +98,7 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3683 passed, 4 skipped, 1292 subtests passed in 305.22s (0:05:05)`)
+  (`3685 passed, 4 skipped, 1300 subtests passed in 308.67s (0:05:08)`)
 
 ## 0.5.8 - Durable Operation Core
 

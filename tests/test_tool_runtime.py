@@ -90,6 +90,24 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertFalse(outcome.ok)
         self.assertEqual(outcome.error_code, "symlink_path")
 
+    def test_metadata_stat_failure_returns_structured_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("before\n", encoding="utf-8")
+
+            with mock.patch.object(Path, "is_file", side_effect=OSError("stat failed")):
+                edit_outcome = edit_file(root, "app.py", [EditBlock("before", "after")])
+            with mock.patch.object(Path, "is_dir", side_effect=OSError("stat failed")):
+                list_outcome = tool_runtime.list_directory(root, ".")
+            with mock.patch.object(Path, "exists", side_effect=OSError("stat failed")):
+                search_outcome = tool_runtime.search_files(root, ".", "before")
+                refs_outcome = find_references(root, ".", "before")
+
+        for outcome in (edit_outcome, list_outcome, search_outcome, refs_outcome):
+            with self.subTest(outcome=outcome.model_text):
+                self.assertFalse(outcome.ok)
+                self.assertTrue(outcome.error_code)
+
     def test_file_tools_report_workspace_escape_as_structured_errors(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

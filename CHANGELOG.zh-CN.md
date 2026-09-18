@@ -24,6 +24,14 @@
   slash 上下文脱敏 + CamelCase 干净、shell unwrap/pip 前缀/链式 generic
   approval 卡片、pipeline `append_record` 抛错时 trace + sink 出现
   `write_failed`。
+- 收掉剩余边界尾巴（共享 helper，无兼容 shim）：
+  `toolchain/runtime.py` 新增 `_verify_file_for_use` / `_verify_dir_for_use`
+  / `_verify_path_exists`，`read_file`、`edit_file`、`list_directory`、
+  `search_files`、`find_references` 在使用前统一重验 symlink，
+  `is_file` / `is_dir` / `exists` / `lstat` 失败一律转结构化拒绝，不再抛裸
+  `OSError`；`policies/shell_risk.py` 把任何链式命令（`&&`、`||`、`;`、`|`、
+  单独 `&`）判为 `generic`（仅展示），`cmd /c "npm install && curl ..."`
+  不再展示成单一安装，`curl ...?a=1&b=2` 这类 query URL 仍保持精确。
 
 - 把 `codey/runtime/` 拆成五个包，依赖只准单向：
   `core/`（operation 状态机、纯 reducer、契约）、
@@ -78,7 +86,7 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - `python -m pytest -q`
-  （`3683 passed, 4 skipped, 1292 subtests passed in 305.22s (0:05:05)`）
+  （`3685 passed, 4 skipped, 1300 subtests passed in 308.67s (0:05:08)`）
 
 ## 0.5.8 - Durable Operation Core
 

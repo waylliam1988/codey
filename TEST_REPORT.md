@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Boundary tails: shared verify helpers + chained-shell generic (2026-09-18)
+
+Scope:
+
+```text
+toolchain/runtime.py:   new _verify_file_for_use / _verify_dir_for_use /
+                        _verify_path_exists shared helpers; read_file,
+                        edit_file, list_directory, search_files,
+                        find_references re-verify symlink before use and map
+                        is_file/is_dir/exists/lstat failures to structured
+                        denials (no bare OSError escapes)
+policies/shell_risk.py: chained commands (&&, ||, ;, |, lone &) classify as
+                        generic (display-only); cmd /c + powershell chains
+                        covered, ?a=1&b=2 query URLs stay precise
+docs:                   CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+tests:                  test_tool_runtime (metadata stat failures),
+                        test_shell_risk (cmd/powershell/direct chains)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_tool_runtime.py tests/test_shell_risk.py tests/test_action_policy.py tests/test_redaction.py tests/test_run_ledger.py tests/test_research_pipeline.py`
+  (`184 passed, 77 subtests passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3685 passed, 4 skipped, 1300 subtests passed in 308.67s (0:05:08)`)
+
 ## Boundary hardening: policy/path/ledger/redaction fail-closed (2026-09-18)
 
 Scope:
