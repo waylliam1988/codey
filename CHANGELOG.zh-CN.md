@@ -33,6 +33,15 @@
 - 收紧架构门禁：`SessionView` 锁死三字段，`write/` 与 `observe/` 互禁
   import，平铺残留 `codey/runtime/*.py` 断言不存在，event matrix 的模块
   单元格同步到新路径。
+- `write/mutation_line.py` 瘦成 facade（461 行）：五个 `_build_*_rows()`
+  搬到 `write/provider_effects.py`、`write/tool_batches.py`
+  （`ToolBatchCommit` 也搬过去）和 `write/delivery_recovery.py`；共享
+  guard 回到各自 domain（`_find_effect` / `_require_new_effect_id` 进
+  effects，`_require_open_view` / `_driver_for_state` 进 session view）。
+  公开 API、异常文本、调用顺序全不变，mutation line 仍是唯一生产
+  `.mutate()` 调用方。
+- 新增 living 架构文档 `docs/runtime_architecture.zh-CN.md`，只写当前真相
+  （五包、三字段 view、派生 pending、mutation 边界、write/observe 互斥）。
 - 修复派生 pending 按 state 当前 turn 做坐标：`pending_for()` 忽略旧 turn
   记录，多候选 delivery batch 直接 fail closed，不再随便拿第一个。同 turn
   failover fresh batch（provider attempt 失败后按 `result_delivery`
@@ -47,7 +56,7 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - `python -m pytest -q`
-  （`3673 passed, 4 skipped, 1289 subtests passed in 312.72s (0:05:12)`）
+  （`3673 passed, 4 skipped, 1289 subtests passed in 321.16s (0:05:21)`）
 
 ## 0.5.8 - Durable Operation Core
 

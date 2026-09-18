@@ -37,6 +37,17 @@
   `write/` and `observe/` must not import each other, flat
   `codey/runtime/*.py` leftovers are asserted gone, and the event matrix
   module cells track the new paths.
+- Slimmed `write/mutation_line.py` into a facade (461 lines): the five
+  `_build_*_rows()` helpers moved to `write/provider_effects.py`,
+  `write/tool_batches.py` (now also home to `ToolBatchCommit`), and
+  `write/delivery_recovery.py`; shared guards moved to their domains
+  (`_find_effect` / `_require_new_effect_id` to effects,
+  `_require_open_view` / `_driver_for_state` to the session view). Public
+  API, error texts, and call order are unchanged, and the mutation line
+  stays the only production `.mutate()` caller.
+- Added living architecture doc `docs/runtime_architecture.zh-CN.md`
+  describing only the current truth (five packages, three-field view,
+  derived pending, mutation boundary, write/observe exclusion).
 - Fixed derived pending facts to use the state's current turn as the
   coordinate: `pending_for()` now ignores records from older turns, and an
   ambiguous delivery-pending batch set fails closed instead of grabbing the
@@ -54,7 +65,7 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3673 passed, 4 skipped, 1289 subtests passed in 312.72s (0:05:12)`)
+  (`3673 passed, 4 skipped, 1289 subtests passed in 321.16s (0:05:21)`)
 
 ## 0.5.8 - Durable Operation Core
 

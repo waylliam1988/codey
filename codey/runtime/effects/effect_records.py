@@ -678,6 +678,24 @@ def effects_from_entries(
     )
 
 
+def _require_new_effect_id(
+    effects: tuple[RuntimeEffectProjection, ...],
+    effect_id: str,
+) -> None:
+    if any(effect.intent.effect_id == effect_id for effect in effects):
+        raise RuntimeEffectError(f"duplicate effect id: {effect_id}")
+
+
+def _find_effect(
+    effects: tuple[RuntimeEffectProjection, ...],
+    effect_id: str,
+) -> RuntimeEffectProjection:
+    found = next((effect for effect in effects if effect.intent.effect_id == effect_id), None)
+    if found is None:
+        raise RuntimeEffectError(f"effect intent not found: {effect_id}")
+    return found
+
+
 def keep_effect_pair_for_compaction(
     *,
     is_open: bool,

@@ -8,7 +8,6 @@ entries, decides the next bounded records, and commits them as one batch.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from codey.runtime.effects.effect_records import (
@@ -16,36 +15,18 @@ from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectError,
     RuntimeEffectIntent,
-    RuntimeEffectProjection,
     RuntimeEffectSettlement,
-    SENT_STATE_SETTLED,
-    effect_intent_entry,
-    effect_settlement_entry,
-    prepare_intent,
-    prepare_settlement,
 )
 from codey.runtime.core.operation_state import (
-    DRIVER_REPAIR,
-    DRIVER_WRITER,
-    LEAF_REPAIR_CONTEXT_ADMITTED,
-    LEAF_REPAIR_RUNNING,
-    LEAF_REPAIR_SETTLED,
     LEAF_TERMINAL,
-    LEAF_TOOL_DELIVERY_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     mark_completion_blocked as state_mark_completion_blocked,
     mark_completion_proof_recorded as state_mark_completion_proof_recorded,
-    mark_provider_effect_pending,
-    mark_provider_effect_settled,
     mark_repair_context_admitted as state_mark_repair_context_admitted,
     mark_repair_running as state_mark_repair_running,
     mark_repair_settled as state_mark_repair_settled,
     mark_terminal as state_mark_terminal,
-    mark_tool_delivery_pending,
-    mark_tool_delivery_settled,
-    mark_tool_effect_pending,
-    mark_tool_effect_settled,
     mark_writer_running as state_mark_writer_running,
     mark_writer_settled as state_mark_writer_settled,
     new_operation_state,
@@ -56,22 +37,18 @@ from codey.runtime.core.operation_state import (
     start_entries,
 )
 from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
-from codey.runtime.log.session_view import SessionView, load_session_view, pending_for
-from codey.runtime.effects.tool_result_delivery import (
-    DeliveryBatchIntent,
-    batch_intent_entry,
-    delivered_entry,
-    prepare_batch_intent,
-    recovered_entry,
-    send_attempt_entry,
+from codey.runtime.log.session_view import load_session_view
+from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
+from codey.runtime.write.delivery_recovery import _build_delivery_recovered_rows
+from codey.runtime.write.provider_effects import (
+    _build_provider_begin_rows,
+    _build_provider_settle_rows,
 )
-
-
-@dataclass(frozen=True)
-class ToolBatchCommit:
-    batch_id: str
-    effect_ids: tuple[str, ...]
-    driver: str
+from codey.runtime.write.tool_batches import (
+    ToolBatchCommit,
+    _build_tool_batch_rows,
+    _build_tool_settle_rows,
+)
 
 
 class RuntimeMutationLine:
@@ -453,228 +430,6 @@ class RuntimeMutationLine:
         self.session_log.mutate(session_id, mutation)
 
 
-def _build_provider_begin_rows(
-    projection,
-    view: SessionView,
-    *,
-    session_id: str,
-    run_id: str,
-    intent: RuntimeEffectIntent,
-    driver: str = "",
-    delivery_batch_id: str = "",
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
-    state = _require_open_view(projection, view)
-    prepared = prepare_intent(session_id, run_id, intent)
-    _require_new_effect_id(view.effects, prepared.effect_id)
-    effect_driver = _driver_for_state(state, explicit=driver)
-    batches = view.batches
-    rows = [effect_intent_entry(prepared)]
-    if delivery_batch_id:
-        attempt = send_attempt_entry(
-            session_id,
-            run_id,
-            batch_id=delivery_batch_id,
-            provider_effect_id=prepared.effect_id,
-            batches=batches,
-        )
-        if attempt is not None:
-            rows.append(attempt)
-    rows.append(
-        operation_state_entry(
-            mark_provider_effect_pending(
-                state,
-                driver=effect_driver,
-                provider_id=prepared.provider_id,
-                turn=prepared.turn,
-            )
-        )
-    )
-    return tuple(rows), prepared
-
-
-def _build_provider_settle_rows(
-    projection,
-    view: SessionView,
-    *,
-    session_id: str,
-    run_id: str,
-    settlement: RuntimeEffectSettlement,
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = _require_open_view(projection, view)
-    effects = view.effects
-    matching = _find_effect(effects, settlement.effect_id)
-    prepared = prepare_settlement(session_id, run_id, settlement, effects)
-    if matching.settlement is not None:
-        return (), prepared
-    pending = pending_for(view)
-    rows = [effect_settlement_entry(prepared)]
-    if (
-        pending.delivery_batch_id
-        and prepared.status == "ok"
-        and prepared.sent_state == SENT_STATE_SETTLED
-    ):
-        batches = view.batches
-        delivered = delivered_entry(
-            session_id,
-            run_id,
-            batch_id=pending.delivery_batch_id,
-            provider_effect_id=prepared.effect_id,
-            batches=batches,
-        )
-        if delivered is not None:
-            rows.append(delivered)
-    rows.append(
-        operation_state_entry(
-            mark_provider_effect_settled(state)
-        )
-    )
-    return tuple(rows), prepared
-
-
-def _build_tool_batch_rows(
-    projection,
-    view: SessionView,
-    *,
-    session_id: str,
-    run_id: str,
-    intents: Iterable[RuntimeEffectIntent],
-    delivery_intent: DeliveryBatchIntent,
-    driver: str = "",
-) -> tuple[tuple[dict[str, object], ...], ToolBatchCommit]:
-    state = _require_open_view(projection, view)
-    effect_driver = _driver_for_state(state, explicit=driver)
-    existing_effects = view.effects
-    prepared_intents = tuple(
-        prepare_intent(session_id, run_id, intent) for intent in intents
-    )
-    for intent in prepared_intents:
-        _require_new_effect_id(existing_effects, intent.effect_id)
-    prepared_delivery = prepare_batch_intent(session_id, run_id, delivery_intent)
-    batches = view.batches
-    existing_batch = next(
-        (
-            batch
-            for batch in batches
-            if batch.intent.batch_id == prepared_delivery.batch_id
-        ),
-        None,
-    )
-    rows = [effect_intent_entry(intent) for intent in prepared_intents]
-    if existing_batch is None:
-        rows.append(batch_intent_entry(prepared_delivery))
-    elif (
-        existing_batch.intent.turn != prepared_delivery.turn
-        or existing_batch.intent.items != prepared_delivery.items
-        or existing_batch.intent.batch_digest != prepared_delivery.batch_digest
-    ):
-        raise RuntimeOperationTransitionError("delivery batch intent conflict")
-
-    effect_ids = tuple(intent.effect_id for intent in prepared_intents)
-    if effect_ids:
-        next_state = mark_tool_effect_pending(
-            state,
-            driver=effect_driver,
-            turn=prepared_delivery.turn,
-        )
-    else:
-        next_state = mark_tool_delivery_pending(
-            state,
-            driver=effect_driver,
-            turn=prepared_delivery.turn,
-        )
-    rows.append(operation_state_entry(next_state))
-    batch_commit = ToolBatchCommit(
-        batch_id=prepared_delivery.batch_id,
-        effect_ids=effect_ids,
-        driver=effect_driver,
-    )
-    return tuple(rows), batch_commit
-
-
-def _build_tool_settle_rows(
-    projection,
-    view: SessionView,
-    *,
-    session_id: str,
-    run_id: str,
-    settlement: RuntimeEffectSettlement,
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = _require_open_view(projection, view)
-    effects = view.effects
-    matching = _find_effect(effects, settlement.effect_id)
-    prepared = prepare_settlement(session_id, run_id, settlement, effects)
-    if matching.settlement is not None:
-        return (), prepared
-    rows = [effect_settlement_entry(prepared)]
-    pending = pending_for(view)
-    if prepared.effect_id not in pending.effect_ids:
-        raise RuntimeOperationTransitionError("effect is not pending on operation state")
-    remaining = tuple(effect_id for effect_id in pending.effect_ids if effect_id != prepared.effect_id)
-    rows.append(
-        operation_state_entry(
-            mark_tool_effect_settled(state, has_remaining=bool(remaining))
-        )
-    )
-    return tuple(rows), prepared
-
-
-def _build_delivery_recovered_rows(
-    projection,
-    view: SessionView,
-    *,
-    session_id: str,
-    run_id: str,
-    batch_id: str,
-    recovered_ids: tuple[str, ...],
-    recovered_reads: int = 0,
-    recovered_lookups: int = 0,
-) -> tuple[dict[str, object], ...]:
-    state = _require_open_view(projection, view)
-    batches = view.batches
-    projection_batch = next(
-        (batch for batch in batches if batch.intent.batch_id == batch_id),
-        None,
-    )
-    if projection_batch is None:
-        raise RuntimeOperationTransitionError(
-            "delivery recovery requires matching delivery_pending state"
-        )
-    pending = pending_for(view)
-    if (
-        state.leaf != LEAF_TOOL_DELIVERY_PENDING
-        or pending.delivery_batch_id != batch_id
-    ):
-        if not projection_batch.is_recovered:
-            raise RuntimeOperationTransitionError(
-                "delivery recovery requires matching delivery_pending state"
-            )
-        entry = recovered_entry(
-            session_id,
-            run_id,
-            batch_id=batch_id,
-            recovered_effect_ids=recovered_ids,
-            recovered_reads=recovered_reads,
-            recovered_lookups=recovered_lookups,
-            batches=batches,
-        )
-        return () if entry is None else (entry,)
-    next_state = mark_tool_delivery_settled(state)
-    rows: list[dict[str, object]] = []
-    entry = recovered_entry(
-        session_id,
-        run_id,
-        batch_id=batch_id,
-        recovered_effect_ids=recovered_ids,
-        recovered_reads=recovered_reads,
-        recovered_lookups=recovered_lookups,
-        batches=batches,
-    )
-    if entry is not None:
-        rows.append(entry)
-    rows.append(operation_state_entry(next_state))
-    return tuple(rows)
-
-
 def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
     return {
         "lane": state.lane,
@@ -698,45 +453,6 @@ def _require_state(
     if state is None:
         raise RuntimeOperationTransitionError("operation state is missing")
     return state
-
-
-def _require_open_view(projection, view: SessionView) -> RuntimeOperationState:
-    if view.state is None:
-        raise RuntimeOperationTransitionError("operation state is missing")
-    operation_is_open(projection, view.state)
-    return view.state
-
-
-def _driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str:
-    if explicit:
-        if explicit not in {DRIVER_WRITER, DRIVER_REPAIR}:
-            raise RuntimeOperationTransitionError("driver must be writer or repair")
-        return explicit
-    if state.driver == DRIVER_REPAIR or state.leaf in {
-        LEAF_REPAIR_CONTEXT_ADMITTED,
-        LEAF_REPAIR_RUNNING,
-        LEAF_REPAIR_SETTLED,
-    }:
-        return DRIVER_REPAIR
-    return DRIVER_WRITER
-
-
-def _require_new_effect_id(
-    effects: tuple[RuntimeEffectProjection, ...],
-    effect_id: str,
-) -> None:
-    if any(effect.intent.effect_id == effect_id for effect in effects):
-        raise RuntimeEffectError(f"duplicate effect id: {effect_id}")
-
-
-def _find_effect(
-    effects: tuple[RuntimeEffectProjection, ...],
-    effect_id: str,
-) -> RuntimeEffectProjection:
-    found = next((effect for effect in effects if effect.intent.effect_id == effect_id), None)
-    if found is None:
-        raise RuntimeEffectError(f"effect intent not found: {effect_id}")
-    return found
 
 
 __all__ = [

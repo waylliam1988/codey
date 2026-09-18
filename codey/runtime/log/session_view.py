@@ -19,10 +19,17 @@ from codey.runtime.effects.effect_records import (
     effects_from_entries,
 )
 from codey.runtime.core.operation_state import (
+    DRIVER_REPAIR,
+    DRIVER_WRITER,
     LEAF_PROVIDER_EFFECT_PENDING,
+    LEAF_REPAIR_CONTEXT_ADMITTED,
+    LEAF_REPAIR_RUNNING,
+    LEAF_REPAIR_SETTLED,
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_TOOL_EFFECT_PENDING,
     RuntimeOperationState,
+    RuntimeOperationTransitionError,
+    operation_is_open,
     operation_state_from_entries,
 )
 from codey.runtime.log.session_log import RuntimeLogEntry
@@ -128,6 +135,27 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
             batch_id = ""
         return PendingRuntimeFacts(delivery_batch_id=batch_id)
     return PendingRuntimeFacts()
+
+
+def _require_open_view(projection, view: SessionView) -> RuntimeOperationState:
+    if view.state is None:
+        raise RuntimeOperationTransitionError("operation state is missing")
+    operation_is_open(projection, view.state)
+    return view.state
+
+
+def _driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str:
+    if explicit:
+        if explicit not in {DRIVER_WRITER, DRIVER_REPAIR}:
+            raise RuntimeOperationTransitionError("driver must be writer or repair")
+        return explicit
+    if state.driver == DRIVER_REPAIR or state.leaf in {
+        LEAF_REPAIR_CONTEXT_ADMITTED,
+        LEAF_REPAIR_RUNNING,
+        LEAF_REPAIR_SETTLED,
+    }:
+        return DRIVER_REPAIR
+    return DRIVER_WRITER
 
 
 def load_session_view(
