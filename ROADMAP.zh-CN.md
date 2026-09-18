@@ -771,7 +771,7 @@ codey.operations.ghost_post_turn         terminal-event Ghost projections
 codey.app.http_plumbing                  Host/Origin/static/JSON/SSE transport helpers
 codey.app.api                            ordinary JSON endpoint payloads
 codey.app.services                       provider/review/consensus/shell service calls
-codey.runtime.terminalizer               terminal task_done event + turn accounting
+codey.runtime.observe.terminalizer       terminal task_done event + turn accounting
 codey.task.model                         TaskSubmission model-only boundary
 ```
 
@@ -876,10 +876,10 @@ provider send、tool execution、completion repair round。每个真实外部效
 扩展现有 runtime fact source：
 
 ```text
-codey/runtime/session_log.py
-codey/runtime/operation_state.py
-codey/runtime/effect_records.py
-codey/runtime/replay_policy.py
+codey/runtime/log/session_log.py
+codey/runtime/core/operation_state.py
+codey/runtime/effects/effect_records.py
+codey/runtime/effects/replay_policy.py
 tests/test_runtime_operation_state.py
 tests/test_runtime_effect_records.py
 tests/test_tool_replay_policy.py
@@ -1097,8 +1097,8 @@ canonical tool args 之后，把 safe read/search 的恢复闭环补齐：进程
 新增：
 
 ```text
-codey/runtime/safe_tool_replay.py
-codey/runtime/replay_args.py
+codey/runtime/effects/safe_tool_replay.py
+codey/runtime/effects/replay_args.py
 tests/test_safe_tool_replay.py
 tests/manual/safe_tool_replay_smoke.py
 ```
@@ -1106,8 +1106,8 @@ tests/manual/safe_tool_replay_smoke.py
 扩展：
 
 ```text
-codey/runtime/effect_records.py
-codey/runtime/replay_policy.py
+codey/runtime/effects/effect_records.py
+codey/runtime/effects/replay_policy.py
 codey/agents/tool_execution.py
 codey/operations/task_run.py
 codey/runs/details.py
@@ -1210,7 +1210,7 @@ persisted canonical `replay_args` 重新执行整批 safe 结果，再交回同�
 新增或扩展：
 
 ```text
-codey/runtime/tool_result_delivery.py
+codey/runtime/effects/tool_result_delivery.py
 tests/test_tool_result_delivery.py
 tests/manual/safe_tool_replay_delivery_smoke.py
 ```
@@ -1539,9 +1539,11 @@ source wrapper 已胜出并接入默认 open_url/source-content rendering；后�
 
 ## 0.5.8 - Pi Agent v2-inspired Durable Operation Core v1
 
-状态：实现候选已落地，待 review / release。目标不是继续加 Ghost / World Model / provider learning，而是把 0.5.1-0.5.7
+状态：实现候选已落地，待 release。目标不是继续加 Ghost / World Model / provider learning，而是把 0.5.1-0.5.7
 已经做出来的 durable runtime、effect intent/settlement、safe replay、delivery receipt、
 prompt surface hardening 和 Research proof gate 收成一个更明确的 operation state machine。
+P0-P4 runtime subtraction 后，runtime 文件已经从平铺模块收敛成 `core/`、`log/`、
+`effects/`、`write/`、`observe/` 五个包；下面的当前落点按新路径记录。
 
 参考：
 
@@ -1572,14 +1574,16 @@ snapshot/state 是事实源，event/trace 是观察面
 当前落点：
 
 ```text
-codey/runtime/operation_state.py      # total durable operation state; first-class operation_state log entry
-codey/runtime/operation_reducer.py    # pure state + durable facts -> RuntimeAction
-codey/runtime/drive.py                # peek_next_action(), no side effects
-codey/runtime/mutation_line.py        # serialized production mutation boundary
-codey/runtime/effect_records.py       # effect intent / settlement ledger, projection + entry builders
-codey/runtime/tool_result_delivery.py # delivery receipt ledger, projection + entry builders
-codey/runtime/session_projection.py   # session-log projection, renamed from reducer.py
-codey/runtime/session_log.py          # mutate() + repair/compaction storage adapter
+codey/runtime/core/operation_state.py        # total durable operation state; first-class operation_state log entry
+codey/runtime/core/operation_reducer.py      # pure SessionView -> RuntimeAction
+codey/runtime/log/session_view.py            # canonical runtime read projection: state/effects/batches
+codey/runtime/write/drive.py                 # peek_next_action(), no side effects
+codey/runtime/write/mutation_line.py         # serialized production mutation boundary
+codey/runtime/effects/effect_records.py      # effect intent / settlement ledger, projection + entry builders
+codey/runtime/effects/tool_result_delivery.py # delivery receipt ledger, projection + entry builders
+codey/runtime/log/session_projection.py      # session-log projection, renamed from reducer.py
+codey/runtime/log/session_log.py             # mutate() + repair/compaction storage adapter
+codey/runtime/log/compaction.py              # session-log compaction coordinator
 ```
 
 目标形态：
@@ -1611,15 +1615,15 @@ repair_settled
 terminal
 ```
 
-每个 state 必须携带足够恢复下一步的 bounded refs：
+每个 state 必须携带足够恢复下一步的 bounded refs；in-flight effect ids 和
+delivery batch id 不再作为 state 的 Source of Truth，而是由 `SessionView`
+从当前 `turn/tool_index`、effect ledger 和 delivery ledger 派生：
 
 ```text
 operation_id
 lane
 leaf
 driver = writer | repair
-pending_effect_ids
-pending_delivery_batch_id
 turn/tool_index
 completion_proof_ref
 repair_context_ref

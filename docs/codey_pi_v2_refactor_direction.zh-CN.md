@@ -231,20 +231,40 @@ PermissionProfile、tool contract、prompt surface hardening 和 completion proo
 
 ## 0.5.8 目标架构
 
-目标不是新增大框架，而是把当前 runtime 文件整理成一个更明确的小内核：
+目标不是新增大框架，而是把当前 runtime 文件整理成一个更明确的小内核。
+P0-P4 落地后，runtime 已按职责拆成五个包：
 
 ```text
 codey/runtime/
-  operation.py              # Operation identity / intent / outcome contracts
-  operation_state.py        # total durable operation state; operation_state log entry
-  operation_reducer.py      # pure: state + durable facts -> RuntimeAction
-  drive.py                  # peek_next_action(), no side effects
-  mutation_line.py          # serialized production mutation boundary
-  effect_records.py         # intent / settlement ledger, projection + entry builders
-  replay_policy.py          # safe/unsafe replay policy
-  tool_result_delivery.py   # delivery receipt ledger, projection + entry builders
-  session_projection.py     # session-log projection; renamed from reducer.py
-  session_log.py            # mutate() + repair/compaction storage adapter
+  core/
+    operation.py            # Operation identity / intent / outcome contracts
+    operation_state.py      # total durable operation state; operation_state log entry
+    operation_reducer.py    # pure SessionView -> RuntimeAction
+    models.py               # tool/control runtime model contracts
+    ports.py                # runtime dependency protocols
+    outcome.py              # terminal operation outcome projection
+    cancellation.py         # cancellation/deadline primitives
+  log/
+    session_log.py          # mutate() + repair storage adapter
+    session_projection.py   # session-log projection; renamed from reducer.py
+    session_view.py         # canonical runtime read model: state/effects/batches
+    compaction.py           # session-log compaction coordinator
+  effects/
+    effect_records.py       # intent / settlement ledger, projection + entry builders
+    replay_policy.py        # safe/unsafe replay policy
+    replay_args.py          # canonical safe replay args
+    safe_tool_replay.py     # safe tool replay candidates / validators
+    tool_result_delivery.py # delivery receipt ledger, projection + entry builders
+  write/
+    mutation_line.py        # serialized production mutation boundary
+    drive.py                # peek_next_action(), no side effects
+    task_runtime.py         # task runtime wiring
+  observe/
+    events.py               # UI/SSE event projection
+    execution_evidence.py   # execution evidence contracts
+    prompt_envelope.py      # prompt surface envelope recording
+    prompt_surface.py       # provider prompt surface records
+    terminalizer.py         # terminal task_done event + turn accounting
 ```
 
 冷启动实现不保留 `runtime/effects.py`、`runtime/reducer.py`、`runtime/scheduler.py`
@@ -254,10 +274,10 @@ codey/runtime/
 
 ```text
 TaskRuntime accepts operation
-OperationState says next action
+SessionView + OperationState says next action
 task_run executes business action
 runtime records state/effect/settlement
-terminalizer records final outcome
+observe.terminalizer records final outcome
 ```
 
 它不再继续吸收：
@@ -297,12 +317,14 @@ operation_id 是谁
 lane 是谁
 leaf 是什么
 driver 是 writer 还是 repair
-pending_effect_ids 是哪些
-pending_delivery_batch_id 是谁
 turn / tool_index 到哪里
-proof / repair / delivery 的最小 refs 是什么
+proof / repair 的最小 refs 是什么
 terminal 是否已经不可逆
 ```
+
+`pending_effect_ids` 和 `pending_delivery_batch_id` 不再写入 state；它们由
+`SessionView(state, effects, batches)` 以当前 `turn/tool_index` 为坐标派生，
+避免 durable state 和 effect/delivery ledger 复制同一事实。
 
 禁止：
 
@@ -439,7 +461,7 @@ max_turns / invalid_tool_called / cancelled 的 terminal 分类
 ```text
 task_run.py 负责 wiring 和业务 dispatch
 runtime reducer 负责下一步 action
-terminalizer 负责终态事件
+observe.terminalizer 负责终态事件
 completion proof 负责 done 是否可信
 ```
 

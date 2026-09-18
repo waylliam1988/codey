@@ -110,7 +110,7 @@ ChatProvider
 ```text
 codey/protocols/base.py
 codey/protocols/json_codec.py
-codey/runtime/models.py
+codey/runtime/core/models.py
 codey/toolchain/definition.py
 codey/agents/tools.py
 codey/toolchain/runtime.py
