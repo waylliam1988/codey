@@ -4,6 +4,19 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- hardening 批次的复查跟进（不新增兼容或 fallback）：
+  过期 SSE replay 改为 marker-only：`replay_events_after` 只返回
+  `resync_required`，id 取 `max(cutoff, start + 1)`，不再附带 retained rows，
+  采纳 marker 一定推进 `Last-Event-ID`，“刚好差一格”不再重复 resync。
+  这正好对上客户端本来就把 `resync_required` 当“全量 reconcile”
+  （`reconcileRunState()` + `refreshProviderStatus()`）的契约，所以前端逻辑
+  不用改。`WorkerChatProvider.close()` 走 `restart=False`：关闭永不复活已死
+  子进程（`terminate → start → terminate` 没了；`send`/`new_chat` 下次调用照常
+  自愈）。`providers_response()` 探测崩溃记 `logger.exception`，provider 菜单
+  加一行安静的单色 `Provider probe failed`（muted 文字、无颜色），由
+  `data.probe_error` 控制，用户能分清“探测崩了”和“全离线”。测试：resync 期望
+  更新为 marker-only + 不重复，两个 `close()` 不重启测试、`probe_error` 日志断言、
+  warning 行的 UI 静态测试。
 - 冷启动 hardening 批次，fail closed，不新增兼容或 fallback：
   `task_runtime.py:_settle_if_open` 不再吞 `mark_terminal` 异常（真正的结算
   不一致现在会冒泡，而不是 operation 还 open 着、UI 却显示 done）；先检查

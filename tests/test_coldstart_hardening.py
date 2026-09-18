@@ -179,18 +179,20 @@ class EventBusOverflowTests(unittest.TestCase):
             EventBus._put_for_subscriber(sub, payload, {"type": "turn"})
         self.assertEqual(sub.dropped, 1)
 
-    def test_resync_marker_carries_a_cursor(self) -> None:
+    def test_expired_replay_is_marker_only_and_never_repeats(self) -> None:
         bus = EventBus(replay_limit=4)
         for index in range(6):
             bus.emit({"type": "turn", "turn": index})
         rows = bus.replay_events_after(1)
+        self.assertEqual(len(rows), 1)
         marker_id, marker = rows[0]
         self.assertEqual(marker["type"], "resync_required")
         self.assertGreater(marker_id, 1)
-        follow_up = bus.replay_events_after(marker_id)
-        self.assertTrue(any(
-            payload.get("type") == "turn" for _, payload in follow_up
-        ))
+        # Adopting the marker strictly advances the cursor: the off-by-one
+        # case (cursor == oldest_retained - 1) must not resync twice.
+        self.assertEqual(bus.replay_events_after(marker_id), [])
+        # Any other expired cursor converges on the same marker id.
+        self.assertEqual(bus.replay_events_after(2)[0][0], marker_id)
 
 
 class WorkerSelfHealTests(unittest.TestCase):
@@ -232,18 +234,47 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._drain_responses()
         self.assertTrue(provider._responses.empty())
 
+    def test_close_never_restarts_a_dead_worker(self) -> None:
+        provider = self._provider()
+        with mock.patch.object(
+            WorkerChatProvider, "_start",
+            side_effect=AssertionError("close() must not restart"),
+        ):
+            provider.close()  # _proc is None
+        self.assertIsNone(provider._proc)
+
+    def test_close_never_restarts_an_exited_worker(self) -> None:
+        provider = self._provider()
+        exited = mock.Mock()
+        exited.poll.return_value = 1
+        exited.stdin = mock.Mock()
+        provider._proc = exited
+        with (
+            mock.patch.object(
+                WorkerChatProvider, "_start",
+                side_effect=AssertionError("close() must not restart"),
+            ),
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree"),
+        ):
+            provider.close()
+        self.assertIsNone(provider._proc)
+
 
 class ProviderProbeErrorTests(unittest.TestCase):
     def test_probe_crash_is_signalled_not_silent(self) -> None:
         ctx = SimpleNamespace()
-        with mock.patch(
-            "codey.app.api.services.provider_availability",
-            side_effect=RuntimeError("probe exploded"),
+        with (
+            mock.patch(
+                "codey.app.api.services.provider_availability",
+                side_effect=RuntimeError("probe exploded"),
+            ),
+            self.assertLogs("codey.app.api", level="ERROR") as captured,
         ):
             status, payload = app_api.providers_response(ctx)
         self.assertEqual(status, 200)
         self.assertTrue(payload["probe_error"])
         self.assertTrue(all(item["available"] is False for item in payload["providers"]))
+        self.assertTrue(any("probe" in message for message in captured.output))
 
     def test_healthy_probe_reports_no_error(self) -> None:
         ctx = SimpleNamespace()

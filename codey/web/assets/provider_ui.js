@@ -65,6 +65,9 @@ function refreshProviderStatus(immediate = false) {
   }
   _doRefreshProviderStatus();
 }
+function setProbeWarning(failed) {
+  $('provider-probe-warning').hidden = !failed;
+}
 async function _doRefreshProviderStatus() {
   const reqId = ++lastRequestId;
   const fetchTime = Date.now();
@@ -74,6 +77,7 @@ async function _doRefreshProviderStatus() {
     const data = await r.json();
     if (reqId !== lastRequestId) return;
     applyProviderStatus(data.providers, false, fetchTime);
+    setProbeWarning(!!data.probe_error);
   } catch {}
 }
 

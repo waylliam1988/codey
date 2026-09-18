@@ -686,6 +686,12 @@
   }
   .provider-item.active .check { opacity: 1; }
   .provider-item.active { color: var(--text); }
+  .provider-probe-warning {
+    padding: 6px 10px 4px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .provider-probe-warning[hidden] { display: none; }
 
   .local-config-pop {
     position: fixed;

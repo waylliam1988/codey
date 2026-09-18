@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
@@ -73,10 +74,14 @@ def _project_directory_error(project: str | None) -> str:
     return "project not found, use pick_folder"
 
 
+logger = logging.getLogger(__name__)
+
+
 def providers_response(ctx: Any) -> tuple[int, dict]:
     try:
         statuses = services.provider_availability(ctx)
     except Exception:
+        logger.exception("provider availability probe failed")
         statuses = {}
         probe_error = True
     else:

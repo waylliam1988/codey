@@ -342,6 +342,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Open the model page", UI_SOURCE)
         self.assertNotIn("PlaywrightContextManager", UI_SOURCE)
 
+    def test_provider_probe_failure_shows_a_quiet_menu_warning(self) -> None:
+        self.assertIn('id="provider-probe-warning"', HTML)
+        self.assertIn("Provider probe failed", HTML)
+        self.assertIn("setProbeWarning(!!data.probe_error)", PROVIDER_UI_JS)
+        self.assertIn(".provider-probe-warning", STYLE_SOURCE)
+        self.assertIn("color: var(--muted)", STYLE_SOURCE)
+
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
         self.assertIn("defaultSession(null, fallbackProvider)", HTML)

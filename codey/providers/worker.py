@@ -84,8 +84,9 @@ class WorkerChatProvider:
         return str(result or "")
 
     def close(self) -> None:
+        # Shutdown must never resurrect the child: a dead worker stays dead.
         try:
-            self._request("close", {}, 2.0)
+            self._request("close", {}, 2.0, restart=False)
         except Exception:
             pass
         self._terminate()
@@ -202,12 +203,31 @@ class WorkerChatProvider:
             raise RuntimeError("provider worker is not running")
         return proc
 
-    def _request(self, method: str, params: dict, timeout: float | None):
+    def _request(
+        self,
+        method: str,
+        params: dict,
+        timeout: float | None,
+        *,
+        restart: bool = True,
+    ):
         with self._lock:
-            return self._request_locked(method, params, timeout)
+            return self._request_locked(method, params, timeout, restart=restart)
 
-    def _request_locked(self, method: str, params: dict, timeout: float | None):
-        proc = self._ensure_running_locked()
+    def _request_locked(
+        self,
+        method: str,
+        params: dict,
+        timeout: float | None,
+        *,
+        restart: bool = True,
+    ):
+        if restart:
+            proc = self._ensure_running_locked()
+        else:
+            proc = self._proc
+            if proc is None or proc.poll() is not None or proc.stdin is None:
+                raise RuntimeError("provider worker is not running")
         request_id = uuid.uuid4().hex
         payload = {"id": request_id, "method": method, "params": params}
         try:

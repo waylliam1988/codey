@@ -80,18 +80,18 @@ class EventBus:
                 if start < event_id <= cutoff
             ]
             if start > 0 and self._replay and start < self._replay[0][0]:
-                # Advance the cursor past the expired window: the next
-                # Last-Event-ID returns the oldest retained row instead of
-                # looping on an id-less marker.
-                marker_id = max(1, self._replay[0][0] - 1)
-                rows.insert(0, (
-                    marker_id,
+                # Expired window: force a full reconcile. Return only the
+                # marker (no retained rows) stamped past the caller's cursor,
+                # so adopting it strictly advances Last-Event-ID and the same
+                # marker is never replayed twice.
+                return [(
+                    max(cutoff, start + 1),
                     {
                         "type": "resync_required",
                         "reason": "sse_replay_window_expired",
                         "dropped": self._replay[0][0] - start,
                     },
-                ))
+                )]
             return rows
 
     @staticmethod

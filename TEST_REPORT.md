@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Hardening review follow-ups (2026-09-18)
+
+Scope:
+
+```text
+app/event_bus.py:       expired replay is marker-only, id max(cutoff, start+1)
+providers/worker.py:    close() uses restart=False; _request/_request_locked
+                        gain restart flag (send/new_chat default True)
+app/api.py:             logger.exception on probe crash
+web:                    provider-probe-warning row (muted, hidden by default),
+                        setProbeWarning(!!data.probe_error) in _doRefresh
+tests:                  resync expectations to marker-only + never-repeats
+                        (test_server.py, test_coldstart_hardening.py);
+                        two close()-never-restarts tests; probe log assertion;
+                        UI static test for the warning row
+docs:                   CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `tests/test_coldstart_hardening.py tests/test_server.py -k
+  "coldstart or hardening or replay or resync or sse or event or probe or
+  worker or close or ProviderRegistry or providers_response"`
+  (`56 passed`)
+  `tests/test_ui.py tests/test_ui_architecture.py
+  tests/test_adapter_self_repair.py tests/test_providers.py`
+  (`185 passed, 11 subtests passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3742 passed, 6 skipped, 1300 subtests passed in 314.95s (0:05:14)`)
+- No release (batch stays Unreleased).
+
 ## Cold-start hardening batch (2026-09-18)
 
 Scope:

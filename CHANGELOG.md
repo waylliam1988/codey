@@ -4,6 +4,23 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Review follow-ups on the hardening batch (no new compat or fallback):
+  expired SSE replay is now marker-only: `replay_events_after` returns just
+  `resync_required` stamped at `max(cutoff, start + 1)` with no retained rows
+  attached, so adopting the marker strictly advances `Last-Event-ID` and the
+  off-by-one case (`cursor == oldest_retained - 1`) can no longer resync
+  twice. This matches the client contract that already treats
+  `resync_required` as “re-pull authoritative state”
+  (`reconcileRunState()` + `refreshProviderStatus()`), so no frontend change
+  was needed. `WorkerChatProvider.close()` takes `restart=False`: shutdown
+  never resurrects a dead child (`terminate → start → terminate` is gone;
+  `send`/`new_chat` keep auto-restart on their next call).
+  `providers_response()` logs the probe crash via `logger.exception`, and the
+  provider menu gained a quiet monochrome `Provider probe failed` row
+  (muted text, no color) toggled by `data.probe_error`, so users can tell a
+  crashed probe apart from all-offline. Tests: resync expectations updated
+  to marker-only + never-repeats, two `close()`-never-restarts tests, a
+  `probe_error` log-assertion, and a UI static test for the warning row.
 - Cold-start hardening batch, fail closed with no new compat or fallback:
   `runtime/write/task_runtime.py:_settle_if_open` no longer swallows
   `mark_terminal` errors (a real settle mismatch now propagates instead of
