@@ -9,9 +9,20 @@ class ApprovalRegistry:
     def __init__(self) -> None:
         self._pending_shell: dict[str, dict] = {}
         self._pending_teach: dict[str, dict] = {}
+        # Monotonic epoch: Stop (expire-all) always bumps it, even when the
+        # map is already empty, so an Allow that already popped its entry can
+        # still detect that a Stop landed before execution. Filtered expires
+        # bump only when they actually remove entries (fail-closed, rare false
+        # positives across sessions are acceptable; false negatives are not).
+        self._generation = 0
+
+    def current_generation(self) -> int:
+        return self._generation
 
     def add_shell(self, approval_id: str, pending: dict) -> None:
-        self._pending_shell[approval_id] = dict(pending)
+        record = dict(pending)
+        record["_approval_generation"] = self._generation
+        self._pending_shell[approval_id] = record
 
     def pop_shell(self, approval_id: str) -> dict | None:
         pending = self._pending_shell.pop(approval_id, None)
@@ -52,6 +63,7 @@ class ApprovalRegistry:
         *,
         run_id: str = "",
         exclude_run_id: str = "",
+        session_id: str = "",
         output: str = "Task stopped; command approval expired.",
     ) -> tuple[dict, ...]:
         stale: list[dict] = []
@@ -61,7 +73,14 @@ class ApprovalRegistry:
                 continue
             if exclude_run_id and pending_run_id == exclude_run_id:
                 continue
+            if session_id and str(pending.get("session_id") or "") != session_id:
+                continue
             stale.append(self._pending_shell.pop(approval_id))
+        # Stop-all (no filters) always bumps, even with zero removals, to
+        # invalidate an already-claimed Allow. Filtered expires bump only when
+        # they remove something.
+        if stale or (not run_id and not exclude_run_id and not session_id):
+            self._generation += 1
         return tuple(
             {
                 "type": "shell_result",
@@ -76,6 +95,15 @@ class ApprovalRegistry:
             }
             for pending in stale
         )
+
+    def expire_session(
+        self,
+        session_id: str,
+        *,
+        output: str = "Chat cleared; command approval expired.",
+    ) -> tuple[dict, ...]:
+        """Expire pending shell approvals for one session (new-chat path)."""
+        return self.expire_shell_results(session_id=session_id, output=output)
 
     def pending_ui_event(self, active: RunSnapshot | None) -> dict | None:
         candidates = [

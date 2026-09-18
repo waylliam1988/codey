@@ -376,11 +376,24 @@ def run_research_advisors(
     )
 
 
+def _approval_generation_current(ctx: Any, expected: int) -> bool:
+    try:
+        current = int(ctx.approval_generation())
+    except Exception:
+        return True
+    return int(expected or 0) == int(current or 0)
+
+
 def safe_project_cwd(project: str | Path, rel: str) -> Path:
     root = Path(project).expanduser().resolve()
     cwd = (root / (rel or ".")).resolve()
     if root not in cwd.parents and cwd != root:
         raise ValueError("cwd escapes project root")
+    try:
+        if cwd.is_symlink():
+            raise ValueError("cwd is a symlink")
+    except OSError as exc:
+        raise ValueError("cwd is not a directory") from exc
     if not cwd.is_dir():
         raise ValueError("cwd is not a directory")
     return cwd
@@ -394,6 +407,7 @@ def execute_approved_shell(
     *,
     timeout: int | None = None,
     output_limit: int | None = None,
+    expected_approval_generation: int | None = None,
 ) -> dict:
     command = (command or "").strip()
     if not command:
@@ -401,6 +415,21 @@ def execute_approved_shell(
     timeout = SHELL_TIMEOUT if timeout is None else timeout
     output_limit = SHELL_OUTPUT_LIMIT if output_limit is None else output_limit
     try:
+        cwd = safe_project_cwd(project, rel)
+        # Second Stop check in the same critical state as api.py, immediately
+        # before Popen, to narrow the claim-then-execute window. Re-resolve
+        # the cwd as well so a symlink swap between approval and execution is
+        # more likely to fail closed here than inside the child.
+        if expected_approval_generation is not None and not _approval_generation_current(
+            ctx, expected_approval_generation
+        ):
+            return {"ok": False, "error": "command stopped", "exit_code": None, "output": ""}
+        try:
+            stop_set = bool(ctx.run_registry.stop_flag.is_set())
+        except Exception:
+            stop_set = False
+        if stop_set:
+            return {"ok": False, "error": "command stopped", "exit_code": None, "output": ""}
         cwd = safe_project_cwd(project, rel)
         with cancellation.scope(ctx.run_registry.stop_flag):
             proc = cancellation.run_process(

@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import hashlib
+import os
+import stat
 from pathlib import Path, PurePosixPath
 
 
 def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Path:
+    """Resolve ``rel`` under ``root`` and prevent relative path traversal.
+
+    Threat model: application-level guard against model-generated escapes
+    (``../../etc/passwd``); not an OS-level capability sandbox (symlink
+    races / TOCTOU across directory swaps need the no-follow helpers).
+    """
     resolved_root = Path(root).expanduser().resolve()
     path = (resolved_root / str(rel)).resolve()
     if path != resolved_root and resolved_root not in path.parents:
@@ -15,13 +23,60 @@ def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Pat
     return path
 
 
-def read_text_bounded(path: str | Path, *, max_bytes: int) -> str:
+def ensure_not_symlink(path: str | Path) -> Path:
+    """Fail closed when the final component is a symlink.
+
+    Windows has no full O_NOFOLLOW, so every no-follow reader/writer calls
+    this immediately before open: the lstat-then-open window stays, but a
+    swapped-in symlink is rejected instead of followed.
+    """
     target = Path(path)
-    if not target.is_file():
+    try:
+        if target.is_symlink():
+            raise ValueError(f"refusing symlink: {target}")
+    except OSError as exc:
+        raise ValueError(f"not a file: {target}") from exc
+    return target
+
+
+def read_text_bounded_no_follow(path: str | Path, *, max_bytes: int) -> str:
+    """Read a bounded UTF-8 file without following a trailing symlink."""
+    target = ensure_not_symlink(path)
+    limit = max(0, int(max_bytes))
+    try:
+        info = target.lstat()
+    except OSError as exc:
+        raise ValueError(f"not a file: {target}") from exc
+    if stat.S_ISLNK(info.st_mode):
+        raise ValueError(f"refusing symlink: {target}")
+    if not stat.S_ISREG(info.st_mode):
         raise ValueError(f"not a file: {target}")
-    if target.stat().st_size > max(0, int(max_bytes)):
+    if info.st_size > limit:
         raise ValueError(f"file too large for snapshot: {target}")
-    return target.read_text(encoding="utf-8")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(target, flags)
+    except OSError as exc:
+        raise ValueError(f"not a file: {target}") from exc
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            data = handle.read(limit + 1)
+    except OSError as exc:
+        raise ValueError(f"not a file: {target}") from exc
+    if len(data) > limit:
+        raise ValueError(f"file too large for snapshot: {target}")
+    text = data.decode("utf-8")
+    # Match Path.read_text universal-newline semantics so snapshot hashes are
+    # stable across the old/new readers (raw CRLF on disk -> "\n" in memory).
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_text_bounded(path: str | Path, *, max_bytes: int) -> str:
+    return read_text_bounded_no_follow(path, max_bytes=max_bytes)
 
 
 def read_text_or_none(path: str | Path, *, max_bytes: int) -> str | None:
@@ -39,6 +94,12 @@ def content_hash(content: str | None) -> str:
 
 def path_hash(path: str | Path) -> str:
     target = Path(path)
+    try:
+        info = target.lstat()
+    except OSError:
+        return "missing"
+    if stat.S_ISLNK(info.st_mode):
+        raise ValueError(f"refusing symlink: {target}")
     if not target.exists():
         return "missing"
     if not target.is_file():
@@ -102,9 +163,11 @@ def _sorted_entries(
 __all__ = [
     "bounded_directory_entries",
     "content_hash",
+    "ensure_not_symlink",
     "is_test_path",
     "path_hash",
     "read_text_bounded",
+    "read_text_bounded_no_follow",
     "read_text_or_none",
     "safe_join",
 ]

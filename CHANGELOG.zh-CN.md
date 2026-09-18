@@ -4,6 +4,36 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 堵住五个已验真的安全/恢复缺口（fail closed，冷启动，无兼容 shim）：
+  审批 `Allow`/`Stop` 竞态引入单调 epoch（`ApprovalRegistry._generation`，
+  Stop-all 即使 map 为空也递增，`api.shell_approval_response` 与
+  `services.execute_approved_shell` 在 `Popen` 前两次确认 stop flag + epoch，
+  过期 claim 返回 `409 stopped` 并记 denied `shell_result`，绝不启动进程）；
+  预置 `run_id` 不再绕过单槽忙检查（`prepare_submission` 仅当 active 为同 id
+  才放行），headless 直接用请求 id 预留（删掉随机预留 + replace），并以
+  ledger 路径 + operation id 做持久判重，复用直接以 `duplicate`/`busy` 拒绝；
+  `workspace/paths.py` 新增 `read_text_bounded_no_follow` /
+  `ensure_not_symlink`（`lstat` + `O_NOFOLLOW` + `fstat` 限额 + 分块读，保持
+  通用换行语义），`read_text_bounded` / `path_hash` 拒绝尾部 symlink，
+  `ChangeTracker.restore` 在 hash 前与写入前两次重验，`safe_project_cwd`
+  拒绝 symlink 并在 `Popen` 前重解析，`search_files` 走同一 helper；
+  `storage/local_store.py` 新增 `StoreCorruption` + `read_json_strict`
+  （缺失 -> `None`，损坏 -> 抛错），宽松 `read_json` 保留缓存语义，
+  `SnapshotStore.load` 改为跳过单条脏 entry（不再清空全 baseline），损坏
+  manifest 备份为 `manifest.json.corrupt`；`forget_conversation` 按 session
+  过期 pending shell 审批并清理其 research 恢复态（审计 ledger / managed
+  outputs 保留）。
+- 小步卫生减法：`toolchain/runtime.py` 删除自带的 `safe_join`（唯一源为
+  `workspace/paths.py`，威胁模型注释一并迁移）。明确推迟且不改变行为：
+  `RestoreResult` 双定义、`digest_text`/`_clip` 局部重复、
+  `requirements.txt` 与 `pyproject` 依赖重复（后续跟进）。
+- 新增回归测试：approval epoch（空 map 下 Stop-all 仍递增、过期 Allow ->
+  `409` 且无 `Popen`、执行前二次拒绝）、`prepare_submission` 忙/同 id、
+  headless `--run-id` 复用拒绝且不跑 agent、no-follow symlink 拒绝、快照
+  脏条目跳过 + 损坏备份、按 session 清理；`test_tool_runtime`
+  搜索错误测试迁移到新 `lstat`/reader 接缝，`test_server` 一处调用断言补
+  epoch 参数。
+
 - 收紧 policy/path/ledger/redaction 边界（fail closed，冷启动，无兼容 shim）：
   `policies/action.py` 的 guard 异常现在对所有动作一律 deny（删掉
   `DANGEROUS_ACTIONS` 读写区分），记 `logger.exception`，观测码

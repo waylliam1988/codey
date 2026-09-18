@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import unittest
@@ -629,6 +630,42 @@ class ChangeTrackerTests(unittest.TestCase):
             # Verify body file cleaned up
             baseline_file = store._baseline_path(root, "temp.txt")
             self.assertFalse(baseline_file.exists())
+
+    def test_single_dirty_entry_does_not_wipe_whole_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            (root / "good.py").write_text("good\n", encoding="utf-8")
+            (root / "bad.py").write_text("bad\n", encoding="utf-8")
+
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("good.py")
+            tracker.capture_before("bad.py")
+
+            manifest = store.path_for(root)
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            payload["files"]["bad.py"]["after_hash"] = "not-a-hash"
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+            before, _ = SnapshotStore(state_td).load(root)
+
+            self.assertIn("good.py", before)
+            self.assertNotIn("bad.py", before)
+
+    def test_corrupt_manifest_is_backed_up_not_silently_emptied(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            manifest = store.path_for(root)
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text("not json", encoding="utf-8")
+
+            before, hashes = SnapshotStore(state_td).load(root)
+
+            self.assertEqual(before, {})
+            self.assertEqual(hashes, {})
+            self.assertFalse(manifest.exists())
+            self.assertTrue(manifest.with_name(manifest.name + ".corrupt").exists())
 
 
 if __name__ == "__main__":

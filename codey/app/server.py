@@ -166,6 +166,7 @@ class AppContext:
         self.run_registry = RunRegistry()
         self.approvals = ApprovalRegistry()
         self.research_changes: dict[str, object] = {}
+        self._research_change_sessions: dict[str, str] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.conversation_registry = ConversationRegistry(
             state_home,
@@ -515,6 +516,10 @@ class AppContext:
         with self.lock:
             return self.approvals.pop_shell(approval_id)
 
+    def approval_generation(self) -> int:
+        with self.lock:
+            return self.approvals.current_generation()
+
     def pending_shell_approvals(self) -> dict[str, dict]:
         with self.lock:
             return self.approvals.shell_snapshot()
@@ -542,9 +547,16 @@ class AppContext:
     def record_research_changes(self, run_id: str, changes: object) -> None:
         with self.lock:
             self.research_changes[run_id] = changes
+            try:
+                active = self.run_registry.current()
+            except Exception:
+                active = None
+            if active is not None and active.run_id == run_id:
+                self._research_change_sessions[run_id] = active.session_id
             if len(self.research_changes) > 32:
                 for key in list(self.research_changes)[:-32]:
                     self.research_changes.pop(key, None)
+                    self._research_change_sessions.pop(key, None)
 
     def restore_research_changes(self, run_id: str) -> dict:
         with self.lock:
@@ -557,6 +569,7 @@ class AppContext:
         if result.ok:
             with self.lock:
                 self.research_changes.pop(run_id, None)
+                self._research_change_sessions.pop(run_id, None)
         return {
             "ok": result.ok,
             "restored": result.restored,
@@ -723,6 +736,25 @@ class AppContext:
         with self.lock:
             self.providers.forget_session(session_id)
         self.run_registry.clear_session_outputs(session_id)
+        # Executable pending state must not outlive the chat: expire this
+        # session's shell approvals (denied) and drop its restorable research
+        # changes. Audit artifacts (run ledgers, managed outputs) are kept.
+        with self.lock:
+            approval_events = self.approvals.expire_session(session_id)
+            orphan_runs = [
+                run_id
+                for run_id, owner in self._research_change_sessions.items()
+                if owner == session_id
+            ]
+            for run_id in orphan_runs:
+                self.research_changes.pop(run_id, None)
+                self._research_change_sessions.pop(run_id, None)
+        for event in approval_events:
+            try:
+                self.record_shell_result(event)
+            except Exception as exc:
+                failures["approvals"] = str(exc)
+                break
         for store_name, attr_name, method in (
             ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
             ("ghost_router", "ghost_router", lambda s: s.delete_scope("session", session_id=session_id)),

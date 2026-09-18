@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -169,6 +169,30 @@ def run_headless(
         session_id=session_id,
         project=project,
     )
+    if str(request.run_id or "").strip() and not pre_reserved_run_id:
+        reason = (
+            "duplicate"
+            if _headless_run_id_exists(
+                state,
+                session_id=session_id,
+                run_id=str(request.run_id or "").strip(),
+            )
+            else "busy"
+        )
+        emit_jsonl({
+            "schema_version": SCHEMA_VERSION,
+            "type": "task_done",
+            "run_id": str(request.run_id or "").strip(),
+            "session_id": session_id,
+            "stop_reason": reason,
+        })
+        return HeadlessResult(
+            exit_code=1,
+            run_id=str(request.run_id or "").strip(),
+            session_id=session_id,
+            stop_reason=reason,
+            ledger_path="",
+        )
     deps = TaskRunDeps(
         state=state,
         agent_run=agent_run or default_agent_run,
@@ -347,6 +371,36 @@ def _no_headless_review(**_kwargs):
     return None
 
 
+def _headless_run_id_exists(
+    state: HeadlessAppContext,
+    *,
+    session_id: str,
+    run_id: str,
+) -> bool:
+    """True when a durable operation or ledger already owns this run_id."""
+    try:
+        ledgers = getattr(state, "run_ledgers", None)
+        if ledgers is not None:
+            try:
+                if ledgers.path_for(session_id, run_id).exists():
+                    return True
+            except Exception:
+                pass
+        runtime_log = getattr(state, "runtime_log", None)
+        if runtime_log is not None:
+            from codey.runtime.core.operation_state import operation_id_for_run
+
+            try:
+                projection = runtime_log.projection(session_id)
+            except Exception:
+                return False
+            operations = getattr(projection, "operations", {}) or {}
+            return operation_id_for_run(run_id) in operations
+    except Exception:
+        return False
+    return False
+
+
 def _pre_reserve_run_id(
     state: HeadlessAppContext,
     *,
@@ -357,16 +411,19 @@ def _pre_reserve_run_id(
     requested = str(request.run_id or "").strip()
     if not requested:
         return ""
+    # Never recycle a durable run_id into a fresh operation: same run_id maps
+    # to the same operation/lane, so reuse would append to чужой ledger and
+    # replay settled effects.
+    if _headless_run_id_exists(state, session_id=session_id, run_id=requested):
+        return ""
     reserved = state.reserve_run(
         session_id=session_id,
         project=str(project),
         task=request.task,
         provider_id=request.provider_id,
+        run_id=requested,
     )
-    if reserved is None:
-        return ""
-    state.replace_reserved_run(reserved.run_id, replace(reserved, run_id=requested))
-    return requested
+    return requested if reserved is not None else ""
 
 
 def _request_intent(value: str) -> str:

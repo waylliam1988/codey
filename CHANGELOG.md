@@ -4,6 +4,43 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Closed five verified safety/recovery gaps (fail closed, cold start, no compat shims):
+  approval `Allow`/`Stop` race now carries a monotonic epoch
+  (`ApprovalRegistry._generation`; Stop-all always bumps even on an empty map,
+  execution re-checks stop flag + epoch in `api.shell_approval_response` and
+  again inside `services.execute_approved_shell` just before `Popen`, stale
+  claims return `409 stopped` with a denied `shell_result` and never start a
+  process); preset `run_id` no longer bypasses the single-slot busy check
+  (`prepare_submission` returns busy unless the active run is the same id) and
+  headless reserves the requested id directly (no random-reserve + replace)
+  with a durable duplicate check (ledger path + operation id) that rejects
+  reuse as `duplicate`/`busy` instead of appending to another run's ledger;
+  `workspace/paths.py` gained `read_text_bounded_no_follow` /
+  `ensure_not_symlink` (`lstat` + `O_NOFOLLOW` + `fstat` size cap + chunked
+  read, universal-newline preserving) and `read_text_bounded` / `path_hash`
+  now refuse trailing symlinks, `ChangeTracker.restore` re-checks symlinks
+  before hash and before write, `safe_project_cwd` rejects symlink `cwd` and
+  re-resolves before `Popen`, `search_files` walks `lstat` and reads through
+  the same helper; `storage/local_store.py` gained `StoreCorruption` +
+  `read_json_strict` (missing -> `None`, corrupt -> raise) while lenient
+  `read_json` keeps cache semantics, and `SnapshotStore.load` skips single
+  dirty entries instead of wiping the whole baseline, backing corrupt
+  manifests up to `manifest.json.corrupt`; `forget_conversation` now expires
+  the session's pending shell approvals (denied) and drops its restorable
+  research changes via a session index (audit ledgers / managed outputs kept).
+- Small hygiene subtraction: `toolchain/runtime.py` no longer keeps its own
+  `safe_join` (single source in `workspace/paths.py`, threat-model note moved
+  with it). Deferred without behavior change: `RestoreResult` duality,
+  `digest_text`/`_clip` local copies, `requirements.txt` vs `pyproject`
+  duplication (follow-up).
+- Added regression tests: approval epoch (`expire_all` bumps on empty map,
+  stale Allow -> `409` without `Popen`, pre-`Popen` refusal),
+  `prepare_submission` busy vs same-id, headless `--run-id` reuse rejected
+  without running the agent, no-follow symlink refusal, snapshot
+  dirty-entry-skip + corrupt-manifest backup, per-session forget cleanup;
+  updated `test_tool_runtime` search-error tests to the new `lstat`/reader
+  seams and one `test_server` call assertion for the new epoch kwarg.
+
 - Hardened policy/path/ledger/redaction boundaries (fail closed, cold start, no compat shims):
   `policies/action.py` guard exceptions now deny every action kind (removed the
   `DANGEROUS_ACTIONS` read/write split) with `logger.exception` and

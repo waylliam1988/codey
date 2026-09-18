@@ -133,6 +133,11 @@ def prepare_submission(state: Any, request: TaskSubmission) -> TaskSubmission | 
                 run_id=request.run_id,
             )
             return request if reserved is not None else None
+        # A preset run_id must match the active run; otherwise the slot is
+        # busy with somebody else. Previously any preset id bypassed the busy
+        # check and produced orphan operations downstream.
+        if active.run_id != request.run_id:
+            return None
         return request
     reserved = state.reserve_run(
         session_id=request.session_id,

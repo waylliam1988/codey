@@ -7,9 +7,11 @@ import unittest
 from codey.workspace.paths import (
     bounded_directory_entries,
     content_hash,
+    ensure_not_symlink,
     is_test_path,
     path_hash,
     read_text_bounded,
+    read_text_bounded_no_follow,
     read_text_or_none,
     safe_join,
 )
@@ -79,6 +81,24 @@ class WorkspacePathTests(unittest.TestCase):
         self.assertTrue(is_test_path("src/routes.spec.ts"))
         self.assertTrue(is_test_path("src/session_test.py"))
         self.assertFalse(is_test_path("src/latest.py"))
+
+    def test_no_follow_reader_refuses_trailing_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "real.txt"
+            target.write_text("secret\n", encoding="utf-8")
+            link = Path(td) / "link.txt"
+            try:
+                link.symlink_to(target)
+            except OSError:
+                self.skipTest("symlinks unavailable")
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                read_text_bounded_no_follow(link, max_bytes=64)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                read_text_bounded(link, max_bytes=64)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                ensure_not_symlink(link)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                path_hash(link)
 
 
 if __name__ == "__main__":

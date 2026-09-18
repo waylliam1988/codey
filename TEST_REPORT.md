@@ -1,5 +1,66 @@
 # Codey Test Report
 
+## Approval epoch + run_id dedup + no-follow reads + strict snapshot load + session forget (2026-09-18)
+
+Scope:
+
+```text
+codey/app/approval_registry.py:  monotonic _generation; Stop-all always bumps
+                                  (even on empty map); expire_session filter
+codey/app/api.py:                 shell_approval_response checks stop flag +
+                                  epoch after pop (409 stopped, denied event),
+                                  never leaks _approval_generation
+codey/app/services.py:            execute_approved_shell re-checks flag +
+                                  epoch and re-resolves cwd before Popen;
+                                  safe_project_cwd rejects symlink cwd
+codey/operations/task_run.py:     prepare_submission rejects preset run_id
+                                  unless it matches the active run
+codey/app/headless_runner.py:     reserve requested id directly (no random +
+                                  replace); durable duplicate check (ledger +
+                                  operation id); requested-but-failed returns
+                                  duplicate/busy without running the agent
+codey/workspace/paths.py:         read_text_bounded_no_follow /
+                                  ensure_not_symlink; bounded reader + hash
+                                  refuse trailing symlinks (universal-newline
+                                  preserving)
+codey/workspace/changes.py:       restore re-checks symlinks before hash and
+                                  write; load skips dirty entries, backs
+                                  corrupt manifests to .corrupt
+codey/storage/local_store.py:     StoreCorruption + read_json_strict
+                                  (lenient read_json keeps cache semantics)
+codey/app/server.py:              research-change session index;
+                                  forget_conversation expires session
+                                  approvals + research restores
+codey/toolchain/runtime.py:       safe_join unified to workspace.paths;
+                                  search_files uses lstat + no-follow reader
+docs:                             CHANGELOG.md + CHANGELOG.zh-CN.md
+                                  Unreleased entries
+tests:                            new test_shell_approval_epoch,
+                                  test_run_id_dedup,
+                                  test_forget_session_cleanup; extended
+                                  test_approval_registry, test_workspace_paths,
+                                  test_local_store, test_changes; updated
+                                  test_tool_runtime seams + 1 test_server
+                                  call assertion
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_approval_registry.py tests/test_shell_approval_epoch.py tests/test_run_id_dedup.py tests/test_workspace_paths.py tests/test_local_store.py tests/test_forget_session_cleanup.py tests/test_changes.py`
+  (`61 passed`)
+  `pytest -q tests/test_tool_runtime.py tests/test_headless_runner.py tests/test_run_registry.py tests/test_architecture.py`
+  (`182 passed, 325 subtests passed`, after moving 2 search-error tests to the new seams)
+  `pytest -q tests/test_server.py`
+  (`202 passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3702 passed, 4 skipped, 1300 subtests passed in 318.85s (0:05:18)`)
+
 ## list_directory enumeration hardening (2026-09-18)
 
 Scope:

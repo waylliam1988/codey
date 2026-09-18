@@ -782,12 +782,12 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertNotIn(marker, outcome.model_text)
 
     def test_search_reports_read_text_errors_as_incomplete(self) -> None:
-        original_read_text = Path.read_text
+        original_reader = tool_runtime._read_text_bounded_no_follow
 
-        def read_text(path: Path, *args, **kwargs) -> str:
-            if path.name == "unreadable.py":
+        def failing_reader(path, *args, **kwargs) -> str:
+            if Path(path).name == "unreadable.py":
                 raise OSError("synthetic unreadable file")
-            return original_read_text(path, *args, **kwargs)
+            return original_reader(path, *args, **kwargs)
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -797,7 +797,7 @@ class ToolOutcomeTests(unittest.TestCase):
             )
             (root / "unreadable.py").write_text("target_marker\n", encoding="utf-8")
 
-            with mock.patch.object(Path, "read_text", read_text):
+            with mock.patch.object(tool_runtime, "_read_text_bounded_no_follow", failing_reader):
                 outcome = tool_runtime.search_files(root, ".", "target_marker")
 
         self.assertTrue(outcome.ok)
@@ -811,16 +811,19 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertNotIn("target_marker", outcome.model_text)
 
     def test_search_reports_stat_errors_as_incomplete(self) -> None:
-        original_stat = Path.stat
+        original_lstat = Path.lstat
 
-        def stat(path: Path, *args, **kwargs):
+        def lstat(path: Path, *args, **kwargs):
             if path.name == "stat_unreadable.py":
                 import traceback
 
+                # Only fail the metadata probe inside search_files itself;
+                # the bounded scanner's own lstat runs in the generator and
+                # must keep yielding so the failure is counted, not skipped.
                 caller = traceback.extract_stack(limit=2)[0].name
                 if caller == "search_files":
                     raise OSError("synthetic stat failure")
-            return original_stat(path, *args, **kwargs)
+            return original_lstat(path, *args, **kwargs)
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -830,7 +833,7 @@ class ToolOutcomeTests(unittest.TestCase):
             )
             (root / "stat_unreadable.py").write_text("target_marker\n", encoding="utf-8")
 
-            with mock.patch.object(Path, "stat", stat):
+            with mock.patch.object(Path, "lstat", lstat):
                 outcome = tool_runtime.search_files(root, ".", "target_marker")
 
         self.assertTrue(outcome.ok)

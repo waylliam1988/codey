@@ -14,14 +14,16 @@ from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    StoreCorruption,
     delete_file,
     project_key,
-    read_json,
+    read_json_strict,
     write_json_atomic,
 )
 from codey.utils.change_paths import change_file_paths
 from codey.workspace.paths import (
     content_hash as _content_hash,
+    ensure_not_symlink as _ensure_not_symlink,
     path_hash as _path_hash,
     read_text_bounded as _read_text_bounded,
     read_text_or_none as _read_text_or_none,
@@ -113,10 +115,14 @@ class SnapshotStore:
         except OSError:
             return {}, {}
         with with_file_lock(self._lock_target(resolved_root)):
-            payload = read_json(
-                manifest_path,
-                max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
-            )
+            try:
+                payload = read_json_strict(
+                    manifest_path,
+                    max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
+                )
+            except StoreCorruption:
+                _backup_corrupt_manifest(manifest_path)
+                return {}, {}
             if not payload or payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
                 return {}, {}
             raw_files = payload.get("files")
@@ -127,41 +133,42 @@ class SnapshotStore:
             hashes: dict[str, str] = {}
             total = 0
             for rel, entry in raw_files.items():
+                # One dirty entry must not wipe the whole baseline: skip it.
                 if len(before) >= MAX_SNAPSHOT_FILES or not isinstance(rel, str):
-                    return {}, {}
+                    continue
                 if not isinstance(entry, dict):
-                    return {}, {}
+                    continue
                 if set(entry) - {"baseline", "after_hash"}:
-                    return {}, {}
+                    continue
                 if "baseline" not in entry:
-                    return {}, {}
+                    continue
                 try:
                     path = _safe_join(resolved_root, rel)
                     canonical = path.relative_to(resolved_root).as_posix()
                 except (ValueError, OSError):
-                    return {}, {}
+                    continue
                 if canonical != rel:
-                    return {}, {}
+                    continue
                 content: str | None
                 if entry.get("baseline") is None:
                     content = None
                 else:
                     expected_body = self._baseline_path(resolved_root, rel).name
                     if entry.get("baseline") != expected_body:
-                        return {}, {}
+                        continue
                     try:
                         body = _read_text_bounded(
                             self._baseline_path(resolved_root, rel),
                             max_bytes=MAX_SNAPSHOT_FILE_BYTES,
                         )
                     except (OSError, UnicodeDecodeError, ValueError):
-                        return {}, {}
+                        continue
                     if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
-                        return {}, {}
+                        continue
                     content = body
                 total += len((content or "").encode("utf-8"))
                 if total > MAX_SNAPSHOT_TOTAL_BYTES:
-                    return {}, {}
+                    break
                 before[rel] = content
 
                 digest = entry.get("after_hash")
@@ -169,7 +176,8 @@ class SnapshotStore:
                     isinstance(digest, str)
                     and (digest == "missing" or digest.startswith("sha256:"))
                 ):
-                    return {}, {}
+                    before.pop(rel, None)
+                    continue
                 if isinstance(digest, str):
                     hashes[rel] = digest
             return before, hashes
@@ -232,7 +240,11 @@ class SnapshotStore:
             _remove_file(body_path)
             _remove_dir_if_empty(body_path.parent)
 
-            payload = read_json(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            try:
+                payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            except StoreCorruption:
+                _backup_corrupt_manifest(manifest_path)
+                return
             files = payload.get("files") if isinstance(payload, dict) else None
             if not isinstance(files, dict) or rel not in files:
                 return
@@ -270,7 +282,11 @@ class SnapshotStore:
         mutate,
     ) -> None:
         manifest_path = self.path_for(resolved_root)
-        payload = read_json(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+        try:
+            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+        except StoreCorruption:
+            _backup_corrupt_manifest(manifest_path)
+            payload = None
         files = payload.get("files") if isinstance(payload, dict) else None
         if not isinstance(files, dict):
             files = {}
@@ -282,6 +298,15 @@ class SnapshotStore:
             {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
             max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
         )
+
+
+def _backup_corrupt_manifest(manifest_path: Path) -> None:
+    """Preserve a corrupt manifest for forensics, then let callers reset."""
+    try:
+        corrupt_path = manifest_path.with_name(manifest_path.name + ".corrupt")
+        manifest_path.replace(corrupt_path)
+    except OSError:
+        pass
 
 
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
@@ -562,6 +587,7 @@ class ChangeTracker:
                 expected_hash = self._after_hashes.get(rel)
             path = _safe_join(self.root, rel)
             try:
+                _ensure_not_symlink(path)
                 current_hash = _path_hash(path)
             except (OSError, ValueError):
                 conflicts.append(rel)
@@ -573,9 +599,24 @@ class ChangeTracker:
             if expected_hash is None or current_hash != expected_hash:
                 conflicts.append(rel)
                 continue
+            try:
+                if path.is_symlink():
+                    # Fail closed: never write restored content through a
+                    # swapped-in link, even though os.replace would swap the
+                    # link itself. Deleting a link to restore absence is safe.
+                    if before is not None:
+                        conflicts.append(rel)
+                        continue
+                elif before is not None:
+                    _ensure_not_symlink(path)
+            except (OSError, ValueError):
+                conflicts.append(rel)
+                continue
             if before is None:
                 try:
-                    if path.exists():
+                    if path.is_symlink():
+                        path.unlink()
+                    elif path.exists():
                         path.unlink()
                 except OSError:
                     conflicts.append(rel)

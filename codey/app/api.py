@@ -325,6 +325,25 @@ def run_submit_response(
     return 200, {"ok": True, "run_id": run_id}
 
 
+def _shell_claim_expired(ctx: Any, claimed_generation: int) -> bool:
+    """True when a Stop landed after the Allow claimed its approval.
+
+    Fake contexts in tests may lack the epoch accessor or stop flag; treat
+    missing state as not-expired so unit fakes keep working.
+    """
+    try:
+        stop_set = bool(ctx.run_registry.stop_flag.is_set())
+    except Exception:
+        stop_set = False
+    if stop_set:
+        return True
+    try:
+        current_generation = int(ctx.approval_generation())
+    except Exception:
+        return False
+    return int(claimed_generation or 0) != int(current_generation or 0)
+
+
 def shell_approval_response(
     ctx: Any,
     body: dict,
@@ -337,6 +356,13 @@ def shell_approval_response(
     pending = ctx.pop_pending_shell_approval(approval_id)
     if not pending:
         return 404, {"error": "approval not found"}
+    # Internal epoch, never leaked to events/UI. A Stop that lands after pop
+    # bumps the generation; the claim below (and a second check inside
+    # execute_approved_shell just before Popen) makes Stop win.
+    try:
+        claimed_generation = int(pending.pop("_approval_generation", 0) or 0)
+    except (TypeError, ValueError):
+        claimed_generation = 0
     project = str(pending.get("project") or "").strip()
     max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
     session_id = pending["session_id"]
@@ -356,7 +382,25 @@ def shell_approval_response(
         ctx.record_shell_result(event)
         return 200, {"ok": True, "approved": False, "event": event}
 
-    result = services.execute_approved_shell(ctx, project, pending["cwd"], command)
+    if _shell_claim_expired(ctx, claimed_generation):
+        event = {
+            "type": "shell_result",
+            "run_id": pending.get("run_id") or "",
+            "session_id": session_id,
+            "id": approval_id,
+            "approved": False,
+            "command": command,
+            "cwd": pending["cwd"],
+            "output": "Task stopped; command approval expired.",
+            "exit_code": None,
+        }
+        ctx.record_shell_result(event)
+        return 409, {"error": "stopped", "stopped": True, "event": event}
+
+    result = services.execute_approved_shell(
+        ctx, project, pending["cwd"], command,
+        expected_approval_generation=claimed_generation,
+    )
     event = {
         "type": "shell_result",
         "run_id": pending.get("run_id") or "",

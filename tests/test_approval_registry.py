@@ -118,6 +118,39 @@ class ApprovalRegistryTests(unittest.TestCase):
             {"type": "teach_request", "run_id": "run-new"},
         )
 
+    def test_stop_all_bumps_generation_even_when_map_is_empty(self) -> None:
+        approvals = ApprovalRegistry()
+        approvals.add_shell("shell-1", {"id": "shell-1", "session_id": "s-1"})
+        claimed = approvals.pop_shell("shell-1")
+        assert claimed is not None
+        claimed_generation = claimed.pop("_approval_generation", 0)
+
+        # Stop lands after the Allow claimed its entry: the map is empty but
+        # the epoch must still advance so the claim detects it.
+        approvals.expire_shell_results()
+
+        self.assertNotEqual(claimed_generation, approvals.current_generation())
+
+    def test_add_shell_pins_current_generation(self) -> None:
+        approvals = ApprovalRegistry()
+        approvals.expire_shell_results()
+        bumped = approvals.current_generation()
+        approvals.add_shell("shell-2", {"id": "shell-2"})
+
+        pending = approvals.pop_shell("shell-2")
+        assert pending is not None
+        self.assertEqual(pending.get("_approval_generation"), bumped)
+
+    def test_expire_session_only_clears_matching_session(self) -> None:
+        approvals = ApprovalRegistry()
+        approvals.add_shell("shell-a", {"id": "shell-a", "session_id": "s-a"})
+        approvals.add_shell("shell-b", {"id": "shell-b", "session_id": "s-b"})
+
+        events = approvals.expire_session("s-a")
+
+        self.assertEqual([event["id"] for event in events], ["shell-a"])
+        self.assertEqual(set(approvals.shell_snapshot()), {"shell-b"})
+
 
 if __name__ == "__main__":
     unittest.main()

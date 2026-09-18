@@ -6,6 +6,7 @@ import ast
 import json
 import os
 import re
+import stat
 import subprocess
 import time
 from collections.abc import Mapping
@@ -34,6 +35,8 @@ from codey.workspace.bounded_scan import (
     iter_bounded_files,
 )
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
+from codey.workspace.paths import read_text_bounded_no_follow as _read_text_bounded_no_follow
+from codey.workspace.paths import safe_join
 from codey.runtime.core.models import (
     json_safe_projection,
     model_text_with_audit_markers,
@@ -217,21 +220,6 @@ def _byte_limit_label(value: int) -> str:
 class EditBlock:
     search: str
     replace: str
-
-
-def safe_join(root: Path, rel: str) -> Path:
-    """Resolve ``rel`` under ``root`` and prevent relative path traversal.
-
-    Threat model: This guard defends against model-generated relative path
-    escapes (e.g. ``../../etc/passwd`` or absolute escape strings). It is an
-    application-level path validation guard and not an operating-system-level
-    capability sandbox (e.g. symlink races / TOCTOU across directory swaps).
-    """
-    path = (root / rel).resolve()
-    resolved_root = root.resolve()
-    if resolved_root not in path.parents and path != resolved_root:
-        raise ValueError(f"path escapes project root: {rel}")
-    return path
 
 
 def _symlink_path_error(root: Path, rel: str, *, tool: str) -> ToolOutcome | None:
@@ -952,10 +940,17 @@ def search_files(
     ):
         cancellation.check()
         try:
-            size = path.stat().st_size
+            file_stat = path.lstat()
         except OSError:
             unreadable_files += 1
             continue
+        if stat.S_ISLNK(file_stat.st_mode):
+            unreadable_files += 1
+            continue
+        if not stat.S_ISREG(file_stat.st_mode):
+            unreadable_files += 1
+            continue
+        size = file_stat.st_size
         if size > SEARCH_MAX_FILE_BYTES:
             oversized_files += 1
             continue
@@ -964,12 +959,15 @@ def search_files(
             break
         bytes_read += size
         try:
-            text = path.read_text(encoding="utf-8")
+            text = _read_text_bounded_no_follow(path, max_bytes=SEARCH_MAX_FILE_BYTES)
         except UnicodeDecodeError:
             decode_failed_files += 1
             continue
-        except OSError:
-            unreadable_files += 1
+        except (OSError, ValueError) as exc:
+            if "too large" in str(exc):
+                oversized_files += 1
+            else:
+                unreadable_files += 1
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if line_no == 1 or line_no % 200 == 0:

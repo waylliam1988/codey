@@ -51,6 +51,25 @@ class LocalStoreTests(unittest.TestCase):
             with mock.patch.object(local_store, "MAX_JSON_BYTES", 2):
                 self.assertIsNone(local_store.read_json(path))
 
+    def test_strict_reader_distinguishes_missing_from_corrupt(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "missing.json"
+            self.assertIsNone(local_store.read_json_strict(missing))
+
+            corrupt = Path(td) / "corrupt.json"
+            corrupt.write_text("not json", encoding="utf-8")
+            with self.assertRaises(local_store.StoreCorruption):
+                local_store.read_json_strict(corrupt)
+
+            not_dict = Path(td) / "list.json"
+            not_dict.write_text("[1,2]", encoding="utf-8")
+            with self.assertRaises(local_store.StoreCorruption):
+                local_store.read_json_strict(not_dict)
+
+            ok = Path(td) / "ok.json"
+            ok.write_text('{"value":1}', encoding="utf-8")
+            self.assertEqual(local_store.read_json_strict(ok), {"value": 1})
+
     def test_project_and_session_keys_are_stable_and_opaque(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             first = local_store.project_key(td)

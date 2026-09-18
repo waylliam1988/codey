@@ -3223,7 +3223,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["continuation_requested"])
         self.assertFalse(payload["continued"])
         self.assertEqual(payload["retry_after"], 15)
-        execute.assert_called_once_with(state, "", ".", "pytest")
+        execute.assert_called_once_with(state, "", ".", "pytest", expected_approval_generation=0)
         setup.assert_not_called()
         build.assert_called_once()
         self.assertEqual(submit.call_args.args[0], "session-1")
