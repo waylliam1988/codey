@@ -4,6 +4,29 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Hardened policy/path/ledger/redaction boundaries (fail closed, cold start, no compat shims):
+  `policies/action.py` guard exceptions now deny every action kind (removed the
+  `DANGEROUS_ACTIONS` read/write split) with `logger.exception` and
+  `reason_code="guard_exception"`; `toolchain/runtime.py` symlink checks fail
+  closed on `OSError`, `read_file` re-verifies the symlink check immediately
+  before use and maps `lstat`/`read` failures to denied errors, `edit_file`
+  maps read failures to errors, `write_file` treats the best-effort `before`
+  read as non-fatal; `runs/ledger.py` exposes `disabled_reason` /
+  `last_error_reason` (`ledger_write_failed` / `ledger_truncated`) instead of
+  silent disable; `app/event_bus.py` logs non-`queue.Full` subscriber failures
+  instead of swallowing them; `policies/redaction.py` adds a marker-gated 32+
+  hex/base64url contextual rule (splits `key=value` blobs, judges
+  slash-bearing tokens instead of skipping them) while keeping engineering
+  identifiers and marker-free hashes clean; `policies/shell_risk.py`
+  recognizes `py -X/-W <value> -m pip install` as `dependency_install`
+  (display-only, chained commands stay `generic`); `DESIGN.md` asset list
+  synced to the 11 shipped modules.
+- Added regression tests: guard-exception deny for `read_file`,
+  symlink-`OSError` fail-closed, ledger `ledger_write_failed` observable
+  reason, lowercase-hex/query/bearer-slash contextual redaction plus CamelCase
+  clean, shell unwrap/pip-prefix/chained-generic approval cards, and pipeline
+  `append_record`-raise surfacing as trace + sink `write_failed`.
+
 - Split `codey/runtime/` into five packages with one-way instincts:
   `core/` (operation state machine, pure reducer, contracts),
   `log/` (session log, projection, canonical `SessionView`, compaction),
@@ -66,7 +89,7 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3673 passed, 4 skipped, 1289 subtests passed in 321.16s (0:05:21)`)
+  (`3683 passed, 4 skipped, 1292 subtests passed in 305.22s (0:05:05)`)
 
 ## 0.5.8 - Durable Operation Core
 

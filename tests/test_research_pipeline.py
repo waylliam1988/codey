@@ -4,6 +4,7 @@ import json
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -1695,3 +1696,99 @@ def test_pipeline_projects_final_review_findings_and_gaps_to_trace_only() -> Non
         idx_findings = names.index("record_review_findings")
         idx_plan_after = max(i for i, name in enumerate(names) if name == "record_research_plan")
         assert idx_review < idx_findings < idx_plan_after
+
+
+def test_pipeline_surfaces_ledger_append_raise_as_write_failed() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        state_root = root / "state"
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        tools = ResearchTools(search=search, store=store, changes=changes, session_id="session-pipeline", project="project-pipeline")
+        trace = _TraceRecorder()
+        record = _record(question="Pipeline question", synthesis_id="initial", project=project)
+        result = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=record,
+            tools=tools,
+        )
+        evidence_ledgers = EvidenceLedgerStore(state_root)
+        events: list[tuple[str, object]] = []
+
+        def run_iteration(**_kwargs):
+            return result
+
+        def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
+            del question, evidence_ledger
+            return replace(
+                _review(
+                    record_id=getattr(record, "record_id", ""),
+                    record_digest=getattr(record, "record_digest", ""),
+                    ok=True,
+                    answer_status="answered",
+                    score=1.0,
+                ),
+                ledger_record_verified=require_ledger_record,
+            )
+
+        def fake_plan(review, *, question: str = "", max_queries: int, max_sources: int):
+            del question
+            return ResearchPlan(
+                plan_ref="research_plan:noop",
+                proof_ref=getattr(review, "proof_ref", ""),
+                query_candidates=(),
+                reason_codes=("proof_ok_no_required_followup",),
+                max_queries=max_queries,
+                max_sources=max_sources,
+            )
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-pipeline",
+            run_id="run-pipeline",
+            project="project-pipeline",
+            proof_question="Pipeline question",
+            max_turns=4,
+            should_stop=lambda: False,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_review = pipeline_module.review_research_proof
+        original_plan = pipeline_module.build_research_plan
+        try:
+            pipeline_module.review_research_proof = fake_review
+            pipeline_module.build_research_plan = fake_plan
+            with mock.patch.object(
+                EvidenceLedgerStore,
+                "append_record",
+                side_effect=OSError("disk"),
+            ):
+                pipeline = ResearchPipeline(
+                    context=context,
+                    run_iteration=run_iteration,
+                    search_factory=lambda: search,
+                    evidence_ledgers=evidence_ledgers,
+                    config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+                    ledger_event_sink=lambda item: events.append(("ledger", item)),
+                    research_changes_sink=lambda run_id, snapshot: events.append((run_id, snapshot)),
+                )
+                output = pipeline.run()
+        finally:
+            pipeline_module.review_research_proof = original_review
+            pipeline_module.build_research_plan = original_plan
+
+        assert output.final_result is result.result
+        ledger_calls = [call for call in trace.calls if call[0] == "record_evidence_ledger_write"]
+        assert len(ledger_calls) == 1
+        assert ledger_calls[0][1][0]["reason_code"] == "write_failed"
+        sink_items = [item for name, item in events if name == "ledger"]
+        assert len(sink_items) == 1
+        assert getattr(sink_items[0], "reason_code", "") == "write_failed"

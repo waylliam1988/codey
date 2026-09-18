@@ -275,6 +275,20 @@ class RunLedgerStoreTests(unittest.TestCase):
 
             self.assertTrue(writer.disabled)
 
+    def test_write_line_failure_records_observable_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            writer = RunLedgerWriter(Path(td) / "ledger.jsonl", run_id="run", session_id="session")
+            with mock.patch.object(
+                RunLedgerWriter,
+                "_write_line_locked",
+                side_effect=OSError("no disk"),
+            ):
+                writer.append("info", text="fails")
+
+            self.assertTrue(writer.disabled)
+            self.assertEqual(writer.disabled_reason, "ledger_write_failed")
+            self.assertIn("OSError", writer.last_error_reason)
+
 
 class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
     def _provider(self):

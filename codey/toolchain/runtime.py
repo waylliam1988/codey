@@ -278,13 +278,18 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
     before = ""
-    if path.is_file():
-        try:
-            before = path.read_text(encoding="utf-8")
-            if before == content:
-                return ToolOutcome(f"wrote {rel} (no changes)", True)
-        except UnicodeDecodeError:
-            pass
+    try:
+        if path.is_file():
+            try:
+                before = path.read_text(encoding="utf-8")
+                if before == content:
+                    return ToolOutcome(f"wrote {rel} (no changes)", True)
+            except (OSError, UnicodeDecodeError, ValueError):
+                # Best-effort hint only: the authoritative path check
+                # runs again inside _write_text_after_final_path_check.
+                before = ""
+    except OSError:
+        before = ""
     write_error = _write_text_after_final_path_check(
         root,
         rel,
@@ -560,6 +565,8 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
+    except (OSError, ValueError):
+        return ToolOutcome.error(f"cannot read file: {rel}")
 
     updated = content
     for index, block in enumerate(blocks, start=1):
@@ -661,8 +668,25 @@ def read_file(
     path, error = _checked_tool_path(root, rel, tool="read_file")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
-    if not path.is_file():
-        return ToolOutcome.error(f"not a file: {rel}")
+    # Final fail-closed check immediately before use: narrows the
+    # check-use gap and denies when lstat itself cannot be verified
+    # (Windows has no O_NOFOLLOW; any verification failure denies).
+    symlink_error = _symlink_path_error(root, rel, tool="read_file")
+    if symlink_error is not None:
+        return symlink_error
+    try:
+        if path.is_symlink():
+            return ToolOutcome.error(
+                f"symlink paths are not supported for read_file: {rel}",
+                error_code="symlink_path",
+            )
+        if not path.is_file():
+            return ToolOutcome.error(f"not a file: {rel}")
+    except OSError:
+        return ToolOutcome.error(
+            f"path check failed for read_file: {rel}",
+            error_code="symlink_path",
+        )
     try:
         start_line = bounded_positive_int(offset, "offset")
         line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
@@ -672,6 +696,8 @@ def read_file(
         return ToolOutcome.error(f"not utf-8 text: {rel}")
     except ValueError as exc:
         return ToolOutcome.error(str(exc))
+    except OSError:
+        return ToolOutcome.error(f"cannot read file: {rel}")
 
     lines = text.splitlines(keepends=True)
     total = len(lines)
@@ -927,7 +953,9 @@ def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
             if current.is_symlink():
                 return f"symlink paths are not supported for {tool}: {rel}"
         except OSError:
-            return ""
+            # Fail closed: an unverifiable path component must deny,
+            # never silently allow a possible symlink escape.
+            return f"symlink check failed for {tool}: {rel}"
     return ""
 
 

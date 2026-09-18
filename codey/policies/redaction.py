@@ -30,6 +30,13 @@ SECRET_SHAPE_RE = re.compile(
 )
 _CODE_SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
 _HIGH_ENTROPY_TOKEN_RE = re.compile(r"\b[A-Za-z0-9][A-Za-z0-9_\-./+=]{16,}\b")
+# Context-triggered strong rule (cold start, no allowlist): a 32+ char
+# hex/base64url token next to a secret marker word is sensitive even
+# when it lacks mixed case (e.g. lowercase hex API keys, URL query
+# tokens, slash-bearing bearer blobs). The marker requirement keeps
+# ordinary hashes and ids clean.
+_CONTEXTUAL_SECRET_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-+=/]{32,}$")
+_HEX_SECRET_TOKEN_RE = re.compile(r"^[0-9a-fA-F]{32,}$")
 _CJK_SECRET_CODE_RE = re.compile(r"(?:密钥|密码|令牌|私钥|访问令牌)")
 _SENSITIVE_CODE_COMPONENTS = frozenset({
     "bearer",
@@ -155,16 +162,62 @@ def looks_prompt_visible_secret(value: object) -> bool:
 def looks_high_entropy_secret(value: object) -> bool:
     """Return whether text carries a random token that looks like a secret.
 
-    Tokens containing ``/`` are path- or URL-like references, and ordinary
-    source paths are not secrets, so only slash-free random tokens qualify.
+    Slash-free random blobs qualify on their own. Slash-bearing or
+    single-case long tokens only qualify next to a secret marker word
+    (``token=...``, ``bearer .../...``, ``?api_key=...``): bare paths and
+    URLs without any marker stay clean.
     """
 
-    for token in _HIGH_ENTROPY_TOKEN_RE.findall(str(value or "")):
-        if "/" in token:
-            continue
-        if _looks_like_secret_token(token):
-            return True
+    text = str(value or "")
+    if not text:
+        return False
+    has_marker = bool(SECRET_MARKER_RE.search(text))
+    for token in _HIGH_ENTROPY_TOKEN_RE.findall(text):
+        # Split key=value blobs so the value is judged alone
+        # (the token regex keeps "=" inside the match).
+        candidates = [token] if "=" not in token else [part for part in token.split("=") if part]
+        for candidate in candidates:
+            if "/" in candidate:
+                if not has_marker:
+                    continue
+                if _looks_like_contextual_secret_token(candidate):
+                    return True
+                for part in [item for item in candidate.split("/") if item]:
+                    if len(part) < 16:
+                        continue
+                    if _looks_like_secret_token(part):
+                        return True
+                    if _looks_like_contextual_secret_token(part):
+                        return True
+                continue
+            if _looks_like_secret_token(candidate):
+                return True
+            if has_marker and _looks_like_contextual_secret_token(candidate):
+                return True
     return False
+
+
+def _looks_like_contextual_secret_token(token: str) -> bool:
+    """Contextual complement to :func:`_looks_like_secret_token`.
+
+    Requires a secret marker nearby (checked by the caller) and a 32+
+    char hex/base64url token. Engineering identifiers stay exempt.
+    """
+
+    if len(token) < 32:
+        return False
+    if _looks_like_engineering_identifier(token):
+        return False
+    if _HEX_SECRET_TOKEN_RE.match(token):
+        return True
+    if not _CONTEXTUAL_SECRET_TOKEN_RE.match(token):
+        return False
+    varied = any(char.isdigit() for char in token) or any(not char.isalnum() for char in token)
+    if not varied:
+        unique_ratio = len(set(token)) / max(1, len(token))
+        return unique_ratio >= 0.5
+    unique_ratio = len(set(token)) / max(1, len(token))
+    return unique_ratio >= 0.35
 
 
 def _looks_like_secret_token(token: str) -> bool:

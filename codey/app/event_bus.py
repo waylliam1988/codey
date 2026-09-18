@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 from collections import deque
+
+
+logger = logging.getLogger(__name__)
 
 
 class SsePayload(dict):
@@ -98,6 +102,9 @@ class EventBus:
         except queue.Full:
             pass
         except Exception:
+            # queue.Full is the expected overflow path (handled below);
+            # any other queue failure must stay observable, never silent.
+            logger.exception("event bus subscriber put failed")
             return
 
         limit = max(0, int(sub.maxsize or 0))
@@ -115,9 +122,13 @@ class EventBus:
                     "dropped": sub.dropped,
                 }))
                 sub.dropped = 0
-            except Exception:
+            except queue.Full:
                 pass
+            except Exception:
+                logger.exception("event bus overflow marker put failed")
         try:
             sub.put_nowait(queued_payload)
-        except Exception:
+        except queue.Full:
             pass
+        except Exception:
+            logger.exception("event bus subscriber retry put failed")

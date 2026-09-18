@@ -66,3 +66,29 @@ def test_entropy_predicate_agrees_with_the_single_entry() -> None:
     token = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29"
     assert looks_high_entropy_secret(token)
     assert looks_prompt_visible_secret(token)
+
+
+def test_contextual_rule_blocks_lowercase_hex_next_to_marker() -> None:
+    secret = "api_key=abcdef1234567890abcdef1234567890"
+    assert looks_high_entropy_secret(secret)
+    assert looks_prompt_visible_secret(secret)
+
+
+def test_contextual_rule_blocks_url_query_token() -> None:
+    secret = "https://example.com/callback?token=abcdef1234567890abcdef1234567890"
+    assert looks_high_entropy_secret(secret)
+    assert looks_prompt_visible_secret(secret)
+
+
+def test_contextual_rule_blocks_bearer_base64_slash_token() -> None:
+    secret = "Authorization: Bearer AbCdEfGhIjKlMnOp12345678/AbCdEfGhIjKlMnOp12345678"
+    assert looks_high_entropy_secret(secret)
+    assert looks_prompt_visible_secret(secret)
+
+
+def test_contextual_rule_keeps_camelcase_engineering_text_clean() -> None:
+    # Marker nearby must not turn ordinary engineering names into secrets:
+    # short CamelCase stays under the 32-char contextual threshold and
+    # keeps its engineering exemption.
+    assert not looks_high_entropy_secret("password reset for OAuth2CallbackHandler")
+    assert not looks_high_entropy_secret("password reset for Windows10CompatibilityMode")

@@ -164,6 +164,10 @@ class RunLedgerWriter:
         self.bytes_written = file_state.bytes_written
         self.truncated = file_state.truncated
         self.disabled = self.truncated
+        # Observable failure state (cold start, in-memory only): callers
+        # and tests read these instead of guessing from missing rows.
+        self.disabled_reason: str = "ledger_truncated" if self.truncated else ""
+        self.last_error_reason: str = ""
 
     def append(self, event_type: str, **fields: object) -> None:
         if self.disabled:
@@ -342,6 +346,7 @@ class RunLedgerWriter:
                     self.bytes_written = file_state.bytes_written
                     self.truncated = True
                     self.disabled = True
+                    self.disabled_reason = "ledger_truncated"
                     return
                 current_seq = file_state.seq
                 current_bytes = file_state.bytes_written
@@ -355,8 +360,10 @@ class RunLedgerWriter:
                 self._write_line_locked(line)
                 self.seq = int(payload["seq"])
                 self.bytes_written = next_size
-        except (OSError, TimeoutError, TypeError, ValueError):
+        except (OSError, TimeoutError, TypeError, ValueError) as exc:
             self.disabled = True
+            self.disabled_reason = "ledger_write_failed"
+            self.last_error_reason = _clip(f"{type(exc).__name__}: {exc}", 120)
 
     def _append_truncated_once_locked(self, current_seq: int, current_bytes: int) -> None:
         if self.truncated:
@@ -371,6 +378,7 @@ class RunLedgerWriter:
         self.seq = int(payload["seq"])
         self.bytes_written = current_bytes + len(line.encode("utf-8"))
         self.disabled = True
+        self.disabled_reason = "ledger_truncated"
 
     def _write_line_locked(self, line: str) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -4,6 +4,27 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 收紧 policy/path/ledger/redaction 边界（fail closed，冷启动，无兼容 shim）：
+  `policies/action.py` 的 guard 异常现在对所有动作一律 deny（删掉
+  `DANGEROUS_ACTIONS` 读写区分），记 `logger.exception`，观测码
+  `reason_code="guard_exception"`；`toolchain/runtime.py` 的 symlink 检查遇到
+  `OSError` 直接 fail closed，`read_file` 在使用前立刻重验 symlink，
+  `lstat`/读取失败映射为拒绝错误，`edit_file` 读取失败返回错误，
+  `write_file` 的 best-effort `before` 读取失败不阻断写入；`runs/ledger.py`
+  新增 `disabled_reason` / `last_error_reason`
+  （`ledger_write_failed` / `ledger_truncated`），不再静默 disable；
+  `app/event_bus.py` 对非 `queue.Full` 的 subscriber 失败记日志不再吞掉；
+  `policies/redaction.py` 新增 marker 门控的 32+ hex/base64url 上下文强规则
+ （拆 `key=value` 再判，含 `/` token 改为判定而非整串跳过），工程标识符和
+  无 marker 哈希仍保持干净；`policies/shell_risk.py` 把
+  `py -X/-W <value> -m pip install` 识别为 `dependency_install`
+ （仅展示，链式命令仍为 `generic`）；`DESIGN.md` 资产清单同步为实际 11 模块。
+- 新增回归测试：`read_file` 的 guard 异常 deny、symlink `OSError`
+  fail-closed、ledger `ledger_write_failed` 可观测原因、小写 hex/query/bearer
+  slash 上下文脱敏 + CamelCase 干净、shell unwrap/pip 前缀/链式 generic
+  approval 卡片、pipeline `append_record` 抛错时 trace + sink 出现
+  `write_failed`。
+
 - 把 `codey/runtime/` 拆成五个包，依赖只准单向：
   `core/`（operation 状态机、纯 reducer、契约）、
   `log/`（session log、投影、标准 `SessionView`、compaction）、
@@ -57,7 +78,7 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - `python -m pytest -q`
-  （`3673 passed, 4 skipped, 1289 subtests passed in 321.16s (0:05:21)`）
+  （`3683 passed, 4 skipped, 1292 subtests passed in 305.22s (0:05:05)`）
 
 ## 0.5.8 - Durable Operation Core
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,6 +20,9 @@ from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 DECISION_ALLOW = "allow"
@@ -54,15 +58,6 @@ KNOWN_ACTIONS = PATH_ACTIONS | frozenset({
     "provider_fallback",
     "managed_output",
     "local_context_action",
-})
-DANGEROUS_ACTIONS = WRITE_ACTIONS | frozenset({
-    "run_command",
-    "shell",
-    "research_url",
-    "provider_fallback",
-    "managed_output",
-    "local_context_action",
-    "unknown_tool",
 })
 
 
@@ -225,15 +220,20 @@ class ActionPolicyPipeline:
             try:
                 candidate = guard(subject)
             except Exception:
-                if subject.kind in DANGEROUS_ACTIONS:
-                    candidate = ActionPolicyDecision.deny(
-                        subject,
-                        guard_id="guard_exception",
-                        reason_code="guard_exception",
-                        display="action denied because a policy guard failed",
-                    )
-                else:
-                    candidate = None
+                # Fail closed for every action kind (cold start, no
+                # read/write distinction): a guard bug must deny, never
+                # silently allow. The denial is observable via
+                # reason_code="guard_exception".
+                logger.exception(
+                    "policy guard failed: %s",
+                    getattr(guard, "__name__", type(guard).__name__),
+                )
+                candidate = ActionPolicyDecision.deny(
+                    subject,
+                    guard_id="guard_exception",
+                    reason_code="guard_exception",
+                    display="action denied because a policy guard failed",
+                )
             if candidate is not None:
                 decision = merge_decisions(decision, candidate)
         return decision

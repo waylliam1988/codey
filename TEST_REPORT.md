@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## Boundary hardening: policy/path/ledger/redaction fail-closed (2026-09-18)
+
+Scope:
+
+```text
+policies/action.py:   guard exceptions now deny every action kind (removed
+                      DANGEROUS_ACTIONS split) + logger.exception,
+                      reason_code="guard_exception"
+toolchain/runtime.py: symlink OSError fail-closed; read_file re-verifies
+                      symlink before use + lstat/read failures deny;
+                      edit_file read failures error; write_file best-effort
+                      before-read stays non-fatal
+runs/ledger.py:       disabled_reason/last_error_reason
+                      (ledger_write_failed/ledger_truncated)
+app/event_bus.py:     non-queue.Full subscriber failures logged
+policies/redaction:   marker-gated 32+ hex/base64url contextual rule
+                      (key=value split, slash tokens judged)
+policies/shell_risk:  py -X/-W <value> -m pip install => dependency_install
+docs:                 DESIGN.md 11-module sync; CHANGELOG.md + CHANGELOG.zh-CN.md
+tests:                test_action_policy (read deny), test_tool_runtime
+                      (symlink OSError), test_run_ledger (observable reason),
+                      test_redaction (hex/query/bearer/CamelCase),
+                      test_shell_risk (unwrap/pip/chained), test_research_pipeline
+                      (append_raise => trace+sink write_failed)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_action_policy.py tests/test_redaction.py tests/test_run_ledger.py tests/test_shell_risk.py tests/test_tool_runtime.py`
+  (`158 passed, 69 subtests passed`)
+  `pytest -q tests/test_research_pipeline.py tests/test_research_evidence_ledger.py tests/test_architecture.py tests/test_ui_architecture.py`
+  (`144 passed, 311 subtests passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3683 passed, 4 skipped, 1292 subtests passed in 305.22s (0:05:05)`)
+
 ## Write-builder API naming cleanup (2026-09-18)
 
 Scope:

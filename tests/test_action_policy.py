@@ -72,6 +72,24 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertEqual(decision.decision, DECISION_DENY)
         self.assertEqual(decision.reason_code, "guard_exception")
 
+    def test_guard_exception_denies_read_action(self) -> None:
+        def broken(_subject: ActionSubject):
+            raise RuntimeError("boom")
+
+        with tempfile.TemporaryDirectory() as td:
+            decision = ActionPolicyPipeline((broken,)).evaluate(
+                ActionSubject(
+                    "read_file",
+                    permission_profile="coding_writer",
+                    project=td,
+                    path="app.py",
+                ),
+            )
+
+        self.assertEqual(decision.decision, DECISION_DENY)
+        self.assertEqual(decision.reason_code, "guard_exception")
+        self.assertEqual(decision.guard_id, "guard_exception")
+
     def test_unknown_action_kind_is_denied(self) -> None:
         decision = evaluate_action(ActionSubject(
             "delete_file",

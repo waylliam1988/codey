@@ -79,6 +79,17 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(all(not outcome.ok for outcome in outcomes))
         self.assertTrue(all(outcome.error_code == "symlink_path" for outcome in outcomes))
 
+    def test_symlink_check_failure_denies_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("ok\n", encoding="utf-8")
+
+            with mock.patch.object(Path, "is_symlink", side_effect=OSError("lstat failed")):
+                outcome = read_file(root, "app.py")
+
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "symlink_path")
+
     def test_file_tools_report_workspace_escape_as_structured_errors(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

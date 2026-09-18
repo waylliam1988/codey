@@ -207,6 +207,12 @@ def _pip_install(argv: list[str]) -> bool:
         return False
     index = 1
     while index < len(argv) and argv[index].startswith("-") and argv[index] != "-m":
+        # Python -X/-W take a separate value (e.g. `py -X utf8 -m pip ...`);
+        # skip the value so the -m pip install prefix is still recognized.
+        # Display-only: unknown flags fall through to generic, never to allow.
+        if argv[index] in {"-x", "-w"} and index + 1 < len(argv):
+            index += 2
+            continue
         index += 1
     return argv[index:index + 3] == ["-m", "pip", "install"]
 
