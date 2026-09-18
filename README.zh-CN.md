@@ -32,7 +32,7 @@ Codey 不是云端代码托管 agent，不是插件市场，也不是让网页 A
 安装依赖：
 
 ```powershell
-pip install -r requirements.txt
+pip install -e .
 ```
 
 启动 Codey：
@@ -83,7 +83,7 @@ adapter，不需要改 agent 核心。
 ## 开发
 
 ```powershell
-pip install -r requirements.txt
+pip install -e .[dev]
 python -m pytest
 ```
 

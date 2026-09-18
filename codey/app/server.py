@@ -544,15 +544,21 @@ class AppContext:
         with self.lock:
             return self.approvals.teach_snapshot()
 
-    def record_research_changes(self, run_id: str, changes: object) -> None:
+    def record_research_changes(
+        self, run_id: str, changes: object, session_id: str = ""
+    ) -> None:
         with self.lock:
             self.research_changes[run_id] = changes
-            try:
-                active = self.run_registry.current()
-            except Exception:
-                active = None
-            if active is not None and active.run_id == run_id:
-                self._research_change_sessions[run_id] = active.session_id
+            owner = str(session_id or "").strip()
+            if not owner:
+                try:
+                    active = self.run_registry.current()
+                except Exception:
+                    active = None
+                if active is not None and active.run_id == run_id:
+                    owner = active.session_id
+            if owner:
+                self._research_change_sessions[run_id] = owner
             if len(self.research_changes) > 32:
                 for key in list(self.research_changes)[:-32]:
                     self.research_changes.pop(key, None)

@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from codey.storage.local_store import read_json, write_json_atomic
+from codey.storage.local_store import (
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 from codey.providers.flow import normalize_recipe, serialize_recipe
 
 
@@ -15,6 +20,14 @@ REVIVAL_KEY = "_revival"
 REVIVAL_ACTIONS = ("message_box", "send_button", "response")
 MAX_CONTROL_FAILURES = 2
 MAX_PROVIDER_STORE_BYTES = 64 * 1024
+
+
+def _load_store(path: Path) -> dict[str, Any]:
+    try:
+        return read_json_strict(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return {}
 
 
 def complete_send(
@@ -33,7 +46,7 @@ def complete_send(
     normalized_flow = normalize_recipe(staged_flow) if staged_flow else None
     if not staged and not learned_verified and not normalized_flow and not learned_flow_verified:
         return False
-    data = read_json(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
         provider = {}
@@ -162,7 +175,7 @@ def load_flow_recipe(
     provider_id: str,
     built_in_profile_hash: str,
 ) -> dict[str, tuple[str, ...]] | None:
-    data = read_json(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
         return None
@@ -176,7 +189,7 @@ def load_flow_recipe(
 
 def record_flow_failure(path: Path, provider_id: str) -> bool:
     """Count an explicit flow mismatch and restore the previous generation."""
-    data = read_json(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
         return False
@@ -194,7 +207,7 @@ def record_flow_failure(path: Path, provider_id: str) -> bool:
 
 def record_control_failure(path: Path, provider_id: str, action: str) -> bool:
     """Count an explicit learned-control failure and restore the prior bundle."""
-    data = read_json(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
         return False
@@ -221,7 +234,7 @@ def record_control_failure(path: Path, provider_id: str, action: str) -> bool:
 
 
 def record_control_success(path: Path, provider_id: str, action: str) -> bool:
-    data = read_json(path, max_bytes=MAX_PROVIDER_STORE_BYTES) or {}
+    data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
         return False

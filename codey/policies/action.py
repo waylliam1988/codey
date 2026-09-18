@@ -16,6 +16,7 @@ from pathlib import Path
 
 from codey.policies.network import DEFAULT_NETWORK_POLICY
 from codey.policies.permissions import PermissionProfile, profile_for_name
+from codey.utils.refs import digest_text
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
@@ -534,11 +535,6 @@ def _normcase_path(value: object) -> str:
         return str(Path(str(value or "")).expanduser().resolve())
     except (OSError, RuntimeError, ValueError):
         return str(value or "")
-
-
-def digest_text(value: object) -> str:
-    text = str(value or "")
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 __all__ = [

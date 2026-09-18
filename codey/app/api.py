@@ -344,6 +344,24 @@ def _shell_claim_expired(ctx: Any, claimed_generation: int) -> bool:
     return int(claimed_generation or 0) != int(current_generation or 0)
 
 
+def _stopped_shell_denial(
+    ctx: Any, pending: dict, approval_id: str, session_id: str, command: object
+) -> tuple[int, dict]:
+    event = {
+        "type": "shell_result",
+        "run_id": pending.get("run_id") or "",
+        "session_id": session_id,
+        "id": approval_id,
+        "approved": False,
+        "command": command,
+        "cwd": pending["cwd"],
+        "output": "Task stopped; command approval expired.",
+        "exit_code": None,
+    }
+    ctx.record_shell_result(event)
+    return 409, {"error": "stopped", "stopped": True, "event": event}
+
+
 def shell_approval_response(
     ctx: Any,
     body: dict,
@@ -383,24 +401,14 @@ def shell_approval_response(
         return 200, {"ok": True, "approved": False, "event": event}
 
     if _shell_claim_expired(ctx, claimed_generation):
-        event = {
-            "type": "shell_result",
-            "run_id": pending.get("run_id") or "",
-            "session_id": session_id,
-            "id": approval_id,
-            "approved": False,
-            "command": command,
-            "cwd": pending["cwd"],
-            "output": "Task stopped; command approval expired.",
-            "exit_code": None,
-        }
-        ctx.record_shell_result(event)
-        return 409, {"error": "stopped", "stopped": True, "event": event}
+        return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
 
     result = services.execute_approved_shell(
         ctx, project, pending["cwd"], command,
         expected_approval_generation=claimed_generation,
     )
+    if result.get("stopped"):
+        return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
     event = {
         "type": "shell_result",
         "run_id": pending.get("run_id") or "",

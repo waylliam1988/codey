@@ -105,5 +105,34 @@ class ShellApprovalEpochTests(unittest.TestCase):
         self.assertEqual(result["error"], "command stopped")
 
 
+    def test_stopped_execute_result_is_denied_without_continuation(self) -> None:
+        pending = _pending()
+        pending["continue_after"] = True
+        ctx = _FakeCtx(pending, generation_at_pop=9, generation_now=9)
+        submit = mock.Mock()
+        with mock.patch.object(
+            app_api.services,
+            "execute_approved_shell",
+            return_value={
+                "ok": False,
+                "error": "command stopped",
+                "exit_code": None,
+                "output": "",
+                "stopped": True,
+            },
+        ):
+            status, payload = app_api.shell_approval_response(
+                ctx,
+                {"id": "shell-1", "approved": True},
+                submit_task_after_slot_release=submit,
+            )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(payload.get("error"), "stopped")
+        self.assertEqual(len(ctx.recorded), 1)
+        self.assertFalse(ctx.recorded[0]["approved"])
+        submit.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,37 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 收掉四个复核尾巴，不新增兼容（fail closed，冷启动）：
+  `workspace/paths.py:path_hash` 改为走 fd 自身做 hash（`os.open` 带
+  `O_NOFOLLOW`、`fstat` 重验 regular file、分块文本读并保持通用换行语义），
+  不再经 `exists`/`is_file`/`Path.open` 重解析路径；
+  `SnapshotStore.load` 先验 entry digest 再扣 total 预算，脏条目既不清空
+  baseline 也不挤占后面好条目的额度；`execute_approved_shell` 内发现的晚到
+  Stop 返回 `stopped: True`，API 统一走 denied 路径（`approved: False`、
+  `409 stopped`、不 continuation）；`record_research_changes` 加可选
+  `session_id`（保留 active-run 回退），research pipeline 显式传入，
+  `forget_conversation` 不再依赖 best-effort 推断。
+- 其余生产侧 `read_json` 调用全部迁到 `read_json_strict`，每家 store 自带备份
+  策略（`local_store.py` 共享 `backup_corrupt_file`）：ghost 各 store
+  （affinity/continuity/hebbian/inbox/router/sleep/work_queue；hebbian/inbox
+  保留自带 quarantine，只读的 directive 按设计不做任何变更）、project
+  facts、conversations、UI state、work checkpoint、run details、provider 各
+  store（revival 收敛为 `_load_store` 单 helper，controls、local config、
+  supervisor、adapter overrides）。两个有意的例外：`SnapshotStore` 保留
+  `manifest.json.corrupt` 语义（现委托给共享 helper）；evidence ledger 保持
+  宽松读，因为它的 `-unavailable-` rotation 就是备份策略，提前备份反而会
+  让 rotation 看不到文件。
+- 小步卫生减法：`knowledge/changes.py` 复用 `workspace.changes.RestoreResult`
+  （单定义，重导出保留）；`policies/action.py` 与 `runs/trace.py` 复用
+  `utils.refs.digest_text`（原 import 路径仍可用）；删除多余的
+  `requirements.txt`（CI 本就用 `pip install -e .[dev]`），两份 README 改为
+  `pip install -e .` / `pip install -e .[dev]`。
+- 新增回归测试：`path_hash` symlink 替换拒绝 + `O_NOFOLLOW` 断言、压缩 total
+  上限后的脏条目预算测试、stopped 执行映射到 denied/不续跑、research
+  session 显式透传、各 store 严格加载矩阵（`test_strict_store_loads.py`）；
+  同步更新既有测试的接缝（`test_tool_runtime` 两处、`test_server` epoch 参数、
+  `test_provider_revival` 两处 mock、`test_research_pipeline` 三处 sink）。
+
 - 堵住五个已验真的安全/恢复缺口（fail closed，冷启动，无兼容 shim）：
   审批 `Allow`/`Stop` 竞态引入单调 epoch（`ApprovalRegistry._generation`，
   Stop-all 即使 map 为空也递增，`api.shell_approval_response` 与

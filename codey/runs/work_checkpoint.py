@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
     delete_file,
-    read_json,
+    read_json_strict,
     session_key,
     write_json_atomic,
 )
@@ -168,7 +170,12 @@ class WorkCheckpointStore:
         return self.state_home / "work_checkpoints" / f"{session_key(session_id)}.json"
 
     def load(self, session_id: str) -> WorkCheckpoint | None:
-        payload = read_json(self.path_for(session_id), max_bytes=MAX_CHECKPOINT_BYTES)
+        path = self.path_for(session_id)
+        try:
+            payload = read_json_strict(path, max_bytes=MAX_CHECKPOINT_BYTES)
+        except StoreCorruption:
+            backup_corrupt_file(path)
+            return None
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return None
         try:

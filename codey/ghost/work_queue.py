@@ -26,8 +26,10 @@ from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
     project_key,
-    read_json,
+    read_json_strict,
     session_key,
     write_json_atomic,
 )
@@ -1149,7 +1151,11 @@ class GhostWorkQueueStore:
         return projection
 
     def _load_projection_items_unlocked(self) -> tuple[GhostWorkItem, ...]:
-        payload = read_json(self.projection_path, max_bytes=MAX_WORK_STATE_BYTES)
+        try:
+            payload = read_json_strict(self.projection_path, max_bytes=MAX_WORK_STATE_BYTES)
+        except StoreCorruption:
+            backup_corrupt_file(self.projection_path)
+            return ()
         if not isinstance(payload, dict):
             return ()
         if payload.get("schema_version") != WORK_QUEUE_SCHEMA_VERSION:

@@ -28,7 +28,15 @@ from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import DEFAULT_STATE_HOME, project_key, read_json, session_key, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    project_key,
+    read_json_strict,
+    session_key,
+    write_json_atomic,
+)
 
 
 ROUTER_SCHEMA_VERSION = 1
@@ -1098,7 +1106,11 @@ def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
 
 
 def _read_json_dict(path: Path, *, max_bytes: int) -> dict | None:
-    return read_json(path, max_bytes=max_bytes)
+    try:
+        return read_json_strict(path, max_bytes=max_bytes)
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return None
 
 
 def _list(value: object) -> list:

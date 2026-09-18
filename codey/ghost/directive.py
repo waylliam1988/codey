@@ -18,7 +18,7 @@ from codey.ghost.hebbian import (
 )
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
-from codey.storage.local_store import read_json
+from codey.storage.local_store import StoreCorruption, read_json_strict
 
 
 DEFAULT_DIRECTIVE_BUDGET = 900
@@ -207,7 +207,12 @@ def _read_projected_nodes(store: GhostHebbianStore) -> tuple[GhostNode, ...]:
     state_path = getattr(store, "state_path", None)
     if state_path is None:
         return ()
-    payload = read_json(Path(state_path), max_bytes=MAX_HEBBIAN_STATE_BYTES)
+    try:
+        payload = read_json_strict(Path(state_path), max_bytes=MAX_HEBBIAN_STATE_BYTES)
+    except StoreCorruption:
+        # Read-only consumer: never mutate (no quarantine, no backup). The
+        # owning Hebbian store quarantines on its own loads.
+        return ()
     if not isinstance(payload, dict):
         return ()
     if payload.get("schema_version") != HEBBIAN_SCHEMA_VERSION:

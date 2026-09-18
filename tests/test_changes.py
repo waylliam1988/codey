@@ -651,7 +651,6 @@ class ChangeTrackerTests(unittest.TestCase):
 
             self.assertIn("good.py", before)
             self.assertNotIn("bad.py", before)
-
     def test_corrupt_manifest_is_backed_up_not_silently_emptied(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
@@ -666,6 +665,27 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(hashes, {})
             self.assertFalse(manifest.exists())
             self.assertTrue(manifest.with_name(manifest.name + ".corrupt").exists())
+
+    def test_dirty_entry_does_not_consume_total_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            (root / "big.py").write_text("x" * 2000, encoding="utf-8")
+            (root / "good.py").write_text("y\n", encoding="utf-8")
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("big.py")
+            tracker.capture_before("good.py")
+
+            manifest = store.path_for(root)
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            payload["files"]["big.py"]["after_hash"] = "not-a-hash"
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+            with mock.patch.object(changes, "MAX_SNAPSHOT_TOTAL_BYTES", 100):
+                before, _ = SnapshotStore(state_td).load(root)
+
+            self.assertNotIn("big.py", before)
+            self.assertIn("good.py", before)
 
 
 if __name__ == "__main__":

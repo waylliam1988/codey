@@ -34,7 +34,13 @@ from codey.ghost.schema import (
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    delete_file,
+    read_json_strict,
+    write_json_atomic,
+)
 
 
 INBOX_SCHEMA_VERSION = 1
@@ -744,7 +750,11 @@ class GhostInboxStore:
     def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
         if not self.inbox_path.exists():
             return None
-        payload = read_json(self.inbox_path, max_bytes=MAX_INBOX_BYTES)
+        try:
+            payload = read_json_strict(self.inbox_path, max_bytes=MAX_INBOX_BYTES)
+        except StoreCorruption:
+            self._quarantine(self.inbox_path)
+            return None
         if not isinstance(payload, dict):
             self._quarantine(self.inbox_path)
             return None
@@ -797,7 +807,11 @@ class GhostInboxStore:
         }
         if not self.settings_path.exists():
             return default
-        payload = read_json(self.settings_path, max_bytes=MAX_INBOX_BYTES)
+        try:
+            payload = read_json_strict(self.settings_path, max_bytes=MAX_INBOX_BYTES)
+        except StoreCorruption:
+            self._quarantine(self.settings_path)
+            return default
         if not isinstance(payload, dict):
             self._quarantine(self.settings_path)
             return default

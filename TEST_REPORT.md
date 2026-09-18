@@ -1,5 +1,52 @@
 # Codey Test Report
 
+## Review tails + strict-store migration + hygiene subtractions (2026-09-18)
+
+Scope:
+
+```text
+workspace/paths.py:           path_hash hashes through the fd (O_NOFOLLOW +
+                              fstat re-check, bounded text chunks)
+workspace/changes.py:         load validates digest before total budget;
+                              manifest backup delegates to shared helper
+app/services.py + app/api.py: late Stop returns stopped: True; API maps it
+                              to denied (approved False, 409, no continuation)
+app/server.py +                explicit session_id on record_research_changes
+research/pipeline.py:         (active-run fallback); pipeline passes it
+local_store.py:               backup_corrupt_file shared helper
+ghost/*, facts,               all remaining production read_json callers ->
+conversations, ui_state,      read_json_strict + backup (hebbian/inbox keep
+checkpoints, run details,     quarantine; directive read-only untouched;
+providers, repairs:           evidence ledger keeps rotation strategy)
+knowledge/changes.py:         reuses workspace RestoreResult
+policies/action.py +          reuse utils.refs.digest_text
+runs/trace.py:
+requirements.txt:             deleted; READMEs point at pip install -e .[dev]
+docs:                         CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased
+                              entries
+tests:                        new test_research_changes_session,
+                              test_strict_store_loads; extended
+                              test_workspace_paths, test_changes,
+                              test_shell_approval_epoch; updated
+                              test_provider_revival, test_research_pipeline
+                              seams
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  new/updated suites plus ghost/provider/ledger/server/pipeline batches
+  (4 pre-existing tests initially failed on real contract changes and were
+  resolved per contract: directive stays mutation-free, evidence ledger
+  keeps rotation, revival mocks moved to read_json_strict)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3717 passed, 5 skipped, 1300 subtests passed in 308.55s (0:05:08)`)
+
 ## Approval epoch + run_id dedup + no-follow reads + strict snapshot load + session forget (2026-09-18)
 
 Scope:

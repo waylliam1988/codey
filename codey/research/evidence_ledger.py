@@ -398,6 +398,10 @@ class EvidenceLedgerStore:
     def _load_payload(self, path: Path) -> dict[str, object] | None:
         if not path.exists():
             return {}
+        # Lenient read on purpose: a corrupt active file stays in place so
+        # append_record can rotate it into an `-unavailable-` archive (that
+        # rotation is this ledger's backup strategy) instead of vanishing
+        # into a sidecar before rotation sees it.
         payload = read_json(path, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
         if not _canonical_ledger_payload(payload):
             return None

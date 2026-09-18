@@ -8,13 +8,14 @@ belong here.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
+
+from codey.utils.refs import digest_text
 
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.completion.contract import (
@@ -104,11 +105,6 @@ RESEARCH_ANSWER_STATUSES = frozenset({
     "insufficient_evidence",
     "not_answered",
 })
-
-
-def digest_text(value: object) -> str:
-    text = str(value or "")
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def project_ref(project: str | Path | None) -> dict[str, str]:

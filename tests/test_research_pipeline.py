@@ -317,7 +317,7 @@ def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> N
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                 ledger_event_sink=lambda item: events.append(("ledger", item)),
-                research_changes_sink=lambda run_id, snapshot: events.append((run_id, snapshot)),
+                research_changes_sink=lambda run_id, snapshot, _session_id="": events.append((run_id, snapshot)),
             )
             output = pipeline.run()
         finally:
@@ -540,7 +540,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                 ledger_event_sink=lambda item: ledger_events.append(item.reason_code),
-                research_changes_sink=lambda run_id, snapshot: ledger_events.append(run_id if snapshot is changes else "unexpected"),
+                research_changes_sink=lambda run_id, snapshot, _session_id="": ledger_events.append(run_id if snapshot is changes else "unexpected"),
             )
             output = pipeline.run()
         finally:
@@ -1778,7 +1778,7 @@ def test_pipeline_surfaces_ledger_append_raise_as_write_failed() -> None:
                     evidence_ledgers=evidence_ledgers,
                     config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                     ledger_event_sink=lambda item: events.append(("ledger", item)),
-                    research_changes_sink=lambda run_id, snapshot: events.append((run_id, snapshot)),
+                    research_changes_sink=lambda run_id, snapshot, _session_id="": events.append((run_id, snapshot)),
                 )
                 output = pipeline.run()
         finally:

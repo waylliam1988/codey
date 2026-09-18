@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from codey.workspace.paths import (
     bounded_directory_entries,
@@ -99,6 +101,42 @@ class WorkspacePathTests(unittest.TestCase):
                 ensure_not_symlink(link)
             with self.assertRaisesRegex(ValueError, "symlink"):
                 path_hash(link)
+
+    def test_path_hash_opens_without_following_symlinks(self) -> None:
+        # Proves the hash path cannot bypass the no-follow helper: a swapped-in
+        # link must fail even if it points at readable content, and on POSIX
+        # the open itself must carry O_NOFOLLOW.
+        with tempfile.TemporaryDirectory() as td:
+            victim = Path(td) / "victim.txt"
+            victim.write_text("original\n", encoding="utf-8")
+            self.assertEqual(path_hash(victim), content_hash("original\n"))
+
+            other = Path(td) / "other.txt"
+            other.write_text("attacker\n", encoding="utf-8")
+            victim.unlink()
+            try:
+                victim.symlink_to(other)
+            except OSError:
+                self.skipTest("symlinks unavailable")
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                path_hash(victim)
+
+    def test_path_hash_fd_open_carries_no_follow_flag(self) -> None:
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW unavailable")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "a.txt"
+            path.write_text("hello\n", encoding="utf-8")
+            seen: dict[str, int] = {}
+            real_open = os.open
+
+            def spy_open(file, flags, *args, **kwargs):
+                seen["flags"] = int(flags)
+                return real_open(file, flags, *args, **kwargs)
+
+            with mock.patch.object(os, "open", spy_open):
+                self.assertEqual(path_hash(path), content_hash("hello\n"))
+            self.assertTrue(seen["flags"] & os.O_NOFOLLOW)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,13 @@ from typing import Any
 import codey
 from codey import __version__
 from codey.repairs.adapter_surface import adapter_repair_surface
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 from codey.providers.diagnostics import (
     FAILURE_CONTROL_MISSING,
     FAILURE_READINESS_STALE,
@@ -324,7 +330,12 @@ def _index_path(provider_id: str, state_home: str | Path | None) -> Path:
 
 
 def _load_index(provider_id: str, state_home: str | Path | None) -> dict[str, Any]:
-    data = read_json(_index_path(provider_id, state_home), max_bytes=MAX_INDEX_BYTES) or {}
+    index_path = _index_path(provider_id, state_home)
+    try:
+        data = read_json_strict(index_path, max_bytes=MAX_INDEX_BYTES) or {}
+    except StoreCorruption:
+        backup_corrupt_file(index_path)
+        data = {}
     if data.get("schema_version") != 1 or not isinstance(data.get("generations"), dict):
         return {
             "schema_version": 1,

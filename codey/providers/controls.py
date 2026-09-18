@@ -24,7 +24,13 @@ from codey.providers import profile_doctor
 from codey.providers import discovery as discovery
 from codey.providers import flow as provider_flow
 from codey.providers import revival as provider_revival
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 from codey.providers.diagnostics import ResponseMissing
 from codey.providers.profiles import get_profile
 
@@ -662,10 +668,14 @@ def resolve_captured_control(request: ControlTeachRequest, captured: CapturedCon
 
 def load_controls(path: Path | None = None) -> dict[str, Any]:
     path = path or CONTROL_STORE
-    return read_json(
-        path,
-        max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
-    ) or {}
+    try:
+        return read_json_strict(
+            path,
+            max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
+        ) or {}
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return {}
 
 
 def save_control(

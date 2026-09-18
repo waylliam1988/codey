@@ -13,7 +13,7 @@ class ProviderRevivalTests(unittest.TestCase):
     FLOW = {"completion": ("response_stable", "stop_hidden")}
 
     def test_normal_profile_only_send_does_not_touch_local_store(self) -> None:
-        with mock.patch.object(revival, "read_json") as read:
+        with mock.patch.object(revival, "read_json_strict") as read:
             revival.complete_send(
                 Path("unused.json"),
                 "qwen",
@@ -361,7 +361,7 @@ class ProviderRevivalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
             with (
-                mock.patch.object(revival, "read_json", return_value={}) as read,
+                mock.patch.object(revival, "read_json_strict", return_value={}) as read,
                 mock.patch.object(revival, "write_json_atomic") as write,
             ):
                 revival.complete_send(

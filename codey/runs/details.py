@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from codey.storage.local_store import read_json
+from codey.storage.local_store import StoreCorruption, backup_corrupt_file, read_json_strict
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
@@ -493,7 +493,11 @@ def _load_trace_payload(store: Any, session_id: str, run_id: str) -> dict[str, o
         path = store.path_for(session_id, run_id)
     except Exception:
         return None
-    payload = read_json(path, max_bytes=MAX_TRACE_BYTES)
+    try:
+        payload = read_json_strict(path, max_bytes=MAX_TRACE_BYTES)
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return None
     if not isinstance(payload, dict):
         return None
     if payload.get("schema_version") != SCHEMA_VERSION:

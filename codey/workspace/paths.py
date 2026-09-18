@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import errno
 import hashlib
 import os
 import stat
@@ -93,6 +94,14 @@ def content_hash(content: str | None) -> str:
 
 
 def path_hash(path: str | Path) -> str:
+    """Hash a text file without following a trailing symlink.
+
+    Opens with ``O_NOFOLLOW`` (POSIX) so a swapped-in link fails with
+    ``ELOOP`` instead of hashing another file's content; the ``lstat`` pre-check covers
+    Windows, where ``O_NOFOLLOW`` is unavailable. Reads through the fd in
+    bounded text chunks with universal-newline semantics, matching
+    :func:`content_hash`.
+    """
     target = Path(path)
     try:
         info = target.lstat()
@@ -100,14 +109,40 @@ def path_hash(path: str | Path) -> str:
         return "missing"
     if stat.S_ISLNK(info.st_mode):
         raise ValueError(f"refusing symlink: {target}")
-    if not target.exists():
-        return "missing"
-    if not target.is_file():
+    if not stat.S_ISREG(info.st_mode):
+        try:
+            if not target.exists():
+                return "missing"
+        except OSError:
+            return "missing"
         raise ValueError(f"not a file: {target}")
-    digest = hashlib.sha256()
-    with target.open("r", encoding="utf-8") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), ""):
-            digest.update(chunk.encode("utf-8"))
+    flags = os.O_RDONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(target, flags)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ValueError(f"refusing symlink: {target}") from exc
+        if isinstance(exc, FileNotFoundError):
+            return "missing"
+        raise ValueError(f"not a file: {target}") from exc
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8", newline=None) as handle:
+            try:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise ValueError(f"not a file: {target}")
+            except OSError as exc:
+                raise ValueError(f"not a file: {target}") from exc
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(1024 * 1024), ""):
+                digest.update(chunk.encode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise
+    except OSError as exc:
+        raise ValueError(f"not a file: {target}") from exc
     return "sha256:" + digest.hexdigest()
 
 

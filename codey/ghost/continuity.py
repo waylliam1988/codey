@@ -26,7 +26,13 @@ from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_re
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 
 if TYPE_CHECKING:
     from codey.runs.ledger_projection import RunLedgerProjection
@@ -685,7 +691,11 @@ def render_ghost_continuity(
 
 
 def _read_projected_items_from_path(path: Path) -> tuple[GhostContinuityItem, ...]:
-    payload = read_json(path, max_bytes=MAX_CONTINUITY_STATE_BYTES)
+    try:
+        payload = read_json_strict(path, max_bytes=MAX_CONTINUITY_STATE_BYTES)
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return ()
     if not isinstance(payload, dict):
         return ()
     if payload.get("schema_version") != CONTINUITY_SCHEMA_VERSION:

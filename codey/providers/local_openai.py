@@ -10,7 +10,13 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 LOCAL_BASE_URL_CANDIDATES = (
@@ -218,7 +224,12 @@ def resolve_local_endpoint() -> LocalEndpoint | None:
 
 
 def load_local_config() -> dict:
-    return read_json(_config_path()) or {}
+    path = _config_path()
+    try:
+        return read_json_strict(path) or {}
+    except StoreCorruption:
+        backup_corrupt_file(path)
+        return {}
 
 
 def save_local_config(

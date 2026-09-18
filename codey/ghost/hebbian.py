@@ -20,7 +20,13 @@ from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    delete_file,
+    read_json_strict,
+    write_json_atomic,
+)
 
 
 HEBBIAN_SCHEMA_VERSION = 1
@@ -691,7 +697,11 @@ class GhostHebbianStore:
     def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
         if not self.state_path.exists():
             return None
-        payload = read_json(self.state_path, max_bytes=MAX_HEBBIAN_STATE_BYTES)
+        try:
+            payload = read_json_strict(self.state_path, max_bytes=MAX_HEBBIAN_STATE_BYTES)
+        except StoreCorruption:
+            self._quarantine(self.state_path)
+            return None
         if not isinstance(payload, dict):
             self._quarantine(self.state_path)
             return None

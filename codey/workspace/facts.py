@@ -10,8 +10,10 @@ from typing import Sequence
 from codey.policies.command_line import split_run_command
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
     project_key,
-    read_json,
+    read_json_strict,
     write_json_atomic,
 )
 
@@ -226,7 +228,12 @@ class ProjectFactsStore:
         return self.state_home / "projects" / project_key(project) / "facts.json"
 
     def load(self, project: str | Path) -> ProjectFacts:
-        payload = read_json(self.path_for(project))
+        path = self.path_for(project)
+        try:
+            payload = read_json_strict(path)
+        except StoreCorruption:
+            backup_corrupt_file(path)
+            return ProjectFacts()
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return ProjectFacts()
         commands: list[VerifiedCommand] = []

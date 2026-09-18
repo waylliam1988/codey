@@ -93,3 +93,21 @@ def delete_file(path: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def backup_corrupt_file(path: Path) -> Path | None:
+    """Rename a corrupt state file aside for forensics.
+
+    Returns the backup path, or None when there is nothing to back up.
+    Every strict reader calls this before resetting to empty so corruption
+    is observable instead of silent.
+    """
+    try:
+        target = Path(path)
+        if not target.is_file():
+            return None
+        backup = target.with_name(target.name + ".corrupt")
+        target.replace(backup)
+        return backup
+    except OSError:
+        return None

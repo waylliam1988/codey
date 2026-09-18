@@ -27,7 +27,14 @@ from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    delete_file,
+    read_json_strict,
+    write_json_atomic,
+)
 from codey.workspace.paths import read_text_bounded
 
 
@@ -608,7 +615,11 @@ class GhostSleepStore:
         return GhostSleepReport.from_payload(payload.get("report"))
 
     def _read_state_payload_unlocked(self) -> dict[str, object] | None:
-        payload = read_json(self.state_path, max_bytes=MAX_SLEEP_STATE_BYTES)
+        try:
+            payload = read_json_strict(self.state_path, max_bytes=MAX_SLEEP_STATE_BYTES)
+        except StoreCorruption:
+            backup_corrupt_file(self.state_path)
+            return None
         if not isinstance(payload, dict):
             return None
         if payload.get("schema_version") != SLEEP_SCHEMA_VERSION:

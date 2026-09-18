@@ -98,7 +98,7 @@ class ResearchPipeline:
         evidence_ledgers: EvidenceLedgerStore | None = None,
         config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
-        research_changes_sink: Callable[[str, object], None] | None = None,
+        research_changes_sink: Callable[..., None] | None = None,
     ) -> None:
         self.context = context
         self.run_iteration = run_iteration
@@ -388,7 +388,9 @@ class ResearchPipeline:
             return
         if tools is None:
             return
-        self.research_changes_sink(self.context.run_id, tools.changes)
+        self.research_changes_sink(
+            self.context.run_id, tools.changes, self.context.session_id
+        )
 
     def _max_rounds(self) -> int:
         try:

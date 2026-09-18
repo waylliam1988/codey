@@ -36,7 +36,7 @@ give websites hidden access to your whole machine.
 Install dependencies:
 
 ```powershell
-pip install -r requirements.txt
+pip install -e .
 ```
 
 Start Codey:
@@ -91,7 +91,7 @@ agent core.
 ## Development
 
 ```powershell
-pip install -r requirements.txt
+pip install -e .[dev]
 python -m pytest
 ```
 

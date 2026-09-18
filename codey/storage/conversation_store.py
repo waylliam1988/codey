@@ -15,8 +15,10 @@ from codey.agents.handoff import (
 )
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
     delete_file,
-    read_json,
+    read_json_strict,
     session_key,
     write_json_atomic,
 )
@@ -93,7 +95,12 @@ class ConversationStore:
         return self.directory / f"{session_key(session_id)}.json"
 
     def load(self, session_id: str) -> ConversationContext:
-        payload = read_json(self.path_for(session_id))
+        path = self.path_for(session_id)
+        try:
+            payload = read_json_strict(path)
+        except StoreCorruption:
+            backup_corrupt_file(path)
+            return ConversationContext()
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return ConversationContext()
         return ConversationContext(

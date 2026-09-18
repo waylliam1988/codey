@@ -4,6 +4,46 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Closed four review tails with no new compat (fail closed, cold start):
+  `workspace/paths.py:path_hash` now hashes through the fd itself
+  (`os.open` with `O_NOFOLLOW`, `fstat` regular-file re-check, bounded text
+  chunks with universal-newline semantics) instead of re-resolving the path
+  via `exists`/`is_file`/`Path.open`; `SnapshotStore.load` validates the
+  entry digest before charging the total-bytes budget, so dirty entries
+  neither wipe the baseline nor starve later good entries; a late Stop found
+  inside `execute_approved_shell` now returns `stopped: True` and the API
+  maps it to the same denied path as an expired claim (`approved: False`,
+  `409 stopped`, no continuation); `record_research_changes` takes an
+  explicit `session_id` (active-run fallback kept) and the research pipeline
+  passes it, so `forget_conversation` no longer depends on best-effort
+  inference.
+- Migrated every remaining production `read_json` caller to `read_json_strict`
+  with a per-store backup strategy (`backup_corrupt_file`, shared in
+  `local_store.py`): ghost stores (affinity/continuity/hebbian/inbox/router/
+  sleep/work_queue; hebbian/inbox keep their timestamped quarantine, the
+  read-only directive consumer stays mutation-free by design), project facts,
+  conversations, UI state, work checkpoints, run details, provider stores
+  (revival via one `_load_store` helper, controls, local config, supervisor,
+  adapter overrides). Two deliberate exceptions: `SnapshotStore` keeps its
+  `manifest.json.corrupt` helper (same shape, now delegating), and the
+  evidence ledger stays on the lenient read because its
+  `-unavailable-` rotation is its backup strategy (backing up early would
+  steal the file before rotation sees it).
+- Small hygiene subtractions: `knowledge/changes.py` reuses
+  `workspace.changes.RestoreResult` (single definition, re-export kept);
+  `policies/action.py` and `runs/trace.py` reuse `utils.refs.digest_text`
+  (importable names unchanged); deleted the redundant `requirements.txt`
+  (CI already installs `pip install -e .[dev]`) and pointed both READMEs at
+  `pip install -e .` / `pip install -e .[dev]`.
+- Added regression tests: `path_hash` symlink-swap refusal + `O_NOFOLLOW`
+  flag assertion, dirty-entry budget packing under a shrunk total cap,
+  stopped-execute mapping to denied/no-continuation, explicit research
+  session plumbing, and a per-store strict-load matrix
+  (`test_strict_store_loads.py`); updated two `test_tool_runtime` search
+  seams (kept), one `test_server` epoch kwarg (kept), two
+  `test_provider_revival` mocks (`read_json_strict`), and three
+  `test_research_pipeline` sink lambdas (explicit session).
+
 - Closed five verified safety/recovery gaps (fail closed, cold start, no compat shims):
   approval `Allow`/`Stop` race now carries a monotonic epoch
   (`ApprovalRegistry._generation`; Stop-all always bumps even on an empty map,

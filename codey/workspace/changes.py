@@ -15,6 +15,7 @@ from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
+    backup_corrupt_file,
     delete_file,
     project_key,
     read_json_strict,
@@ -166,18 +167,17 @@ class SnapshotStore:
                     if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
                         continue
                     content = body
-                total += len((content or "").encode("utf-8"))
-                if total > MAX_SNAPSHOT_TOTAL_BYTES:
-                    break
-                before[rel] = content
-
                 digest = entry.get("after_hash")
                 if digest is not None and not (
                     isinstance(digest, str)
                     and (digest == "missing" or digest.startswith("sha256:"))
                 ):
-                    before.pop(rel, None)
                     continue
+                content_bytes = len((content or "").encode("utf-8"))
+                if total + content_bytes > MAX_SNAPSHOT_TOTAL_BYTES:
+                    break
+                total += content_bytes
+                before[rel] = content
                 if isinstance(digest, str):
                     hashes[rel] = digest
             return before, hashes
@@ -302,11 +302,7 @@ class SnapshotStore:
 
 def _backup_corrupt_manifest(manifest_path: Path) -> None:
     """Preserve a corrupt manifest for forensics, then let callers reset."""
-    try:
-        corrupt_path = manifest_path.with_name(manifest_path.name + ".corrupt")
-        manifest_path.replace(corrupt_path)
-    except OSError:
-        pass
+    backup_corrupt_file(manifest_path)
 
 
 def _write_bytes_atomic(path: Path, data: bytes) -> None:

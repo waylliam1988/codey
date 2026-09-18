@@ -384,6 +384,17 @@ def _approval_generation_current(ctx: Any, expected: int) -> bool:
     return int(expected or 0) == int(current or 0)
 
 
+def _stopped_shell_result() -> dict:
+    """Refused-before/during-execution result: never approved, never continued."""
+    return {
+        "ok": False,
+        "error": "command stopped",
+        "exit_code": None,
+        "output": "",
+        "stopped": True,
+    }
+
+
 def safe_project_cwd(project: str | Path, rel: str) -> Path:
     root = Path(project).expanduser().resolve()
     cwd = (root / (rel or ".")).resolve()
@@ -423,13 +434,13 @@ def execute_approved_shell(
         if expected_approval_generation is not None and not _approval_generation_current(
             ctx, expected_approval_generation
         ):
-            return {"ok": False, "error": "command stopped", "exit_code": None, "output": ""}
+            return _stopped_shell_result()
         try:
             stop_set = bool(ctx.run_registry.stop_flag.is_set())
         except Exception:
             stop_set = False
         if stop_set:
-            return {"ok": False, "error": "command stopped", "exit_code": None, "output": ""}
+            return _stopped_shell_result()
         cwd = safe_project_cwd(project, rel)
         with cancellation.scope(ctx.run_registry.stop_flag):
             proc = cancellation.run_process(
@@ -439,12 +450,7 @@ def execute_approved_shell(
                 shell=True,
             )
     except cancellation.TaskCancelled:
-        return {
-            "ok": False,
-            "error": "command stopped",
-            "exit_code": None,
-            "output": "",
-        }
+        return _stopped_shell_result()
     except subprocess.TimeoutExpired:
         return {
             "ok": False,

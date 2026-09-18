@@ -9,7 +9,12 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable
 
-from codey.storage.local_store import read_json, write_json_atomic
+from codey.storage.local_store import (
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 from codey.runtime.core import cancellation
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
@@ -223,7 +228,11 @@ class ProviderSupervisor:
     def _load(self) -> dict[str, ProviderHealth]:
         if self.path is None:
             return {}
-        payload = read_json(self.path, max_bytes=MAX_HEALTH_BYTES) or {}
+        try:
+            payload = read_json_strict(self.path, max_bytes=MAX_HEALTH_BYTES) or {}
+        except StoreCorruption:
+            backup_corrupt_file(self.path)
+            return {}
         records = payload.get("providers")
         if not isinstance(records, dict):
             return {}

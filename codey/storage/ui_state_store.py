@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    StoreCorruption,
+    backup_corrupt_file,
+    read_json_strict,
+    write_json_atomic,
+)
 
 
 SCHEMA_VERSION = 1
@@ -337,7 +343,11 @@ class UiStateStore:
         self._cached_state: dict[str, Any] | None = None
 
     def load(self) -> dict[str, Any]:
-        payload = read_json(self.path, max_bytes=MAX_UI_STATE_BYTES)
+        try:
+            payload = read_json_strict(self.path, max_bytes=MAX_UI_STATE_BYTES)
+        except StoreCorruption:
+            backup_corrupt_file(self.path)
+            payload = None
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             state = _empty_state()
         else:
