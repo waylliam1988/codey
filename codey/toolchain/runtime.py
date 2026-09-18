@@ -346,6 +346,21 @@ def _verify_path_exists(
     return None
 
 
+def _dir_entry_kind(entry: Path) -> str:
+    """Best-effort kind probe for directory listing display.
+
+    Returns ``"dir"``, ``"file"``, or ``"unreadable"``. Never raises: an
+    entry whose type cannot be verified renders as unreadable instead of
+    failing the whole listing. Symlink semantics are unchanged (followed,
+    as before); only verification failures are contained.
+    """
+
+    try:
+        return "dir" if entry.is_dir() else "file"
+    except (OSError, ValueError):
+        return "unreadable"
+
+
 def _write_text_after_final_path_check(
     root: Path,
     rel: str,
@@ -848,25 +863,44 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
     if verify_error is not None:
         return verify_error
     lines: list[str] = []
-    entries, entry_limited = _bounded_directory_entries(
-        path,
-        LIST_MAX_DIR_ENTRIES,
-        include_hidden=False,
-        check_cancel=cancellation.check,
-    )
+    incomplete = False
+    try:
+        entries, entry_limited = _bounded_directory_entries(
+            path,
+            LIST_MAX_DIR_ENTRIES,
+            include_hidden=False,
+            check_cancel=cancellation.check,
+        )
+    except (OSError, ValueError):
+        return ToolOutcome.error(f"cannot list directory: {rel}")
     for entry in entries:
         cancellation.check()
-        if entry.is_dir():
+        kind = _dir_entry_kind(entry)
+        if kind == "unreadable":
+            lines.append(f"{entry.name} (unreadable)")
+            incomplete = True
+            continue
+        if kind == "dir":
             lines.append(f"{entry.name}/")
-            sub_entries, sub_limited = _bounded_directory_entries(
-                entry,
-                LIST_MAX_SUBDIR_ENTRIES,
-                include_hidden=False,
-                check_cancel=cancellation.check,
-            )
+            try:
+                sub_entries, sub_limited = _bounded_directory_entries(
+                    entry,
+                    LIST_MAX_SUBDIR_ENTRIES,
+                    include_hidden=False,
+                    check_cancel=cancellation.check,
+                )
+            except (OSError, ValueError):
+                lines.append("  (unreadable)")
+                incomplete = True
+                continue
             for sub in sub_entries:
                 cancellation.check()
-                tag = "/" if sub.is_dir() else ""
+                sub_kind = _dir_entry_kind(sub)
+                if sub_kind == "unreadable":
+                    lines.append(f"  {sub.name} (unreadable)")
+                    incomplete = True
+                    continue
+                tag = "/" if sub_kind == "dir" else ""
                 lines.append(f"  {sub.name}{tag}")
             if sub_limited:
                 lines.append(
@@ -876,7 +910,7 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
             lines.append(entry.name)
     if entry_limited:
         lines.append(f"... list_dir stopped after {LIST_MAX_DIR_ENTRIES} directory entries")
-    return ToolOutcome("\n".join(lines) if lines else "(empty)", True)
+    return ToolOutcome("\n".join(lines) if lines else "(empty)", True, truncated=incomplete)
 
 
 def search_files(

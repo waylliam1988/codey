@@ -33,8 +33,13 @@
   use and map `is_file` / `is_dir` / `exists` / `lstat` failures to structured
   denials instead of raising bare `OSError`; `policies/shell_risk.py` treats
   any chained command (`&&`, `||`, `;`, `|`, lone `&`) as `generic`
-  (display-only), so `cmd /c "npm install && curl ..."` no longer renders as a
+  (display-only), so   `cmd /c "npm install && curl ..."` no longer renders as a
   single-purpose install while `curl ...?a=1&b=2` query URLs stay precise.
+- Hardened `list_directory` enumeration (display-only, no compat shims):
+  entries probe through `_dir_entry_kind()` (`"dir"` / `"file"` /
+  `"unreadable"`, never raising), unreadable children render as
+  `(unreadable)` lines with `truncated=True`, and unreadable sub-directory
+  scans degrade to an `(unreadable)` line instead of raising bare `OSError`.
 
 - Split `codey/runtime/` into five packages with one-way instincts:
   `core/` (operation state machine, pure reducer, contracts),
@@ -98,7 +103,7 @@ Verification:
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3685 passed, 4 skipped, 1300 subtests passed in 308.67s (0:05:08)`)
+  (`3686 passed, 4 skipped, 1300 subtests passed in 311.47s (0:05:11)`)
 
 ## 0.5.8 - Durable Operation Core
 

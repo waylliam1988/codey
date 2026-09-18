@@ -1,5 +1,34 @@
 # Codey Test Report
 
+## list_directory enumeration hardening (2026-09-18)
+
+Scope:
+
+```text
+toolchain/runtime.py:   new _dir_entry_kind() probe ("dir"/"file"/"unreadable",
+                        never raises); list_directory renders unreadable
+                        children as (unreadable) lines with truncated=True;
+                        unreadable sub-directory scans degrade to an
+                        (unreadable) line; top-level scan failure returns a
+                        structured cannot-list-directory error
+docs:                   CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+tests:                  test_tool_runtime (child/nested stat failure renders
+                        unreadable, listing stays ok + truncated)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_tool_runtime.py tests/test_shell_risk.py`
+  (`100 passed, 69 subtests passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3686 passed, 4 skipped, 1300 subtests passed in 311.47s (0:05:11)`)
+
 ## Boundary tails: shared verify helpers + chained-shell generic (2026-09-18)
 
 Scope:

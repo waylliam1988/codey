@@ -108,6 +108,34 @@ class ToolOutcomeTests(unittest.TestCase):
                 self.assertFalse(outcome.ok)
                 self.assertTrue(outcome.error_code)
 
+    def test_list_directory_child_stat_failure_renders_unreadable(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "ok.txt").write_text("ok\n", encoding="utf-8")
+            child = root / "child"
+            child.mkdir()
+            (child / "inner.txt").write_text("inner\n", encoding="utf-8")
+            (child / "broken").mkdir()
+            (root / "bad").mkdir()
+
+            real_is_dir = Path.is_dir
+
+            def flaky_is_dir(self: Path) -> bool:
+                if self.name in {"bad", "broken"}:
+                    raise OSError("child stat failed")
+                return real_is_dir(self)
+
+            with mock.patch.object(Path, "is_dir", flaky_is_dir):
+                outcome = tool_runtime.list_directory(root, ".")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("ok.txt", outcome.model_text)
+        self.assertIn("child/", outcome.model_text)
+        self.assertIn("inner.txt", outcome.model_text)
+        self.assertIn("bad (unreadable)", outcome.model_text)
+        self.assertIn("broken (unreadable)", outcome.model_text)
+
     def test_file_tools_report_workspace_escape_as_structured_errors(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

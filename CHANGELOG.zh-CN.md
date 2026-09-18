@@ -32,6 +32,10 @@
   `OSError`；`policies/shell_risk.py` 把任何链式命令（`&&`、`||`、`;`、`|`、
   单独 `&`）判为 `generic`（仅展示），`cmd /c "npm install && curl ..."`
   不再展示成单一安装，`curl ...?a=1&b=2` 这类 query URL 仍保持精确。
+- 收紧 `list_directory` 枚举（仅展示，无兼容 shim）：
+  子项经 `_dir_entry_kind()` 探针（`"dir"` / `"file"` / `"unreadable"`，
+  永不抛异常），不可读子项渲染为 `(unreadable)` 行并标 `truncated=True`，
+  子目录扫描失败降级为 `(unreadable)` 行，不再抛裸 `OSError`。
 
 - 把 `codey/runtime/` 拆成五个包，依赖只准单向：
   `core/`（operation 状态机、纯 reducer、契约）、
@@ -86,7 +90,7 @@
 - `python -m compileall -q codey tests`（通过）
 - `ruff check .`（通过）
 - `python -m pytest -q`
-  （`3685 passed, 4 skipped, 1300 subtests passed in 308.67s (0:05:08)`）
+  （`3686 passed, 4 skipped, 1300 subtests passed in 311.47s (0:05:11)`）
 
 ## 0.5.8 - Durable Operation Core
 
