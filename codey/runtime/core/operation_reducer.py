@@ -70,6 +70,7 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
                 effect.intent.effect_id
                 for effect in effects
                 if effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
+                and effect.intent.turn == state.turn
                 and effect.settlement is not None
             )
             if stale:
@@ -101,6 +102,7 @@ def next_runtime_action(view: SessionView) -> RuntimeAction:
                 effect.intent.effect_id
                 for effect in effects
                 if effect.intent.effect_category == EFFECT_CATEGORY_TOOL_CALL
+                and effect.intent.turn == state.turn
                 and effect.settlement is not None
             )
             if stale_settled:

@@ -2079,6 +2079,89 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             [eff_new],
         )
 
+    def test_same_turn_failover_fresh_batch_replays_in_recovery(self) -> None:
+        # Same turn: the first batch gets a provider send attempt that
+        # errors, then the failover records a fresh batch for the same turn.
+        eff = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
+        items = (
+            DeliveryBatchItem(
+                tool_index=0,
+                tool_name="read",
+                ref=eff,
+                replay_class="safe",
+                is_denied=False,
+            ),
+        )
+        self._begin_tool_batch(
+            batch_id="batch-attempted-turn",
+            intents=(
+                self._tool_intent(
+                    eff,
+                    tool_index=0,
+                    tool_name="read",
+                    replay_args={"path": "target.py"},
+                ),
+            ),
+            items=items,
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            self._tool_settlement(eff),
+        )
+        provider_old = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, self.run_id)
+        self.line.begin_provider_effect(
+            self.session_id,
+            self.run_id,
+            self._provider_intent(provider_old),
+            delivery_batch_id="batch-attempted-turn",
+        )
+        self.line.settle_provider_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=provider_old,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_ERROR,
+                sent_state=SENT_STATE_MAYBE_SENT,
+                replay_class=ReplayClass.UNSAFE,
+            ),
+        )
+        self._begin_tool_batch(
+            batch_id="batch-fresh-turn",
+            intents=(),
+            items=items,
+        )
+
+        view = load_session_view(
+            self.log.entries(self.session_id),
+            session_id=self.session_id,
+            run_id=self.run_id,
+        )
+        self.assertEqual(pending_for(view).delivery_batch_id, "batch-fresh-turn")
+
+        recovery = recover_effects_for_resume(
+            self._deps(),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            project=str(self.project_dir),
+            task_kind="project",
+        )
+        self.assertTrue(recovery.ok)
+        self.assertEqual(recovery.recovered_tool_result_batch_id, "batch-fresh-turn")
+        self.assertEqual(
+            [outcome.effect_id for outcome in recovery.recovered_tool_outcomes],
+            [eff],
+        )
+        fresh = next(
+            batch
+            for batch in self.delivery.load_batches(self.session_id, self.run_id)
+            if batch.intent.batch_id == "batch-fresh-turn"
+        )
+        self.assertTrue(fresh.is_recovered)
+
     def test_torn_provider_settlement_batch_recovers_as_unknown_outcome(self) -> None:
         eff_read = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
         batch_id = "batch-torn-provider-settlement"

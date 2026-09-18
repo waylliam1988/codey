@@ -407,6 +407,28 @@ class RuntimeOperationReducerTests(unittest.TestCase):
         self.assertEqual(action.effect_ids, ("eff-new",))
         self.assertEqual(action.delivery_batch_id, "batch-new")
 
+    def test_delivery_pending_prefers_fresh_batch_over_attempted_failover_batch(self) -> None:
+        items = (DeliveryBatchItem(0, "read", "eff-read", "safe", False),)
+        state = _state(
+            LEAF_TOOL_DELIVERY_PENDING,
+            driver=DRIVER_WRITER,
+            turn=1,
+        )
+
+        action = next_runtime_action(
+            _view(
+                state,
+                batches=(
+                    _batch("batch-attempted", items, turn=1, send_attempts=("eff-provider",)),
+                    _batch("batch-fresh", items, turn=1),
+                ),
+            )
+        )
+
+        self.assertEqual(action.kind, ACTION_REPLAY_SAFE_TOOL_BATCH)
+        self.assertEqual(action.effect_ids, ("eff-read",))
+        self.assertEqual(action.delivery_batch_id, "batch-fresh")
+
     def test_all_known_leaves_have_total_dispatch(self) -> None:
         fixtures: dict[str, dict[str, object]] = {
             LEAF_PROVIDER_EFFECT_PENDING: {

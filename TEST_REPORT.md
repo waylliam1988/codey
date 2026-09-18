@@ -1,5 +1,33 @@
 # Codey Test Report
 
+## Same-turn failover fresh-batch fix (2026-09-18)
+
+Scope:
+
+```text
+log/session_view: delivery-pending derivation prefers the untouched
+          same-turn fresh batch over a prior attempted batch (failover
+          contract in agents/result_delivery.py); only genuinely ambiguous
+          sets fail closed; reducer stale-settled diagnostics turn-scoped
+tests:    reducer same-turn failover regression (attempted + fresh replays
+          fresh) and real-log same-turn recovery test (fresh batch replayed
+          and marked recovered)
+docs:     CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries (no release)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed)
+- Focused gates (all green before the full run):
+  `pytest tests/test_architecture.py tests/test_events.py tests/test_runtime_mutation_line.py tests/test_runtime_drive.py tests/test_runtime_operation_reducer.py tests/test_runtime_session_log.py tests/test_runtime_effect_records.py tests/test_runtime_operation_state.py tests/test_tool_result_delivery.py tests/test_agent_effect_sandwich.py tests/test_task_entry_operation_state.py tests/test_safe_tool_replay.py -q`
+  (`239 passed, 365 subtests passed`)
+- Full pytest suite:
+  `pytest -q`
+  (`3673 passed, 4 skipped, 1289 subtests passed in 312.72s (0:05:12)`)
+
 ## Pending derivation turn-coordinate fix (2026-09-18)
 
 Scope:

@@ -111,13 +111,21 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
             delivery_batch_id=batch_id,
         )
     if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
-        candidates = tuple(
-            batch.intent.batch_id
+        open_batches = tuple(
+            batch
             for batch in current_batches
             if not batch.is_delivered and not batch.is_recovered
         )
-        # Ambiguous history must fail closed, never grab an arbitrary batch.
-        batch_id = candidates[0] if len(candidates) == 1 else ""
+        # A same-turn failover may record a fresh batch after a prior
+        # provider attempt failed: prefer the untouched batch.
+        fresh_batches = tuple(batch for batch in open_batches if not batch.send_attempts)
+        if len(fresh_batches) == 1:
+            batch_id = fresh_batches[0].intent.batch_id
+        elif not fresh_batches and len(open_batches) == 1:
+            batch_id = open_batches[0].intent.batch_id
+        else:
+            # Ambiguous history must fail closed, never grab an arbitrary batch.
+            batch_id = ""
         return PendingRuntimeFacts(delivery_batch_id=batch_id)
     return PendingRuntimeFacts()
 

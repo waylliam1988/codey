@@ -40,18 +40,21 @@
 - Fixed derived pending facts to use the state's current turn as the
   coordinate: `pending_for()` now ignores records from older turns, and an
   ambiguous delivery-pending batch set fails closed instead of grabbing the
-  first undelivered batch. Added a multi-batch reducer regression test and
-  a real-log recovery test proving a stale attempted batch never shadows
-  the current turn's safe replay. Also removed the dead
-  `_require_open_state()` helper and moved compaction policy imports to
-  module top level.
+  first undelivered batch. A same-turn failover fresh batch (recorded after
+  a failed provider attempt, per the `result_delivery` failover contract)
+  now wins over the attempted batch; only genuinely ambiguous sets fail
+  closed. Reducer stale-settled diagnostics are turn-scoped too. Added
+  multi-batch reducer regression tests and real-log recovery tests proving
+  a stale attempted batch never shadows the current replay. Also removed
+  the dead `_require_open_state()` helper and moved compaction policy
+  imports to module top level.
 
 Verification:
 
 - `python -m compileall -q codey tests` (passed)
 - `ruff check .` (passed)
 - `python -m pytest -q`
-  (`3671 passed, 4 skipped, 1289 subtests passed in 306.79s (0:05:06)`)
+  (`3673 passed, 4 skipped, 1289 subtests passed in 312.72s (0:05:12)`)
 
 ## 0.5.8 - Durable Operation Core
 
