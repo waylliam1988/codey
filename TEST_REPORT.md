@@ -1,5 +1,34 @@
 # Codey Test Report
 
+## No-follow choke point + numbered corrupt backups (2026-09-18)
+
+Scope:
+
+```text
+workspace/paths.py:   new _open_regular_no_follow() (lstat + O_NOFOLLOW
+                      open + fstat re-check); reader and path_hash share it
+                      (reader keeps fd size re-check, limit+1 cap,
+                      universal newlines)
+local_store.py:       backup_corrupt_file() numbered (.corrupt,
+                      .corrupt.1, ...) without overwriting
+docs:                 CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased entries
+tests:                reader O_NOFOLLOW flag, fd-recheck refusal, backup
+                      numbering (test_workspace_paths, test_local_store)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `pytest -q tests/test_workspace_paths.py tests/test_local_store.py tests/test_changes.py tests/test_strict_store_loads.py tests/test_tool_runtime.py`
+  (`149 passed, 2 skipped, 14 subtests passed`)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3719 passed, 6 skipped, 1300 subtests passed in 322.51s (0:05:22)`)
+
 ## Review tails + strict-store migration + hygiene subtractions (2026-09-18)
 
 Scope:

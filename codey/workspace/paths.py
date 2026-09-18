@@ -40,20 +40,26 @@ def ensure_not_symlink(path: str | Path) -> Path:
     return target
 
 
-def read_text_bounded_no_follow(path: str | Path, *, max_bytes: int) -> str:
-    """Read a bounded UTF-8 file without following a trailing symlink."""
-    target = ensure_not_symlink(path)
-    limit = max(0, int(max_bytes))
+def _open_regular_no_follow(target: Path) -> int:
+    """Open a regular file without following a trailing symlink; return the fd.
+
+    Single choke point for the no-follow boundary so the reader and the
+    hasher cannot drift: ``lstat`` rejects links/non-regulars, ``os.open``
+    carries ``O_NOFOLLOW`` where available, and ``fstat`` re-checks the
+    opened fd before any byte is read. Absence surfaces as
+    ``FileNotFoundError`` (callers map it: missing hash vs unreadable file);
+    everything else is ``ValueError``.
+    """
     try:
         info = target.lstat()
+    except FileNotFoundError:
+        raise
     except OSError as exc:
         raise ValueError(f"not a file: {target}") from exc
     if stat.S_ISLNK(info.st_mode):
         raise ValueError(f"refusing symlink: {target}")
     if not stat.S_ISREG(info.st_mode):
         raise ValueError(f"not a file: {target}")
-    if info.st_size > limit:
-        raise ValueError(f"file too large for snapshot: {target}")
     flags = os.O_RDONLY
     if hasattr(os, "O_BINARY"):
         flags |= os.O_BINARY
@@ -61,13 +67,51 @@ def read_text_bounded_no_follow(path: str | Path, *, max_bytes: int) -> str:
         flags |= os.O_NOFOLLOW
     try:
         fd = os.open(target, flags)
+    except FileNotFoundError:
+        raise
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise ValueError(f"refusing symlink: {target}") from exc
         raise ValueError(f"not a file: {target}") from exc
     try:
-        with os.fdopen(fd, "rb") as handle:
-            data = handle.read(limit + 1)
+        opened = os.fstat(fd)
+    except OSError as exc:
+        os.close(fd)
+        raise ValueError(f"not a file: {target}") from exc
+    if not stat.S_ISREG(opened.st_mode):
+        os.close(fd)
+        raise ValueError(f"not a file: {target}")
+    return fd
+
+
+def read_text_bounded_no_follow(path: str | Path, *, max_bytes: int) -> str:
+    """Read a bounded UTF-8 file without following a trailing symlink."""
+    target = ensure_not_symlink(path)
+    limit = max(0, int(max_bytes))
+    try:
+        fd = _open_regular_no_follow(target)
+    except FileNotFoundError as exc:
+        raise ValueError(f"not a file: {target}") from exc
+    try:
+        if os.fstat(fd).st_size > limit:
+            raise ValueError(f"file too large for snapshot: {target}")
+    except OSError as exc:
+        os.close(fd)
+        raise ValueError(f"not a file: {target}") from exc
+    except ValueError:
+        os.close(fd)
+        raise
+    try:
+        handle = os.fdopen(fd, "rb")
+    except OSError as exc:
+        os.close(fd)
+        raise ValueError(f"not a file: {target}") from exc
+    try:
+        data = handle.read(limit + 1)
     except OSError as exc:
         raise ValueError(f"not a file: {target}") from exc
+    finally:
+        handle.close()
     if len(data) > limit:
         raise ValueError(f"file too large for snapshot: {target}")
     text = data.decode("utf-8")
@@ -104,45 +148,24 @@ def path_hash(path: str | Path) -> str:
     """
     target = Path(path)
     try:
-        info = target.lstat()
-    except OSError:
+        fd = _open_regular_no_follow(target)
+    except FileNotFoundError:
         return "missing"
-    if stat.S_ISLNK(info.st_mode):
-        raise ValueError(f"refusing symlink: {target}")
-    if not stat.S_ISREG(info.st_mode):
-        try:
-            if not target.exists():
-                return "missing"
-        except OSError:
-            return "missing"
-        raise ValueError(f"not a file: {target}")
-    flags = os.O_RDONLY
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
     try:
-        fd = os.open(target, flags)
+        handle = os.fdopen(fd, "r", encoding="utf-8", newline=None)
     except OSError as exc:
-        if exc.errno == errno.ELOOP:
-            raise ValueError(f"refusing symlink: {target}") from exc
-        if isinstance(exc, FileNotFoundError):
-            return "missing"
+        os.close(fd)
         raise ValueError(f"not a file: {target}") from exc
     try:
-        with os.fdopen(fd, "r", encoding="utf-8", newline=None) as handle:
-            try:
-                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                    raise ValueError(f"not a file: {target}")
-            except OSError as exc:
-                raise ValueError(f"not a file: {target}") from exc
-            digest = hashlib.sha256()
-            for chunk in iter(lambda: handle.read(1024 * 1024), ""):
-                digest.update(chunk.encode("utf-8"))
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: handle.read(1024 * 1024), ""):
+            digest.update(chunk.encode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         raise
     except OSError as exc:
         raise ValueError(f"not a file: {target}") from exc
+    finally:
+        handle.close()
     return "sha256:" + digest.hexdigest()
 
 

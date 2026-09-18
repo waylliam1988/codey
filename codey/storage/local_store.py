@@ -96,17 +96,24 @@ def delete_file(path: Path) -> None:
 
 
 def backup_corrupt_file(path: Path) -> Path | None:
-    """Rename a corrupt state file aside for forensics.
+    """Rename a corrupt state file aside for forensics, never overwriting.
 
-    Returns the backup path, or None when there is nothing to back up.
-    Every strict reader calls this before resetting to empty so corruption
-    is observable instead of silent.
+    The first backup is ``<name>.corrupt``; later ones append a counter
+    (``.corrupt.1``, ``.corrupt.2``, …) so repeated corruption never destroys
+    an earlier backup. Returns the backup path, or None when there is
+    nothing to back up.
     """
     try:
         target = Path(path)
         if not target.is_file():
             return None
         backup = target.with_name(target.name + ".corrupt")
+        index = 0
+        while backup.exists():
+            index += 1
+            if index > 999:
+                return None
+            backup = target.with_name(f"{target.name}.corrupt.{index}")
         target.replace(backup)
         return backup
     except OSError:

@@ -70,6 +70,23 @@ class LocalStoreTests(unittest.TestCase):
             ok.write_text('{"value":1}', encoding="utf-8")
             self.assertEqual(local_store.read_json_strict(ok), {"value": 1})
 
+    def test_corrupt_backup_never_overwrites_previous_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.json"
+            path.write_text("first", encoding="utf-8")
+            first = local_store.backup_corrupt_file(path)
+            assert first is not None
+            self.assertEqual(first.name, "state.json.corrupt")
+
+            path.write_text("second", encoding="utf-8")
+            second = local_store.backup_corrupt_file(path)
+            assert second is not None
+            self.assertEqual(second.name, "state.json.corrupt.1")
+
+            self.assertEqual(first.read_text(encoding="utf-8"), "first")
+            self.assertEqual(second.read_text(encoding="utf-8"), "second")
+            self.assertFalse(path.exists())
+
     def test_project_and_session_keys_are_stable_and_opaque(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             first = local_store.project_key(td)

@@ -4,6 +4,16 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 把 no-follow 文件边界收敛为单一 choke point（不新增兼容）：
+  `workspace/paths.py` 新增 `_open_regular_no_follow()`（`lstat` 拒绝
+  symlink/非常规文件，`os.open` 按平台带 `O_NOFOLLOW`，`fstat` 重验已打开的
+  fd；缺失以 `FileNotFoundError` 交给调用方映射），`read_text_bounded_no_follow()`
+ （fd size 重验、`limit+1` 兜底、通用换行语义保留）与 `path_hash()`（fd 分块
+  hash）都走它；`local_store.py:backup_corrupt_file()` 改为编号备份
+  （`.corrupt`、`.corrupt.1`、…），永不覆盖更早的备份。
+- 新增回归测试：reader 的 `O_NOFOLLOW` 断言、mock 非 regular `fstat` 下的
+  fd 重验拒绝、备份编号保留测试。
+
 - 收掉四个复核尾巴，不新增兼容（fail closed，冷启动）：
   `workspace/paths.py:path_hash` 改为走 fd 自身做 hash（`os.open` 带
   `O_NOFOLLOW`、`fstat` 重验 regular file、分块文本读并保持通用换行语义），

@@ -4,6 +4,19 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Hardened the no-follow file boundary into one choke point (no new compat):
+  `workspace/paths.py` gained `_open_regular_no_follow()` (`lstat` rejects
+  links/non-regulars, `os.open` carries `O_NOFOLLOW` where available, `fstat`
+  re-checks the opened fd, absence stays `FileNotFoundError` for callers to
+  map), and both `read_text_bounded_no_follow()` (fd size re-check, `limit+1`
+  read cap, universal-newline semantics kept) and `path_hash()` (fd-based
+  chunked hashing) go through it; corrupt-state backups in
+  `local_store.py:backup_corrupt_file()` are now numbered (`.corrupt`,
+  `.corrupt.1`, …) and never overwrite an earlier backup.
+- Added regression tests: reader `O_NOFOLLOW` flag assertion, fd-recheck
+  refusal under a mocked non-regular `fstat`, and backup-numbering
+  preservation.
+
 - Closed four review tails with no new compat (fail closed, cold start):
   `workspace/paths.py:path_hash` now hashes through the fd itself
   (`os.open` with `O_NOFOLLOW`, `fstat` regular-file re-check, bounded text

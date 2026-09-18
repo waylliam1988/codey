@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from codey.workspace.paths import (
@@ -137,6 +139,39 @@ class WorkspacePathTests(unittest.TestCase):
             with mock.patch.object(os, "open", spy_open):
                 self.assertEqual(path_hash(path), content_hash("hello\n"))
             self.assertTrue(seen["flags"] & os.O_NOFOLLOW)
+
+    def test_no_follow_reader_opens_with_no_follow_flag(self) -> None:
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW unavailable")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "b.txt"
+            path.write_text("hello\n", encoding="utf-8")
+            seen: dict[str, int] = {}
+            real_open = os.open
+
+            def spy_open(file, flags, *args, **kwargs):
+                seen["flags"] = int(flags)
+                return real_open(file, flags, *args, **kwargs)
+
+            with mock.patch.object(os, "open", spy_open):
+                self.assertEqual(
+                    read_text_bounded_no_follow(path, max_bytes=64), "hello\n"
+                )
+            self.assertTrue(seen["flags"] & os.O_NOFOLLOW)
+
+    def test_no_follow_reader_rechecks_opened_fd_is_regular(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "c.txt"
+            path.write_text("hello\n", encoding="utf-8")
+            with mock.patch.object(
+                os,
+                "fstat",
+                return_value=SimpleNamespace(st_mode=stat.S_IFDIR),
+            ):
+                with self.assertRaisesRegex(ValueError, "not a file"):
+                    read_text_bounded_no_follow(path, max_bytes=64)
+                with self.assertRaisesRegex(ValueError, "not a file"):
+                    path_hash(path)
 
 
 if __name__ == "__main__":
