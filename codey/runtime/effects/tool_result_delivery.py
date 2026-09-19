@@ -24,7 +24,8 @@ import uuid
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
-from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_log import RuntimeSessionLog
 
 SCHEMA_VERSION = 1
 EFFECT_KIND = "tool_result_delivery"

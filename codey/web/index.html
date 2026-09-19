@@ -757,7 +757,10 @@ function appendMessageNode(chat, m) {
 
 function scrollChat() {
   const area = $('chat-area');
-  area.scrollTop = area.scrollHeight;
+  // Follow only when already near the bottom: never yank a user who
+  // scrolled up to read history while a run streams in.
+  const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 120;
+  if (nearBottom) area.scrollTop = area.scrollHeight;
 }
 
 // ============================ session ops ============================

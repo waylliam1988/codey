@@ -1661,6 +1661,8 @@ def record_analysis_run(
         )
         if capsule is not None:
             trace.record_reproducibility_capsule(capsule.to_payload())
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return
 

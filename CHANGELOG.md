@@ -2,6 +2,60 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - P0/P1 safety + cold-start decoupling (no release)
+
+- Safety stop-bleed (fail closed, no new compat or fallback):
+  `_approval_generation_current` returns False on epoch read failure
+  (was True/fail-open) and re-raises TaskCancelled/DeadlineExceeded;
+  `_shell_claim_expired` fails closed on read errors (legacy fakes without
+  the accessor keep not-expired). Cancellation now propagates through the
+  silent-fallback reads in ghost affinity/continuity/hebbian/inbox,
+  workspace task context, managed outputs, and run details instead of
+  masquerading as empty data. Adapter-override package shims no longer
+  `exec` the base `__init__.py` (path extension only). POST/GET routes are
+  contained to JSON 500 (handler thread never drops the connection) and all
+  external body fields are coerced with `str(x or "")` before `.strip()`.
+  `run_command_with_managed_output` surfaces `error_code:
+  managed_output_failed` instead of silently returning the truncated
+  projection. Local probe reports `unreachable/auth/invalid_json` reasons;
+  malformed local replies raise instead of poisoning context with `""`.
+- Reliability: knowledge SQLite gets `WAL + busy_timeout=5000` with a
+  degraded-to-LIKE warning; browser worker queue is bounded (64, `submit`
+  drops with a warning, `call` raises busy) with an `on_abandoned` cleanup
+  hook for timed-out browser jobs; `_submit_task` releases the run slot on
+  a full queue; CDP port remember/read paths share one lock; work
+  checkpoints record `last_corrupt_backup` (visible instead of "no
+  checkpoint") and save under the file lock.
+- Cold-start decoupling (no behavior change): new `codey/app/context.py`
+  owns AppContext plus the UI-agnostic constants; `server.py` keeps only
+  HTTP/SSE routing, global STATE, and task wiring; `headless_runner`
+  imports context (importing it no longer executes the server module or
+  builds global STATE) with `replay_limit=0`. `ScanReport` moves down to
+  `codey/utils/scan_report.py` (`reviews/scan_report.py` re-exports);
+  `MAX_REPLACEMENTS` moves to `codey/toolchain/constants.py` (runtime
+  re-exports); the runtime log entry model moves to
+  `codey/runtime/log/entries.py`, breaking the
+  session_log<->projection/compaction import cycles (session_log
+  re-exports); `workspace/task_context.py` becomes a re-export of the new
+  `codey/operations/task_context.py`. `runs/trace.py` research imports are
+  pinned by test to projection-only leaves. Module `SYSTEM_PROMPT`
+  renders lazily via `get_system_prompt()` + PEP 562 `__getattr__`.
+- UI smoothness: chat follows only when already near the bottom (no more
+  yanking readers during a run); run-details cache capped at 32 (LRU);
+  SSE buffer capped at 100 with rebuild-after-3-failures reconnect.
+- Guards: new `test_hardening_batch2.py` (21 tests: fail-closed approval,
+  cancellation propagation, POST coercion/containment, shim without exec,
+  WAL mode, worker backpressure/cleanup, managed-output visibility, probe
+  reasons, checkpoint backup, lazy prompt); architecture tests track the
+  context split, the trace projection allowlist, and a 1000-line no-growth
+  baseline. Deliberately deferred (documented, risky without dedicated
+  review): control-flow splits of `execute_task_run`, work-queue
+  transitions, agent loop `step_once`, and research pipeline phases; the
+  cohesive >1000-line stores stay intact under the no-growth guard.
+- Verification: full `pytest tests/ --ignore=tests/manual`
+  (`3784 passed, 6 skipped, 1304 subtests`); `ruff check .` clean;
+  `compileall` clean.
+
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
 - Confirmed-issue hardening batch (no new compat or fallback):

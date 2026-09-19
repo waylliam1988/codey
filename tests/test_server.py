@@ -17,6 +17,7 @@ from codey import __version__
 from codey.app import api as app_api
 from codey.app import http_plumbing
 from codey.app import server
+from codey.app import context as app_context
 from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
@@ -703,7 +704,7 @@ class ProviderStatusTests(unittest.TestCase):
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
         state = server.AppContext()
         with mock.patch.object(
-            server,
+            app_context,
             "provider_tab_availability",
             return_value={"qwen": True, "glm": True},
         ):
@@ -2512,7 +2513,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(live["seq"], 3)
 
     def test_replay_events_after_expired_cursor_requests_resync(self) -> None:
-        with mock.patch.object(server, "SSE_REPLAY_LIMIT", 2):
+        with mock.patch.object(app_context, "SSE_REPLAY_LIMIT", 2):
             state = server.AppContext()
         state.emit({"type": "info", "seq": 1})
         state.emit({"type": "info", "seq": 2})
@@ -2975,8 +2976,8 @@ class RunSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td)
             with (
-                mock.patch.object(server, "GhostInboxStore") as inbox_cls,
-                mock.patch.object(server, "GhostHebbianStore") as hebbian_cls,
+                mock.patch.object(app_context, "GhostInboxStore") as inbox_cls,
+                mock.patch.object(app_context, "GhostHebbianStore") as hebbian_cls,
             ):
                 state = server.AppContext(state_home)
 
@@ -2993,8 +2994,8 @@ class RunSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td) / "state"
             with (
-                mock.patch.object(server, "DEFAULT_STATE_HOME", state_home),
-                mock.patch.object(server, "KnowledgeStore") as store_cls,
+                mock.patch.object(app_context, "DEFAULT_STATE_HOME", state_home),
+                mock.patch.object(app_context, "KnowledgeStore") as store_cls,
             ):
                 state = server.AppContext(state_home)
 
@@ -3008,7 +3009,7 @@ class RunSnapshotTests(unittest.TestCase):
     def test_app_context_lazily_constructs_self_repair_supervisor(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td) / "state"
-            with mock.patch.object(server, "SelfRepairSupervisor") as supervisor_cls:
+            with mock.patch.object(app_context, "SelfRepairSupervisor") as supervisor_cls:
                 state = server.AppContext(state_home)
 
                 supervisor_cls.assert_not_called()
@@ -3378,7 +3379,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[5], app_services.DEFAULT_PROVIDER_ID)
 
     def test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks(self) -> None:
-        active = server.RunSnapshot(
+        active = app_context.RunSnapshot(
             run_id="run-1",
             session_id="session-1",
             project="E:/demo",
@@ -3424,7 +3425,7 @@ class RunSnapshotTests(unittest.TestCase):
         )
 
     def test_shell_approval_continuation_plan_falls_back_to_pending_provider(self) -> None:
-        active = server.RunSnapshot(
+        active = app_context.RunSnapshot(
             run_id="run-2",
             session_id="session-1",
             project="E:/demo",
@@ -3461,7 +3462,7 @@ class RunSnapshotTests(unittest.TestCase):
         build.assert_called_once()
 
     def test_ghost_post_turn_warning_is_whitelisted_for_run_events(self) -> None:
-        self.assertIn("ghost_post_turn_warning", server.RUN_EVENT_TYPES)
+        self.assertIn("ghost_post_turn_warning", app_context.RUN_EVENT_TYPES)
 
 
 class SessionThreadingTests(unittest.TestCase):
@@ -3508,10 +3509,10 @@ class SessionThreadingTests(unittest.TestCase):
     def test_conversation_state_is_bounded(self) -> None:
         state = make_app_state(self)
 
-        for index in range(server.MAX_CONVERSATION_STATES + 1):
+        for index in range(app_context.MAX_CONVERSATION_STATES + 1):
             state.conversation_for(f"session-{index}")
 
-        self.assertEqual(len(state.conversation_registry.contexts), server.MAX_CONVERSATION_STATES)
+        self.assertEqual(len(state.conversation_registry.contexts), app_context.MAX_CONVERSATION_STATES)
         self.assertNotIn("session-0", state.conversation_registry.contexts)
 
     def test_state_opens_provider_connection_each_time(self) -> None:
@@ -3521,7 +3522,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         state = server.AppContext()
         with mock.patch.object(
-            server,
+            app_context,
             "connect_provider",
             side_effect=[FakeProvider(), FakeProvider()],
         ) as connected:
@@ -3942,7 +3943,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         state = server.AppContext()
         events = state.subscribe()
-        with mock.patch.object(server, "connect_provider", return_value=FakeProvider()):
+        with mock.patch.object(app_context, "connect_provider", return_value=FakeProvider()):
             state.get_provider("stepfun")
 
         emitted = []
@@ -4004,7 +4005,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            server,
+            app_context,
             "borrow_open_provider",
             side_effect=[None, helper],
         ) as borrowed:
@@ -4019,11 +4020,11 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertGreater(helper.new_chat.call_args.kwargs["timeout"], 0)
         self.assertLessEqual(
             helper.new_chat.call_args.kwargs["timeout"],
-            server.PROFILE_DOCTOR_TIMEOUT,
+            app_context.PROFILE_DOCTOR_TIMEOUT,
         )
         helper.send.assert_called_once()
         self.assertGreater(helper.send.call_args.kwargs["timeout"], 0)
-        self.assertLessEqual(helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT)
+        self.assertLessEqual(helper.send.call_args.kwargs["timeout"], app_context.PROFILE_DOCTOR_TIMEOUT)
         helper.close.assert_called_once_with()
         self.assertTrue(state.provider_session_changed("stepfun", "old-session"))
 
@@ -4042,7 +4043,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            server,
+            app_context,
             "borrow_open_provider",
             side_effect=[first, second],
         ) as borrowed:
@@ -4069,7 +4070,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with (
-            mock.patch.object(server, "borrow_open_provider", return_value=helper),
+            mock.patch.object(app_context, "borrow_open_provider", return_value=helper),
             mock.patch.object(
                 server.time,
                 "monotonic",
@@ -4096,7 +4097,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(server, "borrow_open_provider", side_effect=[first, second]):
+        with mock.patch.object(app_context, "borrow_open_provider", side_effect=[first, second]):
             selected = state.handle_profile_doctor(request)
 
         self.assertEqual(selected, "c1")
@@ -4116,7 +4117,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(server, "borrow_open_provider", side_effect=helpers) as borrowed:
+        with mock.patch.object(app_context, "borrow_open_provider", side_effect=helpers) as borrowed:
             selected = state.handle_profile_doctor(request)
 
         self.assertIsNone(selected)
@@ -4137,7 +4138,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(server, "borrow_open_provider") as borrowed,
+            mock.patch.object(app_context, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
                 state.handle_profile_doctor(request)
@@ -4186,7 +4187,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                server,
+                app_context,
                 "borrow_open_provider",
                 side_effect=[first, second],
             ) as borrowed,
@@ -4219,7 +4220,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(server, "borrow_open_provider") as borrowed,
+            mock.patch.object(app_context, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
                 state.handle_flow_recovery(request)
@@ -5983,7 +5984,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("second model reviewed", followup)
         self.assertIn("Missing empty case", followup)
         self.assertFalse(followup_request.fresh_chat)
-        self.assertLessEqual(followup_request.max_turns, server.REVIEW_FIX_TURNS)
+        self.assertLessEqual(followup_request.max_turns, app_context.REVIEW_FIX_TURNS)
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())

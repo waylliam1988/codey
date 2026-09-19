@@ -36,7 +36,8 @@ from codey.runtime.core.operation_state import (
     outcome_for_terminal,
     start_entries,
 )
-from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
 from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows

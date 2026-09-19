@@ -2,6 +2,51 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - P0/P1 安全止血 + 冷启动解耦（未发布）
+
+- 安全止血（fail closed，不新增兼容或 fallback）：
+  epoch 读失败时 `_approval_generation_current` 返回 False（原为
+  True/fail-open），取消异常继续冒泡；`_shell_claim_expired` 读失败即视为
+  过期（无 accessor 的旧 fake 保持不过期）。ghost
+  affinity/continuity/hebbian/inbox、工作区 task context、managed
+  outputs、run details 的静默 fallback 不再吞掉取消，改为冒泡。
+  Adapter-override 包垫片不再 `exec` 基础 `__init__.py`（只扩展
+  `__path__`）。POST/GET 路由异常收敛为 JSON 500（不断连接），外部 body
+  字段先 `str(x or "")` 再 `.strip()`。`run_command_with_managed_output`
+  写失败返回 `error_code: managed_output_failed` 而非静默丢弃。本地探针
+  区分 `unreachable/auth/invalid_json`；畸形本地回复抛错，不再用 `""`
+  污染上下文。
+- 可靠性：知识库 SQLite 启用 `WAL + busy_timeout=5000`，锁争用降级 LIKE
+  时打 warning；browser worker 队列有界（64，`submit` 满则丢弃并 warning，
+  `call` 满则报忙），超时抛弃任务支持 `on_abandoned` 清理；
+  `_submit_task` 队列满时释放 run 槽位；CDP 端口记忆/读取共用一把锁；
+  checkpoint 损坏保留 `last_corrupt_backup` 可见（不再伪装成“无检查点”），
+  保存加文件锁。
+- 冷启动解耦（无行为变化）：新增 `codey/app/context.py` 持有 AppContext
+  与 UI 无关常量；`server.py` 只留 HTTP/SSE 路由、全局 STATE 与任务接线；
+  `headless_runner` 改引 context（import 不再执行 server 模块、不再建
+  全局 STATE），`replay_limit=0`。`ScanReport` 下沉
+  `codey/utils/scan_report.py`（reviews 侧 re-export）；
+  `MAX_REPLACEMENTS` 归 `codey/toolchain/constants.py`（runtime
+  re-export）；runtime 日志条目模型归 `codey/runtime/log/entries.py`，
+  打断 session_log<->projection/compaction 包循环（session_log
+  re-export）；`workspace/task_context.py` 改为 re-export 新的
+  `codey/operations/task_context.py`。`runs/trace.py` 的 research 引用被
+  测试锁死在投影纯叶。模块级 `SYSTEM_PROMPT` 改
+  `get_system_prompt()` + PEP 562 懒加载。
+- UI 顺滑：聊天仅在贴底时跟随（不再打断翻历史的用户）；run-details
+  缓存上限 32（LRU）；SSE 缓冲上限 100，连续 3 次失败重建连接。
+- 门禁：新增 `test_hardening_batch2.py`（21 项：fail-closed 审批、取消
+  穿透、POST 归一/兜底、无 exec 垫片、WAL、worker 背压/清理、managed
+  output 可见、探针原因、checkpoint 备份、懒 prompt）；架构测试跟踪
+  context 拆分、trace 投影 allowlist、1000 行不增长基线。刻意延后（有
+  记录，需专项评审）：`execute_task_run`、work-queue transitions、agent
+  loop `step_once`、research pipeline 的流程拆分；cohesive 大文件在
+  不增长门禁下保持不动。
+- 验证：全量 `pytest tests/ --ignore=tests/manual`
+ （`3784 passed, 6 skipped, 1304 subtests`）；`ruff check .` 通过；
+  `compileall` 通过。
+
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
 - 确认项 hardening 批次（不新增兼容或 fallback）：

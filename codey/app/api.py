@@ -13,6 +13,7 @@ from codey.providers.local_openai import (
     load_local_config,
     local_config_payload,
     probe_local_endpoint,
+    probe_local_endpoint_detail,
     save_local_config,
 )
 from codey.runs.details import load_run_details
@@ -125,7 +126,13 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
         }
     endpoint = probe_local_endpoint(base_url, api_key=probe_key)
     if endpoint is None:
-        return 400, {"ok": False, "error": "could not reach an OpenAI-compatible /models endpoint"}
+        _retry, reason = probe_local_endpoint_detail(base_url, api_key=probe_key)
+        detail = {
+            "unreachable": "could not reach an OpenAI-compatible /models endpoint",
+            "auth": "local endpoint rejected the api_key (401/403)",
+            "invalid_json": "local endpoint returned a non-OpenAI /models payload",
+        }.get(reason, "could not reach an OpenAI-compatible /models endpoint")
+        return 400, {"ok": False, "error": detail, "reason": reason}
     try:
         save_local_config(
             endpoint.base_url,
@@ -272,19 +279,20 @@ def ghost_action_response(ctx: Any, body: dict) -> tuple[int, dict]:
     return ghost_control_surface(ctx).dispatch_action(body)
 
 
-def changes_response(ctx: Any, project: str) -> tuple[int, dict]:
-    key = str(Path(project).expanduser().resolve()) if project else ""
+def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
+    project_text = str(project or "").strip()
+    key = str(Path(project_text).expanduser().resolve()) if project_text else ""
     tracker = (
         ctx.change_tracker_for(key, persistent=not is_git_repository(key))
         if key
         else None
     )
-    payload = collect_changes(project, tracker)
+    payload = collect_changes(project_text, tracker)
     return 200 if payload.get("ok") else 400, payload
 
 
 def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
-    project = (body.get("project") or "").strip()
+    project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
     if not project:
         return 400, {"ok": False, "error": "project required"}
     paths = body.get("paths")
@@ -307,9 +315,11 @@ def run_submit_response(
     body: dict,
     submit_task: Callable[..., str | None],
 ) -> tuple[int, dict]:
+    if not isinstance(body, dict):
+        return 400, {"error": "invalid json"}
     session_id = str(body.get("session_id") or "").strip() or "default"
-    project = (body.get("project") or "").strip() or None
-    task = (body.get("task") or "").strip()
+    project = str(body.get("project") or "").strip() or None
+    task = str(body.get("task") or "").strip()
     continue_task = bool(body.get("continue_task"))
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
@@ -359,19 +369,23 @@ def run_submit_response(
 def _shell_claim_expired(ctx: Any, claimed_generation: int) -> bool:
     """True when a Stop landed after the Allow claimed its approval.
 
-    Fake contexts in tests may lack the epoch accessor or stop flag; treat
-    missing state as not-expired so unit fakes keep working.
+    Missing epoch accessor on legacy fakes means "no epoch tracking", so
+    treat as not-expired. Any other read failure fails closed (expired).
     """
     try:
         stop_set = bool(ctx.run_registry.stop_flag.is_set())
-    except Exception:
+    except (AttributeError, TypeError):
         stop_set = False
+    except Exception:
+        return True
     if stop_set:
         return True
     try:
         current_generation = int(ctx.approval_generation())
-    except Exception:
+    except (AttributeError, TypeError):
         return False
+    except Exception:
+        return True
     return int(claimed_generation or 0) != int(current_generation or 0)
 
 

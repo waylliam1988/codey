@@ -4,6 +4,14 @@
 
 let deps = null;
 const cache = {};
+const CACHE_LIMIT = 32;
+
+function cacheSet(key, data) {
+  if (!Object.prototype.hasOwnProperty.call(cache, key) && Object.keys(cache).length >= CACHE_LIMIT) {
+    delete cache[Object.keys(cache)[0]];
+  }
+  cache[key] = data;
+}
 
 function init(nextDeps) {
   deps = nextDeps;
@@ -51,7 +59,7 @@ async function toggle(button, message) {
   const key = `${sessionId}:${runId}`;
   try {
     const data = cache[key] || await fetchDetails(sessionId, runId);
-    cache[key] = data;
+    cacheSet(key, data);
     render(panel, data);
     reveal(panel);
   } catch {

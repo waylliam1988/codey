@@ -20,6 +20,12 @@ class KnowledgeIndex:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        try:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.OperationalError:
+            pass
         self._lock = threading.RLock()
         self.fts_enabled = self._detect_fts()
         self._create_schema()
@@ -199,7 +205,13 @@ class KnowledgeIndex:
                     ).fetchall()
                     if rows:
                         return [dict(r) for r in rows]
-                except sqlite3.OperationalError:
+                except sqlite3.OperationalError as exc:
+                    if "locked" in str(exc).lower():
+                        import logging
+
+                        logging.getLogger(__name__).warning(
+                            "knowledge index FTS locked, degraded to LIKE search"
+                        )
                     pass
             like = f"%{self._escape_like(query)}%"
             rows = self._conn.execute(

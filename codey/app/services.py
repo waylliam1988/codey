@@ -387,8 +387,11 @@ def run_research_advisors(
 def _approval_generation_current(ctx: Any, expected: int) -> bool:
     try:
         current = int(ctx.approval_generation())
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
-        return True
+        # Fail closed: an unreadable epoch must stop execution, never approve.
+        return False
     return int(expected or 0) == int(current or 0)
 
 
@@ -452,6 +455,8 @@ def execute_approved_shell(
             return _stopped_shell_result()
         try:
             stop_set = bool(ctx.run_registry.stop_flag.is_set())
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             stop_set = False
         if stop_set:
@@ -464,7 +469,7 @@ def execute_approved_shell(
                 timeout=timeout,
                 shell=True,
             )
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
     except subprocess.TimeoutExpired:
         return {

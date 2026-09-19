@@ -13,6 +13,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,7 @@ CHROME_PATHS = [
 CODEY_BROWSER_PATH_ENV = "CODEY_BROWSER_PATH"
 
 _active_cdp_port: int | None = None
+_CDP_PORT_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -199,7 +201,9 @@ def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     preferred = int(preferred)
     ports: list[int] = []
     port_family = _cdp_port_family(preferred)
-    remembered = (_active_cdp_port, _load_saved_cdp_port())
+    with _CDP_PORT_LOCK:
+        active = _active_cdp_port
+    remembered = (active, _load_saved_cdp_port())
     if preferred != DEFAULT_PORT:
         allowed = set(port_family)
         remembered = tuple(item for item in remembered if item in allowed)
@@ -250,8 +254,9 @@ def detect_open_provider_tabs(port: int = DEFAULT_PORT) -> dict[str, bool]:
 
 def _remember_cdp_port(port: int) -> int:
     global _active_cdp_port
-    _active_cdp_port = port
-    _save_cdp_port(port)
+    with _CDP_PORT_LOCK:
+        _active_cdp_port = port
+        _save_cdp_port(port)
     return port
 
 
@@ -275,7 +280,9 @@ def _find_existing_cdp_port(preferred: int = DEFAULT_PORT) -> int | None:
 def _remembered_cdp_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     ports: list[int] = []
     allowed_ports = set(_cdp_port_family(preferred))
-    for item in (_active_cdp_port, _load_saved_cdp_port()):
+    with _CDP_PORT_LOCK:
+        active = _active_cdp_port
+    for item in (active, _load_saved_cdp_port()):
         if item is None or item in ports:
             continue
         port = int(item)

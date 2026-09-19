@@ -7,7 +7,7 @@ from dataclasses import fields
 from pathlib import Path
 from unittest import mock
 
-from codey.workspace import task_context as project_task_context
+from codey.operations import task_context as operations_task_context
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import workspace_fingerprint
@@ -260,7 +260,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
     def test_project_map_render_failure_degrades_to_empty_map(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            with mock.patch.object(project_task_context, "render_project_map", side_effect=RuntimeError("boom")):
+            with mock.patch.object(operations_task_context, "render_project_map", side_effect=RuntimeError("boom")):
                 context = ProjectTaskContextBuilder().build(
                     project=Path(td),
                     task="task",

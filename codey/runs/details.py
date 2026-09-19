@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey.storage.local_store import StoreCorruption, backup_corrupt_file, read_json_strict
+from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
@@ -129,6 +130,8 @@ def _load_recovery_summary(
     if runtime_effects is not None:
         try:
             summary = runtime_effects.recovery_summary(session_id, run_id)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             summary = None
 
@@ -141,6 +144,8 @@ def _load_recovery_summary(
             if facts:
                 delivery_reads = sum(f.recovered_reads for f in facts)
                 delivery_lookups = sum(f.recovered_lookups for f in facts)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             delivery_error = True
 
@@ -278,6 +283,8 @@ def _load_operation_state(
         return None
     try:
         operation = runtime_operations.load(session_id, run_id)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return None
     if operation is None:

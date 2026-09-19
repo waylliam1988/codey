@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
-from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 

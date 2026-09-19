@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from codey.runtime.core.outcome import OperationOutcomeStatus
-from codey.runtime.log.session_log import RuntimeLogCorruption, RuntimeLogEntry
+from codey.runtime.log.entries import RuntimeLogCorruption, RuntimeLogEntry
 
 _OUTCOMES = {"completed", "failed", "aborted", "suspended"}
 _KNOWN_EFFECT_KINDS = {"runtime_effect", "tool_result_delivery"}

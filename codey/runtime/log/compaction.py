@@ -11,7 +11,7 @@ import uuid
 
 from codey.runtime.effects.effect_records import keep_effect_pair_for_compaction
 from codey.runtime.effects.tool_result_delivery import keep_delivery_entry_for_compaction
-from codey.runtime.log.session_log import RuntimeLogCorruption, RuntimeLogEntry
+from codey.runtime.log.entries import RuntimeLogCorruption, RuntimeLogEntry
 
 
 def _complete_batch_prefix(

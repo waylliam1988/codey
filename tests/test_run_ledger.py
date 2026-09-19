@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.app import context as app_context
 from codey.app import server
 from codey.app import services as app_services
 from codey.agents.request import AgentRequest
@@ -298,7 +299,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
         return provider
 
     def test_state_without_state_home_does_not_enable_run_ledger_store(self) -> None:
-        with mock.patch.object(server, "RunLedgerStore") as store_class:
+        with mock.patch.object(app_context, "RunLedgerStore") as store_class:
             state = server.AppContext()
 
         self.assertIsNone(state.run_ledgers)

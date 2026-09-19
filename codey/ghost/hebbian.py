@@ -21,6 +21,7 @@ from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
 from codey.ghost._warnings import slice_event_warnings
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
+from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -328,6 +329,8 @@ class GhostHebbianStore:
                     delete_file(self.state_path)
                 self._compact_if_needed(nodes, edges)
                 return GhostReinforceResult(True, "reinforced", node=node, edges=tuple(changed_edges))
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return GhostReinforceResult(False, "store_error")
 
@@ -422,6 +425,8 @@ class GhostHebbianStore:
     ) -> tuple[GhostNode, ...]:
         try:
             nodes, _edges = self._load_state_unlocked()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         statuses = _status_filter(status, allowed=NODE_STATUSES)
@@ -445,6 +450,8 @@ class GhostHebbianStore:
     def _list_edges_unlocked(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
         try:
             _nodes, edges = self._load_state_unlocked()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         normalized_relation = str(relation or "").strip().lower()
@@ -523,6 +530,8 @@ class GhostHebbianStore:
                     return False
                 self._write_projection(nodes, edges)
                 return True
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return False
 

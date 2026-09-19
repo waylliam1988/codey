@@ -21,6 +21,7 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.app import context as app_context
 from codey.app import server
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.storage.local_store import read_json
@@ -89,7 +90,7 @@ def run_provider_smoke(
     doctor_events: list[dict] = []
     helper_attempts: list[str] = []
     original_doctor = state.handle_profile_doctor
-    original_borrow = server.borrow_open_provider
+    original_borrow = app_context.borrow_open_provider
     original_select = provider_controls.discovery.select_control_candidate
 
     def tracked_borrow(helper_id, owner_page):
@@ -121,7 +122,7 @@ def run_provider_smoke(
 
         with (
             mock.patch.object(module, "PROFILE", faulted),
-            mock.patch.object(server, "borrow_open_provider", side_effect=tracked_borrow),
+            mock.patch.object(app_context, "borrow_open_provider", side_effect=tracked_borrow),
             mock.patch.object(
                 provider_controls.discovery,
                 "select_control_candidate",

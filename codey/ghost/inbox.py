@@ -35,6 +35,7 @@ from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
+from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -271,6 +272,8 @@ class GhostInboxStore:
                     delete_file(self.inbox_path)
                 self._compact_if_needed(candidates)
                 return tuple(changed)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
 
@@ -307,6 +310,8 @@ class GhostInboxStore:
                 session_id=session_id,
                 applicable=False,
             )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         return tuple(rows)
@@ -341,6 +346,8 @@ class GhostInboxStore:
                 session_id=session_id,
                 applicable=True,
             )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         priority = {"session": 0, "project": 1, "user": 2}

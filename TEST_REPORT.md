@@ -1,5 +1,79 @@
 # Codey Test Report
 
+## P0/P1 safety + cold-start decoupling (2026-09-19)
+
+Scope:
+
+```text
+app/services.py:                _approval_generation_current fail-closed on
+                                epoch read error + cancellation re-raise;
+                                stop-flag check re-raises; shell result maps
+                                DeadlineExceeded to stopped
+app/api.py:                     _shell_claim_expired fail-closed (legacy fakes
+                                without accessor keep not-expired); str()
+                                coercion on restore/run/changes project fields;
+                                local probe reason in 400 payload
+app/server.py:                  GET/POST route-level try -> JSON 500; /api/changes
+                                str() coercion; _submit_task releases the run
+                                slot when the bounded worker queue is full
+codey/app/context.py:           NEW owner of AppContext + UI-agnostic constants;
+                                server.py keeps HTTP/SSE/STATE/task wiring only;
+                                replay_limit param (call-time global read)
+app/headless_runner.py:         imports context (no server import, no global
+                                STATE side effect); replay_limit=0
+ghost affinity/continuity/
+hebbian/inbox + workspace
+task_context + storage
+managed_outputs + runs/details: cancellation re-raise before silent fallback;
+                                managed-output write failure returns
+                                error_code managed_output_failed
+repairs/adapter_overrides.py:   shim without exec(base __init__)
+knowledge/index.py:             WAL + busy_timeout=5000 + degraded LIKE warning
+automation/browser_worker.py:   bounded queue (64) + on_abandoned cleanup;
+                                submit drops with warning, call raises busy
+automation/browser.py:          CDP port remember/read under one lock
+runs/work_checkpoint.py:        last_corrupt_backup visibility + save under
+                                file lock
+providers/local_openai.py:      probe_local_endpoint_detail
+                                (unreachable/auth/invalid_json); _extract_reply
+                                raises on malformed choices
+protocols/json_codec.py:        module SYSTEM_PROMPT lazy (lru_cache +
+                                PEP 562 __getattr__)
+utils/scan_report.py:           NEW canonical ScanReport leaf;
+                                reviews/scan_report.py re-exports
+toolchain/constants.py:         NEW MAX_REPLACEMENTS owner (runtime re-exports)
+runtime/log/entries.py:         NEW entry-model leaf; projection/compaction/
+                                view/operation_state/delivery/mutation_line
+                                import entries (cycles broken, session_log
+                                re-exports)
+operations/task_context.py:     NEW canonical home (workspace re-exports)
+web:                            scroll-follow only near bottom; run-details
+                                cache 32 LRU; SSE buffer 100 + rebuild after
+                                3 failures
+tests/test_hardening_batch2.py: NEW 21 regression tests
+tests/test_architecture.py:     context ownership, trace projection allowlist,
+                                1000-line no-growth baseline
+tests/test_server.py et al:     patch targets moved to canonical modules
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -B -m compileall -q codey tests tools` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `tests/test_shell_approval_epoch.py` (`5 passed`)
+  `tests/test_architecture.py tests/test_headless_runner.py
+  tests/test_managed_outputs.py tests/test_knowledge.py
+  tests/test_work_checkpoint.py` (`151 passed, 313 subtests passed`)
+  `tests/test_hardening_batch2.py` (`21 passed`)
+  `tests/test_server.py` (`207 passed`)
+- Full pytest suite:
+  `python -m pytest tests/ -p no:cacheprovider --ignore=tests/manual`
+  (`3784 passed, 6 skipped, 1304 subtests passed in 253.43s (0:04:13)`)
+- No release (batch stays Unreleased).
+
 ## Confirmed-issue hardening batch (2026-09-19)
 
 Scope:

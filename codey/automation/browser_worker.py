@@ -19,6 +19,7 @@ from codey.runtime.core import cancellation
 T = TypeVar("T")
 _POLL_INTERVAL = 0.05
 DEFAULT_STUCK_AFTER_SECONDS = 30.0
+DEFAULT_MAX_QUEUE_SIZE = 64
 
 
 class _JobState(Enum):
@@ -42,6 +43,7 @@ class _Job:
     deadline: float | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     abandoned: bool = False
+    on_abandoned: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -78,8 +80,9 @@ class BrowserWorker:
         *,
         name: str = "codey-browser",
         stuck_after_seconds: float = DEFAULT_STUCK_AFTER_SECONDS,
+        max_queue_size: int = DEFAULT_MAX_QUEUE_SIZE,
     ) -> None:
-        self._queue: queue.Queue[_Job] = queue.Queue()
+        self._queue: queue.Queue[_Job] = queue.Queue(maxsize=max(1, int(max_queue_size)))
         self._thread_id: int | None = None
         self._stuck_after_seconds = max(_POLL_INTERVAL, float(stuck_after_seconds))
         self._state_lock = threading.Lock()
@@ -120,11 +123,14 @@ class BrowserWorker:
                     if not job.abandoned and job.state != _JobState.ABANDONED:
                         job.slot.append(exc)
             finally:
+                cleanup = None
                 with job.lock:
                     if job.abandoned or job.state in (_JobState.CANCELLED, _JobState.ABANDONED):
                         job.state = _JobState.ABANDONED
                         final_state = _JobState.ABANDONED
                         job.slot.clear()
+                        cleanup = job.on_abandoned
+                        job.on_abandoned = None
                     else:
                         job.state = _JobState.COMPLETED
                         final_state = _JobState.COMPLETED
@@ -138,6 +144,11 @@ class BrowserWorker:
                         self._failed_jobs += 1
                     else:
                         self._completed_jobs += 1
+                if cleanup is not None:
+                    try:
+                        cleanup()
+                    except Exception:
+                        pass
                 job.done.set()
 
     def health_snapshot(self, *, now: float | None = None) -> BrowserWorkerHealth:
@@ -178,16 +189,36 @@ class BrowserWorker:
             thread_alive=self._thread.is_alive(),
         )
 
-    def submit(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-        """Schedule work on the browser thread without blocking the caller."""
-        job = _Job(fn=fn, args=args, kwargs=kwargs)
-        self._queue.put(job)
+    def submit(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,
+        on_abandoned: Callable[[], None] | None = None,
+        **kwargs: Any,
+    ) -> bool:
+        """Schedule work on the browser thread without blocking the caller.
+
+        Returns False (dropping the job with a warning) when the bounded
+        queue is full, instead of growing memory without limit.
+        """
+        job = _Job(fn=fn, args=args, kwargs=kwargs, on_abandoned=on_abandoned)
+        try:
+            self._queue.put_nowait(job)
+        except queue.Full:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "browser worker queue full, dropping fire-and-forget job"
+            )
+            return False
+        return True
 
     def call(
         self,
         fn: Callable[..., T],
         *args: Any,
         timeout: float | None = None,
+        on_abandoned: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> T:
         if threading.get_ident() == self._thread_id:
@@ -216,6 +247,7 @@ class BrowserWorker:
             args=args,
             kwargs=kwargs,
             deadline=active_deadline,
+            on_abandoned=on_abandoned,
         )
 
         if caller_event is not None and caller_event.is_set():
@@ -224,7 +256,13 @@ class BrowserWorker:
             job.abandoned = True
             raise cancellation.TaskCancelled("task was cancelled before browser job execution")
 
-        self._queue.put(job)
+        try:
+            self._queue.put_nowait(job)
+        except queue.Full:
+            job.cancel_event.set()
+            job.state = _JobState.CANCELLED
+            job.abandoned = True
+            raise RuntimeError("browser worker busy: queue full")
 
         try:
             while not job.done.wait(_POLL_INTERVAL):
@@ -269,12 +307,22 @@ class BrowserWorker:
 WORKER = BrowserWorker()
 
 
-def submit(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-    WORKER.submit(fn, *args, **kwargs)
+def submit(
+    fn: Callable[..., Any],
+    *args: Any,
+    on_abandoned: Callable[[], None] | None = None,
+    **kwargs: Any,
+) -> bool:
+    return WORKER.submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
-def call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    return WORKER.call(fn, *args, **kwargs)
+def call(
+    fn: Callable[..., T],
+    *args: Any,
+    on_abandoned: Callable[[], None] | None = None,
+    **kwargs: Any,
+) -> T:
+    return WORKER.call(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
 def health_snapshot() -> BrowserWorkerHealth:

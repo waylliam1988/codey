@@ -13,6 +13,7 @@ EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 TASK_FLOW_PATH = ROOT / "codey" / "operations" / "task_flow.py"
 TASK_ENTRY_PATH = ROOT / "codey" / "operations" / "task_entry.py"
 TASK_RUN_PATH = ROOT / "codey" / "operations" / "task_run.py"
+APP_CONTEXT_PATH = ROOT / "codey" / "app" / "context.py"
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -150,20 +151,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("conversation.prepare_model_handoff", source)
 
     def test_sse_event_bus_owns_replay_state(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         bus_imports = imported_modules(ROOT / "codey" / "app" / "event_bus.py")
 
-        self.assertIn("codey.app.event_bus", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("codey.app.event_bus", imported_modules(APP_CONTEXT_PATH))
         self.assertNotIn("self.subscribers", server_source)
         self.assertNotIn("self.event_replay", server_source)
         self.assertNotIn("self.event_sequence", server_source)
         self.assertIn("queue", bus_imports)
 
     def test_run_registry_owns_run_lifecycle_state(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         registry_source = (ROOT / "codey" / "app" / "run_registry.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.app.run_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("codey.app.run_registry", imported_modules(APP_CONTEXT_PATH))
         self.assertIn("class RunRegistry", registry_source)
         self.assertNotIn("class RunSnapshot", server_source)
         self.assertIn("self._active_run: RunSnapshot | None", registry_source)
@@ -187,10 +188,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, server_source)
 
     def test_approval_registry_owns_pending_approval_maps(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         approval_source = (ROOT / "codey" / "app" / "approval_registry.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.app.approval_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("codey.app.approval_registry", imported_modules(APP_CONTEXT_PATH))
         self.assertIn("class ApprovalRegistry", approval_source)
         self.assertNotIn("self.pending_shell: dict", server_source)
         self.assertNotIn("self.pending_teach: dict", server_source)
@@ -205,10 +206,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("def resume_pending_teach", server_source)
 
     def test_provider_registry_owns_provider_sessions_and_health(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         registry_source = (ROOT / "codey" / "app" / "provider_registry.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.app.provider_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("codey.app.provider_registry", imported_modules(APP_CONTEXT_PATH))
         self.assertIn("class ProviderRegistry", registry_source)
         self.assertNotIn("self.provider_sessions: dict", server_source)
         self.assertNotIn("self.provider_supervisor = ProviderSupervisor", server_source)
@@ -220,10 +221,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("self.supervisor =", registry_source)
 
     def test_conversation_registry_owns_conversation_cache_and_store(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         registry_source = (ROOT / "codey" / "app" / "conversation_registry.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.app.conversation_registry", imported_modules(ROOT / "codey" / "app" / "server.py"))
+        self.assertIn("codey.app.conversation_registry", imported_modules(APP_CONTEXT_PATH))
         self.assertIn("class ConversationRegistry", registry_source)
         for token in (
             "self.conversations: dict",
@@ -235,11 +236,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, server_source)
 
     def test_background_workers_own_single_flight_state(self) -> None:
-        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
         ghost_source = (ROOT / "codey" / "app" / "ghost_daemon.py").read_text(encoding="utf-8")
         indexer_source = (ROOT / "codey" / "app" / "knowledge_indexer.py").read_text(encoding="utf-8")
 
-        imports = imported_modules(ROOT / "codey" / "app" / "server.py")
+        imports = imported_modules(APP_CONTEXT_PATH)
         self.assertIn("codey.app.ghost_daemon", imports)
         self.assertIn("codey.app.knowledge_indexer", imports)
         self.assertIn("class GhostSleepDaemon", ghost_source)
@@ -352,6 +353,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.effects.replay_args",
             "codey.runtime.effects.replay_policy",
             "codey.runtime.log.compaction",
+            "codey.runtime.log.entries",
             "codey.runtime.log.session_projection",
             "codey.runtime.log.session_log",
             "codey.runtime.log.session_view",
@@ -1687,6 +1689,82 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertNotIn("def _parse_object(", source)
         self.assertNotIn("def _text(", source)
+
+
+    def test_run_trace_only_consumes_research_projection_leaves(self) -> None:
+        # Run Trace is audit infra: it may validate/normalize research refs,
+        # but only through projection-only leaves. A behavior import
+        # (runner/tools/pipeline/contracts) would drag execution into audit.
+        path = ROOT / "codey" / "runs" / "trace.py"
+        imports = imported_modules(path)
+        research_imports = sorted(
+            name for name in imports if name == "codey.research" or name.startswith("codey.research.")
+        )
+        allowed = {
+            "codey.research.artifact_lineage",
+            "codey.research.evidence_runtime",
+            "codey.research.review_finding",
+            "codey.research.shape",
+            "codey.research.source_trust",
+        }
+        self.assertTrue(set(research_imports) <= allowed, sorted(set(research_imports) - allowed))
+
+
+    def test_long_files_do_not_grow(self) -> None:
+        # 1000-line guardrail (warning-grade): the files above the line are
+        # known cohesive stores/flows. They must shrink over time; this test
+        # fails only when a NEW file crosses the line or a tracked file
+        # grows, so refactors stay honest without a hard fail on legacy.
+        over_limit: dict[str, int] = {}
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            size = sum(1 for _ in path.open(encoding="utf-8"))
+            if size > 1000:
+                over_limit[path.relative_to(ROOT / "codey").as_posix()] = size
+        baseline = {
+            "agents/consensus.py",
+            "ghost/affinity.py",
+            "ghost/continuity.py",
+            "ghost/hebbian.py",
+            "ghost/inbox.py",
+            "ghost/router.py",
+            "ghost/work_queue.py",
+            "operations/project_completion_flow.py",
+            "operations/task_run.py",
+            "providers/controls.py",
+            "research/browser_search.py",
+            "research/evidence_ledger.py",
+            "research/runner.py",
+            "research/source_connectors.py",
+            "runs/trace.py",
+            "runtime/core/operation_state.py",
+            "toolchain/runtime.py",
+        }
+        self.assertEqual(set(over_limit) - baseline, set())
+        ceiling = {
+            "agents/consensus.py": 1100,
+            "ghost/affinity.py": 2750,
+            "ghost/continuity.py": 1350,
+            "ghost/hebbian.py": 1300,
+            "ghost/inbox.py": 1200,
+            "ghost/router.py": 1180,
+            "ghost/work_queue.py": 2750,
+            "operations/project_completion_flow.py": 1750,
+            "operations/task_run.py": 1200,
+            "providers/controls.py": 1400,
+            "research/browser_search.py": 1230,
+            "research/evidence_ledger.py": 1550,
+            "research/runner.py": 1360,
+            "research/source_connectors.py": 1420,
+            "runs/trace.py": 2450,
+            "runtime/core/operation_state.py": 1110,
+            "toolchain/runtime.py": 1240,
+        }
+        grown = {
+            name: size
+            for name, size in over_limit.items()
+            if size > ceiling.get(name, 1000)
+        }
+        self.assertEqual(grown, {})
 
 
 if __name__ == "__main__":

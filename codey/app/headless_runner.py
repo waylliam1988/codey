@@ -25,13 +25,13 @@ from codey.providers import (
     connect_fresh_provider_tab as default_connect_fresh_provider_tab,
     connect_provider as default_connect_provider,
 )
-from codey.app.server import (
+from codey.app.context import (
     AppContext,
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
     _should_wait_for_local_ghost_sleep,
-    is_git_repository,
 )
+from codey.workspace.changes import is_git_repository
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
@@ -71,7 +71,7 @@ class HeadlessAppContext(AppContext):
         emit_jsonl: Callable[[dict[str, object]], None],
         connect_provider: Callable[..., Any] = default_connect_provider,
     ) -> None:
-        super().__init__(state_home)
+        super().__init__(state_home, replay_limit=0)
         self.port = int(port)
         self._emit_jsonl = emit_jsonl
         self._connect_provider = connect_provider

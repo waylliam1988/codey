@@ -35,6 +35,7 @@ from codey.storage.local_store import (
 )
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
+from codey.runtime.core import cancellation
 
 
 AFFINITY_SCHEMA_VERSION = 1
@@ -527,6 +528,8 @@ class GhostAffinityStore:
     ) -> tuple[AffinityNode, ...]:
         try:
             nodes, _edges = self._load_state_for_read_unlocked()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         kinds = _filter_values(kind, AFFINITY_NODE_KINDS)
@@ -580,6 +583,8 @@ class GhostAffinityStore:
     ) -> tuple[AffinityEdge, ...]:
         try:
             _nodes, edges = self._load_state_for_read_unlocked()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             return ()
         relations = _filter_values(relation, AFFINITY_EDGE_RELATIONS)
@@ -1252,6 +1257,8 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[_NodeSpec]:
         return []
     try:
         rows = hebbian_store.list_nodes(status="active")
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return []
     specs: list[_NodeSpec] = []
@@ -1310,6 +1317,8 @@ def _specs_from_work_queue(
         return [], []
     try:
         rows = work_queue_store.list_items()
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return [], []
     node_specs: list[_NodeSpec] = []
@@ -1478,6 +1487,8 @@ def _specs_from_router(router_store: Any) -> tuple[list[_NodeSpec], list[_EdgeSp
     try:
         exported = router_store.export_state()
         records = _list((exported.get("router") if isinstance(exported, Mapping) else {}).get("records"))
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return [], []
     node_specs: list[_NodeSpec] = []

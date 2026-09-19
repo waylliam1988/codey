@@ -172,6 +172,24 @@ def probe_local_endpoint(
     api_key: str = "",
     timeout: float = 1.5,
 ) -> LocalEndpoint | None:
+    endpoint, _reason = probe_local_endpoint_detail(
+        base_url, api_key=api_key, timeout=timeout
+    )
+    return endpoint
+
+
+def probe_local_endpoint_detail(
+    base_url: str,
+    *,
+    api_key: str = "",
+    timeout: float = 1.5,
+) -> tuple[LocalEndpoint | None, str]:
+    """Probe /models and report why it failed without raising.
+
+    Returns (endpoint, reason) where reason is one of
+    ok/unreachable/auth/invalid_json. The thin probe_local_endpoint
+    wrapper above keeps the historical Optional return for callers.
+    """
     url = (base_url or DEFAULT_BASE_URL).rstrip("/")
     headers = {}
     if api_key:
@@ -180,19 +198,25 @@ def probe_local_endpoint(
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return None, "auth"
+        return None, "unreachable"
     except Exception:
-        return None
+        return None, "unreachable"
     try:
         body = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        body = {}
+        return LocalEndpoint(url, ()), "invalid_json"
     data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, list):
+        return LocalEndpoint(url, ()), "invalid_json"
     models = tuple(
         str(item.get("id"))
-        for item in (data or [])
+        for item in data
         if isinstance(item, dict) and item.get("id")
     )
-    return LocalEndpoint(url, models)
+    return LocalEndpoint(url, models), "ok"
 
 
 def detect_local_endpoints(*, api_key: str = "") -> list[LocalEndpoint]:
@@ -276,12 +300,16 @@ def _config_path() -> Path:
 def _extract_reply(body: dict) -> str:
     try:
         choice = body["choices"][0]
-    except (KeyError, IndexError, TypeError):
-        return ""
-    message = choice.get("message") if isinstance(choice, dict) else None
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("local model returned no choices") from exc
+    if not isinstance(choice, dict):
+        raise RuntimeError("local model returned a malformed choice")
+    message = choice.get("message")
     if isinstance(message, dict):
         return str(message.get("content") or "")
-    return str(choice.get("text") or "") if isinstance(choice, dict) else ""
+    if isinstance(choice.get("text"), str):
+        return str(choice.get("text") or "")
+    raise RuntimeError("local model returned a choice without message content")
 
 
 def _load_response_json(raw: bytes, endpoint: str) -> dict:

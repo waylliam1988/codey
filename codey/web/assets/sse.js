@@ -7,6 +7,8 @@
   let reconnectTimer = null;
   let reconcilePromise = null;
   let bufferedServerEvents = [];
+  const BUFFER_LIMIT = 100;
+  let consecutiveFailures = 0;
 
 function init(nextDeps) {
   deps = nextDeps;
@@ -49,6 +51,7 @@ function reconcileRunState() {
 
 function ingestServerEvent(data) {
   if (reconcilePromise) {
+    if (bufferedServerEvents.length >= BUFFER_LIMIT) bufferedServerEvents.shift();
     bufferedServerEvents.push(data);
     return;
   }
@@ -77,6 +80,7 @@ function connect() {
     const eventId = Number.parseInt(e.lastEventId || '', 10);
     if (Number.isFinite(eventId) && eventId > 0 && data.event_id == null) data.event_id = eventId;
     if (data.type === 'hello') {
+      consecutiveFailures = 0;
       clearReconnectTimer();
       reconcileRunState();
       deps.refreshProviderStatus();
@@ -84,7 +88,17 @@ function connect() {
     }
     ingestServerEvent(data);
   };
-  evtSrc.onerror = scheduleReconnectStatus;
+  evtSrc.onerror = () => {
+    consecutiveFailures += 1;
+    if (consecutiveFailures >= 3 && evtSrc) {
+      try { evtSrc.close(); } catch { /* ignore */ }
+      evtSrc = null;
+      consecutiveFailures = 0;
+      connect();
+      return;
+    }
+    scheduleReconnectStatus();
+  };
 }
 
 window.CodeySse = {

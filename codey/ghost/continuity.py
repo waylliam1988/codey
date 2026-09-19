@@ -27,6 +27,7 @@ from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_re
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
+from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -351,6 +352,8 @@ class GhostContinuityStore:
                     total_items=len(merged),
                     warnings=self.last_warnings,
                 )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception as exc:
             self.last_warnings = (f"{type(exc).__name__}: {clip_signal_text(exc, 160)}",)
             return GhostContinuityResult(False, skipped_reason="continuity_error", warnings=self.last_warnings)
@@ -629,6 +632,8 @@ def build_ghost_continuity(
         return GhostContinuity("")
     try:
         items = _read_projected_items_from_path(store.projection_path)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         return GhostContinuity("", warnings=("store_unreadable",))
     return render_ghost_continuity(
@@ -719,6 +724,8 @@ def _items_from_hebbian(
         return []
     try:
         nodes = store.list_nodes(status="active")
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         warnings.append("hebbian_unreadable")
         return []
@@ -867,6 +874,8 @@ def _items_from_knowledge(
                 types=("synthesis", "decision"),
             )
         )
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
     except Exception:
         try:
             rows = list(
@@ -876,6 +885,8 @@ def _items_from_knowledge(
                     types=("synthesis", "decision"),
                 )
             )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception:
             warnings.append("knowledge_unreadable")
             return []

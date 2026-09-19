@@ -32,7 +32,7 @@ from codey.runtime.core.operation_state import (
     operation_is_open,
     operation_state_from_entries,
 )
-from codey.runtime.log.session_log import RuntimeLogEntry
+from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, batches_from_entries
 
 

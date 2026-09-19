@@ -19,7 +19,7 @@ from codey.workspace.bounded_scan import (
     iter_bounded_files,
     iter_provided_files,
 )
-from codey.reviews.scan_report import ScanReport
+from codey.utils.scan_report import ScanReport
 
 REFERENCE_MAX_RESULTS = 80
 REFERENCE_MAX_FILE_BYTES = 512 * 1024

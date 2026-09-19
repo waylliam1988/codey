@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.runtime.core.models import ToolCall
-from codey.toolchain.runtime import MAX_REPLACEMENTS
+from codey.toolchain.constants import MAX_REPLACEMENTS
 
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8

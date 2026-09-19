@@ -64,11 +64,6 @@ _base = {base}
 _norm = _os.path.normcase(_os.path.normpath(_base)) if _base else ""
 if _norm and all(_os.path.normcase(_os.path.normpath(p)) != _norm for p in __path__):
     __path__.append(_base)
-
-_base_init = _os.path.join(_base, "__init__.py")
-if _os.path.isfile(_base_init):
-    with open(_base_init, "rb") as _f:
-        exec(compile(_f.read(), _base_init, "exec"))
 '''
 
 

@@ -9,6 +9,7 @@ from unittest import mock
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 import codey.ghost.work_queue as work_queue_module
+from codey.runtime.core import cancellation
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
@@ -610,7 +611,7 @@ def test_claimed_item_is_released_on_stop() -> None:
         _seed_research_item(state)
         provider = _Provider()
         runner = _runner(state)
-        research_iteration = mock.Mock(side_effect=server.cancellation.TaskCancelled("stop"))
+        research_iteration = mock.Mock(side_effect=cancellation.TaskCancelled("stop"))
 
         with (
             mock.patch.object(state, "get_provider", return_value=provider),

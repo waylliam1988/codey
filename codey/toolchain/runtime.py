@@ -43,7 +43,8 @@ from codey.runtime.core.models import (
     normalized_managed_output,
 )
 from codey.utils.references import find_reference_hints
-from codey.reviews.scan_report import render_scan_coverage
+from codey.utils.scan_report import render_scan_coverage
+from codey.toolchain.constants import MAX_REPLACEMENTS
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
 
 
@@ -73,7 +74,8 @@ WRITE_MAX_FILE_BYTES = 512 * 1024
 READ_DEFAULT_LINES = 300
 READ_MAX_LINES = 600
 READ_MAX_CHARS = 16_000
-MAX_REPLACEMENTS = 8
+# NOTE: MAX_REPLACEMENTS is imported from codey.toolchain.constants above and
+# re-exported here so existing `from codey.toolchain.runtime import ...` keep working.
 EDIT_FAILURE_MAX_CHARS = 1_600
 EDIT_FAILURE_MAX_LINES = 7
 EDIT_FAILURE_MAX_MATCHES = 3

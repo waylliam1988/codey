@@ -5,12 +5,13 @@ from pathlib import Path
 from unittest import mock
 
 from codey.workspace import task_context as project_task_context
+from codey.operations import task_context as operations_task_context
 from codey.workspace.map import MAX_PROJECT_MAP_CHARS
 
 
 class SafeProjectMapTests(unittest.TestCase):
     def test_safe_project_map_passes_task_to_renderer(self) -> None:
-        with mock.patch.object(project_task_context, "render_project_map", return_value="map") as render:
+        with mock.patch.object(operations_task_context, "render_project_map", return_value="map") as render:
             rendered = project_task_context.safe_project_map(
                 Path("project"),
                 "- successful check: python -m unittest",

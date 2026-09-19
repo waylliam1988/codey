@@ -19,6 +19,7 @@ from codey.policies.action import (
     evaluate_action,
 )
 from codey.storage.local_store import session_key, write_json_atomic
+from codey.runtime.core import cancellation
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
 
@@ -104,6 +105,8 @@ class ManagedOutputStore:
                 sha256=digest,
                 stored_truncated=stored_truncated,
             )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except (OSError, TypeError, ValueError):
             return None
 
@@ -168,7 +171,17 @@ def run_command_with_managed_output(
         text=raw.output,
     )
     if ref is None:
-        return projected
+        return ToolOutcome(
+            projected.model_text,
+            projected.ok,
+            canonical=projected.canonical,
+            presentation=projected.presentation,
+            audit={**dict(projected.audit), "managed_output_failed": True},
+            error_code=projected.error_code or "managed_output_failed",
+            exit_code=projected.exit_code,
+            changed=projected.changed,
+            truncated=projected.truncated,
+        )
     managed_output = {
         "handle": ref.handle,
         "original_bytes": ref.original_bytes,

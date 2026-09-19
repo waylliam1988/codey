@@ -17,6 +17,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.providers import controls as provider_controls
+from codey.app import context as app_context
 from codey.app import services as app_services
 from codey.app import server as codey_server
 from codey.workspace.changes import collect_changes, is_git_repository
@@ -240,7 +241,7 @@ class TimedProvider:
 def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.AppContext]:
     state = codey_server.AppContext(state_home)
     original_state = codey_server.STATE
-    original_connect_provider = codey_server.connect_provider
+    original_connect_provider = app_context.connect_provider
     original_connect_existing = app_services.connect_existing_provider
     original_borrow_open_provider = app_services.borrow_open_provider
 
@@ -265,7 +266,7 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
 
     try:
         codey_server.STATE = state
-        codey_server.connect_provider = timed_connect_provider
+        app_context.connect_provider = timed_connect_provider
         app_services.connect_existing_provider = timed_connect_existing
         app_services.borrow_open_provider = timed_borrow_open_provider
         provider_controls.set_teach_handler(state.handle_control_teach)
@@ -273,7 +274,7 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
         yield state
     finally:
         codey_server.STATE = original_state
-        codey_server.connect_provider = original_connect_provider
+        app_context.connect_provider = original_connect_provider
         app_services.connect_existing_provider = original_connect_existing
         app_services.borrow_open_provider = original_borrow_open_provider
         provider_controls.set_teach_handler(original_state.handle_control_teach)

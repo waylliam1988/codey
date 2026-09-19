@@ -20,6 +20,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+from codey.storage.file_lock import with_file_lock
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
     valid_workspace_fingerprint,
@@ -165,6 +166,10 @@ class WorkCheckpointStore:
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.state_home = Path(state_home)
+        # Last corrupt checkpoint backup written by load(). None means the
+        # last load was clean/missing. Callers surface this instead of
+        # pretending a corrupt checkpoint is "no checkpoint".
+        self.last_corrupt_backup: Path | None = None
 
     def path_for(self, session_id: str) -> Path:
         return self.state_home / "work_checkpoints" / f"{session_key(session_id)}.json"
@@ -174,8 +179,9 @@ class WorkCheckpointStore:
         try:
             payload = read_json_strict(path, max_bytes=MAX_CHECKPOINT_BYTES)
         except StoreCorruption:
-            backup_corrupt_file(path)
+            self.last_corrupt_backup = backup_corrupt_file(path)
             return None
+        self.last_corrupt_backup = None
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return None
         try:
@@ -240,11 +246,13 @@ class WorkCheckpointStore:
             return None
 
     def save(self, checkpoint: WorkCheckpoint) -> None:
-        write_json_atomic(
-            self.path_for(checkpoint.session_id),
-            checkpoint.to_payload(),
-            max_bytes=MAX_CHECKPOINT_BYTES,
-        )
+        path = self.path_for(checkpoint.session_id)
+        with with_file_lock(path):
+            write_json_atomic(
+                path,
+                checkpoint.to_payload(),
+                max_bytes=MAX_CHECKPOINT_BYTES,
+            )
 
     def start(self, *, run_id: str, session_id: str, project: str | Path, task: str) -> WorkCheckpoint:
         now = _now()
