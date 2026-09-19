@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 浏览器测试门禁收紧与 close 清理可重试（未发布）
+
+- 收紧 Playwright 浏览器测试门禁：`tests/test_ui_inplace_render.py` 在 CI 中遇到
+  Playwright 或 Chromium 不可用时直接失败，避免关键浏览器回归被静默 skip；本地特殊缺浏览器
+  环境仍显式跳过。teardown 对残留 handler 线程改为硬失败，并删除无效的 `evtSrc`
+  关闭探针，因为 EventSource 是 `assets/sse.js` 内部私有状态。
+- `AppContext.close()` 清理语义改为真正可重试：只有全部 store 与临时目录都完成释放后才标记
+  `closed`；已经成功关闭的资源会置空，失败的 cleanup 保留到后续 `close()` 再试。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `51 passed in 7.73s`；UI/server 生命周期重点回归
+  `413 passed, 1 skipped, 313 subtests passed in 45.58s`；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  `3790 passed, 23 skipped in 268.15s`。
+
 ## Unreleased - CI 浏览器安装、清理 closed 垫片、线程收拢与取消稳定性增强（未发布）
 
 - CI 浏览器依赖配置与环境探测：在 `.github/workflows/ci.yml` 的依赖安装中增加

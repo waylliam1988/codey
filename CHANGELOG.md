@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Strict browser-test gates and retryable close cleanup (no release)
+
+- Tightened Playwright browser-test gates: `tests/test_ui_inplace_render.py` now fails fast
+  in CI when Playwright or Chromium is unavailable, while local missing-browser environments
+  still skip explicitly. The browser teardown test also treats lingering handler threads as
+  a hard failure, and the dead `evtSrc` close probe was removed because the EventSource is
+  private inside `assets/sse.js`.
+- Made `AppContext.close()` resource cleanup truly retryable: resources are marked closed only
+  after every store and temporary directory has actually been released; successfully closed
+  resources are nulled, while failed cleanup remains available for a later `close()` retry.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`51 passed in 7.73s`); broader UI/server lifecycle regression
+  (`413 passed, 1 skipped, 313 subtests passed in 45.58s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3790 passed, 23 skipped in 268.15s`).
+
 ## Unreleased - CI Playwright install, clean closed property, teardown thread join, robust cancellation (no release)
 
 - CI Playwright browser install & launch probe: added `python -m playwright install chromium`

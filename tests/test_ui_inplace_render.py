@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import threading
 import unittest
@@ -14,6 +15,56 @@ except ImportError:  # pragma: no cover
     sync_playwright = None
 
 
+def _running_in_ci() -> bool:
+    return any(os.environ.get(name, "").lower() not in {"", "0", "false"} for name in ("CI", "GITHUB_ACTIONS"))
+
+
+def _skip_or_fail_browser_unavailable(message: str, exc: Exception | None = None) -> None:
+    if _running_in_ci():
+        raise AssertionError(message) from exc
+    raise unittest.SkipTest(message)
+
+
+def _join_live_handler_threads(httpd: object, timeout: float = 0.5) -> list[object]:
+    threads = list(getattr(httpd, "_threads", ()))
+    for thread in threads:
+        if thread.is_alive():
+            thread.join(timeout=timeout)
+    return [thread for thread in threads if thread.is_alive()]
+
+
+class UiInPlaceRenderHarnessTests(unittest.TestCase):
+    def test_browser_unavailable_skips_outside_ci(self) -> None:
+        with mock.patch.dict(os.environ, {"CI": "", "GITHUB_ACTIONS": ""}):
+            with self.assertRaises(unittest.SkipTest):
+                _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
+
+    def test_browser_unavailable_fails_in_ci(self) -> None:
+        with mock.patch.dict(os.environ, {"CI": "true"}):
+            with self.assertRaises(AssertionError):
+                _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
+
+    def test_join_live_handler_threads_returns_threads_that_remain_alive(self) -> None:
+        class FakeThread:
+            def __init__(self, alive: bool) -> None:
+                self.alive = alive
+                self.join_timeout: float | None = None
+
+            def is_alive(self) -> bool:
+                return self.alive
+
+            def join(self, timeout: float | None = None) -> None:
+                self.join_timeout = timeout
+
+        finished = FakeThread(False)
+        stuck = FakeThread(True)
+        lingering = _join_live_handler_threads(mock.Mock(_threads=[finished, stuck]), timeout=0.25)
+
+        self.assertEqual(lingering, [stuck])
+        self.assertIsNone(finished.join_timeout)
+        self.assertEqual(stuck.join_timeout, 0.25)
+
+
 class UiInPlaceRenderBrowserTests(unittest.TestCase):
     """Browser-level validation of in-place tool replacement, text selection
 
@@ -23,13 +74,13 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if sync_playwright is None:
-            raise unittest.SkipTest("playwright is required for browser DOM tests")
+            _skip_or_fail_browser_unavailable("playwright is required for browser DOM tests")
         try:
             with sync_playwright() as pw:
                 probe = pw.chromium.launch(headless=True)
                 probe.close()
         except Exception as exc:
-            raise unittest.SkipTest(f"playwright chromium browser is not available: {exc}")
+            _skip_or_fail_browser_unavailable(f"playwright chromium browser is not available: {exc}", exc)
         cls.tmp = tempfile.TemporaryDirectory()
         cls.state = codey_server.AppContext(Path(cls.tmp.name) / "state")
         cls.state_patch = mock.patch.object(codey_server, "STATE", cls.state)
@@ -48,14 +99,15 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 cls.httpd.server_close()
             if hasattr(cls, "server_thread"):
                 cls.server_thread.join(timeout=2.0)
+            lingering_handlers = []
             if hasattr(cls, "httpd") and hasattr(cls.httpd, "_threads"):
-                for t in list(cls.httpd._threads):
-                    if t.is_alive():
-                        t.join(timeout=0.5)
+                lingering_handlers = _join_live_handler_threads(cls.httpd)
             if hasattr(cls, "state"):
                 cls.state.close()
             if hasattr(cls, "tmp"):
                 cls.tmp.cleanup()
+            if lingering_handlers:
+                raise AssertionError(f"{len(lingering_handlers)} request handler thread(s) did not stop")
         finally:
             if hasattr(cls, "state_patch"):
                 cls.state_patch.stop()
@@ -163,10 +215,6 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     chatArea.scrollTop = 0;
                     window.scrollChat(true);
                     const forcedFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
-
-                    if (typeof evtSrc !== 'undefined' && evtSrc) {
-                        evtSrc.close();
-                    }
 
                     return {
                         replaced,

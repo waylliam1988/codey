@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Strict browser-test gates and retryable close cleanup (2026-09-19)
+
+Scope:
+
+```text
+tests/test_ui_inplace_render.py:
+                            CI now fails fast when Playwright or Chromium is unavailable,
+                            while local missing-browser environments still skip explicitly;
+                            removed the dead evtSrc close probe because the EventSource is
+                            intentionally private inside assets/sse.js; handler thread teardown
+                            now reports lingering request threads as a hard test failure
+codey/app/context.py:       AppContext.close() now marks resources closed only after every
+                            resource has actually been released; successfully closed stores
+                            are nulled, failed cleanup remains retryable on a later close()
+tests/test_coldstart_hardening.py:
+                            added coverage for retrying close() after temporary cleanup failure
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warning)
+- Focused gate before the full run:
+  `python -m pytest tests\test_ui_inplace_render.py tests\test_coldstart_hardening.py tests\test_cancellation.py tests\test_headless_runner.py -q`
+  (`51 passed in 7.73s`)
+- Broader UI/server lifecycle regression before the full run:
+  `python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py tests\test_architecture.py tests\test_coldstart_hardening.py tests\test_headless_runner.py tests\test_run_id_dedup.py tests\test_workspace_project_map.py tests\test_ui_inplace_render.py -q`
+  (`413 passed, 1 skipped, 313 subtests passed in 45.58s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3790 passed, 23 skipped in 268.15s (0:04:28)`)
+- No release.
+
 ## CI Playwright browser install, clean closed property, timeout-safe handler teardown, robust deadline cancellation (2026-09-19)
 
 Scope:

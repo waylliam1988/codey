@@ -938,23 +938,36 @@ class AppContext:
         if not finished:
             return
 
-        self._resources_closed = True
-        if self._knowledge_store is not None:
+        resources_closed = True
+        with self.lock:
+            self._knowledge_store_enabled = False
+            knowledge_store = self._knowledge_store
+        if knowledge_store is not None:
             try:
-                getattr(self._knowledge_store, "close", lambda: None)()
+                getattr(knowledge_store, "close", lambda: None)()
             except Exception:
-                pass
+                resources_closed = False
+            else:
+                with self.lock:
+                    if self._knowledge_store is knowledge_store:
+                        self._knowledge_store = None
         evidence = getattr(self, "evidence_ledgers", None)
         if evidence is not None:
             try:
                 getattr(evidence, "close", lambda: None)()
             except Exception:
-                pass
+                resources_closed = False
+            else:
+                self.evidence_ledgers = None
         if self._ephemeral_runtime_home is not None:
             try:
                 self._ephemeral_runtime_home.cleanup()
             except Exception:
-                pass
+                resources_closed = False
+            else:
+                self._ephemeral_runtime_home = None
+        if resources_closed:
+            self._resources_closed = True
 
     def __enter__(self) -> "AppContext":
         return self
