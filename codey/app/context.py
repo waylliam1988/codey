@@ -179,6 +179,8 @@ class AppContext:
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
+        self._close_requested = False
+        self._resources_closed = False
 
     def _ghost_store(
         self,
@@ -914,11 +916,21 @@ class AppContext:
                 return selected
         return None
 
+    @property
+    def _closed(self) -> bool:
+        return self._resources_closed
+
+    @_closed.setter
+    def _closed(self, value: bool) -> None:
+        self._resources_closed = bool(value)
+
     def close(self) -> None:
-        if self._closed:
+        if self._resources_closed:
             return
-        self._closed = True
-        self.run_registry.stop_flag.set()
+        if not self._close_requested:
+            self._close_requested = True
+            self.run_registry.stop_flag.set()
+
         finished = True
         try:
             wait_result = self.ghost_sleep_daemon.wait(timeout=2.0)
@@ -926,8 +938,11 @@ class AppContext:
                 finished = False
         except Exception:
             finished = False
+
         if not finished:
             return
+
+        self._resources_closed = True
         if self._knowledge_store is not None:
             try:
                 getattr(self._knowledge_store, "close", lambda: None)()

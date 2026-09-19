@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Isolate Playwright server state, guard browser teardown, retryable AppContext close (2026-09-19)
+
+Scope:
+
+```text
+codey/app/context.py:       split close tracking into _close_requested and _resources_closed;
+                            AppContext.close() sets stop_flag on first request and gracefully
+                            allows subsequent close() calls to retry resource teardown
+                            once the background ghost daemon completes
+tests/test_ui_inplace_render.py:
+                            isolated server.STATE with a dedicated temporary AppContext
+                            and mock patch during setUpClass/tearDownClass, preventing any
+                            leakage into ~/.codey; wrapped browser interaction in try...finally
+                            to guarantee Chromium teardown across failures
+tests/test_coldstart_hardening.py:
+                            added test_app_context_close_retries_cleanup_when_thread_subsequently_finishes
+                            validating multi-stage retryable teardown behavior
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_ui_inplace_render.py tests\test_coldstart_hardening.py tests\test_headless_runner.py -q`
+  (`39 passed in 4.36s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3803 passed, 6 skipped in 258.07s (0:04:18)`)
+- No release.
+
 ## In-place DOM and selection browser tests, guard shared stores on unfinished ghost sleep (2026-09-19)
 
 Scope:

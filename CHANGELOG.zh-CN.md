@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 浏览器测试状态隔离与异常守护、AppContext 重试清理机制（未发布）
+
+- 浏览器测试状态隔离与进程保护：在 `tests/test_ui_inplace_render.py` 中为本地 server
+  挂载独立的临时 `AppContext`，防止前端异步上报写入真实 `~/.codey`；浏览器交互全生命周期使用
+  `try ... finally: browser.close()` 包裹，杜绝测试失败泄漏 Chromium 进程。
+- `AppContext.close()` 支持延迟重试清理：拆分为 `_close_requested` 与 `_resources_closed` 两个标志，
+  首次调用先设置 `stop_flag`；若后台 ghost 维护仍在进行，后续再次调用 `close()` 时若后台已退出，
+  能顺利接续清理共享存储与临时目录，兼顾锁安全与资源确定性释放。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `39 passed in 4.36s`；全量 `python -m pytest tests/ --ignore=tests/manual`
+  `3803 passed, 6 skipped in 258.07s`。
+
 ## Unreleased - 前端原地渲染与滚动策略真实浏览器测试、未结束维护保护共享存储（未发布）
 
 - 前端原地替换与滚动策略真实测试：新增轻量 Playwright 浏览器端集成测试

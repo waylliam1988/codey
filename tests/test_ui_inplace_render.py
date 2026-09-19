@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import tempfile
 import threading
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from codey.app import server as codey_server
 
@@ -21,6 +24,10 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         if sync_playwright is None:
             raise unittest.SkipTest("playwright is required for browser DOM tests")
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.state = codey_server.AppContext(Path(cls.tmp.name) / "state", sync_ghost_maintenance=True)
+        cls.state_patch = mock.patch.object(codey_server, "STATE", cls.state)
+        cls.state_patch.start()
         cls.httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.server_thread.start()
@@ -32,127 +39,136 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
         if hasattr(cls, "httpd"):
             cls.httpd.shutdown()
             cls.httpd.server_close()
+        if hasattr(cls, "server_thread"):
+            cls.server_thread.join(timeout=2.0)
+        if hasattr(cls, "state_patch"):
+            cls.state_patch.stop()
+        if hasattr(cls, "state"):
+            cls.state.close()
+        if hasattr(cls, "tmp"):
+            cls.tmp.cleanup()
 
     def test_in_place_tool_render_preserves_assistant_dom_and_selection_and_respects_scroll(self) -> None:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1024, "height": 768})
-            page.goto(self.base_url)
-            page.wait_for_function("typeof window.renderChat === 'function'")
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                page.goto(self.base_url)
+                page.wait_for_function("typeof window.renderChat === 'function'")
 
-            result = page.evaluate("""() => {
-                const sid = 'test-session-inplace';
-                const initialMessages = [
-                    { type: 'user', text: 'Please inspect and modify the target module.' },
-                    { type: 'asst', text: 'I am reading the codebase and executing edits now.' },
-                    { type: 'tool_pending', kind: 'edit', toolKey: 'tool-k1', path: 'module.py', activity: 'Applying changes...' }
-                ];
+                result = page.evaluate("""() => {
+                    const sid = 'test-session-inplace';
+                    const initialMessages = [
+                        { type: 'user', text: 'Please inspect and modify the target module.' },
+                        { type: 'asst', text: 'I am reading the codebase and executing edits now.' },
+                        { type: 'tool_pending', kind: 'edit', toolKey: 'tool-k1', path: 'module.py', activity: 'Applying changes...' }
+                    ];
 
-                window.CodeyUiState.apply({
-                    active_id: sid,
-                    sessions: [{
-                        id: sid,
-                        title: 'In-place Test',
-                        projectId: null,
-                        provider: 'deepseek',
-                        messages: initialMessages,
-                        terminalRuns: []
-                    }],
-                    projects: []
-                });
+                    window.CodeyUiState.apply({
+                        active_id: sid,
+                        sessions: [{
+                            id: sid,
+                            title: 'In-place Test',
+                            projectId: null,
+                            provider: 'deepseek',
+                            messages: initialMessages,
+                            terminalRuns: []
+                        }],
+                        projects: []
+                    });
 
-                // Initial chat rendering
-                window.renderChat(true);
+                    // Initial chat rendering
+                    window.renderChat(true);
 
-                const chatEl = document.getElementById('chat');
-                const chatArea = document.getElementById('chat-area');
+                    const chatEl = document.getElementById('chat');
+                    const chatArea = document.getElementById('chat-area');
 
-                const asstNode = chatEl.querySelector('.msg.asst');
-                if (!asstNode) throw new Error('Expected assistant message node');
-                asstNode.__identity_marker = 'original-asst-instance';
+                    const asstNode = chatEl.querySelector('.msg.asst');
+                    if (!asstNode) throw new Error('Expected assistant message node');
+                    asstNode.__identity_marker = 'original-asst-instance';
 
-                const pendingToolNode = chatEl.querySelector('.msg.tool[data-tool-key="tool-k1"]');
-                if (!pendingToolNode) throw new Error('Expected pending tool node');
+                    const pendingToolNode = chatEl.querySelector('.msg.tool[data-tool-key="tool-k1"]');
+                    if (!pendingToolNode) throw new Error('Expected pending tool node');
 
-                // 1. Select text within the assistant message
-                const selection = window.getSelection();
-                selection.removeAllRanges();
-                const range = document.createRange();
-                range.selectNodeContents(asstNode.querySelector('.body') || asstNode);
-                selection.addRange(range);
-                const selectedTextBefore = selection.toString();
+                    // 1. Select text within the assistant message
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    const range = document.createRange();
+                    range.selectNodeContents(asstNode.querySelector('.body') || asstNode);
+                    selection.addRange(range);
+                    const selectedTextBefore = selection.toString();
 
-                // Make the chat area scrollable to test scroll policies
-                const spacer = document.createElement('div');
-                spacer.id = 'test-scroll-spacer';
-                spacer.style.height = '1200px';
-                chatEl.appendChild(spacer);
+                    // Make the chat area scrollable to test scroll policies
+                    const spacer = document.createElement('div');
+                    spacer.id = 'test-scroll-spacer';
+                    spacer.style.height = '1200px';
+                    chatEl.appendChild(spacer);
 
-                const maxScroll = chatArea.scrollHeight - chatArea.clientHeight;
+                    const maxScroll = chatArea.scrollHeight - chatArea.clientHeight;
 
-                // 2. Simulate user reading history away from the bottom (e.g. top)
-                chatArea.scrollTop = 0;
-                const distanceToBottomBefore = maxScroll - chatArea.scrollTop;
+                    // 2. Simulate user reading history away from the bottom (e.g. top)
+                    chatArea.scrollTop = 0;
+                    const distanceToBottomBefore = maxScroll - chatArea.scrollTop;
 
-                // 3. Trigger final tool message via replaceSessionMessage
-                const finalToolMessage = {
-                    type: 'tool',
-                    kind: 'edit',
-                    toolKey: 'tool-k1',
-                    path: 'module.py',
-                    result: 'Successfully updated 1 line'
-                };
+                    // 3. Trigger final tool message via replaceSessionMessage
+                    const finalToolMessage = {
+                        type: 'tool',
+                        kind: 'edit',
+                        toolKey: 'tool-k1',
+                        path: 'module.py',
+                        result: 'Successfully updated 1 line'
+                    };
 
-                const replaced = window.replaceSessionMessage(
-                    sid,
-                    m => m.type === 'tool_pending' && m.toolKey === 'tool-k1',
-                    finalToolMessage
-                );
+                    const replaced = window.replaceSessionMessage(
+                        sid,
+                        m => m.type === 'tool_pending' && m.toolKey === 'tool-k1',
+                        finalToolMessage
+                    );
 
-                // 4. Assertions on DOM identity & selection preservation
-                const currentAsstNode = chatEl.querySelector('.msg.asst');
-                const asstNodeIdentical = (currentAsstNode === asstNode);
-                const asstMarkerPreserved = (currentAsstNode.__identity_marker === 'original-asst-instance');
-                const selectedTextAfter = selection.toString();
-                const selectionPreserved = (selectedTextAfter === selectedTextBefore);
+                    // 4. Assertions on DOM identity & selection preservation
+                    const currentAsstNode = chatEl.querySelector('.msg.asst');
+                    const asstNodeIdentical = (currentAsstNode === asstNode);
+                    const asstMarkerPreserved = (currentAsstNode.__identity_marker === 'original-asst-instance');
+                    const selectedTextAfter = selection.toString();
+                    const selectionPreserved = (selectedTextAfter === selectedTextBefore);
 
-                // 5. Assertions on tool node in-place replacement
-                const currentToolNode = chatEl.querySelector('.msg.tool[data-tool-key="tool-k1"]');
-                const toolNodeReplaced = (currentToolNode !== pendingToolNode);
-                const toolHasFinalResult = currentToolNode ? currentToolNode.textContent.includes('Successfully updated 1 line') : false;
-                const toolPendingRemoved = currentToolNode ? currentToolNode.querySelector('.tool-line.pending') === null : false;
+                    // 5. Assertions on tool node in-place replacement
+                    const currentToolNode = chatEl.querySelector('.msg.tool[data-tool-key="tool-k1"]');
+                    const toolNodeReplaced = (currentToolNode !== pendingToolNode);
+                    const toolHasFinalResult = currentToolNode ? currentToolNode.textContent.includes('Successfully updated 1 line') : false;
+                    const toolPendingRemoved = currentToolNode ? currentToolNode.querySelector('.tool-line.pending') === null : false;
 
-                // 6. Assertions on scroll policy:
-                // When away from bottom (scrollTop = 0, distance > 120px), replace does NOT force jump to bottom
-                const scrollAwayPreserved = (chatArea.scrollTop === 0);
+                    // 6. Assertions on scroll policy:
+                    // When away from bottom (scrollTop = 0, distance > 120px), replace does NOT force jump to bottom
+                    const scrollAwayPreserved = (chatArea.scrollTop === 0);
 
-                // Near bottom follow: when within 120px of bottom, scrollChat() follows to bottom
-                chatArea.scrollTop = maxScroll - 50; // 50px < 120px
-                window.scrollChat(false);
-                const nearBottomFollowed = (chatArea.scrollTop >= maxScroll - 1);
+                    // Near bottom follow: when within 120px of bottom, scrollChat() follows to bottom
+                    chatArea.scrollTop = maxScroll - 50; // 50px < 120px
+                    window.scrollChat(false);
+                    const nearBottomFollowed = (chatArea.scrollTop >= maxScroll - 1);
 
-                // Forced follow: scrollChat(true) always forces to bottom
-                chatArea.scrollTop = 0;
-                window.scrollChat(true);
-                const forcedFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
+                    // Forced follow: scrollChat(true) always forces to bottom
+                    chatArea.scrollTop = 0;
+                    window.scrollChat(true);
+                    const forcedFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
 
-                return {
-                    replaced,
-                    asstNodeIdentical,
-                    asstMarkerPreserved,
-                    selectionPreserved,
-                    selectedTextBefore,
-                    selectedTextAfter,
-                    toolNodeReplaced,
-                    toolHasFinalResult,
-                    toolPendingRemoved,
-                    scrollAwayPreserved,
-                    nearBottomFollowed,
-                    forcedFollowSucceeded
-                };
-            }""")
-
-            browser.close()
+                    return {
+                        replaced,
+                        asstNodeIdentical,
+                        asstMarkerPreserved,
+                        selectionPreserved,
+                        selectedTextBefore,
+                        selectedTextAfter,
+                        toolNodeReplaced,
+                        toolHasFinalResult,
+                        toolPendingRemoved,
+                        scrollAwayPreserved,
+                        nearBottomFollowed,
+                        forcedFollowSucceeded
+                    };
+                }""")
+            finally:
+                browser.close()
 
         self.assertTrue(result["replaced"])
         self.assertTrue(result["asstNodeIdentical"], "Assistant DOM node must not be rebuilt")

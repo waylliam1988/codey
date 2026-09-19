@@ -2,6 +2,21 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Isolate browser test server state, guard Chromium teardown, retryable AppContext close (no release)
+
+- Isolate browser test server state and guard Chromium process: patched `codey_server.STATE`
+  with a dedicated temporary `AppContext` in `tests/test_ui_inplace_render.py` to guarantee
+  no asynchronous UI state writes pollute `~/.codey`; wrapped browser execution in
+  `try ... finally: browser.close()` to prevent orphaned Chromium processes upon test assertions.
+- Retryable `AppContext.close()` teardown: separated close lifecycle into `_close_requested`
+  and `_resources_closed` flags; initial close call sets `stop_flag` and safely yields if the
+  ghost daemon is still busy, while subsequent `close()` calls retry and complete shared SQLite
+  and temporary folder teardown once the thread finishes.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`39 passed in 4.36s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3803 passed, 6 skipped in 258.07s`).
+
 ## Unreleased - In-place tool DOM browser tests, guard shared stores during unfinished ghost sleep (no release)
 
 - In-place tool DOM and scroll browser tests: added lightweight Playwright browser integration
