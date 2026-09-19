@@ -13,7 +13,22 @@ EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 TASK_FLOW_PATH = ROOT / "codey" / "operations" / "task_flow.py"
 TASK_ENTRY_PATH = ROOT / "codey" / "operations" / "task_entry.py"
 TASK_RUN_PATH = ROOT / "codey" / "operations" / "task_run.py"
+TASK_PHASES_DIR = ROOT / "codey" / "operations" / "task_phases"
 APP_CONTEXT_PATH = ROOT / "codey" / "app" / "context.py"
+
+
+def task_phases_sources() -> str:
+    return "".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(TASK_PHASES_DIR.glob("*.py"))
+    )
+
+
+def task_phases_imports() -> set[str]:
+    imports: set[str] = set()
+    for path in sorted(TASK_PHASES_DIR.glob("*.py")):
+        imports |= imported_modules(path)
+    return imports
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -279,12 +294,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_operation_context_values_are_not_defined_by_task_flow(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
-        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
+        phases_source = task_phases_sources()
         context_source = (ROOT / "codey" / "operations" / "context.py").read_text(encoding="utf-8")
         result_source = (ROOT / "codey" / "operations" / "result.py").read_text(encoding="utf-8")
-        imports = imported_modules(TASK_RUN_PATH) | imported_modules(
-            ROOT / "codey" / "operations" / "task_run_phases.py"
-        )
+        imports = imported_modules(TASK_RUN_PATH) | task_phases_imports()
 
         self.assertIn("codey.operations.context", imports)
         self.assertIn("codey.operations.result", imports)
@@ -299,13 +312,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
-        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
+        phases_source = task_phases_sources()
         chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(encoding="utf-8")
 
         self.assertIn(
             "codey.operations.chat",
-            imported_modules(TASK_RUN_PATH)
-            | imported_modules(ROOT / "codey" / "operations" / "task_run_phases.py"),
+            imported_modules(TASK_RUN_PATH) | task_phases_imports(),
         )
         self.assertIn("def run_chat_mode", chat_source)
         self.assertIn("run_chat_mode(", task_run_source + phases_source)
@@ -315,7 +327,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_project_completion_logic_lives_in_project_completion_operation(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
-        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
+        phases_source = task_phases_sources()
         completion_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
 
         self.assertIn("def run_project_mode", completion_source)

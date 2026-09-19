@@ -9,6 +9,14 @@ from codey.toolchain.runtime import ToolOutcome
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TASK_PHASES_DIR = ROOT / "codey" / "operations" / "task_phases"
+
+
+def task_phases_sources() -> str:
+    return "".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(TASK_PHASES_DIR.glob("*.py"))
+    )
 
 
 class RunEventUiPayloadTests(unittest.TestCase):
@@ -71,7 +79,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
 
     def test_task_run_no_longer_owns_ui_event_projection(self) -> None:
         task_run_source = (ROOT / "codey" / "operations" / "task_run.py").read_text(encoding="utf-8")
-        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
+        phases_source = task_phases_sources()
         events_source = (ROOT / "codey" / "runtime" / "observe" / "events.py").read_text(encoding="utf-8")
 
         self.assertFalse((ROOT / "codey" / "task" / "service.py").exists())

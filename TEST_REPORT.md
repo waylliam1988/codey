@@ -1,5 +1,40 @@
 # Codey Test Report
 
+## Split task_run_phases into the task_phases package, verbatim motion only (2026-09-20)
+
+Scope:
+
+```text
+codey/operations/task_phases/ (new package, replaces task_run_phases.py):
+                             lifecycle.py (slot/workspace/ledger/operation),
+                             ghost.py (claim/route/policy deps),
+                             hooks.py (RunHooks assembly, failure fan-out),
+                             dispatch.py (deps/frame/dispatch/route trace),
+                             settlement.py (cancelled/error/mode finish),
+                             __init__.py re-exports cross-module surface
+codey/operations/task_run.py: imports from task_phases; thin orchestrator unchanged
+tests:                       4 mock paths moved to task_phases.ghost/dispatch;
+                             4 architecture/event assertions scan the package dir
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warning)
+- Targeted gate before the full run:
+  `python -m pytest tests/test_agent_effect_sandwich.py tests/test_task_entry_provider_preference.py tests/test_architecture.py tests/test_events.py tests/test_coldstart_review_batch.py -q`
+  (`128 passed, 317 subtests passed`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3823 passed, 6 skipped, 1300 subtests passed in 248.31s (0:04:08)`)
+  Identical counts to the pre-split run: motion without behavior change.
+- 26 moved definitions verified byte-identical per function (AST slices);
+  two dropped `@dataclass(frozen=True)` decorators restored.
+- No release.
+
 ## Findings follow-up: true N+1 removal, stratified sampling, close semantics, scorers to manual (2026-09-20)
 
 Scope:

@@ -2,6 +2,25 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - task_run_phases 拆成 task_phases 包，逐字搬运（未发布）
+
+- 删除 979 行 `operations/task_run_phases.py`，26 个定义经 AST 切片逐字搬运
+ （已逐函数校验字节一致）到新包 `operations/task_phases/`：`lifecycle.py`
+ （run 槽位、工作区、ledger、operation 开关）、`ghost.py`（work 认领/路由、
+  任务策略依赖）、`hooks.py`（RunHooks 装配、失败分发）、`dispatch.py`
+ （依赖装配、provider frame、模式分发、路由 trace）、`settlement.py`
+ （取消/错误/模式收尾），另有 `__init__` 重导出跨模块接口。最大模块
+  `dispatch.py` 约 305 行；`task_run.py` 仍是约 470 行编排器。
+- 修复两处切片产物，无逻辑改动：补回两个 `@dataclass(frozen=True)` 装饰器
+ （AST 切片起于 `class` 行）；9 个跨模块 helper 沿用之前转正的 public 名。
+- 仅更新引用：`task_run.py` 改从 `task_phases` import；4 处测试 mock 路径迁移
+ （claim/route 走 `ghost.*`，hybrid 走 `dispatch.*`）；4 处架构/event 断言改为
+  扫描包目录。无 fallback 垫片（冷启动）。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；聚焦回归
+  全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+ （`3823 passed, 6 skipped, 1300 subtests passed in 248.31s`，与拆分前计数一致，
+  确认只搬运无行为变化）。
+
 ## Unreleased - Findings 跟进：真 N+1 消除、分层 focus 采样、index 关闭语义、scorer 移 manual 层（未发布）
 
 - 修正 ruff 债务口径：`B/UP/I/SIM` 数字以

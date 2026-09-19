@@ -2,6 +2,35 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Split task_run_phases into the task_phases package, verbatim motion only (no release)
+
+- Deleted the 979-line `operations/task_run_phases.py` and moved its 26
+  definitions verbatim (verified byte-identical per function via AST slices)
+  into the new `operations/task_phases/` package: `lifecycle.py` (run slot,
+  workspace, ledger, operation open/close), `ghost.py` (work claim/route,
+  task-policy deps), `hooks.py` (RunHooks assembly, failure fan-out),
+  `dispatch.py` (deps builders, provider frame, mode dispatch, route trace),
+  `settlement.py` (cancelled/error/mode-outcome finish), plus an `__init__`
+  re-exporting the cross-module surface. Largest module is now
+  `dispatch.py` at ~305 lines; `task_run.py` stays a ~470-line orchestrator.
+- Two slice artifacts repaired with no logic change: the two
+  `@dataclass(frozen=True)` decorators (AST slicing starts at the
+  `class` line) were restored, and the 9 cross-module helpers keep the
+  public names introduced earlier (`open_run_trace`, `review_flow_deps`,
+  `ghost_task_deps`, `project_completion_deps`, `dispatch_run_mode`,
+  `open_run_ledger`, `start_run_operation`, `finish_run_operation`,
+  `record_route_trace`).
+- Reference updates only: `task_run.py` imports from `task_phases`; 4 test
+  mock paths moved (`ghost.*` for claim/route, `dispatch.*` for hybrid);
+  4 architecture/event assertions scan the package directory instead of the
+  deleted file. No fallback shims (cold start).
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; targeted regression (sandwich + provider preference + architecture +
+  events + review batch) green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3823 passed, 6 skipped, 1300 subtests passed in 248.31s` — identical
+  counts to the pre-split run, confirming motion without behavior change).
+
 ## Unreleased - Findings follow-up: true N+1 removal, stratified focus sampling, index close semantics, scorers to manual layer (no release)
 
 - Fixed the ruff-debt caliber: the `B/UP/I/SIM` numbers are scoped to

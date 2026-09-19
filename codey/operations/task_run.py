@@ -1,8 +1,9 @@
 """Task run lifecycle.
 
-Thin orchestrator around task_run_phases: run slot, provider task context,
+Thin orchestrator around task_phases: run slot, provider task context,
 trace/ledger wiring, and terminal settlement. Phase helpers live in
-task_run_phases so this module stays under the long-file guardrail.
+task_phases (split by concern: lifecycle, ghost, hooks, dispatch,
+settlement) so this module stays under the long-file guardrail.
 Mode behavior lives in the mode flow modules.
 """
 
@@ -18,7 +19,7 @@ from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
 from codey.operations.recovery import recover_effects_for_resume
-from codey.operations.task_run_phases import (
+from codey.operations.task_phases import (
     dispatch_run_mode,
     finish_run_operation,
     ghost_task_deps,
