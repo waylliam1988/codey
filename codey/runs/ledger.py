@@ -110,6 +110,13 @@ def _ledger_file_state(path: Path) -> _LedgerFileState:
     )
 
 
+def _stat_mtime_ns(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns if path.is_file() else 0
+    except OSError:
+        return 0
+
+
 @dataclass(frozen=True)
 class RunLedgerRecord:
     payload: dict[str, object]
@@ -164,6 +171,7 @@ class RunLedgerWriter:
         self.bytes_written = file_state.bytes_written
         self.truncated = file_state.truncated
         self.disabled = self.truncated
+        self._mtime_ns = _stat_mtime_ns(path)
         # Observable failure state (cold start, in-memory only): callers
         # and tests read these instead of guessing from missing rows.
         self.disabled_reason: str = "ledger_truncated" if self.truncated else ""
@@ -363,6 +371,7 @@ class RunLedgerWriter:
                 self._write_line_locked(line)
                 self.seq = int(payload["seq"])
                 self.bytes_written = next_size
+                self._mtime_ns = _stat_mtime_ns(self.path)
         except (OSError, TimeoutError, TypeError, ValueError) as exc:
             self.disabled = True
             self.disabled_reason = "ledger_write_failed"
@@ -371,16 +380,23 @@ class RunLedgerWriter:
     def _fast_file_state_locked(self) -> tuple[int, int, bool | None]:
         """In-memory seq/bytes fast path; None means fall back to a full scan.
 
-        The writer owns the file for its run, so when the on-disk size still
-        matches the last write the cached seq is authoritative and no parse
-        is needed. Any size drift (external truncation, concurrent writer,
-        crash recovery) falls back to _ledger_file_state.
+        The writer owns the file for its run, so when on-disk size *and*
+        mtime still match the last write the cached seq is authoritative and
+        no parse is needed. Any drift -- including a same-size content change,
+        which always bumps mtime -- falls back to _ledger_file_state, which
+        recomputes seq from content. Deliberate mtime-preserving tampering is
+        out of scope: the ledger is a local crash-recovery log, not a
+        tamper-evidence store.
         """
         try:
-            size = self.path.stat().st_size if self.path.is_file() else 0
+            stat = self.path.stat() if self.path.is_file() else None
         except OSError:
             return self.seq, self.bytes_written, self.truncated or None
-        if size == self.bytes_written:
+        if stat is None:
+            if self.bytes_written == 0:
+                return self.seq, self.bytes_written, self.truncated
+            return self.seq, self.bytes_written, None
+        if stat.st_size == self.bytes_written and stat.st_mtime_ns == self._mtime_ns:
             return self.seq, self.bytes_written, self.truncated
         return self.seq, self.bytes_written, None
 
@@ -396,6 +412,7 @@ class RunLedgerWriter:
         self._write_line_locked(line)
         self.seq = int(payload["seq"])
         self.bytes_written = current_bytes + len(line.encode("utf-8"))
+        self._mtime_ns = _stat_mtime_ns(self.path)
         self.disabled = True
         self.disabled_reason = "ledger_truncated"
 

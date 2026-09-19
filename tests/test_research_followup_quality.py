@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from codey.research.followup_quality import followup_usefulness, score_followup_quality_row
-from codey.research.source_finalizer_scoring import (
+from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
     score_source_finalizer_row,

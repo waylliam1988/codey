@@ -2,6 +2,53 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Findings follow-up: true N+1 removal, stratified focus sampling, index close semantics, scorers to manual layer (no release)
+
+- Fixed the ruff-debt caliber: the `B/UP/I/SIM` numbers are scoped to
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`950 total (B:35, UP:223, I:373, SIM:319), 678 fixable as of 2026-09-20`).
+  `ruff check .` adds 6 `tools/` findings (`956 total, 683 fixable`).
+- `knowledge/store.py` + `app/api.py`: removed the residual per-note N+1. New
+  `KnowledgeStore.read_notes_with_rows(ids)` returns `(note, index_row)` pairs
+  from a single `notes_by_ids()` round-trip (one conditional rebuild at most);
+  `research_notes_response` no longer calls `index.get` per note. Tests patch
+  `index.get` to `AssertionError` at both store and API layers.
+- `workspace/map.py`: focused scan keeps two stages but the remainder is no
+  longer an alphabetical prefix. Path-score positives parse first, then
+  zero-signal files are round-robined across top-level modules up to the parse
+  budget. Regression test: 120 `aaa/generic_*.py` + `zzz/z999.py` carrying the
+  only matching symbol (fails on the old code, passes now).
+- `knowledge/index.py`: close semantics fixed. `close()` sets a `_closed` flag
+  first, then closes every tracked connection; `_read_conn()` raises a clear
+  `RuntimeError("knowledge index is closed")` instead of handing out a stale
+  thread-local closed connection (`sqlite3.ProgrammingError` before).
+- `research` scorers moved to the manual layer: `followup_quality.py` and
+  `source_finalizer_scoring.py` now live in `tests/manual/research_scorers/`
+  (new package `__init__` re-exports the scorer surface); the 5 manual
+  harnesses and `tests/test_research_followup_quality.py` import from there.
+  Architecture now ratchets absence from `codey/research` plus the stdlib-leaf
+  check on the new paths. No production runtime imported them.
+- `runs/ledger.py`: the append fast path now requires size *and* `st_mtime_ns`
+  to match; any same-size content change bumps mtime and falls back to a full
+  rescan that recomputes seq from content. Documented contract: accidental
+  same-size corruption is detected; deliberate mtime-preserving tampering is
+  out of scope (local crash log, not tamper-evidence). Tests cover size drift
+  fallback and same-size tamper (monotonic unique seqs).
+- `operations/task_run_phases.py`: cross-module helpers are now public
+  (`open_run_trace`, `review_flow_deps`, `ghost_task_deps`,
+  `project_completion_deps`, `dispatch_run_mode`, `open_run_ledger`,
+  `start_run_operation`, `finish_run_operation`, `record_route_trace`); purely
+  internal helpers keep their underscores. `task_run.py` is the thin
+  orchestrator; no logic changed. Deeper splits (hooks/lifecycle/dispatch/
+  settlement/ghost) deliberately deferred per the no-logic-change rule.
+- Ghost direction unchanged: control plane stays unified, `accept/reject/work`
+  keep CLI semantics (not a bug).
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; focused regression (review batch + followup quality + architecture +
+  project map + knowledge + server) green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3823 passed, 6 skipped, 1300 subtests passed in 248.08s`).
+
 ## Unreleased - Cold-start review batch: unified Ghost control plane, bounded caches, safe paths, thin task runner (no release)
 
 - `workspace/paths.py`: `safe_join()` now rejects Windows reserved device names
@@ -49,7 +96,8 @@
   `start_provider_warmup(..., delay_s=0.0)` defaults to immediate while `serve()`
   passes `delay_s=2.0` so boot renders from the static provider catalog first.
 - `pyproject.toml`: updated the B/UP/I/SIM debt comment to the measured
-  `505 total (B:17, UP:187, I:181, SIM:120), 376 fixable`.
+  `ruff check codey tests --select B,UP,I,SIM` scope
+  (`950 total (B:35, UP:223, I:373, SIM:319), 678 fixable`).
 - Tests: new `tests/test_coldstart_review_batch.py` (10 tests: reserved names,
   budget filtering, excerpt cache, tracker LRU, static-cache eviction, CLI surface
   shapes, availability TTL, notes batch, ledger fast path); updated CLI

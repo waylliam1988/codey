@@ -105,7 +105,15 @@ class KnowledgeStore:
         return self._read_indexed_note(note_id)
 
     def read_notes(self, note_ids: list[str]) -> dict[str, KnowledgeNote]:
-        """Batch read; single index round-trip, no rebuild amplification."""
+        return {
+            note_id: note
+            for note_id, (note, _row) in self.read_notes_with_rows(note_ids).items()
+        }
+
+    def read_notes_with_rows(
+        self, note_ids: list[str]
+    ) -> dict[str, tuple[KnowledgeNote, dict]]:
+        """Batch read notes plus their index rows in one index round-trip."""
         seen: list[str] = []
         for raw in note_ids:
             text = str(raw or "").strip()
@@ -114,7 +122,7 @@ class KnowledgeStore:
         if not seen:
             return {}
         rows = self.index.notes_by_ids(seen)
-        out: dict[str, KnowledgeNote] = {}
+        out: dict[str, tuple[KnowledgeNote, dict]] = {}
         for row in rows:
             path_text = str(row.get("path") or "")
             if not path_text:
@@ -126,14 +134,24 @@ class KnowledgeStore:
                 note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 continue
-            out[str(row.get("id") or note.id)] = note
+            out[str(row.get("id") or note.id)] = (note, dict(row))
         if len(out) < len(seen) and not self._rebuilt_after_index_miss:
             self.rebuild()
-            for note_id in seen:
-                if note_id not in out:
-                    note = self._read_indexed_note(note_id)
-                    if note is not None:
-                        out[note_id] = note
+            rows = self.index.notes_by_ids(
+                [note_id for note_id in seen if note_id not in out]
+            )
+            for row in rows:
+                path_text = str(row.get("path") or "")
+                if not path_text:
+                    continue
+                path = self.root / path_text
+                try:
+                    if not path.is_file():
+                        continue
+                    note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
+                except (ValueError, OSError):
+                    continue
+                out[str(row.get("id") or note.id)] = (note, dict(row))
         return out
 
     def iter_note_paths(self):

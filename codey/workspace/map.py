@@ -491,10 +491,27 @@ def _scan_focus_candidates(
         paths_by_rel[rel] = path
         rels.append(rel)
     task_tokens = _tokens(task)
-    rels.sort(key=lambda rel: (-_cheap_path_score(rel, task_tokens), rel))
+    scored = [(_cheap_path_score(rel, task_tokens), rel) for rel in rels]
+    positives = [rel for score, rel in sorted(scored, key=lambda item: (-item[0], item[1])) if score > 0]
+    remainder = sorted(rel for score, rel in scored if score <= 0)
     parse_limit = MAX_SYMBOL_FILES if MAX_SYMBOL_FILES > 0 else MAX_FOCUS_SCAN_FILES
+    # Probe complement (cold start: no index): positives first, then round-robin
+    # across top-level modules so one big alphabetical module cannot starve the
+    # rest. Zero-signal files are never taken as a pure alphabetical prefix.
+    ordered = list(positives)
+    if len(ordered) < parse_limit and remainder:
+        by_module: dict[str, list[str]] = {}
+        for rel in remainder:
+            by_module.setdefault(_focus_root(rel), []).append(rel)
+        modules = sorted(by_module)
+        index = 0
+        while len(ordered) < parse_limit and any(by_module[m] for m in modules):
+            module = modules[index % len(modules)]
+            index += 1
+            if by_module[module]:
+                ordered.append(by_module[module].pop(0))
     candidates: list[FocusCandidate] = []
-    for rel in rels[:parse_limit]:
+    for rel in ordered[:parse_limit]:
         path = paths_by_rel[rel]
         symbols = _symbols_for_file(path)
         if not symbols:

@@ -30,11 +30,14 @@ class KnowledgeIndex:
         self._local = threading.local()
         self._read_conns: set[sqlite3.Connection] = set()
         self._read_conns_lock = threading.Lock()
+        self._closed = False
         self.fts_enabled = self._detect_fts()
         self._create_schema()
 
     def _read_conn(self) -> sqlite3.Connection:
         """Thread-local read connection; writes stay on _conn under _lock."""
+        if self._closed:
+            raise RuntimeError("knowledge index is closed")
         conn = getattr(self._local, "conn", None)
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -43,9 +46,12 @@ class KnowledgeIndex:
                 conn.execute("PRAGMA busy_timeout=5000")
             except sqlite3.OperationalError:
                 pass
-            self._local.conn = conn
             with self._read_conns_lock:
+                if self._closed:
+                    conn.close()
+                    raise RuntimeError("knowledge index is closed")
                 self._read_conns.add(conn)
+            self._local.conn = conn
         return conn
 
     def _detect_fts(self) -> bool:
@@ -431,6 +437,8 @@ class KnowledgeIndex:
         return _unique_rows([dict(r) for r in rows], limit, unique_keys)
 
     def close(self) -> None:
+        with self._lock:
+            self._closed = True
         with self._read_conns_lock:
             read_conns, self._read_conns = set(self._read_conns), set()
         for conn in read_conns:
@@ -440,7 +448,10 @@ class KnowledgeIndex:
                 pass
         with self._lock:
             self._local.conn = None
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
 
 
 def _fts_query(query: str) -> str:

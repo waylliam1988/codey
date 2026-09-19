@@ -190,16 +190,57 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     store.write_note(KnowledgeNote(
                         id=note_id, title=note_id, body=f"body {note_id}", type="fact",
                     ))
-                with mock.patch.object(
-                    store.index, "notes_by_ids", wraps=store.index.notes_by_ids
-                ) as spy:
-                    notes = store.read_notes(["alpha", "beta", "missing"])
+                with (
+                    mock.patch.object(
+                        store.index, "notes_by_ids", wraps=store.index.notes_by_ids
+                    ) as spy,
+                    mock.patch.object(
+                        store.index, "get",
+                        side_effect=AssertionError("notes batch must not index.get per note"),
+                    ),
+                ):
+                    notes = store.read_notes_with_rows(["alpha", "beta"])
+                    self.assertEqual(spy.call_count, 1)
+                missing = store.read_notes_with_rows(["alpha", "beta", "missing"])
             finally:
                 store.close()
             self.assertIn("alpha", notes)
             self.assertIn("beta", notes)
-            self.assertNotIn("missing", notes)
             self.assertEqual(spy.call_count, 1)
+            for _note_id, (note, row) in notes.items():
+                self.assertTrue(note.id)
+                self.assertIn("path", row)
+            self.assertIn("alpha", missing)
+            self.assertNotIn("missing", missing)
+
+    def test_research_notes_response_has_no_per_note_index_get(self) -> None:
+        from codey.app import api as app_api
+        from codey.knowledge.note import KnowledgeNote
+        from codey.knowledge.store import KnowledgeStore
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(td)
+            try:
+                for note_id in ("alpha", "beta"):
+                    store.write_note(KnowledgeNote(
+                        id=note_id, title=note_id, body=f"body {note_id}", type="fact",
+                    ))
+                ctx = SimpleNamespace(knowledge_store=store)
+                with mock.patch.object(
+                    store.index, "get",
+                    side_effect=AssertionError("API layer must not index.get per note"),
+                ):
+                    status, payload = app_api.research_notes_response(
+                        ctx, {"ids": ["alpha", "beta", "missing"]}
+                    )
+            finally:
+                store.close()
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertIn("alpha", payload["notes"])
+            self.assertIn("beta", payload["notes"])
+            self.assertEqual(payload["missing"], ["missing"])
 
     def test_ledger_append_fast_path_avoids_full_rescan(self) -> None:
         from codey.runs.ledger import RunLedgerStore
@@ -215,6 +256,90 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             ):
                 writer.append("probe_event", note="fast")
             self.assertGreater(writer.seq, 0)
+
+    def test_ledger_fast_path_falls_back_on_size_drift(self) -> None:
+        from codey.runs.ledger import RunLedgerStore
+
+        with tempfile.TemporaryDirectory() as td:
+            store = RunLedgerStore(td)
+            writer = store.open(
+                run_id="r1", session_id="s1", project="p", task="t",
+                provider="deepseek", mode="project",
+            )
+            writer.append("first_event", note="one")
+            seq_before = writer.seq
+            # External append behind the writer's back: size drifts.
+            with writer.path.open("a", encoding="utf-8", newline="\n") as handle:
+                handle.write('{"schema_version":1,"seq":999,"type":"note","run_id":"r1","session_id":"s1"}\n')
+            writer.append("second_event", note="two")
+            self.assertGreater(writer.seq, seq_before + 1)
+
+    def test_ledger_fast_path_detects_same_size_content_change(self) -> None:
+        from codey.runs.ledger import RunLedgerStore, read_ledger
+
+        with tempfile.TemporaryDirectory() as td:
+            store = RunLedgerStore(td)
+            writer = store.open(
+                run_id="r1", session_id="s1", project="p", task="t",
+                provider="deepseek", mode="project",
+            )
+            writer.append("first_event", note="one")
+            raw = writer.path.read_bytes()
+            # Same-size corruption: flip bytes without changing the length.
+            tampered = bytearray(raw)
+            for index in range(len(tampered)):
+                if tampered[index : index + 1] not in (b"\n", b"{", b"}"):
+                    tampered[index] = ord("x")
+                    break
+            assert len(tampered) == len(raw)
+            writer.path.write_bytes(bytes(tampered))
+            writer.append("after_tamper", note="two")
+            rows = read_ledger(writer.path)
+            seqs = [row.payload.get("seq") for row in rows]
+            self.assertEqual(seqs, sorted(seqs))
+            self.assertEqual(len(set(seqs)), len(seqs))
+
+    def test_knowledge_index_close_fails_cleanly_on_reuse(self) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+        from codey.knowledge.index import KnowledgeIndex
+
+        with tempfile.TemporaryDirectory() as td:
+            index = KnowledgeIndex(Path(td) / "index.db")
+            try:
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    self.assertEqual(pool.submit(index.count).result(), 0)
+                    index.close()
+                    with self.assertRaisesRegex(RuntimeError, "closed"):
+                        pool.submit(index.count).result()
+            finally:
+                try:
+                    index.close()
+                except Exception:
+                    pass
+
+    def test_focused_scan_samples_across_modules_not_alphabetical_prefix(self) -> None:
+        from codey.workspace import map as project_map
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            crowded = root / "aaa"
+            crowded.mkdir()
+            for index in range(project_map.MAX_SYMBOL_FILES):
+                (crowded / f"generic_{index:03d}.py").write_text(
+                    "def generic_helper():\n    return True\n", encoding="utf-8"
+                )
+            late = root / "zzz"
+            late.mkdir()
+            # No task tokens in the path: only the symbol body matches, so the
+            # file scores zero on path alone and must survive remainder sampling.
+            (late / "z999.py").write_text(
+                "def target_magic_widget():\n    return True\n", encoding="utf-8"
+            )
+            focused = project_map.build_focused_subtree_overview(
+                root, "target magic widget"
+            )
+            symbol_map = project_map.build_symbol_overview(root, "target magic widget")
+        self.assertIn("target_magic_widget", focused + symbol_map)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,42 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Findings 跟进：真 N+1 消除、分层 focus 采样、index 关闭语义、scorer 移 manual 层（未发布）
+
+- 修正 ruff 债务口径：`B/UP/I/SIM` 数字以
+  `ruff check codey tests --select B,UP,I,SIM` 为准
+ （`950 total (B:35, UP:223, I:373, SIM:319), 678 fixable as of 2026-09-20`）。
+  `ruff check .` 多 6 个 `tools/` 项（`956 total, 683 fixable`）。
+- `knowledge/store.py` + `app/api.py`：消除残留逐 note N+1。新增
+  `KnowledgeStore.read_notes_with_rows(ids)`，一次 `notes_by_ids()` 返回
+  `(note, index_row)`（最多一次条件 rebuild）；`research_notes_response` 不再逐 note
+  `index.get`。store 与 API 两层测试都把 `index.get` patch 成 `AssertionError` 锁死。
+- `workspace/map.py`：保留两阶段，但补集不再是字典序前缀。path 得分 >0 的先解析，
+  零信号文件按顶层 module 轮询补齐到解析预算。回归测试：120 个 `aaa/generic_*.py` +
+  唯一命中符号的 `zzz/z999.py`（旧代码失败，新代码通过）。
+- `knowledge/index.py`：修复关闭语义。`close()` 先置 `_closed` 标志再关所有连接；
+  `_read_conn()` 返回清晰的 `RuntimeError("knowledge index is closed")`，不再把
+  线程局部旧连接交出去（之前是 `sqlite3.ProgrammingError`）。
+- research scorer 移 manual 层：`followup_quality.py` 与
+  `source_finalizer_scoring.py` 搬到 `tests/manual/research_scorers/`（新包
+  `__init__` 重导出 scorer 接口）；5 个 manual harness 与
+  `tests/test_research_followup_quality.py` 改从新路径 import。架构测试改为断言
+  `codey/research` 下不存在这俩文件 + 新路径 stdlib-leaf 检查。生产运行时本来就没 import 它们。
+- `runs/ledger.py`：快路径要求 size 与 `st_mtime_ns` 同时命中；同尺寸内容变化一定
+  推高 mtime，从而回落全量扫描按内容重算 seq。契约写明：意外同尺寸损坏可检出；
+  蓄意保留 mtime 的篡改不在范围（本地 crash 日志，非防篡改存储）。测试覆盖 size
+  漂移回落与同尺寸篡改（seq 单调唯一）。
+- `operations/task_run_phases.py`：跨模块 helper 转正（`open_run_trace`、
+  `review_flow_deps`、`ghost_task_deps`、`project_completion_deps`、
+  `dispatch_run_mode`、`open_run_ledger`、`start_run_operation`、
+  `finish_run_operation`、`record_route_trace`）；纯内部 helper 保留下划线。
+  `task_run.py` 仍是薄编排器，无逻辑改动。更深拆分（hooks/lifecycle/dispatch/
+  settlement/ghost）按不改逻辑原则留待下次。
+- Ghost 方向不变：控制面保持统一，`accept/reject/work` 保留 CLI 语义（不是 bug）。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；聚焦回归
+  全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+ （`3823 passed, 6 skipped, 1300 subtests passed in 248.08s`）。
+
 ## Unreleased - 冷启动复查合集：Ghost 控制面统一、有界缓存、安全路径、任务主流程瘦身（未发布）
 
 - `workspace/paths.py`：`safe_join()` 在 `os.name == "nt"` 时拒绝 Windows 保留设备名
@@ -39,7 +75,8 @@
  （测试用 `reset_provider_availability_cache()`；warmup 会刷新）；
   `start_provider_warmup(..., delay_s=0.0)` 默认立即，`serve()` 传 `delay_s=2.0`，
   首屏先走静态 provider catalog。
-- `pyproject.toml`：B/UP/I/SIM 债务注释更新为实测 `505 total (B:17, UP:187, I:181, SIM:120), 376 fixable`。
+- `pyproject.toml`：B/UP/I/SIM 债务注释更新为实测 `ruff check codey tests --select B,UP,I,SIM` 口径
+（`950 total (B:35, UP:223, I:373, SIM:319), 678 fixable`）。
 - 测试：新增 `tests/test_coldstart_review_batch.py`（10 个：保留名、预算过滤、excerpt 缓存、
   tracker LRU、静态缓存淘汰、CLI surface 形状、可用性 TTL、notes 批量、ledger 快路径）；
   同步更新 CLI reset/delete-scope 断言、architecture 守卫覆盖 `task_run_phases.py`、

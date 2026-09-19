@@ -1165,11 +1165,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_research_followup_scorers_are_pure_leaf_modules(self) -> None:
         for path in (
             ROOT / "codey" / "research" / "followup_selection.py",
-            ROOT / "codey" / "research" / "followup_quality.py",
-            ROOT / "codey" / "research" / "source_finalizer_scoring.py",
+            ROOT / "tests" / "manual" / "research_scorers" / "followup_quality.py",
+            ROOT / "tests" / "manual" / "research_scorers" / "source_finalizer_scoring.py",
         ):
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
                 self._assert_stdlib_leaf(path)
+
+    def test_experiment_scorers_stay_out_of_production_research(self) -> None:
+        # A/B scorer helpers are manual-layer only; if they drift back into
+        # codey/research they become unowned dead code, so ratchet their absence.
+        for name in ("followup_quality.py", "source_finalizer_scoring.py"):
+            with self.subTest(module=name):
+                self.assertFalse(
+                    (ROOT / "codey" / "research" / name).exists(),
+                    f"experiment scorer belongs in tests/manual/research_scorers: {name}",
+                )
 
     def test_research_regression_gate_production_module_is_gone(self) -> None:
         self.assertFalse((ROOT / "codey" / "research" / "regression_gate.py").exists())

@@ -163,7 +163,7 @@ def build_run_work(
         workspace_revision=workspace_state.revision,
         workspace_fingerprint=workspace_state.fingerprint,
     )
-    started_ok = _start_run_operation(
+    started_ok = start_run_operation(
         deps,
         work,
         session_id=session_id,
@@ -489,7 +489,7 @@ def settle_cancelled_run(
         deps.run_ledgers, stopped_event, session_id=session_id, run_id=run_id
     )
     if work is not None:
-        _finish_run_operation(deps, work, stopped_event)
+        finish_run_operation(deps, work, stopped_event)
     finish_trace(stopped_event)
     state.finish_run(run_id, stopped_event)
     release_work_item(
@@ -570,7 +570,7 @@ def settle_error_run(
         deps.run_ledgers, error_event, session_id=session_id, run_id=run_id
     )
     if work is not None:
-        _finish_run_operation(deps, work, error_event)
+        finish_run_operation(deps, work, error_event)
     finish_trace(error_event)
     state.finish_run(run_id, error_event)
     current_work_item = work.claimed_work_item if work is not None else None
@@ -600,7 +600,7 @@ def finish_mode_outcome(
         append_ledger=append_ledger, finish_trace=finish_trace,
     )
 
-def _open_trace(
+def open_run_trace(
     deps: Any,
     session_id: str,
     run_id: str,
@@ -644,7 +644,7 @@ def _workspace_edit_event(event: RunEvent) -> bool:
     )
 
 
-def _review_deps(deps: Any) -> ReviewFlowDeps:
+def review_flow_deps(deps: Any) -> ReviewFlowDeps:
     return ReviewFlowDeps(
         state=deps.state,
         collect_changes=deps.collect_changes,
@@ -677,7 +677,7 @@ def _planning_deps(deps: Any) -> PlanningFlowDeps:
     )
 
 
-def _ghost_deps(deps: Any, review_deps: ReviewFlowDeps) -> GhostTaskPolicyDeps:
+def ghost_task_deps(deps: Any, review_deps: ReviewFlowDeps) -> GhostTaskPolicyDeps:
     return GhostTaskPolicyDeps(
         state=deps.state,
         run_ledgers=deps.run_ledgers,
@@ -692,7 +692,7 @@ def _ghost_deps(deps: Any, review_deps: ReviewFlowDeps) -> GhostTaskPolicyDeps:
     )
 
 
-def _project_completion_deps(deps: Any) -> ProjectCompletionDeps:
+def project_completion_deps(deps: Any) -> ProjectCompletionDeps:
     return ProjectCompletionDeps(
         state=deps.state,
         agent=AgentAccess(
@@ -725,7 +725,7 @@ def _project_completion_deps(deps: Any) -> ProjectCompletionDeps:
     )
 
 
-def _dispatch_mode(
+def dispatch_run_mode(
     deps: Any,
     project_completion_deps: ProjectCompletionDeps,
     review_deps: ReviewFlowDeps,
@@ -806,7 +806,7 @@ def _dispatch_mode(
     )
 
 
-def _open_ledger(
+def open_run_ledger(
     deps: Any,
     work: RunWork,
     request: TaskSubmission,
@@ -834,7 +834,7 @@ def _open_ledger(
             work.ledger = None
 
 
-def _start_run_operation(
+def start_run_operation(
     deps: Any,
     work: RunWork,
     *,
@@ -867,7 +867,7 @@ def _start_run_operation(
         return False
 
 
-def _finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> None:
+def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> None:
     if work.operation is None:
         return
     max_turns = int(event.get("max_turns") or 0)
@@ -905,7 +905,7 @@ def _finish_mode_outcome(
         session_id=frame.request.session_id,
         run_id=frame.run_id,
     )
-    _finish_run_operation(deps, work, event)
+    finish_run_operation(deps, work, event)
     finish_trace(event)
     deps.state.finish_run(frame.run_id, event)
     run_ghost_post_turn(
@@ -931,7 +931,7 @@ def _update_checkpoint_safely(deps: Any, work: RunWork, reason: str) -> None:
         pass
 
 
-def _record_route_trace(
+def record_route_trace(
     trace_sink: FailOpenPromptTrace,
     *,
     request: TaskSubmission,

@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Findings follow-up: true N+1 removal, stratified sampling, close semantics, scorers to manual (2026-09-20)
+
+Scope:
+
+```text
+pyproject.toml:              debt caliber fixed to `ruff check codey tests` scope
+                             (950 total / 678 fixable; full repo 956 / 683)
+codey/knowledge/store.py + app/api.py:
+                             read_notes_with_rows returns (note, row) in one
+                             notes_by_ids round-trip; no per-note index.get
+codey/workspace/map.py:      positives first, zero-signal remainder round-robin
+                             across top-level modules up to parse budget
+codey/knowledge/index.py:    _closed flag; _read_conn raises RuntimeError after
+                             close; close() releases every tracked connection
+tests/manual/research_scorers/ (new package):
+                             followup_quality.py + source_finalizer_scoring.py
+                             moved out of codey/research; 5 harnesses + gate test
+                             re-pointed; architecture ratchets absence + leaf check
+codey/runs/ledger.py:        fast path requires size + st_mtime_ns; same-size
+                             change falls back to content rescan (contract noted)
+codey/operations/task_run_phases.py:
+                             cross-module helpers made public; internals stay
+                             private; task_run.py thin orchestrator, no logic change
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warning)
+- Focused gate before the full run:
+  `python -m pytest tests/test_coldstart_review_batch.py tests/test_research_followup_quality.py tests/test_architecture.py tests/test_workspace_project_map.py tests/test_knowledge.py tests/test_server.py -q`
+  (green)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3823 passed, 6 skipped, 1300 subtests passed in 248.08s (0:04:08)`)
+- No release.
+
 ## Cold-start review batch: unified Ghost control plane, bounded caches, safe paths, thin task runner (2026-09-20)
 
 Scope:
@@ -27,7 +67,8 @@ codey/knowledge/store.py + app/api.py:
 codey/runs/ledger.py:        in-memory seq/bytes fast path, full rescan only on drift
 codey/app/services.py + server.py:
                              3s provider availability TTL; serve() warmup delay_s=2.0
-pyproject.toml:              debt comment -> 505 total (B:17, UP:187, I:181, SIM:120)
+pyproject.toml:              debt comment -> codey-tests scope
+                             (950 total / 678 fixable; corrected in follow-up entry)
 tests:                       new test_coldstart_review_batch (10 tests); updated CLI,
                              architecture, sandwich, server, events, inbox expectations
 docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md

@@ -19,15 +19,15 @@ from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
 from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_run_phases import (
-    _dispatch_mode,
-    _finish_run_operation,
-    _ghost_deps,
-    _open_ledger,
-    _open_trace,
-    _project_completion_deps,
-    _record_route_trace,
-    _review_deps,
-    _start_run_operation,
+    dispatch_run_mode,
+    finish_run_operation,
+    ghost_task_deps,
+    open_run_ledger,
+    open_run_trace,
+    project_completion_deps,
+    record_route_trace,
+    review_flow_deps,
+    start_run_operation,
     build_hooks,
     build_run_work,
     claim_or_route_ghost_work,
@@ -146,7 +146,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
     request = reservation.request
     run_id = reservation.run_id
 
-    trace = _open_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
+    trace = open_run_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
     trace_sink = FailOpenPromptTrace(trace)
     project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
 
@@ -171,8 +171,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
     state.run_registry.set_last_provider_failure(None)
     previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
 
-    review_deps = _review_deps(deps)
-    ghost_deps = _ghost_deps(deps, review_deps)
+    review_deps = review_flow_deps(deps)
+    ghost_deps = ghost_task_deps(deps, review_deps)
     route_result = None
 
     def _fail_early(
@@ -191,7 +191,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             work=current_work,
         )
         if current_work is not None:
-            _finish_run_operation(deps, current_work, error_event)
+            finish_run_operation(deps, current_work, error_event)
         finish_trace(error_event)
         state.finish_run(run_id, error_event)
         run_ghost_post_turn(
@@ -295,7 +295,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             state.finish_run(run_id, stopped_event)
             return operation_outcome_from_task_done_event(stopped_event)
 
-        _record_route_trace(
+        record_route_trace(
             trace_sink,
             request=request,
             baseline_task_kind=baseline_task_kind,
@@ -318,8 +318,8 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             "intent": request.intent,
         })
 
-        project_completion_deps = _project_completion_deps(deps)
-        _open_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
+        completion_deps = project_completion_deps(deps)
+        open_run_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
 
         hooks = build_hooks(
             deps,
@@ -331,7 +331,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             max_turns=max_turns,
             project_config_ignored=project_config_result.config.ignored_paths,
             review_log_lines=deps.review_log_lines,
-            project_completion_deps=project_completion_deps,
+            project_completion_deps=completion_deps,
             current_provider_id=lambda: frame.provider_id if frame is not None else provider_id,
         )
 
@@ -356,9 +356,9 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 preflight_switches=0,
                 trace=trace,
             )
-            outcome = _dispatch_mode(
+            outcome = dispatch_run_mode(
                 deps,
-                project_completion_deps,
+                completion_deps,
                 review_deps,
                 work,
                 frame,
@@ -394,9 +394,9 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         conversation = frame.conversation
 
-        outcome = _dispatch_mode(
+        outcome = dispatch_run_mode(
             deps,
-            project_completion_deps,
+            completion_deps,
             review_deps,
             work,
             frame,
@@ -462,7 +462,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
 
 __all__ = [
     "TaskRunDeps",
-    "_start_run_operation",
+    "start_run_operation",
     "execute_task_run",
     "prepare_submission",
     "record_provider_failure_event",

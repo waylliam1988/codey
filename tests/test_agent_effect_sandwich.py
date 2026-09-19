@@ -27,7 +27,7 @@ from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
-from codey.operations.task_run import TaskRunDeps, _start_run_operation
+from codey.operations.task_run import TaskRunDeps, start_run_operation as _start_run_operation
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runtime.effects.effect_records import (

@@ -41,7 +41,7 @@ from codey.research import runner as runner_module
 from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
 from codey.research.runner import ResearchRunner
-from codey.research.source_finalizer_scoring import (
+from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
     rate_rows,

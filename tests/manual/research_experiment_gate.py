@@ -21,8 +21,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.research.followup_quality import followup_usefulness
-from codey.research.source_finalizer_scoring import (
+from tests.manual.research_scorers.followup_quality import followup_usefulness
+from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
 )

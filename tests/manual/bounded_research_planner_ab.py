@@ -56,7 +56,7 @@ from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.evidence_followup import run_evidence_followup
 import codey.research.followup_selection as followup_selection
 import codey.research.pipeline as pipeline_module
-from codey.research.followup_quality import followup_usefulness, score_followup_quality_row
+from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
