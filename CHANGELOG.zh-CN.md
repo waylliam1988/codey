@@ -2,6 +2,53 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 冷启动复查合集：Ghost 控制面统一、有界缓存、安全路径、任务主流程瘦身（未发布）
+
+- `workspace/paths.py`：`safe_join()` 在 `os.name == "nt"` 时拒绝 Windows 保留设备名
+ （`CON/PRN/AUX/NUL/COM1-9/LPT1-9`，含 `NUL.txt` 这类 stem）；`bounded_directory_entries()`
+  改为先过滤隐藏文件再消耗 entry 预算，dotfile 不再吞预算。无兼容 fallback，fail closed。
+- `workspace/bounded_scan.py` + `workspace/map.py`：excluded 目录先过滤再计入单目录
+  entry 预算（另有 raw 迭代安全上限）；focused 子树扫描改为两阶段（先廉价路径打分，
+  只对 top `MAX_SYMBOL_FILES` 解析符号），`MAX_FOCUS_TOTAL_BYTES` 从 8MB 降到 4MB。
+- `storage/ui_state_store.py`：`visible_session_excerpt()` 改走内存 `_current()` 缓存，
+  不再每次重读/重解析最多 16MB 的 `ui-state.json`。
+- `app/context.py`：`change_trackers` 改为 `OrderedDict` LRU，上限
+  `MAX_CHANGE_TRACKERS = 32`；淘汰只丢内存 tracker（持久化 snapshot 留在磁盘，被淘汰者
+  调 `disable_persistence()`）。
+- `app/http_plumbing.py`：`_STATIC_CACHE` 改为 `OrderedDict`，
+  `MAX_STATIC_CACHE_ENTRIES = 64` / `MAX_STATIC_CACHE_BYTES = 8MB`；命中 move-to-end，
+  插入后从最旧开始淘汰。纯内存，无磁盘 fallback。
+- `ghost/control_surface.py` + `app/cli.py`：统一 Ghost 控制面（Ghost 保留，只收敛）。
+  CLI 改为一次 `GhostControlSurface.from_state_home()`，不再手动拼 8 个 store；
+  `export` 走 `surface.export_state()`，`reset` / `delete-scope` / `enable/disable`
+  走 `surface.dispatch_action()`。`dispatch_action(review)` 支持 `reviewed_by`
+ （默认 `ui`，CLI 传 `cli`）。accept/reject/work 保持 CLI 语义（按 id，无 UI scope 门禁）。
+- `operations/task_run.py` + 新增 `operations/task_run_phases.py`：把 606 行
+  `execute_task_run` 按行为边界拆成纯函数（`ensure_run_reserved_and_started`、
+  `build_run_work`、`claim_or_route_ghost_work`、`build_hooks`、
+  `connect_and_build_frame`、`settle_cancelled_run`、`settle_error_run`、
+  `finish_mode_outcome`），只搬代码不改逻辑。`task_run.py` 瘦到约 470 行。
+- `knowledge/index.py`：写仍走单 `_conn` + `_lock`；读（`get/count/resolve/search/recent/notes_by_ids/links/tags/concept`）
+  改走线程本地只读连接（WAL 已开），`close()` 关闭所有线程的读连接。写锁不去掉。
+- `knowledge/store.py` + `app/api.py`：新增 `KnowledgeStore.read_notes(ids)` 批量读
+ （一次 `notes_by_ids`，最多一次条件 rebuild）；`research_notes_response` 改用批量，
+  不再 64 次循环 `read_note`。
+- `runs/ledger.py`：`RunLedgerWriter._append_payload` 增加内存 seq/bytes 快路径
+ （锁内 stat 大小一致则不全量解析）；仅大小漂移时回落全量扫描。截断/预算语义不变。
+- `app/services.py` + `app/server.py`：provider 可用性加 3s TTL 缓存
+ （测试用 `reset_provider_availability_cache()`；warmup 会刷新）；
+  `start_provider_warmup(..., delay_s=0.0)` 默认立即，`serve()` 传 `delay_s=2.0`，
+  首屏先走静态 provider catalog。
+- `pyproject.toml`：B/UP/I/SIM 债务注释更新为实测 `505 total (B:17, UP:187, I:181, SIM:120), 376 fixable`。
+- 测试：新增 `tests/test_coldstart_review_batch.py`（10 个：保留名、预算过滤、excerpt 缓存、
+  tracker LRU、静态缓存淘汰、CLI surface 形状、可用性 TTL、notes 批量、ledger 快路径）；
+  同步更新 CLI reset/delete-scope 断言、architecture 守卫覆盖 `task_run_phases.py`、
+  effect-sandwich/router 打桩路径。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦回归
+  （`261 passed, 2 skipped`）；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3817 passed, 6 skipped, 1304 subtests passed in 264.78s`）。
+
 ## Unreleased - 浏览器测试门禁收紧与 close 清理可重试（未发布）
 
 - 收紧 Playwright 浏览器测试门禁：`tests/test_ui_inplace_render.py` 在 CI 中遇到

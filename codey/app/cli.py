@@ -118,27 +118,22 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
-    from codey.ghost.affinity import GhostAffinityStore
-    from codey.ghost.continuity import GhostContinuityStore, build_ghost_continuity
+    from codey.ghost.continuity import build_ghost_continuity
+    from codey.ghost.control_surface import GhostControlSurface
     from codey.ghost.directive import build_ghost_directive
-    from codey.ghost.hebbian import GhostHebbianStore
-    from codey.ghost.inbox import GhostInboxStore
-    from codey.ghost.router import GhostRouteStore
-    from codey.ghost.sleep import GhostSleepStore
-    from codey.ghost.store import GhostSignalStore
-    from codey.ghost.work_queue import GhostWorkQueueStore
     from codey.storage.local_store import DEFAULT_STATE_HOME
 
     state_home_arg = getattr(args, "state_home", "") or ""
     state_home = Path(state_home_arg).expanduser() if state_home_arg else DEFAULT_STATE_HOME
-    store = GhostInboxStore(state_home)
-    hebbian_store = GhostHebbianStore(state_home)
-    continuity_store = GhostContinuityStore(state_home)
-    router_store = GhostRouteStore(state_home)
-    sleep_store = GhostSleepStore(state_home)
-    work_queue_store = GhostWorkQueueStore(state_home)
-    affinity_store = GhostAffinityStore(state_home)
-    signal_store = GhostSignalStore(state_home)
+    surface = GhostControlSurface.from_state_home(state_home)
+    if not surface.available or surface.inbox is None:
+        _print_error_json("ghost store unavailable")
+        return 1
+    store = surface.inbox
+    hebbian_store = surface.hebbian
+    continuity_store = surface.continuity
+    affinity_store = surface.affinity
+    work_queue_store = surface.work_queue
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
         candidates = [
@@ -159,16 +154,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         })
         return 0
     if action == "export":
-        payload = store.export_state()
-        payload["signals"] = list(signal_store.read_all())
-        payload["hebbian"] = hebbian_store.export_state()
-        payload["continuity"] = continuity_store.export_state()
-        payload["router"] = router_store.export_state()
-        payload["sleep"] = sleep_store.export_state()
-        payload["work_queue"] = work_queue_store.export_state()
-        payload["affinity"] = affinity_store.export_state()
-        payload["ok"] = True
-        _print_json(payload)
+        _print_json(surface.export_state())
         return 0
     if action == "work-list":
         items = [
@@ -307,103 +293,36 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         if not getattr(args, "yes", False):
             _print_error_json("reset requires --yes")
             return 2
-        try:
-            ok = store.reset_all(preserve_settings=True)
-            hebbian_ok = hebbian_store.reset_all()
-            continuity_ok = continuity_store.reset_all()
-            router_ok = router_store.reset_all()
-            sleep_ok = sleep_store.reset_all()
-            work_queue_ok = work_queue_store.reset_all()
-            affinity_ok = affinity_store.reset_all()
-            signal_store.delete_all()
-        except OSError as exc:
-            _print_error_json(exc)
-            return 1
-        all_ok = ok and hebbian_ok and continuity_ok and router_ok and sleep_ok and work_queue_ok and affinity_ok
-        _print_json({
-            "schema_version": 1,
-            "ok": all_ok,
-            "hebbian_ok": hebbian_ok,
-            "continuity_ok": continuity_ok,
-            "router_ok": router_ok,
-            "sleep_ok": sleep_ok,
-            "work_queue_ok": work_queue_ok,
-            "affinity_ok": affinity_ok,
-        })
-        return 0 if all_ok else 1
+        status, payload = surface.dispatch_action({"action": "reset_all", "confirm": True})
+        _print_json(payload)
+        if status == 400:
+            return 2
+        return 0 if payload.get("ok") else 1
     if action == "delete-scope":
         if not getattr(args, "yes", False):
             _print_error_json("delete-scope requires --yes")
             return 2
-        try:
-            removed = store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            signal_removed = signal_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            hebbian_removed = hebbian_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            continuity_removed = continuity_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            router_removed = router_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            sleep_removed = sleep_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            work_queue_removed = work_queue_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-            affinity_removed = affinity_store.delete_scope(
-                args.scope_name,
-                project=getattr(args, "project", "") or "",
-                session_id=getattr(args, "session_id", "") or "",
-            )
-        except ValueError as exc:
-            _print_error_json(exc)
+        status, payload = surface.dispatch_action({
+            "action": "delete_scope",
+            "confirm": True,
+            "scope": getattr(args, "scope_name", ""),
+            "project": getattr(args, "project", "") or "",
+            "session_id": getattr(args, "session_id", "") or "",
+        })
+        _print_json(payload)
+        if status == 400:
             return 2
-        except (OSError, TypeError) as exc:
-            _print_error_json(exc)
-            return 1
-        _print_json({
-            "schema_version": 1,
-            "ok": True,
-            "removed_count": removed,
-            "signal_removed_count": signal_removed,
-            "hebbian_removed": hebbian_removed,
-            "continuity_removed_count": continuity_removed,
-            "router_removed_count": router_removed,
-            "sleep_removed": sleep_removed,
-            "work_queue_removed": work_queue_removed,
-            "affinity_removed": affinity_removed,
-        })
-        return 0
+        return 0 if payload.get("ok") else 1
     if action in {"enable", "disable"}:
-        enabled = action == "enable"
-        ok = store.set_learning_enabled(enabled)
+        _status, payload = surface.dispatch_action(
+            {"action": "enable_updates" if action == "enable" else "disable_updates"}
+        )
         _print_json({
             "schema_version": 1,
-            "ok": ok,
-            "learning_enabled": store.learning_enabled(),
+            "ok": payload.get("ok"),
+            "learning_enabled": payload.get("enabled", store.learning_enabled()),
         })
-        return 0 if ok else 1
+        return 0 if payload.get("ok") else 1
     _safe_print("ghost subcommand required", file=sys.stderr)
     return 2
 

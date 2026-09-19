@@ -279,15 +279,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_operation_context_values_are_not_defined_by_task_flow(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
+        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
         context_source = (ROOT / "codey" / "operations" / "context.py").read_text(encoding="utf-8")
         result_source = (ROOT / "codey" / "operations" / "result.py").read_text(encoding="utf-8")
-        imports = imported_modules(TASK_RUN_PATH)
+        imports = imported_modules(TASK_RUN_PATH) | imported_modules(
+            ROOT / "codey" / "operations" / "task_run_phases.py"
+        )
 
         self.assertIn("codey.operations.context", imports)
         self.assertIn("codey.operations.result", imports)
         for token in ("_RunFrame", "_RunWork", "_RunHooks", "_ModeOutcome", "_TaskSubmission"):
             with self.subTest(token=token):
                 self.assertNotIn(token, task_run_source)
+                self.assertNotIn(token, phases_source)
         self.assertIn("class RunFrame", context_source)
         self.assertIn("class RunWork", context_source)
         self.assertIn("class RunHooks", context_source)
@@ -295,27 +299,38 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_chat_mode_logic_lives_in_chat_operation(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
+        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
         chat_source = (ROOT / "codey" / "operations" / "chat.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.operations.chat", imported_modules(TASK_RUN_PATH))
+        self.assertIn(
+            "codey.operations.chat",
+            imported_modules(TASK_RUN_PATH)
+            | imported_modules(ROOT / "codey" / "operations" / "task_run_phases.py"),
+        )
         self.assertIn("def run_chat_mode", chat_source)
-        self.assertIn("run_chat_mode(", task_run_source)
+        self.assertIn("run_chat_mode(", task_run_source + phases_source)
         self.assertNotIn("chat_outbound_prompt", task_run_source)
+        self.assertNotIn("chat_outbound_prompt", phases_source)
         self.assertIn("chat_outbound_prompt", chat_source)
 
     def test_project_completion_logic_lives_in_project_completion_operation(self) -> None:
         task_run_source = TASK_RUN_PATH.read_text(encoding="utf-8")
+        phases_source = (ROOT / "codey" / "operations" / "task_run_phases.py").read_text(encoding="utf-8")
         completion_source = (ROOT / "codey" / "operations" / "project_completion_flow.py").read_text(encoding="utf-8")
 
         self.assertIn("def run_project_mode", completion_source)
         self.assertIn("WriterFailoverRunner", completion_source)
         self.assertIn("project_repair_context", completion_source)
         self.assertIn("build_task_receipt", completion_source)
-        self.assertIn("run_project_mode(", task_run_source)
+        self.assertIn("run_project_mode(", task_run_source + phases_source)
         self.assertNotIn("def _run_project_mode", task_run_source)
+        self.assertNotIn("def _run_project_mode", phases_source)
         self.assertNotIn("ReviewCoordinator", task_run_source)
+        self.assertNotIn("ReviewCoordinator", phases_source)
         self.assertNotIn("project_repair_context", task_run_source)
+        self.assertNotIn("project_repair_context", phases_source)
         self.assertNotIn("build_task_receipt(", task_run_source)
+        self.assertNotIn("build_task_receipt(", phases_source)
 
     def test_legacy_task_runner_module_is_gone(self) -> None:
         self.assertFalse((ROOT / "codey" / "app" / "task_runner.py").exists())

@@ -951,7 +951,8 @@ class GhostCliTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(code, 1)
             self.assertFalse(payload["ok"])
-            self.assertIn("disk unavailable", payload["error"])
+            self.assertTrue(payload["errors"])
+            self.assertTrue(any("inbox" in str(item) for item in payload["errors"]))
 
     def test_ghost_list_cli_outputs_json_without_provider_stack(self) -> None:
         with tempfile.TemporaryDirectory() as td:

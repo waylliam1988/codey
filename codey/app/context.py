@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from collections import OrderedDict
 from pathlib import Path
 from typing import cast
 
@@ -86,6 +87,7 @@ def _close_if_discarded(store: object) -> None:
 
 
 MAX_CONVERSATION_STATES = 32
+MAX_CHANGE_TRACKERS = 32
 RUN_EVENT_TYPES = {
     "task_start",
     "turn",
@@ -126,7 +128,7 @@ class AppContext:
         self.approvals = ApprovalRegistry()
         self.research_changes: dict[str, object] = {}
         self._research_change_sessions: dict[str, str] = {}
-        self.change_trackers: dict[str, ChangeTracker] = {}
+        self.change_trackers: OrderedDict[str, ChangeTracker] = OrderedDict()
         self.conversation_registry = ConversationRegistry(
             state_home,
             max_states=MAX_CONVERSATION_STATES,
@@ -374,7 +376,19 @@ class AppContext:
                     self.snapshot_store if persistent else None,
                 )
                 self.change_trackers[key] = tracker
+            else:
+                self.change_trackers.move_to_end(key)
+            self._evict_change_trackers_locked()
             return tracker
+
+    def _evict_change_trackers_locked(self) -> None:
+        """Drop oldest in-memory trackers only; durable snapshots stay on disk."""
+        while len(self.change_trackers) > MAX_CHANGE_TRACKERS:
+            _old_key, old_tracker = self.change_trackers.popitem(last=False)
+            try:
+                old_tracker.disable_persistence()
+            except Exception:
+                pass
 
     def reserve_run(
         self,

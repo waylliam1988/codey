@@ -392,7 +392,7 @@ class UiStateStore:
         if not target:
             return ""
         current = str(current_request or "").strip()
-        for session in self.load().get("sessions", []):
+        for session in self._current().get("sessions", []):
             if not isinstance(session, dict) or str(session.get("id") or "") != target:
                 continue
             messages = session.get("messages")

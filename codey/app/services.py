@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -68,8 +69,36 @@ def review_label(provider_id: str) -> str:
     return PROVIDER_LABELS.get(provider_id, provider_id)
 
 
+PROVIDER_AVAILABILITY_TTL_S = 3.0
+_AVAIL_LOCK = threading.Lock()
+_AVAIL_STATUSES: dict[str, bool] = {}
+_AVAIL_AT: list[float] = [0.0]
+
+
+def _note_availability_statuses(raw: dict[str, bool], now: float) -> None:
+    with _AVAIL_LOCK:
+        _AVAIL_STATUSES.clear()
+        _AVAIL_STATUSES.update(raw)
+        _AVAIL_AT[0] = now
+
+
+def reset_provider_availability_cache() -> None:
+    """Clear the CDP availability cache; tests call this to avoid cross-test bleed."""
+    _note_availability_statuses({}, 0.0)
+
+
 def provider_availability(ctx: Any) -> dict[str, bool]:
-    return provider_availability_from_statuses(ctx, provider_tab_availability())
+    import time as _time
+
+    now = _time.monotonic()
+    with _AVAIL_LOCK:
+        cached_at = _AVAIL_AT[0]
+        cached = dict(_AVAIL_STATUSES)
+    if cached and now - cached_at < PROVIDER_AVAILABILITY_TTL_S:
+        return provider_availability_from_statuses(ctx, cached)
+    raw = provider_tab_availability()
+    _note_availability_statuses(raw, now)
+    return provider_availability_from_statuses(ctx, raw)
 
 
 def provider_availability_from_statuses(
@@ -108,8 +137,11 @@ def provider_status_update(provider_id: str, available: bool) -> list[dict]:
 
 
 def run_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
+    import time as _time
+
     try:
         raw_statuses = runner()
+        _note_availability_statuses(dict(raw_statuses), _time.monotonic())
         statuses = provider_availability_from_statuses(ctx, raw_statuses)
         ctx.emit({"type": "providers", "providers": provider_payload(statuses)})
     except Exception as exc:
@@ -125,8 +157,19 @@ def run_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
             return
 
 
-def start_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
-    submit_browser_task(run_provider_warmup, ctx, runner)
+def start_provider_warmup(ctx: Any, runner=warm_provider_tabs, *, delay_s: float = 0.0) -> None:
+    """Queue warmup; serve() passes a short delay to stay off the boot path."""
+    import threading as _threading
+
+    def _delayed() -> None:
+        submit_browser_task(run_provider_warmup, ctx, runner)
+
+    if delay_s <= 0:
+        _delayed()
+        return
+    timer = _threading.Timer(delay_s, _delayed)
+    timer.daemon = True
+    timer.start()
 
 
 def emit_review(ctx: Any, session_id: str, text: str) -> None:
@@ -630,6 +673,7 @@ __all__ = [
     "provider_catalog",
     "provider_payload",
     "provider_status_update",
+    "reset_provider_availability_cache",
     "review_label",
     "reviewer_candidates",
     "run_consensus",

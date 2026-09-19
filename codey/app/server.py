@@ -531,7 +531,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             pass
 
     threading.Thread(target=_run_httpd, daemon=True).start()
-    app_services.start_provider_warmup(STATE)
+    app_services.start_provider_warmup(STATE, delay_s=2.0)
 
     def _run_webview() -> None:
         import webview

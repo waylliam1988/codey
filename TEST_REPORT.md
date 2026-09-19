@@ -1,5 +1,52 @@
 # Codey Test Report
 
+## Cold-start review batch: unified Ghost control plane, bounded caches, safe paths, thin task runner (2026-09-20)
+
+Scope:
+
+```text
+codey/workspace/paths.py:   safe_join rejects Windows reserved device names on nt;
+                             bounded_directory_entries filters hidden entries before budget
+codey/workspace/bounded_scan.py + map.py:
+                             excluded-first entry budget with raw safety cap;
+                             two-stage focused scan (cheap path score, top-N symbol parse);
+                             MAX_FOCUS_TOTAL_BYTES 8MB -> 4MB
+codey/storage/ui_state_store.py:
+                             visible_session_excerpt uses _current() cache, no disk re-read
+codey/app/context.py:        change_trackers OrderedDict LRU, MAX 32, snapshots stay on disk
+codey/app/http_plumbing.py:  _STATIC_CACHE OrderedDict, 64 entries / 8MB, oldest-first eviction
+codey/ghost/control_surface.py + app/cli.py:
+                             single GhostControlSurface.from_state_home; export/reset/
+                             delete-scope/enable-disable via surface; reviewed_by passthrough
+codey/operations/task_run.py + task_run_phases.py (new):
+                             606-line execute_task_run split into 8 pure phase helpers,
+                             verbatim motion, orchestrator ~470 lines
+codey/knowledge/index.py:    writes under _lock; reads on thread-local conns, close-all
+codey/knowledge/store.py + app/api.py:
+                             KnowledgeStore.read_notes batch; notes route single round-trip
+codey/runs/ledger.py:        in-memory seq/bytes fast path, full rescan only on drift
+codey/app/services.py + server.py:
+                             3s provider availability TTL; serve() warmup delay_s=2.0
+pyproject.toml:              debt comment -> 505 total (B:17, UP:187, I:181, SIM:120)
+tests:                       new test_coldstart_review_batch (10 tests); updated CLI,
+                             architecture, sandwich, server, events, inbox expectations
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warning)
+- Focused gate before the full run:
+  `python -m pytest tests/test_coldstart_review_batch.py tests/test_workspace_paths.py tests/test_ui_state_store.py tests/test_http_plumbing.py tests/test_bounded_scan.py tests/test_workspace_project_map.py tests/test_cli.py tests/test_server.py -q`
+  (`261 passed, 2 skipped`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3817 passed, 6 skipped, 1304 subtests passed in 264.78s (0:04:24)`)
+- No release.
+
 ## Strict browser-test gates and retryable close cleanup (2026-09-19)
 
 Scope:

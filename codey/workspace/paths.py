@@ -10,6 +10,31 @@ import stat
 from pathlib import Path, PurePosixPath
 
 
+_WINDOWS_RESERVED_STEMS = frozenset({
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+})
+
+
+def _reject_windows_reserved_names(rel: str, *, label: str) -> None:
+    """Reject Windows device names (cold start: no compat fallback, fail closed)."""
+    if os.name != "nt":
+        return
+    text = str(rel or "").replace("\\", "/")
+    for part in PurePosixPath(text).parts:
+        name = part.strip()
+        if not name or name in {".", ".."}:
+            continue
+        # Trailing dots/spaces are stripped by Windows, so "NUL. " is still NUL.
+        stem = name.split(".")[0].rstrip(" .").lower()
+        if stem in _WINDOWS_RESERVED_STEMS:
+            raise ValueError(f"path uses reserved device name ({label}): {rel}")
+
+
 def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Path:
     """Resolve ``rel`` under ``root`` and prevent relative path traversal.
 
@@ -17,6 +42,7 @@ def safe_join(root: str | Path, rel: str, *, label: str = "project root") -> Pat
     (``../../etc/passwd``); not an OS-level capability sandbox (symlink
     races / TOCTOU across directory swaps need the no-follow helpers).
     """
+    _reject_windows_reserved_names(str(rel), label=label)
     resolved_root = Path(root).expanduser().resolve()
     path = (resolved_root / str(rel)).resolve()
     if path != resolved_root and resolved_root not in path.parents:
@@ -182,13 +208,14 @@ def bounded_directory_entries(
         return [], True
     entries: list[Path] = []
     try:
-        for index, entry in enumerate(path.iterdir()):
+        for entry in path.iterdir():
             if check_cancel is not None:
                 check_cancel()
-            if index >= max_entries:
+            if not include_hidden and entry.name.startswith("."):
+                continue
+            if len(entries) >= max_entries:
                 return _sorted_entries(entries, sort_key), True
-            if include_hidden or not entry.name.startswith("."):
-                entries.append(entry)
+            entries.append(entry)
     except OSError:
         if swallow_errors:
             return [], False

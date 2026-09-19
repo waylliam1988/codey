@@ -133,13 +133,24 @@ def iter_bounded_files(
             return
         budget.dirs_seen += 1
         entries: list[Path] = []
+        raw_seen = 0
+        raw_cap = max(budget.max_dir_entries * 4, budget.max_dir_entries + 100)
         try:
-            for index, entry in enumerate(current.iterdir()):
+            for entry in current.iterdir():
                 cancellation.check()
-                if index >= budget.max_dir_entries:
+                raw_seen += 1
+                if entry.name.lower() in excluded_lower:
+                    if raw_seen >= raw_cap:
+                        budget.entry_limited = True
+                        break
+                    continue
+                if len(entries) >= budget.max_dir_entries:
                     budget.entry_limited = True
                     break
                 entries.append(entry)
+                if raw_seen >= raw_cap:
+                    budget.entry_limited = True
+                    break
         except OSError:
             continue
 

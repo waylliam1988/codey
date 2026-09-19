@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import OrderedDict
 import json
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -15,8 +16,11 @@ WEB_ASSET_TYPES = {
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
 }
+MAX_STATIC_CACHE_ENTRIES = 64
+MAX_STATIC_CACHE_BYTES = 8 * 1024 * 1024
 _STATIC_CACHE_LOCK = threading.Lock()
-_STATIC_CACHE: dict[tuple[str, str], "_StaticCacheEntry"] = {}
+_STATIC_CACHE: OrderedDict[tuple[str, str], "_StaticCacheEntry"] = OrderedDict()
+_STATIC_CACHE_BYTES = 0
 
 
 @dataclass(frozen=True)
@@ -136,6 +140,7 @@ def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
     with _STATIC_CACHE_LOCK:
         cached = _STATIC_CACHE.get(key)
         if cached is not None and cached.signature == signature:
+            _STATIC_CACHE.move_to_end(key)
             return cached
     body = path.read_bytes()
     if transform_name == "index":
@@ -146,8 +151,27 @@ def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
         etag=_static_etag(path, transform_name=transform_name, signature=signature),
     )
     with _STATIC_CACHE_LOCK:
-        _STATIC_CACHE[key] = entry
+        _put_static_cache_locked(key, entry)
     return entry
+
+
+def _put_static_cache_locked(key: tuple[str, str], entry: _StaticCacheEntry) -> None:
+    """Insert with entry+byte budgets; in-memory only, no disk fallback."""
+    global _STATIC_CACHE_BYTES
+    old = _STATIC_CACHE.get(key)
+    if old is not None:
+        _STATIC_CACHE_BYTES -= len(old.body)
+        del _STATIC_CACHE[key]
+    _STATIC_CACHE[key] = entry
+    _STATIC_CACHE_BYTES += len(entry.body)
+    while (
+        len(_STATIC_CACHE) > MAX_STATIC_CACHE_ENTRIES
+        or _STATIC_CACHE_BYTES > MAX_STATIC_CACHE_BYTES
+    ) and _STATIC_CACHE:
+        _old_key, evicted = _STATIC_CACHE.popitem(last=False)
+        _STATIC_CACHE_BYTES -= len(evicted.body)
+        if _old_key == key and not _STATIC_CACHE:
+            break
 
 
 def _static_etag(path: Path, *, transform_name: str, signature: tuple[int, int]) -> str:

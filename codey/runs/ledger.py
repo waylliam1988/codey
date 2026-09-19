@@ -340,16 +340,19 @@ class RunLedgerWriter:
             return
         try:
             with with_file_lock(self.path):
-                file_state = _ledger_file_state(self.path)
-                if file_state.truncated and not allow_after_truncation:
-                    self.seq = file_state.seq
-                    self.bytes_written = file_state.bytes_written
+                current_seq, current_bytes, truncated = self._fast_file_state_locked()
+                if truncated is None:
+                    file_state = _ledger_file_state(self.path)
+                    current_seq = file_state.seq
+                    current_bytes = file_state.bytes_written
+                    truncated = file_state.truncated
+                if truncated and not allow_after_truncation:
+                    self.seq = current_seq
+                    self.bytes_written = current_bytes
                     self.truncated = True
                     self.disabled = True
                     self.disabled_reason = "ledger_truncated"
                     return
-                current_seq = file_state.seq
-                current_bytes = file_state.bytes_written
                 payload = dict(payload)
                 payload["seq"] = current_seq + 1
                 line = _json_line(payload)
@@ -364,6 +367,22 @@ class RunLedgerWriter:
             self.disabled = True
             self.disabled_reason = "ledger_write_failed"
             self.last_error_reason = _clip(f"{type(exc).__name__}: {exc}", 120)
+
+    def _fast_file_state_locked(self) -> tuple[int, int, bool | None]:
+        """In-memory seq/bytes fast path; None means fall back to a full scan.
+
+        The writer owns the file for its run, so when the on-disk size still
+        matches the last write the cached seq is authoritative and no parse
+        is needed. Any size drift (external truncation, concurrent writer,
+        crash recovery) falls back to _ledger_file_state.
+        """
+        try:
+            size = self.path.stat().st_size if self.path.is_file() else 0
+        except OSError:
+            return self.seq, self.bytes_written, self.truncated or None
+        if size == self.bytes_written:
+            return self.seq, self.bytes_written, self.truncated
+        return self.seq, self.bytes_written, None
 
     def _append_truncated_once_locked(self, current_seq: int, current_bytes: int) -> None:
         if self.truncated:

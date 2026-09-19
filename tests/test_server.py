@@ -572,6 +572,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(payload, [{"id": "deepseek", "label": "DeepSeek", "available": True}])
 
     def test_provider_availability_reads_cdp_tabs_without_connecting(self) -> None:
+        app_services.reset_provider_availability_cache()
         with (
             mock.patch.object(
                 app_services,
@@ -590,6 +591,7 @@ class ProviderStatusTests(unittest.TestCase):
         connected.assert_not_called()
 
     def test_health_filter_excludes_open_provider_from_helpers(self) -> None:
+        app_services.reset_provider_availability_cache()
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             state.providers.supervisor.record_failure(
@@ -7153,7 +7155,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with(server.STATE)
+        warmup.assert_called_once_with(server.STATE, delay_s=2.0)
         _, kwargs = fake_webview.start.call_args
         self.assertFalse(kwargs["private_mode"])
         self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
@@ -7178,7 +7180,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
-        warmup.assert_called_once_with(server.STATE)
+        warmup.assert_called_once_with(server.STATE, delay_s=2.0)
         fallback.assert_called_once()
         self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/")
         self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))

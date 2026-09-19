@@ -2,6 +2,67 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start review batch: unified Ghost control plane, bounded caches, safe paths, thin task runner (no release)
+
+- `workspace/paths.py`: `safe_join()` now rejects Windows reserved device names
+  (`CON/PRN/AUX/NUL/COM1-9/LPT1-9`, including `NUL.txt` style stems) on `os.name == "nt"`;
+  `bounded_directory_entries()` filters hidden entries before consuming the entry
+  budget so dotfiles no longer eat the scan budget. No compat fallback: fail closed.
+- `workspace/bounded_scan.py` + `workspace/map.py`: excluded dirs are skipped before
+  the per-directory entry budget (with a raw-iteration safety cap); focused subtree
+  scan is two-stage (cheap path-score first, symbol parsing only for the top
+  `MAX_SYMBOL_FILES`) and `MAX_FOCUS_TOTAL_BYTES` drops from 8MB to 4MB.
+- `storage/ui_state_store.py`: `visible_session_excerpt()` now reads from the
+  in-memory `_current()` cache instead of re-reading/parsing up to 16MB of
+  `ui-state.json` on every call.
+- `app/context.py`: `change_trackers` is now an `OrderedDict` LRU capped at
+  `MAX_CHANGE_TRACKERS = 32`; eviction drops only the in-memory tracker
+  (durable snapshots stay on disk; evicted trackers get `disable_persistence()`).
+- `app/http_plumbing.py`: `_STATIC_CACHE` is now an `OrderedDict` with
+  `MAX_STATIC_CACHE_ENTRIES = 64` and `MAX_STATIC_CACHE_BYTES = 8MB`; hits move
+  to the end, inserts evict oldest first. In-memory only, no disk fallback.
+- `ghost/control_surface.py` + `app/cli.py`: unified Ghost control plane (Ghost is
+  kept, not removed). CLI builds one `GhostControlSurface.from_state_home()` instead
+  of eight manual stores; `export` uses `surface.export_state()`; `reset`,
+  `delete-scope`, `enable/disable` go through `surface.dispatch_action()`.
+  `dispatch_action(review)` now honors `reviewed_by` (`ui` default, `cli` from CLI).
+  Accept/reject/work transitions keep CLI semantics (by id, no UI scope gate).
+- `operations/task_run.py` + new `operations/task_run_phases.py`: split the 606-line
+  `execute_task_run` into pure phase helpers (`ensure_run_reserved_and_started`,
+  `build_run_work`, `claim_or_route_ghost_work`, `build_hooks`,
+  `connect_and_build_frame`, `settle_cancelled_run`, `settle_error_run`,
+  `finish_mode_outcome`) with verbatim code motion, no logic change. `task_run.py`
+  is now a ~470-line thin orchestrator; all phase wiring lives in phases.
+- `knowledge/index.py`: writes stay on the single `_conn` under `_lock`; reads
+  (`get/count/resolve/search/recent/notes_by_ids/links/tags/concept rows`) use
+  thread-local read connections (WAL already on) with a tracked set so `close()`
+  releases every thread's connection. No lock removal for writes.
+- `knowledge/store.py` + `app/api.py`: added `KnowledgeStore.read_notes(ids)` batch
+  read (single `notes_by_ids` round-trip, one conditional rebuild at most);
+  `research_notes_response` uses it instead of 64 sequential `read_note` calls.
+- `runs/ledger.py`: `RunLedgerWriter._append_payload` uses an in-memory
+  seq/bytes fast path (stat size check inside the file lock); full
+  `_ledger_file_state` rescan only on size drift. Truncation/budget semantics
+  unchanged.
+- `app/services.py` + `app/server.py`: provider availability gets a 3s TTL cache
+  (`reset_provider_availability_cache()` for tests; warmup refreshes it);
+  `start_provider_warmup(..., delay_s=0.0)` defaults to immediate while `serve()`
+  passes `delay_s=2.0` so boot renders from the static provider catalog first.
+- `pyproject.toml`: updated the B/UP/I/SIM debt comment to the measured
+  `505 total (B:17, UP:187, I:181, SIM:120), 376 fixable`.
+- Tests: new `tests/test_coldstart_review_batch.py` (10 tests: reserved names,
+  budget filtering, excerpt cache, tracker LRU, static-cache eviction, CLI surface
+  shapes, availability TTL, notes batch, ledger fast path); updated CLI
+  reset/delete-scope expectations to control-surface shapes, architecture guards
+  to cover `task_run_phases.py`, and effect-sandwich/router patches to the new
+  module paths.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused regression
+  (`test_coldstart_review_batch + workspace_paths + ui_state_store + http_plumbing + bounded_scan + workspace_project_map + cli + server`)
+  (`261 passed, 2 skipped`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3817 passed, 6 skipped, 1304 subtests passed in 264.78s`).
+
 ## Unreleased - Strict browser-test gates and retryable close cleanup (no release)
 
 - Tightened Playwright browser-test gates: `tests/test_ui_inplace_render.py` now fails fast

@@ -38,7 +38,7 @@ MAX_FOCUSED_SUBTREE_CHARS = 2_000
 MAX_FOCUS_SCAN_FILES = 1_000
 MAX_FOCUS_SCAN_DIRS = 350
 MAX_FOCUS_SOURCE_BYTES = 256 * 1024
-MAX_FOCUS_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_FOCUS_TOTAL_BYTES = 4 * 1024 * 1024
 MAX_FOCUS_MODULES = 1
 MAX_FOCUS_FILES_PER_MODULE = 8
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
@@ -365,7 +365,7 @@ def build_focused_subtree_overview(
     candidates, budget = _scan_focus_candidates(root, task, ignored_paths=ignored_paths)
     if not candidates:
         return ""
-    if len(candidates) <= MAX_SYMBOL_FILES and not budget.limited:
+    if budget.files_seen <= MAX_SYMBOL_FILES and not budget.limited:
         return ""
 
     modules = _focus_modules(candidates)
@@ -474,7 +474,10 @@ def _scan_focus_candidates(
         max_dir_entries=1_000,
         max_bytes=MAX_FOCUS_TOTAL_BYTES,
     )
-    candidates: list[FocusCandidate] = []
+    # Two-stage scan (cold start: no index, no cache): stage 1 collects paths
+    # only, cheap path-score picks top N, stage 2 reads symbols for those.
+    rels: list[str] = []
+    paths_by_rel: dict[str, Path] = {}
     for path in iter_bounded_files(
         root,
         excluded_dirs=EXCLUDED_DIRS,
@@ -483,8 +486,16 @@ def _scan_focus_candidates(
         allow_file=lambda item: _focus_source_file_allowed(root, item, ignored_paths),
     ):
         rel = _safe_relative(root, path)
-        if not rel:
+        if not rel or rel in paths_by_rel:
             continue
+        paths_by_rel[rel] = path
+        rels.append(rel)
+    task_tokens = _tokens(task)
+    rels.sort(key=lambda rel: (-_cheap_path_score(rel, task_tokens), rel))
+    parse_limit = MAX_SYMBOL_FILES if MAX_SYMBOL_FILES > 0 else MAX_FOCUS_SCAN_FILES
+    candidates: list[FocusCandidate] = []
+    for rel in rels[:parse_limit]:
+        path = paths_by_rel[rel]
         symbols = _symbols_for_file(path)
         if not symbols:
             continue
@@ -498,6 +509,18 @@ def _scan_focus_candidates(
             )
         )
     return candidates, budget
+
+
+def _cheap_path_score(rel: str, task_tokens: set[str]) -> int:
+    """Path-only score used before any file content is read."""
+    path_tokens = _tokens(rel.replace("/", " "))
+    basename_tokens = _tokens(Path(rel).stem)
+    score = 8 * len(task_tokens & path_tokens) + 6 * len(task_tokens & basename_tokens)
+    lower_rel = rel.lower()
+    for token in task_tokens:
+        if len(token) >= 4 and token in lower_rel:
+            score += 2
+    return score
 
 
 def _focus_dir_allowed(root: Path, path: Path, ignored_paths: Sequence[str] = ()) -> bool:

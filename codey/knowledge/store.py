@@ -104,6 +104,38 @@ class KnowledgeStore:
         self.rebuild()
         return self._read_indexed_note(note_id)
 
+    def read_notes(self, note_ids: list[str]) -> dict[str, KnowledgeNote]:
+        """Batch read; single index round-trip, no rebuild amplification."""
+        seen: list[str] = []
+        for raw in note_ids:
+            text = str(raw or "").strip()
+            if text and text not in seen:
+                seen.append(text)
+        if not seen:
+            return {}
+        rows = self.index.notes_by_ids(seen)
+        out: dict[str, KnowledgeNote] = {}
+        for row in rows:
+            path_text = str(row.get("path") or "")
+            if not path_text:
+                continue
+            path = self.root / path_text
+            try:
+                if not path.is_file():
+                    continue
+                note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            out[str(row.get("id") or note.id)] = note
+        if len(out) < len(seen) and not self._rebuilt_after_index_miss:
+            self.rebuild()
+            for note_id in seen:
+                if note_id not in out:
+                    note = self._read_indexed_note(note_id)
+                    if note is not None:
+                        out[note_id] = note
+        return out
+
     def iter_note_paths(self):
         for path in sorted(self.root.rglob("*.md")):
             if ".codey" in path.parts:

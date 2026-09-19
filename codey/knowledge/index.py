@@ -27,8 +27,26 @@ class KnowledgeIndex:
         except sqlite3.OperationalError:
             pass
         self._lock = threading.RLock()
+        self._local = threading.local()
+        self._read_conns: set[sqlite3.Connection] = set()
+        self._read_conns_lock = threading.Lock()
         self.fts_enabled = self._detect_fts()
         self._create_schema()
+
+    def _read_conn(self) -> sqlite3.Connection:
+        """Thread-local read connection; writes stay on _conn under _lock."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("PRAGMA busy_timeout=5000")
+            except sqlite3.OperationalError:
+                pass
+            self._local.conn = conn
+            with self._read_conns_lock:
+                self._read_conns.add(conn)
+        return conn
 
     def _detect_fts(self) -> bool:
         try:
@@ -163,23 +181,20 @@ class KnowledgeIndex:
             self._conn.commit()
 
     def get(self, note_id: str) -> dict | None:
-        with self._lock:
-            row = self._conn.execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
+        row = self._read_conn().execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
         return dict(row) if row else None
 
     def count(self) -> int:
-        with self._lock:
-            row = self._conn.execute("SELECT COUNT(*) FROM notes").fetchone()
+        row = self._read_conn().execute("SELECT COUNT(*) FROM notes").fetchone()
         return int(row[0])
 
     def resolve(self, target: str) -> str | None:
         if self.get(target):
             return target
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT id FROM notes WHERE title=? LIMIT 1",
-                (target,),
-            ).fetchone()
+        row = self._read_conn().execute(
+            "SELECT id FROM notes WHERE title=? LIMIT 1",
+            (target,),
+        ).fetchone()
         return row["id"] if row else None
 
     @staticmethod
@@ -192,35 +207,35 @@ class KnowledgeIndex:
         query = (query or "").strip()
         if not query:
             return []
-        with self._lock:
-            if self.fts_enabled:
-                try:
-                    rows = self._conn.execute(
-                        "SELECT n.id,n.type,n.title,n.status,n.confidence,n.updated,"
-                        "n.session_id,n.project,"
-                        " snippet(notes_fts,2,'','','...',12) AS snippet"
-                        " FROM notes_fts f JOIN notes n ON n.id=f.id"
-                        " WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?",
-                        (_fts_query(query), limit),
-                    ).fetchall()
-                    if rows:
-                        return [dict(r) for r in rows]
-                except sqlite3.OperationalError as exc:
-                    if "locked" in str(exc).lower():
-                        import logging
+        conn = self._read_conn()
+        if self.fts_enabled:
+            try:
+                rows = conn.execute(
+                    "SELECT n.id,n.type,n.title,n.status,n.confidence,n.updated,"
+                    "n.session_id,n.project,"
+                    " snippet(notes_fts,2,'','','...',12) AS snippet"
+                    " FROM notes_fts f JOIN notes n ON n.id=f.id"
+                    " WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (_fts_query(query), limit),
+                ).fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower():
+                    import logging
 
-                        logging.getLogger(__name__).warning(
-                            "knowledge index FTS locked, degraded to LIKE search"
-                        )
-                    pass
-            like = f"%{self._escape_like(query)}%"
-            rows = self._conn.execute(
-                "SELECT id,type,title,status,confidence,updated,session_id,project,"
-                " substr(body,1,160) AS snippet FROM notes"
-                " WHERE title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'"
-                " ORDER BY updated DESC LIMIT ?",
-                (like, like, limit),
-            ).fetchall()
+                    logging.getLogger(__name__).warning(
+                        "knowledge index FTS locked, degraded to LIKE search"
+                    )
+                pass
+        like = f"%{self._escape_like(query)}%"
+        rows = conn.execute(
+            "SELECT id,type,title,status,confidence,updated,session_id,project,"
+            " substr(body,1,160) AS snippet FROM notes"
+            " WHERE title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'"
+            " ORDER BY updated DESC LIMIT ?",
+            (like, like, limit),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def recent(
@@ -244,23 +259,21 @@ class KnowledgeIndex:
             args.extend(types)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         args.append(limit)
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT id,type,title,status,updated,session_id,project,body,open_questions FROM notes"
-                f"{where} ORDER BY updated DESC LIMIT ?",
-                tuple(args),
-            ).fetchall()
+        rows = self._read_conn().execute(
+            "SELECT id,type,title,status,updated,session_id,project,body,open_questions FROM notes"
+            f"{where} ORDER BY updated DESC LIMIT ?",
+            tuple(args),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def links_for(self, note_ids: list[str]) -> list[dict]:
         if not note_ids:
             return []
         marks = ",".join("?" * len(note_ids))
-        with self._lock:
-            rows = self._conn.execute(
-                f"SELECT src_id,dst_id,kind FROM links WHERE src_id IN ({marks})",
-                note_ids,
-            ).fetchall()
+        rows = self._read_conn().execute(
+            f"SELECT src_id,dst_id,kind FROM links WHERE src_id IN ({marks})",
+            note_ids,
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def notes_by_ids(self, note_ids: list[str]) -> list[dict]:
@@ -268,13 +281,12 @@ class KnowledgeIndex:
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT id,path,type,title,confidence,status,session_id,project,"
-                "created,updated,content_hash,body,open_questions FROM notes"
-                f" WHERE id IN ({marks})",
-                ids,
-            ).fetchall()
+        rows = self._read_conn().execute(
+            "SELECT id,path,type,title,confidence,status,session_id,project,"
+            "created,updated,content_hash,body,open_questions FROM notes"
+            f" WHERE id IN ({marks})",
+            ids,
+        ).fetchall()
         by_id = {str(row["id"]): dict(row) for row in rows}
         return [by_id[note_id] for note_id in ids if note_id in by_id]
 
@@ -283,12 +295,11 @@ class KnowledgeIndex:
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT src_id,dst_id,kind FROM links"
-                f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
-                (*ids, *ids),
-            ).fetchall()
+        rows = self._read_conn().execute(
+            "SELECT src_id,dst_id,kind FROM links"
+            f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
+            (*ids, *ids),
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def replace_links_touching(self, note_ids: list[str], links: list[dict]) -> None:
@@ -324,11 +335,10 @@ class KnowledgeIndex:
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        with self._lock:
-            rows = self._conn.execute(
-                f"SELECT note_id,source FROM sources WHERE note_id IN ({marks})",
-                ids,
-            ).fetchall()
+        rows = self._read_conn().execute(
+            f"SELECT note_id,source FROM sources WHERE note_id IN ({marks})",
+            ids,
+        ).fetchall()
         return [dict(r) for r in rows]
 
     def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[dict]:
@@ -336,19 +346,19 @@ class KnowledgeIndex:
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        with self._lock:
-            if active_only:
-                rows = self._conn.execute(
-                    "SELECT t.note_id,t.tag FROM tags t"
-                    " JOIN notes n ON n.id=t.note_id"
-                    f" WHERE n.status='active' AND t.note_id IN ({marks})",
-                    ids,
-                ).fetchall()
-            else:
-                rows = self._conn.execute(
-                    f"SELECT note_id,tag FROM tags WHERE note_id IN ({marks})",
-                    ids,
-                ).fetchall()
+        conn = self._read_conn()
+        if active_only:
+            rows = conn.execute(
+                "SELECT t.note_id,t.tag FROM tags t"
+                " JOIN notes n ON n.id=t.note_id"
+                f" WHERE n.status='active' AND t.note_id IN ({marks})",
+                ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT note_id,tag FROM tags WHERE note_id IN ({marks})",
+                ids,
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[dict]:
@@ -402,26 +412,34 @@ class KnowledgeIndex:
         unique_keys: tuple[str, ...],
     ) -> list[dict]:
         session_id = str(session_id or "").strip()
-        with self._lock:
-            rows = []
-            if session_id:
-                rows.extend(
-                    self._conn.execute(
-                        select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
-                        (session_id, limit),
-                    ).fetchall()
-                )
-            if len(rows) < limit:
-                rows.extend(
-                    self._conn.execute(
-                        select_sql + " ORDER BY n.updated DESC LIMIT ?",
-                        (limit,),
-                    ).fetchall()
-                )
+        conn = self._read_conn()
+        rows = []
+        if session_id:
+            rows.extend(
+                conn.execute(
+                    select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
+                    (session_id, limit),
+                ).fetchall()
+            )
+        if len(rows) < limit:
+            rows.extend(
+                conn.execute(
+                    select_sql + " ORDER BY n.updated DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            )
         return _unique_rows([dict(r) for r in rows], limit, unique_keys)
 
     def close(self) -> None:
+        with self._read_conns_lock:
+            read_conns, self._read_conns = set(self._read_conns), set()
+        for conn in read_conns:
+            try:
+                conn.close()
+            except Exception:
+                pass
         with self._lock:
+            self._local.conn = None
             self._conn.close()
 
 

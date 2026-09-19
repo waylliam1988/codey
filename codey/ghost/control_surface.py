@@ -213,7 +213,11 @@ class GhostControlSurface:
             return 404, _error_payload("candidate not found")
         if not _candidate_visible_for_scope(current, body):
             return 409, _error_payload("scope changed")
-        candidate = self.inbox.review_candidate(candidate_id, review_action, reviewed_by="ui")
+        candidate = self.inbox.review_candidate(
+            candidate_id,
+            review_action,
+            reviewed_by=clip_signal_text(body.get("reviewed_by") or "ui", 80) or "ui",
+        )
         if candidate is None:
             return 404, _error_payload("candidate not found")
         payload: dict[str, object] = {

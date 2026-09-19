@@ -618,7 +618,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.maybe_claim_work_item") as claim_work_item, \
+             patch("codey.operations.task_run_phases.maybe_claim_work_item") as claim_work_item, \
              patch.object(state.runtime_mutations, "accept_operation", return_value=None):
             run_task_submission(
                 deps,
@@ -780,8 +780,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.maybe_claim_work_item", autospec=True) as mock_claim, \
-             patch("codey.operations.task_run.maybe_route_auto", autospec=True) as mock_route:
+             patch("codey.operations.task_run_phases.maybe_claim_work_item", autospec=True) as mock_claim, \
+             patch("codey.operations.task_run_phases.maybe_route_auto", autospec=True) as mock_route:
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -892,7 +892,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_run.run_hybrid_mode", autospec=True) as mock_hybrid:
+             patch("codey.operations.task_run_phases.run_hybrid_mode", autospec=True) as mock_hybrid:
             run_task_submission(
                 deps,
                 TaskSubmission(
