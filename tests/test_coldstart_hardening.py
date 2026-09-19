@@ -475,13 +475,31 @@ class AppContextLifecycleTests(unittest.TestCase):
                 with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
                     ctx.close()
                     cleanup_mock.assert_not_called()
+                    store_mock.close.assert_not_called()
                     self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                    # Second close call must be idempotent
+                    # Second close call must be idempotent and still not close shared store
                     ctx.close()
-                    self.assertEqual(store_mock.close.call_count, 1)
+                    store_mock.close.assert_not_called()
         finally:
-            ctx._closed = False
-            ctx.close()
+            ctx._closed = True
+
+    def test_app_context_close_cleans_resources_when_finished(self) -> None:
+        store_mock = mock.Mock()
+        evidence_mock = mock.Mock()
+        ctx = AppContext()
+        try:
+            ctx._knowledge_store = store_mock
+            ctx.evidence_ledgers = evidence_mock
+            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
+                assert ctx._ephemeral_runtime_home is not None
+                with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
+                    ctx.close()
+                    store_mock.close.assert_called_once()
+                    evidence_mock.close.assert_called_once()
+                    cleanup_mock.assert_called_once()
+                    self.assertTrue(ctx.run_registry.stop_flag.is_set())
+        finally:
+            ctx._closed = True
 
 
 if __name__ == "__main__":

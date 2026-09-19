@@ -2,6 +2,23 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - In-place tool DOM browser tests, guard shared stores during unfinished ghost sleep (no release)
+
+- In-place tool DOM and scroll browser tests: added lightweight Playwright browser integration
+  test in `tests/test_ui_inplace_render.py`, asserting that final tool events update DOM
+  nodes in-place by `data-tool-key`, leave assistant DOM nodes and active text selections
+  untouched, and respect scroll policy (keeps reading position away from bottom, follows
+  when near bottom or forced).
+- Guard shared SQLite stores during unfinished ghost sleep: updated `AppContext.close()`
+  to bind closure of `knowledge_store` and `evidence_ledgers` to `ghost_sleep_daemon.wait()`
+  success; when the background thread is still running, close sets `stop_flag` and exits
+  early without closing stores or removing temporary folders, preventing concurrent access
+  to closed SQLite databases.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`38 passed in 4.10s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3802 passed, 6 skipped in 284.13s`).
+
 ## Unreleased - Explicit ghost maintenance, headless teardown hardening, close idempotency (no release)
 
 - Explicit ghost maintenance: removed remaining `state_home != DEFAULT_STATE_HOME`

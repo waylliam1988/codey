@@ -926,6 +926,8 @@ class AppContext:
                 finished = False
         except Exception:
             finished = False
+        if not finished:
+            return
         if self._knowledge_store is not None:
             try:
                 getattr(self._knowledge_store, "close", lambda: None)()
@@ -937,7 +939,7 @@ class AppContext:
                 getattr(evidence, "close", lambda: None)()
             except Exception:
                 pass
-        if self._ephemeral_runtime_home is not None and finished:
+        if self._ephemeral_runtime_home is not None:
             try:
                 self._ephemeral_runtime_home.cleanup()
             except Exception:

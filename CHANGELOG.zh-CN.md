@@ -2,6 +2,19 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 前端原地渲染与滚动策略真实浏览器测试、未结束维护保护共享存储（未发布）
+
+- 前端原地替换与滚动策略真实测试：新增轻量 Playwright 浏览器端集成测试
+  `tests/test_ui_inplace_render.py`，构造多条消息与 pending tool，断言在触发 final tool
+  时 assistant DOM 节点未被重建、选中文本高亮完整保留、tool 节点被原地更新，
+  且滚动策略在翻看历史时不强制置底、在靠近底部或强制调用时可靠置底。
+- 守护未结束 ghost 线程下的共享存储：在 `AppContext.close()` 中将共享 `knowledge_store`
+  和 `evidence_ledgers` 的关闭与临时目录清理统一绑定到 `ghost_sleep_daemon.wait()` 完成条件上；
+  若后台线程未确认退出，则只触发 `stop_flag` 后安全返回，避免并发访问已关闭 SQLite 造成脏边界。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `38 passed in 4.10s`；全量 `python -m pytest tests/ --ignore=tests/manual`
+  `3802 passed, 6 skipped in 284.13s`。
+
 ## Unreleased - 显式维护彻底消除路径猜测、headless 异常安全防护、close 幂等防重（未发布）
 
 - 显式维护彻底消除路径猜测：删除 `AppContext` 构造器中基于 `state_home != DEFAULT_STATE_HOME` 的

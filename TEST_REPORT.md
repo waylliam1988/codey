@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## In-place DOM and selection browser tests, guard shared stores on unfinished ghost sleep (2026-09-19)
+
+Scope:
+
+```text
+codey/app/context.py:       bound knowledge_store, evidence_ledgers, and ephemeral cleanup
+                            strictly to ghost_sleep_daemon.wait() completion in AppContext.close();
+                            when ghost thread is still running, close returns early after setting
+                            stop_flag, protecting shared SQLite stores from concurrent closure
+tests/test_ui_inplace_render.py:
+                            new lightweight Playwright browser integration test verifying
+                            that pending tool replacement updates the tool node in-place,
+                            preserves assistant DOM node identity and active text selection,
+                            and strictly follows scroll policies (preserves scroll when reading
+                            history, follows when near bottom or forced)
+tests/test_coldstart_hardening.py:
+                            updated close tests to assert shared knowledge store remains open
+                            when ghost wait returns False, and cleanly teardown all resources
+                            when wait returns True
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_ui_inplace_render.py tests\test_coldstart_hardening.py tests\test_headless_runner.py -q`
+  (`38 passed in 4.10s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3802 passed, 6 skipped in 284.13s (0:04:44)`)
+- No release.
+
 ## Explicit ghost maintenance, headless teardown hardening, close idempotency, stale docstring cleanup (2026-09-19)
 
 Scope:
