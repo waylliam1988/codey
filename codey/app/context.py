@@ -106,15 +106,10 @@ class AppContext:
         state_home: str | Path | None = None,
         *,
         replay_limit: int | None = None,
-        sync_ghost_maintenance: bool | None = None,
+        sync_ghost_maintenance: bool = False,
     ) -> None:
-        if sync_ghost_maintenance is not None:
-            self.sync_ghost_maintenance = sync_ghost_maintenance
-        else:
-            self.sync_ghost_maintenance = (
-                state_home is not None
-                and Path(state_home).expanduser().resolve() != DEFAULT_STATE_HOME.expanduser().resolve()
-            )
+        self.sync_ghost_maintenance = bool(sync_ghost_maintenance)
+        self._closed = False
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
         runtime_state_home = (
@@ -920,16 +915,29 @@ class AppContext:
         return None
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.run_registry.stop_flag.set()
+        finished = True
         try:
-            self.ghost_sleep_daemon.wait(timeout=2.0)
+            wait_result = self.ghost_sleep_daemon.wait(timeout=2.0)
+            if wait_result is False:
+                finished = False
         except Exception:
-            pass
+            finished = False
         if self._knowledge_store is not None:
             try:
                 getattr(self._knowledge_store, "close", lambda: None)()
             except Exception:
                 pass
-        if self._ephemeral_runtime_home is not None:
+        evidence = getattr(self, "evidence_ledgers", None)
+        if evidence is not None:
+            try:
+                getattr(evidence, "close", lambda: None)()
+            except Exception:
+                pass
+        if self._ephemeral_runtime_home is not None and finished:
             try:
                 self._ephemeral_runtime_home.cleanup()
             except Exception:

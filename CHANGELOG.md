@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Explicit ghost maintenance, headless teardown hardening, close idempotency (no release)
+
+- Explicit ghost maintenance: removed remaining `state_home != DEFAULT_STATE_HOME`
+  inference from `AppContext`; `AppContext`, `HeadlessRequest`, and `HeadlessAppContext`
+  default `sync_ghost_maintenance` strictly to `False`. Custom `--state-home` directories
+  no longer incur unexpected ghost maintenance latency.
+- Headless exception safety: wrapped `run_headless()` execution entirely in an outermost
+  `try ... finally: state.close()` block, guaranteeing state and background thread teardown
+  across early exits and unhandled exceptions alike.
+- Hardened `AppContext.close()` idempotency: added `_closed` re-entrancy flag; triggered
+  `stop_flag` to interrupt background loops; guarded temporary directory cleanup by
+  verifying ghost sleep thread termination within timeout, eliminating Windows file lock races.
+- Cleaned stale docstrings: removed outdated references in `codey/utils/scan_report.py`
+  pointing to the deleted `reviews.scan_report` shim.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`31 passed in 4.09s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3800 passed, 6 skipped in 257.14s`).
+
 ## Unreleased - Smooth chat scrolling, in-place tool rendering, SSE cursor replay, retire legacy shims, explicit ghost maintenance (no release)
 
 - Smooth chat UX: `scrollChat(force)` and `renderChat(forceBottom)` support

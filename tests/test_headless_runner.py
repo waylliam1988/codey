@@ -4,11 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.runner import RunResult
 from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
-from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
+from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, headless_event_payload, run_headless
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.core.models import ToolCall
@@ -313,6 +314,26 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         for row in rows:
             json.dumps(row, ensure_ascii=False)
+
+    def test_headless_run_exception_bubbles_and_closes_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            state_home = Path(td, "state")
+            with mock.patch("codey.app.headless_runner.run_task_submission", side_effect=RuntimeError("boom in submission")):
+                with mock.patch.object(HeadlessAppContext, "close", autospec=True) as mock_close:
+                    with self.assertRaises(RuntimeError) as cm:
+                        run_headless(
+                            HeadlessRequest(
+                                project=project,
+                                task="failing task",
+                                provider_id="qwen",
+                                state_home=state_home,
+                            ),
+                            emit_jsonl=lambda _row: None,
+                            connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+                        )
+                    self.assertIn("boom in submission", str(cm.exception))
+                    mock_close.assert_called_once()
 
 
 if __name__ == "__main__":

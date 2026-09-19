@@ -286,7 +286,7 @@ class ProjectFactsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (backend / "app.js").write_text("before\n", encoding="utf-8")
-            state = server.AppContext(root / "state")
+            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
@@ -372,7 +372,7 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_facts_persistence_failure_does_not_fail_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext(state_td)
+            state = server.AppContext(state_td, sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 

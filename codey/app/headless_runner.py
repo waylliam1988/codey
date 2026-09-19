@@ -50,7 +50,7 @@ class HeadlessRequest:
     intent: str = "project"
     state_home: Path | None = DEFAULT_STATE_HOME
     port: int = 9222
-    sync_ghost_maintenance: bool | None = None
+    sync_ghost_maintenance: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class HeadlessAppContext(AppContext):
         port: int,
         emit_jsonl: Callable[[dict[str, object]], None],
         connect_provider: Callable[..., Any] = default_connect_provider,
-        sync_ghost_maintenance: bool | None = None,
+        sync_ghost_maintenance: bool = False,
     ) -> None:
         super().__init__(
             state_home,
@@ -173,99 +173,100 @@ def run_headless(
         connect_provider=connect_provider,
         sync_ghost_maintenance=request.sync_ghost_maintenance,
     )
-    pre_reserved_run_id = _pre_reserve_run_id(
-        state,
-        request=request,
-        session_id=session_id,
-        project=project,
-    )
-    if str(request.run_id or "").strip() and not pre_reserved_run_id:
-        reason = (
-            "duplicate"
-            if _headless_run_id_exists(
-                state,
-                session_id=session_id,
-                run_id=str(request.run_id or "").strip(),
-            )
-            else "busy"
-        )
-        emit_jsonl({
-            "schema_version": SCHEMA_VERSION,
-            "type": "task_done",
-            "run_id": str(request.run_id or "").strip(),
-            "session_id": session_id,
-            "stop_reason": reason,
-        })
-        state.close()
-        return HeadlessResult(
-            exit_code=1,
-            run_id=str(request.run_id or "").strip(),
-            session_id=session_id,
-            stop_reason=reason,
-            ledger_path="",
-        )
-    deps = TaskRunDeps(
-        state=state,
-        agent_run=agent_run or default_agent_run,
-        collect_changes=collect_changes or default_collect_changes,
-        run_review=_no_headless_review,
-        capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
-        project_facts=state.project_facts,
-        work_checkpoints=state.work_checkpoints,
-        workspace_revisions=state.workspace_revisions,
-        run_ledgers=state.run_ledgers,
-        run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
-        managed_outputs=state.managed_outputs,
-        knowledge_store=state.knowledge_store,
-        is_git_repository=is_git_repository,
-        review_fix_turns=REVIEW_FIX_TURNS,
-        review_log_lines=REVIEW_LOG_LINES,
-        ghost_router_provider_factory=(
-            (lambda provider_id: connect_fresh_provider(provider_id, port=request.port))
-            if _request_intent(request.intent) == "auto"
-            else None
-        ),
-        runtime_mutations=state.runtime_mutations,
-        runtime_effects=state.runtime_effects,
-    )
     try:
-        run_task_submission(
-            deps,
-            TaskSubmission(
+        pre_reserved_run_id = _pre_reserve_run_id(
+            state,
+            request=request,
+            session_id=session_id,
+            project=project,
+        )
+        if str(request.run_id or "").strip() and not pre_reserved_run_id:
+            reason = (
+                "duplicate"
+                if _headless_run_id_exists(
+                    state,
+                    session_id=session_id,
+                    run_id=str(request.run_id or "").strip(),
+                )
+                else "busy"
+            )
+            emit_jsonl({
+                "schema_version": SCHEMA_VERSION,
+                "type": "task_done",
+                "run_id": str(request.run_id or "").strip(),
+                "session_id": session_id,
+                "stop_reason": reason,
+            })
+            return HeadlessResult(
+                exit_code=1,
+                run_id=str(request.run_id or "").strip(),
                 session_id=session_id,
-                project=str(project),
-                task=request.task,
-                max_turns=request.max_turns,
-                continue_task=False,
-                provider_id=request.provider_id,
-                intent=_request_intent(request.intent),
-                run_id=pre_reserved_run_id,
+                stop_reason=reason,
+                ledger_path="",
+            )
+        deps = TaskRunDeps(
+            state=state,
+            agent_run=agent_run or default_agent_run,
+            collect_changes=collect_changes or default_collect_changes,
+            run_review=_no_headless_review,
+            capture_provider_failure=capture_provider_failure or default_capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            workspace_revisions=state.workspace_revisions,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=is_git_repository,
+            review_fix_turns=REVIEW_FIX_TURNS,
+            review_log_lines=REVIEW_LOG_LINES,
+            ghost_router_provider_factory=(
+                (lambda provider_id: connect_fresh_provider(provider_id, port=request.port))
+                if _request_intent(request.intent) == "auto"
+                else None
             ),
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
+        )
+        try:
+            run_task_submission(
+                deps,
+                TaskSubmission(
+                    session_id=session_id,
+                    project=str(project),
+                    task=request.task,
+                    max_turns=request.max_turns,
+                    continue_task=False,
+                    provider_id=request.provider_id,
+                    intent=_request_intent(request.intent),
+                    run_id=pre_reserved_run_id,
+                ),
+            )
+        finally:
+            if state.sync_ghost_maintenance:
+                state.wait_for_ghost_sleep()
+        terminal = dict(state.run_registry.last_terminal_event() or {})
+        run_id = str(terminal.get("run_id") or request.run_id or "")
+        stop_reason = str(terminal.get("stop_reason") or "error")
+        ledger_path = ""
+        if state.run_ledgers is not None and run_id:
+            try:
+                path = state.run_ledgers.path_for(session_id, run_id)
+                if path.exists():
+                    ledger_path = str(path)
+            except Exception:
+                ledger_path = ""
+        exit_code = 0 if stop_reason == "done" and not state.shell_rejected else 1
+        return HeadlessResult(
+            exit_code=exit_code,
+            run_id=run_id,
+            session_id=session_id,
+            stop_reason=stop_reason,
+            ledger_path=ledger_path,
         )
     finally:
-        if state.sync_ghost_maintenance:
-            state.wait_for_ghost_sleep()
-    terminal = dict(state.run_registry.last_terminal_event() or {})
-    run_id = str(terminal.get("run_id") or request.run_id or "")
-    stop_reason = str(terminal.get("stop_reason") or "error")
-    ledger_path = ""
-    if state.run_ledgers is not None and run_id:
-        try:
-            path = state.run_ledgers.path_for(session_id, run_id)
-            if path.exists():
-                ledger_path = str(path)
-        except Exception:
-            ledger_path = ""
-    exit_code = 0 if stop_reason == "done" and not state.shell_rejected else 1
-    state.close()
-    return HeadlessResult(
-        exit_code=exit_code,
-        run_id=run_id,
-        session_id=session_id,
-        stop_reason=stop_reason,
-        ledger_path=ledger_path,
-    )
+        state.close()
 
 
 def headless_event_payload(event: dict) -> dict[str, object] | None:

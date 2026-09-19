@@ -1,9 +1,7 @@
 """Small scan omission facts for bounded local tools.
 
 This is the canonical home of ScanReport: a stdlib-only leaf shared by
-tool execution (toolchain), lexical references (utils), and review
-rendering (reviews). reviews.scan_report re-exports it so existing
-importers keep working without dragging the reviews package into utils.
+toolchain, utils, and review rendering.
 """
 
 from __future__ import annotations

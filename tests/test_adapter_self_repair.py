@@ -1045,7 +1045,7 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
 class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(Path(td) / "state")
+            state = server.AppContext(Path(td) / "state", sync_ghost_maintenance=True)
             state.provider_failover_order = lambda: ("deepseek", "stepfun")
             state.providers.supervisor.record_failure(
                 "deepseek",

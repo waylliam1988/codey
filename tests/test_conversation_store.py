@@ -205,7 +205,7 @@ class ConversationStoreTests(unittest.TestCase):
                 "projects": [],
             })
 
-            restarted = server.AppContext(td)
+            restarted = server.AppContext(td, sync_ghost_maintenance=True)
             events = restarted.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"

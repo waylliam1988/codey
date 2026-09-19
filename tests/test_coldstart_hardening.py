@@ -446,6 +446,15 @@ class AppContextLifecycleTests(unittest.TestCase):
         finally:
             ctx_sync.close()
 
+    def test_app_context_sync_ghost_maintenance_is_always_explicit_and_defaults_false(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            custom_home = Path(td, "state")
+            ctx = AppContext(custom_home)
+            try:
+                self.assertFalse(ctx.sync_ghost_maintenance)
+            finally:
+                ctx.close()
+
     def test_app_context_close_and_context_manager(self) -> None:
         store_mock = mock.Mock()
         with AppContext() as ctx:
@@ -455,6 +464,24 @@ class AppContextLifecycleTests(unittest.TestCase):
             self.assertIsNotNone(ephemeral)
         daemon_wait.assert_called_once()
         store_mock.close.assert_called_once()
+
+    def test_app_context_close_is_idempotent_and_respects_finished(self) -> None:
+        store_mock = mock.Mock()
+        ctx = AppContext()
+        try:
+            ctx._knowledge_store = store_mock
+            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
+                assert ctx._ephemeral_runtime_home is not None
+                with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
+                    ctx.close()
+                    cleanup_mock.assert_not_called()
+                    self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                    # Second close call must be idempotent
+                    ctx.close()
+                    self.assertEqual(store_mock.close.call_count, 1)
+        finally:
+            ctx._closed = False
+            ctx.close()
 
 
 if __name__ == "__main__":

@@ -317,7 +317,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             (project / "pyproject.toml").write_text(
                 "[tool.pytest.ini_options]\n", encoding="utf-8"
             )
-            state = server.AppContext(root / "state")
+            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
             provider = self._provider()
 
             def fake_agent(request: AgentRequest):
@@ -424,7 +424,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.AppContext(root / "state")
+            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
             state.run_ledgers = FailingStore()
             provider = self._provider()
 

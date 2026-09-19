@@ -3537,7 +3537,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_mode_prepends_ghost_directive(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             seed_ghost_style_memory(state, session_id="session-ghost")
             seed_ghost_continuity(state, session_id="session-ghost")
             events = state.subscribe()
@@ -3575,7 +3575,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_mode_runs_post_turn_ghost_learning_after_task_done(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -3804,7 +3804,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -3834,7 +3834,7 @@ class SessionThreadingTests(unittest.TestCase):
     def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
         self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             seed_ghost_style_memory(state, session_id="session-ghost")
             seed_ghost_continuity(state, session_id="session-ghost")
             provider = mock.Mock()
@@ -3867,7 +3867,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             seed_ghost_style_memory(state, session_id="session-plan", project=td)
             seed_ghost_continuity(
                 state,
@@ -3908,7 +3908,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_project_writer_receives_empty_ghost_directive(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             seed_ghost_style_memory(state, session_id="session-project", project=td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -4306,7 +4306,7 @@ class SessionThreadingTests(unittest.TestCase):
             tests_dir = project / "tests"
             tests_dir.mkdir()
             (tests_dir / "test_large.py").write_text("def test_large():\n    assert False\n", encoding="utf-8")
-            state = server.AppContext(root / "state")
+            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -4703,7 +4703,7 @@ class SessionThreadingTests(unittest.TestCase):
                 pass
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             seed_ghost_style_memory(state, session_id="session-research")
             from codey.knowledge import KnowledgeStore
 
@@ -4954,7 +4954,7 @@ class SessionThreadingTests(unittest.TestCase):
                 pass
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             from codey.knowledge import KnowledgeStore
 
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
@@ -5143,7 +5143,7 @@ class SessionThreadingTests(unittest.TestCase):
             project = Path(td, "project")
             project.mkdir()
             (project / "app.py").write_text("value = 1\n", encoding="utf-8")
-            state = server.AppContext(td)
+            state = server.AppContext(td, sync_ghost_maintenance=True)
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()
             provider = mock.Mock()
@@ -5306,7 +5306,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_plain_chat_followup_consensus_uses_context_not_owner_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
-            state = server.AppContext(state_home)
+            state = server.AppContext(state_home, sync_ghost_maintenance=True)
             first = mock.Mock()
             first.name = "DeepSeek Web"
             first.location = "https://chat.deepseek.com/"
@@ -5337,7 +5337,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_recovered_chat_handoff_goes_to_owner_not_advisor_context(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:
-            state = server.AppContext(state_home)
+            state = server.AppContext(state_home, sync_ghost_maintenance=True)
             context = state.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
             context.update_snapshot(
@@ -5395,7 +5395,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_chat_to_project_handoff_reaches_writer(self) -> None:
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(state_home)
+            state = server.AppContext(state_home, sync_ghost_maintenance=True)
             project = Path(td)
             (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
             context = state.conversation_for("session-1")
@@ -5482,7 +5482,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
             project = Path(td)
             (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
-            first = server.AppContext(state_home)
+            first = server.AppContext(state_home, sync_ghost_maintenance=True)
             context = first.conversation_for("session-1")
             context.begin_window("deepseek", "chat")
             context.record_exchange(
@@ -5537,7 +5537,7 @@ class SessionThreadingTests(unittest.TestCase):
                 }
             )
 
-            restarted = server.AppContext(state_home)
+            restarted = server.AppContext(state_home, sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -5735,7 +5735,7 @@ class SessionThreadingTests(unittest.TestCase):
         }
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(Path(td, "state"))
+            state = server.AppContext(Path(td, "state"), sync_ghost_maintenance=True)
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             project = Path(td, "project")
             project.mkdir()
@@ -7053,7 +7053,7 @@ class SessionThreadingTests(unittest.TestCase):
             subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
             path = root / "app.py"
             path.write_text("old\n", encoding="utf-8")
-            state = server.AppContext(state_td)
+            state = server.AppContext(state_td, sync_ghost_maintenance=True)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 

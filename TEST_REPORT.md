@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Explicit ghost maintenance, headless teardown hardening, close idempotency, stale docstring cleanup (2026-09-19)
+
+Scope:
+
+```text
+codey/app/context.py:       removed all remaining implicit state_home != DEFAULT_STATE_HOME
+                            guessing; sync_ghost_maintenance defaults strictly to False;
+                            hardened AppContext.close() with idempotent _closed flag,
+                            stop_flag trigger, ghost sleep thread join timeout checking,
+                            and conditional ephemeral directory cleanup
+codey/app/headless_runner.py:
+                            HeadlessRequest and HeadlessAppContext enforce explicit
+                            sync_ghost_maintenance: bool = False; wrapped execution in
+                            outermost try...finally: state.close() to guarantee resource
+                            release even on unhandled exceptions
+codey/utils/scan_report.py: cleaned obsolete docstring referencing deleted cold-start shim
+tests:                      new unit tests in test_coldstart_hardening.py and
+                            test_headless_runner.py; explicit sync_ghost_maintenance=True
+                            in integration tests to prevent Windows file locking races
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_coldstart_hardening.py tests\test_headless_runner.py -q`
+  (`31 passed in 4.09s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3800 passed, 6 skipped in 257.14s (0:04:17)`)
+- No release.
+
 ## Smooth chat scrolling, in-place tool rendering, SSE cursor replay, retire legacy shims, explicit ghost maintenance (2026-09-19)
 
 Scope:

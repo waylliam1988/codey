@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 显式维护彻底消除路径猜测、headless 异常安全防护、close 幂等防重（未发布）
+
+- 显式维护彻底消除路径猜测：删除 `AppContext` 构造器中基于 `state_home != DEFAULT_STATE_HOME` 的
+  推导残留，`AppContext`、`HeadlessRequest` 与 `HeadlessAppContext` 的 `sync_ghost_maintenance`
+  均完全显式且默认为 `False`；自定义状态目录不再触发多余的同步维护阻塞。
+- headless 异常安全收口：`run_headless()` 整体使用外层 `try ... finally: state.close()` 包裹，
+  保证执行流中无论是常规提前返回还是未捕获异常冒泡，均无条件确保底层状态与线程资源释放。
+- `AppContext.close()` 幂等防重：增加 `_closed` 幂等标志防重复进入；设置 `stop_flag` 中止后台线程；
+  以超时方式等待 ghost 维护线程，仅在完全停止时才清理临时目录，彻底杜绝 Windows 独占锁竞态。
+- 清理废弃垫片过时注释：清理 `codey/utils/scan_report.py` 头部关于已物理删除垫片 `reviews.scan_report`
+  的陈旧说明。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `31 passed in 4.09s`；全量 `python -m pytest tests/ --ignore=tests/manual`
+  `3800 passed, 6 skipped in 257.14s`。
+
 ## Unreleased - 交互体验平滑化、废弃垫片与死接线清理、显式维护收口（未发布）
 
 - 交互体验平滑化：`scrollChat(force)` 与 `renderChat(forceBottom)` 支持强制置底，
