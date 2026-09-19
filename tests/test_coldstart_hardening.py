@@ -477,11 +477,13 @@ class AppContextLifecycleTests(unittest.TestCase):
                     cleanup_mock.assert_not_called()
                     store_mock.close.assert_not_called()
                     self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                    self.assertFalse(ctx.closed)
                     # Second close call must be idempotent and still not close shared store
                     ctx.close()
                     store_mock.close.assert_not_called()
+                    self.assertFalse(ctx.closed)
         finally:
-            ctx._closed = True
+            ctx._resources_closed = True
 
     def test_app_context_close_cleans_resources_when_finished(self) -> None:
         store_mock = mock.Mock()
@@ -498,9 +500,10 @@ class AppContextLifecycleTests(unittest.TestCase):
                     evidence_mock.close.assert_called_once()
                     cleanup_mock.assert_called_once()
                     self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                    self.assertTrue(ctx._closed)
+                    self.assertTrue(ctx.closed)
+                    self.assertTrue(ctx._resources_closed)
         finally:
-            ctx._closed = True
+            ctx._resources_closed = True
 
     def test_app_context_close_retries_cleanup_when_thread_subsequently_finishes(self) -> None:
         store_mock = mock.Mock()
@@ -518,7 +521,7 @@ class AppContextLifecycleTests(unittest.TestCase):
                     store_mock.close.assert_not_called()
                     self.assertTrue(ctx._close_requested)
                     self.assertFalse(ctx._resources_closed)
-                    self.assertFalse(ctx._closed)
+                    self.assertFalse(ctx.closed)
 
                 # 2. Second close: daemon subsequently finishes (returns True)
                 with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
@@ -527,14 +530,14 @@ class AppContextLifecycleTests(unittest.TestCase):
                     store_mock.close.assert_called_once()
                     evidence_mock.close.assert_called_once()
                     self.assertTrue(ctx._resources_closed)
-                    self.assertTrue(ctx._closed)
+                    self.assertTrue(ctx.closed)
 
                 # 3. Third close: idempotent, no repeated cleanup
                 ctx.close()
                 cleanup_mock.assert_called_once()
                 store_mock.close.assert_called_once()
         finally:
-            ctx._closed = True
+            ctx._resources_closed = True
 
 
 if __name__ == "__main__":

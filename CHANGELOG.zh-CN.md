@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - CI 浏览器安装、清理 closed 垫片、线程收拢与取消稳定性增强（未发布）
+
+- CI 浏览器依赖配置与环境探测：在 `.github/workflows/ci.yml` 的依赖安装中增加
+  `python -m playwright install chromium`，确保 CI 环境具备真实浏览器二进制；
+  同时在 `tests/test_ui_inplace_render.py` 中增加启动探测并在二进制缺失时优雅跳过，
+  去掉多余的 `sync_ghost_maintenance` 参数，并在 teardown 中超时收拢 handler 线程且在
+  `finally` 中恢复 patch。
+- 去除 `AppContext._closed` 垫片别名：移除过渡兼容的私有属性转发，直接提供公开的只读
+  `closed` 属性与底层的 `_resources_closed` 状态，消除冷启动多余绕路。
+- 消除高负载下进程取消竞态：放宽 `test_cancellation.py` 中的 deadline 窗口并在读取 pid 时
+  做健壮校验，杜绝 Windows Job Object 测试偶发文件读空报错。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `47 passed in 8.15s`；全量 `python -m pytest tests/ --ignore=tests/manual`
+  `3803 passed, 6 skipped in 255.57s`。
+
 ## Unreleased - 浏览器测试状态隔离与异常守护、AppContext 重试清理机制（未发布）
 
 - 浏览器测试状态隔离与进程保护：在 `tests/test_ui_inplace_render.py` 中为本地 server

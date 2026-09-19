@@ -109,7 +109,6 @@ class AppContext:
         sync_ghost_maintenance: bool = False,
     ) -> None:
         self.sync_ghost_maintenance = bool(sync_ghost_maintenance)
-        self._closed = False
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
         runtime_state_home = (
@@ -917,12 +916,9 @@ class AppContext:
         return None
 
     @property
-    def _closed(self) -> bool:
+    def closed(self) -> bool:
+        """Return True when resources have been completely released."""
         return self._resources_closed
-
-    @_closed.setter
-    def _closed(self, value: bool) -> None:
-        self._resources_closed = bool(value)
 
     def close(self) -> None:
         if self._resources_closed:

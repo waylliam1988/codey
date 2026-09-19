@@ -24,8 +24,14 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         if sync_playwright is None:
             raise unittest.SkipTest("playwright is required for browser DOM tests")
+        try:
+            with sync_playwright() as pw:
+                probe = pw.chromium.launch(headless=True)
+                probe.close()
+        except Exception as exc:
+            raise unittest.SkipTest(f"playwright chromium browser is not available: {exc}")
         cls.tmp = tempfile.TemporaryDirectory()
-        cls.state = codey_server.AppContext(Path(cls.tmp.name) / "state", sync_ghost_maintenance=True)
+        cls.state = codey_server.AppContext(Path(cls.tmp.name) / "state")
         cls.state_patch = mock.patch.object(codey_server, "STATE", cls.state)
         cls.state_patch.start()
         cls.httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
@@ -36,17 +42,23 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        if hasattr(cls, "httpd"):
-            cls.httpd.shutdown()
-            cls.httpd.server_close()
-        if hasattr(cls, "server_thread"):
-            cls.server_thread.join(timeout=2.0)
-        if hasattr(cls, "state_patch"):
-            cls.state_patch.stop()
-        if hasattr(cls, "state"):
-            cls.state.close()
-        if hasattr(cls, "tmp"):
-            cls.tmp.cleanup()
+        try:
+            if hasattr(cls, "httpd"):
+                cls.httpd.shutdown()
+                cls.httpd.server_close()
+            if hasattr(cls, "server_thread"):
+                cls.server_thread.join(timeout=2.0)
+            if hasattr(cls, "httpd") and hasattr(cls.httpd, "_threads"):
+                for t in list(cls.httpd._threads):
+                    if t.is_alive():
+                        t.join(timeout=0.5)
+            if hasattr(cls, "state"):
+                cls.state.close()
+            if hasattr(cls, "tmp"):
+                cls.tmp.cleanup()
+        finally:
+            if hasattr(cls, "state_patch"):
+                cls.state_patch.stop()
 
     def test_in_place_tool_render_preserves_assistant_dom_and_selection_and_respects_scroll(self) -> None:
         with sync_playwright() as pw:
@@ -151,6 +163,10 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                     chatArea.scrollTop = 0;
                     window.scrollChat(true);
                     const forcedFollowSucceeded = (chatArea.scrollTop >= maxScroll - 1);
+
+                    if (typeof evtSrc !== 'undefined' && evtSrc) {
+                        evtSrc.close();
+                    }
 
                     return {
                         replaced,

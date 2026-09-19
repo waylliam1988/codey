@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - CI Playwright install, clean closed property, teardown thread join, robust cancellation (no release)
+
+- CI Playwright browser install & launch probe: added `python -m playwright install chromium`
+  to CI dependencies in `.github/workflows/ci.yml` so headless integration tests execute fully;
+  added chromium launch check in `tests/test_ui_inplace_render.py` to skip gracefully if binaries
+  are missing, removed unused `sync_ghost_maintenance` argument, joined active handler threads
+  with timeout during teardown, and stopped state patch reliably in `finally`.
+- Removed `AppContext._closed` property shim: eliminated legacy shim forwarding to `_resources_closed`
+  in favor of clean public `closed` property and explicit internal lifecycle states.
+- Hardened process cancellation under high load: extended deadline window in `tests/test_cancellation.py`
+  and validated process ID output defensively to eliminate Windows Job Object startup races.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`47 passed in 8.15s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3803 passed, 6 skipped in 255.57s`).
+
 ## Unreleased - Isolate browser test server state, guard Chromium teardown, retryable AppContext close (no release)
 
 - Isolate browser test server state and guard Chromium process: patched `codey_server.STATE`

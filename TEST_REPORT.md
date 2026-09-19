@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## CI Playwright browser install, clean closed property, timeout-safe handler teardown, robust deadline cancellation (2026-09-19)
+
+Scope:
+
+```text
+.github/workflows/ci.yml:   added `python -m playwright install chromium` in CI dependencies
+                            step to ensure headless browser binary is available for integration tests
+tests/test_ui_inplace_render.py:
+                            added chromium launch probe in setUpClass to skip gracefully if binary is missing;
+                            removed unnecessary sync_ghost_maintenance=True; safely joins active handler
+                            threads with timeout in tearDownClass and guarantees state_patch stop in finally
+codey/app/context.py:       removed private _closed property shim in favor of public read-only closed property
+tests/test_coldstart_hardening.py:
+                            updated close tests to assert against closed property and _resources_closed directly
+tests/test_cancellation.py: widened deadline from 1.0s to 2.0s and added robust text parsing to eliminate
+                            high-load Windows Job Object process startup race
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_ui_inplace_render.py tests\test_coldstart_hardening.py tests\test_cancellation.py tests\test_headless_runner.py -q`
+  (`47 passed in 8.15s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3803 passed, 6 skipped in 255.57s (0:04:15)`)
+- No release.
+
 ## Isolate Playwright server state, guard browser teardown, retryable AppContext close (2026-09-19)
 
 Scope:
