@@ -16,6 +16,12 @@ from typing import Any
 import uuid
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
+from codey.runtime.effects.keep_policies import (
+    SENT_STATE_MAYBE_SENT,
+    SETTLEMENT_STATUS_ERROR,
+    SETTLEMENT_STATUS_INTERRUPTED,
+    keep_effect_pair_for_compaction,
+)
 from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
@@ -39,15 +45,12 @@ EFFECT_CATEGORIES = frozenset({
 })
 
 SETTLEMENT_STATUS_OK = "ok"
-SETTLEMENT_STATUS_ERROR = "error"
-SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
 SETTLEMENT_STATUSES = frozenset({
     SETTLEMENT_STATUS_OK,
     SETTLEMENT_STATUS_ERROR,
     SETTLEMENT_STATUS_INTERRUPTED,
 })
 
-SENT_STATE_MAYBE_SENT = "maybe_sent"
 SENT_STATE_SETTLED = "settled"
 SENT_STATES = frozenset({
     SENT_STATE_MAYBE_SENT,
@@ -695,29 +698,6 @@ def find_effect(
         raise RuntimeEffectError(f"effect intent not found: {effect_id}")
     return found
 
-
-def keep_effect_pair_for_compaction(
-    *,
-    is_open: bool,
-    settlement_payload: dict | None,
-) -> bool:
-    """Compaction retention policy for one intent/settlement pair.
-
-    Open operations keep the pair so resume can replay or settle. Settled
-    operations keep only pairs that explain an abnormal ending: interrupted
-    or error status, maybe-sent provider calls, or replayed effects.
-    """
-    if is_open:
-        return True
-    if settlement_payload is None:
-        return False
-    replay_count = settlement_payload.get("replay_count")
-    replayed = replay_count if isinstance(replay_count, int) and replay_count > 0 else 0
-    return (
-        settlement_payload.get("status") in {SETTLEMENT_STATUS_INTERRUPTED, SETTLEMENT_STATUS_ERROR}
-        or settlement_payload.get("sent_state") == SENT_STATE_MAYBE_SENT
-        or replayed > 0
-    )
 
 class RuntimeEffectStore:
     """Projection store for external effect intents and settlements."""

@@ -382,6 +382,13 @@ class BrowserSearchProvider:
                     self._fetch_on_browser_thread,
                     url,
                     timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
+                    # If the caller gives up first, the abandoned job may
+                    # leave the shared fetch page mid-navigation. Discard
+                    # whatever page is current when the worker gets there;
+                    # the discard is idempotent with the job's own paths.
+                    on_abandoned=lambda: self._discard_fetch_page_on_browser_thread(
+                        self._fetch_page
+                    ),
                 )
             except TimeoutError as exc:
                 self._record_worker_health()

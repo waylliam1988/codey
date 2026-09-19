@@ -14,7 +14,7 @@ from codey.operations.result import ModeOutcome
 from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.workspace.config import ProjectConfigLoadResult
 from codey.workspace.facts import ProjectFactsStore
-from codey.workspace.task_context import ProjectTaskContextBuilder
+from codey.operations.task_context import ProjectTaskContextBuilder
 
 
 @dataclass(frozen=True)

@@ -352,6 +352,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.observe.prompt_envelope",
             "codey.runtime.effects.replay_args",
             "codey.runtime.effects.replay_policy",
+            "codey.runtime.effects.keep_policies",
             "codey.runtime.log.compaction",
             "codey.runtime.log.entries",
             "codey.runtime.log.session_projection",
@@ -1709,6 +1710,62 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         }
         self.assertTrue(set(research_imports) <= allowed, sorted(set(research_imports) - allowed))
 
+
+    def test_runtime_package_has_no_import_cycles(self) -> None:
+        # The runtime kernel is a DAG: session_log -> {projection, compaction}
+        # -> leaves, effects -> {operation_state, session_log}, write on top.
+        # A cycle here would let audit, execution, and projection silently
+        # depend on each other. Tarjan over all intra-package imports,
+        # including function-local ones.
+        pkg = ROOT / "codey" / "runtime"
+        modules: dict[str, set[str]] = {}
+        for path in sorted(pkg.rglob("*.py")):
+            name = "codey.runtime." + path.relative_to(pkg).with_suffix("").as_posix().replace("/", ".")
+            if name.endswith(".__init__"):
+                name = name[: -len(".__init__")]
+            names: set[str] = set()
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    mod = node.module
+                    if mod == "codey.runtime" or mod.startswith("codey.runtime."):
+                        names.add(mod)
+            modules[name] = names
+        index: dict[str, int] = {}
+        low: dict[str, int] = {}
+        on_stack: set[str] = set()
+        stack: list[str] = []
+        counter = [0]
+        cycles: list[list[str]] = []
+
+        def strongconnect(node: str) -> None:
+            index[node] = low[node] = counter[0]
+            counter[0] += 1
+            stack.append(node)
+            on_stack.add(node)
+            for dep in sorted(modules.get(node, ())):
+                if dep not in modules:
+                    continue
+                if dep not in index:
+                    strongconnect(dep)
+                    low[node] = min(low[node], low[dep])
+                elif dep in on_stack:
+                    low[node] = min(low[node], index[dep])
+            if low[node] == index[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                if len(component) > 1:
+                    cycles.append(sorted(component))
+
+        for module in sorted(modules):
+            if module not in index:
+                strongconnect(module)
+        self.assertEqual(cycles, [])
 
     def test_long_files_do_not_grow(self) -> None:
         # 1000-line guardrail (warning-grade): the files above the line are

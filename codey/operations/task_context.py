@@ -42,6 +42,7 @@ class CheckpointContext:
     seed_checks: tuple[CheckpointCheck, ...] = ()
     resumed_verification_commands: tuple[CheckpointCheck, ...] = ()
     workspace_changed: bool = False
+    corrupt_backup_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -191,29 +192,53 @@ class ProjectTaskContextBuilder:
         if self.work_checkpoints is None:
             return CheckpointContext()
         try:
-            previous = self.work_checkpoints.load(session_id)
+            loaded = self.work_checkpoints.load_result(session_id)
+            previous = loaded.checkpoint
+            corrupt_backup = (
+                str(loaded.corrupt_backup_path)
+                if loaded.corrupt_backup_path is not None
+                else ""
+            )
             project_root = str(Path(project).expanduser().resolve())
             same_project = previous is not None and previous.project == project_root
             resume_requested = continue_task or provider_session_changed
             same_task = previous is not None and previous.original_task.strip() == task.strip()
             if same_project and resume_requested and (continue_task or same_task):
-                return _checkpoint_context(
+                resumed = _checkpoint_context(
                     self.work_checkpoints.reconcile(
                         previous,
                         ignored_paths=ignored_paths,
                     ),
                     resumed=True,
                 )
-            return CheckpointContext(
+                return resumed
+            fresh = CheckpointContext(
                 item=self.work_checkpoints.start(
                     run_id=run_id,
                     session_id=session_id,
                     project=project,
                     task=task,
-                )
+                ),
+                corrupt_backup_path=corrupt_backup,
+                prompt=_corrupt_backup_notice(corrupt_backup),
             )
+            return fresh
         except (OSError, ValueError):
             return CheckpointContext()
+
+
+def _corrupt_backup_notice(corrupt_backup_path: str) -> str:
+    """User-visible line: a corrupt checkpoint was backed up, work restarts."""
+    if not corrupt_backup_path:
+        return ""
+    name = corrupt_backup_path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1][:120]
+    return (
+        "Local execution checkpoint (bounded local facts):\n"
+        f"- Previous checkpoint was corrupt and backed up as {name}; "
+        "starting fresh with no recorded changes.\n"
+        "Verify the current files before editing and do not assume unfinished "
+        "suggestions are correct."
+    )
 
 
 def _checkpoint_context(

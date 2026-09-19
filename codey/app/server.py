@@ -58,6 +58,7 @@ from codey.app.http_plumbing import (
     sse_replay_cursor,
     write_sse_event,
 )
+from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.providers import connect_fresh_provider_tab
@@ -226,7 +227,7 @@ def _submit_task(
         raise
     if not accepted:
         STATE.release_run(reserved.run_id)
-        raise RuntimeError("browser worker busy: queue full")
+        raise BrowserWorkerBusy("browser worker busy: queue full")
     STATE.expire_stale_shell_approvals(reserved.run_id)
     return reserved.run_id
 

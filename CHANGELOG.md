@@ -2,6 +2,35 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - CI findings follow-ups (no release)
+
+- CI hermetic fix: `test_atomic_io` fsync tests build `Path(".")` outside
+  the `os.name` mock (pathlib dispatches on `os.name` at construction).
+- P1 local probe: `invalid_json`/non-`/models` payloads are no longer
+  accepted as connected (`probe_local_endpoint` returns an endpoint only
+  for `reason == "ok"`); `save_local_provider_response` reports the
+  `invalid_json` reason and never saves.
+- P2 checkpoint visibility: `WorkCheckpointStore.load_result()` returns an
+  explicit `WorkCheckpointLoadResult(checkpoint, corrupt_backup_path)`
+  (mutable side channel removed); `CheckpointContext` carries
+  `corrupt_backup_path` and a bounded backup notice in `prompt`, tested
+  through `ProjectTaskContextBuilder.build()`.
+- P2 backpressure: typed `BrowserWorkerBusy`; `/api/run` maps it to `503
+  {"error", "hint": "retry"}` instead of 500; `_submit_task` raises the
+  typed error on a full queue.
+- P2 abandon cleanup: research `fetch()` passes `on_abandoned` that
+  discards the current shared fetch page (idempotent with the job's own
+  discard paths); covered by a fake-page timeout test through the
+  production wrapper.
+- P3 runtime DAG: retention predicates move to the stdlib-only
+  `runtime/effects/keep_policies.py` leaf (effects modules re-export the
+  literals); new Tarjan test asserts `codey/runtime` has no import cycle.
+  Production imports move to `codey/operations/task_context` (workspace
+  keeps the shim).
+- Verification: full `pytest tests/ --ignore=tests/manual`
+  (`3793 passed, 6 skipped, 1304 subtests`); `ruff check .` clean;
+  `compileall` clean.
+
 ## Unreleased - P0/P1 safety + cold-start decoupling (no release)
 
 - Safety stop-bleed (fail closed, no new compat or fallback):

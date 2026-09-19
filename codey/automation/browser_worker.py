@@ -22,6 +22,10 @@ DEFAULT_STUCK_AFTER_SECONDS = 30.0
 DEFAULT_MAX_QUEUE_SIZE = 64
 
 
+class BrowserWorkerBusy(RuntimeError):
+    """The bounded browser queue is full: backpressure, not a server fault."""
+
+
 class _JobState(Enum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -262,7 +266,7 @@ class BrowserWorker:
             job.cancel_event.set()
             job.state = _JobState.CANCELLED
             job.abandoned = True
-            raise RuntimeError("browser worker busy: queue full")
+            raise BrowserWorkerBusy("browser worker busy: queue full")
 
         try:
             while not job.done.wait(_POLL_INTERVAL):

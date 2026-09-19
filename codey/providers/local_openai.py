@@ -172,10 +172,16 @@ def probe_local_endpoint(
     api_key: str = "",
     timeout: float = 1.5,
 ) -> LocalEndpoint | None:
-    endpoint, _reason = probe_local_endpoint_detail(
+    """Return an endpoint only for a valid OpenAI-compatible /models reply.
+
+    Anything else (unreachable/auth/invalid payload) is None: callers treat
+    "we got bytes but not /models" the same as "nothing there". Use
+    probe_local_endpoint_detail when the reason matters for an error message.
+    """
+    endpoint, reason = probe_local_endpoint_detail(
         base_url, api_key=api_key, timeout=timeout
     )
-    return endpoint
+    return endpoint if reason == "ok" else None
 
 
 def probe_local_endpoint_detail(
@@ -207,10 +213,10 @@ def probe_local_endpoint_detail(
     try:
         body = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return LocalEndpoint(url, ()), "invalid_json"
+        return None, "invalid_json"
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, list):
-        return LocalEndpoint(url, ()), "invalid_json"
+        return None, "invalid_json"
     models = tuple(
         str(item.get("id"))
         for item in data

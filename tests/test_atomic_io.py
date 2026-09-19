@@ -225,6 +225,10 @@ class AtomicWriteTests(unittest.TestCase):
     def test_fsync_dir_unsupported_errno_stays_silent(self) -> None:
         from codey.storage import atomic_io
 
+        # Build the path outside the os.name mock: pathlib dispatches on
+        # os.name at construction time, so constructing inside would read
+        # the faked platform instead of the real one.
+        target = Path(".")
         with (
             mock.patch.object(atomic_io.os, "name", "posix"),
             mock.patch.object(atomic_io.os, "open", return_value=99),
@@ -235,11 +239,13 @@ class AtomicWriteTests(unittest.TestCase):
             ),
             mock.patch.object(atomic_io.os, "close"),
         ):
-            atomic_io._fsync_dir(Path("."))
+            atomic_io._fsync_dir(target)
 
     def test_fsync_dir_real_error_propagates(self) -> None:
         from codey.storage import atomic_io
 
+        # See above: keep Path construction on the real platform.
+        target = Path(".")
         with (
             mock.patch.object(atomic_io.os, "name", "posix"),
             mock.patch.object(atomic_io.os, "open", return_value=99),
@@ -251,7 +257,7 @@ class AtomicWriteTests(unittest.TestCase):
             mock.patch.object(atomic_io.os, "close"),
         ):
             with self.assertRaises(OSError):
-                atomic_io._fsync_dir(Path("."))
+                atomic_io._fsync_dir(target)
 
 
 if __name__ == "__main__":

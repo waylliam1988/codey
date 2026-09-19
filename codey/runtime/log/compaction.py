@@ -1,16 +1,19 @@
 """Log compaction: replay-equivalent spine plus recovery facts.
 
 Only this module decides which records survive compaction. Retention
-policy for effect and delivery records lives in the effects domain and
-is called from here; grouping and rebatching stay here.
+policy for effect and delivery records is a shared leaf
+(`effects.keep_policies`) so the log package never imports the effects
+layer; grouping and rebatching stay here.
 """
 
 from __future__ import annotations
 
 import uuid
 
-from codey.runtime.effects.effect_records import keep_effect_pair_for_compaction
-from codey.runtime.effects.tool_result_delivery import keep_delivery_entry_for_compaction
+from codey.runtime.effects.keep_policies import (
+    keep_delivery_entry_for_compaction,
+    keep_effect_pair_for_compaction,
+)
 from codey.runtime.log.entries import RuntimeLogCorruption, RuntimeLogEntry
 
 

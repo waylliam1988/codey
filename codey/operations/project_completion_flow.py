@@ -84,7 +84,7 @@ from codey.workspace.change_brief import (
 )
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 from codey.workspace.facts import ProjectFactsStore
-from codey.workspace.task_context import (
+from codey.operations.task_context import (
     ProjectTaskContextBuilder,
     safe_project_map,
     safe_verification_candidates,

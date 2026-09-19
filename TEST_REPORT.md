@@ -1,5 +1,52 @@
 # Codey Test Report
 
+## CI findings follow-ups (2026-09-19)
+
+Scope:
+
+```text
+tests/test_atomic_io.py:            fsync tests build Path outside os.name mock
+providers/local_openai.py:          invalid payloads -> (None, invalid_json);
+                                    probe returns endpoint only for reason ok
+app/api.py + app/server.py +
+automation/browser_worker.py:       typed BrowserWorkerBusy; /api/run 503
+                                    {"error", "hint": "retry"}; _submit_task
+                                    raises typed busy on full queue
+runs/work_checkpoint.py +
+operations/task_context.py:         WorkCheckpointLoadResult explicit result;
+                                    CheckpointContext.corrupt_backup_path +
+                                    bounded backup notice in prompt
+research/browser_search.py:         fetch() passes on_abandoned shared-page
+                                    discard (idempotent)
+runtime/effects/keep_policies.py:   NEW stdlib-only retention leaf (effects
+                                    re-export literals); compaction imports leaf
+tests/test_hardening_batch2.py:     probe invalid payloads end-to-end, builder
+                                    corruption prompt, 503 mapping, typed submit,
+                                    fake-page abandon, no-op assertion replaced
+                                    with worker health assertion
+tests/test_architecture.py:         runtime Tarjan no-cycle test
+tests/test_research.py +
+test_server/adapters/etc:           patch targets moved to canonical modules
+docs:                               CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -B -m compileall -q codey tests tools` (passed)
+  `ruff check .` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `tests/test_atomic_io.py` (`14 passed, 2 skipped`)
+  `tests/test_hardening_batch2.py` (`29 passed`)
+  `tests/test_architecture.py` (`80 passed, 313 subtests passed`)
+  research fetch/browser suites + runtime/effects suites + approval/browser
+  suites (all green; one exact-kwarg assertion updated for on_abandoned)
+- Full pytest suite:
+  `python -m pytest tests/ -p no:cacheprovider --ignore=tests/manual`
+  (`3793 passed, 6 skipped, 1304 subtests passed in 253.86s (0:04:13)`)
+- No release (batch stays Unreleased).
+
 ## P0/P1 safety + cold-start decoupling (2026-09-19)
 
 Scope:

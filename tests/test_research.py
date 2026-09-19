@@ -4311,6 +4311,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             provider._fetch_on_browser_thread,
             "https://example.com/article",
             timeout=browser_search._FETCH_TOTAL_TIMEOUT_SECONDS,
+            on_abandoned=mock.ANY,
         )
 
     def test_browser_search_fetch_timeout_returns_error_and_records_worker_health(self) -> None:

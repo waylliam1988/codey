@@ -30,6 +30,11 @@ class BrokenCheckpointStore:
     def load(self, _session_id):
         return None
 
+    def load_result(self, session_id):
+        from codey.runs.work_checkpoint import WorkCheckpointLoadResult
+
+        return WorkCheckpointLoadResult(checkpoint=self.load(session_id))
+
     def start(self, **_kwargs):
         raise OSError("cannot write")
 

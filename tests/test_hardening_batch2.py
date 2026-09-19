@@ -10,7 +10,6 @@ route-level 500 containment.
 
 from __future__ import annotations
 
-import queue
 import tempfile
 import threading
 import unittest
@@ -207,7 +206,7 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
         release.set()
 
     def test_call_reports_busy_when_full(self) -> None:
-        from codey.automation.browser_worker import BrowserWorker
+        from codey.automation.browser_worker import BrowserWorker, BrowserWorkerBusy
 
         worker = BrowserWorker(name="test-call-busy", max_queue_size=1)
         release = threading.Event()
@@ -221,7 +220,7 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
         self.assertTrue(worker.submit(_blocker))
         self.assertTrue(started.wait(10))
         self.assertTrue(worker.submit(_blocker))
-        with self.assertRaisesRegex(RuntimeError, "busy"):
+        with self.assertRaises(BrowserWorkerBusy):
             worker.call(_blocker, timeout=5)
         release.set()
 
@@ -257,13 +256,13 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
         release.set()
         self.assertEqual(outcome.get("timed_out"), "yes")
         # Cleanup runs on the worker thread after abandon; poll briefly.
-        deadline = threading.Event()
         for _ in range(100):
             if cleaned.is_set():
                 break
-            deadline.wait(0.05)
+            threading.Event().wait(0.05)
         self.assertTrue(cleaned.is_set())
-        self.assertTrue(queue.Queue().empty() or True)
+        health = worker.health_snapshot().to_payload()
+        self.assertGreaterEqual(health["cancelled_jobs"], 1)
 
 
 class ManagedOutputFailureTests(unittest.TestCase):
@@ -320,6 +319,60 @@ class LocalProbeReasonTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             local_module._extract_reply({"choices": []})
 
+    def test_non_json_models_is_not_an_endpoint(self) -> None:
+        from codey.providers import local_openai as local_module
+
+        response = mock.Mock()
+        response.read.return_value = b"not json"
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        with mock.patch.object(
+            local_module.urllib.request, "urlopen", return_value=response
+        ):
+            endpoint, reason = local_module.probe_local_endpoint_detail("http://x")
+            thin = local_module.probe_local_endpoint("http://x")
+        self.assertIsNone(endpoint)
+        self.assertEqual(reason, "invalid_json")
+        self.assertIsNone(thin)
+
+    def test_non_openai_payload_is_not_an_endpoint(self) -> None:
+        import json as json_module
+
+        from codey.providers import local_openai as local_module
+
+        response = mock.Mock()
+        response.read.return_value = json_module.dumps({}).encode("utf-8")
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        with mock.patch.object(
+            local_module.urllib.request, "urlopen", return_value=response
+        ):
+            endpoint, reason = local_module.probe_local_endpoint_detail("http://x")
+            thin = local_module.probe_local_endpoint("http://x")
+        self.assertIsNone(endpoint)
+        self.assertEqual(reason, "invalid_json")
+        self.assertIsNone(thin)
+
+    def test_save_rejects_invalid_models_payload(self) -> None:
+        with (
+            mock.patch.object(app_api, "probe_local_endpoint", return_value=None),
+            mock.patch.object(
+                app_api,
+                "probe_local_endpoint_detail",
+                return_value=(None, "invalid_json"),
+            ),
+            mock.patch.object(
+                app_api, "save_local_config", side_effect=AssertionError("must not save")
+            ),
+        ):
+            status, payload = app_api.save_local_provider_response({
+                "base_url": "http://x/v1",
+                "model": "m",
+                "api_key": "k",
+            })
+        self.assertEqual(status, 400)
+        self.assertEqual(payload.get("reason"), "invalid_json")
+
 
 class CheckpointCorruptionTests(unittest.TestCase):
     def test_corrupt_checkpoint_leaves_a_backup(self) -> None:
@@ -330,11 +383,134 @@ class CheckpointCorruptionTests(unittest.TestCase):
             path = store.path_for("s1")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{truncated", encoding="utf-8")
+            result = store.load_result("s1")
+            self.assertIsNone(result.checkpoint)
+            self.assertIsNotNone(result.corrupt_backup_path)
+            assert result.corrupt_backup_path is not None
+            self.assertTrue(result.corrupt_backup_path.exists())
+            # Plain load keeps its historical shape.
             self.assertIsNone(store.load("s1"))
-            backup = store.last_corrupt_backup
-            self.assertIsNotNone(backup)
-            assert backup is not None
-            self.assertTrue(backup.exists())
+
+    def test_builder_surfaces_corrupt_backup_in_prompt(self) -> None:
+        from codey.operations.task_context import ProjectTaskContextBuilder
+        from codey.runs.work_checkpoint import WorkCheckpointStore
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            store = WorkCheckpointStore(root / "state")
+            path = store.path_for("s1")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{truncated", encoding="utf-8")
+            context = ProjectTaskContextBuilder(
+                work_checkpoints=store,
+            ).build(
+                project=project,
+                task="do it",
+                session_id="s1",
+                run_id="run-1",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+        self.assertTrue(context.checkpoint.corrupt_backup_path)
+        self.assertIn("corrupt", context.checkpoint.prompt)
+        self.assertIn("backed up", context.checkpoint.prompt)
+
+
+class WorkerBusyMappingTests(unittest.TestCase):
+    def test_run_submit_maps_busy_to_503(self) -> None:
+        from codey.automation.browser_worker import BrowserWorkerBusy
+
+        def _busy(*_args, **_kwargs):
+            raise BrowserWorkerBusy("browser worker busy: queue full")
+
+        status, payload = app_api.run_submit_response(
+            {
+                "session_id": "s",
+                "project": str(Path(".").resolve()),
+                "task": "do it",
+                "provider": "qwen",
+            },
+            submit_task=_busy,
+        )
+        self.assertEqual(status, 503)
+        self.assertIn("busy", str(payload.get("error")))
+        self.assertTrue(payload.get("hint"))
+
+    def test_run_submit_keeps_500_for_server_faults(self) -> None:
+        def _broken(*_args, **_kwargs):
+            raise RuntimeError("disk exploded")
+
+        status, payload = app_api.run_submit_response(
+            {
+                "session_id": "s",
+                "project": str(Path(".").resolve()),
+                "task": "do it",
+                "provider": "qwen",
+            },
+            submit_task=_broken,
+        )
+        self.assertEqual(status, 500)
+
+    def test_submit_task_raises_typed_busy_on_full_queue(self) -> None:
+        from codey.app import server as server_module
+        from codey.automation.browser_worker import BrowserWorkerBusy
+
+        reserved = SimpleNamespace(run_id="run-1")
+        state = SimpleNamespace(
+            reserve_run=mock.Mock(return_value=reserved),
+            release_run=mock.Mock(),
+            expire_stale_shell_approvals=mock.Mock(),
+        )
+        with (
+            mock.patch.object(server_module, "STATE", state),
+            mock.patch.object(
+                server_module, "submit_browser_task", return_value=False
+            ),
+        ):
+            with self.assertRaises(BrowserWorkerBusy):
+                server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
+        state.release_run.assert_called_once_with("run-1")
+
+
+class BrowserFetchAbandonTests(unittest.TestCase):
+    def test_abandoned_fetch_closes_page_via_production_wrapper(self) -> None:
+        from codey.automation.browser_worker import BrowserWorker
+        from codey.research import browser_search as browser_search_module
+        from codey.research.browser_search import BrowserSearchProvider
+
+        provider = BrowserSearchProvider()
+        worker = BrowserWorker(name="test-fetch-abandon")
+        fake_page = mock.Mock()
+        release = threading.Event()
+
+        def _slow_fetch(url):
+            provider._fetch_page = fake_page
+            self.assertTrue(release.wait(10))
+            return {"url": url, "title": "", "text": "late", "truncated": False}
+
+        with (
+            mock.patch.object(
+                provider, "_fetch_on_browser_thread", side_effect=_slow_fetch
+            ),
+            mock.patch.object(
+                browser_search_module,
+                "_search_browser_worker",
+                return_value=worker,
+            ),
+            mock.patch.object(
+                browser_search_module, "_FETCH_TOTAL_TIMEOUT_SECONDS", 0.2
+            ),
+        ):
+            result = provider.fetch("https://example.com/report")
+        self.assertIn("ERROR", str(result.get("text")))
+        release.set()
+        for _ in range(100):
+            if fake_page.close.called:
+                break
+            threading.Event().wait(0.05)
+        fake_page.close.assert_called()
 
 
 class SystemPromptLazyTests(unittest.TestCase):

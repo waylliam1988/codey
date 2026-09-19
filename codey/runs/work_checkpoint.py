@@ -161,33 +161,41 @@ class WorkCheckpoint:
         return payload
 
 
+@dataclass(frozen=True)
+class WorkCheckpointLoadResult:
+    """Explicit load outcome: corruption is data, not a side channel."""
+
+    checkpoint: WorkCheckpoint | None = None
+    corrupt_backup_path: Path | None = None
+
+
 class WorkCheckpointStore:
     """Keep at most one active task checkpoint per UI session."""
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.state_home = Path(state_home)
-        # Last corrupt checkpoint backup written by load(). None means the
-        # last load was clean/missing. Callers surface this instead of
-        # pretending a corrupt checkpoint is "no checkpoint".
-        self.last_corrupt_backup: Path | None = None
 
     def path_for(self, session_id: str) -> Path:
         return self.state_home / "work_checkpoints" / f"{session_key(session_id)}.json"
 
     def load(self, session_id: str) -> WorkCheckpoint | None:
+        return self.load_result(session_id).checkpoint
+
+    def load_result(self, session_id: str) -> WorkCheckpointLoadResult:
         path = self.path_for(session_id)
         try:
             payload = read_json_strict(path, max_bytes=MAX_CHECKPOINT_BYTES)
         except StoreCorruption:
-            self.last_corrupt_backup = backup_corrupt_file(path)
-            return None
-        self.last_corrupt_backup = None
+            return WorkCheckpointLoadResult(
+                checkpoint=None,
+                corrupt_backup_path=backup_corrupt_file(path),
+            )
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
-            return None
+            return WorkCheckpointLoadResult(checkpoint=None)
         try:
             status = str(payload.get("status") or "")
             if status not in VALID_STATUSES or str(payload.get("session_id") or "") != session_id:
-                return None
+                return WorkCheckpointLoadResult(checkpoint=None)
             files = []
             for item in payload.get("changed_files") or []:
                 rel = _rel_path(item.get("path")) if isinstance(item, dict) else None
@@ -228,22 +236,24 @@ class WorkCheckpointStore:
                     _rel_path(action_value.get("cwd") or ".") or ".",
                 )
             project = str(Path(str(payload.get("project") or "")).expanduser().resolve())
-            return WorkCheckpoint(
-                run_id=_text(payload.get("run_id"), 120),
-                session_id=session_id,
-                project=project,
-                original_task=_text(payload.get("original_task"), MAX_TASK_CHARS),
-                status=status,
-                started_at=_text(payload.get("started_at"), 40),
-                updated_at=_text(payload.get("updated_at"), 40),
-                changed_files=tuple(files),
-                hash_unavailable_files=hash_unavailable,
-                successful_checks_after_last_change=tuple(checks),
-                last_action=action,
-                stop_reason=_text(payload.get("stop_reason"), MAX_STOP_REASON_CHARS),
+            return WorkCheckpointLoadResult(
+                checkpoint=WorkCheckpoint(
+                    run_id=_text(payload.get("run_id"), 120),
+                    session_id=session_id,
+                    project=project,
+                    original_task=_text(payload.get("original_task"), MAX_TASK_CHARS),
+                    status=status,
+                    started_at=_text(payload.get("started_at"), 40),
+                    updated_at=_text(payload.get("updated_at"), 40),
+                    changed_files=tuple(files),
+                    hash_unavailable_files=hash_unavailable,
+                    successful_checks_after_last_change=tuple(checks),
+                    last_action=action,
+                    stop_reason=_text(payload.get("stop_reason"), MAX_STOP_REASON_CHARS),
+                )
             )
         except (OSError, TypeError, ValueError):
-            return None
+            return WorkCheckpointLoadResult(checkpoint=None)
 
     def save(self, checkpoint: WorkCheckpoint) -> None:
         path = self.path_for(checkpoint.session_id)

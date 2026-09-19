@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import services
+from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
@@ -359,6 +360,8 @@ def run_submit_response(
             provider_id,
             intent,
         )
+    except BrowserWorkerBusy:
+        return 503, {"error": "browser worker busy", "hint": "retry"}
     except Exception as exc:
         return 500, {"error": str(exc)}
     if run_id is None:

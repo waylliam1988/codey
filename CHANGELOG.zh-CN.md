@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - CI findings 跟进（未发布）
+
+- CI  hermetic 修复：`test_atomic_io` 的 fsync 测试把 `Path(".")` 移到
+  `os.name` mock 之外构造（pathlib 在构造时按 `os.name` 分发）。
+- P1 本地探针：`invalid_json`/非 `/models` 负载不再被接受为 connected
+ （仅 `reason == "ok"` 才返回 endpoint）；`save_local_provider_response`
+  返回 `invalid_json` 原因且永不保存。
+- P2 checkpoint 可见：`WorkCheckpointStore.load_result()` 返回显式的
+  `WorkCheckpointLoadResult(checkpoint, corrupt_backup_path)`（删掉可变
+  side channel）；`CheckpointContext` 携带 `corrupt_backup_path`，
+  `prompt` 内附有界备份提示，经 `ProjectTaskContextBuilder.build()` 测试。
+- P2 背压：typed `BrowserWorkerBusy`；`/api/run` 映射为 `503
+  {"error", "hint": "retry"}` 而非 500；队列满时 `_submit_task` 抛 typed
+  错误。
+- P2 抛弃清理：research `fetch()` 传入 `on_abandoned` 丢弃当前共享取页
+  （与任务自身丢弃路径幂等）；经生产 wrapper 的假页面超时测试覆盖。
+- P3 runtime DAG：保留策略下沉到纯 stdlib 的
+  `runtime/effects/keep_policies.py` 叶子（effects 模块 re-export 字面
+  量）；新增 Tarjan 测试断言 `codey/runtime` 无 import 环。生产 import
+  切到 `codey/operations/task_context`（workspace 留垫片）。
+- 验证：全量 `pytest tests/ --ignore=tests/manual`
+ （`3793 passed, 6 skipped, 1304 subtests`）；`ruff check .` 通过；
+  `compileall` 通过。
+
 ## Unreleased - P0/P1 安全止血 + 冷启动解耦（未发布）
 
 - 安全止血（fail closed，不新增兼容或 fallback）：

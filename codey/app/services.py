@@ -36,7 +36,7 @@ from codey.storage.managed_outputs import ManagedOutputStore
 from codey.utils.refs import clip, digest_text
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
-from codey.workspace.task_context import safe_verification_candidates
+from codey.operations.task_context import safe_verification_candidates
 
 
 @dataclass(frozen=True)
