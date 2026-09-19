@@ -1730,6 +1730,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     mod = node.module
                     if mod == "codey.runtime" or mod.startswith("codey.runtime."):
                         names.add(mod)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "codey.runtime" or alias.name.startswith("codey.runtime."):
+                            names.add(alias.name)
             modules[name] = names
         index: dict[str, int] = {}
         low: dict[str, int] = {}
@@ -1766,6 +1770,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             if module not in index:
                 strongconnect(module)
         self.assertEqual(cycles, [])
+
+    def test_workspace_task_context_shim_has_no_production_importers(self) -> None:
+        # workspace/task_context.py is a compatibility re-export only; the
+        # canonical home is operations.task_context. Production code must not
+        # import the shim, or it quietly becomes permanent plumbing.
+        offenders: list[str] = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            if "codey.workspace.task_context" in imported_modules(path):
+                offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(offenders, [])
 
     def test_long_files_do_not_grow(self) -> None:
         # 1000-line guardrail (warning-grade): the files above the line are

@@ -355,7 +355,6 @@ class LocalProbeReasonTests(unittest.TestCase):
 
     def test_save_rejects_invalid_models_payload(self) -> None:
         with (
-            mock.patch.object(app_api, "probe_local_endpoint", return_value=None),
             mock.patch.object(
                 app_api,
                 "probe_local_endpoint_detail",
@@ -372,6 +371,37 @@ class LocalProbeReasonTests(unittest.TestCase):
             })
         self.assertEqual(status, 400)
         self.assertEqual(payload.get("reason"), "invalid_json")
+
+    def test_save_probes_models_exactly_once(self) -> None:
+        import json as json_module
+
+        from codey.providers import local_openai as local_module
+
+        response = mock.Mock()
+        response.read.return_value = json_module.dumps(
+            {"data": [{"id": "m"}]}
+        ).encode("utf-8")
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        with (
+            mock.patch.object(
+                local_module.urllib.request, "urlopen", return_value=response
+            ) as opened,
+            mock.patch.object(app_api, "load_local_config", return_value={}),
+            mock.patch.object(app_api, "save_local_config") as saved,
+            mock.patch.object(
+                app_api, "local_config_payload", return_value={"connected": True}
+            ),
+        ):
+            status, payload = app_api.save_local_provider_response({
+                "base_url": "http://x/v1",
+                "model": "m",
+                "api_key": "k",
+            })
+        self.assertEqual(status, 200)
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(opened.call_count, 1)
+        saved.assert_called_once()
 
 
 class CheckpointCorruptionTests(unittest.TestCase):
@@ -416,6 +446,35 @@ class CheckpointCorruptionTests(unittest.TestCase):
         self.assertTrue(context.checkpoint.corrupt_backup_path)
         self.assertIn("corrupt", context.checkpoint.prompt)
         self.assertIn("backed up", context.checkpoint.prompt)
+
+    def test_notice_survives_fresh_start_failure(self) -> None:
+        from codey.operations.task_context import ProjectTaskContextBuilder
+        from codey.runs.work_checkpoint import WorkCheckpointLoadResult
+
+        class _CorruptThenUnwritable:
+            def load_result(self, _session_id):
+                return WorkCheckpointLoadResult(
+                    checkpoint=None,
+                    corrupt_backup_path=Path("/tmp/state/abc.corrupt"),
+                )
+
+            def start(self, **_kwargs):
+                raise OSError("cannot write")
+
+        with tempfile.TemporaryDirectory() as td:
+            context = ProjectTaskContextBuilder(
+                work_checkpoints=_CorruptThenUnwritable(),
+            ).build(
+                project=Path(td),
+                task="do it",
+                session_id="s1",
+                run_id="run-1",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+        self.assertIsNone(context.checkpoint.item)
+        self.assertTrue(context.checkpoint.corrupt_backup_path)
+        self.assertIn("corrupt", context.checkpoint.prompt)
 
 
 class WorkerBusyMappingTests(unittest.TestCase):

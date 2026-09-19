@@ -2,6 +2,23 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review follow-up finishing pass (no release)
+
+- Local provider save now branches on one `probe_local_endpoint_detail()`
+  result, removing the double `/models` probe that could disagree if the
+  endpoint changed between requests.
+- Checkpoint initialization keeps the corrupt-checkpoint backup notice even
+  when the fresh checkpoint write fails, while resume/reconcile failures stay
+  an empty checkpoint context.
+- Architecture guards now catch both `import codey.runtime...` and
+  `from codey.runtime...` edges, and assert production code no longer imports
+  the `codey.workspace.task_context` shim.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean
+  (CRLF normalization warnings only); focused pytest
+  (`337 passed, 1 skipped, 313 subtests`); full
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3779 passed, 23 skipped in 269.44s`).
+
 ## Unreleased - CI findings follow-ups (no release)
 
 - CI hermetic fix: `test_atomic_io` fsync tests build `Path(".")` outside

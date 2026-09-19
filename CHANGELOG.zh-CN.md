@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 复查收尾批次（未发布）
+
+- 本地 provider 保存改为只依据一次 `probe_local_endpoint_detail()` 结果分支，
+  去掉可能在端点抖动时前后不一致的双 `/models` 探针。
+- checkpoint 初始化在坏 checkpoint 已备份、但新 checkpoint 写入失败时，
+  仍保留有界提示；resume/reconcile 失败则继续退化为空 checkpoint context。
+- 架构门禁现在同时覆盖 `import codey.runtime...` 与
+  `from codey.runtime...` 边，并断言生产代码不再 import
+  `codey.workspace.task_context` 垫片。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过
+ （仅既有 CRLF normalization warning）；聚焦 pytest
+  `337 passed, 1 skipped, 313 subtests`；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  `3779 passed, 23 skipped in 269.44s`。
+
 ## Unreleased - CI findings 跟进（未发布）
 
 - CI  hermetic 修复：`test_atomic_io` 的 fsync 测试把 `Path(".")` 移到

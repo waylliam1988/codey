@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Review follow-up finishing pass (2026-09-19)
+
+Scope:
+
+```text
+app/api.py:                 save_local_provider_response uses one detailed
+                            local /models probe and branches on that verdict
+operations/task_context.py: checkpoint load/start handling split; corrupt
+                            backup notice survives fresh-start write failure
+tests/test_hardening_batch2.py:
+                            single-probe save coverage; corrupt-backup notice
+                            survives start failure
+tests/test_architecture.py: runtime Tarjan scan covers ast.Import as well as
+                            ast.ImportFrom; production code may not import the
+                            workspace.task_context shim
+tests/test_server.py:       local-provider mocks target the detailed probe
+docs:                       CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_hardening_batch2.py tests\test_architecture.py tests\test_project_task_context.py tests\test_server.py -q`
+  (`337 passed, 1 skipped, 313 subtests passed in 40.93s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3779 passed, 23 skipped in 269.44s (0:04:29)`)
+- No release.
+
 ## CI findings follow-ups (2026-09-19)
 
 Scope:

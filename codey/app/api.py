@@ -13,7 +13,6 @@ from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_openai import (
     load_local_config,
     local_config_payload,
-    probe_local_endpoint,
     probe_local_endpoint_detail,
     save_local_config,
 )
@@ -125,9 +124,10 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
             "ok": False,
             "error": "api_key required when base_url changes",
         }
-    endpoint = probe_local_endpoint(base_url, api_key=probe_key)
-    if endpoint is None:
-        _retry, reason = probe_local_endpoint_detail(base_url, api_key=probe_key)
+    # One probe only: branching on a single detail result keeps the verdict
+    # consistent even if the endpoint flaps between two requests.
+    endpoint, reason = probe_local_endpoint_detail(base_url, api_key=probe_key)
+    if endpoint is None or reason != "ok":
         detail = {
             "unreachable": "could not reach an OpenAI-compatible /models endpoint",
             "auth": "local endpoint rejected the api_key (401/403)",

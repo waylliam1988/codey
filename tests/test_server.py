@@ -2003,7 +2003,7 @@ class LocalProviderApiTests(unittest.TestCase):
                         "api_key": "old-secret",
                     },
                 ),
-                mock.patch.object(app_api, "probe_local_endpoint") as probe,
+                mock.patch.object(app_api, "probe_local_endpoint_detail") as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
@@ -2047,8 +2047,11 @@ class LocalProviderApiTests(unittest.TestCase):
                 ),
                 mock.patch.object(
                     app_api,
-                    "probe_local_endpoint",
-                    return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                    "probe_local_endpoint_detail",
+                    return_value=(
+                        LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                        "ok",
+                    ),
                 ) as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
                 mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
@@ -2089,8 +2092,11 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(app_api, "load_local_config", return_value={"api_key": "old-secret"}),
                 mock.patch.object(
                     app_api,
-                    "probe_local_endpoint",
-                    return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                    "probe_local_endpoint_detail",
+                    return_value=(
+                        LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                        "ok",
+                    ),
                 ) as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
                 mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
