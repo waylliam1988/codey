@@ -2,6 +2,28 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Release 卫生：空白、债务重计、探针配额、roadmap 路径（未发布）
+
+- 修复 `git show --check HEAD` 空白问题：5 个 `operations/task_phases/*.py`
+  文件删掉 EOF 多余空行，只保留一个最终换行。
+- 修掉拆包引入的 6 条新增 `B/UP/I/SIM` 债而不是上调 ratchet：1×`I001` import
+  排序、4×`SIM105` 改 `contextlib.suppress`、1×`SIM103` 直接返回布尔。
+  重计口径 `ruff check codey tests --select B,UP,I,SIM` 为
+  `950 total (B:35, UP:223, I:376, SIM:316), 681 fixable`
+ （全 repo `956/686`，含 `tools/`）。
+- `workspace/map.py`：remainder 保留探针配额（解析预算 20%，至少 8 个）。
+  positives 只占 `parse_limit - probe_quota`，零信号文件按 module 轮询，
+  余量回补 positives——名字命中洪水再也饿不死纯符号命中。回归测试用 120 个
+  `aaa/target_magic_widget_*.py`（只有 `generic_helper`）淹没
+  `zzz/z999.py`（`target_magic_widget`），要求目标被解析（旧代码失败）。
+  展示排序（一模块、path 加权）有意不动。
+- `ROADMAP.zh-CN.md`：scorer 指引改为 `tests/manual/research_scorers/...`；
+  历史 CHANGELOG 不动。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  commit 后再验 `git show --check HEAD`；聚焦回归全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+ （`3824 passed, 6 skipped, 1300 subtests passed in 254.73s`）。
+
 ## Unreleased - task_run_phases 拆成 task_phases 包，逐字搬运（未发布）
 
 - 删除 979 行 `operations/task_run_phases.py`，26 个定义经 AST 切片逐字搬运

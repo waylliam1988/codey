@@ -75,4 +75,3 @@ def ghost_task_deps(deps: Any, review_deps: ReviewFlowDeps) -> GhostTaskPolicyDe
         has_reviewable_diff=lambda project: has_reviewable_diff(review_deps, project),
         record_completion_proof_trace=record_completion_proof_trace,
     )
-

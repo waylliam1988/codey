@@ -495,10 +495,15 @@ def _scan_focus_candidates(
     positives = [rel for score, rel in sorted(scored, key=lambda item: (-item[0], item[1])) if score > 0]
     remainder = sorted(rel for score, rel in scored if score <= 0)
     parse_limit = MAX_SYMBOL_FILES if MAX_SYMBOL_FILES > 0 else MAX_FOCUS_SCAN_FILES
-    # Probe complement (cold start: no index): positives first, then round-robin
-    # across top-level modules so one big alphabetical module cannot starve the
-    # rest. Zero-signal files are never taken as a pure alphabetical prefix.
-    ordered = list(positives)
+    # Probe complement (cold start: no index): positives first, but the
+    # remainder always keeps a probe quota (20%, at least 8) so files whose
+    # task words live only in symbol names cannot be starved by a flood of
+    # name-matching but symbol-irrelevant files. Leftover quota goes back to
+    # positives. Zero-signal files are never taken as a pure alphabetical
+    # prefix: they are round-robined across top-level modules.
+    probe_quota = max(8, parse_limit // 5)
+    positive_budget = max(0, parse_limit - probe_quota)
+    ordered = list(positives[:positive_budget])
     if len(ordered) < parse_limit and remainder:
         by_module: dict[str, list[str]] = {}
         for rel in remainder:
@@ -510,6 +515,8 @@ def _scan_focus_candidates(
             index += 1
             if by_module[module]:
                 ordered.append(by_module[module].pop(0))
+    if len(ordered) < parse_limit:
+        ordered.extend(positives[positive_budget:][: parse_limit - len(ordered)])
     candidates: list[FocusCandidate] = []
     for rel in ordered[:parse_limit]:
         path = paths_by_rel[rel]

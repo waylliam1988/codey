@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -172,9 +173,7 @@ def start_run_operation(
             max_repair_rounds=max_repair_rounds,
             task_kind=task_kind,
         )
-        if work.operation is None:
-            return False
-        return True
+        return work.operation is not None
     except (OSError, ValueError, RuntimeOperationTransitionError):
         work.operation = None
         return False
@@ -204,12 +203,9 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
 def _update_checkpoint_safely(deps: Any, work: RunWork, reason: str) -> None:
     if deps.work_checkpoints is None or work.work_checkpoint is None:
         return
-    try:
+    with suppress(OSError, ValueError):
         work.work_checkpoint = deps.work_checkpoints.set_status(
             work.work_checkpoint,
             "interrupted",
             reason,
         )
-    except (OSError, ValueError):
-        pass
-

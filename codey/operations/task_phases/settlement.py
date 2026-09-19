@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import replace
 from typing import Any
 
@@ -53,12 +54,10 @@ def settle_cancelled_run(
     if work is not None:
         _update_checkpoint_safely(deps, work, "stopped")
     if conversation is not None:
-        try:
+        with suppress(Exception):
             conversation.update_snapshot(
                 replace(conversation.snapshot, provider_id=provider_id, blocker="stopped")
             )
-        except Exception:
-            pass
     stopped_event = task_done_event(
         run_id=run_id,
         session_id=session_id,
@@ -114,12 +113,10 @@ def settle_error_run(
     if work is not None:
         _update_checkpoint_safely(deps, work, "error")
     if conversation is not None:
-        try:
+        with suppress(Exception):
             conversation.update_snapshot(
                 replace(conversation.snapshot, provider_id=provider_id, blocker=str(exc))
             )
-        except Exception:
-            pass
     failure = None
     if not isinstance(exc, ToolResultDeliveryError):
         failure = (
@@ -218,4 +215,3 @@ def _finish_mode_outcome(
         research_result=outcome.research_result,
     )
     return operation_outcome_from_task_done_event(event)
-

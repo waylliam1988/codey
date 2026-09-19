@@ -52,6 +52,6 @@ target-version = "py311"
 [tool.ruff.lint]
 # W (trailing whitespace/newline) is enforced. B/UP/I/SIM stay off until the
 # pre-existing debt is paid down (`ruff check codey tests --select B,UP,I,SIM`:
-# B:35, UP:223, I:373, SIM:319, 950 total, 678 fixable as of 2026-09-20);
+# B:35, UP:223, I:376, SIM:316, 950 total, 681 fixable as of 2026-09-20);
 # enabling them now would only force unrelated fixes into every batch.
 select = ["E4", "E7", "E9", "F", "W"]

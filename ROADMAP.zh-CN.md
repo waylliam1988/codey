@@ -1422,8 +1422,8 @@ codey/research/evidence_followup.py（单轮 knowledge_write-only evidence 提�
 codey/research/record_merge.py（确定性合并新 evidence，不合并 unsupported 新 claim）
 codey/research/done_finalizer.py（citation compiler + final-report claim filter）
 codey/research/source_rendering.py（默认 open_url/source-content untrusted-data wrapper）
-codey/research/source_finalizer_scoring.py（纯 scorer，只供 manual/gate；不参与生产报告生成）
-codey/research/followup_quality.py（纯 scorer，只供 manual/gate 与发布决策）
+tests/manual/research_scorers/source_finalizer_scoring.py（纯 scorer，只供 manual/gate；不参与生产报告生成）
+tests/manual/research_scorers/followup_quality.py（纯 scorer，只供 manual/gate 与发布决策）
 ```
 
 manual-only 仍保留为证据和复盘层，不是生产接线：

@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Release hygiene: whitespace, debt recount, probe quota, roadmap paths (2026-09-20)
+
+Scope:
+
+```text
+codey/operations/task_phases/*.py:
+                             removed extra blank line at EOF (git show --check clean);
+                             fixed 6 new B/UP/I/SIM debts (I001 sort, 4xSIM105
+                             suppress, SIM103 direct return) instead of ratcheting
+pyproject.toml:              debt comment recounted (950 total / 681 fixable)
+codey/workspace/map.py:      remainder probe quota (20%, min 8); positives take
+                             parse_limit - quota; leftover backfills positives
+tests/test_coldstart_review_batch.py:
+                             new name-flood probe-quota regression test
+ROADMAP.zh-CN.md:            scorer guidance -> tests/manual/research_scorers/...
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warning)
+- Targeted gate before the full run:
+  `python -m pytest tests/test_coldstart_review_batch.py tests/test_workspace_project_map.py tests/test_knowledge.py tests/test_architecture.py -q`
+  (`143 passed, 311 subtests passed`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3824 passed, 6 skipped, 1300 subtests passed in 254.73s (0:04:14)`)
+- Post-commit gate: `git show --check HEAD` (to be verified after commit).
+- No release.
+
 ## Split task_run_phases into the task_phases package, verbatim motion only (2026-09-20)
 
 Scope:

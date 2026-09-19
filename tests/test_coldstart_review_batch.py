@@ -341,6 +341,36 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             symbol_map = project_map.build_symbol_overview(root, "target magic widget")
         self.assertIn("target_magic_widget", focused + symbol_map)
 
+    def test_focused_scan_reserves_probe_quota_against_name_flood(self) -> None:
+        from codey.workspace import map as project_map
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            crowded = root / "aaa"
+            crowded.mkdir()
+            # Every crowded file matches the task words in its *name* but has
+            # no relevant symbol; the real target matches only in symbol name.
+            for index in range(project_map.MAX_SYMBOL_FILES):
+                (crowded / f"target_magic_widget_{index:03d}.py").write_text(
+                    "def generic_helper():\n    return True\n", encoding="utf-8"
+                )
+            late = root / "zzz"
+            late.mkdir()
+            (late / "z999.py").write_text(
+                "def target_magic_widget():\n    return True\n", encoding="utf-8"
+            )
+            candidates, _budget = project_map._scan_focus_candidates(
+                root, "target magic widget"
+            )
+            by_path = {candidate.path: candidate for candidate in candidates}
+        # The probe quota guarantees the symbol-only match is parsed even
+        # though 120 name-matching files flood the path-score ranking. (Which
+        # module the display surfaces is a separate ranking decision.)
+        self.assertIn("zzz/z999.py", by_path)
+        self.assertIn(
+            "target_magic_widget", " ".join(by_path["zzz/z999.py"].symbols)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 from codey.agents.shell_approval import ShellApprovalRequest
@@ -25,7 +26,6 @@ from codey.runtime.observe.events import (
 )
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.observe.terminalizer import nonnegative_event_count
-
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +90,8 @@ def build_hooks(
     def update_checkpoint(action: Callable[[Any, Any], Any]) -> None:
         if deps.work_checkpoints is None or work.work_checkpoint is None:
             return
-        try:
+        with suppress(OSError, ValueError):
             work.work_checkpoint = action(deps.work_checkpoints, work.work_checkpoint)
-        except (OSError, ValueError):
-            pass
 
     def on_event(event: RunEvent) -> None:
         work.turns_observed = max(work.turns_observed, nonnegative_event_count(event.turn))
@@ -208,4 +206,3 @@ def _workspace_edit_event(event: RunEvent) -> bool:
         and bool(event.outcome.ok)
         and bool(event.outcome.changed)
     )
-

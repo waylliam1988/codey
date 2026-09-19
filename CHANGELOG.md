@@ -2,6 +2,32 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Release hygiene: whitespace, debt recount, probe quota, roadmap paths (no release)
+
+- Fixed `git show --check HEAD` whitespace: removed the extra blank line at EOF
+  in all five `operations/task_phases/*.py` modules (single trailing newline kept).
+- Fixed the 6 new `B/UP/I/SIM` debts the split introduced instead of ratcheting
+  up: 1×`I001` import sort, 4×`SIM105` `try/except/pass` to
+  `contextlib.suppress`, 1×`SIM103` direct boolean return. Recounted caliber
+  `ruff check codey tests --select B,UP,I,SIM` is now
+  `950 total (B:35, UP:223, I:376, SIM:316), 681 fixable`
+  (full repo `956/686` including `tools/`).
+- `workspace/map.py`: the remainder now keeps a probe quota (20% of the parse
+  budget, at least 8). Positives take only `parse_limit - probe_quota` slots,
+  zero-signal files round-robin across modules, leftover quota backfills
+  positives — a flood of name-matching files can no longer starve a
+  symbol-only match. Regression test floods 120 `aaa/target_magic_widget_*.py`
+  (`generic_helper` only) plus `zzz/z999.py` (`target_magic_widget`); the
+  target must be parsed (fails on old code). Display ranking (one module,
+  path-weighted) intentionally unchanged.
+- `ROADMAP.zh-CN.md`: scorer guidance now points at
+  `tests/manual/research_scorers/...`; historical CHANGELOG entries untouched.
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `git show --check HEAD` to be re-verified after commit; focused
+  regression green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3824 passed, 6 skipped, 1300 subtests passed in 254.73s`).
+
 ## Unreleased - Split task_run_phases into the task_phases package, verbatim motion only (no release)
 
 - Deleted the 979-line `operations/task_run_phases.py` and moved its 26

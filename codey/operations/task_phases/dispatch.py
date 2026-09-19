@@ -302,4 +302,3 @@ def record_route_trace(
         reason_code=route_reason,
         overridden_by_user=(route_source == "explicit_user_choice"),
     )
-
