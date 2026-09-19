@@ -24,7 +24,13 @@
   行（原来只在探测崩溃时提示）。Research notes 一次
   `POST /api/research/notes`（最多 64 个，返回 `{notes, missing}`），不再 N+1；
   `research-use-project`/`changes-refresh` 用 `disabled` + `title` 代替静默
-  no-op。Ghost 警告收进 `ghost/_warnings.py`（等价移动，`router` 保持无界
+  no-op。Provider 目录后续复查改为冷启动不阻塞：`boot` 采纳的是便宜的
+  `/api/provider_catalog`（只返回 id/label，不探 CDP/本地 API），可用性仍留在
+  异步 `/api/providers` 刷新路径。`for_session` 在锁外 load 期间如果 token 被
+  `forget`/evict/新 load 抢走，会返回一个 detached 的 stale context，不再把它
+  重新装回 `contexts/tokens`；`_ghost_store/knowledge_store` 双检输掉的 loser
+  会在 `AppContext.lock` 外 best-effort `close()`，不把清理 IO 带回锁内。
+  Ghost 警告收进 `ghost/_warnings.py`（等价移动，`router` 保持无界
   map，`inbox/hebbian` 保持 slice 不 clip）。减法：删
   `GET /api/research/concept_graph` + 对应 API（内部 `ConceptGraphBuilder` 留给
   `unified_graph/research_interest`；图只走 `/api/research/graph`，
@@ -32,7 +38,8 @@
   （只留 `POST /api/changes`）。`_request` 加 `grace=True`（正常链路不变），
   `close()` 传 `grace=False`，无响应子进程最多等 2s。测试：trace 日志断言、
   坏 recorder 下 `_setup_loop` 存活、fsync `EIO 抛/EINVAL 静默`、锁外加载探针、
-  shell 稳定状态、目录契约、批量笔记、警告等价、close 跳 grace、管道关闭、
+  `forget` 中途打断不复活、discarded loser 锁外 close、shell 稳定状态、
+  provider catalog no-probe 契约、批量笔记、警告等价、close 跳 grace、管道关闭、
   动态菜单/禁用按钮/路由删除的 UI 静态测试。
 - hardening 批次的复查跟进（不新增兼容或 fallback）：
   过期 SSE replay 改为 marker-only：`replay_events_after` 只返回

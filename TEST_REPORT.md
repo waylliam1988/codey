@@ -11,17 +11,24 @@ agents/loop.py:                     drop silent try/pass around trace calls
 storage/atomic_io.py:               _fsync_dir only swallows EINVAL/ENOTSUP/
                                     EOPNOTSUPP/ENOSYS/EPERM, else raise
 app/conversation_registry.py:       for_session loads outside self.lock,
-                                    double-checked token install
+                                    double-checked token install; stale
+                                    lock-free loads that lose the token to
+                                    forget/evict/newer load return detached
+                                    and never resurrect contexts/tokens
 app/server.py:                      _ghost_store/knowledge_store build outside
-                                    AppContext.lock, double-checked install
+                                    AppContext.lock, double-checked install;
+                                    discarded losers close outside
+                                    AppContext.lock
 app/knowledge_indexer.py:           owns its lock (no AppContext.lock reuse)
 app/services.py + app/api.py + web: shell stable status stopped/timeout/
                                     spawn_error/exit; events/409 carry status;
                                     web renders by status (monochrome)
 web/assets/provider_ui.js +         dynamic provider menu (no static copy);
-web/assets/ui_state.js +            boot adoptCatalog before init; setProviders
-web/index.html:                     in-place mutate; fetch !ok/catch raises
-                                    Provider status unavailable
+web/assets/ui_state.js +            boot adopts cheap /api/provider_catalog
+web/index.html:                     before init (ids/labels only, no
+                                    CDP/network probe); setProviders in-place
+                                    mutate; /api/providers fetch !ok/catch
+                                    raises Provider status unavailable
 app/api.py + app/server.py + web:   POST /api/research/notes {ids(<=64)} ->
                                     {notes, missing}; drawer single batch;
                                     research-use-project/changes-refresh
@@ -40,31 +47,42 @@ providers/worker.py:                _request gains grace=True; close() uses
 tests/test_file_lock.py:            close Popen stdout/stderr pipes
 tests:                              trace log + broken-recorder setup_loop,
                                     fsync EIO/EINVAL, lock-outside probe,
-                                    shell status, catalog contract, notes batch
-                                    + routes, warning equivalence, close grace,
-                                    UI static (menu/batch/disabled/no endpoint)
+                                    forget-during-load no resurrect,
+                                    discarded-loser close outside lock,
+                                    shell status, catalog no-probe contract,
+                                    notes batch + routes, warning equivalence,
+                                    close grace, UI static
+                                    (menu/batch/disabled/no endpoint)
 docs:                               CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased
 ```
 
 Verification:
 
 - Static gates before the full run:
-  `python -m compileall -q codey tests` (passed)
-  `ruff check codey tests` (passed; one unused ghost schema import removed)
+  `python -B -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed)
   `git diff --check` (passed; only CRLF normalization warnings)
 - Focused gates (all green before the full run):
-  `tests/test_prompt_envelope tests/test_atomic_io
-  tests/test_conversation_registry tests/test_app_background_workers
-  tests/test_ghost_warnings tests/test_ui_architecture tests/test_ui
-  tests/test_coldstart_hardening tests/test_file_lock tests/test_providers`
-  (`188 passed, 2 skipped`)
-  `tests/test_server.ApprovedShellTests tests/test_architecture`
-  (`86 passed`)
-  `tests/test_ui_architecture.InlineBudgetTests` (`4 passed`;
-  inline stays within the 1650 ratchet after moving boot catalog to assets)
+  `python -B -m unittest tests.test_prompt_envelope tests.test_atomic_io
+  tests.test_conversation_registry tests.test_app_background_workers
+  tests.test_server.ResearchGraphApiTests
+  tests.test_server.ResearchServerHelperTests
+  tests.test_server.ApprovedShellTests
+  tests.test_coldstart_hardening.ProviderProbeErrorTests
+  tests.test_ui.ProviderSelectorUiTests tests.test_ghost_warnings`
+  (`146 tests OK, skipped=3`)
+  `python -B -m unittest
+  tests.test_server.ResearchGraphApiTests.test_ghost_store_race_closes_discarded_loser
+  tests.test_conversation_registry
+  tests.test_coldstart_hardening.ProviderProbeErrorTests.test_provider_catalog_never_probes
+  tests.test_ui.ProviderSelectorUiTests.test_boot_catalog_never_runs_the_availability_probe`
+  (`8 tests OK`)
+  catalog probe: `provider_catalog_response()` returned 6 providers in
+  `0.0s`; `providers_response(AppContext())` still takes about `14.841s`
+  on this host and is intentionally kept off the boot catalog path.
 - Full pytest suite:
-  `pytest -q -p no:cacheprovider`
-  (`3756 passed, 6 skipped, 1304 subtests passed in 316.84s (0:05:16)`)
+  `python -B -m pytest`
+  (`3744 passed, 23 skipped in 306.49s (0:05:06)`)
 - No release (batch stays Unreleased).
 
 ## Hardening review follow-ups (2026-09-18)

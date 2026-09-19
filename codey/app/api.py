@@ -92,6 +92,14 @@ def providers_response(ctx: Any) -> tuple[int, dict]:
     }
 
 
+def provider_catalog_response() -> tuple[int, dict]:
+    """Boot-time catalog: static ids + labels, never runs the availability probe."""
+    return 200, {
+        "default": DEFAULT_PROVIDER_ID,
+        "providers": services.provider_catalog(),
+    }
+
+
 def local_provider_response() -> tuple[int, dict]:
     return 200, {"ok": True, "local": local_config_payload()}
 
@@ -523,6 +531,7 @@ __all__ = [
     "ghost_summary_response",
     "local_provider_response",
     "new_chat_response",
+    "provider_catalog_response",
     "providers_response",
     "research_graph_response",
     "research_note_response",

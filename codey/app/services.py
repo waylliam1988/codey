@@ -91,6 +91,14 @@ def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
     ]
 
 
+def provider_catalog() -> list[dict]:
+    """Cheap static catalog: ids + labels only, never probes CDP or network."""
+    return [
+        {"id": provider_id, "label": label}
+        for provider_id, label in PROVIDER_LABELS.items()
+    ]
+
+
 def provider_status_update(provider_id: str, available: bool) -> list[dict]:
     return [{
         "id": provider_id,
@@ -614,6 +622,7 @@ __all__ = [
     "execute_approved_shell",
     "provider_availability",
     "provider_availability_from_statuses",
+    "provider_catalog",
     "provider_payload",
     "provider_status_update",
     "review_label",

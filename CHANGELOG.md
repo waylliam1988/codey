@@ -22,9 +22,11 @@
   kept for the existing `stop wins` check; `api` shell events and the 409
   denial carry the same `status`; web `shell_result` renders
   Stopped/Timed out/Failed to start vs Executed/Denied in monochrome text).
-  Provider catalog is single-sourced: `index.html` no longer hand-writes six
-  `provider-item` buttons (`provider_ui.buildProviderMenu` renders from the
-  catalog; `boot` adopts `/api/providers` via `adoptCatalog` before init;
+  Provider catalog is single-sourced without blocking cold start:
+  `index.html` no longer hand-writes six `provider-item` buttons
+  (`provider_ui.buildProviderMenu` renders from the catalog; `boot` adopts
+  the cheap `/api/provider_catalog` via `adoptCatalog` before init;
+  availability stays on the async `/api/providers` refresh path;
   `ui_state.setProviders` mutates in place so boot consts stay live);
   `/api/providers` fetch failures and non-OK now raise the quiet
   `Provider status unavailable` row (was `Provider probe failed`, only on
@@ -41,12 +43,19 @@
   dead `options.endpoint`); `GET /api/changes` removed (`POST /api/changes`
   is the single path). `WorkerChatProvider._request` gains `grace=True`
   (normal `send/new_chat` unchanged); `close()` passes `grace=False` so an
-  unresponsive child costs at most 2s, not 2s + 5s grace. Tests: trace
+  unresponsive child costs at most 2s, not 2s + 5s grace. Review follow-ups:
+  `ConversationRegistry.for_session` now treats a lost token during lock-free
+  load (forget/evict/newer load) as stale and returns the loaded context
+  detached, never reinstalling it into `contexts/tokens`; discarded
+  double-checked `AppContext._ghost_store/knowledge_store` losers are closed
+  outside `AppContext.lock`, so the cleanup path does not reintroduce lock-held
+  IO. Tests: trace
   log-assertion + broken-recorder `_setup_loop` survival, fsync
   `EIO-raises/EINVAL-silent`, registry load-outside-lock probe, shell stable
-  status, provider catalog contract, notes batch + route tests, ghost warning
-  equivalence, close-skips-grace, file-lock pipe close, UI static tests for
-  dynamic menu/batch/disabled buttons/route removal.
+  status, provider catalog contract + no-probe route, forget-during-load
+  no-resurrect, discarded-loser close outside lock, notes batch + route tests,
+  ghost warning equivalence, close-skips-grace, file-lock pipe close, UI
+  static tests for dynamic menu/batch/disabled buttons/route removal.
 - Review follow-ups on the hardening batch (no new compat or fallback):
   expired SSE replay is now marker-only: `replay_events_after` returns just
   `resync_required` stamped at `max(cutoff, start + 1)` with no retained rows

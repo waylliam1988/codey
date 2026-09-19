@@ -49,7 +49,12 @@ class ConversationRegistry:
                     existing = self.contexts.get(session_id)
                     if existing is not None:
                         return existing
-                    self.tokens[session_id] = token
+                    # Superseded while loading (forget, eviction, or a newer
+                    # load won the token): never reinstall the stale token or
+                    # the stale load. Detach so late writes cannot repopulate
+                    # the store, and let the caller use this run in memory.
+                    loaded.on_change = None
+                    return loaded
             self.contexts[session_id] = loaded
             return loaded
 

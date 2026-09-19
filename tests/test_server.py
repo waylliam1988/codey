@@ -20,7 +20,7 @@ from codey.app import server
 from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.providers import profile_doctor
+from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, profile_doctor
 from codey.runtime.core import cancellation
 from codey.workspace.changes import ChangeTracker
 from codey.workspace import changes
@@ -1281,6 +1281,82 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIn(note.id, payload["notes"])
         self.assertEqual(payload["missing"], ["missing"])
+
+    def test_provider_catalog_route_serves_static_catalog_without_probe(self) -> None:
+        state = server.AppContext()
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch(
+                    "codey.app.api.services.provider_availability",
+                    side_effect=AssertionError("catalog must not probe"),
+                ),
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/provider_catalog")
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["default"], DEFAULT_PROVIDER_ID)
+        self.assertEqual(
+            [item["id"] for item in payload["providers"]],
+            list(PROVIDER_LABELS),
+        )
+
+    def test_ghost_store_race_closes_discarded_loser(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            ctx = server.AppContext(state_home=td)
+            gate = threading.Barrier(2)
+            made: list[object] = []
+
+            class _Fake:
+                def __init__(self) -> None:
+                    self.closed = False
+                    self.closed_while_context_locked = False
+
+                def close(self) -> None:
+                    self.closed_while_context_locked = ctx.lock.locked()
+                    self.closed = True
+
+            def _factory(_home: object) -> object:
+                gate.wait(timeout=5)
+                fake = _Fake()
+                made.append(fake)
+                return fake
+
+            results: list[object] = []
+            threads = [
+                threading.Thread(
+                    target=lambda: results.append(ctx._ghost_store("_ghost_inbox", _factory)),
+                    daemon=True,
+                )
+                for _ in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+
+        self.assertEqual(len(made), 2)
+        self.assertEqual(len(results), 2)
+        self.assertIs(results[0], results[1])
+        self.assertIs(ctx._ghost_inbox, results[0])
+        losers = [fake for fake in made if fake is not results[0]]
+        self.assertEqual(len(losers), 1)
+        self.assertTrue(losers[0].closed)
+        self.assertFalse(losers[0].closed_while_context_locked)
+        self.assertFalse(results[0].closed)
 
 
 class ResearchServerHelperTests(unittest.TestCase):

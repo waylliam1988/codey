@@ -60,6 +60,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("buildProviderMenu", PROVIDER_UI_JS)
         self.assertIn("adoptBackendCatalog", PROVIDER_UI_JS)
         self.assertIn("setProviders", UI_STATE_JS)
+        self.assertIn("fetch('/api/provider_catalog'", PROVIDER_UI_JS)
         self.assertIn("glm: 'GLM'", UI_STATE_JS)
         self.assertIn("local: 'Local'", UI_STATE_JS)
         self.assertIn('id="provider-dot"', HTML)
@@ -83,6 +84,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('<script src="/assets/sse.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn("window.CodeySse = {", SSE_JS)
         self.assertIn("window.CodeyComposer = {", COMPOSER_JS)
+
+    def test_boot_catalog_never_runs_the_availability_probe(self) -> None:
+        start = PROVIDER_UI_JS.index("async function adoptBackendCatalog()")
+        end = PROVIDER_UI_JS.index("async function", start + 1)
+        body = PROVIDER_UI_JS[start:end]
+        self.assertIn("fetch('/api/provider_catalog'", body)
+        self.assertNotIn("fetch('/api/providers')", body)
+        # /api/providers stays on the async refresh path only.
+        self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
+        self.assertIn("await window.CodeyProviderUI.adoptCatalog()", HTML)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         # Order lives in the single ui_state.js fallback (backend is canonical).

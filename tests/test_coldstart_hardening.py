@@ -319,6 +319,27 @@ class ProviderProbeErrorTests(unittest.TestCase):
         )
         self.assertTrue(all("label" in item for item in payload["providers"]))
 
+    def test_provider_catalog_never_probes(self) -> None:
+        with (
+            mock.patch(
+                "codey.app.api.services.provider_availability",
+                side_effect=AssertionError("catalog must not probe"),
+            ),
+            mock.patch(
+                "codey.app.api.services.provider_tab_availability",
+                side_effect=AssertionError("catalog must not probe"),
+            ),
+        ):
+            status, payload = app_api.provider_catalog_response()
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["default"], DEFAULT_PROVIDER_ID)
+        self.assertEqual(
+            [item["id"] for item in payload["providers"]],
+            list(PROVIDER_LABELS),
+        )
+        self.assertTrue(all("label" in item for item in payload["providers"]))
+        self.assertTrue(all("available" not in item for item in payload["providers"]))
+
 
 class ConversationPruneTests(unittest.TestCase):
     def test_prune_skips_unstatable_files_instead_of_abandoning(self) -> None:

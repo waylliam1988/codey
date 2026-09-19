@@ -124,6 +124,19 @@ SSE_REPLAY_LIMIT = 512
 def _profile_doctor_timeout(deadline: float) -> float:
     remaining = deadline - time.monotonic()
     return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
+
+
+def _close_if_discarded(store: object) -> None:
+    """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""
+    close = getattr(store, "close", None)
+    if not callable(close):
+        return
+    try:
+        close()
+    except Exception:
+        pass
+
+
 MAX_CONVERSATION_STATES = 32
 
 
@@ -239,9 +252,12 @@ class AppContext:
         with self.lock:
             existing = getattr(self, attr_name)
             if existing is not None:
-                return existing
-            setattr(self, attr_name, fresh)
-            return fresh
+                winner = existing
+            else:
+                setattr(self, attr_name, fresh)
+                return fresh
+        _close_if_discarded(fresh)
+        return winner
 
     @property
     def ghost_inbox(self) -> GhostInboxStore | None:
@@ -344,9 +360,12 @@ class AppContext:
         fresh = KnowledgeStore(root)
         with self.lock:
             if self._knowledge_store is not None:
-                return self._knowledge_store
-            self._knowledge_store = fresh
-            return fresh
+                winner = self._knowledge_store
+            else:
+                self._knowledge_store = fresh
+                return fresh
+        _close_if_discarded(fresh)
+        return winner
 
     @knowledge_store.setter
     def knowledge_store(self, value: object | None) -> None:
@@ -1179,6 +1198,7 @@ _GET_ROUTES = {
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/ui_state": lambda ctx, _query: app_api.ui_state_response(ctx),
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
+    "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
     "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
     "/api/research/graph": app_api.research_graph_response,
     "/api/research/note": app_api.research_note_response,

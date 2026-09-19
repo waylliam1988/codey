@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 
 from codey.agents.handoff import ConversationSnapshot
@@ -61,6 +62,38 @@ class ConversationRegistryTests(unittest.TestCase):
             registry.for_session("chat-1")
 
         self.assertEqual(seen_locked, [False])
+
+    def test_forget_during_load_never_resurrects(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            registry = ConversationRegistry(td, max_states=4)
+            real_load = registry.store.load
+            entered = threading.Event()
+            release = threading.Event()
+            results: list[object] = []
+
+            def _blocking_load(session_id: str):
+                entered.set()
+                self.assertTrue(release.wait(timeout=5))
+                return real_load(session_id)
+
+            registry.store.load = _blocking_load  # type: ignore[method-assign]
+            worker = threading.Thread(
+                target=lambda: results.append(registry.for_session("s1")),
+                daemon=True,
+            )
+            worker.start()
+            self.assertTrue(entered.wait(timeout=5))
+            registry.forget("s1")
+            release.set()
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+
+        self.assertEqual(len(results), 1)
+        self.assertNotIn("s1", registry.contexts)
+        self.assertNotIn("s1", registry.tokens)
+        # Detached: late writes from the stale load must not repopulate.
+        stale = results[0]
+        self.assertIsNone(getattr(stale, "on_change", None))
 
 
 if __name__ == "__main__":

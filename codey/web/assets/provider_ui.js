@@ -89,9 +89,11 @@ function applyProviderConfig(data) {
 
 async function adoptBackendCatalog() {
   // Boot-time only: adopt the backend catalog into ui_state before init.
-  // Menu is built later by init(); do not touch DOM here (deps is unset).
+  // Hits the cheap static catalog (no CDP/network probe); availability
+  // stays on the async /api/providers refresh path. Do not touch DOM
+  // here (deps is unset); menu is built later by init().
   try {
-    const r = await fetch('/api/providers', { cache: 'no-store' });
+    const r = await fetch('/api/provider_catalog', { cache: 'no-store' });
     if (!r.ok) return;
     const data = await r.json();
     if (!data || !Array.isArray(data.providers) || !data.providers.length) return;
