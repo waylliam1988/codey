@@ -2,6 +2,25 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 交互体验平滑化、废弃垫片与死接线清理、显式维护收口（未发布）
+
+- 交互体验平滑化：`scrollChat(force)` 与 `renderChat(forceBottom)` 支持强制置底，
+  在切换会话、创建新会话及发送消息时强制置底，彻底消除长会话卡在顶部的视觉瑕疵；
+  `replaceSessionMessage` 对工具消息采用 `data-tool-key` 原地替换 DOM，避免破坏用户
+  选中高亮与全量重排。
+- SSE 光标断线续传：`assets/sse.js` 记录并在重连时带上 `last_event_id` query 参数，
+  服务端回退支持 query cursor，并在重连成功后即时触发事件历史回放。
+- 死接线清理与垫片退役：彻底移除已被批量接口替代的旧单条路由 `GET /api/research/note`
+  及对应函数；物理删除冷启动废弃垫片 `codey/workspace/task_context.py` 和
+  `codey/reviews/scan_report.py`，架构测试更新为守护垫片永久不存在。
+- 显式生命周期与环境收口：移除 `_should_wait_for_local_ghost_sleep()` 隐式路径猜测，
+  改为显式 `sync_ghost_maintenance` 参数；实现 `AppContext.close()` 与上下文管理器，
+  确保 headless/测试及各类容器环境中的维护线程与证据账本资源完整释放。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 通过；聚焦 pytest
+  `404 passed, 313 subtests in 45.55s`；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  `3797 passed, 6 skipped in 256.73s`。
+
 ## Unreleased - 复查收尾批次（未发布）
 
 - 本地 provider 保存改为只依据一次 `probe_local_endpoint_detail()` 结果分支，

@@ -186,18 +186,12 @@ let uiStateUpdatedAt = 0;
 let uiStateRevision = 0;
 let uiStateDirtySinceBoot = false;
 
-const uid = window.CodeyUiState.uid;
-const defaultSession = window.CodeyUiState.defaultSession;
-const pathName = window.CodeyUiState.pathName;
-const pathKey = window.CodeyUiState.pathKey;
-const applyUiState = window.CodeyUiState.apply;
-const currentUiState = window.CodeyUiState.current;
-const cacheUiState = window.CodeyUiState.cache;
-const cachedUiState = window.CodeyUiState.cached;
-const hasMeaningfulUiState = window.CodeyUiState.hasMeaningful;
-const hasStoredUiState = window.CodeyUiState.hasStored;
-const isUiStateNewer = window.CodeyUiState.isNewer;
-const flushUiState = window.CodeyUiState.flush;
+const {
+  uid, defaultSession, pathName, pathKey,
+  apply: applyUiState, current: currentUiState, cache: cacheUiState,
+  cached: cachedUiState, hasMeaningful: hasMeaningfulUiState,
+  hasStored: hasStoredUiState, isNewer: isUiStateNewer, flush: flushUiState,
+} = window.CodeyUiState;
 const persistActive = window.CodeyUiState.persist;
 const persistActiveNow = window.CodeyUiState.persistNow;
 const bindUiStatePagehide = window.CodeyUiState.bindPagehide;
@@ -207,24 +201,15 @@ const bootCachedState = cachedUiState();
 const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
 
 window.CodeyUiState.init({
-  getSessions: () => sessions,
-  setSessions: value => { sessions = value; },
-  getProjects: () => projects,
-  setProjects: value => { projects = value; },
-  getActiveId: () => activeId,
-  setActiveId: value => { activeId = value; },
-  getUpdatedAt: () => uiStateUpdatedAt,
-  setUpdatedAt: value => { uiStateUpdatedAt = value; },
-  getRevision: () => uiStateRevision,
-  setRevision: value => { uiStateRevision = value; },
-  isDirtySinceBoot: () => uiStateDirtySinceBoot,
-  setDirtySinceBoot: value => { uiStateDirtySinceBoot = !!value; },
+  getSessions: () => sessions, setSessions: value => { sessions = value; },
+  getProjects: () => projects, setProjects: value => { projects = value; },
+  getActiveId: () => activeId, setActiveId: value => { activeId = value; },
+  getUpdatedAt: () => uiStateUpdatedAt, setUpdatedAt: value => { uiStateUpdatedAt = value; },
+  getRevision: () => uiStateRevision, setRevision: value => { uiStateRevision = value; },
+  isDirtySinceBoot: () => uiStateDirtySinceBoot, setDirtySinceBoot: value => { uiStateDirtySinceBoot = !!value; },
   bootHadMeaningfulUiState: () => bootHadMeaningfulUiState,
-  renderSidebar,
-  renderChat,
-  updateComposerContext,
-  syncProviderUI,
-  currentProviderId,
+  renderSidebar, renderChat, updateComposerContext,
+  syncProviderUI, currentProviderId,
 });
 applyUiState(bootCachedState);
 cacheUiState();
@@ -495,7 +480,7 @@ function armDanger(btn, run) {
 }
 
 // ============================ chat rendering ============================
-function renderChat() {
+function renderChat(forceBottom = false) {
   const s = activeSession();
   const chat = $('chat');
   if (!s) return;
@@ -521,7 +506,7 @@ function renderChat() {
 
   chat.innerHTML = '';
   for (const m of s.messages) appendMessageNode(chat, m);
-  scrollChat();
+  scrollChat(forceBottom);
 }
 
 function statusRow(prefix, text, opts = {}) {
@@ -755,17 +740,17 @@ function appendMessageNode(chat, m) {
   }
 }
 
-function scrollChat() {
+function scrollChat(force = false) {
   const area = $('chat-area');
-  // Follow only when already near the bottom: never yank a user who
-  // scrolled up to read history while a run streams in.
-  const nearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 120;
-  if (nearBottom) area.scrollTop = area.scrollHeight;
+  // Follow only when forced or already near the bottom.
+  if (force || (area.scrollHeight - area.scrollTop - area.clientHeight < 120)) {
+    area.scrollTop = area.scrollHeight;
+  }
 }
 
 // ============================ session ops ============================
 function switchSession(id) {
-  activeId = id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
+  activeId = id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat(true);
 }
 function openProject(projectId) {
   const p = projectById(projectId);
@@ -778,7 +763,7 @@ function openProject(projectId) {
 function newSession(projectId = null) {
   const provider = currentProviderId();
   const s = defaultSession(projectId, provider);
-  sessions.unshift(s); activeId = s.id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
+  sessions.unshift(s); activeId = s.id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat(true);
   fetch('/api/new_chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -942,15 +927,15 @@ function pushMsgToSession(sid, m) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
     persistActiveNow();
     renderSidebar();
-    if (sid === activeId) renderChat();
+    if (sid === activeId) renderChat(true);
     return true;
   }
   persistActiveNow();
   if (sid === activeId) {
-    if (wasEmpty) renderChat();
+    if (wasEmpty) renderChat(true);
     else {
       appendMessageNode($('chat'), m);
-      scrollChat();
+      scrollChat(true);
     }
   }
   return true;
@@ -1388,7 +1373,19 @@ function replaceSessionMessage(sid, predicate, message) {
   if (index < 0) return false;
   s.messages[index] = message;
   persistActive();
-  if (sid === activeId) { renderChat(); scrollChat(); }
+  if (sid === activeId) {
+    const existingNode = message.toolKey && Array.from($('chat').children).find(el => el.dataset && el.dataset.toolKey === message.toolKey);
+    if (existingNode) {
+      const temp = document.createElement('div');
+      appendMessageNode(temp, message);
+      if (temp.firstElementChild) {
+        existingNode.replaceWith(temp.firstElementChild);
+        scrollChat();
+        return true;
+      }
+    }
+    renderChat(); scrollChat();
+  }
   return true;
 }
 

@@ -21,6 +21,7 @@ from unittest import mock
 
 from codey.app import api as app_api
 from codey.app.event_bus import EventBus, EventSubscriber, SsePayload
+from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessAppContext
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.worker import WorkerChatProvider
@@ -429,6 +430,31 @@ class PostBodyTimeoutTests(unittest.TestCase):
         handler._send_json = lambda status, payload: sent.append((status, payload))  # type: ignore[method-assign]
         self.assertIsNone(handler._read_post_body(16))
         self.assertEqual(sent[0][0], 408)
+
+
+class AppContextLifecycleTests(unittest.TestCase):
+    def test_app_context_sync_ghost_maintenance_flag(self) -> None:
+        ctx_default = AppContext()
+        try:
+            self.assertFalse(ctx_default.sync_ghost_maintenance)
+        finally:
+            ctx_default.close()
+
+        ctx_sync = AppContext(sync_ghost_maintenance=True)
+        try:
+            self.assertTrue(ctx_sync.sync_ghost_maintenance)
+        finally:
+            ctx_sync.close()
+
+    def test_app_context_close_and_context_manager(self) -> None:
+        store_mock = mock.Mock()
+        with AppContext() as ctx:
+            ctx._knowledge_store = store_mock
+            daemon_wait = mock.patch.object(ctx.ghost_sleep_daemon, "wait").start()
+            ephemeral = ctx._ephemeral_runtime_home
+            self.assertIsNotNone(ephemeral)
+        daemon_wait.assert_called_once()
+        store_mock.close.assert_called_once()
 
 
 if __name__ == "__main__":

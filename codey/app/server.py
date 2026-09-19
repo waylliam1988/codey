@@ -46,7 +46,6 @@ from codey.app.context import (
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
     AppContext,
-    _should_wait_for_local_ghost_sleep,
 )
 from codey.app.http_plumbing import (
     WEB_DIR,
@@ -185,7 +184,7 @@ def _run_task(
             )
         )
     finally:
-        if _should_wait_for_local_ghost_sleep(STATE.state_home):
+        if STATE.sync_ghost_maintenance:
             STATE.wait_for_ghost_sleep()
         STATE.kick_self_repair()
 
@@ -309,7 +308,6 @@ _GET_ROUTES = {
     "/api/provider_catalog": lambda _ctx, _query: app_api.provider_catalog_response(),
     "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
     "/api/research/graph": app_api.research_graph_response,
-    "/api/research/note": app_api.research_note_response,
     "/api/run_details": app_api.run_details_response,
     "/api/ghost/summary": app_api.ghost_summary_response,
     "/api/ghost/export": lambda ctx, _query: app_api.ghost_export_response(ctx),
@@ -475,7 +473,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        replay_cursor = sse_replay_cursor(self.headers.get("Last-Event-ID"))
+        raw_header = self.headers.get("Last-Event-ID")
+        if not raw_header:
+            query = parse_qs(urlparse(self.path).query)
+            raw_header = (query.get("last_event_id") or [""])[0]
+        replay_cursor = sse_replay_cursor(raw_header)
         q = STATE.subscribe()
         try:
             if not self._write_sse_event({"type": "hello", "status": STATE.run_status()}):

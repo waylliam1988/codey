@@ -11,7 +11,7 @@ from codey.operations import task_context as operations_task_context
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import workspace_fingerprint
-from codey.workspace.task_context import ProjectTaskContext, ProjectTaskContextBuilder
+from codey.operations.task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.runs.work_checkpoint import WorkCheckpointStore
 
 

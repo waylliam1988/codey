@@ -106,7 +106,15 @@ class AppContext:
         state_home: str | Path | None = None,
         *,
         replay_limit: int | None = None,
+        sync_ghost_maintenance: bool | None = None,
     ) -> None:
+        if sync_ghost_maintenance is not None:
+            self.sync_ghost_maintenance = sync_ghost_maintenance
+        else:
+            self.sync_ghost_maintenance = (
+                state_home is not None
+                and Path(state_home).expanduser().resolve() != DEFAULT_STATE_HOME.expanduser().resolve()
+            )
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
         runtime_state_home = (
@@ -911,13 +919,26 @@ class AppContext:
                 return selected
         return None
 
+    def close(self) -> None:
+        try:
+            self.ghost_sleep_daemon.wait(timeout=2.0)
+        except Exception:
+            pass
+        if self._knowledge_store is not None:
+            try:
+                getattr(self._knowledge_store, "close", lambda: None)()
+            except Exception:
+                pass
+        if self._ephemeral_runtime_home is not None:
+            try:
+                self._ephemeral_runtime_home.cleanup()
+            except Exception:
+                pass
 
-def _should_wait_for_local_ghost_sleep(state_home: Path | None) -> bool:
-    if state_home is None:
-        return False
-    try:
-        return state_home.expanduser().resolve() != DEFAULT_STATE_HOME.expanduser().resolve()
-    except (OSError, RuntimeError, ValueError):
-        return True
+    def __enter__(self) -> "AppContext":
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.close()
 
 

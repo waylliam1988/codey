@@ -9,6 +9,7 @@
   let bufferedServerEvents = [];
   const BUFFER_LIMIT = 100;
   let consecutiveFailures = 0;
+  let lastKnownEventId = 0;
 
 function init(nextDeps) {
   deps = nextDeps;
@@ -73,12 +74,18 @@ async function acceptRunResponse(response, sessionId) {
 
 function connect() {
   if (evtSrc) return;
-  evtSrc = new EventSource('/api/events');
+  const url = lastKnownEventId > 0 ? `/api/events?last_event_id=${lastKnownEventId}` : '/api/events';
+  evtSrc = new EventSource(url);
   evtSrc.onmessage = (e) => {
     let data;
     try { data = JSON.parse(e.data); } catch { return; }
     const eventId = Number.parseInt(e.lastEventId || '', 10);
-    if (Number.isFinite(eventId) && eventId > 0 && data.event_id == null) data.event_id = eventId;
+    if (Number.isFinite(eventId) && eventId > 0) {
+      lastKnownEventId = eventId;
+      if (data.event_id == null) data.event_id = eventId;
+    } else if (Number.isFinite(data.event_id) && data.event_id > 0) {
+      lastKnownEventId = data.event_id;
+    }
     if (data.type === 'hello') {
       consecutiveFailures = 0;
       clearReconnectTimer();

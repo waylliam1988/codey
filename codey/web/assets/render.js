@@ -238,6 +238,7 @@ function createToolGroup(kind) {
 function standaloneToolEl(m) {
   const div = document.createElement('div');
   div.className = 'msg tool';
+  if (m.toolKey) div.dataset.toolKey = m.toolKey;
   if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error && !m.pending) {
     div.dataset.foldkind = m.kind;
     div.dataset.toolPath = m.path || '';

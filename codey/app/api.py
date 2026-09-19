@@ -167,22 +167,6 @@ def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int,
     return 200, {"ok": True, "graph": graph.to_dict()}
 
 
-def research_note_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
-    note_id = query_value(query, "id")
-    if not note_id:
-        return 400, {"ok": False, "error": "id required"}
-    if ctx.knowledge_store is None:
-        return research_unconfigured_response()
-    note = ctx.knowledge_store.read_note(note_id)
-    if note is None:
-        return 404, {"ok": False, "error": "note not found"}
-    row = ctx.knowledge_store.index.get(note.id) or {}
-    return 200, {
-        "ok": True,
-        "note": _research_note_payload(ctx, note, row),
-    }
-
-
 def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     raw_ids = body.get("ids") if isinstance(body, dict) else None
     if not isinstance(raw_ids, list):
@@ -551,7 +535,6 @@ __all__ = [
     "provider_catalog_response",
     "providers_response",
     "research_graph_response",
-    "research_note_response",
     "research_notes_response",
     "research_restore_response",
     "restore_changes_response",

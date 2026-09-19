@@ -29,7 +29,7 @@ from codey.agents.tools import AgentToolFns
 from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.utils.references import find_reference_hints
-from codey.reviews.scan_report import render_scan_coverage
+from codey.utils.scan_report import render_scan_coverage
 from codey.toolchain.runtime import ToolOutcome, safe_join
 
 

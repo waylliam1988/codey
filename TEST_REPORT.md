@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## Smooth chat scrolling, in-place tool rendering, SSE cursor replay, retire legacy shims, explicit ghost maintenance (2026-09-19)
+
+Scope:
+
+```text
+web/index.html + web/assets/render.js:
+                            scrollChat(force) and renderChat(forceBottom) support
+                            forced stick-to-bottom on session switch, new session,
+                            and user send; replaceSessionMessage performs in-place
+                            DOM node replacement by toolKey to preserve text
+                            selection and avoid full chat reflow
+web/assets/sse.js + app/server.py:
+                            SSE reconnect passes last_event_id via query parameter;
+                            server extracts last_event_id query fallback and replays
+                            missed events
+app/api.py + app/server.py:
+                            retired obsolete GET /api/research/note route and
+                            research_note_response handler in favor of batch endpoints
+codey/workspace/task_context.py + codey/reviews/scan_report.py:
+                            physically deleted legacy cold-start shims; updated
+                            remaining test imports; architecture test guards their
+                            non-existence
+app/context.py + app/headless_runner.py:
+                            removed implicit environment guessing; added explicit
+                            sync_ghost_maintenance flag; added AppContext.close()
+                            and context manager support for clean resource teardown
+tests:                      new unit tests in test_server.py, test_coldstart_hardening.py,
+                            test_ui.py; updated test_architecture.py,
+                            test_project_task_context.py, test_workspace_project_map.py
+docs:                       TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check .` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gate before the full run:
+  `python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py tests\test_architecture.py tests\test_coldstart_hardening.py tests\test_headless_runner.py tests\test_run_id_dedup.py tests\test_workspace_project_map.py -q`
+  (`404 passed, 313 subtests passed in 45.55s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3797 passed, 6 skipped in 256.73s (0:04:16)`)
+- No release.
+
 ## Review follow-up finishing pass (2026-09-19)
 
 Scope:

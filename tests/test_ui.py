@@ -645,6 +645,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const index = s.messages.findIndex(predicate);", replace_block)
         self.assertIn("s.messages[index] = message;", replace_block)
         self.assertIn("renderChat(); scrollChat();", replace_block)
+        self.assertIn("dataset.toolKey === message.toolKey", replace_block)
+        self.assertIn("existingNode.replaceWith(", replace_block)
 
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)

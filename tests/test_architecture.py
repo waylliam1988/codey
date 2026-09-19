@@ -1771,13 +1771,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 strongconnect(module)
         self.assertEqual(cycles, [])
 
-    def test_workspace_task_context_shim_has_no_production_importers(self) -> None:
-        # workspace/task_context.py is a compatibility re-export only; the
-        # canonical home is operations.task_context. Production code must not
-        # import the shim, or it quietly becomes permanent plumbing.
+    def test_retired_compatibility_shims_do_not_exist(self) -> None:
+        self.assertFalse((ROOT / "codey" / "workspace" / "task_context.py").exists())
+        self.assertFalse((ROOT / "codey" / "reviews" / "scan_report.py").exists())
         offenders: list[str] = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
-            if "codey.workspace.task_context" in imported_modules(path):
+            imported = imported_modules(path)
+            if "codey.workspace.task_context" in imported or "codey.reviews.scan_report" in imported:
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
 

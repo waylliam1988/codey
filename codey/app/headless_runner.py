@@ -29,7 +29,6 @@ from codey.app.context import (
     AppContext,
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
-    _should_wait_for_local_ghost_sleep,
 )
 from codey.workspace.changes import is_git_repository
 from codey.task.model import TaskSubmission
@@ -51,6 +50,7 @@ class HeadlessRequest:
     intent: str = "project"
     state_home: Path | None = DEFAULT_STATE_HOME
     port: int = 9222
+    sync_ghost_maintenance: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -70,8 +70,13 @@ class HeadlessAppContext(AppContext):
         port: int,
         emit_jsonl: Callable[[dict[str, object]], None],
         connect_provider: Callable[..., Any] = default_connect_provider,
+        sync_ghost_maintenance: bool | None = None,
     ) -> None:
-        super().__init__(state_home, replay_limit=0)
+        super().__init__(
+            state_home,
+            replay_limit=0,
+            sync_ghost_maintenance=sync_ghost_maintenance,
+        )
         self.port = int(port)
         self._emit_jsonl = emit_jsonl
         self._connect_provider = connect_provider
@@ -166,6 +171,7 @@ def run_headless(
         port=request.port,
         emit_jsonl=emit_jsonl,
         connect_provider=connect_provider,
+        sync_ghost_maintenance=request.sync_ghost_maintenance,
     )
     pre_reserved_run_id = _pre_reserve_run_id(
         state,
@@ -190,6 +196,7 @@ def run_headless(
             "session_id": session_id,
             "stop_reason": reason,
         })
+        state.close()
         return HeadlessResult(
             exit_code=1,
             run_id=str(request.run_id or "").strip(),
@@ -237,7 +244,7 @@ def run_headless(
             ),
         )
     finally:
-        if _should_wait_for_local_ghost_sleep(state.state_home):
+        if state.sync_ghost_maintenance:
             state.wait_for_ghost_sleep()
     terminal = dict(state.run_registry.last_terminal_event() or {})
     run_id = str(terminal.get("run_id") or request.run_id or "")
@@ -251,6 +258,7 @@ def run_headless(
         except Exception:
             ledger_path = ""
     exit_code = 0 if stop_reason == "done" and not state.shell_rejected else 1
+    state.close()
     return HeadlessResult(
         exit_code=exit_code,
         run_id=run_id,

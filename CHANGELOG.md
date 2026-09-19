@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Smooth chat scrolling, in-place tool rendering, SSE cursor replay, retire legacy shims, explicit ghost maintenance (no release)
+
+- Smooth chat UX: `scrollChat(force)` and `renderChat(forceBottom)` support
+  forced stick-to-bottom on session switches, new sessions, and user message sends,
+  preventing long chats from landing stuck at the top; `replaceSessionMessage`
+  replaces tool message DOM elements in-place by `data-tool-key`, preserving
+  active text selections and avoiding full chat reflows.
+- SSE cursor reconnect: `assets/sse.js` tracks and sends `last_event_id` as a query
+  parameter on reconnect; server parses the query fallback cursor and replays
+  historical events immediately upon reconnect.
+- Retired dead routes and shims: removed obsolete `GET /api/research/note`
+  single-item route and handler in favor of batch endpoints; physically deleted
+  legacy cold-start shims `codey/workspace/task_context.py` and
+  `codey/reviews/scan_report.py`, with architecture tests asserting their non-existence.
+- Explicit lifecycle and maintenance: removed implicit path-based
+  `_should_wait_for_local_ghost_sleep()` guessing in favor of explicit
+  `sync_ghost_maintenance` flag; added `AppContext.close()` and context manager
+  support to ensure clean teardown of background maintenance threads and evidence ledgers.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  focused pytest (`404 passed, 313 subtests in 45.55s`); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3797 passed, 6 skipped in 256.73s`).
+
 ## Unreleased - Review follow-up finishing pass (no release)
 
 - Local provider save now branches on one `probe_local_endpoint_detail()`

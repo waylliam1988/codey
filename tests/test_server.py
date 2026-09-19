@@ -1405,47 +1405,6 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
 
-    def test_research_note_response_validation_and_payload(self) -> None:
-        status, payload = app_api.research_note_response(server.AppContext(), {})
-        self.assertEqual(status, 400)
-        self.assertEqual(payload, {"ok": False, "error": "id required"})
-
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext()
-            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
-            note = KnowledgeNote.create(
-                type="fact",
-                title="Fact",
-                body="Body",
-                sources=["https://example.com"],
-                tags=["research"],
-            )
-            state.knowledge_store.write_note(note)
-            try:
-                found_status, found_payload = app_api.research_note_response(state, {"id": [note.id]})
-                missing_status, missing_payload = app_api.research_note_response(state, {"id": ["missing"]})
-            finally:
-                state.knowledge_store.close()
-
-        self.assertEqual(found_status, 200)
-        self.assertTrue(found_payload["ok"])
-        self.assertEqual(found_payload["note"]["id"], note.id)
-        self.assertEqual(found_payload["note"]["title"], "Fact")
-        self.assertEqual(found_payload["note"]["body"], "Body")
-        self.assertEqual(found_payload["note"]["sources"], ["https://example.com"])
-        self.assertEqual(found_payload["note"]["type"], "fact")
-        self.assertEqual(found_payload["note"]["path"], f"facts/{note.id}.md")
-        self.assertEqual(missing_status, 404)
-        self.assertEqual(missing_payload, {"ok": False, "error": "note not found"})
-
-    def test_research_note_response_reports_unconfigured_store(self) -> None:
-        state = server.AppContext()
-        state.knowledge_store = None
-        status, payload = app_api.research_note_response(state, {"id": ["n1"]})
-
-        self.assertEqual(status, 404)
-        self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
-
     def test_research_notes_response_batches_without_n_plus_one(self) -> None:
         bad_status, bad_payload = app_api.research_notes_response(
             server.AppContext(), {"ids": "nope"}
@@ -2575,6 +2534,43 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertTrue(any('"type": "hello"' in line for line in lines), lines)
         replay.assert_not_called()
+
+    def test_sse_reconnect_replays_history_from_query_cursor(self) -> None:
+        state = server.AppContext()
+        state.emit({"type": "info", "seq": 1})
+        state.emit({"type": "info", "seq": 2})
+        original_replay = state.replay_events_after
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "replay_events_after", wraps=original_replay) as replay,
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/events?last_event_id=1")
+                response = conn.getresponse()
+                lines: list[str] = []
+                for _ in range(10):
+                    line = response.fp.readline().decode("utf-8", "replace")
+                    if not line:
+                        break
+                    lines.append(line)
+                    if "seq" in line and "2" in line:
+                        break
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(any('"type": "hello"' in line for line in lines), lines)
+        self.assertTrue(any('"seq": 2' in line for line in lines), lines)
+        replay.assert_called_once()
+        self.assertEqual(replay.call_args[0][0], 1)
 
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
