@@ -22,6 +22,7 @@ from unittest import mock
 from codey.app import api as app_api
 from codey.app.event_bus import EventBus, EventSubscriber, SsePayload
 from codey.app.headless_runner import HeadlessAppContext
+from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.worker import WorkerChatProvider
 from codey.research.controller import ResearchController
 from codey.runtime.core.operation_state import (
@@ -259,6 +260,23 @@ class WorkerSelfHealTests(unittest.TestCase):
             provider.close()
         self.assertIsNone(provider._proc)
 
+    def test_close_skips_timeout_grace(self) -> None:
+        provider = self._provider()
+        seen: dict[str, object] = {}
+
+        def _capture(self, method: str, params: dict, timeout: float | None, *, restart: bool, grace: bool):
+            seen["grace"] = grace
+            seen["restart"] = restart
+            raise RuntimeError("no child")
+
+        with (
+            mock.patch.object(WorkerChatProvider, "_request_locked", _capture),
+            mock.patch.object(provider, "_terminate"),
+        ):
+            provider.close()
+        self.assertIs(seen.get("grace"), False)
+        self.assertIs(seen.get("restart"), False)
+
 
 class ProviderProbeErrorTests(unittest.TestCase):
     def test_probe_crash_is_signalled_not_silent(self) -> None:
@@ -285,6 +303,21 @@ class ProviderProbeErrorTests(unittest.TestCase):
             status, payload = app_api.providers_response(ctx)
         self.assertEqual(status, 200)
         self.assertFalse(payload["probe_error"])
+
+    def test_providers_response_carries_backend_catalog(self) -> None:
+        ctx = SimpleNamespace()
+        with mock.patch(
+            "codey.app.api.services.provider_availability",
+            return_value={},
+        ):
+            status, payload = app_api.providers_response(ctx)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["default"], DEFAULT_PROVIDER_ID)
+        self.assertEqual(
+            [item["id"] for item in payload["providers"]],
+            list(PROVIDER_LABELS),
+        )
+        self.assertTrue(all("label" in item for item in payload["providers"]))
 
 
 class ConversationPruneTests(unittest.TestCase):

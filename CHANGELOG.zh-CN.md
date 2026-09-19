@@ -4,6 +4,36 @@
 
 ## Unreleased - Runtime 减法（P0-P4，未发布）
 
+- 确认项 hardening 批次（不新增兼容或 fallback）：
+  fail-open 取证变可观测：`agents/loop.py` 删掉
+  `record_protocol_codec/record_tool_contract_hash` 外层的静默
+  `try/except pass`（`model_tool_contract_hash()` 是纯返回，外层 guard 只会
+  藏住取证丢失）；`FailOpenPromptTrace.call/record_section` 集中记
+  `logger.debug(..., exc_info=True)`，主流程仍 fail-open（取消继续冒泡）。
+  `_fsync_dir` 只吞“目录 fsync 不支持”
+  （`EINVAL/ENOTSUP/EOPNOTSUPP/ENOSYS/EPERM`），真实 `EIO`/权限/设备错误继续
+  抛。锁不再罩住 IO：`for_session` 在锁外 `load`、锁内双检安装（token 输了就
+  返回赢家，不覆盖）；`_ghost_store/knowledge_store` 在锁外构造、锁内双检
+  安装；`KnowledgeIndexer` 用自己的锁，不再复用 `AppContext.lock`。Shell 结果
+  带稳定 `status: stopped | timeout | spawn_error | exit`（保留 `stopped` 布尔
+  给现有 `stop wins` 检查；`api` 事件和 409 拒绝带同样 `status`；前端按状态
+  渲染 Stopped/Timed out/Failed to start，单色文字）。Provider 目录单源：
+  `index.html` 不再手写六个按钮（`buildProviderMenu` 按目录生成；`boot` 先
+  `adoptCatalog` 采纳后端再 init；`setProviders` 原地变异，boot 引用保持鲜活）；
+  `/api/providers` 不可达/非 OK 也点亮安静的 `Provider status unavailable`
+  行（原来只在探测崩溃时提示）。Research notes 一次
+  `POST /api/research/notes`（最多 64 个，返回 `{notes, missing}`），不再 N+1；
+  `research-use-project`/`changes-refresh` 用 `disabled` + `title` 代替静默
+  no-op。Ghost 警告收进 `ghost/_warnings.py`（等价移动，`router` 保持无界
+  map，`inbox/hebbian` 保持 slice 不 clip）。减法：删
+  `GET /api/research/concept_graph` + 对应 API（内部 `ConceptGraphBuilder` 留给
+  `unified_graph/research_interest`；图只走 `/api/research/graph`，
+  `research_graph.js` 删死 `options.endpoint`）；删 `GET /api/changes`
+  （只留 `POST /api/changes`）。`_request` 加 `grace=True`（正常链路不变），
+  `close()` 传 `grace=False`，无响应子进程最多等 2s。测试：trace 日志断言、
+  坏 recorder 下 `_setup_loop` 存活、fsync `EIO 抛/EINVAL 静默`、锁外加载探针、
+  shell 稳定状态、目录契约、批量笔记、警告等价、close 跳 grace、管道关闭、
+  动态菜单/禁用按钮/路由删除的 UI 静态测试。
 - hardening 批次的复查跟进（不新增兼容或 fallback）：
   过期 SSE replay 改为 marker-only：`replay_events_after` 只返回
   `resync_required`，id 取 `max(cutoff, start + 1)`，不再附带 retained rows，

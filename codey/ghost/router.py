@@ -26,6 +26,7 @@ from codey.ghost.event_log import (
 )
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
+from codey.ghost._warnings import map_event_warnings
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
@@ -1094,15 +1095,7 @@ def _route_reason_code(result: GhostRouteResult) -> str:
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    mapped: list[str] = []
-    for warning in warnings:
-        if warning == "router_events.jsonl:too_large":
-            mapped.append("router_events_too_large")
-        elif warning == "router_events.jsonl:unreadable":
-            mapped.append("router_events_unreadable")
-        else:
-            mapped.append(str(warning))
-    return tuple(mapped)
+    return tuple(map_event_warnings(warnings, stream="router_events"))
 
 
 def _read_json_dict(path: Path, *, max_bytes: int) -> dict | None:

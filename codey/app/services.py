@@ -388,6 +388,7 @@ def _stopped_shell_result() -> dict:
     """Refused-before/during-execution result: never approved, never continued."""
     return {
         "ok": False,
+        "status": "stopped",
         "error": "command stopped",
         "exit_code": None,
         "output": "",
@@ -422,7 +423,13 @@ def execute_approved_shell(
 ) -> dict:
     command = (command or "").strip()
     if not command:
-        return {"ok": False, "error": "command required", "exit_code": None, "output": ""}
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": "command required",
+            "exit_code": None,
+            "output": "",
+        }
     timeout = SHELL_TIMEOUT if timeout is None else timeout
     output_limit = SHELL_OUTPUT_LIMIT if output_limit is None else output_limit
     try:
@@ -454,12 +461,19 @@ def execute_approved_shell(
     except subprocess.TimeoutExpired:
         return {
             "ok": False,
+            "status": "timeout",
             "error": f"command timed out after {timeout}s",
             "exit_code": None,
             "output": "",
         }
     except Exception as exc:
-        return {"ok": False, "error": str(exc), "exit_code": None, "output": ""}
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": str(exc),
+            "exit_code": None,
+            "output": "",
+        }
 
     output_parts = []
     if proc.stdout:
@@ -470,6 +484,7 @@ def execute_approved_shell(
     output, truncated = clip_middle(output, output_limit)
     return {
         "ok": True,
+        "status": "exit",
         "error": None,
         "exit_code": proc.returncode,
         "output": output,

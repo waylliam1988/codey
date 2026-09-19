@@ -49,12 +49,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Clear saved key", HTML)
         self.assertNotIn("clear_api_key", HTML)
         self.assertIn("fetch('/api/local_provider')", PROVIDER_UI_JS)
-        self.assertIn('data-provider="deepseek"', HTML)
-        self.assertIn('data-provider="mimo"', HTML)
-        self.assertIn('data-provider="qwen"', HTML)
-        self.assertIn('data-provider="stepfun"', HTML)
-        self.assertIn('data-provider="glm"', HTML)
-        self.assertIn('data-provider="local"', HTML)
+        # Menu items are generated from the backend catalog (no static copy).
+        self.assertNotIn('data-provider="deepseek"', HTML)
+        self.assertIn("deepseek", UI_STATE_JS)
+        self.assertIn("mimo", UI_STATE_JS)
+        self.assertIn("qwen", UI_STATE_JS)
+        self.assertIn("stepfun", UI_STATE_JS)
+        self.assertIn("glm", UI_STATE_JS)
+        self.assertIn("local", UI_STATE_JS)
+        self.assertIn("buildProviderMenu", PROVIDER_UI_JS)
+        self.assertIn("adoptBackendCatalog", PROVIDER_UI_JS)
+        self.assertIn("setProviders", UI_STATE_JS)
         self.assertIn("glm: 'GLM'", UI_STATE_JS)
         self.assertIn("local: 'Local'", UI_STATE_JS)
         self.assertIn('id="provider-dot"', HTML)
@@ -80,12 +85,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("window.CodeyComposer = {", COMPOSER_JS)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
-        deepseek = HTML.index('data-provider="deepseek"')
-        mimo = HTML.index('data-provider="mimo"')
-        stepfun = HTML.index('data-provider="stepfun"')
-        qwen = HTML.index('data-provider="qwen"')
-        glm = HTML.index('data-provider="glm"')
-        local = HTML.index('data-provider="local"')
+        # Order lives in the single ui_state.js fallback (backend is canonical).
+        deepseek = UI_STATE_JS.index("deepseek")
+        mimo = UI_STATE_JS.index("mimo")
+        stepfun = UI_STATE_JS.index("stepfun")
+        qwen = UI_STATE_JS.index("qwen")
+        glm = UI_STATE_JS.index("'GLM'")
+        local = UI_STATE_JS.index("'Local'")
 
         self.assertLess(deepseek, mimo)
         self.assertLess(mimo, stepfun)
@@ -344,8 +350,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_provider_probe_failure_shows_a_quiet_menu_warning(self) -> None:
         self.assertIn('id="provider-probe-warning"', HTML)
-        self.assertIn("Provider probe failed", HTML)
+        self.assertIn("Provider status unavailable", HTML)
         self.assertIn("setProbeWarning(!!data.probe_error)", PROVIDER_UI_JS)
+        self.assertIn("setProbeWarning(true)", PROVIDER_UI_JS)
         self.assertIn(".provider-probe-warning", STYLE_SOURCE)
         self.assertIn("color: var(--muted)", STYLE_SOURCE)
 
@@ -451,6 +458,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("renderResearchGraph(panel, run, sessionId)", RESEARCH_DRAWER_JS)
         self.assertNotIn("renderResearchConcepts", RESEARCH_DRAWER_JS)
         self.assertNotIn("endpoint: '/api/research/concept_graph'", RESEARCH_DRAWER_JS)
+        self.assertNotIn("options.endpoint", GRAPH_JS)
         self.assertNotIn("showDepth: false", RESEARCH_DRAWER_JS)
         self.assertIn('<script src="/assets/research_graph.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn('<script src="/assets/research_drawer.js?v=__CODEY_VERSION__"></script>', HTML)
@@ -466,7 +474,20 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("function draw(canvas, graph, detail, options)", GRAPH_JS)
         self.assertIn("function setDetailBody(body, text)", GRAPH_JS)
         self.assertIn("window.CodeyRender.renderMarkdown(body, value);", GRAPH_JS)
-        self.assertIn("fetch((options.endpoint || '/api/research/graph') + '?' + params.toString())", GRAPH_JS)
+
+    def test_research_notes_load_in_one_batch(self) -> None:
+        self.assertIn("/api/research/notes", RESEARCH_DRAWER_JS)
+        self.assertIn("missing", RESEARCH_DRAWER_JS)
+        self.assertNotIn("/api/research/note?id=", RESEARCH_DRAWER_JS)
+
+    def test_drawer_buttons_never_silent_noop(self) -> None:
+        self.assertIn("syncResearchUseProjectButton", HTML)
+        self.assertIn("syncChangesRefreshButton", HTML)
+        self.assertIn(".disabled", HTML)
+        self.assertIn("syncResearchUseProjectButton();", HTML)
+        self.assertIn("syncChangesRefreshButton();", HTML)
+        self.assertIn("fetch('/api/research/graph?' + params.toString())", GRAPH_JS)
+        self.assertNotIn("options.endpoint", GRAPH_JS)
         self.assertIn("if (options.showDepth !== false) {", GRAPH_JS)
         self.assertIn("for (const depth of [1, 2, 3])", GRAPH_JS)
         self.assertIn("function graphLayerY(node)", GRAPH_JS)
@@ -728,7 +749,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('class="provider-chooser"', HTML)
         self.assertIn('class="provider-button"', HTML)
         self.assertIn('class="provider-menu"', HTML)
-        self.assertIn('class="provider-item"', HTML)
+        # Menu items are built by provider_ui.js from the backend catalog;
+        # HTML holds only the container + warning (no second static copy).
+        self.assertIn("buildProviderMenu", PROVIDER_UI_JS)
+        self.assertIn("provider-item", PROVIDER_UI_JS)
+        self.assertNotIn('data-provider="deepseek"', HTML)
 
     def test_send_and_stop_share_one_action_slot(self) -> None:
         self.assertIn('class="action-slot"', HTML)

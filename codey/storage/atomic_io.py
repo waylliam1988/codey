@@ -9,6 +9,7 @@ by platform text-mode translation.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -94,8 +95,19 @@ def _fsync_dir(directory: Path) -> None:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-        except OSError:
-            pass
+        except OSError as exc:
+            # Only directory-fsync-not-supported is best-effort. Real IO,
+            # permission, or device errors must surface so durability is
+            # not silently claimed.
+            if exc.errno in (
+                errno.EINVAL,
+                errno.ENOTSUP,
+                errno.EOPNOTSUPP,
+                errno.ENOSYS,
+                errno.EPERM,
+            ):
+                return
+            raise
 
 
 def write_text_atomic(

@@ -22,6 +22,7 @@ from codey.ghost.event_log import (
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.storage.event_state import reset_event_backed_state
@@ -1274,26 +1275,13 @@ def _looks_like_question(value: object) -> bool:
 
 
 def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    out: list[str] = []
-    for warning in warnings:
-        text = clip_signal_text(warning, 180)
-        if text and text not in out:
-            out.append(text)
-        if len(out) >= MAX_CONTINUITY_WARNINGS:
-            break
-    return tuple(out)
+    return bounded_warnings(warnings, limit=MAX_CONTINUITY_WARNINGS)
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    mapped: list[str] = []
-    for warning in warnings:
-        if warning == "continuity_events.jsonl:too_large":
-            mapped.append("continuity_events_too_large")
-        elif warning == "continuity_events.jsonl:unreadable":
-            mapped.append("continuity_events_unreadable")
-        else:
-            mapped.append(str(warning))
-    return _bounded_warnings(mapped)
+    return event_read_warnings(
+        warnings, stream="continuity_events", limit=MAX_CONTINUITY_WARNINGS
+    )
 
 
 def _reverse_text_sort_key(value: object) -> tuple[int, ...]:

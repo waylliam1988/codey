@@ -26,21 +26,32 @@ class ConversationRegistry:
     def for_session(self, session_id: str) -> ConversationContext:
         with self.lock:
             context = self.contexts.pop(session_id, None)
-            if context is None:
-                self._evict_oldest_if_needed()
-                with self.store_lock:
-                    token = object()
+            if context is not None:
+                self.contexts[session_id] = context
+                return context
+            self._evict_oldest_if_needed()
+            token = object()
+            with self.store_lock:
+                self.tokens[session_id] = token
+        # Store IO happens outside self.lock so one slow session load
+        # cannot stall emit/subscribe or other sessions.
+        loaded = self.store.load(session_id)
+        loaded.on_change = (
+            lambda value, owner=session_id, owner_token=token: self._save(
+                owner,
+                owner_token,
+                value,
+            )
+        )
+        with self.lock:
+            with self.store_lock:
+                if self.tokens.get(session_id) is not token:
+                    existing = self.contexts.get(session_id)
+                    if existing is not None:
+                        return existing
                     self.tokens[session_id] = token
-                    context = self.store.load(session_id)
-                context.on_change = (
-                    lambda value, owner=session_id, owner_token=token: self._save(
-                        owner,
-                        owner_token,
-                        value,
-                    )
-                )
-            self.contexts[session_id] = context
-            return context
+            self.contexts[session_id] = loaded
+            return loaded
 
     def forget(self, session_id: str) -> None:
         with self.lock:

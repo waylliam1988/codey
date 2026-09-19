@@ -88,23 +88,17 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
     project_text = str(project)
 
     trace.call("record_permission_profile", profile.name, phase="writer")
-    try:
-        trace.call(
-            "record_protocol_codec",
-            str(getattr(codec, "name", "") or ""),
-            phase="writer",
-            model_tool_contract_hash=codec.model_tool_contract_hash(),
-        )
-    except Exception:
-        pass
-    try:
-        trace.call(
-            "record_tool_contract_hash",
-            codec.model_tool_contract_hash(),
-            phase="writer",
-        )
-    except Exception:
-        pass
+    trace.call(
+        "record_protocol_codec",
+        str(getattr(codec, "name", "") or ""),
+        phase="writer",
+        model_tool_contract_hash=codec.model_tool_contract_hash(),
+    )
+    trace.call(
+        "record_tool_contract_hash",
+        codec.model_tool_contract_hash(),
+        phase="writer",
+    )
     trace.record_section(PromptEnvelopeSection(
         name="coding_system_prompt",
         text=system_prompt_text,

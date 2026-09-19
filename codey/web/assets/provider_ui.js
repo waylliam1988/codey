@@ -23,7 +23,87 @@ function init(nextDeps) {
   DEFAULT_PROVIDER = deps.DEFAULT_PROVIDER;
   providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
   providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, 0]));
+  buildProviderMenu();
   bindHandlers();
+}
+
+function buildProviderMenu() {
+  const menu = deps.$('provider-menu');
+  if (!menu) return;
+  const warning = deps.$('provider-probe-warning');
+  menu.querySelectorAll('.provider-item').forEach((btn) => btn.remove());
+  for (const id of PROVIDERS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'provider-item';
+    btn.dataset.provider = id;
+    const dot = document.createElement('span');
+    dot.className = 'dot ' + providerAvailability(id);
+    dot.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = providerLabel(id);
+    const check = document.createElement('span');
+    check.className = 'check';
+    check.setAttribute('aria-hidden', 'true');
+    check.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg>';
+    btn.append(dot, label, check);
+    btn.onclick = () => {
+      setActiveProvider(id);
+      menu.classList.remove('open');
+      deps.$('provider-button').classList.remove('open');
+    };
+    if (warning) menu.insertBefore(btn, warning);
+    else menu.appendChild(btn);
+  }
+  syncProviderUI(currentProviderId());
+}
+
+function applyProviderConfig(data) {
+  if (!data || !Array.isArray(data.providers)) return false;
+  const ids = data.providers.map((item) => item && item.id).filter(Boolean);
+  if (!ids.length) return false;
+  const labels = {};
+  for (const item of data.providers) {
+    if (item && item.id) labels[item.id] = item.label || item.id;
+  }
+  let changed = false;
+  for (const id of ids) {
+    if (!PROVIDERS.includes(id)) { changed = true; break; }
+    if (PROVIDER_LABELS[id] !== labels[id]) { changed = true; break; }
+  }
+  if (data.default && data.default !== DEFAULT_PROVIDER && labels[data.default]) changed = true;
+  if (!changed) return false;
+  if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
+    window.CodeyUiState.setProviders(ids, labels, data.default);
+  } else {
+    PROVIDER_LABELS = labels;
+    PROVIDERS = ids;
+    if (data.default && labels[data.default]) DEFAULT_PROVIDER = data.default;
+  }
+  providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, !!providerStatus[id]]));
+  providerUpdatedAt = Object.fromEntries(PROVIDERS.map(id => [id, providerUpdatedAt[id] || 0]));
+  buildProviderMenu();
+  return true;
+}
+
+async function adoptBackendCatalog() {
+  // Boot-time only: adopt the backend catalog into ui_state before init.
+  // Menu is built later by init(); do not touch DOM here (deps is unset).
+  try {
+    const r = await fetch('/api/providers', { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data || !Array.isArray(data.providers) || !data.providers.length) return;
+    const ids = data.providers.map((item) => item && item.id).filter(Boolean);
+    const labels = {};
+    for (const item of data.providers) {
+      if (item && item.id) labels[item.id] = item.label || item.id;
+    }
+    if (ids.length && window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
+      window.CodeyUiState.setProviders(ids, labels, data.default);
+    }
+  } catch {}
 }
 
 function providerLabel(id) {
@@ -73,12 +153,18 @@ async function _doRefreshProviderStatus() {
   const fetchTime = Date.now();
   try {
     const r = await fetch('/api/providers');
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (reqId === lastRequestId) setProbeWarning(true);
+      return;
+    }
     const data = await r.json();
     if (reqId !== lastRequestId) return;
+    applyProviderConfig(data);
     applyProviderStatus(data.providers, false, fetchTime);
     setProbeWarning(!!data.probe_error);
-  } catch {}
+  } catch {
+    if (reqId === lastRequestId) setProbeWarning(true);
+  }
 }
 
 async function openLocalProviderConfig() {
@@ -165,13 +251,6 @@ document.addEventListener('click', (e) => {
     closeLocalProviderConfig();
   }
 });
-document.querySelectorAll('.provider-item').forEach((btn) => {
-  btn.onclick = () => {
-    setActiveProvider(btn.dataset.provider);
-    $('provider-menu').classList.remove('open');
-    $('provider-button').classList.remove('open');
-  };
-});
 $('local-config-close').onclick = closeLocalProviderConfig;
 $('local-config-save').onclick = saveLocalProviderConfig;
 }
@@ -180,6 +259,8 @@ window.CodeyProviderUI = {
   init,
   label: providerLabel,
   sync: syncProviderUI,
+  applyConfig: applyProviderConfig,
+  adoptCatalog: adoptBackendCatalog,
   applyStatus: applyProviderStatus,
   refreshStatus: refreshProviderStatus,
   openLocalConfig: openLocalProviderConfig,

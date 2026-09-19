@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import tempfile
@@ -220,6 +221,37 @@ class AtomicWriteTests(unittest.TestCase):
                         atomic_io.write_text_atomic(path, "after\n", preserve_mode=True)
 
             self.assertEqual(path.read_text(encoding="utf-8"), "after\n")
+
+    def test_fsync_dir_unsupported_errno_stays_silent(self) -> None:
+        from codey.storage import atomic_io
+
+        with (
+            mock.patch.object(atomic_io.os, "name", "posix"),
+            mock.patch.object(atomic_io.os, "open", return_value=99),
+            mock.patch.object(
+                atomic_io.os,
+                "fsync",
+                side_effect=OSError(errno.EINVAL, "invalid"),
+            ),
+            mock.patch.object(atomic_io.os, "close"),
+        ):
+            atomic_io._fsync_dir(Path("."))
+
+    def test_fsync_dir_real_error_propagates(self) -> None:
+        from codey.storage import atomic_io
+
+        with (
+            mock.patch.object(atomic_io.os, "name", "posix"),
+            mock.patch.object(atomic_io.os, "open", return_value=99),
+            mock.patch.object(
+                atomic_io.os,
+                "fsync",
+                side_effect=OSError(errno.EIO, "io error"),
+            ),
+            mock.patch.object(atomic_io.os, "close"),
+        ):
+            with self.assertRaises(OSError):
+                atomic_io._fsync_dir(Path("."))
 
 
 if __name__ == "__main__":

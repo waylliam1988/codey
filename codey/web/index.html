@@ -62,37 +62,9 @@
             <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="provider-menu" id="provider-menu" aria-hidden="true">
-            <button class="provider-item" data-provider="deepseek">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">DeepSeek</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <button class="provider-item" data-provider="mimo">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">MiMo</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <button class="provider-item" data-provider="stepfun">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">StepFun</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <button class="provider-item" data-provider="qwen">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">Qwen</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <button class="provider-item" data-provider="glm">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">GLM</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <button class="provider-item" data-provider="local">
-              <span class="dot" aria-hidden="true"></span>
-              <span class="label">Local</span>
-              <span class="check" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5 4.8 9 10 3.5"/></svg></span>
-            </button>
-            <div class="provider-probe-warning" id="provider-probe-warning" hidden>Provider probe failed</div>
+            <!-- Provider items are built by provider_ui.js from PROVIDER_LABELS;
+                 do not hand-edit a second copy here. -->
+            <div class="provider-probe-warning" id="provider-probe-warning" hidden>Provider status unavailable</div>
           </div>
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
@@ -203,7 +175,7 @@ const $ = (id) => document.getElementById(id);
 const escapeHtml = window.CodeyRender.escapeHtml;
 const receiptSummary = window.CodeyRender.receiptSummary;
 const receiptChangedCount = window.CodeyRender.receiptChangedCount;
-const DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
+let DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
 const PROVIDER_LABELS = window.CodeyUiState.PROVIDER_LABELS;
 const PROVIDERS = window.CodeyUiState.PROVIDERS;
 
@@ -536,6 +508,7 @@ function renderChat() {
   }
   syncProviderUI(currentProviderId());
   updateComposerContext();
+  syncResearchUseProjectButton();
 
   if (!s.messages.length) {
     chat.innerHTML = `
@@ -744,7 +717,11 @@ function appendMessageNode(chat, m) {
     const out = document.createElement('div');
     out.className = 'shell-output';
     const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
-    out.textContent = `${m.approved ? 'Executed' : 'Denied'}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
+    const verb = m.shellStatus === 'stopped' ? 'Stopped'
+      : m.shellStatus === 'timeout' ? 'Timed out'
+      : m.shellStatus === 'spawn_error' ? 'Failed to start'
+      : (m.approved ? 'Executed' : 'Denied');
+    out.textContent = `${verb}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
     div.appendChild(out);
     chat.appendChild(div);
   } else if (m.type === 'limit') {
@@ -1174,6 +1151,7 @@ function handleServerEvent(data) {
     $('provider-button').disabled = true;
     updateSend();
     updateComposerContext();
+    syncResearchUseProjectButton();
     return;
   }
   if (data.type === 'task_done') {
@@ -1185,6 +1163,7 @@ function handleServerEvent(data) {
       $('provider-button').disabled = false;
       updateSend();
       updateComposerContext();
+      syncResearchUseProjectButton();
     }
     if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
@@ -1283,6 +1262,7 @@ function handleServerEvent(data) {
       type: 'shell_result',
       id: data.id,
       approved: !!data.approved,
+      shellStatus: data.status || '',
       command: data.command,
       cwd: data.cwd,
       output: data.output,
@@ -1371,6 +1351,7 @@ function applyRunState(data) {
   markResearchRestoreAvailability(data.research_restore_runs || []);
   updateSend();
   updateComposerContext();
+  syncResearchUseProjectButton();
 }
 
 function reconcileRunState() {
@@ -1633,6 +1614,21 @@ const researchClose = $('research-close');
 if (researchClose) researchClose.onclick = () => window.CodeyResearchDrawer.close();
 const researchRestore = $('research-restore');
 if (researchRestore) researchRestore.onclick = restoreResearchRun;
+function syncResearchUseProjectButton() {
+  const btn = $('research-use-project');
+  if (!btn) return;
+  const s = activeSession();
+  const busy = !!runningSessionId;
+  const unusable = busy || !s || !!sessionProject(s);
+  btn.disabled = unusable;
+  btn.title = busy ? 'Busy' : (!s ? 'No chat' : (sessionProject(s) ? 'Already in a project' : 'Use in Project'));
+}
+function syncChangesRefreshButton() {
+  const btn = $('changes-refresh');
+  if (!btn) return;
+  btn.disabled = !activeChangesProject;
+  btn.title = activeChangesProject ? 'Refresh' : 'No project loaded';
+}
 $('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sendDraft: false });
 $('changes-refresh').onclick = () => {
   if (activeChangesProject) loadChangesDrawer(activeChangesProject);
@@ -1709,6 +1705,8 @@ document.addEventListener('keydown', (e) => {
 });
 // ============================ boot ============================
 async function boot() {
+  await window.CodeyProviderUI.adoptCatalog();
+  DEFAULT_PROVIDER = window.CodeyUiState.DEFAULT_PROVIDER;
   bindUiStatePagehide();
   window.CodeyResearchRuns.init({
     getActiveId: () => activeId,
@@ -1735,7 +1733,7 @@ async function boot() {
     $,
     fetchChanges,
     escapeHtml,
-    setActiveProject: value => { activeChangesProject = value; },
+    setActiveProject: value => { activeChangesProject = value; syncChangesRefreshButton(); },
     setLastData: value => { lastChangesData = value; },
     closeOtherDrawers,
   });
@@ -1800,11 +1798,14 @@ async function boot() {
   resizeTask();
   updateSend();
   syncProviderUI(currentProviderId());
+  syncChangesRefreshButton();
+  syncResearchUseProjectButton();
   refreshProviderStatus();
   $('provider-button').disabled = false;
   syncResearchUI();
   setStatus('', 'ok');
   await restoreUiStateFromServer();
+  syncResearchUseProjectButton();
   connectEvents();
 }
 boot();

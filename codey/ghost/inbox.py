@@ -31,6 +31,7 @@ from codey.ghost.schema import (
     GhostSignalParseResult,
     clip_signal_text,
 )
+from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
@@ -1148,12 +1149,4 @@ def _compact_timestamp() -> str:
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    mapped: list[str] = []
-    for warning in warnings:
-        if warning == "events.jsonl:too_large":
-            mapped.append("events_too_large")
-        elif warning == "events.jsonl:unreadable":
-            mapped.append("events_unreadable")
-        else:
-            mapped.append(str(warning))
-    return tuple(mapped[:MAX_EVENT_WARNINGS])
+    return slice_event_warnings(warnings, stream="events", limit=MAX_EVENT_WARNINGS)

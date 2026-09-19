@@ -383,8 +383,29 @@ class ApprovedShellTests(unittest.TestCase):
             )
 
             self.assertTrue(data["ok"], data)
+            self.assertEqual(data["status"], "exit")
             self.assertEqual(data["exit_code"], 0)
             self.assertIn("approved", data["output"])
+
+    def test_execute_approved_shell_status_is_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            ctx = server.AppContext()
+            empty = app_services.execute_approved_shell(ctx, td, ".", "   ")
+            self.assertEqual(empty["status"], "spawn_error")
+            self.assertFalse(empty["ok"])
+
+            stopped = app_services._stopped_shell_result()
+            self.assertEqual(stopped["status"], "stopped")
+            self.assertTrue(stopped["stopped"])
+
+            with mock.patch.object(
+                app_services.cancellation,
+                "run_process",
+                side_effect=subprocess.TimeoutExpired("cmd", 1),
+            ):
+                timed_out = app_services.execute_approved_shell(ctx, td, ".", "sleep 5")
+            self.assertEqual(timed_out["status"], "timeout")
+            self.assertFalse(timed_out["ok"])
 
     def test_execute_approved_shell_rejects_escaped_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1187,17 +1208,51 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(payload["graph"]["nodes"], [])
         self.assertEqual(payload["graph"]["edges"], [])
 
-    def test_research_concept_graph_api_returns_concepts(self) -> None:
+    def test_research_concept_graph_route_is_gone(self) -> None:
+        state = server.AppContext()
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/research/concept_graph?session_id=s1")
+                response = conn.getresponse()
+                response.read()
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 404)
+
+    def test_get_changes_route_is_gone_post_only(self) -> None:
+        state = server.AppContext()
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/changes?project=x")
+                response = conn.getresponse()
+                response.read()
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 404)
+
+    def test_research_notes_batch_route_serves_post(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext()
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
-            note = KnowledgeNote.create(
-                type="note",
-                title="War and helium",
-                body="B",
-                session_id="s1",
-                relations=[{"src": "war", "dst": "helium", "kind": "affects"}],
-            )
+            note = KnowledgeNote.create(type="note", title="T", body="B")
             state.knowledge_store.write_note(note)
             httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1206,7 +1261,13 @@ class ResearchGraphApiTests(unittest.TestCase):
             try:
                 with mock.patch.object(server, "STATE", state):
                     conn = http.client.HTTPConnection(host, port, timeout=5)
-                    conn.request("GET", "/api/research/concept_graph?session_id=s1")
+                    body = json.dumps({"ids": [note.id, "missing"]}).encode("utf-8")
+                    conn.request(
+                        "POST",
+                        "/api/research/notes",
+                        body=body,
+                        headers={"Content-Type": "application/json"},
+                    )
                     response = conn.getresponse()
                     payload = json.loads(response.read().decode("utf-8"))
                     conn.close()
@@ -1218,31 +1279,8 @@ class ResearchGraphApiTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertTrue(payload["ok"])
-        node_ids = {node["id"] for node in payload["graph"]["nodes"]}
-        self.assertEqual(node_ids, {"concept:war", "concept:helium"})
-        self.assertEqual(payload["graph"]["edges"][0]["kind"], "affects")
-
-    def test_research_concept_graph_api_without_store_is_404(self) -> None:
-        state = server.AppContext()
-        state.knowledge_store = None
-        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        host, port = httpd.server_address
-        try:
-            with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
-                conn.request("GET", "/api/research/concept_graph")
-                response = conn.getresponse()
-                payload = json.loads(response.read().decode("utf-8"))
-                conn.close()
-        finally:
-            httpd.shutdown()
-            httpd.server_close()
-            thread.join(timeout=5)
-
-        self.assertEqual(response.status, 404)
-        self.assertFalse(payload["ok"])
+        self.assertIn(note.id, payload["notes"])
+        self.assertEqual(payload["missing"], ["missing"])
 
 
 class ResearchServerHelperTests(unittest.TestCase):
@@ -1330,6 +1368,32 @@ class ResearchServerHelperTests(unittest.TestCase):
 
         self.assertEqual(status, 404)
         self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
+
+    def test_research_notes_response_batches_without_n_plus_one(self) -> None:
+        bad_status, bad_payload = app_api.research_notes_response(
+            server.AppContext(), {"ids": "nope"}
+        )
+        self.assertEqual(bad_status, 400)
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.AppContext()
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            first = KnowledgeNote.create(type="fact", title="A", body="a")
+            second = KnowledgeNote.create(type="fact", title="B", body="b")
+            state.knowledge_store.write_note(first)
+            state.knowledge_store.write_note(second)
+            try:
+                status, payload = app_api.research_notes_response(
+                    state, {"ids": [first.id, second.id, "missing", first.id]}
+                )
+            finally:
+                state.knowledge_store.close()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(set(payload["notes"]), {first.id, second.id})
+        self.assertEqual(payload["missing"], ["missing"])
+        self.assertEqual(payload["notes"][first.id]["title"], "A")
 
     def test_research_restore_response_preserves_status_mapping(self) -> None:
         missing_status, missing_payload = app_api.research_restore_response(server.AppContext(), {})

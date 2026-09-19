@@ -8,9 +8,33 @@ const LS_ACTIVE = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_UI_UPDATED = 'codey:ui-updated';
 const LS_UI_REVISION = 'codey:ui-revision';
-const DEFAULT_PROVIDER = 'deepseek';
-const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
-const PROVIDERS = Object.keys(PROVIDER_LABELS);
+let DEFAULT_PROVIDER = 'deepseek';
+let PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
+let PROVIDERS = Object.keys(PROVIDER_LABELS);
+
+function setProviders(ids, labels, defaultId) {
+  // Mutate in place so every module holding PROVIDERS/PROVIDER_LABELS
+  // references (index.html boot consts) stays live without re-wiring.
+  if (Array.isArray(ids) && ids.length) {
+    const nextLabels = {};
+    for (const id of ids) {
+      const key = String(id || '').trim();
+      if (!key) continue;
+      const label = labels && labels[key] ? String(labels[key]) : (PROVIDER_LABELS[key] || key);
+      nextLabels[key] = label;
+    }
+    const keys = Object.keys(nextLabels);
+    if (keys.length) {
+      for (const key of Object.keys(PROVIDER_LABELS)) delete PROVIDER_LABELS[key];
+      for (const key of keys) PROVIDER_LABELS[key] = nextLabels[key];
+      PROVIDERS.splice(0, PROVIDERS.length, ...keys);
+    }
+  }
+  if (typeof defaultId === 'string' && PROVIDER_LABELS[defaultId]) {
+    DEFAULT_PROVIDER = defaultId;
+    window.CodeyUiState.DEFAULT_PROVIDER = defaultId;
+  }
+}
 
 function init(nextDeps) {
   deps = nextDeps || {};
@@ -250,6 +274,7 @@ window.CodeyUiState = {
   DEFAULT_PROVIDER,
   PROVIDER_LABELS,
   PROVIDERS,
+  setProviders,
   uid,
   defaultSession,
   pathName,

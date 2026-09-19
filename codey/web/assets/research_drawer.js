@@ -538,24 +538,28 @@ async function loadResearchRunNotes(run, sessionId) {
   const ids = noteIdsForResearchRun(run)
     .filter(id => id && !researchNoteCache[id]);
   if (!ids.length) return;
-  await Promise.all(ids.map(async (id) => {
-    researchNoteCache[id] = { __state: 'loading' };
-    try {
-      const r = await fetch('/api/research/note?id=' + encodeURIComponent(id));
-      if (r.status === 404) {
-        researchNoteCache[id] = { __state: 'missing' };
-        return;
-      }
-      if (!r.ok) {
-        researchNoteCache[id] = { __state: 'error' };
-        return;
-      }
+  for (const id of ids) researchNoteCache[id] = { __state: 'loading' };
+  try {
+    const r = await fetch('/api/research/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!r.ok) {
+      for (const id of ids) researchNoteCache[id] = { __state: 'error' };
+    } else {
       const data = await r.json();
-      researchNoteCache[id] = data.ok && data.note ? data.note : { __state: 'missing' };
-    } catch {
-      researchNoteCache[id] = { __state: 'error' };
+      const notes = (data && data.ok && data.notes) || {};
+      const missing = new Set(Array.isArray(data && data.missing) ? data.missing : []);
+      for (const id of ids) {
+        if (notes[id]) researchNoteCache[id] = notes[id];
+        else if (missing.has(id)) researchNoteCache[id] = { __state: 'missing' };
+        else researchNoteCache[id] = { __state: 'error' };
+      }
     }
-  }));
+  } catch {
+    for (const id of ids) researchNoteCache[id] = { __state: 'error' };
+  }
   if (currentResearchRun(sessionId) === run && $('research-drawer').classList.contains('open')) {
     renderResearchDrawer(sessionId);
   }

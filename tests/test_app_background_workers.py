@@ -71,7 +71,6 @@ class GhostSleepDaemonTests(unittest.TestCase):
 
 class KnowledgeIndexerTests(unittest.TestCase):
     def test_schedule_rebuilds_once_and_runs_pending_pass(self) -> None:
-        lock = threading.Lock()
         release = threading.Event()
         calls = 0
         indexer: KnowledgeIndexer
@@ -85,12 +84,12 @@ class KnowledgeIndexerTests(unittest.TestCase):
                     release.set()
 
         store = Store()
-        indexer = KnowledgeIndexer(lock=lock, store=lambda: store)
+        indexer = KnowledgeIndexer(store=lambda: store)
 
         indexer.schedule()
         self.assertTrue(release.wait(2))
         for _ in range(100):
-            with lock:
+            with indexer.lock:
                 running = indexer.running
             if not running:
                 break
@@ -99,17 +98,15 @@ class KnowledgeIndexerTests(unittest.TestCase):
         self.assertEqual(calls, 2)
 
     def test_worker_errors_are_recorded_without_staying_running(self) -> None:
-        lock = threading.Lock()
-
         class Store:
             def rebuild(self) -> None:
                 raise RuntimeError("index failed")
 
-        indexer = KnowledgeIndexer(lock=lock, store=Store)
+        indexer = KnowledgeIndexer(store=Store)
 
         indexer.schedule()
         for _ in range(100):
-            with lock:
+            with indexer.lock:
                 running = indexer.running
             if not running:
                 break

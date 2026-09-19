@@ -10,7 +10,6 @@ Endpoints
     POST /api/ui_state    stores durable sidebar/chat UI state
     POST /api/run         body {project, task, provider, max_turns} → starts agent in
                           a background thread, returns {ok:true, run_id}
-    GET  /api/changes     query {project} → returns git status + diff
     POST /api/changes     body {project} → returns git status + diff
     GET  /api/ghost/summary query {session_id, project} → returns bounded
                           local context summary
@@ -184,7 +183,6 @@ class AppContext:
         self._knowledge_store: object | None = None
         self._knowledge_root = Path(state_home) / "vault" if self._knowledge_store_enabled else None
         self.knowledge_indexer = KnowledgeIndexer(
-            lock=self.lock,
             store=lambda: self._knowledge_store,
         )
         self.work_checkpoints = (
@@ -234,9 +232,16 @@ class AppContext:
                 return store
             if self.state_home is None:
                 return None
-            store = factory(self.state_home)
-            setattr(self, attr_name, store)
-            return store
+            state_home = self.state_home
+        # Build outside the lock: store constructors do file IO and must
+        # not stall event emit/subscribe on AppContext.lock.
+        fresh = factory(state_home)
+        with self.lock:
+            existing = getattr(self, attr_name)
+            if existing is not None:
+                return existing
+            setattr(self, attr_name, fresh)
+            return fresh
 
     @property
     def ghost_inbox(self) -> GhostInboxStore | None:
@@ -328,13 +333,20 @@ class AppContext:
 
     @property
     def knowledge_store(self) -> object | None:
-        if not self._knowledge_store_enabled:
-            return self._knowledge_store
         with self.lock:
-            if self._knowledge_store is None:
-                assert self._knowledge_root is not None
-                self._knowledge_store = KnowledgeStore(self._knowledge_root)
-            return self._knowledge_store
+            if not self._knowledge_store_enabled:
+                return self._knowledge_store
+            if self._knowledge_store is not None:
+                return self._knowledge_store
+            assert self._knowledge_root is not None
+            root = self._knowledge_root
+        # Build outside the lock: KnowledgeStore scans the vault on miss.
+        fresh = KnowledgeStore(root)
+        with self.lock:
+            if self._knowledge_store is not None:
+                return self._knowledge_store
+            self._knowledge_store = fresh
+            return fresh
 
     @knowledge_store.setter
     def knowledge_store(self, value: object | None) -> None:
@@ -1169,15 +1181,10 @@ _GET_ROUTES = {
     "/api/providers": lambda ctx, _query: app_api.providers_response(ctx),
     "/api/local_provider": lambda _ctx, _query: app_api.local_provider_response(),
     "/api/research/graph": app_api.research_graph_response,
-    "/api/research/concept_graph": app_api.research_concept_graph_response,
     "/api/research/note": app_api.research_note_response,
     "/api/run_details": app_api.run_details_response,
     "/api/ghost/summary": app_api.ghost_summary_response,
     "/api/ghost/export": lambda ctx, _query: app_api.ghost_export_response(ctx),
-    "/api/changes": lambda ctx, query: app_api.changes_response(
-        ctx,
-        (query.get("project") or [""])[0].strip(),
-    ),
 }
 
 
@@ -1186,6 +1193,7 @@ _POST_ROUTES = {
     "/api/local_provider": lambda _ctx, body: app_api.save_local_provider_response(body),
     "/api/run": _run_submit_route,
     "/api/research/restore": app_api.research_restore_response,
+    "/api/research/notes": app_api.research_notes_response,
     "/api/ghost/action": app_api.ghost_action_response,
     "/api/pick_folder": _pick_folder_response,
     "/api/changes": lambda ctx, body: app_api.changes_response(

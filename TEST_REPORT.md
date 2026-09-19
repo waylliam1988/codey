@@ -1,5 +1,72 @@
 # Codey Test Report
 
+## Confirmed-issue hardening batch (2026-09-19)
+
+Scope:
+
+```text
+runtime/observe/prompt_envelope.py: FailOpenPromptTrace.call/record_section log
+                                    logger.debug(exc_info=True), stay fail-open
+agents/loop.py:                     drop silent try/pass around trace calls
+storage/atomic_io.py:               _fsync_dir only swallows EINVAL/ENOTSUP/
+                                    EOPNOTSUPP/ENOSYS/EPERM, else raise
+app/conversation_registry.py:       for_session loads outside self.lock,
+                                    double-checked token install
+app/server.py:                      _ghost_store/knowledge_store build outside
+                                    AppContext.lock, double-checked install
+app/knowledge_indexer.py:           owns its lock (no AppContext.lock reuse)
+app/services.py + app/api.py + web: shell stable status stopped/timeout/
+                                    spawn_error/exit; events/409 carry status;
+                                    web renders by status (monochrome)
+web/assets/provider_ui.js +         dynamic provider menu (no static copy);
+web/assets/ui_state.js +            boot adoptCatalog before init; setProviders
+web/index.html:                     in-place mutate; fetch !ok/catch raises
+                                    Provider status unavailable
+app/api.py + app/server.py + web:   POST /api/research/notes {ids(<=64)} ->
+                                    {notes, missing}; drawer single batch;
+                                    research-use-project/changes-refresh
+                                    disabled + title (no silent no-op)
+codey/ghost/_warnings.py:           new shared bounded/event/slice/map helpers;
+                                    work_queue/affinity/continuity/directive/
+                                    sleep/hebbian/inbox/router delegate
+                                    (behavior-equivalent, no algorithm change)
+subtraction:                        remove GET /api/research/concept_graph +
+                                    research_concept_graph_response (builder kept
+                                    for unified_graph/research_interest);
+                                    remove GET /api/changes (POST only);
+                                    research_graph.js drops options.endpoint
+providers/worker.py:                _request gains grace=True; close() uses
+                                    grace=False (max 2s on dead child)
+tests/test_file_lock.py:            close Popen stdout/stderr pipes
+tests:                              trace log + broken-recorder setup_loop,
+                                    fsync EIO/EINVAL, lock-outside probe,
+                                    shell status, catalog contract, notes batch
+                                    + routes, warning equivalence, close grace,
+                                    UI static (menu/batch/disabled/no endpoint)
+docs:                               CHANGELOG.md + CHANGELOG.zh-CN.md Unreleased
+```
+
+Verification:
+
+- Static gates before the full run:
+  `python -m compileall -q codey tests` (passed)
+  `ruff check codey tests` (passed; one unused ghost schema import removed)
+  `git diff --check` (passed; only CRLF normalization warnings)
+- Focused gates (all green before the full run):
+  `tests/test_prompt_envelope tests/test_atomic_io
+  tests/test_conversation_registry tests/test_app_background_workers
+  tests/test_ghost_warnings tests/test_ui_architecture tests/test_ui
+  tests/test_coldstart_hardening tests/test_file_lock tests/test_providers`
+  (`188 passed, 2 skipped`)
+  `tests/test_server.ApprovedShellTests tests/test_architecture`
+  (`86 passed`)
+  `tests/test_ui_architecture.InlineBudgetTests` (`4 passed`;
+  inline stays within the 1650 ratchet after moving boot catalog to assets)
+- Full pytest suite:
+  `pytest -q -p no:cacheprovider`
+  (`3756 passed, 6 skipped, 1304 subtests passed in 316.84s (0:05:16)`)
+- No release (batch stays Unreleased).
+
 ## Hardening review follow-ups (2026-09-18)
 
 Scope:

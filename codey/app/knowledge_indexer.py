@@ -12,11 +12,10 @@ class KnowledgeIndexer:
     def __init__(
         self,
         *,
-        lock: threading.Lock,
         store: Callable[[], object | None],
     ) -> None:
-        self.lock = lock
         self.store = store
+        self.lock = threading.Lock()
         self.running = False
         self.pending = False
         self.error_count = 0

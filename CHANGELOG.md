@@ -4,6 +4,49 @@
 
 ## Unreleased - Runtime subtraction (P0-P4, no release)
 
+- Confirmed-issue hardening batch (no new compat or fallback):
+  fail-open trace is now observable: `agents/loop.py` drops the silent
+  `try/except pass` around `record_protocol_codec/record_tool_contract_hash`
+  (`JsonToolCodec.model_tool_contract_hash()` is a pure return, so the outer
+  guard only hid trace loss); `FailOpenPromptTrace.call/record_section`
+  log `logger.debug(..., exc_info=True)` and stay fail-open (cancellation
+  still propagates). `storage/atomic_io._fsync_dir` only swallows
+  directory-fsync-not-supported (`EINVAL/ENOTSUP/EOPNOTSUPP/ENOSYS/EPERM`);
+  real `EIO`/permission/device errors propagate. Locks no longer cover IO:
+  `ConversationRegistry.for_session` loads outside `self.lock` with
+  double-checked install (token race returns the winner instead of
+  clobbering), `AppContext._ghost_store/knowledge_store` build outside
+  `AppContext.lock` with double-checked install, and `KnowledgeIndexer`
+  owns its lock instead of reusing `AppContext.lock`. Shell results carry a
+  stable `status: stopped | timeout | spawn_error | exit` (`stopped` bool
+  kept for the existing `stop wins` check; `api` shell events and the 409
+  denial carry the same `status`; web `shell_result` renders
+  Stopped/Timed out/Failed to start vs Executed/Denied in monochrome text).
+  Provider catalog is single-sourced: `index.html` no longer hand-writes six
+  `provider-item` buttons (`provider_ui.buildProviderMenu` renders from the
+  catalog; `boot` adopts `/api/providers` via `adoptCatalog` before init;
+  `ui_state.setProviders` mutates in place so boot consts stay live);
+  `/api/providers` fetch failures and non-OK now raise the quiet
+  `Provider status unavailable` row (was `Provider probe failed`, only on
+  probe crash). Research notes load in one `POST /api/research/notes`
+  (max 64 ids; `{notes, missing}`) instead of N `GET /api/research/note`;
+  `research-use-project` and `changes-refresh` are `disabled` with `title`
+  hints instead of silent no-ops. Ghost warnings move to
+  `ghost/_warnings.py` (`bounded/event_read/slice/map` once; per-store
+  wrappers pass stream/limit/redact; `router` stays unbounded map-only,
+  `inbox/hebbian` stay slice without clipping). Subtraction: `GET
+  /api/research/concept_graph` + `research_concept_graph_response` removed
+  (internal `ConceptGraphBuilder` stays for `unified_graph/research_interest`;
+  graph UI uses `/api/research/graph` only, `research_graph.js` drops the
+  dead `options.endpoint`); `GET /api/changes` removed (`POST /api/changes`
+  is the single path). `WorkerChatProvider._request` gains `grace=True`
+  (normal `send/new_chat` unchanged); `close()` passes `grace=False` so an
+  unresponsive child costs at most 2s, not 2s + 5s grace. Tests: trace
+  log-assertion + broken-recorder `_setup_loop` survival, fsync
+  `EIO-raises/EINVAL-silent`, registry load-outside-lock probe, shell stable
+  status, provider catalog contract, notes batch + route tests, ghost warning
+  equivalence, close-skips-grace, file-lock pipe close, UI static tests for
+  dynamic menu/batch/disabled buttons/route removal.
 - Review follow-ups on the hardening batch (no new compat or fallback):
   expired SSE replay is now marker-only: `replay_events_after` returns just
   `resync_required` stamped at `max(cutoff, start + 1)` with no retained rows

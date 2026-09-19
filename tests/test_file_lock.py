@@ -118,6 +118,7 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             cwd=str(Path(__file__).resolve().parent.parent),
         )
         try:
+            assert proc.stdout is not None
             line = proc.stdout.readline()
             self.assertEqual(line.strip(), "ACQUIRED")
 
@@ -136,6 +137,10 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
 
     def test_process_lock_registry_releases_unused_paths(self) -> None:
         import codey.storage.file_lock as fl

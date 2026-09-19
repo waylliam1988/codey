@@ -17,6 +17,7 @@ from codey.ghost.hebbian import (
     NODE_HALF_LIFE_DAYS,
 )
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost._warnings import bounded_warnings
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
 from codey.storage.local_store import StoreCorruption, read_json_strict
 
@@ -350,14 +351,7 @@ def _normalize_project(value: object) -> str:
 
 
 def _bounded_warnings(warnings: list[str]) -> tuple[str, ...]:
-    out: list[str] = []
-    for warning in warnings:
-        text = clip_signal_text(warning, 180)
-        if text and text not in out:
-            out.append(text)
-        if len(out) >= MAX_DIRECTIVE_WARNINGS:
-            break
-    return tuple(out)
+    return bounded_warnings(warnings, limit=MAX_DIRECTIVE_WARNINGS)
 
 
 def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, float]:

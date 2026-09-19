@@ -7,7 +7,6 @@ from typing import Any, Callable
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import services
 from codey.ghost.control_surface import GhostControlSurface
-from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_openai import (
@@ -152,20 +151,6 @@ def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int,
     return 200, {"ok": True, "graph": graph.to_dict()}
 
 
-def research_concept_graph_response(
-    ctx: Any,
-    query: dict[str, list[str]],
-) -> tuple[int, dict]:
-    if ctx.knowledge_store is None:
-        return research_unconfigured_response()
-    graph = ConceptGraphBuilder(ctx.knowledge_store).build_for_session(
-        query_value(query, "session_id"),
-        node_limit=query_int(query, "limit", 64, 8, 200),
-        edge_limit=query_int(query, "edge_limit", 128, 8, 400),
-    )
-    return 200, {"ok": True, "graph": graph.to_dict()}
-
-
 def research_note_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict]:
     note_id = query_value(query, "id")
     if not note_id:
@@ -178,17 +163,46 @@ def research_note_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, 
     row = ctx.knowledge_store.index.get(note.id) or {}
     return 200, {
         "ok": True,
-        "note": {
-            "id": note.id,
-            "type": note.type,
-            "title": note.title,
-            "body": note.body,
-            "sources": note.sources,
-            "tags": note.tags,
-            "status": note.status,
-            "path": str(row.get("path") or ""),
-            "updated": note.updated,
-        },
+        "note": _research_note_payload(ctx, note, row),
+    }
+
+
+def research_notes_response(ctx: Any, body: dict) -> tuple[int, dict]:
+    raw_ids = body.get("ids") if isinstance(body, dict) else None
+    if not isinstance(raw_ids, list):
+        return 400, {"ok": False, "error": "ids required"}
+    seen: list[str] = []
+    for raw in raw_ids[:64]:
+        text = str(raw or "").strip()
+        if text and text not in seen:
+            seen.append(text)
+    if not seen:
+        return 400, {"ok": False, "error": "ids required"}
+    if ctx.knowledge_store is None:
+        return research_unconfigured_response()
+    notes: dict[str, dict] = {}
+    missing: list[str] = []
+    for note_id in seen:
+        note = ctx.knowledge_store.read_note(note_id)
+        if note is None:
+            missing.append(note_id)
+            continue
+        row = ctx.knowledge_store.index.get(note.id) or {}
+        notes[note_id] = _research_note_payload(ctx, note, row)
+    return 200, {"ok": True, "notes": notes, "missing": missing}
+
+
+def _research_note_payload(ctx: Any, note: Any, row: dict) -> dict:
+    return {
+        "id": note.id,
+        "type": note.type,
+        "title": note.title,
+        "body": note.body,
+        "sources": note.sources,
+        "tags": note.tags,
+        "status": note.status,
+        "path": str(row.get("path") or ""),
+        "updated": note.updated,
     }
 
 
@@ -362,13 +376,14 @@ def _stopped_shell_denial(
         "session_id": session_id,
         "id": approval_id,
         "approved": False,
+        "status": "stopped",
         "command": command,
         "cwd": pending["cwd"],
         "output": "Task stopped; command approval expired.",
         "exit_code": None,
     }
     ctx.record_shell_result(event)
-    return 409, {"error": "stopped", "stopped": True, "event": event}
+    return 409, {"error": "stopped", "stopped": True, "status": "stopped", "event": event}
 
 
 def shell_approval_response(
@@ -416,7 +431,7 @@ def shell_approval_response(
         ctx, project, pending["cwd"], command,
         expected_approval_generation=claimed_generation,
     )
-    if result.get("stopped"):
+    if result.get("status") == "stopped" or result.get("stopped"):
         return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
     event = {
         "type": "shell_result",
@@ -424,6 +439,7 @@ def shell_approval_response(
         "session_id": session_id,
         "id": approval_id,
         "approved": True,
+        "status": str(result.get("status") or "exit"),
         "command": command,
         "cwd": pending["cwd"],
         "output": result.get("output") or result.get("error") or "",
@@ -508,9 +524,9 @@ __all__ = [
     "local_provider_response",
     "new_chat_response",
     "providers_response",
-    "research_concept_graph_response",
     "research_graph_response",
     "research_note_response",
+    "research_notes_response",
     "research_restore_response",
     "restore_changes_response",
     "run_details_response",

@@ -68,7 +68,7 @@ async function loadGraph(options, canvas, status, detail) {
   const seq = ++loadSeq;
   try {
     const params = graphParams(options);
-    const r = await fetch((options.endpoint || '/api/research/graph') + '?' + params.toString());
+    const r = await fetch('/api/research/graph?' + params.toString());
     let data = {};
     try { data = await r.json(); } catch {}
     if (seq !== loadSeq || !canvas.isConnected) return;

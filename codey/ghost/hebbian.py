@@ -18,6 +18,7 @@ from codey.ghost.event_log import (
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
+from codey.ghost._warnings import slice_event_warnings
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
@@ -1260,12 +1261,4 @@ def _compact_timestamp() -> str:
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    mapped: list[str] = []
-    for warning in warnings:
-        if warning == "hebbian_events.jsonl:too_large":
-            mapped.append("hebbian_events_too_large")
-        elif warning == "hebbian_events.jsonl:unreadable":
-            mapped.append("hebbian_events_unreadable")
-        else:
-            mapped.append(str(warning))
-    return tuple(mapped[:MAX_HEBBIAN_WARNINGS])
+    return slice_event_warnings(warnings, stream="hebbian_events", limit=MAX_HEBBIAN_WARNINGS)

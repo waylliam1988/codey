@@ -420,6 +420,50 @@ class PromptEnvelopeTests(unittest.TestCase):
             {"phase": "chat"},
         )])
 
+    def test_trace_call_failure_is_logged_but_stays_fail_open(self) -> None:
+        class _ExplodingCall:
+            def record_permission_profile(self, *_args, **_kwargs) -> None:
+                raise OSError("trace unavailable")
+
+        with self.assertLogs("codey.runtime.observe.prompt_envelope", level="DEBUG") as logs:
+            FailOpenPromptTrace(_ExplodingCall()).call("record_permission_profile", "chat")
+
+        self.assertTrue(any("record_permission_profile" in line for line in logs.output))
+
+    def test_setup_loop_survives_broken_trace_recorder(self) -> None:
+        import tempfile
+
+        from codey.agents.loop import _setup_loop
+        from codey.agents.request import AgentRequest
+
+        class _ExplodingTrace:
+            def __getattr__(self, _name):
+                def _boom(*_args, **_kwargs):
+                    raise OSError("trace unavailable")
+
+                return _boom
+
+        class _Provider:
+            name = "fake"
+
+            def new_chat(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as td:
+            request = AgentRequest(
+                provider=_Provider(),  # type: ignore[arg-type]
+                project=Path(td),
+                task="do it",
+                trace_recorder=_ExplodingTrace(),
+            )
+            with self.assertLogs(
+                "codey.runtime.observe.prompt_envelope", level="DEBUG"
+            ) as logs:
+                session = _setup_loop(request)
+
+        self.assertIsNotNone(session)
+        self.assertTrue(any("record_" in line for line in logs.output))
+
 
 if __name__ == "__main__":
     unittest.main()

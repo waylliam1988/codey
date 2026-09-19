@@ -8,6 +8,7 @@ assembly helper plus a trace sink, not a plugin system or prompt policy layer.
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,8 @@ DEFAULT_PROMPT_SEPARATOR = "\n\n"
 MODEL_BOUNDARY_FRESHNESS = frozenset((PROVIDER_TURN_BOUNDARY,))
 MAX_PROMPT_SOURCE_REFS = 64
 MAX_PROMPT_REF_CHARS = 160
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -125,6 +128,7 @@ class FailOpenPromptTrace:
         except Exception as exc:
             if _is_trace_cancellation(exc):
                 raise
+            logger.debug("prompt trace %s failed: %r", method, exc, exc_info=True)
             return
 
     def record_section(
@@ -157,6 +161,7 @@ class FailOpenPromptTrace:
         except Exception as exc:
             if _is_trace_cancellation(exc):
                 raise
+            logger.debug("prompt trace section normalize failed: %r", exc, exc_info=True)
             return
         # Admission metadata is appended only when present so sparse trace
         # payloads stay compact.

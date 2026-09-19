@@ -85,8 +85,9 @@ class WorkerChatProvider:
 
     def close(self) -> None:
         # Shutdown must never resurrect the child: a dead worker stays dead.
+        # No timeout grace here: close must not linger on an unresponsive child.
         try:
-            self._request("close", {}, 2.0, restart=False)
+            self._request("close", {}, 2.0, restart=False, grace=False)
         except Exception:
             pass
         self._terminate()
@@ -210,9 +211,10 @@ class WorkerChatProvider:
         timeout: float | None,
         *,
         restart: bool = True,
+        grace: bool = True,
     ):
         with self._lock:
-            return self._request_locked(method, params, timeout, restart=restart)
+            return self._request_locked(method, params, timeout, restart=restart, grace=grace)
 
     def _request_locked(
         self,
@@ -221,6 +223,7 @@ class WorkerChatProvider:
         timeout: float | None,
         *,
         restart: bool = True,
+        grace: bool = True,
     ):
         if restart:
             proc = self._ensure_running_locked()
@@ -237,7 +240,9 @@ class WorkerChatProvider:
             self._terminate()
             self._drain_responses()
             raise RuntimeError("provider worker stdin is unavailable") from exc
-        deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + WORKER_TIMEOUT_GRACE
+        deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + (
+            WORKER_TIMEOUT_GRACE if grace else 0.0
+        )
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:

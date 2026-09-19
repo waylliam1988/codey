@@ -47,6 +47,21 @@ class ConversationRegistryTests(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertEqual(fresh.snapshot.goal, "")
 
+    def test_session_load_runs_outside_registry_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            registry = ConversationRegistry(td, max_states=4)
+            real_load = registry.store.load
+            seen_locked: list[bool] = []
+
+            def _probing_load(session_id: str):
+                seen_locked.append(registry.lock.locked())
+                return real_load(session_id)
+
+            registry.store.load = _probing_load  # type: ignore[method-assign]
+            registry.for_session("chat-1")
+
+        self.assertEqual(seen_locked, [False])
+
 
 if __name__ == "__main__":
     unittest.main()

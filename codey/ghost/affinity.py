@@ -22,6 +22,7 @@ from codey.ghost.event_log import (
 )
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -2526,14 +2527,7 @@ def _merge_refs(current: Iterable[object], incoming: Iterable[object], *, limit:
 
 
 def _bounded_warnings(values: Iterable[object]) -> tuple[str, ...]:
-    out: list[str] = []
-    for value in values:
-        text = clip_signal_text(value, 180)
-        if text and text not in out:
-            out.append(text)
-        if len(out) >= MAX_AFFINITY_WARNINGS:
-            break
-    return tuple(out)
+    return bounded_warnings(values, limit=MAX_AFFINITY_WARNINGS)
 
 
 def _valid_affinity_node_payload(payload: object) -> bool:
@@ -2685,15 +2679,7 @@ def _now() -> str:
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
-    mapped: list[str] = []
-    for warning in warnings:
-        if warning == "affinity_events.jsonl:too_large":
-            mapped.append("affinity_events_too_large")
-        elif warning == "affinity_events.jsonl:unreadable":
-            mapped.append("affinity_events_unreadable")
-        else:
-            mapped.append(str(warning))
-    return _bounded_warnings(mapped)
+    return event_read_warnings(warnings, stream="affinity_events", limit=MAX_AFFINITY_WARNINGS)
 
 
 __all__ = [
