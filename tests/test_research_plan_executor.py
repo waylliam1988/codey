@@ -94,7 +94,7 @@ def test_plan_executor_bounds_queries_sources_and_url_guard() -> None:
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=2,
@@ -176,7 +176,7 @@ def test_plan_executor_stops_before_search_when_total_source_budget_is_full() ->
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=2,
@@ -221,7 +221,7 @@ def test_plan_executor_bounds_malformed_plan_limits() -> None:
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=1,
@@ -264,7 +264,7 @@ def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=1,
@@ -335,7 +335,7 @@ def test_plan_executor_skips_root_landing_pages_before_opening() -> None:
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=1,
@@ -400,7 +400,7 @@ def test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_mat
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=1,
@@ -472,7 +472,7 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
             )
 
             with mock.patch("codey.research.plan_executor.check_fetch_url", side_effect=_allow_http_url):
-                with mock.patch("codey.research.tools.check_fetch_url", side_effect=_allow_http_url):
+                with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
                     result = PlanExecutor(
                         config=ResearchPipelineConfig(
                             max_queries_per_round=2,

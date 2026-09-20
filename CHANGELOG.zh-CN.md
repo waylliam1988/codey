@@ -2,6 +2,32 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - ResearchSourceGateway：provider + ledger 之上的采集主干（未发布）
+
+- 新增 `research/source_gateway.py`：`search(query, limit)`、
+  `open(url, offset, limit, pages)`、`search_inside(url, query, limit)`，
+  底座是一个 search provider + 一个 run ledger。connector 优先 /
+  browser 回退（走现成的 `ConnectorAwareSearchProvider`）、fetch 策略、
+  重定向检查、PDF/HTML 构建、opened-ledger 记录、失败回调都在这里编排。
+  返回冻结 dataclass（`SearchedSources` / `OpenedSource` /
+  `SearchedInside`），detail 不带前缀；Tools 只加 `ERROR:` / `SKIPPED:` /
+  `NEEDS_OPEN:` 前缀——所有模型可见字符串与之前逐字节一致。
+- `ResearchTools.web_search/open_url/source_search` 变薄委托（校验、
+  渲染、诊断）；fetch / document / PDF 扫描 / ledger 逻辑逐字搬走。
+  `source_connectors.py` 保持纯 connector 合同，`browser_search.py` 保持纯
+  浏览器运行时，两者不互相 import。
+- 上限 single owner：`OPEN_DEFAULT/LIMIT/MAX`、`SEARCH_LIMIT`、
+  `PDF_SOURCE_SEARCH_MAX_PAGES` 归 gateway；`tools.py` 与两个 manual 脚本
+  从 gateway import。无兼容重导出。
+- 新增测试 `test_source_gateway.py`（fake provider + 真 ledger，9 个结构
+  测试）；三个测试 patch 路径跟随搬家。
+- 债务不动：`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`
+ （自带的一个 UP035 跑全量前已修）。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿；research 定向全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3877 passed, 6 skipped, 1306 subtests passed in 286.23s`）。
+
 ## Unreleased - Stop 线性化、冷启动 import、小收尾、更硬的测试（未发布）
 
 - P0 shell Stop 线性化：新增 `AppContext.request_stop()`，在

@@ -5,36 +5,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from codey.runtime.core import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore, content_hash_bytes
 from codey.research.ledger import ResearchLedger
-from codey.research.pdf_extract import (
-    PDF_DEFAULT_PAGES,
-    PDF_MAX_PAGES_PER_OPEN,
-    PdfSkipped,
-    extract_pdf_document,
+from codey.research.source_gateway import (
+    OPEN_DEFAULT_LIMIT,
+    OPEN_MAX_LIMIT,
+    SEARCH_LIMIT,
+    ResearchSourceGateway,
 )
-from codey.research.source_document import SourceDocument
 from codey.research.source_rendering import render_opened_source
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
-    SourceSearchHit,
-    bounded_limit,
     render_results,
-    search_pages,
-    search_text,
 )
 from codey.research.url_selection import source_candidate_skip_reason
-from codey.policies.network import check_fetch_url
 from codey.utils.text_budget import clip_middle
 
-OPEN_DEFAULT_LIMIT = 6000
-OPEN_MAX_LIMIT = 12000
-SEARCH_LIMIT = 8
-PDF_SOURCE_SEARCH_MAX_PAGES = 30
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
 
@@ -84,20 +73,27 @@ class ResearchTools:
         self.links_created = max(self.links_created, staged.links_created)
         self.ledger = staged.ledger
 
+    @property
+    def gateway(self) -> ResearchSourceGateway:
+        """Acquisition spine over this tool's provider and ledger.
+
+        Built fresh per access (no I/O): staged clones pick up their own
+        ledger automatically, so staging semantics never drift.
+        """
+        return ResearchSourceGateway(
+            search_provider=self.search,
+            ledger=self.ledger,
+            on_failure=self._record_failure,
+        )
+
     def web_search(self, query: str) -> str:
         query = (query or "").strip()
         if not query:
             return "ERROR: web_search needs a non-empty query"
-        cancellation.check()
-        try:
-            results = self.search.search(query, limit=SEARCH_LIMIT)
-        except cancellation.TaskCancelled:
-            raise
-        except Exception as exc:
-            self._record_failure("search", "search", exc)
-            return f"ERROR: search failed: {exc}"
-        cancellation.check()
-        self.ledger.record_search(query, results)
+        outcome = self.gateway.search(query, SEARCH_LIMIT)
+        if outcome.error:
+            return f"ERROR: {outcome.error}"
+        results = outcome.hits
         if not results:
             return "no results"
         lines = []
@@ -117,52 +113,16 @@ class ResearchTools:
         return "\n".join(lines)
 
     def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
-        url = (url or "").strip()
-        if not url:
-            return "ERROR: open_url needs a url"
-        skip_reason = source_candidate_skip_reason(url)
-        if skip_reason:
-            self._record_failure("browser", "open", skip_reason, url=url)
-            return f"SKIPPED: {skip_reason}. Choose a specific article, document, or readable source page."
+        outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
+        if outcome.status == "error":
+            return f"ERROR: {outcome.detail}"
+        if outcome.status == "skipped":
+            return f"SKIPPED: {outcome.detail}"
+        document = outcome.document
+        assert document is not None
+        self.sources_read.update(outcome.read_urls)
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
-        reason = check_fetch_url(url, use_cache=True)
-        if reason:
-            self._record_failure("browser", "open", reason, url=url)
-            return f"ERROR: {reason}"
-        cancellation.check()
-        try:
-            page = self.search.fetch(url)
-        except cancellation.TaskCancelled:
-            raise
-        except Exception as exc:
-            self._record_failure("browser", "open", exc, url=url)
-            return f"ERROR: open failed: {exc}"
-        cancellation.check()
-        page_url = str(page.get("url") or url)
-        page_text = str(page.get("text") or "")
-        skip_reason = source_candidate_skip_reason(page_url)
-        if skip_reason:
-            self._record_failure("browser", "open", skip_reason + " after redirect", url=url)
-            return f"SKIPPED: {skip_reason} after redirect. Choose a specific article, document, or readable source page."
-        if page_text.startswith("SKIPPED:"):
-            return page_text
-        if page_text.startswith("ERROR:"):
-            message = page_text[len("ERROR:") :].strip()
-            if message.lower().startswith("unsupported content type:"):
-                return f"SKIPPED: {message}. Choose an HTML source or another readable page."
-            self._record_failure("browser", "open", message, url=url)
-            return f"ERROR: {message}"
-        reason = check_fetch_url(page_url, use_cache=True)
-        if reason:
-            return f"ERROR: {reason} (after redirect)"
-        document = self._source_document_from_fetch(url, page, pages=pages)
-        if isinstance(document, PdfSkipped):
-            return f"SKIPPED: {document.reason}. Choose an HTML source or another readable PDF."
-        self.sources_read.add(url)
-        if page_url and page_url != url:
-            self.sources_read.add(page_url)
-        self.ledger.record_open_document(document)
         window = document.text[offset : offset + limit]
         more = offset + limit < len(document.text)
         body = render_opened_source(
@@ -174,118 +134,13 @@ class ResearchTools:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
         return body
 
-    def _source_document_from_fetch(
-        self, requested_url: str, page: dict, *, pages: str = ""
-    ) -> SourceDocument | PdfSkipped:
-        final_url = str(page.get("url") or requested_url)
-        content_kind = str(page.get("content_kind") or "").lower()
-        mime_type = str(page.get("mime_type") or "")
-        if content_kind == "pdf":
-            return extract_pdf_document(
-                bytes(page.get("bytes") or b""),
-                requested_url=requested_url,
-                final_url=final_url,
-                title=str(page.get("title") or ""),
-                mime_type=mime_type or "application/pdf",
-                pages=pages or PDF_DEFAULT_PAGES,
-            )
-        return SourceDocument.html(
-            requested_url=requested_url,
-            final_url=final_url,
-            title=str(page.get("title") or ""),
-            text=str(page.get("text") or ""),
-            mime_type=mime_type or "text/html",
-            truncated=bool(page.get("truncated")),
-        )
-
     def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> str:
-        url = (url or "").strip()
-        query = (query or "").strip()
-        if not url:
-            return "ERROR: source_search needs a url"
-        if not query:
-            return "ERROR: source_search needs a query"
-        final_url = self.ledger.canonical_opened_url(url)
-        if not final_url:
-            return "NEEDS_OPEN: open the source before source_search: " + url
-        source = self.ledger.source_record_for_url(final_url)
-        if source is None:
-            return "ERROR: source_search source is not in the opened-source ledger"
-        hit_limit = bounded_limit(limit)
-        cancellation.check()
-        if source.content_kind == "pdf":
-            hits = search_pages(self.ledger.source_pages_for_url(final_url), query, hit_limit)
-            if self._pdf_source_search_scan_needed(source.final_url):
-                hits = _merge_source_hits(
-                    [
-                        *hits,
-                        *self._pdf_source_search_hits(source.final_url, query, hit_limit),
-                    ],
-                    hit_limit,
-                )
-        else:
-            hits = search_text(self.ledger.source_text_for_url(final_url), query, hit_limit)
-        self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
-        return render_results(final_url, hits)
-
-    def _pdf_source_search_scan_needed(self, final_url: str) -> bool:
-        source = self.ledger.source_record_for_url(final_url)
-        if source is None or source.content_kind != "pdf":
-            return False
-        page_count = max(0, int(source.page_count or 0))
-        if page_count <= 0:
-            return False
-        scan_end = min(page_count, PDF_SOURCE_SEARCH_MAX_PAGES)
-        pages_read = self.ledger.pages_read_for_url(final_url)
-        return any(page not in pages_read for page in range(1, scan_end + 1))
-
-    def _pdf_source_search_hits(self, final_url: str, query: str, limit: int) -> list[SourceSearchHit]:
-        source = self.ledger.source_record_for_url(final_url)
-        if source is None or source.content_kind != "pdf":
-            return []
-        page_count = max(0, int(source.page_count or 0))
-        if page_count <= 0:
-            return []
-        scan_end = min(page_count, PDF_SOURCE_SEARCH_MAX_PAGES)
-        try:
-            page = self.search.fetch(source.final_url)
-        except cancellation.TaskCancelled:
-            raise
-        except Exception as exc:
-            self._record_failure("browser", "source_search", exc, url=source.final_url)
-            return []
-        cancellation.check()
-        page_url = str(page.get("url") or source.final_url)
-        reason = check_fetch_url(page_url)
-        if reason:
-            self._record_failure("browser", "source_search", reason, url=source.final_url)
-            return []
-        if page_url != source.final_url and self.ledger.canonical_opened_url(page_url) != source.final_url:
-            self._record_failure(
-                "browser",
-                "source_search",
-                "redirect changed opened source",
-                url=source.final_url,
-            )
-            return []
-        data = bytes(page.get("bytes") or b"")
-        if not data:
-            return []
-        page_texts: dict[int, str] = {}
-        for start in range(1, scan_end + 1, PDF_MAX_PAGES_PER_OPEN):
-            end = min(scan_end, start + PDF_MAX_PAGES_PER_OPEN - 1)
-            document = extract_pdf_document(
-                data,
-                requested_url=source.requested_url or source.final_url,
-                final_url=source.final_url,
-                title=source.title,
-                mime_type=source.mime_type or "application/pdf",
-                pages=f"{start}-{end}",
-            )
-            if isinstance(document, PdfSkipped):
-                continue
-            page_texts.update({page.number: page.text for page in document.page_texts})
-        return search_pages(page_texts, query, limit)
+        outcome = self.gateway.search_inside(url, query, limit)
+        if outcome.status == "needs_open":
+            return f"NEEDS_OPEN: {outcome.detail}"
+        if outcome.status == "error":
+            return f"ERROR: {outcome.detail}"
+        return render_results(outcome.final_url, list(outcome.hits))
 
     def knowledge_search(self, query: str) -> str:
         query = (query or "").strip()
@@ -537,20 +392,6 @@ def _clip_tail(value: str, limit: int) -> str:
     if limit <= 3:
         return text[-limit:]
     return "..." + text[-(limit - 3) :]
-
-
-def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:
-    seen: set[tuple[int | None, int]] = set()
-    unique: list[SourceSearchHit] = []
-    for hit in sorted(hits, key=lambda item: (-item.score, item.page or 0, item.offset)):
-        key = (hit.page, hit.offset)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(hit)
-        if len(unique) >= limit:
-            break
-    return unique
 
 
 class StagedKnowledgeStore:

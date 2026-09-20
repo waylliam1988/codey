@@ -39,7 +39,8 @@ from codey.providers.registry import connect_provider, provider_ids
 from codey.research.protocols import JsonToolCodec
 from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument
-from codey.research.tools import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, ResearchTools
+from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
+from codey.research.tools import ResearchTools
 
 ARMS = ("baseline", "concept")
 DEFAULT_MAX_TURNS = 12

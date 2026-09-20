@@ -35,7 +35,8 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
 from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
-from codey.research.tools import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES, ResearchTools
+from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
+from codey.research.tools import ResearchTools
 
 
 ARMS = ("baseline", "source_search", "thin_gate", "deep_core")

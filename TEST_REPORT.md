@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## ResearchSourceGateway: acquisition spine over provider + ledger (2026-09-20)
+
+Scope:
+
+```text
+codey/research/source_gateway.py (new):
+                           search/open/search_inside over provider+ledger;
+                           connector-first/browser-fallback via existing
+                           wrapper; fetch policy, redirect checks, PDF/HTML
+                           build, ledger records, failure callbacks;
+                           frozen outcomes, prefix-free details
+codey/research/tools.py:   web_search/open_url/source_search thin delegates
+                           (validate/render/diagnose); fetch/document/PDF
+                           logic moved verbatim; bounds imported from gateway
+codey/research/:           OPEN_*/SEARCH_LIMIT/PDF_SOURCE_SEARCH_MAX_PAGES
+                           single-owned by gateway
+tests:                       test_source_gateway.py (new, 9 tests);
+                           3 patch paths follow the move; 2 manual scripts
+                           import bounds from gateway
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`; unchanged)
+- Targeted gates before the full run:
+  research-wide selection (1077 passed, 314 subtests passed),
+  `tests/test_architecture.py` (82 passed, 312 subtests passed),
+  `tests/test_source_gateway.py` (9 passed)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3877 passed, 6 skipped, 1306 subtests passed in 286.23s (0:04:46)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Stop linearization, cold-start imports, small close gaps, harder tests (2026-09-20)
 
 Scope:

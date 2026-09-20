@@ -2,6 +2,34 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - ResearchSourceGateway: acquisition spine over provider + ledger (no release)
+
+- New `research/source_gateway.py`: `search(query, limit)`,
+  `open(url, offset, limit, pages)`, `search_inside(url, query, limit)` over
+  one search provider and one run ledger. Connector-first/browser-fallback
+  (via the existing `ConnectorAwareSearchProvider`), fetch policy, redirect
+  checks, PDF/HTML build, opened-ledger recording, and failure callbacks all
+  orchestrate here. Outcomes are frozen dataclasses (`SearchedSources`,
+  `OpenedSource`, `SearchedInside`) carrying prefix-free details; tools add
+  only the `ERROR:`/`SKIPPED:`/`NEEDS_OPEN:` prefix, so every model-visible
+  string is byte-identical to before.
+- `ResearchTools.web_search/open_url/source_search` are thin delegates now
+  (validate, render, diagnose); fetch/document/PDF-scan/ledger logic moved
+  out verbatim. `source_connectors.py` stays the pure connector contract and
+  `browser_search.py` stays the browser runtime -- neither imports the other.
+- Bounds have one owner: `OPEN_DEFAULT/LIMIT/MAX`, `SEARCH_LIMIT`,
+  `PDF_SOURCE_SEARCH_MAX_PAGES` live in the gateway; `tools.py` and two
+  manual scripts import them from there. No compat re-exports.
+- Tests added: `test_source_gateway.py` (9 structural tests over a fake
+  provider + real ledger); three test patch paths follow the move
+  (`tools.check_fetch_url` -> `source_gateway.check_fetch_url`).
+- Debt unchanged at `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`
+  (one self-introduced UP035 fixed before the run).
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green; research-wide selection green;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`3877 passed, 6 skipped, 1306 subtests passed in 286.23s`).
+
 ## Unreleased - Stop linearization, cold-start imports, small close gaps, harder tests (no release)
 
 - P0 shell Stop is now linearized: new `AppContext.request_stop()` holds

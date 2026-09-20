@@ -2909,7 +2909,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             runner = ResearchRunner(provider, search, store, max_turns=3)
-            with mock.patch("codey.research.tools.check_fetch_url", return_value=None):
+            with mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None):
                 list(runner.run("Research hepatotoxicity"))
             store.close()
 
@@ -5213,7 +5213,7 @@ class NetworkPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(RedirectingSearch(), store, KnowledgeChanges(store.root))
-            with mock.patch("codey.research.tools.check_fetch_url", return_value=None) as policy:
+            with mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None) as policy:
                 result = tools.open_url("https://example.com/start")
             store.close()
 
