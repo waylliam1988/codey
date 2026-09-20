@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Fault-injection + restart-recovery acceptance, P0-P4 (2026-09-21)
+
+Scope:
+
+```text
+tests/stress/__init__.py:  fault matrix (boundary x crash point -> expectation)
+tests/stress/model.py:     ExpectedOutcome, canonical facts, normalize, fold
+tests/stress/faults.py:    seeded FaultController (no business-state contact)
+tests/stress/oracle.py:    InvariantChecker (7 invariants)
+tests/stress/world.py:     StressWorld, FakeClock, FakeProvider (3 modes)
+tests/stress/test_p0_idempotence.py: R(R(S))==R(S), torn tail, ephemeral-empty
+tests/stress/test_p1_provider.py:   timeout dual modes, kill-point matrix
+tests/stress/test_p2_shell_race.py: 1000 seeded Allow/Stop interleavings
+tests/stress/test_p2_worker.py:     generation isolation on a real worker
+tests/stress/test_p2_self_repair.py: journal crash semantics (honest: no auto-replay)
+tests/stress/test_p3_ghost.py:     rebuild/replay/rewrite/projection equivalence
+tests/stress/test_p3_sse.py:       reconnect/replay/duplicates/overflow marker
+tests/stress/test_p4_mixed.py:     1000 seeded mixed ops + kills + replay check
+docs:                        CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+- Stress suite alone: 37 passed in ~48s (P4 ~37s, shell race ~2s)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3968 passed, 6 skipped, 1320 subtests passed in 313.52s (0:05:13)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. No production code changed by this batch.
+
 ## Tool modules into toolchain, mypy baseline, I/SIM debt zero (2026-09-21)
 
 Scope:

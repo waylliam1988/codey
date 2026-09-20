@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 故障注入 + 重启恢复验收 P0-P4（未发布）
+
+- 新增 `tests/stress/` 验收体系：只问故障 + 重启后 durable facts 是否收敛，
+  不断言进程返回值，不碰真浏览器/Provider/shell/网络。
+- P0（model/faults/oracle/world + 幂等测试）：canonical durable facts（含
+  易变 id 归一化）、种子 `FaultController`（绝不碰业务状态）、
+  `InvariantChecker`（7 条不变量）、确定性 `StressWorld`（逻辑 kill = 丢句
+  柄重开；逻辑时钟，payload 无墙钟/uuid）。`R(R(S))==R(S)` 钉住，含 torn
+  tail 修复与 ephemeral 面重建为空。
+- P1（provider/delivery/shell 矩阵）：`FakeProvider` 超时双模式
+  （执行后超时保持 UNKNOWN，绝不变 success）、send 前/后/settle 前 kill、
+  重复 begin 直接失败且不落第二行、tool batch 可重放、shell claim 恰好消费一次。
+- P2：1000 次种子交错的 Allow/Stop race（Stop 完成后零 spawn，两种线性化
+  都观测到）、真 worker 实例的 generation 隔离、自修复 journal 崩溃语义
+ （进程内去重 + 跨重启未完成可检出；自动 journal 回放尚不存在，故意不断言）。
+- P3：ghost append/kill/重建相等、replay 幂等、原子重写等价、
+  session projection 增量与重建相等；SSE 断线重放 canonical 相等、溢出
+  resync 标记、重复投递只落一次 durable fact。
+- P4：1000 次种子混合操作 + 周期 kill：全 oracle + 幂等恢复 + 同种子字
+  节级重放一致。
+- 本批零生产代码改动（仅测试 + 文档）。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3968 passed, 6 skipped, 1320 subtests passed in 313.52s`）。
+
 ## Unreleased - tool 模块进 toolchain、mypy 基线、I/SIM 清零（未发布）
 
 - `codey/tool_args_repair.py` + `codey/tool_prompt.py` 移入

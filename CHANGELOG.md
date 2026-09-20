@@ -2,6 +2,38 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fault-injection + restart-recovery acceptance, P0-P4 (no release)
+
+- New `tests/stress/` acceptance system: the only question asked is
+  whether durable facts converge after any fault + restart. No process
+  return codes asserted, no live browsers/providers/shells/networks.
+- P0 (`model/faults/oracle/world` + idempotence tests): canonical durable
+  facts with volatile-id normalization, seeded `FaultController` (never
+  touches business state), `InvariantChecker` (7 invariants), deterministic
+  `StressWorld` (logical kill = drop handles + reopen; logical clock, no
+  wall time or uuids in payloads). Recovery idempotence `R(R(S)) == R(S)`
+  pinned, including torn-tail repair and ephemeral-surface rebuild-empty.
+- P1 (provider/delivery/shell matrix): `FakeProvider` timeout dual modes
+  (`execute_then_timeout` stays UNKNOWN, never success), kill before send /
+  after send / before settle, duplicate begin fails closed without a second
+  row, tool batch replayable, shell claim consumed exactly once.
+- P2: shell Allow/Stop race over 1000 seeded interleavings (zero spawns
+  after a completed Stop, both linearizations observed), browser worker
+  generation isolation on a real worker instance, self-repair journal
+  crash semantics (in-process dedupe + cross-restart unfinished detection;
+  automatic journal replay does not exist yet and is deliberately unasserted).
+- P3: ghost append/kill/rebuild equality, replay idempotence, atomic
+  rewrite equivalence, session-projection incremental-vs-rebuild; SSE
+  disconnect/replay canonical equality, overflow resync marker, duplicate
+  delivery applying the durable fact once.
+- P4: 1000 seeded mixed operations with periodic kills: full oracle +
+  idempotent recovery + same-seed byte-identical replay.
+- Zero production code changed by this batch (tests + docs only).
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3968 passed, 6 skipped, 1320 subtests passed in 313.52s`).
+
 ## Unreleased - Tool modules into toolchain, mypy baseline, I/SIM debt zero (no release)
 
 - Moved `codey/tool_args_repair.py` + `codey/tool_prompt.py` into
