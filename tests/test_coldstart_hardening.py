@@ -336,7 +336,7 @@ class ProviderProbeErrorTests(unittest.TestCase):
         ctx = SimpleNamespace()
         with (
             mock.patch(
-                "codey.app.api.services.provider_availability",
+                "codey.app.api.provider_services.provider_availability",
                 side_effect=RuntimeError("probe exploded"),
             ),
             self.assertLogs("codey.app.api", level="ERROR") as captured,
@@ -350,7 +350,7 @@ class ProviderProbeErrorTests(unittest.TestCase):
     def test_healthy_probe_reports_no_error(self) -> None:
         ctx = SimpleNamespace()
         with mock.patch(
-            "codey.app.api.services.provider_availability",
+            "codey.app.api.provider_services.provider_availability",
             return_value={"deepseek": True},
         ):
             status, payload = app_api.providers_response(ctx)
@@ -360,7 +360,7 @@ class ProviderProbeErrorTests(unittest.TestCase):
     def test_providers_response_carries_backend_catalog(self) -> None:
         ctx = SimpleNamespace()
         with mock.patch(
-            "codey.app.api.services.provider_availability",
+            "codey.app.api.provider_services.provider_availability",
             return_value={},
         ):
             status, payload = app_api.providers_response(ctx)
@@ -375,11 +375,11 @@ class ProviderProbeErrorTests(unittest.TestCase):
     def test_provider_catalog_never_probes(self) -> None:
         with (
             mock.patch(
-                "codey.app.api.services.provider_availability",
+                "codey.app.api.provider_services.provider_availability",
                 side_effect=AssertionError("catalog must not probe"),
             ),
             mock.patch(
-                "codey.app.api.services.provider_tab_availability",
+                "codey.app.api.provider_services.provider_tab_availability",
                 side_effect=AssertionError("catalog must not probe"),
             ),
         ):

@@ -12,6 +12,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
@@ -81,7 +82,7 @@ def _runner(
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,
         run_review=run_review or mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,

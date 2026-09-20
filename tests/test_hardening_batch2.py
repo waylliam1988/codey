@@ -515,6 +515,7 @@ class WorkerBusyMappingTests(unittest.TestCase):
 
     def test_submit_task_raises_typed_busy_on_full_queue(self) -> None:
         from codey.app import server as server_module
+        from codey.app import task_submit as task_submit_module
         from codey.automation.browser_worker import BrowserWorkerBusy
 
         reserved = SimpleNamespace(run_id="run-1")
@@ -526,7 +527,7 @@ class WorkerBusyMappingTests(unittest.TestCase):
         with (
             mock.patch.object(server_module, "STATE", state),
             mock.patch.object(
-                server_module, "submit_browser_task", return_value=False
+                task_submit_module, "submit_browser_task", return_value=False
             ),
         ):
             with self.assertRaises(BrowserWorkerBusy):

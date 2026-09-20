@@ -13,6 +13,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
@@ -44,7 +45,7 @@ def _runner(state: server.AppContext, *, agent_run=None, router_provider_factory
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,

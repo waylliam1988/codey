@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers.diagnostics import (
@@ -68,7 +69,7 @@ def _build_runner(state: server.AppContext, *, agent_run) -> TaskRunDeps:
             return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
         ),
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,
@@ -138,7 +139,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
             ),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
@@ -189,7 +190,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
             ),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
@@ -254,7 +255,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
             ),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )
@@ -287,7 +288,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""}
             ),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
         )

@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Provider single entry, server task_submit split (2026-09-20)
+
+Scope:
+
+```text
+codey/app/provider_services.py (new): single registry entry + shared TTL cache
+codey/app/services.py:         call-time wrappers (both mock levels work)
+codey/app/task_submit.py (new): run_task/submit_task/after_slot_release (lazy heavy stack)
+codey/app/server.py:           HTTP handlers/routes/STATE/boot + thin get_state wrappers
+codey/app/api.py:              providers/catalog via provider_services
+codey/app/context.py:          drop dead facades, call single entry
+tests:                         retarget seams to task_submit/provider_services,
+                                tests/test_task_submit.py (new), architecture lock
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+- Lazy-start invariant: `test_server_lazy_state` green
+  (`import server` loads no browser/research stack)
+- Targeted gates: task_submit/architecture/server/coldstart/hardening/
+  adapter/sandwich/checkpoint suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3917 passed, 6 skipped, 1314 subtests passed in 294.45s (0:04:54)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Frontend dedupe, durable append, delivery fail-closed (2026-09-20)
 
 Scope:

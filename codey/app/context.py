@@ -61,12 +61,6 @@ from codey.workspace.revision import WorkspaceRevisionStore
 
 from codey.app import provider_services as _provider_services
 
-# Single entry point lives in provider_services; these stay as thin delegates
-# so existing ``mock.patch.object(app_context, ...)`` doubles keep working.
-_provider_registry = _provider_services._provider_registry
-provider_tab_availability = _provider_services.provider_tab_availability
-connect_provider = _provider_services.connect_provider
-
 
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
@@ -709,11 +703,11 @@ class AppContext:
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
         self.set_run_status("connecting")
         self.emit({"type": "status", "status": "connecting"})
-        provider = connect_provider(provider_id)
+        provider = _provider_services.connect_provider(provider_id)
         self.set_run_status("running")
         self.emit({
             "type": "providers",
-            "providers": app_services.provider_status_update(provider_id, True),
+            "providers": _provider_services.provider_status_update(provider_id, True),
         })
         return provider
 
@@ -760,7 +754,7 @@ class AppContext:
         )
 
     def provider_failover_order(self) -> tuple[str, ...]:
-        return self.providers.failover_order(provider_tab_availability)
+        return self.providers.failover_order(_provider_services.provider_tab_availability)
 
     def conversation_for(self, session_id: str) -> ConversationContext:
         return self.conversation_registry.for_session(session_id)

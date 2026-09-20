@@ -17,6 +17,7 @@ from codey import __version__
 from codey.app import api as app_api
 from codey.app import http_plumbing
 from codey.app import provider_services as provider_services
+from codey.app import task_submit as task_submit
 from codey.app import server
 from codey.app import context as app_context
 from codey.app import services as app_services
@@ -130,23 +131,24 @@ def setUpModule() -> None:
     """Forbid real web-provider tab connections for every test here.
 
     Review/memory/receipt tests only need the fallback text paths; any test
-    that wants a provider must patch ``app_services.connect_existing_provider`` or
-    ``app_services.connect_fresh_provider_tab`` explicitly, which nests cleanly
-    over these guards. Live browser flows belong to manual/live-smoke
+    that wants a provider must patch
+    ``provider_services.connect_existing_provider`` or
+    ``provider_services.connect_fresh_provider_tab`` explicitly, which nests
+    cleanly over these guards. Live browser flows belong to manual/live-smoke
     tooling, never to plain pytest.
     """
 
     def _deny(*_args: object, **_kwargs: object) -> None:
         raise AssertionError(
             "test attempted a real provider tab connection; patch "
-            "app_services.connect_existing_provider / connect_fresh_provider_tab "
-            "instead of opening live pages"
+            "provider_services.connect_existing_provider / "
+            "connect_fresh_provider_tab instead of opening live pages"
         )
 
     _PROVIDER_TAB_GUARDS.extend(
         [
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=_deny),
-            mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=_deny),
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=_deny),
+            mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=_deny),
         ]
     )
     for guard in _PROVIDER_TAB_GUARDS:
@@ -715,7 +717,7 @@ class ProviderStatusTests(unittest.TestCase):
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
         state = server.AppContext()
         with mock.patch.object(
-            app_context,
+            provider_services,
             "provider_tab_availability",
             return_value={"qwen": True, "glm": True},
         ):
@@ -1304,7 +1306,7 @@ class ResearchGraphApiTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch(
-                    "codey.app.api.services.provider_availability",
+                    "codey.app.api.provider_services.provider_availability",
                     side_effect=AssertionError("catalog must not probe"),
                 ),
             ):
@@ -1666,7 +1668,7 @@ class WebAssetTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(
-                    app_services,
+                    provider_services,
                     "provider_availability",
                     return_value={"deepseek": True},
                 ),
@@ -2373,7 +2375,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task("session-new", None, "hello", 8, False, "deepseek")
 
@@ -3052,7 +3054,7 @@ class RunSnapshotTests(unittest.TestCase):
         state = server.AppContext()
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task("session-1", None, "hello", 8, False, "deepseek")
             rejected = server._submit_task("session-2", None, "second", 8, False, "qwen")
@@ -3071,7 +3073,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task_after_slot_release(
                 "session-1",
@@ -3129,7 +3131,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
             mock.patch.object(server.time, "sleep", side_effect=AssertionError("polling sleep")),
             mock.patch.object(state.run_registry, "wait_for_slot", wraps=state.run_registry.wait_for_slot) as wait_for_slot,
         ):
@@ -3169,7 +3171,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task_after_slot_release(
                 "session-1",
@@ -3244,7 +3246,7 @@ class RunSnapshotTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "submit_browser_task") as submit,
+            mock.patch.object(task_submit, "submit_browser_task") as submit,
         ):
             run_id = server._submit_task_after_slot_release(
                 "session-1",
@@ -3577,7 +3579,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         state = server.AppContext()
         with mock.patch.object(
-            app_context,
+            provider_services,
             "connect_provider",
             side_effect=[FakeProvider(), FakeProvider()],
         ) as connected:
@@ -3867,7 +3869,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("planned", "done", 1),
                 ),
@@ -3936,7 +3938,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("planned", "done", 1),
                 ) as agent_run,
@@ -3971,7 +3973,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("done", "done", 1),
                 ) as agent_run,
@@ -3998,7 +4000,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         state = server.AppContext()
         events = state.subscribe()
-        with mock.patch.object(app_context, "connect_provider", return_value=FakeProvider()):
+        with mock.patch.object(provider_services, "connect_provider", return_value=FakeProvider()):
             state.get_provider("stepfun")
 
         emitted = []
@@ -4294,7 +4296,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, True),
             ) as agent_run,
@@ -4393,9 +4395,9 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
-                    server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
+                    task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
                 ),
                 mock.patch.object(app_services, "run_project_audit", return_value=()),
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
@@ -4454,12 +4456,12 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("project done", "done", 1, False, False),
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
@@ -4578,12 +4580,12 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[first, second],
             ) as get_provider,
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=[failure, RunResult("done", "done", 1, False, False)],
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
@@ -4643,12 +4645,12 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=[failure, RunResult("done", "done", 1, False, False)],
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
@@ -4836,7 +4838,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(app_services, "run_research_advisors", None),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research helium", 8, False, "deepseek", "research")
 
@@ -4961,7 +4963,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
                 mock.patch.dict(
                     sys.modules,
                     {
@@ -5095,7 +5097,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(app_services, "run_research_advisors", None),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task(
                     "session-research", None, "Research the storage plan", 4, False, "deepseek", "research"
@@ -5142,7 +5144,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task(
                     "session-hybrid",
@@ -5188,7 +5190,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "codey.operations.research_flow.run_research_iteration",
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task(
                     "session-hybrid-fail",
@@ -5249,11 +5251,11 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("project done", "done", 4, True, False),
                 ) as agent_run,
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
                 server._run_task(
                     "session-hybrid-ok",
@@ -5293,7 +5295,7 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
-            mock.patch.object(server, "agent_run") as agent_run,
+            mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
             server._run_task("session-1", None, "First question", 8, False, "deepseek")
             server._run_task("session-1", None, "Follow-up question", 8, False, "deepseek")
@@ -5314,7 +5316,7 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "agent_run") as agent_run,
+            mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
             server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
 
@@ -5348,7 +5350,7 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "agent_run") as agent_run,
+            mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
             server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
 
@@ -5373,7 +5375,7 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "agent_run") as agent_run,
+            mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
             server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
 
@@ -5401,7 +5403,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", side_effect=[first, second]),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task("session-1", None, "Choose a database", 8, False, "deepseek")
                 server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
@@ -5462,7 +5464,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
 
@@ -5530,12 +5532,12 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("Writer done", "done", 1, False, False),
                 ) as agent_run,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
@@ -5628,12 +5630,12 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", restarted),
                 mock.patch.object(restarted, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("Writer done", "done", 1, False, False),
                 ) as agent_run,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
@@ -5784,11 +5786,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_verified_writer_agent_run("complete"),
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
@@ -5865,8 +5867,8 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
                 mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
@@ -5938,12 +5940,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 side_effect=[{"ok": False, "error": "snapshot unavailable"}, final_changes],
             ) as collect_changes,
@@ -5992,12 +5994,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value=changes,
             ) as collect_changes,
@@ -6048,14 +6050,14 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_two_phase_writer(
                     RunResult("first pass", "done", 3, False, True),
                     second_summary="review fixed",
                 ),
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
@@ -6103,14 +6105,14 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_two_phase_writer(
                     RunResult("first pass", "done", 3, False, True),
                     second_summary="self-review fixed",
                 ),
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(
                 app_services,
                 "connect_existing_provider",
@@ -6186,7 +6188,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer) as get_provider,
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_scripted_agent_run(
                     (RunResult("first pass", "done", 2, False, True), False),
@@ -6195,7 +6197,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 side_effect=[changes, repaired_changes],
             ) as collect_changes,
@@ -6248,14 +6250,14 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_scripted_agent_run(
                     (RunResult("first pass", "done", 3, True, True), True),
                     (RunResult("review claim was invalid", "done", 2, False, False), False),
                 ),
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
@@ -6299,14 +6301,14 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=[
                     RunResult("first pass", "done", 3, True, True, True),
                     RunResult("tests failed", "done", 2, False, False, True),
                 ],
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -6349,14 +6351,14 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=[
                     RunResult("first pass", "done", 3, True, True, True),
                     RunResult("stopped after no progress", "no_progress", 2, False, False, False),
                 ],
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -6391,11 +6393,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(
                 app_services,
@@ -6441,11 +6443,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
@@ -6490,11 +6492,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
@@ -6513,7 +6515,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult(
                     "Start with one guided rhythm.\n\nAdd customization later.",
@@ -6524,7 +6526,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6558,12 +6560,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("Writer draft", "done", 1, False, False),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6602,12 +6604,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("Writer review", "done", 1, False, False),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6642,12 +6644,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("Writer review", "done", 1, False, False),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6671,12 +6673,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("Writer draft", "done", 1, False, False),
             ),
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6724,11 +6726,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=write_and_finish,
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
@@ -6783,11 +6785,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("implemented", "done", 1, False, True),
             ),
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
             mock.patch(
                 "codey.completion.verification_policy.shutil.which",
@@ -6837,12 +6839,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("implemented", "done", 2, True, True),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6884,11 +6886,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("implemented", "done", 2, True, True, True),
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
@@ -6914,12 +6916,12 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=writer),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 return_value=RunResult("implemented", "done", 2, True, True),
             ) as agent_run,
             mock.patch.object(
-                server,
+                task_submit,
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
@@ -6965,7 +6967,7 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "agent_run", side_effect=TimeoutError("response timed out")),
+            mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
         ):
             server._run_task("session-1", td, "task", 8, False, "stepfun")
 
@@ -7033,7 +7035,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=provider_controls.ControlTeachCancelled("cancelled"),
             ),
@@ -7065,7 +7067,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(
-                server,
+                task_submit,
                 "agent_run",
                 side_effect=cancelled_agent,
             ),
@@ -7098,7 +7100,7 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(server, "agent_run", side_effect=stopped_agent),
+            mock.patch.object(task_submit, "agent_run", side_effect=stopped_agent),
         ):
             server._run_task("session-1", td, "task", 8, False, "qwen")
 
@@ -7150,9 +7152,9 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),

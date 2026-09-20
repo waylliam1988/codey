@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.operations.context import RunWork
 from codey.operations.project_completion_flow import (
     AgentAccess,
@@ -310,7 +311,7 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             state=state,
             agent=AgentAccess(
                 run=mock.Mock(),
-                capture_provider_failure=server.capture_provider_failure,
+                capture_provider_failure=task_submit.capture_provider_failure,
             ),
             verification=VerificationAccess(
                 collect_changes=mock.Mock(),

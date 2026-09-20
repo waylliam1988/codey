@@ -8,6 +8,7 @@ from unittest import mock
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.app import services as app_services
 from codey.agents.runner import RunResult
 from codey.runtime.observe.events import RunEvent
@@ -262,9 +263,9 @@ class ProjectFactsTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
@@ -323,8 +324,8 @@ class ProjectFactsTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_project_audit", return_value=()),
                 mock.patch.object(app_services, "run_review", return_value=None),
                 mock.patch(
@@ -359,9 +360,9 @@ class ProjectFactsTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
@@ -387,14 +388,14 @@ class ProjectFactsTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(
                     state.project_facts,
                     "record_success",
                     side_effect=OSError("disk full"),
                 ),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),

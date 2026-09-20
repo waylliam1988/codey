@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.completion import engine as completion_engine_module
@@ -105,7 +106,7 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunDep
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes(*files)),
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,
@@ -127,7 +128,7 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
             collected.pop(0) if collected else dict(collected[-1])
         )),
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,

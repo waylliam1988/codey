@@ -40,22 +40,73 @@ class ShellApprovalContinuationPlan:
     provider_id: str
 
 
-# Single entry point lives in provider_services; these stay as thin delegates
-# so existing ``mock.patch.object(app_services, ...)`` doubles keep working.
-_provider_registry = _provider_services._provider_registry
-provider_tab_availability = _provider_services.provider_tab_availability
-warm_provider_tabs = _provider_services.warm_provider_tabs
-connect_existing_provider = _provider_services.connect_existing_provider
-connect_fresh_provider_tab = _provider_services.connect_fresh_provider_tab
-borrow_open_provider = _provider_services.borrow_open_provider
-reviewer_candidates = _provider_services.reviewer_candidates
-provider_availability = _provider_services.provider_availability
-provider_availability_from_statuses = _provider_services.provider_availability_from_statuses
-provider_payload = _provider_services.provider_payload
-provider_catalog = _provider_services.provider_catalog
-provider_status_update = _provider_services.provider_status_update
-reset_provider_availability_cache = _provider_services.reset_provider_availability_cache
-_note_availability_statuses = _provider_services._note_availability_statuses
+# Single entry point lives in provider_services. These wrappers resolve it at
+# call time (not import time) so ``mock.patch.object`` on either module takes
+# effect; behavior and availability-cache state stay shared.
+def _provider_registry():
+    return _provider_services._provider_registry()
+
+
+def provider_tab_availability() -> dict:
+    return _provider_services.provider_tab_availability()
+
+
+def warm_provider_tabs(*args: object, **kwargs: object) -> dict:
+    return _provider_services.warm_provider_tabs(*args, **kwargs)
+
+
+def connect_existing_provider(provider_id: str) -> object:
+    return _provider_services.connect_existing_provider(provider_id)
+
+
+def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> object:
+    return _provider_services.connect_fresh_provider_tab(provider_id, **kwargs)
+
+
+def borrow_open_provider(provider_id: str, owner_page: object) -> object | None:
+    return _provider_services.borrow_open_provider(provider_id, owner_page)
+
+
+def reviewer_candidates(
+    ctx: Any,
+    writer_id: str,
+    *,
+    supervisor: object | None = None,
+) -> tuple[str, ...]:
+    return _provider_services.reviewer_candidates(ctx, writer_id, supervisor=supervisor)
+
+
+def provider_availability(ctx: Any) -> dict[str, bool]:
+    return _provider_services.provider_availability(ctx)
+
+
+def provider_availability_from_statuses(
+    ctx: Any,
+    statuses: dict[str, bool],
+) -> dict[str, bool]:
+    return _provider_services.provider_availability_from_statuses(ctx, statuses)
+
+
+def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
+    return _provider_services.provider_payload(statuses)
+
+
+def provider_catalog() -> list[dict]:
+    return _provider_services.provider_catalog()
+
+
+def provider_status_update(provider_id: str, available: bool) -> list[dict]:
+    return _provider_services.provider_status_update(provider_id, available)
+
+
+def reset_provider_availability_cache() -> None:
+    return _provider_services.reset_provider_availability_cache()
+
+
+def _note_availability_statuses(raw: dict[str, bool], now: float) -> None:
+    return _provider_services._note_availability_statuses(raw, now)
+
+
 PROVIDER_AVAILABILITY_TTL_S = _provider_services.PROVIDER_AVAILABILITY_TTL_S
 _AVAIL_LOCK = _provider_services._AVAIL_LOCK
 _AVAIL_STATUSES = _provider_services._AVAIL_STATUSES

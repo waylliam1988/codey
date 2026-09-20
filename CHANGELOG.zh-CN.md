@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Provider 单一入口、server 拆 task_submit（未发布）
+
+- 新增 `app/provider_services.py`：provider registry 单一入口
+  （`_provider_registry`、`provider_tab_availability`、`connect_*`、
+  `borrow_open_provider`、`provider_availability` 及 payload/catalog helper，
+  TTL 缓存共享）。`services` 改为调用时委托的 wrapper，两边 mock 都生效；
+  `sibling_probe`、`server._build_state` 走单入口。
+- 新增 `app/task_submit.py`：`run_task`/`submit_task`/
+  `submit_task_after_slot_release` 从 `server.py` 搬出，`TaskRunDeps` 组装原样
+  不动，重型 task 栈保持懒加载（`import server` 不拉浏览器/research 栈，
+  `test_server_lazy_state` 钉住）。`server.py` 只留 HTTP handler、路由、
+  `STATE` 与 boot，薄 wrapper 绑定 `get_state`，旧 `server._submit_task`
+  测试锚点继续有效。
+- `api.py` 的 provider 查询直调 `provider_services`
+  （`providers_response`/`provider_catalog_response`）；`context.py` 删掉零
+  调用者的 `provider_tab_availability`/`connect_provider` 门面，直调单入口。
+- 测试迁到新锚点（`task_submit.*`、`provider_services.*`、
+  `api.provider_services.*`），新增 `tests/test_task_submit.py` 与架构锁
+ （api 单入口、server 保持 HTTP-only、`task_entry` import 只在
+  `task_submit`）。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3917 passed, 6 skipped, 1314 subtests passed in 294.45s`）。
+
 ## Unreleased - 前端 O(N) 去重、持久化 append、delivery fail-closed（未发布）
 
 - 前端主线程 churn：每个 session 维护非持久化 `eventKeys`/`toolKeys`/

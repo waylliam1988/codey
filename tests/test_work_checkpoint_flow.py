@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.app import services as app_services
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
@@ -105,8 +106,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=interrupted),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
                 server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
 
@@ -126,8 +127,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=resumed),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=resumed),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(
                     app_services,
                     "run_review",
@@ -200,7 +201,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "get_provider",
                     side_effect=[first, second],
                 ) as get_provider,
-                mock.patch.object(server, "agent_run", side_effect=writer) as agent_run,
+                mock.patch.object(task_submit, "agent_run", side_effect=writer) as agent_run,
                 mock.patch.object(
                     app_services,
                     "run_review",
@@ -250,12 +251,12 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=[RuntimeError("tab unavailable"), provider],
                 ) as get_provider,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("done", "done", 1),
                 ) as agent_run,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
@@ -305,12 +306,12 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=providers,
                 ) as get_provider,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     side_effect=[failure, failure, RunResult("done", "done", 1)],
                 ) as agent_run,
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
@@ -377,9 +378,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", side_effect=providers),
-                mock.patch.object(server, "agent_run", side_effect=writer),
+                mock.patch.object(task_submit, "agent_run", side_effect=writer),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={
                         "ok": True,
@@ -437,7 +438,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "get_provider",
                     return_value=provider,
                 ) as get_provider,
-                mock.patch.object(server, "agent_run", side_effect=stopped),
+                mock.patch.object(task_submit, "agent_run", side_effect=stopped),
             ):
                 server._run_task(
                     "session-stop-takeover",
@@ -479,7 +480,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "get_provider",
                     side_effect=providers,
                 ) as get_provider,
-                mock.patch.object(server, "agent_run", side_effect=failed) as agent_run,
+                mock.patch.object(task_submit, "agent_run", side_effect=failed) as agent_run,
             ):
                 server._run_task(
                     "session-switch-limit",
@@ -523,9 +524,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
@@ -582,8 +583,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
@@ -648,8 +649,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_review", review),
             ):
                 server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek")
@@ -693,11 +694,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("done", "done", 1, False, True, False),
                 ),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_review", review),
                 mock.patch(
                     "codey.operations.project_completion_flow.render_verification_map",
@@ -747,8 +748,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=interrupted),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
                 server._run_task("session-1", str(project), "Fix app", 8, False, "deepseek")
 
@@ -759,11 +760,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     return_value=RunResult("done", "done", 1, False, False, False),
                 ),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
@@ -807,8 +808,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_review", return_value=None),
             ):
                 server._run_task(
@@ -845,9 +846,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
@@ -894,9 +895,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),

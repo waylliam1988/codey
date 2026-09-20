@@ -28,6 +28,7 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from tests.manual.ghost_router_ab import (
@@ -151,7 +152,7 @@ def _run_case(
             agent_run=agent_run,
             collect_changes=collect_changes,
             run_review=run_review,
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,

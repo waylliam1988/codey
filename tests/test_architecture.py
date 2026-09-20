@@ -160,8 +160,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_http_server_delegates_task_orchestration(self) -> None:
         imports = imported_modules(ROOT / "codey" / "app" / "server.py")
         source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        submit_imports = imported_modules(ROOT / "codey" / "app" / "task_submit.py")
 
-        self.assertIn("codey.operations.task_entry", imports)
+        # server.py keeps HTTP/SSE routing + STATE/boot; task wiring lives in
+        # task_submit.py, execution in operations/.
+        self.assertIn("from codey.app import task_submit", source)
+        self.assertNotIn("codey.operations.task_entry", imports)
+        self.assertIn("codey.operations.task_entry", submit_imports)
         self.assertNotIn("on_shell_request(cwd_rel", source)
         self.assertNotIn("conversation.prepare_model_handoff", source)
 
@@ -1858,6 +1863,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def driver_files(", surface_source)
         policy_source = (ROOT / "codey" / "repairs" / "policy.py").read_text(encoding="utf-8")
         self.assertNotIn("def allowed_adapter_files(", policy_source)
+
+    def test_provider_single_entry_and_server_stays_http_only(self) -> None:
+        # Single entry: api/context resolve providers via provider_services.
+        # server.py keeps HTTP/SSE routing + STATE/boot; TaskRunDeps assembly
+        # lives in task_submit.py, task execution in operations/.
+        api_source = (ROOT / "codey" / "app" / "api.py").read_text(encoding="utf-8")
+        self.assertIn("from codey.app import provider_services", api_source)
+        self.assertIn("provider_services.provider_availability(ctx)", api_source)
+        self.assertIn("provider_services.provider_payload(", api_source)
+        self.assertIn("provider_services.provider_catalog()", api_source)
+        self.assertNotIn("statuses = services.provider_availability(ctx)", api_source)
+        self.assertNotIn('"providers": services.provider_payload(', api_source)
+        self.assertNotIn('"providers": services.provider_catalog(', api_source)
+        context_source = (ROOT / "codey" / "app" / "context.py").read_text(encoding="utf-8")
+        self.assertNotIn("def provider_tab_availability(", context_source)
+        self.assertNotIn("def connect_provider(", context_source)
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
+        self.assertIn("from codey.app import task_submit", server_source)
+        self.assertNotIn("TaskRunDeps(", server_source)
+        self.assertNotIn("TaskSubmission(", server_source)
+        self.assertNotIn("from codey.agents.runner import", server_source)
+        self.assertNotIn("from codey.operations.task_entry import", server_source)
+        submit_source = (ROOT / "codey" / "app" / "task_submit.py").read_text(encoding="utf-8")
+        self.assertIn("TaskRunDeps(", submit_source)
+        self.assertIn("run_task_submission(", submit_source)
 
     def test_long_files_do_not_grow(self) -> None:
         # 1000-line guardrail (warning-grade): the files above the line are

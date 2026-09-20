@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.app import services as app_services
 from codey.repairs import adapter_overrides
 from codey.repairs.adapter_repair import (
@@ -1086,11 +1087,11 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", side_effect=[writer, sibling]),
                 mock.patch.object(
-                    server,
+                    task_submit,
                     "agent_run",
                     side_effect=[failure, RunResult("done", "done", 1, False, False)],
                 ),
-                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(app_services, "run_project_audit", return_value=()),
             ):
                 server._run_task("session-self-repair", td, "task", 8, False, "deepseek")
@@ -1145,7 +1146,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 _failure(FAILURE_RESPONSE_MISSING),
                 ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
             )
-            with mock.patch.object(server, "submit_browser_task") as submit:
+            with mock.patch.object(task_submit, "submit_browser_task") as submit:
                 self.assertTrue(state.kick_self_repair())
                 self.assertTrue(ran.wait(2.0))
                 deadline = time.time() + 2.0

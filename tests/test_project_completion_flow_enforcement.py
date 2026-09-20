@@ -9,6 +9,7 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.operations import project_completion_flow as project_completion_module
 from codey.agents.runner import RunResult
@@ -128,7 +129,7 @@ def _runner(state: server.AppContext, writer: ScriptedWriter) -> TaskRunDeps:
         agent_run=writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,
@@ -294,7 +295,7 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             agent_run=writer,
             collect_changes=mock.Mock(side_effect=collect),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -435,7 +436,7 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
             agent_run=writer,
             collect_changes=collect,
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -535,7 +536,7 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
             agent_run=writer,
             collect_changes=mock.Mock(return_value=unavailable_changes),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -576,7 +577,7 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
             agent_run=writer,
             collect_changes=mock.Mock(return_value=empty_git_changes),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -618,7 +619,7 @@ def test_docs_only_change_keeps_limited_done() -> None:
             agent_run=writer,
             collect_changes=mock.Mock(return_value=docs_changes),
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,

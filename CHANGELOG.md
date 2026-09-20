@@ -2,6 +2,33 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Provider single entry, server task_submit split (no release)
+
+- New `app/provider_services.py`: the single provider-registry entry point
+  (`_provider_registry`, `provider_tab_availability`, `connect_*`,
+  `borrow_open_provider`, `provider_availability` + payload/catalog helpers
+  with shared TTL cache). `services` keeps call-time wrappers so mocks on
+  either module take effect; `sibling_probe` and `server._build_state` use
+  the single entry.
+- New `app/task_submit.py`: `run_task`/`submit_task`/
+  `submit_task_after_slot_release` moved out of `server.py` with the same
+  `TaskRunDeps` assembly (no behavior change, heavy task stack stays lazy so
+  `import server` loads no browser/research stack). `server.py` keeps HTTP
+  handlers, routes, `STATE`, and boot only, with thin wrappers binding
+  `get_state` so existing `server._submit_task` seams keep working.
+- `api.py` resolves providers via `provider_services` directly
+  (`providers_response`/`provider_catalog_response`); `context.py` drops the
+  dead `provider_tab_availability`/`connect_provider` facades and calls the
+  single entry.
+- Tests migrated to the new seams (`task_submit.*`,
+  `provider_services.*`, `api.provider_services.*`) plus new
+  `tests/test_task_submit.py` and an architecture lock (api single entry,
+  server stays HTTP-only, `task_entry` import lives in `task_submit`).
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3917 passed, 6 skipped, 1314 subtests passed in 294.45s`).
+
 ## Unreleased - Frontend O(N) dedupe, durable append, delivery fail-closed (no release)
 
 - Frontend main-thread churn: per-session `eventKeys`/`toolKeys`/`terminalRunSet`

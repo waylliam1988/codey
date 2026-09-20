@@ -38,14 +38,10 @@ from urllib.parse import parse_qs, urlparse
 
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey import __version__
-from codey.agents.runner import run as agent_run
 from codey.app import api as app_api
 from codey.app import services as app_services
-from codey.app.context import (
-    REVIEW_FIX_TURNS,
-    REVIEW_LOG_LINES,
-    AppContext,
-)
+from codey.app import task_submit as task_submit
+from codey.app.context import AppContext
 from codey.app.http_plumbing import (
     WEB_DIR,
     request_origin_allowed,
@@ -56,15 +52,10 @@ from codey.app.http_plumbing import (
     sse_replay_cursor,
     write_sse_event,
 )
-from codey.automation.browser_worker import BrowserWorkerBusy
-from codey.automation.browser_worker import submit as submit_browser_task
 from codey.storage.local_store import DEFAULT_STATE_HOME
-from codey.workspace.changes import collect_changes, is_git_repository
-from codey.providers.diagnostics import capture_provider_failure
-from codey.task.model import TaskSubmission
 
 FOLDER_DIALOG_LOCK = threading.Lock()
-SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
+SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
 MAX_POST_BODY_BYTES = 16 * 1024 * 1024
 POST_BODY_READ_TIMEOUT = 10.0
 
@@ -155,6 +146,8 @@ def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
 
 
 # ----------------------------------------------------------- task runner ---
+# Implementation lives in task_submit.py; these bind the HTTP-layer get_state
+# so existing mock.patch.object(server, "_submit_task") seams keep working.
 
 def _run_task(
     session_id: str,
@@ -166,53 +159,17 @@ def _run_task(
     intent: str = "auto",
     run_id: str = "",
 ) -> None:
-    from codey.operations.task_entry import TaskRunDeps, run_task_submission
-
-    state = get_state()
-    deps = TaskRunDeps(
-        state=state,
-        agent_run=agent_run,
-        collect_changes=collect_changes,
-        run_review=lambda **kwargs: app_services.run_review(state, **kwargs),
-        capture_provider_failure=capture_provider_failure,
-        run_consensus=lambda **kwargs: app_services.run_consensus(state, **kwargs),
-        run_project_audit=lambda **kwargs: app_services.run_project_audit(state, **kwargs),
-        run_research_advisors=lambda **kwargs: app_services.run_research_advisors(state, **kwargs),
-        project_facts=state.project_facts,
-        work_checkpoints=state.work_checkpoints,
-        workspace_revisions=state.workspace_revisions,
-        run_ledgers=state.run_ledgers,
-        run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
-        managed_outputs=state.managed_outputs,
-        knowledge_store=state.knowledge_store,
-        is_git_repository=is_git_repository,
-        review_fix_turns=REVIEW_FIX_TURNS,
-        review_log_lines=REVIEW_LOG_LINES,
-        ghost_learning_provider_factory=state.providers.ghost_learning_provider_factory,
-        ghost_router_provider_factory=state.providers.ghost_router_provider_factory,
-        runtime_mutations=state.runtime_mutations,
-        runtime_effects=state.runtime_effects,
+    task_submit.run_task(
+        session_id,
+        project,
+        task,
+        max_turns,
+        continue_task,
+        provider_id,
+        intent,
+        run_id,
+        get_state=get_state,
     )
-    try:
-        run_task_submission(
-            deps,
-            TaskSubmission(
-                session_id=session_id,
-                project=project,
-                task=task,
-                max_turns=max_turns,
-                continue_task=continue_task,
-                provider_id=provider_id,
-                intent=intent,
-                run_id=run_id,
-            )
-        )
-    finally:
-        state = get_state()
-        if state.sync_ghost_maintenance:
-            state.wait_for_ghost_sleep()
-        state.kick_self_repair()
 
 
 def _submit_task(
@@ -226,35 +183,17 @@ def _submit_task(
     *,
     abort_if_stopped: bool = False,
 ) -> str | None:
-    reserved = get_state().reserve_run(
-        session_id=session_id,
-        project=project,
-        task=task,
-        provider_id=provider_id,
+    return task_submit.submit_task(
+        session_id,
+        project,
+        task,
+        max_turns,
+        continue_task,
+        provider_id,
+        intent,
+        get_state=get_state,
         abort_if_stopped=abort_if_stopped,
     )
-    if reserved is None:
-        return None
-    try:
-        accepted = submit_browser_task(
-            _run_task,
-            session_id,
-            project,
-            task,
-            max_turns,
-            continue_task,
-            provider_id,
-            intent,
-            reserved.run_id,
-        )
-    except Exception:
-        get_state().release_run(reserved.run_id)
-        raise
-    if not accepted:
-        get_state().release_run(reserved.run_id)
-        raise BrowserWorkerBusy("browser worker busy: queue full")
-    get_state().expire_stale_shell_approvals(reserved.run_id)
-    return reserved.run_id
 
 
 def _submit_task_after_slot_release(
@@ -269,36 +208,18 @@ def _submit_task_after_slot_release(
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
 ) -> str | None:
-    deadline = time.monotonic() + max(0.0, timeout)
-    while True:
-        # Fast path; the authoritative guard is the atomic
-        # abort_if_stopped reservation below, which closes the race where a
-        # Stop lands between this peek and the reserve.
-        state = get_state()
-        if state.run_registry.stop_flag.is_set():
-            return None
-        active = state.current_run()
-        if active is not None and previous_run_id and active.run_id != previous_run_id:
-            return None
-        run_id = _submit_task(
-            session_id,
-            project,
-            task,
-            max_turns,
-            continue_task,
-            provider_id,
-            intent,
-            abort_if_stopped=True,
-        )
-        if run_id is not None:
-            return run_id
-        active = state.current_run()
-        if active is not None and previous_run_id and active.run_id != previous_run_id:
-            return None
-        if time.monotonic() >= deadline:
-            return None
-        remaining = max(0.0, deadline - time.monotonic())
-        state.run_registry.wait_for_slot(remaining)
+    return task_submit.submit_task_after_slot_release(
+        session_id,
+        project,
+        task,
+        max_turns,
+        continue_task,
+        provider_id,
+        intent,
+        get_state=get_state,
+        previous_run_id=previous_run_id,
+        timeout=timeout,
+    )
 
 
 def _pick_folder_response(_ctx: AppContext, body: dict) -> tuple[int, dict]:

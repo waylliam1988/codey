@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
+from codey.app import provider_services
 from codey.app import services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
@@ -91,7 +92,7 @@ logger = logging.getLogger(__name__)
 
 def providers_response(ctx: Any) -> tuple[int, dict]:
     try:
-        statuses = services.provider_availability(ctx)
+        statuses = provider_services.provider_availability(ctx)
     except Exception:
         logger.exception("provider availability probe failed")
         statuses = {}
@@ -100,7 +101,7 @@ def providers_response(ctx: Any) -> tuple[int, dict]:
         probe_error = False
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
-        "providers": services.provider_payload(statuses),
+        "providers": provider_services.provider_payload(statuses),
         "probe_error": probe_error,
     }
 
@@ -109,7 +110,7 @@ def provider_catalog_response() -> tuple[int, dict]:
     """Boot-time catalog: static ids + labels, never runs the availability probe."""
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
-        "providers": services.provider_catalog(),
+        "providers": provider_services.provider_catalog(),
     }
 
 

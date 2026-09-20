@@ -72,6 +72,7 @@ from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.operations import research_flow as research_flow_module
 from codey.app import server
+from codey.app import task_submit as task_submit
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "continuity")
@@ -307,7 +308,7 @@ def _run_case(
             agent_run=agent_run,
             collect_changes=lambda *_a, **_k: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
             run_review=run_review,
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,

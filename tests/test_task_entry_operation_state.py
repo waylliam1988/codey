@@ -16,6 +16,7 @@ from typing import Any
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.completion import engine as completion_engine_module
@@ -159,7 +160,7 @@ def _runner(
         agent_run=agent_run or writer,
         collect_changes=mock.Mock(side_effect=lambda *_a, **_k: _changes("src/mod.py")),
         run_review=mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,

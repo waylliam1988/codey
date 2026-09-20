@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.consensus import ConsensusResult
 from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agents.request import AgentRequest
@@ -83,7 +84,7 @@ def _runner(
             }
         ),
         run_review=run_review or mock.Mock(return_value=None),
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         run_consensus=run_consensus,
         run_project_audit=run_project_audit,
         project_facts=state.project_facts,

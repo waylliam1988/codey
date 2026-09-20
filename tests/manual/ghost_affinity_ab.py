@@ -23,6 +23,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.agents.runner import RunResult
 import codey.ghost.affinity as affinity_module
 from codey.ghost.affinity import AffinityNode
@@ -185,7 +186,7 @@ def _runner(state: server.AppContext) -> TaskRunDeps:
         agent_run=lambda *_args, **_kwargs: RunResult("done", "done", 1),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
         run_review=lambda **_kwargs: None,
-        capture_provider_failure=server.capture_provider_failure,
+        capture_provider_failure=task_submit.capture_provider_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents.runner import RunResult
+from codey.app import task_submit as task_submit
 from codey.providers.registry import DEFAULT_PROVIDER_ID
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
@@ -194,7 +195,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -257,7 +258,7 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
             agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
             collect_changes=lambda *_a, **_k: {},
             run_review=mock.Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,

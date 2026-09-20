@@ -25,6 +25,7 @@ from codey.agents.tool_execution import (
 )
 from codey.agents.tools import AgentToolFns
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_resume
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps, start_run_operation as _start_run_operation
@@ -488,7 +489,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=fake_agent_run,
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -552,7 +553,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=fake_agent_run,
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -604,7 +605,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=Mock(),
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -649,7 +650,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=Mock(),
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -765,7 +766,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=fake_agent_run,
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -877,7 +878,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=fake_agent_run,
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
@@ -927,7 +928,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             agent_run=Mock(),
             collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
             run_review=Mock(return_value=None),
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,

@@ -35,6 +35,7 @@ from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
@@ -186,7 +187,7 @@ def _run_case(
             agent_run=agent_run,
             collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
             run_review=run_review,
-            capture_provider_failure=server.capture_provider_failure,
+            capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             workspace_revisions=state.workspace_revisions,
