@@ -16,6 +16,10 @@ from codey.ghost.event_log import (
     control_event as _ghost_control_event,
     event_file_stats as _shared_event_file_stats,
 )
+from codey.ghost.event_projection import (
+    over_compact_budget,
+    read_projection_payload,
+)
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
     bound_graph_edges as _shared_bound_graph_edges,
@@ -34,9 +38,7 @@ from codey.storage.file_lock import with_file_lock
 from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    StoreCorruption,
     delete_file,
-    read_json_strict,
     write_json_atomic,
 )
 
@@ -636,7 +638,9 @@ class GhostHebbianStore:
                         return _shared_compact_payload(
                             False, False, before, before, self.last_warnings
                         )
-                if before["events"] <= MAX_HEBBIAN_EVENTS and before["bytes"] <= MAX_HEBBIAN_EVENTS_BYTES:
+                if not over_compact_budget(
+                    before, max_events=MAX_HEBBIAN_EVENTS, max_bytes=MAX_HEBBIAN_EVENTS_BYTES
+                ):
                     return _shared_compact_payload(
                         True, False, before, before, self.last_warnings
                     )
@@ -675,20 +679,13 @@ class GhostHebbianStore:
         return rebuilt_nodes, rebuilt_edges
 
     def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
-        if not self.state_path.exists():
-            return None
-        try:
-            payload = read_json_strict(self.state_path, max_bytes=MAX_HEBBIAN_STATE_BYTES)
-        except StoreCorruption:
-            self._quarantine(self.state_path)
-            return None
-        if not isinstance(payload, dict):
-            self._quarantine(self.state_path)
-            return None
-        if payload.get("schema_version") != HEBBIAN_SCHEMA_VERSION:
-            self._quarantine(self.state_path)
-            return None
-        if payload.get("kind") != _STATE_KIND:
+        payload, reason = read_projection_payload(
+            self.state_path,
+            schema_version=HEBBIAN_SCHEMA_VERSION,
+            kind=_STATE_KIND,
+            max_bytes=MAX_HEBBIAN_STATE_BYTES,
+        )
+        if reason in ("corrupt", "wrong_schema"):
             self._quarantine(self.state_path)
             return None
         return payload
@@ -823,7 +820,11 @@ class GhostHebbianStore:
                 line_count = count_jsonl_rows(self.events_path)
         except OSError:
             return
-        if line_count <= MAX_HEBBIAN_EVENTS and event_bytes <= MAX_HEBBIAN_EVENTS_BYTES:
+        if not over_compact_budget(
+            {"events": line_count, "bytes": event_bytes},
+            max_events=MAX_HEBBIAN_EVENTS,
+            max_bytes=MAX_HEBBIAN_EVENTS_BYTES,
+        ):
             return
         reason = "event_bytes_limit" if event_bytes > MAX_HEBBIAN_EVENTS_BYTES else "event_count_limit"
         try:

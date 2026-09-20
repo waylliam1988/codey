@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost event_projection：共享投影机制，文档化不再合（未发布）
+
+- 新增 `ghost/event_projection.py`，只收编两家逐字节相同的两件机械：
+  `read_projection_payload`（读取 + schema/kind 校验，返回
+  `missing` / `corrupt` / `wrong_schema` 原因，不带后果）和
+  `over_compact_budget`（四个调用点的 compaction 预算谓词）。两家都已采用；
+  腐败后果（quarantine 改名 vs 编号备份，都有测试钉住）与行解析保留本地。
+- 在模块里文档化了为什么其余不再合（115 + 64 个函数两两相似度扫描）：
+  写路径契约不同（append 回退 vs replace 抛错）、loader 顺序相反
+ （projection 优先 vs events 优先）、过滤/排序/clamp 即存储语义本身；
+  通用 driver 需要比自己还长的回调。这条线画在这里，后人不用重新论证。
+  已经共用的原子（`event_log`、`local_store`、`file_lock`、
+  `graph_primitives`、`compact_result_payload`）就是正确的共享层级。
+- 新增测试 `test_ghost_event_projection.py`（9 个：读取原因、预算边界、
+  垃圾 stats fail-closed）。
+- 债务不动：`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿；ghost / knowledge 套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3886 passed, 6 skipped, 1310 subtests passed in 267.08s`）。
+
 ## Unreleased - ResearchSourceGateway：provider + ledger 之上的采集主干（未发布）
 
 - 新增 `research/source_gateway.py`：`search(query, limit)`、

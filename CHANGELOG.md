@@ -2,6 +2,32 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost event_projection: shared projection mechanics, documented non-unification (no release)
+
+- New `ghost/event_projection.py` with the two mechanics both the Hebbian
+  memory graph and the affinity preference index perform byte-for-byte
+  alike: `read_projection_payload` (read + schema/kind validation with a
+  `missing`/`corrupt`/`wrong_schema` reason, no consequences attached) and
+  `over_compact_budget` (shared compaction-budget predicate for all four
+  use sites). Both stores adopted both; corruption consequences
+  (quarantine-rename vs numbered backup, both pinned by tests) and row
+  parsing stay store-local.
+- Documented in the module why the rest is NOT unified (pairwise similarity
+  scan of all 115 + 64 store functions): write paths differ in contract
+  (append-with-rewrite-fallback vs replace-or-raise), loaders run opposite
+  orders (projection-first vs events-first), filters/sorts/clamps encode
+  store semantics, and a common driver would need callbacks longer than
+  itself. The already-shared atoms (`event_log`, `local_store`,
+  `file_lock`, `graph_primitives`, `compact_result_payload`) are the right
+  level; this draws the line so the next refactor does not re-litigate it.
+- Tests added: `test_ghost_event_projection.py` (9 tests: read reasons,
+  budget boundaries, fail-closed garbage stats).
+- Debt unchanged at `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`.
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green; ghost/knowledge suites green;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`3886 passed, 6 skipped, 1310 subtests passed in 267.08s`).
+
 ## Unreleased - ResearchSourceGateway: acquisition spine over provider + ledger (no release)
 
 - New `research/source_gateway.py`: `search(query, limit)`,

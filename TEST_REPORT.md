@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Ghost event_projection: shared projection mechanics, documented non-unification (2026-09-20)
+
+Scope:
+
+```text
+codey/ghost/event_projection.py (new):
+                           read_projection_payload (read+validate with
+                           missing/corrupt/wrong_schema reasons, no
+                           consequences) + over_compact_budget predicate +
+                           why-the-rest-stays-split documentation
+codey/ghost/hebbian.py:    projection read + 2 budget sites delegate;
+                           quarantine consequence kept
+codey/ghost/affinity.py:   projection read + 2 budget sites delegate;
+                           backup consequence kept
+tests:                       test_ghost_event_projection.py (new, 9 tests)
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`; unchanged)
+- Targeted gates before the full run:
+  `tests/test_architecture.py` (82 passed, 316 subtests passed),
+  ghost/knowledge selection (514 passed, 181 subtests passed),
+  `tests/test_ghost_event_projection.py` (9 passed)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3886 passed, 6 skipped, 1310 subtests passed in 267.08s (0:04:27)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## ResearchSourceGateway: acquisition spine over provider + ledger (2026-09-20)
 
 Scope:

@@ -19,6 +19,10 @@ from codey.ghost.event_log import (
     compact_result_payload as _compact_payload,
     event_file_stats as _event_file_stats,
 )
+from codey.ghost.event_projection import (
+    over_compact_budget,
+    read_projection_payload,
+)
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
     bound_graph_edges as _shared_bound_graph_edges,
@@ -33,11 +37,9 @@ from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    StoreCorruption,
     backup_corrupt_file,
     delete_file,
     project_key,
-    read_json_strict,
     session_key,
     write_json_atomic,
 )
@@ -1021,7 +1023,9 @@ class GhostAffinityStore:
                     warning = str(before["warning"] or "affinity_events_unreadable")
                     self.last_warnings = (warning,)
                     return _compact_payload(False, False, before, before, (warning,), warning_cleaner=_bounded_warnings)
-                if before["events"] <= MAX_AFFINITY_EVENTS and before["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
+                if not over_compact_budget(
+                    before, max_events=MAX_AFFINITY_EVENTS, max_bytes=MAX_AFFINITY_EVENTS_BYTES
+                ):
                     return _compact_payload(
                         True, False, before, before, self.last_warnings, warning_cleaner=_bounded_warnings
                     )
@@ -1102,16 +1106,16 @@ class GhostAffinityStore:
         return [], []
 
     def _load_projection_rows_unlocked(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
-        try:
-            payload = read_json_strict(self.projection_path, max_bytes=MAX_AFFINITY_STATE_BYTES)
-        except StoreCorruption:
+        payload, reason = read_projection_payload(
+            self.projection_path,
+            schema_version=AFFINITY_SCHEMA_VERSION,
+            kind=_STATE_KIND,
+            max_bytes=MAX_AFFINITY_STATE_BYTES,
+        )
+        if reason == "corrupt":
             backup_corrupt_file(self.projection_path)
             return [], []
-        if not isinstance(payload, Mapping):
-            return [], []
-        if payload.get("schema_version") != AFFINITY_SCHEMA_VERSION:
-            return [], []
-        if payload.get("kind") != _STATE_KIND:
+        if payload is None:
             return [], []
         nodes = [
             node for node in (AffinityNode.from_payload(row) for row in _list(payload.get("nodes"))) if node is not None
@@ -1223,7 +1227,9 @@ class GhostAffinityStore:
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "affinity_events_unreadable"),)
             return
-        if stats["events"] <= MAX_AFFINITY_EVENTS and stats["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
+        if not over_compact_budget(
+            stats, max_events=MAX_AFFINITY_EVENTS, max_bytes=MAX_AFFINITY_EVENTS_BYTES
+        ):
             return
         try:
             self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
