@@ -42,12 +42,6 @@ def parse_ts(value: object) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def now_iso() -> str:
-    from codey.ghost._common import now_iso_z
-
-    return now_iso_z()
-
-
 def decay_basis_of(
     last_decayed_at: str,
     last_reinforced_at: str,
@@ -184,6 +178,5 @@ __all__ = [
     "decay_basis_of",
     "decayed_by_half_life",
     "exp_decay_factor",
-    "now_iso",
     "parse_ts",
 ]

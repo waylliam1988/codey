@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -44,9 +45,6 @@ from codey.ghost.graph_primitives import (
 )
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
-)
-from codey.ghost.graph_primitives import (
-    now_iso as _shared_now_iso,
 )
 from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
@@ -456,7 +454,7 @@ class GhostAffinityStore:
                 nodes, edges = _rows_from_events(events)
                 node_by_id = {node.id: node for node in nodes}
                 edge_by_id = {edge.id: edge for edge in edges}
-                now = _now()
+                now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
                 changed_nodes = 0
                 for spec in node_specs:
@@ -824,7 +822,7 @@ class GhostAffinityStore:
                 nodes, edges = self._load_projection_rows_unlocked()
             else:
                 nodes, edges = _rows_from_events(events)
-            projection = _projection_payload(nodes, edges, generated_at=_now(), warnings=event_warnings)
+            projection = _projection_payload(nodes, edges, generated_at=_common.now_iso_z(), warnings=event_warnings)
             if orphan_projection:
                 projection["diagnostic"] = {
                     "projection_only": True,
@@ -883,7 +881,7 @@ class GhostAffinityStore:
                     scope_ref if normalized_scope != "user" else "",
                     removed_nodes=removed_nodes,
                     removed_edges=removed_edges,
-                    ts=_now(),
+                    ts=_common.now_iso_z(),
                 )
                 new_nodes, new_edges = _rows_from_events((*events, event))
                 return _AffinityMutation(
@@ -916,7 +914,7 @@ class GhostAffinityStore:
 
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:
                 nodes, edges = _rows_from_events(events)
-                now = _now()
+                now = _common.now_iso_z()
                 if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                     return _AffinityMutation(
                         {
@@ -1048,7 +1046,7 @@ class GhostAffinityStore:
                     )
                 events = self._events_for_mutation_locked()
                 nodes, edges = _rows_from_events(events)
-                self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
+                self._write_events_atomic([_snapshot_event(nodes, edges, ts=_common.now_iso_z(), reason="events_compacted")])
                 self._write_projection(nodes, edges, warnings=self.last_warnings)
                 after = _event_file_stats(
                     self.events_path,
@@ -1216,7 +1214,7 @@ class GhostAffinityStore:
     ) -> None:
         write_json_atomic(
             self.projection_path,
-            _projection_payload(nodes, edges, generated_at=_now(), warnings=warnings),
+            _projection_payload(nodes, edges, generated_at=_common.now_iso_z(), warnings=warnings),
             max_bytes=MAX_AFFINITY_STATE_BYTES,
         )
 
@@ -1247,7 +1245,7 @@ class GhostAffinityStore:
         ):
             return
         try:
-            self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
+            self._write_events_atomic([_snapshot_event(nodes, edges, ts=_common.now_iso_z(), reason="events_compacted")])
         except (OSError, TypeError, ValueError):
             self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_compaction_failed"))
 
@@ -2675,10 +2673,6 @@ def _unit_float(value: object) -> float:
 
 def _parse_ts(value: object) -> datetime:
     return _shared_parse_ts(value)
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

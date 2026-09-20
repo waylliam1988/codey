@@ -151,11 +151,11 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(confidence=0.9), project=td)
 
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-01-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
                 hebbian.reinforce_candidate(candidate)
             before = hebbian.list_nodes()[0]
 
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-04-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-04-01T00:00:00Z"):
                 hebbian.decay()
             after = hebbian.list_nodes()[0]
 
@@ -170,11 +170,11 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(confidence=0.9), project=td)
 
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-01-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
                 hebbian.reinforce_candidate(candidate)
             before = hebbian.list_nodes()[0]
 
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-02-15T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-02-15T00:00:00Z"):
                 hebbian.decay()
             after = hebbian.list_nodes()[0]
 
@@ -187,9 +187,9 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(confidence=0.9), project=td)
 
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-01-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
                 hebbian.reinforce_candidate(candidate)
-            with mock.patch("codey.ghost.hebbian._now", return_value="2026-04-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-04-01T00:00:00Z"):
                 hebbian.decay()
                 first_decay = hebbian.list_nodes()[0]
                 hebbian.decay()

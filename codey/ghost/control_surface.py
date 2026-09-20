@@ -6,13 +6,12 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.router import GhostRouteStore
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
@@ -70,7 +69,7 @@ class GhostControlSurface:
         if not self.available:
             return _unavailable_payload()
         session_ref = clip_signal_text(session_id, 120)
-        project_ref = _normalize_project(project)
+        project_ref = _common.normalize_project(project)
         warnings: list[str] = []
 
         pending = _safe_rows(
@@ -190,7 +189,7 @@ class GhostControlSurface:
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": True,
             "available": True,
-            "generated_at": _now(),
+            "generated_at": _common.now_iso_z(),
         }
         payload["inbox"] = self.inbox.export_state() if self.inbox is not None else {}
         payload["signals"] = list(self.signals.read_all()) if self.signals is not None else []
@@ -288,7 +287,7 @@ class GhostControlSurface:
         scope = clip_signal_text(body.get("scope"), 40).lower()
         if scope not in {"user", "project", "session"}:
             return 400, _error_payload("scope must be user, project, or session")
-        project = _normalize_project(body.get("project"))
+        project = _common.normalize_project(body.get("project"))
         session_id = clip_signal_text(body.get("session_id"), 120)
         if scope == "project" and not project:
             return 400, _error_payload("project required")
@@ -441,7 +440,7 @@ def _candidate_visible_for_scope(
     body: Mapping[str, object],
 ) -> bool:
     session_id = clip_signal_text(body.get("session_id"), 120)
-    project = _normalize_project(body.get("project"))
+    project = _common.normalize_project(body.get("project"))
     if candidate.scope == "user":
         return True
     if candidate.scope == "project":
@@ -468,7 +467,7 @@ def _work_item_visible_for_scope(
     body: Mapping[str, object],
 ) -> bool:
     session_id = clip_signal_text(body.get("session_id"), 120)
-    project = _normalize_project(body.get("project"))
+    project = _common.normalize_project(body.get("project"))
     if item.scope == "user":
         return True
     if not session_id and not project:
@@ -669,14 +668,6 @@ def _bounded_unique(values: Iterable[object]) -> list[str]:
         if len(out) >= 12:
             break
     return out
-
-
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _unavailable_payload() -> dict[str, object]:

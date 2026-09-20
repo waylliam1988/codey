@@ -9,8 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings
 from codey.ghost.hebbian import (
     HEBBIAN_SCHEMA_VERSION,
@@ -113,7 +112,7 @@ def render_ghost_directive(
     affinity_hints: Iterable[Any] = (),
 ) -> GhostDirective:
     warnings: list[str] = []
-    now = _now()
+    now = _common.now_iso_z()
     applicable = _applicable_nodes(
         nodes,
         project=project,
@@ -170,7 +169,7 @@ def _applicable_nodes(
     now: str,
     warnings: list[str],
 ) -> list[GhostNode]:
-    project_ref = _normalize_project(project)
+    project_ref = _common.normalize_project(project)
     session_ref = clip_signal_text(session_id, 120)
     rows: list[GhostNode] = []
     for node in nodes:
@@ -336,14 +335,6 @@ def _parse_ts(value: object) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
-
-
-def _now() -> str:
-    return _shared_now_iso()
-
-
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
 
 
 def _bounded_warnings(warnings: list[str]) -> tuple[str, ...]:

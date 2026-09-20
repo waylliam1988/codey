@@ -15,8 +15,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -259,7 +258,7 @@ class GhostContinuityStore:
         warnings: list[str] = []
         try:
             with with_file_lock(self.events_path):
-                now = _now()
+                now = _common.now_iso_z()
                 existing = list(self._load_items_unlocked())
                 if self.events_path.exists():
                     self._read_events_unlocked()
@@ -329,13 +328,13 @@ class GhostContinuityStore:
                             payload={
                                 "run_id": clip_signal_text(run_id, 120),
                                 "session_id": clip_signal_text(session_id, 120),
-                                "project": _normalize_project(project),
+                                "project": _common.normalize_project(project),
                                 "mode": clip_signal_text(mode, 40),
                                 "items_seen": len(candidates),
                                 "items_changed": len(changed_items),
                                 "items_total": len(merged),
                             },
-                            now=_now(),
+                            now=_common.now_iso_z(),
                             payload_cleaner=_clean_metadata,
                         )
                     )
@@ -384,7 +383,7 @@ class GhostContinuityStore:
         session_id: str = "",
     ) -> tuple[GhostContinuityItem, ...]:
         items = self._load_items_unlocked()
-        project_ref = _normalize_project(project)
+        project_ref = _common.normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         rows = [
             item
@@ -399,7 +398,7 @@ class GhostContinuityStore:
             event_warnings = self.last_warnings
             projection = _projection_payload(
                 self._load_items_unlocked(),
-                generated_at=_now(),
+                generated_at=_common.now_iso_z(),
                 warnings=_bounded_warnings((*event_warnings, *self.last_warnings)),
             )
             warnings = _bounded_warnings(projection.get("warnings", ()))
@@ -428,7 +427,7 @@ class GhostContinuityStore:
         normalized_scope = str(scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
-        project_ref = _normalize_project(project)
+        project_ref = _common.normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         if normalized_scope == "project" and not project_ref:
             raise ValueError("project is required for project scope deletion")
@@ -458,12 +457,12 @@ class GhostContinuityStore:
                     "session_id": session_ref if normalized_scope == "session" else "",
                     "removed_count": removed,
                 },
-                now=_now(),
+                now=_common.now_iso_z(),
                 payload_cleaner=_clean_metadata,
             )
             if not self._append_events([event]):
                 return 0
-            self._write_projection(kept, now=_now(), warnings=[])
+            self._write_projection(kept, now=_common.now_iso_z(), warnings=[])
             self._compact_if_needed(kept)
             return removed
 
@@ -474,7 +473,7 @@ class GhostContinuityStore:
                 if self._events_read_blocked:
                     return False
                 items = _items_from_events(events)
-                self._write_projection(_bounded_items(items), now=_now(), warnings=[])
+                self._write_projection(_bounded_items(items), now=_common.now_iso_z(), warnings=[])
         except (OSError, TypeError, ValueError):
             return False
         return True
@@ -489,7 +488,7 @@ class GhostContinuityStore:
         rebuilt = tuple(_bounded_items(_items_from_events(events)))
         if rebuilt:
             with contextlib.suppress(OSError, TypeError, ValueError):
-                self._write_projection(rebuilt, now=_now(), warnings=[])
+                self._write_projection(rebuilt, now=_common.now_iso_z(), warnings=[])
         return rebuilt
 
     def compact_if_needed(self) -> dict[str, object]:
@@ -604,7 +603,7 @@ class GhostContinuityStore:
                 schema_version=CONTINUITY_SCHEMA_VERSION,
                 event_name="ghost_continuity_events_compacted",
                 payload={"items": len(rows)},
-                now=_now(),
+                now=_common.now_iso_z(),
                 payload_cleaner=_clean_metadata,
             )
         )
@@ -656,7 +655,7 @@ def render_ghost_continuity(
     budget: int = DEFAULT_CONTINUITY_BUDGET,
 ) -> GhostContinuity:
     warnings: list[str] = []
-    now = _now()
+    now = _common.now_iso_z()
     applicable = _applicable_items(
         items,
         project=project,
@@ -793,7 +792,7 @@ def _items_from_task(
         _item(
             kind="recent_focus",
             scope="session" if session_ref else "project" if project else "user",
-            scope_ref=session_ref or _normalize_project(project),
+            scope_ref=session_ref or _common.normalize_project(project),
             text=focus,
             source="task_done",
             source_ref=clip_signal_text(run_id, 120),
@@ -808,7 +807,7 @@ def _items_from_task(
             _item(
                 kind="open_question",
                 scope="session" if session_ref else "project" if project else "user",
-                scope_ref=session_ref or _normalize_project(project),
+                scope_ref=session_ref or _common.normalize_project(project),
                 text=focus,
                 source="task_done",
                 source_ref=clip_signal_text(run_id, 120),
@@ -831,7 +830,7 @@ def _items_from_run_projection(
     if projection is None or not projection.run_id:
         return []
     rows: list[GhostContinuityItem] = []
-    project_ref = _normalize_project(project or projection.project)
+    project_ref = _common.normalize_project(project or projection.project)
     if project_ref:
         project_name = _project_display_name(project_ref)
         if project_name and _safe_prompt_text(project_name, warnings=warnings, kind="active_project"):
@@ -874,7 +873,7 @@ def _items_from_knowledge(
             store.index.recent(
                 5,
                 session_id=clip_signal_text(session_id, 120),
-                project=_normalize_project(project),
+                project=_common.normalize_project(project),
                 types=("synthesis", "decision"),
             )
         )
@@ -897,7 +896,7 @@ def _items_from_knowledge(
     out: list[GhostContinuityItem] = []
     for row in rows:
         source_ref = clip_signal_text(row.get("id"), 160)
-        row_project = _normalize_project(row.get("project") or project)
+        row_project = _common.normalize_project(row.get("project") or project)
         row_session = clip_signal_text(row.get("session_id") or session_id, 120)
         scope = "session" if row_session else "project" if row_project else "user"
         scope_ref = row_session or row_project
@@ -1008,7 +1007,7 @@ def _applicable_items(
     now: str,
     warnings: list[str],
 ) -> list[GhostContinuityItem]:
-    project_ref = _normalize_project(project)
+    project_ref = _common.normalize_project(project)
     session_ref = clip_signal_text(session_id, 120)
     rows: list[GhostContinuityItem] = []
     seen: set[tuple[str, str]] = set()
@@ -1188,7 +1187,7 @@ def _projection_payload(
 def _item_event(item: GhostContinuityItem, *, action: str) -> dict[str, object]:
     return {
         "schema_version": CONTINUITY_SCHEMA_VERSION,
-        "ts": _now(),
+        "ts": _common.now_iso_z(),
         "type": "ghost_continuity_item_upsert",
         "action": clip_signal_text(action, 40),
         "item": item.to_payload(),
@@ -1257,14 +1256,6 @@ def _parse_ts(value: object) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
-
-
-def _now() -> str:
-    return _shared_now_iso()
-
-
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
 
 
 def _project_display_name(value: object) -> str:

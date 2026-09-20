@@ -2,6 +2,21 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost time/project delegates removed, single _common seam (no release)
+
+- Deleted the per-module `_now()` / `_normalize_project()` thin delegates
+  across all ten ghost stores plus the `graph_primitives.now_iso`
+  forwarder. Call sites resolve `codey.ghost._common` through the module
+  object (`_common.now_iso_z()` / `_common.normalize_project()`), so the
+  19 timestamp patches migrated to the single `_common.now_iso_z` seam and
+  genuinely take effect (timestamp-ordered assertions stay green, which
+  proves the mock is consulted rather than bypassed).
+- No production logic changed: every deleted body was a one-line forward.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 329.22s`).
+
 ## Unreleased - Review fixes + real process-kill recovery (no release)
 
 - Fixed a real UI bug in `renderMarkdownChunked`: fixed 120-line slices

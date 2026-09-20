@@ -3,8 +3,8 @@
 Ghost stays domain-split (affinity/continuity/router/work_queue keep their own
 semantics). This module only owns the byte-identical helpers every store
 hand-rolled: UTC timestamps, project scope normalization, and scope validation.
-Stores keep thin ``_now``/``_normalize_project`` delegates so existing patch
-points keep working while the loop lives here once.
+Stores call these directly; tests patch ``codey.ghost._common`` so there is
+exactly one seam.
 """
 
 from __future__ import annotations

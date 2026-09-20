@@ -9,8 +9,7 @@ from __future__ import annotations
 import contextlib
 from pathlib import Path
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost.event_log import GhostEventLog
 from codey.ghost.schema import (
     SCHEMA_VERSION,
@@ -22,10 +21,6 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 MAX_GHOST_EVENTS = 5_000
 MAX_STORED_SIGNALS = 5
 MAX_STORED_DIAGNOSTICS = 8
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 class GhostSignalStore:
@@ -51,7 +46,7 @@ class GhostSignalStore:
     ) -> bool:
         payload = {
             "schema_version": SCHEMA_VERSION,
-            "ts": _now(),
+            "ts": _common.now_iso_z(),
             "type": "ghost_signal_extraction",
             "session_id": clip_signal_text(session_id, 120),
             "run_id": clip_signal_text(run_id, 120),
@@ -97,7 +92,7 @@ class GhostSignalStore:
         normalized_scope = str(scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
-        normalized_project = _normalize_project(project)
+        normalized_project = _common.normalize_project(project)
         normalized_session = clip_signal_text(session_id, 120)
         if normalized_scope == "project" and not normalized_project:
             raise ValueError("project is required for project scope deletion")
@@ -116,7 +111,7 @@ class GhostSignalStore:
                 if _signal_scope_match(
                     signal,
                     normalized_scope,
-                    row_project=_normalize_project(row.get("project")),
+                    row_project=_common.normalize_project(row.get("project")),
                     row_session=clip_signal_text(row.get("session_id"), 120),
                     project=normalized_project,
                     session_id=normalized_session,
@@ -160,7 +155,3 @@ def _signal_scope_match(
     if scope == "session":
         return bool(session_id) and row_session == session_id
     return True
-
-
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)

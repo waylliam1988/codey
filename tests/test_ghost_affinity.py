@@ -269,7 +269,7 @@ def test_source_ref_replay_is_noop() -> None:
         hebbian = GhostHebbianStore(td)
         hebbian.reinforce_candidate(candidate)
         affinity = GhostAffinityStore(td)
-        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value=FRESH_TS):
             first = affinity.sync_from_sources(hebbian_store=hebbian)
             before = affinity.events_path.read_text(encoding="utf-8")
 
@@ -591,7 +591,7 @@ def test_reinforcement_weight_uses_only_new_refs() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
         weights: list[float] = []
-        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value=FRESH_TS):
             for index in range(3):
                 affinity.sync_from_sources(
                     research_interest_candidates=(_candidate(candidate_id=f"alpha-{index}", concepts=("alpha",)),),
@@ -656,11 +656,11 @@ def test_decay_preserves_last_reinforced_and_fanout_cap_prunes_edges() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
         with mock.patch.object(affinity_module, "MAX_EDGE_OUT_DEGREE", 1):
-            with mock.patch("codey.ghost.affinity._now", return_value="2026-01-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
                 affinity.sync_from_sources(research_interest_candidates=(candidate,), session_id="s1")
             before_nodes = affinity.list_nodes(session_id="s1")
             before_edges = affinity.list_edges(session_id="s1")
-            with mock.patch("codey.ghost.affinity._now", return_value="2026-05-01T00:00:00Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-05-01T00:00:00Z"):
                 result = affinity.decay()
             after = affinity.list_nodes(session_id="s1")[0]
 
@@ -687,7 +687,7 @@ def test_export_contains_valid_json_and_no_research_body() -> None:
 def test_concurrent_reinforce_accumulates_both_events() -> None:
     with tempfile.TemporaryDirectory() as td:
         seed = GhostAffinityStore(td)
-        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value=FRESH_TS):
             assert seed.sync_from_sources(
                 research_interest_candidates=(
                     _candidate(candidate_id="alpha-base", concepts=("alpha",), neighbors=()),
@@ -725,7 +725,7 @@ def test_concurrent_reinforce_accumulates_both_events() -> None:
 def test_snapshot_then_reinforce_continues_accumulating() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value=FRESH_TS):
             assert affinity.sync_from_sources(
                 research_interest_candidates=(_candidate(candidate_id="alpha-1", concepts=("alpha",), neighbors=()),),
                 session_id="s1",
@@ -1232,14 +1232,14 @@ def test_affinity_delete_scope_propagates_projection_write_failure_warning() -> 
 def test_affinity_decay_propagates_projection_write_failure_warning() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        with mock.patch("codey.ghost.affinity._now", return_value="2026-01-01T00:00:00Z"):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:00Z"):
             affinity.sync_from_sources(
                 research_interest_candidates=(
                     _candidate(candidate_id="alpha", concepts=("alpha", "beta"), neighbors=()),
                 ),
                 session_id="s1",
             )
-        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")), mock.patch("codey.ghost.affinity._now", return_value="2026-05-01T00:00:00Z"):
+        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")), mock.patch("codey.ghost._common.now_iso_z", return_value="2026-05-01T00:00:00Z"):
             result = affinity.decay()
 
     assert result["decayed_nodes"] > 0

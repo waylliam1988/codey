@@ -1,5 +1,32 @@
 # Codey Test Report
 
+## Ghost time/project delegates removed, single _common seam (2026-09-21)
+
+Scope:
+
+```text
+codey/ghost/{affinity,continuity,control_surface,directive,hebbian,inbox,
+router,sleep,store,work_queue}.py: call _common through the module object
+codey/ghost/graph_primitives.py: delete now_iso forwarder
+codey/ghost/_common.py:          docstring drops the delegates paragraph
+tests/test_ghost_{affinity,directive,hebbian,inbox}.py: 19 patches retargeted
+docs:                        CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests` (passed)
+  `git diff --check` (passed)
+- Seam proof: timestamp-ordered ghost assertions green under the retargeted
+  `_common.now_iso_z` mock (a bypassed mock would fail them)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 329.22s (0:05:29)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. No production logic changed (one-line forwards only).
+
 ## Review fixes + real process-kill recovery (2026-09-21)
 
 Scope:

@@ -619,7 +619,7 @@ class GhostDirectiveTests(unittest.TestCase):
         self.assertEqual(len(directive.selected_nodes), 2)
 
     def test_preview_decay_excludes_stale_high_weight_node_without_writing(self) -> None:
-        with mock.patch("codey.ghost.directive._now", return_value="2026-08-08T00:00:00Z"):
+        with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-08-08T00:00:00Z"):
             directive = render_ghost_directive((
                 _node(
                     node_id="stale",

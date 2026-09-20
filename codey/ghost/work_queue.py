@@ -16,8 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
@@ -401,7 +400,7 @@ class GhostWorkQueueStore:
         project: str = "",
     ) -> GhostWorkSyncResult:
         try:
-            now = _now()
+            now = _common.now_iso_z()
             candidates: list[GhostWorkItem] = []
             candidates.extend(
                 _items_from_continuity(
@@ -545,7 +544,7 @@ class GhostWorkQueueStore:
         project_ref = _project_ref(project)
         session_ref = _session_ref(session_id)
         rows = []
-        now = _now()
+        now = _common.now_iso_z()
         for item in self._load_items_unlocked():
             if _is_expired(item, now):
                 continue
@@ -575,7 +574,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                now = _now()
+                now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
                 items = _bounded_items(_items_from_events(events))
                 for item in items:
@@ -696,7 +695,7 @@ class GhostWorkQueueStore:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
                 if not current.started_run_id or current.started_run_id != expected_run_id:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
-                now = _now()
+                now = _common.now_iso_z()
                 if not refs or not _primary_proof_matches_item_kind(current, refs):
                     blocked = replace(
                         current,
@@ -784,7 +783,7 @@ class GhostWorkQueueStore:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
                 if expected_run_id and current.started_run_id and current.started_run_id != expected_run_id:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
-                now = _now()
+                now = _common.now_iso_z()
                 next_status = "blocked" if current.retry_count >= MAX_WORK_RETRIES else "queued"
                 blocked_reason = clip_signal_text(reason or "retry_limit" if next_status == "blocked" else "", 120)
                 updated = replace(
@@ -834,7 +833,7 @@ class GhostWorkQueueStore:
                     return _WorkMutation(current, items=tuple(items), write_projection=False, compact=False)
                 if current.status not in {"candidate", "blocked", "rejected"}:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
-                now = _now()
+                now = _common.now_iso_z()
                 queued = replace(
                     current,
                     status="queued",
@@ -875,7 +874,7 @@ class GhostWorkQueueStore:
         try:
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                now = _now()
+                now = _common.now_iso_z()
                 items = _bounded_items(_items_from_events(events))
                 append_events: list[dict[str, object]] = []
                 for item in items:
@@ -937,7 +936,7 @@ class GhostWorkQueueStore:
                     event_warnings = ("work_events_missing",)
             else:
                 items = tuple(_items_from_events(events))
-            projection = _projection_payload(items, generated_at=_now(), warnings=event_warnings)
+            projection = _projection_payload(items, generated_at=_common.now_iso_z(), warnings=event_warnings)
             return {
                 "schema_version": WORK_QUEUE_SCHEMA_VERSION,
                 "work_queue": projection,
@@ -994,7 +993,7 @@ class GhostWorkQueueStore:
                     scope=normalized_scope,
                     project_ref=project_ref if normalized_scope == "project" else "",
                     session_ref=session_ref if normalized_scope == "session" else "",
-                    ts=_now(),
+                    ts=_common.now_iso_z(),
                 )
                 new_items = _bounded_items(_items_from_events((*events, event)))
                 return _WorkMutation(
@@ -1046,7 +1045,7 @@ class GhostWorkQueueStore:
                     )
                 events = self._events_for_mutation_locked()
                 items = _bounded_items(_items_from_events(events))
-                self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
+                self._write_events_atomic([_snapshot_event(items, ts=_common.now_iso_z(), reason="events_compacted")])
                 self._write_projection(items, warnings=[])
                 after = _event_file_stats(
                     self.events_path,
@@ -1088,7 +1087,7 @@ class GhostWorkQueueStore:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
                 if expected and current.started_run_id and current.started_run_id != expected:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
-                now = _now()
+                now = _common.now_iso_z()
                 patch: dict[str, object] = {
                     "status": target_status,
                     "updated_at": now,
@@ -1263,7 +1262,7 @@ class GhostWorkQueueStore:
     def _write_projection(self, items: Iterable[GhostWorkItem], *, warnings: Iterable[str]) -> None:
         write_json_atomic(
             self.projection_path,
-            _projection_payload(items, generated_at=_now(), warnings=warnings),
+            _projection_payload(items, generated_at=_common.now_iso_z(), warnings=warnings),
             max_bytes=MAX_WORK_STATE_BYTES,
         )
 
@@ -1289,7 +1288,7 @@ class GhostWorkQueueStore:
         if stats["events"] <= MAX_WORK_EVENTS and stats["bytes"] <= MAX_WORK_EVENTS_BYTES:
             return
         try:
-            self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
+            self._write_events_atomic([_snapshot_event(items, ts=_common.now_iso_z(), reason="events_compacted")])
         except (OSError, TypeError, ValueError):
             self.last_warnings = _bounded_warnings((*self.last_warnings, "work_compaction_failed"))
 
@@ -1394,7 +1393,7 @@ def _items_from_continuity(
         if item.scope == "session":
             scope_ref = _session_ref(scope_ref or session_id)
         elif item.scope == "project":
-            scope_ref = _normalize_project(scope_ref or project)
+            scope_ref = _common.normalize_project(scope_ref or project)
         else:
             scope_ref = ""
         out.append(
@@ -1441,7 +1440,7 @@ def _items_from_research_interest_candidates(
         if scope == "session":
             scope_ref = _session_ref(raw_scope_ref or session_id)
         elif scope == "project":
-            scope_ref = _normalize_project(raw_scope_ref or project)
+            scope_ref = _common.normalize_project(raw_scope_ref or project)
         else:
             scope_ref = ""
         confidence = _unit_float(_field(candidate, "confidence"))
@@ -1504,7 +1503,7 @@ def _items_from_work_checkpoint(
         return []
     if checkpoint is None:
         return []
-    checkpoint_project = _normalize_project(getattr(checkpoint, "project", "") or project)
+    checkpoint_project = _common.normalize_project(getattr(checkpoint, "project", "") or project)
     project_ref = _project_ref(project)
     if project_ref and _project_ref(checkpoint_project) != project_ref:
         return []
@@ -1557,7 +1556,7 @@ def _items_from_run_projection(
             kind="project_followup",
             status="queued" if stop_reason in {"error", "no_progress", "stopped"} else "candidate",
             scope="project",
-            scope_ref=_normalize_project(project or getattr(projection, "project", "")),
+            scope_ref=_common.normalize_project(project or getattr(projection, "project", "")),
             title=title,
             why_now="A bounded run ledger projection recorded unfinished local work.",
             priority=0.72,
@@ -1595,7 +1594,7 @@ def _items_from_terminal_event(
             kind="coding",
             status="queued",
             scope="project",
-            scope_ref=_normalize_project(project),
+            scope_ref=_common.normalize_project(project),
             title="Address local review findings",
             why_now="Review-only mode found issues in the current diff.",
             priority=0.78,
@@ -2449,10 +2448,6 @@ def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:
     return {item for item in values if item in allowed}
 
 
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
-
-
 def _project_ref(value: object) -> str:
     text = str(value or "").strip()
     if not text:
@@ -2523,10 +2518,6 @@ def _field(value: Any, key: str) -> object:
     if isinstance(value, Mapping):
         return value.get(key)
     return getattr(value, key, "")
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _future_ts(now: str, seconds: int) -> str:

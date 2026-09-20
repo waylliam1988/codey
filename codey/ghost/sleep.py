@@ -15,8 +15,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
@@ -202,12 +201,12 @@ class GhostSleepStore:
             trigger=clip_signal_text(trigger or "post_turn", 80),
             run_id=clip_signal_text(run_id, 120),
             session_id=clip_signal_text(session_id, 120),
-            project=_normalize_project(project),
+            project=_common.normalize_project(project),
             run_projection=run_projection,
         )
         budget = budget or GhostSleepBudget()
         cycle_id = "gsc_" + uuid.uuid4().hex[:24]
-        started_at = _now()
+        started_at = _common.now_iso_z()
         steps: list[GhostSleepStepResult] = []
         pending_steps: tuple[str, ...] = ()
         cancelled = False
@@ -270,7 +269,7 @@ class GhostSleepStore:
             session_id=cursor.session_id,
             project=cursor.project,
             started_at=started_at,
-            finished_at=_now(),
+            finished_at=_common.now_iso_z(),
             cancelled=cancelled,
             steps=(*tuple(steps), report_step),
             pending_steps=pending_steps,
@@ -299,7 +298,7 @@ class GhostSleepStore:
                         session_id=cursor.session_id,
                         project=cursor.project,
                         started_at=started_at,
-                        finished_at=_now(),
+                        finished_at=_common.now_iso_z(),
                         cancelled=cancelled,
                         steps=(*tuple(steps), failed_step),
                         pending_steps=pending_steps,
@@ -339,7 +338,7 @@ class GhostSleepStore:
         normalized_scope = str(scope or "").strip().lower()
         if normalized_scope not in {"user", "project", "session"}:
             raise ValueError("scope must be user, project, or session")
-        project_ref = _normalize_project(project)
+        project_ref = _common.normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         if normalized_scope == "project" and not project_ref:
             raise ValueError("project is required for project scope deletion")
@@ -381,7 +380,7 @@ class GhostSleepStore:
                         "session_id": session_ref if normalized_scope == "session" else "",
                         "removed_reports": removed,
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 )
                 self._write_events_atomic([*kept, control])
             if state_deleted:
@@ -638,7 +637,7 @@ class GhostSleepStore:
                 "schema_version": SLEEP_SCHEMA_VERSION,
                 "kind": _STATE_KIND,
                 "source": "sleep_events.jsonl",
-                "updated_at": _now(),
+                "updated_at": _common.now_iso_z(),
                 "report": report.to_payload(),
                 "warnings": list(report.warnings),
             },
@@ -721,7 +720,7 @@ def _report_event(report: GhostSleepReport) -> dict[str, object]:
     return {
         "schema_version": SLEEP_SCHEMA_VERSION,
         "type": "ghost_sleep_report",
-        "ts": _now(),
+        "ts": _common.now_iso_z(),
         "report": report.to_payload(),
     }
 
@@ -753,10 +752,6 @@ def _scope_matches_report(
     return False
 
 
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
-
-
 def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
     try:
         if not path.exists():
@@ -774,10 +769,6 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
         return "present"
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return "unreadable"
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:

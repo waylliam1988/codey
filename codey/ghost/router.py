@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from codey.ghost import _common
 from codey.ghost._warnings import map_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -31,7 +32,6 @@ from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
 from codey.ghost.numbers import clamp_unit_float
-from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost.schema import clip_signal_text
 from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
@@ -264,7 +264,7 @@ class GhostRouteStore:
                         {
                             "schema_version": ROUTER_SCHEMA_VERSION,
                             "kind": _STATE_KIND,
-                            "updated_at": _now(),
+                            "updated_at": _common.now_iso_z(),
                             "records": [record for record in records],
                             "warnings": [],
                         },
@@ -361,7 +361,7 @@ class GhostRouteStore:
                     "session_ref": session_ref if normalized_scope == "session" else "",
                     "removed_count": removed,
                 },
-                now=_now(),
+                now=_common.now_iso_z(),
                 event_field="kind",
                 timestamp_field="created_at",
                 event_id_prefix="grc_",
@@ -372,7 +372,7 @@ class GhostRouteStore:
                 {
                     "schema_version": ROUTER_SCHEMA_VERSION,
                     "kind": _STATE_KIND,
-                    "updated_at": _now(),
+                    "updated_at": _common.now_iso_z(),
                     "records": kept,
                     "warnings": [],
                 },
@@ -468,7 +468,7 @@ class GhostRouteStore:
                     schema_version=ROUTER_SCHEMA_VERSION,
                     event_name="ghost_router_events_compacted",
                     payload={"records": len(rows)},
-                    now=_now(),
+                    now=_common.now_iso_z(),
                     event_field="kind",
                     timestamp_field="created_at",
                     event_id_prefix="grc_",
@@ -885,7 +885,7 @@ def _route_event(
         "schema_version": ROUTER_SCHEMA_VERSION,
         "kind": "ghost_router_decision",
         "event_id": "gre_" + uuid.uuid4().hex[:24],
-        "created_at": _now(),
+        "created_at": _common.now_iso_z(),
         "run_id": clip_signal_text(request.run_id, 120),
         "session_id": clip_signal_text(request.session_id, 120),
         "session_ref": _session_ref(request.session_id),
@@ -913,7 +913,7 @@ def _event_from_record(record: dict[str, object]) -> dict[str, object]:
     payload["schema_version"] = ROUTER_SCHEMA_VERSION
     payload["kind"] = "ghost_router_decision"
     payload.setdefault("event_id", "gre_" + uuid.uuid4().hex[:24])
-    payload.setdefault("created_at", _now())
+    payload.setdefault("created_at", _common.now_iso_z())
     return payload
 
 
@@ -1114,10 +1114,6 @@ def _read_json_dict(path: Path, *, max_bytes: int) -> dict | None:
 
 def _list(value: object) -> list:
     return value if isinstance(value, list) else []
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 __all__ = [

@@ -2,6 +2,19 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost 时间/项目委托删除、单 _common 缝（未发布）
+
+- 删除十个 ghost store 的 `_now()` / `_normalize_project()` 薄委托，
+  以及 `graph_primitives.now_iso` 转发。调用点经模块对象解析
+  `codey.ghost._common`（`_common.now_iso_z()` /
+  `_common.normalize_project()`），19 处时间补丁迁到唯一的
+  `_common.now_iso_z` 缝且真实生效（时间排序断言全绿即证明 mock 被
+  咨询而非绕过）。
+- 生产逻辑零改动：删掉的函数体全是一行转发。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3974 passed, 6 skipped, 1320 subtests passed in 329.22s`）。
+
 ## Unreleased - Review 修补 + 真进程 kill 恢复（未发布）
 
 - 修了一个真 UI bug：`renderMarkdownChunked` 按固定 120 行独立解析，

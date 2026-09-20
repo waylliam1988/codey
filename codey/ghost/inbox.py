@@ -10,8 +10,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost import _common
 from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -170,7 +169,7 @@ class GhostMemoryCandidate:
             value_key=value_key,
             session_id=clip_signal_text(payload.get("session_id"), 120),
             run_id=clip_signal_text(payload.get("run_id"), 120),
-            project=_normalize_project(payload.get("project")),
+            project=_common.normalize_project(payload.get("project")),
             created_at=clip_signal_text(payload.get("created_at"), 80),
             updated_at=clip_signal_text(payload.get("updated_at"), 80),
             gate_reason=clip_signal_text(payload.get("gate_reason"), 160),
@@ -397,7 +396,7 @@ class GhostInboxStore:
                     break
             if target_index is None:
                 return None
-            now = _now()
+            now = _common.now_iso_z()
             reviewer = clip_signal_text(reviewed_by or "cli", 80)
             target = candidates[target_index]
             new_status = "accepted" if normalized_action == "accept" else "rejected"
@@ -448,7 +447,7 @@ class GhostInboxStore:
                         "reviewed_by": reviewer,
                         "superseded_ids": superseded_ids,
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 )
             )
             if not self._append_events(events):
@@ -486,7 +485,7 @@ class GhostInboxStore:
         normalized_scope = str(scope or "").strip().lower()
         if normalized_scope not in SIGNAL_SCOPES:
             raise ValueError("scope must be user, project, or session")
-        normalized_project = _normalize_project(project)
+        normalized_project = _common.normalize_project(project)
         normalized_session = clip_signal_text(session_id, 120)
         if normalized_scope == "project" and not normalized_project:
             raise ValueError("project is required for project scope deletion")
@@ -517,7 +516,7 @@ class GhostInboxStore:
                     "session_id": normalized_session if normalized_scope == "session" else "",
                     "removed_count": removed,
                 },
-                now=_now(),
+                now=_common.now_iso_z(),
             )
             self._rewrite_events_from_candidates(remaining, control_event=control)
             try:
@@ -530,7 +529,7 @@ class GhostInboxStore:
         payload = {
             "schema_version": INBOX_SCHEMA_VERSION,
             "learning_enabled": bool(enabled),
-            "updated_at": _now(),
+            "updated_at": _common.now_iso_z(),
         }
         try:
             with with_file_lock(self.events_path):
@@ -541,7 +540,7 @@ class GhostInboxStore:
                             schema_version=INBOX_SCHEMA_VERSION,
                             event_name="ghost_learning_settings_updated",
                             payload={"learning_enabled": bool(enabled)},
-                            now=_now(),
+                            now=_common.now_iso_z(),
                         )
                     ]
                 )
@@ -645,7 +644,7 @@ class GhostInboxStore:
         run_id: str,
         project: str,
     ) -> GhostMemoryCandidate:
-        now = _now()
+        now = _common.now_iso_z()
         signal_kind = str(signal.kind or "").strip().lower()
         candidate_id = "gmc_" + uuid.uuid4().hex[:24]
         return GhostMemoryCandidate(
@@ -661,7 +660,7 @@ class GhostInboxStore:
             value_key=value_key_for_signal(signal),
             session_id=clip_signal_text(session_id, 120),
             run_id=clip_signal_text(run_id, 120),
-            project=_normalize_project(project),
+            project=_common.normalize_project(project),
             created_at=now,
             updated_at=now,
             gate_reason=decision.reason,
@@ -727,7 +726,7 @@ class GhostInboxStore:
     ) -> list[GhostMemoryCandidate]:
         statuses = _status_filter(status)
         normalized_scope = str(scope or "").strip().lower()
-        normalized_project = _normalize_project(project)
+        normalized_project = _common.normalize_project(project)
         normalized_session = clip_signal_text(session_id, 120)
         rows: list[GhostMemoryCandidate] = []
         for candidate in candidates:
@@ -849,7 +848,7 @@ class GhostInboxStore:
             "schema_version": INBOX_SCHEMA_VERSION,
             "kind": _PROJECTION_KIND,
             "source": "events.jsonl",
-            "updated_at": _now(),
+            "updated_at": _common.now_iso_z(),
             "candidates": candidates[:MAX_INBOX_ITEMS],
             "warnings": list(self.last_warnings),
         }
@@ -897,7 +896,7 @@ class GhostInboxStore:
                 "max_events": MAX_GHOST_EVENTS,
                 "max_event_bytes": MAX_EVENTS_BYTES,
             },
-            now=_now(),
+            now=_common.now_iso_z(),
         )
 
     def _candidate_event(
@@ -909,7 +908,7 @@ class GhostInboxStore:
         return {
             "schema_version": INBOX_SCHEMA_VERSION,
             "type": "ghost_memory_candidate_upsert",
-            "ts": _now(),
+            "ts": _common.now_iso_z(),
             "action": action,
             "signal_schema_version": SIGNAL_SCHEMA_VERSION,
             "candidate": candidate.to_payload(),
@@ -923,7 +922,7 @@ class GhostInboxStore:
         return {
             "schema_version": INBOX_SCHEMA_VERSION,
             "type": "ghost_memory_candidate_rejected",
-            "ts": _now(),
+            "ts": _common.now_iso_z(),
             "signal_schema_version": SIGNAL_SCHEMA_VERSION,
             "signal_kind": clip_signal_text(getattr(signal, "kind", ""), 80),
             "scope": clip_signal_text(getattr(signal, "scope", ""), 40),
@@ -1096,10 +1095,6 @@ def _clean_evidence_refs(
     return tuple(f"{candidate_id}:{index}" for index in range(1, count + 1))
 
 
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
-
-
 def _clean_metadata(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
@@ -1135,10 +1130,6 @@ def _int_or_default(value: object, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _compact_timestamp() -> str:

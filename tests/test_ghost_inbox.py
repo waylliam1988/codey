@@ -542,7 +542,7 @@ class GhostInboxStoreTests(unittest.TestCase):
     def test_applicable_candidates_keep_newest_first_within_same_scope(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = GhostInboxStore(td)
-            with mock.patch("codey.ghost.inbox._now", return_value="2026-01-01T00:00:01Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:01Z"):
                 store.ingest_signals(
                     _result(_signal(
                         "style_preference",
@@ -554,7 +554,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                     run_id="r-old",
                     project=td,
                 )
-            with mock.patch("codey.ghost.inbox._now", return_value="2026-01-01T00:00:02Z"):
+            with mock.patch("codey.ghost._common.now_iso_z", return_value="2026-01-01T00:00:02Z"):
                 store.ingest_signals(
                     _result(_signal(
                         "style_preference",

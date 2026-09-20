@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost import _common
 from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -43,9 +43,6 @@ from codey.ghost.graph_primitives import (
 )
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
-)
-from codey.ghost.graph_primitives import (
-    now_iso as _shared_now_iso,
 )
 from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
@@ -279,7 +276,7 @@ class GhostHebbianStore:
                     return GhostReinforceResult(False, "events_read_blocked")
                 node_by_id = {node.id: node for node in nodes}
                 edge_by_key = {_edge_key(edge): edge for edge in edges}
-                now = _now()
+                now = _common.now_iso_z()
                 node_id = node_id_for_candidate(candidate)
                 current = node_by_id.get(node_id)
                 known_evidence = set(current.evidence_refs if current else ())
@@ -419,7 +416,7 @@ class GhostHebbianStore:
                         "removed_nodes": len(removed_ids),
                         "removed_edges": len(removed_edges),
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 ),
             )
             # Symmetric with the reinforce path: a projection write failure
@@ -547,7 +544,7 @@ class GhostHebbianStore:
                         "removed_nodes": len(removed_ids),
                         "removed_edges": len(removed_edges),
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 ),
             )
             self._write_projection(remaining_nodes, remaining_edges)
@@ -580,7 +577,7 @@ class GhostHebbianStore:
                         "warnings": list(self.last_warnings),
                     }
             nodes, edges = self._load_state_unlocked()
-            now = _now()
+            now = _common.now_iso_z()
             interval = max(0, int(min_interval_seconds or 0))
             if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                 return {
@@ -624,7 +621,7 @@ class GhostHebbianStore:
                         "decayed_nodes": decayed_node_count,
                         "decayed_edges": decayed_edge_count,
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 ),
             )
             self._write_projection(bounded_nodes, bounded_edges)
@@ -770,7 +767,7 @@ class GhostHebbianStore:
             "schema_version": HEBBIAN_SCHEMA_VERSION,
             "kind": _STATE_KIND,
             "source": "hebbian_events.jsonl",
-            "updated_at": _now(),
+            "updated_at": _common.now_iso_z(),
             "nodes": [node.to_payload() for node in node_rows],
             "edges": [edge.to_payload() for edge in edge_rows],
             "warnings": list(self.last_warnings),
@@ -799,7 +796,7 @@ class GhostHebbianStore:
                         "max_events": MAX_HEBBIAN_EVENTS,
                         "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 ),
             )
         except (OSError, TypeError, ValueError):
@@ -856,7 +853,7 @@ class GhostHebbianStore:
                         "max_events": MAX_HEBBIAN_EVENTS,
                         "max_event_bytes": MAX_HEBBIAN_EVENTS_BYTES,
                     },
-                    now=_now(),
+                    now=_common.now_iso_z(),
                 ),
             )
 
@@ -1080,7 +1077,7 @@ def _node_event(node: GhostNode, *, action: str) -> dict[str, object]:
     return {
         "schema_version": HEBBIAN_SCHEMA_VERSION,
         "type": event_type,
-        "ts": _now(),
+        "ts": _common.now_iso_z(),
         "action": action,
         "node": node.to_payload(),
     }
@@ -1090,7 +1087,7 @@ def _edge_event(edge: GhostEdge, *, action: str) -> dict[str, object]:
     return {
         "schema_version": HEBBIAN_SCHEMA_VERSION,
         "type": "ghost_hebbian_edge_upsert",
-        "ts": _now(),
+        "ts": _common.now_iso_z(),
         "action": action,
         "edge": edge.to_payload(),
     }
@@ -1138,14 +1135,10 @@ def _scope_ref_for_candidate(candidate: GhostMemoryCandidate) -> str:
 
 def _scope_ref_for_filter(scope: str, *, project: str, session_id: str) -> str:
     if scope == "project":
-        return _normalize_project(project)
+        return _common.normalize_project(project)
     if scope == "session":
         return clip_signal_text(session_id, 120)
     return ""
-
-
-def _normalize_project(value: object) -> str:
-    return _shared_normalize_project(value)
 
 
 def _edge_key(edge: GhostEdge) -> tuple[str, str, str]:
@@ -1208,10 +1201,6 @@ def _clamp01(value: float) -> float:
 
 def _parse_ts(value: object) -> datetime:
     return _shared_parse_ts(value)
-
-
-def _now() -> str:
-    return _shared_now_iso()
 
 
 def _compact_timestamp() -> str:
