@@ -981,7 +981,7 @@ tool args digest 稳定且不含 raw secret
 新增：
 
 ```text
-codey/tool_args_repair.py
+codey/toolchain/tool_args_repair.py
 tests/test_tool_args_repair.py
 tests/manual/tool_args_repair_smoke.py
 tests/manual/tool_args_repair_simulated_ab.py
@@ -1299,7 +1299,7 @@ subtests passed in 290.34s (0:04:50)` 完成）。目标是让 coding 和 resear
 新增：
 
 ```text
-codey/tool_prompt.py
+codey/toolchain/tool_prompt.py
 tests/test_tool_prompt.py
 tests/test_tool_contract_drift.py
 ```

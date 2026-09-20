@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from functools import partial
 
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -119,6 +118,15 @@ class SourceTrustProjection:
         return payload
 
 
+def _object_getter(source: object):
+    """getattr-style getter with a None default for non-mapping sources."""
+
+    def get(name, default=None):
+        return getattr(source, name, default)
+
+    return get
+
+
 def project_source_trust(source: object) -> SourceTrustProjection | None:
     """Project one source mapping/object into trust facts.
 
@@ -126,7 +134,7 @@ def project_source_trust(source: object) -> SourceTrustProjection | None:
     usable identity, so callers can drop half facts instead of guessing.
     """
 
-    get = source.get if isinstance(source, Mapping) else partial(getattr, source)
+    get = source.get if isinstance(source, Mapping) else _object_getter(source)
     raw_id = str(get("source_id") or "")
     ref = _normalize_runtime_ref(raw_id, kind="source")
     host = _host_of(get("host"), get("final_url_ref"), get("requested_url_ref"))

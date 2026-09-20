@@ -1,5 +1,35 @@
 # Codey Test Report
 
+## Tool modules into toolchain, mypy baseline, I/SIM debt zero (2026-09-21)
+
+Scope:
+
+```text
+codey/toolchain/tool_args_repair.py + tool_prompt.py (moved, git mv keeps history)
+codey/protocols, runtime/effects, research, tests: repathed imports
+pyproject.toml: [tool.mypy] baseline (non-gating) + I/SIM enabled in gate
+tests: purity-path update, no-orphan lock, mypy-config lock
+ruff autofix: I001 x427, SIM105 x114, SIM117, SIM102/110, SIM114/300, small rules
+hand fixes: source_trust getter (partial->helper), scorer enumerate,
+  send_loop/flow/definition/map merges (elif equivalence verified)
+docs: CHANGELOG.md, CHANGELOG.zh-CN.md, ROADMAP.zh-CN.md (moved paths)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+- Cold start: toolchain/__init__ stays an empty docstring; importtime spot-checked
+- Debt counts: `ruff --select I,SIM`: 0 remaining (was 746)
+- Targeted gates: tool/protocol/trace/architecture suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3931 passed, 6 skipped, 1320 subtests passed in 269.74s (0:04:29)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## TaskState protocol, services split, assembly-only AppContext (2026-09-21)
 
 Scope:

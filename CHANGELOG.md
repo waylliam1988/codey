@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Tool modules into toolchain, mypy baseline, I/SIM debt zero (no release)
+
+- Moved `codey/tool_args_repair.py` + `codey/tool_prompt.py` into
+  `codey/toolchain/` next to the tool definitions they serve (not
+  `repairs/`, which is adapter self-repair). `toolchain/__init__.py` is an
+  empty docstring so cold start is unchanged; ~13 import sites updated plus
+  the purity-path test and a new no-orphan `tool_*.py` architecture lock.
+- `[tool.mypy]` baseline config (non-gating; CI stays ruff + pytest +
+  node): `python -m mypy codey` reports 493 errors in 106 files as of
+  2026-09-21. Locked by a config-existence test; counts ratchet down only.
+- Import debt zero: `ruff --fix` sorted 427 `I001` sites; `SIM105` (114) to
+  `contextlib.suppress`, `SIM117` to single `with` statements
+  (half auto-fixed, half merged by script + by hand), small rules
+  auto-fixed, `SIM102`/`SIM110` merged (one `elif` merge verified
+  branch-equivalent), two hand fixes (`functools.partial` getter,
+  `enumerate` counter). One `partial` regression (dropped `default=None`)
+  was caught by `test_source_trust` and fixed with a named helper.
+- `I` + `SIM` enabled in the ruff gate after the debt hit zero.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3931 passed, 6 skipped, 1320 subtests passed in 269.74s`).
+
 ## Unreleased - TaskState protocol, services split, assembly-only AppContext (no release)
 
 - New `operations/task_state.py`: `TaskState` Protocol (stdlib-only at

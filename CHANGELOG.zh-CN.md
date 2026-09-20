@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - tool 模块进 toolchain、mypy 基线、I/SIM 清零（未发布）
+
+- `codey/tool_args_repair.py` + `codey/tool_prompt.py` 移入
+  `codey/toolchain/`（definition 旁边；不进 `repairs/`，那是 adapter
+  自修复的地盘）。`toolchain/__init__.py` 是空 docstring，冷启动零变化；
+  约 13 处引用更新，purity 测试改路径，新增 `tool_*.py` 不许回根目录的
+  架构锁。
+- `[tool.mypy]` 基线配置（不卡门；CI 还是 ruff + pytest + node）：
+  `python -m mypy codey` 基线 493 errors / 106 files（2026-09-21），配
+  置存在性测试锁住，只许减少。
+- Import 债清零：`ruff --fix` 修 427 个 `I001`；`SIM105`（114）转
+  `suppress`，`SIM117` 合单 `with`（一半自动一半脚本+手工），小规则自动
+  修，`SIM102`/`SIM110` 合并（含一处 `elif` 分支等价 verified）。
+  一处 `partial` 回归（丢 `default=None`）被 `test_source_trust` 抓住，
+  改命名 helper 修好。
+- 债清零后打开 `I` + `SIM` 门禁。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3931 passed, 6 skipped, 1320 subtests passed in 269.74s`）。
+
 ## Unreleased - TaskState 协议、services 拆分、AppContext 只做装配（未发布）
 
 - 新增 `operations/task_state.py`：`TaskState` Protocol（运行时零导入），
