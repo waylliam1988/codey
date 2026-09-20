@@ -2,6 +2,68 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 正确性加固：shell spawn 门、耐久追加、Worker 拆锁、supervisor 落盘、冷启动 catalog、ghost 原语、分阶段 task runner（未发布）
+
+- Shell `Stop -> Allow` 竞态已收口：不可变 `ShellExecutionTicket`
+ （`app/services.py`）。认领（pop + generation + stop flag + cwd 解析）在
+  `AppContext.claim_shell_ticket` / `services.mint_shell_ticket` 内原子完成；
+  执行前最终检查 + `Popen` 持有专用 `AppContext._shell_spawn_gate`，
+  Stop 过期路径同样持该门。`cancellation.py` 把 `run_process` 拆成
+  `start_process`（检查 + 启动，门内）和 `wait_process`（门外可取消等待）。
+  直接执行（`execute_approved_shell`）走同一 ticket 路径。拒绝路径仍直接
+  pop，无 ticket 不执行，无多余 fallback。
+- 追加日志全部耐久化：新增 `storage/atomic_io.append_bytes_durable`
+ （追加 + flush + fsync，锁仍归调用方），`runs/ledger.py`、
+  `ghost/event_log.py`、`runtime/log/session_log.py` 快路径都走它。
+  现有文件锁与截断预算不动。
+- `WorkerChatProvider` 不再让 close 排队等长 send：拆分门控
+  （`_conn_lock` 管生命周期，`_request_lock` 保 stdin 单发），响应队列有界
+  （`RESPONSE_QUEUE_MAXSIZE=512`，`_offer_response` 丢最老并计数），
+  按 id 跳过过期响应不变，`close()` 只持 conn 锁终止。`_start` 失败会清理
+  半启动子进程，不再泄漏读线程。
+- `providers/revival.py` 读改写全包 `with_file_lock`（lost update 修好）；
+  `ProviderSupervisor` 锁内只更新内存并快照、锁外落盘（`_save_snapshot`），
+  失败记 `_last_save_error` 不再静默吞掉；`select()` 按快照决策，不再重入
+  保存。`run_half_open_canary` 把 `DeadlineExceeded` 显式记为 transient；
+  `TaskCancelled` 照常上抛。`handle_profile_doctor` / `handle_flow_recovery`
+  预算耗尽后不再试下一个兄弟（`DeadlineExceeded -> return None`），
+  send lambda 绑定 `helper`（B023，含 `mimo.py` 的 `built_in_ready`）。
+- 冷启动保持轻量且接线更少：新增纯 stdlib `providers/catalog.py` 拥有
+  id/label/端口；`registry.py` 重导出静态量（单一真相源），连接接口与测试
+  patch 点不动。`codey.providers.__init__` 静态名解析到 catalog，
+  `--help` / `provider_ids()` 永不 import Playwright。`app/server.py`
+  import 时不再构造 `AppContext`：懒 `get_state()`（兼容已 patch 的
+  `server.STATE`）。
+- `KnowledgeIndex` close 后写操作 fail-closed（写锁内 `_ensure_open_locked`，
+  读走 read-conn 锁检查）；`AppContext.close()` 有界等 ghost-sleep 后一定
+  继续关耐久资源，不再提前 return 泄漏 store。
+- Ghost 人格层不动：新增 `ghost/graph_primitives.py` 只收编两边本来就一致的
+  半衰期数学（`parse_ts`、`now_iso`、`decay_basis_of`、`exp_decay_factor`、
+  `decayed_by_half_life`、`any_decay_due`）。`hebbian.py` / `affinity.py`
+ 保留各自 clamp（`_clamp01` 与 `clamp_unit_float` 在 `bool` 上语义不同）、
+  ref 合并与 affinity spec 投影层；私有 helper 改为委托。
+- `operations/task_run.py` 的 `execute_task_run` 在本模块内拆成命名阶段
+  （不造大 `TaskRunner`，`task_phases/` 不动）：`_RunSetup` +
+  `_setup_run_state`、`_PhaseWork` + `_build_workload`、`_route_ghost_work`
+ （ghost 前路由；post-turn 留在 settlement）、`_connect_provider_frame`
+ （review 照旧跳过 provider），之后仍是现有 dispatch/finish 委托。
+  `app/context.py` 压回 1000 行护栏（兄弟探针 preamble 提成
+  `_sibling_candidates`）。
+- 债务：修掉 3×`B023` 及附带项，零新增——
+  `ruff check codey tests --select B,UP,I,SIM` 现为
+  `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`
+ （之前 `950 (B:35, UP:223, I:376, SIM:316), 681 fixable`）。
+- 新增测试：`test_append_durable.py`、`test_p1_hardening.py`（revival 加锁、
+  supervisor 落盘错误、canary deadline、闭包捕获、knowledge close）、
+  `test_ghost_graph_primitives.py`、`test_provider_catalog_cold.py`
+  （子进程级 import 成本证明）、`test_server_lazy_state.py`；epoch /
+  coldstart / server / shell 套件跟进 ticket、门控、有界队列与认领期
+  cwd fail-closed 行为。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿（含长文件护栏）；聚焦回归全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3852 passed, 6 skipped, 1304 subtests passed in 278.78s`）。
+
 ## Unreleased - Release 卫生：空白、债务重计、探针配额、roadmap 路径（未发布）
 
 - 修复 `git show --check HEAD` 空白问题：5 个 `operations/task_phases/*.py`

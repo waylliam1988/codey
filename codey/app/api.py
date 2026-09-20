@@ -402,21 +402,13 @@ def shell_approval_response(
 ) -> tuple[int, dict]:
     approval_id = str(body.get("id") or "").strip()
     approved = body.get("approved") is True
-    pending = ctx.pop_pending_shell_approval(approval_id)
-    if not pending:
-        return 404, {"error": "approval not found"}
-    # Internal epoch, never leaked to events/UI. A Stop that lands after pop
-    # bumps the generation; the claim below (and a second check inside
-    # execute_approved_shell just before Popen) makes Stop win.
-    try:
-        claimed_generation = int(pending.pop("_approval_generation", 0) or 0)
-    except (TypeError, ValueError):
-        claimed_generation = 0
-    project = str(pending.get("project") or "").strip()
-    max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
-    session_id = pending["session_id"]
-    command = pending["command"]
     if not approved:
+        pending = ctx.pop_pending_shell_approval(approval_id)
+        if not pending:
+            return 404, {"error": "approval not found"}
+        pending.pop("_approval_generation", None)
+        session_id = pending["session_id"]
+        command = pending["command"]
         event = {
             "type": "shell_result",
             "run_id": pending.get("run_id") or "",
@@ -431,13 +423,26 @@ def shell_approval_response(
         ctx.record_shell_result(event)
         return 200, {"ok": True, "approved": False, "event": event}
 
-    if _shell_claim_expired(ctx, claimed_generation):
+    # Approved path: atomic claim (pop + generation + stop + cwd) under one
+    # lock hold, then ticket-only execution with a spawn gate before Popen.
+    # Internal epoch, never leaked to events/UI.
+    from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
+
+    pending, ticket = ctx.claim_shell_ticket(
+        approval_id,
+        timeout=SHELL_TIMEOUT,
+        output_limit=SHELL_OUTPUT_LIMIT,
+    )
+    if pending is None:
+        return 404, {"error": "approval not found"}
+    project = str(pending.get("project") or "").strip()
+    max_turns = int(pending.get("max_turns") or DEFAULT_MAX_TURNS)
+    session_id = pending["session_id"]
+    command = pending["command"]
+    if ticket is None:
         return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
 
-    result = services.execute_approved_shell(
-        ctx, project, pending["cwd"], command,
-        expected_approval_generation=claimed_generation,
-    )
+    result = services.execute_shell_ticket(ctx, ticket)
     if result.get("status") == "stopped" or result.get("stopped"):
         return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
     event = {

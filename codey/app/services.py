@@ -465,17 +465,91 @@ def safe_project_cwd(project: str | Path, rel: str) -> Path:
     return cwd
 
 
-def execute_approved_shell(
-    ctx: Any,
-    project: str | Path,
-    rel: str,
-    command: str,
+@dataclass(frozen=True)
+class ShellExecutionTicket:
+    """Single-use, immutable shell spawn authorization.
+
+    Minted under ``ctx.lock`` by ``AppContext.claim_shell_ticket``: generation,
+    stop flag, resolved cwd, and approval consumption happen together, so an
+    Allow cannot outrun a concurrent Stop. The execution layer only accepts
+    this ticket and re-validates it under the same lock immediately before
+    Popen (spawn gate)."""
+
+    command: str
+    cwd: Path
+    generation: int
+    timeout: int
+    output_limit: int
+
+
+def mint_shell_ticket(
     *,
-    timeout: int | None = None,
-    output_limit: int | None = None,
-    expected_approval_generation: int | None = None,
-) -> dict:
-    command = (command or "").strip()
+    lock: Any,
+    approvals: Any,
+    run_registry: Any,
+    approval_id: str,
+    timeout: int,
+    output_limit: int,
+) -> tuple[dict | None, ShellExecutionTicket | None]:
+    """Atomically consume an approval and mint a spawn ticket.
+
+    Pop, generation snapshot, stop-flag snapshot, and cwd resolution happen
+    under one ``lock`` hold so Stop cannot invalidate the claim between
+    steps. Returns ``(pending, ticket)``; ``ticket`` is None when the claim
+    is stale/stopped or the cwd fails closed. ``pending`` is still returned
+    for stopped-denial event recording."""
+
+    with lock:
+        pending = approvals.pop_shell(approval_id)
+        if pending is None:
+            return None, None
+        try:
+            claimed_generation = int(pending.pop("_approval_generation", 0) or 0)
+        except (TypeError, ValueError):
+            claimed_generation = 0
+        current_generation = approvals.current_generation()
+        try:
+            stop_set = bool(run_registry.stop_flag.is_set())
+        except Exception:
+            return pending, None
+        if stop_set or int(claimed_generation or 0) != int(current_generation or 0):
+            return pending, None
+        try:
+            cwd = safe_project_cwd(
+                str(pending.get("project") or ""),
+                str(pending.get("cwd") or "."),
+            )
+        except Exception:
+            return pending, None
+        ticket = ShellExecutionTicket(
+            command=str(pending.get("command") or ""),
+            cwd=cwd,
+            generation=int(claimed_generation or 0),
+            timeout=int(timeout),
+            output_limit=int(output_limit),
+        )
+        return pending, ticket
+
+
+def _shell_gate(ctx: Any) -> Any:
+    """Spawn gate shared with the Stop path.
+
+    Production ``AppContext._shell_spawn_gate`` is also held while Stop bumps
+    the approval generation, so holding it across final-check+Popen closes
+    the window. It is deliberately *not* ``ctx.lock``: the final check calls
+    ``ctx.approval_generation()``, which takes ``ctx.lock`` itself, so
+    gating on ``ctx.lock`` would self-deadlock. Test doubles without a gate
+    fall back to a private lock (no cross-path atomicity, same code path)."""
+    gate = getattr(ctx, "_shell_spawn_gate", None)
+    if gate is not None:
+        return gate
+    return threading.Lock()
+
+
+def execute_shell_ticket(ctx: Any, ticket: ShellExecutionTicket) -> dict:
+    """Execute an already-claimed ticket. Final Stop check and Popen happen
+    under the spawn gate; waiting happens outside the gate."""
+    command = (ticket.command or "").strip()
     if not command:
         return {
             "ok": False,
@@ -484,41 +558,46 @@ def execute_approved_shell(
             "exit_code": None,
             "output": "",
         }
-    timeout = SHELL_TIMEOUT if timeout is None else timeout
-    output_limit = SHELL_OUTPUT_LIMIT if output_limit is None else output_limit
     try:
-        cwd = safe_project_cwd(project, rel)
-        # Second Stop check in the same critical state as api.py, immediately
-        # before Popen, to narrow the claim-then-execute window. Re-resolve
-        # the cwd as well so a symlink swap between approval and execution is
-        # more likely to fail closed here than inside the child.
-        if expected_approval_generation is not None and not _approval_generation_current(
-            ctx, expected_approval_generation
-        ):
-            return _stopped_shell_result()
-        try:
-            stop_set = bool(ctx.run_registry.stop_flag.is_set())
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            stop_set = False
-        if stop_set:
-            return _stopped_shell_result()
-        cwd = safe_project_cwd(project, rel)
-        with cancellation.scope(ctx.run_registry.stop_flag):
-            proc = cancellation.run_process(
-                command,
-                cwd=cwd,
-                timeout=timeout,
-                shell=True,
-            )
+        gate = _shell_gate(ctx)
+        with gate:
+            if not _approval_generation_current(ctx, ticket.generation):
+                return _stopped_shell_result()
+            try:
+                stop_flag = ctx.run_registry.stop_flag
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception:
+                stop_flag = None
+            try:
+                stop_set = bool(stop_flag.is_set()) if stop_flag is not None else False
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception:
+                stop_set = False
+            if stop_set:
+                return _stopped_shell_result()
+            # Commit point: Popen while still holding the gate so a Stop that
+            # needs the same gate to bump the generation cannot interleave.
+            with cancellation.scope(stop_flag):
+                proc, job = cancellation.start_process(
+                    command,
+                    cwd=ticket.cwd,
+                    shell=True,
+                )
+        stop_flag_after = getattr(
+            getattr(ctx, "run_registry", None), "stop_flag", None
+        )
+        with cancellation.scope(stop_flag_after):
+            completed = cancellation.wait_process(proc, job, command, ticket.timeout)
+            proc = completed
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
     except subprocess.TimeoutExpired:
         return {
             "ok": False,
             "status": "timeout",
-            "error": f"command timed out after {timeout}s",
+            "error": f"command timed out after {ticket.timeout}s",
             "exit_code": None,
             "output": "",
         }
@@ -537,7 +616,7 @@ def execute_approved_shell(
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    output, truncated = clip_middle(output, output_limit)
+    output, truncated = clip_middle(output, ticket.output_limit)
     return {
         "ok": True,
         "status": "exit",
@@ -546,6 +625,57 @@ def execute_approved_shell(
         "output": output,
         "truncated": truncated,
     }
+
+
+def execute_approved_shell(
+    ctx: Any,
+    project: str | Path,
+    rel: str,
+    command: str,
+    *,
+    timeout: int | None = None,
+    output_limit: int | None = None,
+    expected_approval_generation: int | None = None,
+) -> dict:
+    """Direct-execution entry (tests, headless). Approval-card flow must use
+    ``AppContext.claim_shell_ticket`` + ``execute_shell_ticket`` instead."""
+    command = (command or "").strip()
+    if not command:
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": "command required",
+            "exit_code": None,
+            "output": "",
+        }
+    resolved_timeout = SHELL_TIMEOUT if timeout is None else timeout
+    resolved_limit = SHELL_OUTPUT_LIMIT if output_limit is None else output_limit
+    try:
+        cwd = safe_project_cwd(project, rel)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "spawn_error",
+            "error": str(exc),
+            "exit_code": None,
+            "output": "",
+        }
+    generation: int | None = expected_approval_generation
+    if generation is None:
+        try:
+            generation = int(ctx.approval_generation())
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            return _stopped_shell_result()
+        except Exception:
+            generation = 0
+    ticket = ShellExecutionTicket(
+        command=command,
+        cwd=cwd,
+        generation=int(generation or 0),
+        timeout=resolved_timeout,
+        output_limit=resolved_limit,
+    )
+    return execute_shell_ticket(ctx, ticket)
 
 
 def build_shell_approval_continuation(

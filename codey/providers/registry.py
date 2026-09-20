@@ -13,8 +13,15 @@ from codey.automation.browser import (
     detect_open_provider_tabs,
     warm_provider_tabs as browser_warm_provider_tabs,
 )
-from codey.providers.ids import normalize_provider_id
 from codey.providers.base import ChatProvider
+from codey.providers.catalog import (
+    DEFAULT_PROVIDER_ID,
+    PROVIDER_LABELS,
+    PROVIDER_WORKER_PORT_OFFSETS,
+    WEB_PROVIDER_LABELS,
+    WORKER_CHILD_ENV,
+)
+from codey.providers.ids import normalize_provider_id
 from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
 from codey.providers.web_provider import (
     DeepSeekWebProvider,
@@ -25,18 +32,6 @@ from codey.providers.web_provider import (
 )
 from codey.providers.worker import WorkerChatProvider
 
-DEFAULT_PROVIDER_ID = "deepseek"
-PROVIDER_LABELS = {
-    "deepseek": "DeepSeek",
-    "mimo": "MiMo",
-    "stepfun": "StepFun",
-    "qwen": "Qwen",
-    "glm": "GLM",
-    "local": "Local",
-}
-WEB_PROVIDER_LABELS = {
-    key: label for key, label in PROVIDER_LABELS.items() if key != "local"
-}
 PROVIDER_TYPES = {
     "deepseek": DeepSeekWebProvider,
     "mimo": MimoWebProvider,
@@ -45,14 +40,6 @@ PROVIDER_TYPES = {
     "glm": GlmWebProvider,
     "local": LocalOpenAIProvider,
 }
-PROVIDER_WORKER_PORT_OFFSETS = {
-    "deepseek": 101,
-    "mimo": 102,
-    "qwen": 103,
-    "glm": 104,
-    "stepfun": 105,
-}
-WORKER_CHILD_ENV = "CODEY_PROVIDER_WORKER_CHILD"
 
 
 @dataclass

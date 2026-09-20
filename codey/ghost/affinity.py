@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field, is_dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 import hashlib
-import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
@@ -19,6 +18,21 @@ from codey.ghost.event_log import (
     GhostEventLog,
     compact_result_payload as _compact_payload,
     event_file_stats as _event_file_stats,
+)
+from codey.ghost.graph_primitives import (
+    any_decay_due as _shared_any_decay_due,
+)
+from codey.ghost.graph_primitives import (
+    decay_basis_of as _shared_decay_basis_of,
+)
+from codey.ghost.graph_primitives import (
+    decayed_by_half_life as _shared_decayed_by_half_life,
+)
+from codey.ghost.graph_primitives import (
+    now_iso as _shared_now_iso,
+)
+from codey.ghost.graph_primitives import (
+    parse_ts as _shared_parse_ts,
 )
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -1796,13 +1810,11 @@ def _decay_edge(edge: AffinityEdge, *, now: str) -> AffinityEdge:
 
 
 def _decay_basis(row: AffinityNode | AffinityEdge) -> str:
-    return row.last_decayed_at or row.last_reinforced_at or row.updated_at
+    return _shared_decay_basis_of(row.last_decayed_at, row.last_reinforced_at, row.updated_at)
 
 
 def _decayed_weight(weight: float, basis: str, now: str, half_life_days: float) -> float:
-    age = max(0.0, (_parse_ts(now) - _parse_ts(basis)).total_seconds())
-    half_life_seconds = max(1.0, float(half_life_days) * 24.0 * 60.0 * 60.0)
-    return _unit_float(float(weight or 0.0) * math.exp(-(math.log(2.0) / half_life_seconds) * age))
+    return _unit_float(_shared_decayed_by_half_life(weight, basis, now, half_life_days))
 
 
 def _any_decay_due(
@@ -1811,15 +1823,11 @@ def _any_decay_due(
     now: str,
     min_interval_seconds: int,
 ) -> bool:
-    threshold = max(0, int(min_interval_seconds or 0))
-    if threshold <= 0:
-        return True
-    now_ts = _parse_ts(now)
-    for row in rows:
-        age = max(0.0, (now_ts - _parse_ts(_decay_basis(row))).total_seconds())
-        if age >= threshold:
-            return True
-    return False
+    return _shared_any_decay_due(
+        (_decay_basis(row) for row in rows),
+        now=now,
+        min_interval_seconds=min_interval_seconds,
+    )
 
 
 def _bounded_nodes(nodes: Iterable[AffinityNode]) -> list[AffinityNode]:
@@ -2673,20 +2681,11 @@ def _unit_float(value: object) -> float:
 
 
 def _parse_ts(value: object) -> datetime:
-    text = str(value or "").strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return datetime.now(timezone.utc)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    return _shared_parse_ts(value)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

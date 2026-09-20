@@ -870,5 +870,28 @@ class RuntimeSessionLogTests(unittest.TestCase):
                     RuntimeLogEntry.from_payload(payload)
 
 
+class SessionLogDurableAppendTests(unittest.TestCase):
+    def test_mutate_fast_path_fsyncs(self) -> None:
+        from unittest import mock
+
+        from codey.storage.atomic_io import append_bytes_durable
+
+        with tempfile.TemporaryDirectory() as td:
+            log = RuntimeSessionLog(Path(td))
+            with mock.patch(
+                "codey.storage.atomic_io.append_bytes_durable",
+                wraps=append_bytes_durable,
+            ) as durable:
+                _commit_entry_via_mutate(
+                    log,
+                    "session-durable",
+                    lane="current",
+                    operation_id="op-1",
+                    kind="operation_started",
+                    payload={"operation_kind": "agent"},
+                )
+            self.assertTrue(durable.called)
+
+
 if __name__ == "__main__":
     unittest.main()

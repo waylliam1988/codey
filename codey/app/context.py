@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from collections import OrderedDict
 from pathlib import Path
 from typing import cast
@@ -75,6 +75,18 @@ def _profile_doctor_timeout(deadline: float) -> float:
     return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
 
 
+def _sibling_candidates(ctx: object, request_provider_id: str, deadline: float) -> Iterator[str]:
+    """Healthy sibling ids within the deadline (shared probe preamble)."""
+    supervisor = ctx.providers.supervisor
+    for provider_id in app_services.reviewer_candidates(ctx, request_provider_id, supervisor=supervisor)[:3]:
+        cancellation.check()
+        if not supervisor.is_available(provider_id):
+            continue
+        if time.monotonic() >= deadline:
+            return
+        yield provider_id
+
+
 def _close_if_discarded(store: object) -> None:
     """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""
     close = getattr(store, "close", None)
@@ -119,6 +131,9 @@ class AppContext:
             else Path(self._ephemeral_runtime_home.name)
         )
         self.lock = threading.Lock()
+        # Spawn gate: Stop's generation bump and the executor's final
+        # check+Popen both hold it (never self.lock: re-entrant deadlock).
+        self._shell_spawn_gate = threading.Lock()
         # Read the module global at call time (not as a default value) so
         # tests can patch SSE_REPLAY_LIMIT around construction.
         self.event_bus = EventBus(
@@ -464,7 +479,7 @@ class AppContext:
             return False
         expired: tuple[dict, ...] = ()
         if str(payload.get("stop_reason") or "") in {"done", "error", "max_turns", "no_progress", "stopped"}:
-            with self.lock:
+            with self._shell_spawn_gate, self.lock:
                 expired = self.approvals.expire_shell_results(
                     run_id=run_id,
                     output="Run ended; command approval expired.",
@@ -486,7 +501,7 @@ class AppContext:
         denied shell_result for each expired approval under the same lock.
         """
 
-        with self.lock:
+        with self._shell_spawn_gate, self.lock:
             events = self.approvals.expire_shell_results()
         for event in events:
             self.record_shell_result(event)
@@ -494,7 +509,7 @@ class AppContext:
     def expire_stale_shell_approvals(self, active_run_id: str) -> None:
         """Clear approval cards left behind when the user starts new work."""
 
-        with self.lock:
+        with self._shell_spawn_gate, self.lock:
             events = self.approvals.expire_shell_results(
                 exclude_run_id=active_run_id,
                 output="A new task started; command approval expired.",
@@ -509,6 +524,11 @@ class AppContext:
     def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
         with self.lock:
             return self.approvals.pop_shell(approval_id)
+
+    def claim_shell_ticket(self, approval_id: str, *, timeout: int, output_limit: int):
+        return app_services.mint_shell_ticket(
+            lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
+            approval_id=approval_id, timeout=timeout, output_limit=output_limit)
 
     def approval_generation(self) -> int:
         with self.lock:
@@ -841,16 +861,7 @@ class AppContext:
         """Try healthy sibling tabs within one bounded recovery deadline."""
         cancellation.check()
         deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in app_services.reviewer_candidates(
-            self,
-            request.provider_id,
-            supervisor=self.providers.supervisor,
-        )[:3]:
-            cancellation.check()
-            if not self.providers.supervisor.is_available(provider_id):
-                continue
-            if time.monotonic() >= deadline:
-                return None
+        for provider_id in _sibling_candidates(self, request.provider_id, deadline):
             helper = borrow_open_provider(provider_id, request.page)
             if helper is None:
                 continue
@@ -859,6 +870,9 @@ class AppContext:
             except cancellation.TaskCancelled:
                 helper.close()
                 raise
+            except cancellation.DeadlineExceeded:
+                helper.close()
+                return None
             except Exception:
                 helper.close()
                 continue
@@ -866,13 +880,15 @@ class AppContext:
             try:
                 selected = profile_doctor.choose_candidate(
                     request,
-                    lambda prompt: helper.send(
+                    lambda prompt, helper=helper: helper.send(
                         prompt,
                         timeout=_profile_doctor_timeout(deadline),
                     ),
                 )
             except cancellation.TaskCancelled:
                 raise
+            except cancellation.DeadlineExceeded:
+                return None
             except Exception:
                 continue
             finally:
@@ -888,16 +904,7 @@ class AppContext:
         """Ask healthy siblings to choose only among fixed flow predicates."""
         cancellation.check()
         deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in app_services.reviewer_candidates(
-            self,
-            request.provider_id,
-            supervisor=self.providers.supervisor,
-        )[:3]:
-            cancellation.check()
-            if not self.providers.supervisor.is_available(provider_id):
-                continue
-            if time.monotonic() >= deadline:
-                return None
+        for provider_id in _sibling_candidates(self, request.provider_id, deadline):
             helper = borrow_open_provider(provider_id, request.page)
             if helper is None:
                 continue
@@ -907,6 +914,9 @@ class AppContext:
                 except cancellation.TaskCancelled:
                     helper.close()
                     raise
+                except cancellation.DeadlineExceeded:
+                    helper.close()
+                    return None
                 except Exception:
                     helper.close()
                     continue
@@ -914,13 +924,15 @@ class AppContext:
                 try:
                     selected = provider_flow.choose_candidate(
                         request,
-                        lambda prompt: helper.send(
+                        lambda prompt, helper=helper: helper.send(
                             prompt,
                             timeout=_profile_doctor_timeout(deadline),
                         ),
                     )
                 except cancellation.TaskCancelled:
                     raise
+                except cancellation.DeadlineExceeded:
+                    return None
                 except Exception:
                     continue
                 finally:
@@ -941,16 +953,10 @@ class AppContext:
             self._close_requested = True
             self.run_registry.stop_flag.set()
 
-        finished = True
         try:
-            wait_result = self.ghost_sleep_daemon.wait(timeout=2.0)
-            if wait_result is False:
-                finished = False
+            self.ghost_sleep_daemon.wait(timeout=2.0)
         except Exception:
-            finished = False
-
-        if not finished:
-            return
+            pass
 
         resources_closed = True
         with self.lock:

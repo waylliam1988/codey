@@ -15,6 +15,21 @@ from codey.ghost.event_log import (
     control_event as _ghost_control_event,
     event_file_stats as _shared_event_file_stats,
 )
+from codey.ghost.graph_primitives import (
+    any_decay_due as _shared_any_decay_due,
+)
+from codey.ghost.graph_primitives import (
+    decay_basis_of as _shared_decay_basis_of,
+)
+from codey.ghost.graph_primitives import (
+    decayed_by_half_life as _shared_decayed_by_half_life,
+)
+from codey.ghost.graph_primitives import (
+    now_iso as _shared_now_iso,
+)
+from codey.ghost.graph_primitives import (
+    parse_ts as _shared_parse_ts,
+)
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
@@ -1053,14 +1068,11 @@ def _decay_edge(edge: GhostEdge, *, now: str) -> GhostEdge:
 
 
 def _decay_basis(row: GhostNode | GhostEdge) -> str:
-    return row.last_decayed_at or row.last_reinforced_at or row.updated_at
+    return _shared_decay_basis_of(row.last_decayed_at, row.last_reinforced_at, row.updated_at)
 
 
 def _decayed_weight(weight: float, last_reinforced_at: str, now: str, half_life_days: float) -> float:
-    age = max(0.0, (_parse_ts(now) - _parse_ts(last_reinforced_at)).total_seconds())
-    half_life_seconds = max(1.0, float(half_life_days) * 24.0 * 60.0 * 60.0)
-    decay_rate = math.log(2.0) / half_life_seconds
-    return _clamp01(float(weight or 0.0) * math.exp(-decay_rate * age))
+    return _clamp01(_shared_decayed_by_half_life(weight, last_reinforced_at, now, half_life_days))
 
 
 def _any_decay_due(
@@ -1069,15 +1081,11 @@ def _any_decay_due(
     now: str,
     min_interval_seconds: int,
 ) -> bool:
-    threshold = max(0, int(min_interval_seconds or 0))
-    if threshold <= 0:
-        return True
-    now_ts = _parse_ts(now)
-    for row in rows:
-        age = max(0.0, (now_ts - _parse_ts(_decay_basis(row))).total_seconds())
-        if age >= threshold:
-            return True
-    return False
+    return _shared_any_decay_due(
+        (_decay_basis(row) for row in rows),
+        now=now,
+        min_interval_seconds=min_interval_seconds,
+    )
 
 
 def _bounded_nodes(nodes: Iterable[GhostNode]) -> list[GhostNode]:
@@ -1249,20 +1257,11 @@ def _clamp01(value: float) -> float:
 
 
 def _parse_ts(value: object) -> datetime:
-    text = str(value or "").strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return datetime.now(timezone.utc)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    return _shared_parse_ts(value)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _compact_timestamp() -> str:

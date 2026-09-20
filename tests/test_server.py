@@ -401,7 +401,7 @@ class ApprovedShellTests(unittest.TestCase):
 
             with mock.patch.object(
                 app_services.cancellation,
-                "run_process",
+                "wait_process",
                 side_effect=subprocess.TimeoutExpired("cmd", 1),
             ):
                 timed_out = app_services.execute_approved_shell(ctx, td, ".", "sleep 5")
@@ -430,7 +430,13 @@ class ApprovedShellTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(app_services, "SHELL_OUTPUT_LIMIT", 80),
-            mock.patch.object(app_services.cancellation, "run_process", return_value=completed) as run_process,
+            mock.patch.object(
+                app_services.cancellation, "start_process",
+                return_value=(mock.Mock(), mock.Mock()),
+            ) as start_process,
+            mock.patch.object(
+                app_services.cancellation, "wait_process", return_value=completed
+            ),
         ):
             data = app_services.execute_approved_shell(
                 server.AppContext(),
@@ -439,7 +445,7 @@ class ApprovedShellTests(unittest.TestCase):
                 "command",
             )
 
-        self.assertTrue(run_process.call_args.kwargs.get("shell") is True)
+        self.assertTrue(start_process.call_args.kwargs.get("shell") is True)
         self.assertTrue(data["truncated"])
         self.assertTrue(data["output"].startswith("HEAD"))
         self.assertTrue(data["output"].endswith("TAIL"))
@@ -3280,64 +3286,65 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_shell_approval_continuation_uses_current_active_provider(self) -> None:
         state = server.AppContext()
-        run = state.reserve_run(
-            session_id="session-1",
-            project="E:/demo",
-            task="request shell",
-            provider_id="deepseek",
-        )
-        assert run is not None
-        self.assertTrue(state.start_run(run.run_id))
-        self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
-        state.add_pending_shell_approval("shell-1", {
-            "id": "shell-1",
-            "session_id": run.session_id,
-            "run_id": run.run_id,
-            "command": "pytest",
-            "cwd": ".",
-            "project": run.project,
-            "continue_after": True,
-            "max_turns": 8,
-            "provider": "deepseek",
-            "risk_label": "generic",
-        })
-        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
-        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-        thread.start()
-        host, port = httpd.server_address
-        try:
-            with (
-                mock.patch.object(server, "STATE", state),
-                mock.patch.object(app_services, "execute_approved_shell", return_value={
-                    "ok": True,
-                    "exit_code": 0,
-                    "output": "ok",
-                }),
-                mock.patch.object(
-                    server,
-                    "_submit_task_after_slot_release",
-                    return_value="run-next",
-                ) as submit,
-            ):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
-                conn.request(
-                    "POST",
-                    "/api/shell_approval",
-                    body=json.dumps({"id": "shell-1", "approved": True}),
-                    headers={"Content-Type": "application/json"},
-                )
-                response = conn.getresponse()
-                payload = json.loads(response.read().decode("utf-8"))
-                conn.close()
-        finally:
-            httpd.shutdown()
-            httpd.server_close()
-            thread.join(timeout=5)
+        with tempfile.TemporaryDirectory() as project_dir:
+            run = state.reserve_run(
+                session_id="session-1",
+                project=project_dir,
+                task="request shell",
+                provider_id="deepseek",
+            )
+            assert run is not None
+            self.assertTrue(state.start_run(run.run_id))
+            self.assertTrue(state.switch_run_provider(run.run_id, "qwen"))
+            state.add_pending_shell_approval("shell-1", {
+                "id": "shell-1",
+                "session_id": run.session_id,
+                "run_id": run.run_id,
+                "command": "pytest",
+                "cwd": ".",
+                "project": run.project,
+                "continue_after": True,
+                "max_turns": 8,
+                "provider": "deepseek",
+                "risk_label": "generic",
+            })
+            httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            host, port = httpd.server_address
+            try:
+                with (
+                    mock.patch.object(server, "STATE", state),
+                    mock.patch.object(app_services, "execute_shell_ticket", return_value={
+                        "ok": True,
+                        "exit_code": 0,
+                        "output": "ok",
+                    }),
+                    mock.patch.object(
+                        server,
+                        "_submit_task_after_slot_release",
+                        return_value="run-next",
+                    ) as submit,
+                ):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request(
+                        "POST",
+                        "/api/shell_approval",
+                        body=json.dumps({"id": "shell-1", "approved": True}),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response = conn.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    conn.close()
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
 
-        self.assertEqual(response.status, 200)
-        self.assertTrue(payload["continued"])
-        self.assertTrue(payload["continuation_requested"])
-        self.assertEqual(submit.call_args.args[5], "qwen")
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["continued"])
+            self.assertTrue(payload["continuation_requested"])
+            self.assertEqual(submit.call_args.args[5], "qwen")
 
     def test_shell_approval_response_uses_safe_defaults_when_pending_fields_are_missing(self) -> None:
         state = server.AppContext()
@@ -3353,7 +3360,7 @@ class RunSnapshotTests(unittest.TestCase):
         submit = mock.Mock(return_value=None)
 
         with (
-            mock.patch.object(app_services, "execute_approved_shell", return_value={
+            mock.patch.object(app_services, "execute_shell_ticket", return_value={
                 "ok": True,
                 "exit_code": 0,
                 "output": "ok",
@@ -3373,7 +3380,12 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(payload["continuation_requested"])
         self.assertFalse(payload["continued"])
         self.assertEqual(payload["retry_after"], 15)
-        execute.assert_called_once_with(state, "", ".", "pytest", expected_approval_generation=0)
+        execute.assert_called_once()
+        ticket = execute.call_args.args[1]
+        self.assertIs(execute.call_args.args[0], state)
+        self.assertEqual(ticket.command, "pytest")
+        self.assertEqual(ticket.generation, 0)
+        self.assertTrue(str(ticket.cwd))
         setup.assert_not_called()
         build.assert_called_once()
         self.assertEqual(submit.call_args.args[0], "session-1")

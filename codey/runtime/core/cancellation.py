@@ -184,15 +184,16 @@ def wait(seconds: float) -> None:
     check()
 
 
-def run_process(
+def start_process(
     args: str | Sequence[str],
     *,
     cwd: str | Path,
-    timeout: float,
     env: dict[str, str] | None = None,
     shell: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    """Run a captured process and terminate its process group when cancelled."""
+) -> tuple[subprocess.Popen[str], object]:
+    """Check cancellation once, then spawn. Callers holding a spawn gate must
+    keep the gate across their final Stop check and this call so Stop cannot
+    land between check and Popen."""
     check()
     group_args: dict[str, Any]
     if os.name == "nt":
@@ -212,6 +213,16 @@ def run_process(
         **group_args,
     )
     job = attach_process_tree(proc)
+    return proc, job
+
+
+def wait_process(
+    proc: subprocess.Popen[str],
+    job: object,
+    args: str | Sequence[str],
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    """Wait for a spawned process, terminating its tree when cancelled."""
     deadline = time.monotonic() + max(0.0, timeout)
     try:
         while True:
@@ -237,6 +248,19 @@ def run_process(
     finally:
         if job is not None:
             job.close()
+
+
+def run_process(
+    args: str | Sequence[str],
+    *,
+    cwd: str | Path,
+    timeout: float,
+    env: dict[str, str] | None = None,
+    shell: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run a captured process and terminate its process group when cancelled."""
+    proc, job = start_process(args, cwd=cwd, env=env, shell=shell)
+    return wait_process(proc, job, args, timeout)
 
 
 def attach_process_tree(proc: subprocess.Popen[str]):

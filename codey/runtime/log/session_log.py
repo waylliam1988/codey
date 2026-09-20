@@ -219,9 +219,9 @@ class RuntimeSessionLog:
                     projection=compacted_projection,
                 )
                 return rows
-            with path.open("ab") as handle:
-                for encoded in encoded_rows:
-                    handle.write(encoded)
+            from codey.storage.atomic_io import append_bytes_durable
+
+            append_bytes_durable(path, list(encoded_rows))
             self._projection_cache[session_id] = _ProjectionCache(
                 stamp=_file_stamp(path),
                 entries=(*base_entries, *rows),

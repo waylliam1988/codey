@@ -2,6 +2,80 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Correctness hardening: shell spawn gate, durable appends, worker split locks, supervisor save, cold-start catalog, ghost primitives, phased task runner (no release)
+
+- Shell `Stop -> Allow` race is now closed with an immutable
+  `ShellExecutionTicket` (`app/services.py`): the approval claim (pop +
+  generation + stop flag + cwd resolve) happens atomically in
+  `AppContext.claim_shell_ticket` / `services.mint_shell_ticket`, and the
+  final check plus `Popen` hold a dedicated `AppContext._shell_spawn_gate`
+  shared with the Stop expiry paths (`context.py`). `cancellation.py` splits
+  `run_process` into `start_process` (check + spawn, under the gate) and
+  `wait_process` (cancel-aware wait, outside the gate). Direct execution
+  (`execute_approved_shell`) funnels through the same ticket path. No
+  behavior fallback: the API deny path still pops without a ticket, and the
+  approved path refuses without one.
+- Append-only logs are now durable: new `storage/atomic_io.append_bytes_durable`
+  (append + flush + fsync, lock stays with the caller) backs
+  `runs/ledger.py`, `ghost/event_log.py`, and `runtime/log/session_log.py`
+  fast paths. Existing file locks and truncation budgets unchanged.
+- `WorkerChatProvider` no longer serializes close behind sends: split gates
+  (`_conn_lock` for lifecycle, `_request_lock` for single-flight stdin),
+  the response queue is bounded (`RESPONSE_QUEUE_MAXSIZE=512`, oldest drop
+  counted via `_offer_response`), stale ids are still skipped per request,
+  and `close()` terminates under the conn lock only. `_start` failure now
+  cleans up the half-started child instead of leaking reader threads.
+- `providers/revival.py` read-modify-write paths all hold `with_file_lock`
+  (lost update fixed); `ProviderSupervisor` never saves under its lock
+  anymore (`_store`/`get` snapshot inside, `_save_snapshot` outside) and
+  records `_last_save_error` instead of swallowing `OSError`/`ValueError`.
+  `select()` decides from one snapshot without re-entrant saves.
+  `run_half_open_canary` classifies `DeadlineExceeded` explicitly as a
+  transient canary signal; `TaskCancelled` still propagates.
+  `AppContext.handle_profile_doctor` / `handle_flow_recovery` stop retrying
+  siblings once the budget is exhausted (`DeadlineExceeded -> return None`)
+  and bind `helper` in send lambdas (B023, incl. `mimo.py` `built_in_ready`).
+- Cold start stays cheap with less indirection: new stdlib-only
+  `providers/catalog.py` owns ids/labels/ports; `registry.py` re-exports the
+  statics (single source of truth) while keeping its connection surface and
+  test patch points unchanged. `codey.providers.__init__` resolves the
+  static names from the catalog, so `--help` / `provider_ids()` never import
+  Playwright. `app/server.py` no longer constructs `AppContext` on import:
+  lazy `get_state()` (honors a patched `server.STATE` for existing doubles).
+- `KnowledgeIndex` writes fail closed after `close()` (`_ensure_open_locked`
+  under the write lock; reads check under the read-conn lock), and
+  `AppContext.close()` always proceeds to durable cleanup after a bounded
+  ghost-sleep wait instead of returning early and leaking stores.
+- Ghost keeps its personality layers: new `ghost/graph_primitives.py` owns
+  only the shared half-life math both stores already agreed on (`parse_ts`,
+  `now_iso`, `decay_basis_of`, `exp_decay_factor`, `decayed_by_half_life`,
+  `any_decay_due`). `hebbian.py` / `affinity.py` keep their own clamps
+  (`_clamp01` vs `clamp_unit_float` differ on `bool`), ref merging, and the
+  affinity spec-projection layer; their private helpers now delegate.
+- `operations/task_run.py` `execute_task_run` is split into named phases in
+  the same module (no new `TaskRunner`, `task_phases/` untouched):
+  `_RunSetup` + `_setup_run_state`, `_PhaseWork` + `_build_workload`,
+  `_route_ghost_work` (ghost pre-route; post-turn stays in settlement),
+  `_connect_provider_frame` (review frames still skip providers), then the
+  existing dispatch/finish delegation. `app/context.py` stays at the
+  1000-line guardrail (sibling-probe preamble deduped into
+  `_sibling_candidates`).
+- Debt: fixed 3x `B023` plus incidentals, added none --
+  `ruff check codey tests --select B,UP,I,SIM` is now
+  `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`
+  (was `950 (B:35, UP:223, I:376, SIM:316), 681 fixable`).
+- Tests added: `test_append_durable.py`, `test_p1_hardening.py`
+  (revival locking, supervisor save error, canary deadline, closure capture,
+  knowledge close), `test_ghost_graph_primitives.py`,
+  `test_provider_catalog_cold.py` (subprocess import-cost proof),
+  `test_server_lazy_state.py`; extended epoch/coldstart/server/shell suites
+  for ticket, gate, bounded queue, and claim-time cwd fail-closed behavior.
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green (incl. long-file guardrail);
+  targeted regression green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3852 passed, 6 skipped, 1304 subtests passed in 278.78s`).
+
 ## Unreleased - Release hygiene: whitespace, debt recount, probe quota, roadmap paths (no release)
 
 - Fixed `git show --check HEAD` whitespace: removed the extra blank line at EOF

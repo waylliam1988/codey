@@ -776,7 +776,7 @@ def _chat(
                     _wait_response_footer_ready(page, action_baseline)
                     return send_loop.read_completion(
                         ctx,
-                        lambda: _final_text(
+                        lambda built_in_ready=built_in_ready: _final_text(
                             page,
                             completion_verified=not built_in_ready,
                         ),
@@ -816,7 +816,7 @@ def _chat(
                 _wait_response_footer_ready(page, action_baseline)
                 return send_loop.read_completion(
                     ctx,
-                    lambda: _final_text(
+                    lambda built_in_ready=built_in_ready: _final_text(
                         page,
                         completion_verified=not built_in_ready,
                     ),

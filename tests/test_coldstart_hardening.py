@@ -208,8 +208,11 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider.last_failure = None
         provider._proc = None
         provider._job = None
-        provider._responses = queue.Queue()
-        provider._lock = threading.Lock()
+        provider._responses = queue.Queue(maxsize=512)
+        provider._dropped_responses = 0
+        provider._lock = threading.RLock()
+        provider._conn_lock = provider._lock
+        provider._request_lock = threading.Lock()
         provider._reader = None
         provider._cdp_port = 0
         provider._target_id = ""
@@ -235,6 +238,19 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._responses.put({"id": "b"})
         provider._drain_responses()
         self.assertTrue(provider._responses.empty())
+
+    def test_response_queue_is_bounded_and_drops_oldest(self) -> None:
+        provider = self._provider()
+        provider._responses = queue.Queue(maxsize=2)
+        provider._dropped_responses = 0
+        proc = mock.Mock()
+        proc.stdout = iter(['{"id":"a"}\n', '{"id":"b"}\n', '{"id":"c"}\n'])
+        provider._proc = proc
+        provider._read_loop()
+        self.assertEqual(provider._responses.qsize(), 2)
+        self.assertEqual(provider._dropped_responses, 1)
+        ids = sorted(item["id"] for item in list(provider._responses.queue))
+        self.assertEqual(ids, ["b", "c"])
 
     def test_close_never_restarts_a_dead_worker(self) -> None:
         provider = self._provider()
@@ -262,21 +278,33 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertIsNone(provider._proc)
 
     def test_close_skips_timeout_grace(self) -> None:
+        # close() terminates under the conn lock only: no request is sent,
+        # so neither grace nor restart applies, and close never blocks on a
+        # long send holding the request gate.
         provider = self._provider()
-        seen: dict[str, object] = {}
-
-        def _capture(self, method: str, params: dict, timeout: float | None, *, restart: bool, grace: bool):
-            seen["grace"] = grace
-            seen["restart"] = restart
-            raise RuntimeError("no child")
-
         with (
-            mock.patch.object(WorkerChatProvider, "_request_locked", _capture),
-            mock.patch.object(provider, "_terminate"),
+            mock.patch.object(
+                WorkerChatProvider, "_request_locked",
+                side_effect=AssertionError("close() must not send requests"),
+            ),
+            mock.patch.object(
+                WorkerChatProvider, "_start",
+                side_effect=AssertionError("close() must not restart"),
+            ),
+            mock.patch.object(provider, "_terminate_conn_locked") as terminate,
         ):
             provider.close()
-        self.assertIs(seen.get("grace"), False)
-        self.assertIs(seen.get("restart"), False)
+        terminate.assert_called_once_with()
+
+    def test_close_does_not_wait_for_inflight_request_gate(self) -> None:
+        provider = self._provider()
+        provider._request_lock.acquire()
+        try:
+            with mock.patch.object(provider, "_terminate_conn_locked") as terminate:
+                provider.close()
+            terminate.assert_called_once_with()
+        finally:
+            provider._request_lock.release()
 
 
 class ProviderProbeErrorTests(unittest.TestCase):
@@ -470,18 +498,21 @@ class AppContextLifecycleTests(unittest.TestCase):
         ctx = AppContext()
         try:
             ctx._knowledge_store = store_mock
+            # Durable resources close even when the ghost daemon is still
+            # running: close() waits briefly, then proceeds instead of
+            # returning early and leaking stores.
             with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
                 assert ctx._ephemeral_runtime_home is not None
                 with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
                     ctx.close()
-                    cleanup_mock.assert_not_called()
-                    store_mock.close.assert_not_called()
+                    cleanup_mock.assert_called_once()
+                    store_mock.close.assert_called_once()
                     self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                    self.assertFalse(ctx.closed)
-                    # Second close call must be idempotent and still not close shared store
+                    self.assertTrue(ctx.closed)
+                    # Second close call must be idempotent.
                     ctx.close()
-                    store_mock.close.assert_not_called()
-                    self.assertFalse(ctx.closed)
+                    store_mock.close.assert_called_once()
+                    self.assertTrue(ctx.closed)
         finally:
             ctx._resources_closed = True
 
@@ -514,25 +545,18 @@ class AppContextLifecycleTests(unittest.TestCase):
             ctx.evidence_ledgers = evidence_mock
             assert ctx._ephemeral_runtime_home is not None
             with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                # 1. First close: daemon still running (returns False)
+                # 1. First close: daemon still running (returns False), but
+                # durable cleanup still proceeds exactly once.
                 with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
-                    ctx.close()
-                    cleanup_mock.assert_not_called()
-                    store_mock.close.assert_not_called()
-                    self.assertTrue(ctx._close_requested)
-                    self.assertFalse(ctx._resources_closed)
-                    self.assertFalse(ctx.closed)
-
-                # 2. Second close: daemon subsequently finishes (returns True)
-                with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
                     ctx.close()
                     cleanup_mock.assert_called_once()
                     store_mock.close.assert_called_once()
                     evidence_mock.close.assert_called_once()
+                    self.assertTrue(ctx._close_requested)
                     self.assertTrue(ctx._resources_closed)
                     self.assertTrue(ctx.closed)
 
-                # 3. Third close: idempotent, no repeated cleanup
+                # 2. Second close: idempotent, no repeated cleanup.
                 ctx.close()
                 cleanup_mock.assert_called_once()
                 store_mock.close.assert_called_once()

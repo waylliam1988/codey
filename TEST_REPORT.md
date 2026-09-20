@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## Correctness hardening: shell spawn gate, durable appends, worker split locks, cold-start catalog, ghost primitives, phased task runner (2026-09-20)
+
+Scope:
+
+```text
+codey/app/services.py:     ShellExecutionTicket + mint_shell_ticket +
+                           execute_shell_ticket (spawn gate) +
+                           execute_approved_shell via ticket
+codey/app/context.py:      claim_shell_ticket delegate, _shell_spawn_gate,
+                           gated expiry paths, KnowledgeIndex/AppContext
+                           close semantics, Deadline/B023, _sibling_candidates
+codey/app/api.py:          approval allow path via atomic claim + ticket
+codey/app/server.py:       lazy get_state(), no import-time AppContext
+codey/runtime/core/cancellation.py:
+                           start_process + wait_process split
+codey/storage/atomic_io.py: append_bytes_durable (append+flush+fsync)
+codey/runs/ledger.py, ghost/event_log.py, runtime/log/session_log.py:
+                           durable append fast paths
+codey/providers/worker.py: conn/request split gates, bounded responses,
+                           _offer_response, close without request gate
+codey/providers/revival.py: with_file_lock on all read-modify-write paths
+codey/providers/supervisor.py:
+                           snapshot-inside/save-outside, _last_save_error,
+                           snapshot select, explicit canary Deadline class
+codey/providers/catalog.py (new, stdlib-only):
+                           static ids/labels/ports; registry re-exports;
+                           package statics resolve to catalog
+codey/ghost/graph_primitives.py (new):
+                           shared half-life math; hebbian/affinity delegate,
+                           own clamps and ref merging kept
+codey/operations/task_run.py:
+                           _RunSetup/_PhaseWork phases in-module, no new Runner
+codey/knowledge/index.py:  _ensure_open_locked write guards
+tests:                       5 new files + epoch/coldstart/server/shell updates
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`;
+  was `950 (B:35, UP:223, I:376, SIM:316), 681 fixable`)
+- Targeted gates before the full run:
+  shell/append/P1/primitives/catalog/lazy-state suites (109 passed),
+  coldstart/knowledge/ghost/session suites (210 passed),
+  `tests/test_server.py` (206 passed),
+  `tests/test_architecture.py` (83 passed, 312 subtests passed),
+  sandwich/adapter suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3852 passed, 6 skipped, 1304 subtests passed in 278.78s (0:04:38)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Release hygiene: whitespace, debt recount, probe quota, roadmap paths (2026-09-20)
 
 Scope:

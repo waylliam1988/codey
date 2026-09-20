@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     StoreCorruption,
     backup_corrupt_file,
@@ -46,6 +47,34 @@ def complete_send(
     normalized_flow = normalize_recipe(staged_flow) if staged_flow else None
     if not staged and not learned_verified and not normalized_flow and not learned_flow_verified:
         return False
+    with with_file_lock(path):
+        return _complete_send_locked(
+            path,
+            provider_id,
+            host,
+            staged,
+            verified,
+            learned_verified,
+            staged_flow=normalized_flow,
+            learned_flow_verified=learned_flow_verified,
+            built_in_profile_hash=built_in_profile_hash,
+        )
+
+
+def _complete_send_locked(
+    path: Path,
+    provider_id: str,
+    host: str,
+    staged: dict[str, dict[str, Any]],
+    verified: set[str],
+    learned_verified: set[str],
+    *,
+    staged_flow: dict[str, tuple[str, ...]] | None,
+    learned_flow_verified: bool,
+    built_in_profile_hash: str,
+) -> bool:
+    """Commit staged controls. Caller must hold this store's file lock."""
+    normalized_flow = staged_flow
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
@@ -175,6 +204,15 @@ def load_flow_recipe(
     provider_id: str,
     built_in_profile_hash: str,
 ) -> dict[str, tuple[str, ...]] | None:
+    with with_file_lock(path):
+        return _load_flow_recipe_locked(path, provider_id, built_in_profile_hash)
+
+
+def _load_flow_recipe_locked(
+    path: Path,
+    provider_id: str,
+    built_in_profile_hash: str,
+) -> dict[str, tuple[str, ...]] | None:
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
@@ -189,6 +227,11 @@ def load_flow_recipe(
 
 def record_flow_failure(path: Path, provider_id: str) -> bool:
     """Count an explicit flow mismatch and restore the previous generation."""
+    with with_file_lock(path):
+        return _record_flow_failure_locked(path, provider_id)
+
+
+def _record_flow_failure_locked(path: Path, provider_id: str) -> bool:
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
@@ -207,6 +250,11 @@ def record_flow_failure(path: Path, provider_id: str) -> bool:
 
 def record_control_failure(path: Path, provider_id: str, action: str) -> bool:
     """Count an explicit learned-control failure and restore the prior bundle."""
+    with with_file_lock(path):
+        return _record_control_failure_locked(path, provider_id, action)
+
+
+def _record_control_failure_locked(path: Path, provider_id: str, action: str) -> bool:
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):
@@ -234,6 +282,11 @@ def record_control_failure(path: Path, provider_id: str, action: str) -> bool:
 
 
 def record_control_success(path: Path, provider_id: str, action: str) -> bool:
+    with with_file_lock(path):
+        return _record_control_success_locked(path, provider_id, action)
+
+
+def _record_control_success_locked(path: Path, provider_id: str, action: str) -> bool:
     data = _load_store(path)
     provider = data.get(provider_id)
     if not isinstance(provider, dict):

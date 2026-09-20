@@ -138,9 +138,9 @@ class GhostEventLog:
                 current_size = self.path.stat().st_size if self.path.exists() else 0
                 if self.max_bytes is not None and current_size + new_bytes > self.max_bytes:
                     return False
-                with self.path.open("ab") as handle:
-                    for line in encoded_bytes:
-                        handle.write(line)
+                from codey.storage.atomic_io import append_bytes_durable
+
+                append_bytes_durable(self.path, encoded_bytes)
             return True
         except (OSError, TypeError, ValueError):
             return False

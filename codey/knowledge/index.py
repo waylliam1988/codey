@@ -34,10 +34,15 @@ class KnowledgeIndex:
         self.fts_enabled = self._detect_fts()
         self._create_schema()
 
-    def _read_conn(self) -> sqlite3.Connection:
-        """Thread-local read connection; writes stay on _conn under _lock."""
+    def _ensure_open_locked(self) -> None:
         if self._closed:
             raise RuntimeError("knowledge index is closed")
+
+    def _read_conn(self) -> sqlite3.Connection:
+        """Thread-local read connection; writes stay on _conn under _lock."""
+        with self._read_conns_lock:
+            if self._closed:
+                raise RuntimeError("knowledge index is closed")
         conn = getattr(self._local, "conn", None)
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -104,6 +109,7 @@ class KnowledgeIndex:
 
     def upsert(self, note: KnowledgeNote, *, path: str, content_hash: str) -> None:
         with self._lock:
+            self._ensure_open_locked()
             c = self._conn
             c.execute(
                 "INSERT INTO notes(id,path,type,title,confidence,status,session_id,project,"
@@ -156,6 +162,7 @@ class KnowledgeIndex:
 
     def remove(self, note_id: str) -> None:
         with self._lock:
+            self._ensure_open_locked()
             c = self._conn
             c.execute("DELETE FROM links WHERE src_id=? OR dst_id=?", (note_id, note_id))
             c.execute("DELETE FROM tags WHERE note_id=?", (note_id,))
@@ -168,6 +175,7 @@ class KnowledgeIndex:
 
     def clear(self) -> None:
         with self._lock:
+            self._ensure_open_locked()
             c = self._conn
             c.execute("DELETE FROM links")
             c.execute("DELETE FROM tags")
@@ -180,6 +188,7 @@ class KnowledgeIndex:
 
     def add_link(self, src_id: str, dst_id: str, kind: str = "relates") -> None:
         with self._lock:
+            self._ensure_open_locked()
             self._conn.execute(
                 "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
                 (src_id, dst_id, kind),

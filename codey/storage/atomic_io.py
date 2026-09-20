@@ -110,6 +110,24 @@ def _fsync_dir(directory: Path) -> None:
             raise
 
 
+def append_bytes_durable(path: str | Path, chunks: list[bytes] | tuple[bytes, ...]) -> None:
+    """Append chunks to ``path`` and fsync before returning.
+
+    Append-only logs (run ledger, ghost events, runtime session log) must
+    survive an OS crash without losing the tail: ``open("ab")`` alone only
+    guarantees process-local visibility. Callers must already hold their
+    file lock; this helper only adds durability, never locking or rotation."""
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("ab") as handle:
+        for chunk in chunks:
+            if chunk:
+                handle.write(chunk)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def write_text_atomic(
     path: str | Path,
     text: str,
@@ -190,6 +208,7 @@ def _cleanup_temp_file(path: Path) -> None:
 
 
 __all__ = [
+    "append_bytes_durable",
     "encode_with_original_eol",
     "write_bytes_atomic",
     "write_json_atomic",

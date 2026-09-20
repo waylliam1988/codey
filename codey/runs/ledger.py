@@ -417,9 +417,9 @@ class RunLedgerWriter:
         self.disabled_reason = "ledger_truncated"
 
     def _write_line_locked(self, line: str) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(line)
+        from codey.storage.atomic_io import append_bytes_durable
+
+        append_bytes_durable(self.path, [line.encode("utf-8")])
 
 
 def _int_or_none(value: object) -> int | None:

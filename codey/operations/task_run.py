@@ -124,46 +124,111 @@ def release_unstarted_submission(state: Any, request: TaskSubmission) -> None:
         return
 
 
-def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOutcome | None:
-    state = deps.state
-    session_id = request.session_id
-    project = request.project
-    task = request.task
-    max_turns = request.max_turns
-    continue_task = request.continue_task
-    provider_id = request.provider_id
-    baseline_task_kind = resolve_task_kind(request)
-    task_kind = baseline_task_kind
-    run_id = request.run_id
-    claimed_work_item: GhostWorkItem | None = None
-    frame: RunFrame | None = None
-    provider: Any | None = None
-    conversation = None
-    work: RunWork | None = None
+@dataclass
+class _RunSetup:
+    """RunSetup phase: reservation, trace, config, and task wiring.
 
+    Everything ``execute_task_run`` needs before touching the workspace.
+    Ghost pre-route, provider connect, mode dispatch, and settlement each
+    get their own helper below so this orchestrator stays a readable
+    phase list instead of a 300-line closure nest."""
+
+    state: Any
+    request: TaskSubmission
+    run_id: str
+    session_id: str
+    project: str | None
+    task: str
+    max_turns: int
+    continue_task: bool
+    provider_id: str
+    baseline_task_kind: str
+    task_kind: str
+    trace: Any
+    trace_sink: FailOpenPromptTrace
+    project_config_result: ProjectConfigLoadResult
+    ghost_deps: Any
+    review_deps: Any
+    claimed_work_item: GhostWorkItem | None = None
+    route_result: Any = None
+    recovered_resume: bool = False
+    previous_cancel_event: Any = None
+
+
+@dataclass
+class _PhaseWork:
+    work: RunWork
+    recovered_tool_outcomes: tuple = ()
+    recovered_tool_result_batch_id: str = ""
+
+
+def _finish_trace_event(
+    trace_sink: FailOpenPromptTrace,
+    event: dict[str, object],
+    *,
+    task_kind: str,
+    project: str | None,
+    provider_id: str,
+) -> None:
+    trace_sink.call(
+        "finish",
+        status=str(event.get("stop_reason") or "done"),
+        mode=trace_mode(task_kind, project),
+        provider=str(event.get("provider") or provider_id),
+    )
+
+
+def _fail_early_run(
+    deps: TaskRunDeps,
+    setup: _RunSetup,
+    summary_text: str,
+    *,
+    current_work: RunWork | None = None,
+) -> OperationOutcome:
+    state = setup.state
+    error_event = task_done_event(
+        run_id=setup.run_id,
+        session_id=setup.session_id,
+        summary=summary_text,
+        stop_reason="error",
+        max_turns=setup.max_turns,
+        provider=setup.provider_id,
+        mode=ui_mode(setup.task_kind, setup.project),
+        work=current_work,
+    )
+    if current_work is not None:
+        finish_run_operation(deps, current_work, error_event)
+    _finish_trace_event(
+        setup.trace_sink, error_event,
+        task_kind=setup.task_kind, project=setup.project, provider_id=setup.provider_id,
+    )
+    state.finish_run(setup.run_id, error_event)
+    run_ghost_post_turn(
+        setup.ghost_deps,
+        None,
+        error_event,
+        current_work.claimed_work_item if current_work is not None else setup.claimed_work_item,
+        project_text=str(setup.project or ""),
+    )
+    return operation_outcome_from_task_done_event(error_event)
+
+
+def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSetup | None, OperationOutcome | None]:
+    """Phase 1 -- RunSetup: reserve the slot, open trace, load config."""
+    state = deps.state
     reservation, aborted = ensure_run_reserved_and_started(state, request)
     if reservation is None:
-        return aborted
+        return None, aborted
     request = reservation.request
     run_id = reservation.run_id
+    session_id = request.session_id
+    project = request.project
+    provider_id = request.provider_id
+    baseline_task_kind = resolve_task_kind(request)
 
     trace = open_run_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
     trace_sink = FailOpenPromptTrace(trace)
     project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
-
-    def current_provider_id() -> str:
-        return frame.provider_id if frame is not None else provider_id
-
-    def current_provider() -> Any | None:
-        return frame.provider if frame is not None else provider
-
-    def finish_trace(event: dict[str, object]) -> None:
-        trace_sink.call(
-            "finish",
-            status=str(event.get("stop_reason") or "done"),
-            mode=trace_mode(task_kind, project),
-            provider=str(event.get("provider") or current_provider_id()),
-        )
 
     provider_controls.set_teach_handler(state.handle_control_teach)
     provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
@@ -174,242 +239,281 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
 
     review_deps = review_flow_deps(deps)
     ghost_deps = ghost_task_deps(deps, review_deps)
-    route_result = None
+    return _RunSetup(
+        state=state,
+        request=request,
+        run_id=run_id,
+        session_id=session_id,
+        project=project,
+        task=request.task,
+        max_turns=request.max_turns,
+        continue_task=request.continue_task,
+        provider_id=provider_id,
+        baseline_task_kind=baseline_task_kind,
+        task_kind=baseline_task_kind,
+        trace=trace,
+        trace_sink=trace_sink,
+        project_config_result=project_config_result,
+        ghost_deps=ghost_deps,
+        review_deps=review_deps,
+        previous_cancel_event=previous_cancel_event,
+    ), None
 
-    def _fail_early(
-        summary_text: str,
-        *,
-        current_work: RunWork | None = None,
-    ) -> OperationOutcome:
-        error_event = task_done_event(
-            run_id=run_id,
-            session_id=session_id,
-            summary=summary_text,
-            stop_reason="error",
-            max_turns=max_turns,
-            provider=provider_id,
-            mode=ui_mode(task_kind, project),
-            work=current_work,
-        )
-        if current_work is not None:
-            finish_run_operation(deps, current_work, error_event)
-        finish_trace(error_event)
-        state.finish_run(run_id, error_event)
-        run_ghost_post_turn(
-            ghost_deps,
-            None,
-            error_event,
-            current_work.claimed_work_item if current_work is not None else claimed_work_item,
-            project_text=str(project or ""),
-        )
-        return operation_outcome_from_task_done_event(error_event)
 
-    recovered_tool_outcomes = ()
-    recovered_tool_result_batch_id = ""
-    try:
-        work, _workspace_state = build_run_work(
-            deps,
-            session_id=session_id,
-            run_id=run_id,
-            project=project,
-            provider_id=provider_id,
-            max_turns=max_turns,
-            task_kind=task_kind,
-            ignored_paths=project_config_result.config.ignored_paths,
-            trace=trace,
-        )
-        if work is None:
-            empty_work = RunWork(
-                recent_events=[],
-                evidence=ExecutionEvidence(
-                    workspace_revision=_workspace_state.revision,
-                    workspace_fingerprint=_workspace_state.fingerprint,
-                ),
-                claimed_work_item=claimed_work_item,
-                trace=trace,
+def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | None, OperationOutcome | None]:
+    """Phase 2 -- workload: workspace state plus resume recovery."""
+    work, _workspace_state = build_run_work(
+        deps,
+        session_id=setup.session_id,
+        run_id=setup.run_id,
+        project=setup.project,
+        provider_id=setup.provider_id,
+        max_turns=setup.max_turns,
+        task_kind=setup.task_kind,
+        ignored_paths=setup.project_config_result.config.ignored_paths,
+        trace=setup.trace,
+    )
+    if work is None:
+        empty_work = RunWork(
+            recent_events=[],
+            evidence=ExecutionEvidence(
                 workspace_revision=_workspace_state.revision,
                 workspace_fingerprint=_workspace_state.fingerprint,
-            )
-            return _fail_early("ERROR: Runtime operation state unavailable.", current_work=empty_work)
-
-        recovery = recover_effects_for_resume(
-            deps,
-            session_id=session_id,
-            run_id=run_id,
-            project=project or "",
-            task_kind=baseline_task_kind,
+            ),
+            claimed_work_item=setup.claimed_work_item,
+            trace=setup.trace,
+            workspace_revision=_workspace_state.revision,
+            workspace_fingerprint=_workspace_state.fingerprint,
         )
-        if not recovery.ok:
-            return _fail_early(
-                "ERROR: Runtime recovery failed to settle unconfirmed effects.",
-                current_work=work,
-            )
-        recovered_tool_outcomes = recovery.recovered_tool_outcomes
-        recovered_tool_result_batch_id = recovery.recovered_tool_result_batch_id
-        recovered_resume = bool(recovered_tool_outcomes)
-        if recovered_resume:
-            task_kind = "project"
-            if not continue_task:
-                request = replace(request, continue_task=True)
-                continue_task = True
+        return None, _fail_early_run(
+            deps, setup, "ERROR: Runtime operation state unavailable.", current_work=empty_work
+        )
 
+    recovery = recover_effects_for_resume(
+        deps,
+        session_id=setup.session_id,
+        run_id=setup.run_id,
+        project=setup.project or "",
+        task_kind=setup.baseline_task_kind,
+    )
+    if not recovery.ok:
+        return None, _fail_early_run(
+            deps, setup,
+            "ERROR: Runtime recovery failed to settle unconfirmed effects.",
+            current_work=work,
+        )
+    if recovery.recovered_tool_outcomes:
+        setup.task_kind = "project"
+        if not setup.continue_task:
+            setup.request = replace(setup.request, continue_task=True)
+            setup.continue_task = True
+        setup.recovered_resume = True
+    return _PhaseWork(
+        work=work,
+        recovered_tool_outcomes=recovery.recovered_tool_outcomes,
+        recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
+    ), None
+
+
+def _route_ghost_work(
+    deps: TaskRunDeps, setup: _RunSetup, workload: _PhaseWork
+) -> OperationOutcome | None:
+    """Phase 3 -- GhostLifecycle (pre): claim or route ghost work.
+
+    Returns an early outcome when Stop lands before start; otherwise updates
+    ``setup`` in place (request, kinds, claimed item) and emits ``task_start``.
+    Post-turn ghost work still runs inside the settlement helpers, so the
+    ghost lifecycle bookends the run instead of hiding mid-orchestrator."""
+    state = setup.state
+    if not workload.recovered_tool_outcomes:
         try:
-            if not recovered_tool_outcomes:
-                claimed = claim_or_route_ghost_work(
-                    ghost_deps, request,
-                    baseline_task_kind=baseline_task_kind, run_id=run_id,
-                )
-                request = claimed.request
-                task_kind = claimed.task_kind
-                claimed_work_item = claimed.claimed_work_item
-                route_result = claimed.route_result
-                if work is not None:
-                    work.claimed_work_item = claimed_work_item
-                task = request.task
-                continue_task = request.continue_task
+            claimed = claim_or_route_ghost_work(
+                setup.ghost_deps, setup.request,
+                baseline_task_kind=setup.baseline_task_kind, run_id=setup.run_id,
+            )
         except cancellation.TaskCancelled:
-            state.set_provider_session(provider_id, None)
+            state.set_provider_session(setup.provider_id, None)
             release_work_item(
-                ghost_deps,
-                claimed_work_item,
-                run_id=run_id,
+                setup.ghost_deps,
+                setup.claimed_work_item,
+                run_id=setup.run_id,
                 reason="stopped_before_start",
             )
             stopped_event = task_done_event(
-                run_id=run_id,
-                session_id=session_id,
+                run_id=setup.run_id,
+                session_id=setup.session_id,
                 summary="",
                 stop_reason="stopped",
-                max_turns=max_turns,
-                provider=provider_id,
-                mode=ui_mode(baseline_task_kind, project),
+                max_turns=setup.max_turns,
+                provider=setup.provider_id,
+                mode=ui_mode(setup.baseline_task_kind, setup.project),
             )
-            trace_sink.call(
+            setup.trace_sink.call(
                 "record_router",
-                baseline_mode=trace_mode(baseline_task_kind, project),
-                selected_mode=trace_mode(task_kind, project),
-                final_mode=trace_mode(task_kind, project),
-                source="local_work_item" if claimed_work_item else "baseline",
+                baseline_mode=trace_mode(setup.baseline_task_kind, setup.project),
+                selected_mode=trace_mode(setup.task_kind, setup.project),
+                final_mode=trace_mode(setup.task_kind, setup.project),
+                source="local_work_item" if setup.claimed_work_item else "baseline",
                 reason_code="stopped_before_start",
             )
-            finish_trace(stopped_event)
-            state.finish_run(run_id, stopped_event)
+            _finish_trace_event(
+                setup.trace_sink, stopped_event,
+                task_kind=setup.task_kind, project=setup.project,
+                provider_id=setup.provider_id,
+            )
+            state.finish_run(setup.run_id, stopped_event)
             return operation_outcome_from_task_done_event(stopped_event)
+        setup.request = claimed.request
+        setup.task_kind = claimed.task_kind
+        setup.claimed_work_item = claimed.claimed_work_item
+        setup.route_result = claimed.route_result
+        workload.work.claimed_work_item = claimed.claimed_work_item
+        setup.task = setup.request.task
+        setup.continue_task = setup.request.continue_task
+    record_route_trace(
+        setup.trace_sink,
+        request=setup.request,
+        baseline_task_kind=setup.baseline_task_kind,
+        task_kind=setup.task_kind,
+        project=setup.project,
+        claimed_work_item=setup.claimed_work_item,
+        route_result=setup.route_result,
+        recovered_resume=setup.recovered_resume,
+    )
+    state.emit({
+        "type": "task_start",
+        "run_id": setup.run_id,
+        "session_id": setup.session_id,
+        "project": setup.project,
+        "task": setup.task,
+        "mode": ui_mode(setup.task_kind, setup.project),
+        "max_turns": setup.max_turns,
+        "continue_task": setup.continue_task,
+        "provider": setup.provider_id,
+        "intent": setup.request.intent,
+    })
+    return None
 
-        record_route_trace(
-            trace_sink,
-            request=request,
-            baseline_task_kind=baseline_task_kind,
-            task_kind=task_kind,
-            project=project,
-            claimed_work_item=claimed_work_item,
-            route_result=route_result,
-            recovered_resume=recovered_resume,
+
+def _connect_provider_frame(
+    deps: TaskRunDeps, setup: _RunSetup, workload: _PhaseWork, hooks: Any
+) -> tuple[RunFrame, Any, str, Any]:
+    """Phase 4 -- ProviderConnect: review frames skip providers entirely."""
+    state = setup.state
+    if setup.task_kind == "review":
+        project_text = str(Path(setup.project).expanduser().resolve()) if setup.project else ""
+        conversation = state.conversation_for(setup.session_id)
+        frame = RunFrame(
+            request=setup.request,
+            run_id=setup.run_id,
+            task_kind=setup.task_kind,
+            provider=None,
+            provider_id=setup.provider_id,
+            project_text=project_text,
+            conversation=conversation,
+            fresh_chat=False,
+            handoff="",
+            research_handoff="",
+            prior_snapshot=conversation.snapshot,
+            recovered_owner_prompt="",
+            provider_session_changed=False,
+            preflight_tried=set(),
+            preflight_switches=0,
+            trace=setup.trace,
         )
-        state.emit({
-            "type": "task_start",
-            "run_id": run_id,
-            "session_id": session_id,
-            "project": project,
-            "task": task,
-            "mode": ui_mode(task_kind, project),
-            "max_turns": max_turns,
-            "continue_task": continue_task,
-            "provider": provider_id,
-            "intent": request.intent,
-        })
+        return frame, None, setup.provider_id, conversation
+    frame, provider, provider_id = connect_and_build_frame(
+        deps,
+        state,
+        setup.request,
+        workload.work,
+        run_id=setup.run_id,
+        task_kind=setup.task_kind,
+        project=setup.project,
+        provider_id=setup.provider_id,
+        trace=setup.trace,
+        trace_sink=setup.trace_sink,
+        hooks=hooks,
+        project_config_result=setup.project_config_result,
+        recovered_tool_outcomes=workload.recovered_tool_outcomes,
+        recovered_tool_result_batch_id=workload.recovered_tool_result_batch_id,
+    )
+    return frame, provider, provider_id, frame.conversation
+
+
+def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOutcome | None:
+    setup, early = _setup_run_state(deps, request)
+    if setup is None:
+        return early
+    state = setup.state
+    frame: RunFrame | None = None
+    provider: Any | None = None
+    conversation = None
+    workload: _PhaseWork | None = None
+
+    def current_provider_id() -> str:
+        return frame.provider_id if frame is not None else setup.provider_id
+
+    def current_provider() -> Any | None:
+        return frame.provider if frame is not None else provider
+
+    def finish_trace(event: dict[str, object]) -> None:
+        _finish_trace_event(
+            setup.trace_sink, event,
+            task_kind=setup.task_kind, project=setup.project,
+            provider_id=current_provider_id(),
+        )
+
+    try:
+        workload, early = _build_workload(deps, setup)
+        if workload is None:
+            return early
+
+        early = _route_ghost_work(deps, setup, workload)
+        if early is not None:
+            return early
 
         completion_deps = project_completion_deps(deps)
-        open_run_ledger(deps, work, request, run_id=run_id, task_kind=task_kind, provider_id=provider_id)
+        open_run_ledger(
+            deps, workload.work, setup.request,
+            run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,
+        )
 
         hooks = build_hooks(
             deps,
             state,
-            work,
-            session_id=session_id,
-            run_id=run_id,
-            project=project,
-            max_turns=max_turns,
-            project_config_ignored=project_config_result.config.ignored_paths,
+            workload.work,
+            session_id=setup.session_id,
+            run_id=setup.run_id,
+            project=setup.project,
+            max_turns=setup.max_turns,
+            project_config_ignored=setup.project_config_result.config.ignored_paths,
             review_log_lines=deps.review_log_lines,
             project_completion_deps=completion_deps,
-            current_provider_id=lambda: frame.provider_id if frame is not None else provider_id,
+            current_provider_id=lambda: frame.provider_id if frame is not None else setup.provider_id,
         )
 
-        if task_kind == "review":
-            project_text = str(Path(project).expanduser().resolve()) if project else ""
-            conversation = state.conversation_for(session_id)
-            frame = RunFrame(
-                request=request,
-                run_id=run_id,
-                task_kind=task_kind,
-                provider=None,
-                provider_id=provider_id,
-                project_text=project_text,
-                conversation=conversation,
-                fresh_chat=False,
-                handoff="",
-                research_handoff="",
-                prior_snapshot=conversation.snapshot,
-                recovered_owner_prompt="",
-                provider_session_changed=False,
-                preflight_tried=set(),
-                preflight_switches=0,
-                trace=trace,
-            )
-            outcome = dispatch_run_mode(
-                deps,
-                completion_deps,
-                review_deps,
-                work,
-                frame,
-                hooks,
-                task_kind,
-                project_config_result,
-            )
-            return finish_mode_outcome(
-                deps,
-                ghost_deps,
-                frame,
-                work,
-                outcome,
-                append_ledger=hooks.append_ledger,
-                finish_trace=finish_trace,
-            )
-
-        frame, provider, provider_id = connect_and_build_frame(
-            deps,
-            state,
-            request,
-            work,
-            run_id=run_id,
-            task_kind=task_kind,
-            project=project,
-            provider_id=provider_id,
-            trace=trace,
-            trace_sink=trace_sink,
-            hooks=hooks,
-            project_config_result=project_config_result,
-            recovered_tool_outcomes=recovered_tool_outcomes,
-            recovered_tool_result_batch_id=recovered_tool_result_batch_id,
+        frame, provider, setup.provider_id, conversation = _connect_provider_frame(
+            deps, setup, workload, hooks
         )
-        conversation = frame.conversation
 
+        # Phase 5 -- ModeExecution + RunFinalizer (both delegated; ghost
+        # post-turn runs inside finish/settle helpers).
         outcome = dispatch_run_mode(
             deps,
             completion_deps,
-            review_deps,
-            work,
+            setup.review_deps,
+            workload.work,
             frame,
             hooks,
-            task_kind,
-            project_config_result,
+            setup.task_kind,
+            setup.project_config_result,
         )
         return finish_mode_outcome(
             deps,
-            ghost_deps,
+            setup.ghost_deps,
             frame,
-            work,
+            workload.work,
             outcome,
             append_ledger=hooks.append_ledger,
             finish_trace=finish_trace,
@@ -418,14 +522,14 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         return settle_cancelled_run(
             deps,
             state,
-            work,
-            ghost_deps,
-            run_id=run_id,
-            session_id=session_id,
-            max_turns=max_turns,
+            workload.work if workload is not None else None,
+            setup.ghost_deps,
+            run_id=setup.run_id,
+            session_id=setup.session_id,
+            max_turns=setup.max_turns,
             provider_id=current_provider_id(),
-            task_kind=task_kind,
-            project=project,
+            task_kind=setup.task_kind,
+            project=setup.project,
             frame=frame,
             finish_trace=finish_trace,
             conversation=conversation,
@@ -435,21 +539,21 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             deps,
             state,
             exc,
-            work,
-            ghost_deps,
-            run_id=run_id,
-            session_id=session_id,
-            max_turns=max_turns,
+            workload.work if workload is not None else None,
+            setup.ghost_deps,
+            run_id=setup.run_id,
+            session_id=setup.session_id,
+            max_turns=setup.max_turns,
             provider_id=current_provider_id(),
-            task_kind=task_kind,
-            project=project,
+            task_kind=setup.task_kind,
+            project=setup.project,
             frame=frame,
             provider=current_provider(),
             finish_trace=finish_trace,
             conversation=conversation,
         )
     finally:
-        cancellation.set_event(previous_cancel_event)
+        cancellation.set_event(setup.previous_cancel_event)
         provider_controls.end_task_context()
         try:
             current_item = current_provider()

@@ -32,8 +32,9 @@ class ApprovalFailClosedTests(unittest.TestCase):
         ctx = SimpleNamespace()
         ctx.approval_generation = mock.Mock(side_effect=OSError("disk hiccup"))
         ctx.run_registry = SimpleNamespace(stop_flag=threading.Event())
+        ctx.lock = threading.Lock()
         with mock.patch(
-            "codey.runtime.core.cancellation.run_process",
+            "codey.runtime.core.cancellation.start_process",
             side_effect=AssertionError("Popen must not start"),
         ):
             result = app_services.execute_approved_shell(

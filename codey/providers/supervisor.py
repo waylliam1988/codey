@@ -83,11 +83,18 @@ class ProviderSupervisor:
         self.path = Path(state_home) / "provider-health.json" if state_home else None
         self.clock = clock
         self._lock = threading.RLock()
+        self._last_save_error = ""
         self._health = self._load()
 
-    def get(self, provider_id: str) -> ProviderHealth:
+    @property
+    def last_save_error(self) -> str:
+        """Last disk persistence failure, surfaced via provider status."""
         with self._lock:
-            key = normalize_provider_id(provider_id)
+            return self._last_save_error
+
+    def get(self, provider_id: str) -> ProviderHealth:
+        key = normalize_provider_id(provider_id)
+        with self._lock:
             health = self._health.get(key, ProviderHealth())
             if health.state == STATE_OPEN and health.circuit_open_until <= self.clock():
                 health = replace(
@@ -96,8 +103,11 @@ class ProviderSupervisor:
                     circuit_open_until=0.0,
                 )
                 self._health[key] = health
-                self._save()
-            return health
+                snapshot = dict(self._health)
+            else:
+                return health
+        self._save_snapshot(snapshot)
+        return health
 
     def is_available(self, provider_id: str) -> bool:
         return self.get(provider_id).state not in {STATE_OPEN, STATE_AUTH_REQUIRED}
@@ -207,22 +217,32 @@ class ProviderSupervisor:
         *,
         excluded: Iterable[str] = (),
     ) -> str | None:
+        # Decide from one snapshot without holding the lock across per-item
+        # availability probes: the OPEN->DEGRADED lazy transition lands on
+        # the next get() instead of inside this read path.
         with self._lock:
-            blocked = {normalize_provider_id(item) for item in excluded}
-            ordered = [normalize_provider_id(preferred)]
-            ordered.extend(normalize_provider_id(item) for item in provider_ids)
-            seen: set[str] = set()
-            for provider_id in ordered:
-                if not provider_id or provider_id in seen or provider_id in blocked:
-                    continue
-                seen.add(provider_id)
-                if self.is_available(provider_id):
-                    return provider_id
-            return None
+            snapshot = dict(self._health)
+            now = self.clock()
+        blocked = {normalize_provider_id(item) for item in excluded}
+        ordered = [normalize_provider_id(preferred)]
+        ordered.extend(normalize_provider_id(item) for item in provider_ids)
+        seen: set[str] = set()
+        for provider_id in ordered:
+            if not provider_id or provider_id in seen or provider_id in blocked:
+                continue
+            seen.add(provider_id)
+            health = snapshot.get(provider_id, ProviderHealth())
+            if health.state == STATE_OPEN and health.circuit_open_until <= now:
+                health = replace(health, state=STATE_DEGRADED, circuit_open_until=0.0)
+            if health.state not in {STATE_OPEN, STATE_AUTH_REQUIRED}:
+                return provider_id
+        return None
 
     def _store(self, provider_id: str, health: ProviderHealth) -> ProviderHealth:
-        self._health[provider_id] = health
-        self._save()
+        with self._lock:
+            self._health[provider_id] = health
+            snapshot = dict(self._health)
+        self._save_snapshot(snapshot)
         return health
 
     def _load(self) -> dict[str, ProviderHealth]:
@@ -260,11 +280,17 @@ class ProviderSupervisor:
         return health
 
     def _save(self) -> None:
+        with self._lock:
+            snapshot = dict(self._health)
+        self._save_snapshot(snapshot)
+
+    def _save_snapshot(self, snapshot: dict[str, ProviderHealth]) -> None:
+        """Persist outside the lock. Failures are recorded, never swallowed."""
         if self.path is None:
             return
         providers = {
             provider_id: asdict(health)
-            for provider_id, health in list(sorted(self._health.items()))[:MAX_PROVIDERS]
+            for provider_id, health in list(sorted(snapshot.items()))[:MAX_PROVIDERS]
         }
         try:
             write_json_atomic(
@@ -272,8 +298,12 @@ class ProviderSupervisor:
                 {"schema_version": 1, "providers": providers},
                 max_bytes=MAX_HEALTH_BYTES,
             )
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            with self._lock:
+                self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]
+            return
+        with self._lock:
+            self._last_save_error = ""
 
 
 def _failure_family(kind: str) -> str:
@@ -301,6 +331,23 @@ def run_half_open_canary(
             reply = provider.send(prompt, timeout=remaining(deadline, CANARY_TIMEOUT))
     except cancellation.TaskCancelled:
         raise
+    except cancellation.DeadlineExceeded:
+        # Explicit classification: a canary that exhausts its own budget is a
+        # transient provider signal, not a generic exception. Never let it
+        # masquerade as an unexpected failure kind.
+        supervisor.record_canary_failure(
+            provider_id,
+            ProviderFailure(
+                provider_id,
+                "canary",
+                "",
+                "",
+                "canary budget exhausted",
+                "",
+                FAILURE_TRANSIENT,
+            ),
+        )
+        return False
     except Exception as exc:
         failure = getattr(exc, "failure", None)
         if not isinstance(failure, ProviderFailure):

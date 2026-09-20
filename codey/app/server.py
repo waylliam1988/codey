@@ -82,12 +82,35 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-STATE = AppContext(DEFAULT_STATE_HOME)
-STATE.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
-STATE.providers.ghost_router_provider_factory = connect_fresh_provider_tab
-provider_controls.set_teach_handler(STATE.handle_control_teach)
-provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
-provider_flow.set_recovery_handler(STATE.handle_flow_recovery)
+STATE: AppContext | None = None
+_STATE_LOCK = threading.Lock()
+
+
+def _build_state() -> AppContext:
+    state = AppContext(DEFAULT_STATE_HOME)
+    state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
+    state.providers.ghost_router_provider_factory = connect_fresh_provider_tab
+    provider_controls.set_teach_handler(state.handle_control_teach)
+    provider_controls.set_doctor_handler(state.handle_profile_doctor)
+    provider_flow.set_recovery_handler(state.handle_flow_recovery)
+    return state
+
+
+def get_state() -> AppContext:
+    """Lazy global state: importing this module must not construct stores.
+
+    A test-patched ``server.STATE`` (not None) is honored as-is so existing
+    ``mock.patch.object(server, "STATE", state)`` doubles keep working."""
+    current = STATE
+    if current is not None:
+        return current
+    with _STATE_LOCK:
+        current = STATE
+        if current is not None:
+            return current
+        built = _build_state()
+        globals()["STATE"] = built
+        return built
 
 
 def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
@@ -144,30 +167,31 @@ def _run_task(
     intent: str = "auto",
     run_id: str = "",
 ) -> None:
+    state = get_state()
     deps = TaskRunDeps(
-        state=STATE,
+        state=state,
         agent_run=agent_run,
         collect_changes=collect_changes,
-        run_review=lambda **kwargs: app_services.run_review(STATE, **kwargs),
+        run_review=lambda **kwargs: app_services.run_review(state, **kwargs),
         capture_provider_failure=capture_provider_failure,
-        run_consensus=lambda **kwargs: app_services.run_consensus(STATE, **kwargs),
-        run_project_audit=lambda **kwargs: app_services.run_project_audit(STATE, **kwargs),
-        run_research_advisors=lambda **kwargs: app_services.run_research_advisors(STATE, **kwargs),
-        project_facts=STATE.project_facts,
-        work_checkpoints=STATE.work_checkpoints,
-        workspace_revisions=STATE.workspace_revisions,
-        run_ledgers=STATE.run_ledgers,
-        run_traces=STATE.run_traces,
-        evidence_ledgers=STATE.evidence_ledgers,
-        managed_outputs=STATE.managed_outputs,
-        knowledge_store=STATE.knowledge_store,
+        run_consensus=lambda **kwargs: app_services.run_consensus(state, **kwargs),
+        run_project_audit=lambda **kwargs: app_services.run_project_audit(state, **kwargs),
+        run_research_advisors=lambda **kwargs: app_services.run_research_advisors(state, **kwargs),
+        project_facts=state.project_facts,
+        work_checkpoints=state.work_checkpoints,
+        workspace_revisions=state.workspace_revisions,
+        run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
+        managed_outputs=state.managed_outputs,
+        knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
-        ghost_learning_provider_factory=STATE.providers.ghost_learning_provider_factory,
-        ghost_router_provider_factory=STATE.providers.ghost_router_provider_factory,
-        runtime_mutations=STATE.runtime_mutations,
-        runtime_effects=STATE.runtime_effects,
+        ghost_learning_provider_factory=state.providers.ghost_learning_provider_factory,
+        ghost_router_provider_factory=state.providers.ghost_router_provider_factory,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
     try:
         run_task_submission(
@@ -184,9 +208,10 @@ def _run_task(
             )
         )
     finally:
-        if STATE.sync_ghost_maintenance:
-            STATE.wait_for_ghost_sleep()
-        STATE.kick_self_repair()
+        state = get_state()
+        if state.sync_ghost_maintenance:
+            state.wait_for_ghost_sleep()
+        state.kick_self_repair()
 
 
 def _submit_task(
@@ -200,7 +225,7 @@ def _submit_task(
     *,
     abort_if_stopped: bool = False,
 ) -> str | None:
-    reserved = STATE.reserve_run(
+    reserved = get_state().reserve_run(
         session_id=session_id,
         project=project,
         task=task,
@@ -222,12 +247,12 @@ def _submit_task(
             reserved.run_id,
         )
     except Exception:
-        STATE.release_run(reserved.run_id)
+        get_state().release_run(reserved.run_id)
         raise
     if not accepted:
-        STATE.release_run(reserved.run_id)
+        get_state().release_run(reserved.run_id)
         raise BrowserWorkerBusy("browser worker busy: queue full")
-    STATE.expire_stale_shell_approvals(reserved.run_id)
+    get_state().expire_stale_shell_approvals(reserved.run_id)
     return reserved.run_id
 
 
@@ -248,9 +273,10 @@ def _submit_task_after_slot_release(
         # Fast path; the authoritative guard is the atomic
         # abort_if_stopped reservation below, which closes the race where a
         # Stop lands between this peek and the reserve.
-        if STATE.run_registry.stop_flag.is_set():
+        state = get_state()
+        if state.run_registry.stop_flag.is_set():
             return None
-        active = STATE.current_run()
+        active = state.current_run()
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None
         run_id = _submit_task(
@@ -265,13 +291,13 @@ def _submit_task_after_slot_release(
         )
         if run_id is not None:
             return run_id
-        active = STATE.current_run()
+        active = state.current_run()
         if active is not None and previous_run_id and active.run_id != previous_run_id:
             return None
         if time.monotonic() >= deadline:
             return None
         remaining = max(0.0, deadline - time.monotonic())
-        STATE.run_registry.wait_for_slot(remaining)
+        state.run_registry.wait_for_slot(remaining)
 
 
 def _pick_folder_response(_ctx: AppContext, body: dict) -> tuple[int, dict]:
@@ -417,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
         route = _GET_ROUTES.get(url.path)
         if route is not None:
             try:
-                status, payload = route(STATE, parse_qs(url.query))
+                status, payload = route(get_state(), parse_qs(url.query))
             except Exception as exc:
                 self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
@@ -457,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
         route = _POST_ROUTES.get(url.path)
         if route is not None:
             try:
-                status, payload = route(STATE, body)
+                status, payload = route(get_state(), body)
             except Exception as exc:
                 self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
@@ -478,12 +504,13 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             raw_header = (query.get("last_event_id") or [""])[0]
         replay_cursor = sse_replay_cursor(raw_header)
-        q = STATE.subscribe()
+        state = get_state()
+        q = state.subscribe()
         try:
-            if not self._write_sse_event({"type": "hello", "status": STATE.run_status()}):
+            if not self._write_sse_event({"type": "hello", "status": state.run_status()}):
                 return
             if replay_cursor is not None:
-                for event_id, replay in STATE.replay_events_after(
+                for event_id, replay in state.replay_events_after(
                     replay_cursor,
                     max_event_id=q.replay_cutoff,
                 ):
@@ -502,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._write_sse_event(ev, event_id=getattr(ev, "event_id", 0)):
                     break
         finally:
-            STATE.unsubscribe(q)
+            state.unsubscribe(q)
 
     def _write_sse_event(self, event: dict, *, event_id: int = 0) -> bool:
         return write_sse_event(self, event, event_id=event_id)
@@ -531,7 +558,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             pass
 
     threading.Thread(target=_run_httpd, daemon=True).start()
-    app_services.start_provider_warmup(STATE, delay_s=2.0)
+    app_services.start_provider_warmup(get_state(), delay_s=2.0)
 
     def _run_webview() -> None:
         import webview
