@@ -1360,7 +1360,8 @@ manual 复盘材料或删除候选，不留无消费者生产接线。
 ResearchPipeline 的纯 candidate selection / stop decision；
 `codey.research.followup_quality` 和 `codey.research.source_finalizer_scoring`
 已承接 manual harness 之间重复的 bounded follow-up / source-finalizer 行评分与
-聚合逻辑。当前修复又新增了 `tests/manual/research_experiment_gate.py` 和
+聚合逻辑（后续已搬到 `tests/manual/research_scorers/`，见“做什么”一节）。
+当前修复又新增了 `tests/manual/research_experiment_gate.py` 和
 `tests/manual/research_followup_quality_ab.py`，用同一套纯 scorer 复算历史结果并
 继续跑 connector-backed follow-up A/B。0.5.7 不需要新建 manager。
 

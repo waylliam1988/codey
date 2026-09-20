@@ -20,7 +20,7 @@
 - `ROADMAP.zh-CN.md`：scorer 指引改为 `tests/manual/research_scorers/...`；
   历史 CHANGELOG 不动。
 - 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
-  commit 后再验 `git show --check HEAD`；聚焦回归全绿；全量
+  `git show --check HEAD` commit 后已验通过；聚焦回归全绿；全量
   `python -m pytest tests/ --ignore=tests/manual`
  （`3824 passed, 6 skipped, 1300 subtests passed in 254.73s`）。
 

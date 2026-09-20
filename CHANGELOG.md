@@ -23,7 +23,7 @@
 - `ROADMAP.zh-CN.md`: scorer guidance now points at
   `tests/manual/research_scorers/...`; historical CHANGELOG entries untouched.
 - Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
-  clean; `git show --check HEAD` to be re-verified after commit; focused
+  clean; `git show --check HEAD` passed after commit; focused
   regression green; full suite
   `python -m pytest tests/ --ignore=tests/manual`
   (`3824 passed, 6 skipped, 1300 subtests passed in 254.73s`).

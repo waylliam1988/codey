@@ -30,7 +30,7 @@ Verification:
 - Full pytest suite:
   `python -m pytest tests/ --ignore=tests/manual`
   (`3824 passed, 6 skipped, 1300 subtests passed in 254.73s (0:04:14)`)
-- Post-commit gate: `git show --check HEAD` (to be verified after commit).
+- Post-commit gate: `git show --check HEAD` (passed after commit).
 - No release.
 
 ## Split task_run_phases into the task_phases package, verbatim motion only (2026-09-20)
