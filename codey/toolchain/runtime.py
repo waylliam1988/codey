@@ -11,7 +11,7 @@ import subprocess
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from codey.runtime.core import cancellation
@@ -203,7 +203,7 @@ class RunCommandRawResult:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _first_model_line(text: object, limit: int) -> str:

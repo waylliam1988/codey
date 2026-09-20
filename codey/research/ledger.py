@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 from codey.research.source_document import SourceDocument
 from codey.research import source_domains
@@ -364,7 +364,7 @@ class ResearchLedger:
     def page_for_excerpt(self, source_url: str, excerpt: str) -> int | None:
         if not excerpt:
             return None
-        for page, text in (self._source_pages.get(source_url) or {}).items():
+        for page, _text in (self._source_pages.get(source_url) or {}).items():
             if self.excerpt_in_source(source_url, excerpt, page=page):
                 return page
         return None
@@ -471,7 +471,7 @@ class ResearchLedger:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
+    return datetime.now(UTC).astimezone().replace(microsecond=0).isoformat()
 
 
 def classify_source_quality(url: str, text: str = "") -> SourceQuality:
@@ -514,7 +514,7 @@ def _freshness(text: str) -> str:
             pass
     if not years:
         return "undated"
-    current = datetime.now(timezone.utc).year
+    current = datetime.now(UTC).year
     latest = max(years)
     if latest >= current - 2:
         return "fresh"

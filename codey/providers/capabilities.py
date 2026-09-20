@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Iterable, Literal
+from typing import Literal
+from collections.abc import Iterable
 
 from codey.providers.ids import normalize_provider_id
 

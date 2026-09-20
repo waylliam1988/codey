@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Sequence
+from collections.abc import Sequence
 
 from codey.policies.command_line import split_run_command
 from codey.storage.local_store import (

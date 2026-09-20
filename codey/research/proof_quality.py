@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import status_token as _status_token

@@ -13,7 +13,8 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 # ruff: noqa: E402 - direct script execution must add the repository root first.
 ROOT = Path(__file__).resolve().parents[2]

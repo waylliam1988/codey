@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Iterator
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -421,7 +421,7 @@ def run_reviewer_matrix(
                 reply = reviewer.send(prompt, timeout=app_services.REVIEW_TIMEOUT)
                 review = parse_review_with_repair(
                     reply,
-                    lambda repair: reviewer.send(repair, timeout=app_services.REVIEW_TIMEOUT),
+                    lambda repair, reviewer=reviewer: reviewer.send(repair, timeout=app_services.REVIEW_TIMEOUT),
                 )
             item = {
                 "provider": provider_id,

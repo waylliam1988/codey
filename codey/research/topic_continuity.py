@@ -26,7 +26,8 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 TOPIC_CONTINUITY_SCHEMA_VERSION = 1
 _PROJECTION_KIND = "research_topic_continuity_projection"

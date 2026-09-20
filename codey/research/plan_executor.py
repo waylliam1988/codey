@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
 from codey.research.context import ResearchPipelineConfig

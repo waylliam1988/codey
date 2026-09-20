@@ -20,7 +20,7 @@ Design rules locked by tests:
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Iterable
+from collections.abc import Iterable
 
 GENERAL_PROFILE_ID = "general"
 BUILTIN_PROFILE_IDS = (

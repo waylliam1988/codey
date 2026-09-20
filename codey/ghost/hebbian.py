@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import hashlib
 import math
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -121,7 +121,7 @@ class GhostNode:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostNode | None":
+    def from_payload(cls, payload: object) -> GhostNode | None:
         if not isinstance(payload, dict):
             return None
         kind = str(payload.get("kind") or "").strip().lower()
@@ -188,7 +188,7 @@ class GhostEdge:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostEdge | None":
+    def from_payload(cls, payload: object) -> GhostEdge | None:
         if not isinstance(payload, dict):
             return None
         source = clip_signal_text(payload.get("source"), 120)
@@ -1211,7 +1211,7 @@ def _now() -> str:
 
 
 def _compact_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

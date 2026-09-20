@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +25,7 @@ class RepairJournal:
             return
         record = {
             "event": _safe_text(event, 80),
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": datetime.now(UTC).isoformat(),
         }
         for key, value in fields.items():
             if key in {"prompt", "reply", "url", "cookie", "source", "content"}:

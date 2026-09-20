@@ -11,7 +11,7 @@ supervisor. One normalization rule keeps them comparable everywhere:
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def normalize_provider_id(value: object) -> str:

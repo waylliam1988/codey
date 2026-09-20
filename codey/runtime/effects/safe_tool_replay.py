@@ -10,7 +10,7 @@ Does not import agents, operations, ghost, provider, or tool executors.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,

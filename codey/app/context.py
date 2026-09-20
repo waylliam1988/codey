@@ -950,7 +950,7 @@ class AppContext:
         if resources_closed:
             self._resources_closed = True
 
-    def __enter__(self) -> "AppContext":
+    def __enter__(self) -> AppContext:
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:

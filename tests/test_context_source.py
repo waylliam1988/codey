@@ -112,7 +112,7 @@ class ContextSourceTests(unittest.TestCase):
 
         for exc in cases:
             with self.subTest(exc=type(exc).__name__):
-                def stopped() -> str:
+                def stopped(exc=exc) -> str:
                     raise exc
 
                 with self.assertRaises(type(exc)):

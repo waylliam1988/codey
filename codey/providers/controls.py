@@ -12,15 +12,16 @@ import logging
 import re
 import threading
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from codey.runtime.core import cancellation
 from codey.providers import profile_doctor
+from codey.providers.assistance import assistance_suppressed, suppress_assistance
 from codey.providers import discovery as discovery
 from codey.providers import flow as provider_flow
 from codey.providers import revival as provider_revival
@@ -45,13 +46,12 @@ CONTROL_LABELS = {
     CONTROL_RESPONSE: "answer",
 }
 CONTROL_STORE = DEFAULT_STATE_HOME / "provider-controls.json"
-_handler: Callable[["ControlTeachRequest"], Any] | None = None
+_handler: Callable[[ControlTeachRequest], Any] | None = None
 _doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
 _context = threading.local()
 _TASK_CONTEXT_FIELDS = (
     "session_id",
     "doctor_attempts",
-    "assistance_depth",
     "sources",
     "pending",
     "response_locators",
@@ -122,11 +122,11 @@ def set_doctor_handler(
 
 
 def can_teach() -> bool:
-    return _handler is not None and not _assistance_suppressed()
+    return _handler is not None and not assistance_suppressed()
 
 
 def can_doctor() -> bool:
-    return _doctor_handler is not None and not _assistance_suppressed()
+    return _doctor_handler is not None and not assistance_suppressed()
 
 
 def begin_task_context(session_id: str) -> None:
@@ -601,18 +601,7 @@ def _doctor_attempts() -> set[tuple[str, str, str]]:
     return attempts
 
 
-def _assistance_suppressed() -> bool:
-    return bool(getattr(_context, "assistance_depth", 0))
 
-
-@contextmanager
-def suppress_assistance():
-    depth = int(getattr(_context, "assistance_depth", 0))
-    _context.assistance_depth = depth + 1
-    try:
-        yield
-    finally:
-        _context.assistance_depth = depth
 
 
 def start_click_capture(page: Any) -> str:

@@ -43,7 +43,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
             )
             self.assertEqual(metadata["handle"], ref.handle)
             self.assertEqual(metadata["tool_id"], "2:0")
-            self.assertEqual(metadata["original_bytes"], len("full output\n".encode()))
+            self.assertEqual(metadata["original_bytes"], len(b"full output\n"))
             self.assertEqual(metadata["stored_bytes"], ref.stored_bytes)
             self.assertEqual(metadata["sha256"], ref.sha256)
 

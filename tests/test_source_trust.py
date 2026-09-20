@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import FrozenInstanceError
 
 from codey.research.source_trust import (
     MAX_PROJECTIONS,
@@ -373,7 +374,7 @@ class SharedWarningTests(unittest.TestCase):
         projection = project_source_trust(_source("arxiv.org"))
 
         self.assertIsInstance(projection, SourceTrustProjection)
-        with self.assertRaises(Exception):
+        with self.assertRaises(FrozenInstanceError):
             projection.host = "mutated"  # type: ignore[misc]
 
 

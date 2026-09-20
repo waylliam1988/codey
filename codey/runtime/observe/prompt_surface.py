@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 PROMPT_SURFACE_SCHEMA_VERSION = 1
 
@@ -69,7 +69,7 @@ class PromptSurfaceRecord:
 
 
 def prompt_surface_id(*, phase: str, send_ref: str, prompt_digest: str) -> str:
-    raw = f"{phase}\0{send_ref}\0{prompt_digest}".encode("utf-8")
+    raw = f"{phase}\0{send_ref}\0{prompt_digest}".encode()
     digest = hashlib.sha256(raw).hexdigest()[:16]
     return f"prompt_surface:{digest}"
 

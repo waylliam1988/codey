@@ -12,7 +12,8 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.runner import run as default_agent_run

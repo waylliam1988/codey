@@ -145,7 +145,7 @@ class ActionPolicyDecision:
         *,
         guard_id: str = "default_allow",
         reason_code: str = "allowed",
-    ) -> "ActionPolicyDecision":
+    ) -> ActionPolicyDecision:
         return cls(
             DECISION_ALLOW,
             guard_id,
@@ -163,7 +163,7 @@ class ActionPolicyDecision:
         guard_id: str,
         reason_code: str,
         display: str,
-    ) -> "ActionPolicyDecision":
+    ) -> ActionPolicyDecision:
         return cls(
             DECISION_ASK_USER,
             guard_id,
@@ -182,7 +182,7 @@ class ActionPolicyDecision:
         guard_id: str,
         reason_code: str,
         display: str,
-    ) -> "ActionPolicyDecision":
+    ) -> ActionPolicyDecision:
         return cls(
             DECISION_DENY,
             guard_id,

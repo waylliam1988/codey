@@ -344,7 +344,7 @@ class ScanSaturationTests(unittest.TestCase):
     def test_huge_production_diff_does_not_hide_test_section(self) -> None:
         # A production file saturates its section cap; the tampered test
         # file after it must still be observed.
-        filler = "".join("-line %d\n+line %dx\n" % (i, i) for i in range(2400))
+        filler = "".join(f"-line {i}\n+line {i}x\n" for i in range(2400))
         big_first = (
             "diff --git a/src/big.py b/src/big.py\n"
             "--- a/src/big.py\n"

@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.workspace.change_set import ChangeAnchor, ChangeSet
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path, PurePosixPath
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
@@ -49,7 +49,7 @@ VALID_STATUSES = frozenset({"working", "ready_for_review", "fixing_review", "int
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _text(value: object, limit: int) -> str:

@@ -21,7 +21,8 @@ import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 if __package__ in (None, ""):
@@ -220,7 +221,7 @@ class PromptBoundaryProvider:
         self,
         provider,
         *,
-        trace: "LiveTrace | None",
+        trace: LiveTrace | None,
         run_id: str,
         provider_id: str,
         provider_name: str,

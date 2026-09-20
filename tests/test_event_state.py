@@ -122,7 +122,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
         started = threading.Event()
         stop = threading.Event()
 
-        def lock_holder() -> None:
+        def lock_holder(store=store, started=started, stop=stop) -> None:
             with with_file_lock(store.events_path, timeout_seconds=5.0):
                 started.set()
                 stop.wait(timeout=2.0)
@@ -160,7 +160,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
         started = threading.Event()
         stop = threading.Event()
 
-        def lock_holder() -> None:
+        def lock_holder(store=store, started=started, stop=stop) -> None:
             with with_file_lock(store.events_path, timeout_seconds=5.0):
                 started.set()
                 stop.wait(timeout=2.0)
@@ -201,7 +201,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
             started = threading.Event()
             stop = threading.Event()
 
-            def lock_holder() -> None:
+            def lock_holder(store=store, started=started, stop=stop) -> None:
                 with with_file_lock(store.events_path, timeout_seconds=5.0):
                     started.set()
                     stop.wait(timeout=3.0)
@@ -262,7 +262,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
                 started = threading.Event()
                 stop = threading.Event()
 
-                def lock_holder() -> None:
+                def lock_holder(store=store, started=started, stop=stop) -> None:
                     with with_file_lock(store.events_path, timeout_seconds=5.0):
                         started.set()
                         stop.wait(timeout=2.0)
@@ -273,7 +273,7 @@ class ResetEventBackedStateTests(unittest.TestCase):
 
                 read_done = False
 
-                def reader() -> None:
+                def reader(read_fn=read_fn, store=store) -> None:
                     nonlocal read_done
                     read_fn(store)
                     read_done = True

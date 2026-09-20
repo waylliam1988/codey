@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
 
 from codey.storage.local_store import (
     StoreCorruption,

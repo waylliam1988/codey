@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import services

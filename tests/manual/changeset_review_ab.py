@@ -394,7 +394,7 @@ def self_test() -> int:
             + " ".join(case.issue_terms[:2])
             + '","suggested_fix":"Fix it"}]}'
         )
-        parsed = parse_review_with_repair(canned, lambda _repair: canned, changes=case.changes)
+        parsed = parse_review_with_repair(canned, lambda _repair, canned=canned: canned, changes=case.changes)
         rows.append(_score(case, "current", parsed, canned))
     assert all(row["anchor_ok"] for row in rows)
     assert all(row["issue_hit"] for row in rows)

@@ -15,7 +15,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from unittest import mock
 
 if __package__ in (None, ""):

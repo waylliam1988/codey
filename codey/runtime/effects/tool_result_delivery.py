@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import hashlib
 from typing import Any
 import uuid
@@ -353,7 +353,7 @@ class DeliveryBatchIntent:
             "turn": int(self.turn),
             "items": [it.to_dict() for it in self.items],
             "batch_digest": self.batch_digest,
-            "created_at": self.created_at or datetime.now(timezone.utc).isoformat(),
+            "created_at": self.created_at or datetime.now(UTC).isoformat(),
         }
 
 
@@ -489,7 +489,7 @@ def send_attempt_entry(
         "lane": lane_for_run(run_id),
         "operation_id": operation_id_for_run(run_id),
         "provider_effect_id": clean_peid,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
     return delivery_record_entry(payload)
@@ -527,7 +527,7 @@ def delivered_entry(
         "lane": lane_for_run(run_id),
         "operation_id": operation_id_for_run(run_id),
         "provider_effect_id": clean_peid,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
     return delivery_record_entry(payload)
@@ -576,7 +576,7 @@ def recovered_entry(
         "recovered_effect_ids": clean_effect_ids,
         "recovered_reads": rec_reads,
         "recovered_lookups": rec_lookups,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
     _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
     return delivery_record_entry(payload)

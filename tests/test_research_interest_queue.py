@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 
 from codey.ghost.work_queue import GhostWorkQueueStore

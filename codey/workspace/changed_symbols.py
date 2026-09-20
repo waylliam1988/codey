@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from codey.workspace.change_set import ChangeSet
 
@@ -257,7 +257,7 @@ def _paired_definition_indices(
     for kind in _kind_order(old_defs, new_defs):
         old_indices = [index for index, item in enumerate(old_defs) if item.kind == kind]
         new_indices = [index for index, item in enumerate(new_defs) if item.kind == kind]
-        pairs.extend(zip(old_indices, new_indices))
+        pairs.extend(zip(old_indices, new_indices, strict=False))
     return tuple(pairs)
 
 

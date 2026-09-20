@@ -23,7 +23,7 @@ Hard rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.utils.refs import digest_json, identifier, nonnegative_int, stable_ref
 from codey.research.brief_projection import (

@@ -8,7 +8,7 @@ mutation line commits their rows atomically.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from collections.abc import Iterable
 
 from codey.runtime.core.operation_state import (
     RuntimeOperationTransitionError,

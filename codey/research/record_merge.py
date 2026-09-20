@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import replace
-from typing import Sequence
+from collections.abc import Sequence
 
 from codey.research.done_finalizer import (
     finalize_done_answer,

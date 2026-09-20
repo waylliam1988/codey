@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
+from codey.providers.assistance import assistance_suppressed, reset_assistance, suppress_assistance
 from codey.providers.profiles import ProviderProfile
 
 
@@ -143,12 +144,14 @@ def set_recovery_handler(
 
 
 def begin_task_context(session_id: str) -> None:
+    reset_assistance()
     _context.session_id = str(session_id or "")
     _context.attempts = set()
 
 
 def end_task_context() -> None:
-    for name in ("session_id", "attempts", "assistance_depth"):
+    reset_assistance()
+    for name in ("session_id", "attempts"):
         if hasattr(_context, name):
             delattr(_context, name)
 
@@ -295,10 +298,7 @@ def request_recovery(
     failure_kind: str = "response_missing",
 ) -> dict[str, tuple[str, ...]] | None:
     cancellation.check()
-    if (
-        failure_kind not in RECOVERABLE_FAILURE_KINDS
-        or int(getattr(_context, "assistance_depth", 0))
-    ):
+    if failure_kind not in RECOVERABLE_FAILURE_KINDS or assistance_suppressed():
         return None
     key = (str(getattr(_context, "session_id", "") or ""), provider_id, stage)
     attempts = getattr(_context, "attempts", None)
@@ -326,16 +326,6 @@ def request_recovery(
         return None
     recipe = {stage: candidate.predicates}
     return recipe if evaluate(recipe, stage, trace.latest(), trace) else None
-
-
-@contextmanager
-def suppress_assistance():
-    depth = int(getattr(_context, "assistance_depth", 0))
-    _context.assistance_depth = depth + 1
-    try:
-        yield
-    finally:
-        _context.assistance_depth = depth
 
 
 def choose_candidate(

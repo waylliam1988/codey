@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 
 from codey.ghost.extractor import GhostSignalExtractor, SignalProvider
 from codey.ghost.hebbian import GhostHebbianStore

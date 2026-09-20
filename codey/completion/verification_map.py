@@ -10,7 +10,7 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Sequence
+from collections.abc import Sequence
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.changed_symbols import changed_symbol_names

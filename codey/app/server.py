@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import queue
-import socket
 import sys
 import threading
 import time
@@ -405,7 +404,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             try:
                 return self.rfile.read(length)
-            except (TimeoutError, socket.timeout):
+            except TimeoutError:
                 self._send_json(408, {"error": "request body timeout"})
                 return None
             except Exception:

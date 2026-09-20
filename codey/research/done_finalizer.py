@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.utils.citation_scanner import (
     citation_ref_items,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from codey.providers import controls
 from codey.providers import flow as provider_flow

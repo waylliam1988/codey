@@ -18,7 +18,8 @@ Decomposes tool execution in a turn into:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
+from collections.abc import Sequence
 
 from codey.agents.state import AgentLoopSession
 from codey.agents.shell_approval import DeferredToolCall, deferred_tool_call_from_call

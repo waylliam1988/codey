@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from codey.ghost.affinity import GhostAffinityStore
@@ -48,7 +48,7 @@ class GhostControlSurface:
     signals: GhostSignalStore | None = None
 
     @classmethod
-    def from_state_home(cls, state_home: str | Path | None) -> "GhostControlSurface":
+    def from_state_home(cls, state_home: str | Path | None) -> GhostControlSurface:
         if not state_home:
             return cls()
         return cls(
@@ -682,7 +682,7 @@ def _normalize_project(value: object) -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _unavailable_payload() -> dict[str, object]:

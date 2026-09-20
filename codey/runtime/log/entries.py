@@ -154,7 +154,7 @@ class RuntimeLogEntry:
         ) + "\n"
 
     @classmethod
-    def from_payload(cls, payload: object) -> "RuntimeLogEntry":
+    def from_payload(cls, payload: object) -> RuntimeLogEntry:
         if not isinstance(payload, dict):
             raise RuntimeLogCorruption("runtime log entry must be an object")
         if set(payload) - _KNOWN_ENTRY_KEYS:

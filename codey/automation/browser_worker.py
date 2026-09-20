@@ -12,7 +12,8 @@ from enum import Enum
 import queue
 import threading
 import time
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
 
@@ -266,7 +267,7 @@ class BrowserWorker:
             job.cancel_event.set()
             job.state = _JobState.CANCELLED
             job.abandoned = True
-            raise BrowserWorkerBusy("browser worker busy: queue full")
+            raise BrowserWorkerBusy("browser worker busy: queue full") from None
 
         try:
             while not job.done.wait(_POLL_INTERVAL):

@@ -7,11 +7,12 @@ existing projections, compacts event logs, and writes a bounded report.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import json
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
+from collections.abc import Callable, Iterable, Mapping
 import uuid
 
 from codey.ghost.affinity import GhostAffinityStore
@@ -125,7 +126,7 @@ class GhostSleepReport:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostSleepReport | None":
+    def from_payload(cls, payload: object) -> GhostSleepReport | None:
         if not isinstance(payload, dict):
             return None
         if payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
@@ -781,7 +782,7 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:

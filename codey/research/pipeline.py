@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Mapping, Protocol
+from typing import Protocol
+from collections.abc import Callable, Mapping
 
 from codey.runtime.core import cancellation
 from codey.research.context import ResearchContext, ResearchPipelineConfig

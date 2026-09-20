@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any
+from collections.abc import Callable, Sequence
 
 from codey.runtime.core import cancellation
 from codey.utils.refs import clip

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
 from codey.agents.runner import RunResult

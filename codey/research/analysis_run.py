@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.utils.refs import (
     clip,

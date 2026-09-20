@@ -6,7 +6,7 @@ import threading
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.providers import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import ProviderFailure

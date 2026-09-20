@@ -11,7 +11,7 @@ import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import path_matches_ignored_prefix

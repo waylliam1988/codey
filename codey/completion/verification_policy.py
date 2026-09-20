@@ -8,12 +8,19 @@ import shutil
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from codey.policies.command_line import split_run_command
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
+)
+from codey.completion.discovery import (
+    TRUSTED_EXCLUDED_DIRS,
+    is_manifest_file,
+    is_real_directory,
+    read_manifest_text,
+    safe_cwd,
 )
 from codey.completion.edit_scope import is_document_path
 from codey.workspace.config import path_matches_ignored_prefix
@@ -22,10 +29,6 @@ from codey.workspace.config import path_matches_ignored_prefix
 MAX_SCAN_DIRS = 160
 MAX_SCAN_ENTRIES = 2_000
 MAX_MANIFEST_BYTES = 256 * 1024
-EXCLUDED_DIRS = frozenset({
-    ".git", ".hg", ".svn", ".venv", "venv", "node_modules",
-    "__pycache__", "dist", "build", ".next", "target",
-})
 NODE_SCRIPTS = ("test", "typecheck", "check", "lint", "build")
 MAKE_TARGETS = ("test", "typecheck", "check", "lint", "build")
 MAKEFILE_NAMES = ("Makefile", "makefile", "GNUmakefile")
@@ -67,17 +70,6 @@ class VerificationCandidate:
     source_priority: int = 0
 
 
-def _safe_cwd(root: Path, value: object) -> str | None:
-    text = str(value or ".").strip().replace("\\", "/") or "."
-    path = PurePosixPath(text)
-    if path.is_absolute() or ".." in path.parts:
-        return None
-    target = (root / path).resolve()
-    if root != target and root not in target.parents:
-        return None
-    return path.as_posix()
-
-
 def _allowed_and_available(root: str | Path, cwd: str, command: str) -> bool:
     try:
         canonical = canonical_run_command(root, cwd, command)
@@ -97,13 +89,13 @@ def _candidate(
     source_priority: int = 0,
 ) -> VerificationCandidate | None:
     text = str(command or "").strip()
-    safe_cwd = _safe_cwd(root, cwd)
-    if not text or safe_cwd is None or not (root / safe_cwd).is_dir():
+    contained = safe_cwd(root, cwd)
+    if not text or contained is None or not (root / contained).is_dir():
         return None
-    if not _allowed_and_available(root, safe_cwd, text):
+    if not _allowed_and_available(root, contained, text):
         return None
     priority = max(source_priority, 100 if previously_passed else 0)
-    return VerificationCandidate(text, safe_cwd, source, previously_passed, priority)
+    return VerificationCandidate(text, contained, source, previously_passed, priority)
 
 
 def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Iterable[Path]:
@@ -123,7 +115,7 @@ def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Itera
             if seen_entries > MAX_SCAN_ENTRIES:
                 return
             name = child.name
-            if name.startswith(".") or name.lower() in EXCLUDED_DIRS:
+            if name.startswith(".") or name.lower() in TRUSTED_EXCLUDED_DIRS:
                 continue
             try:
                 rel = child.relative_to(root).as_posix()
@@ -138,29 +130,7 @@ def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Itera
                 continue
 
 
-def _is_manifest_file(path: Path) -> bool:
-    try:
-        return not path.is_symlink() and path.is_file()
-    except OSError:
-        return False
 
-
-def _read_manifest(path: Path) -> str:
-    try:
-        if not _is_manifest_file(path):
-            return ""
-        if path.stat().st_size > MAX_MANIFEST_BYTES:
-            return ""
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return ""
-
-
-def _is_directory(path: Path) -> bool:
-    try:
-        return not path.is_symlink() and path.is_dir()
-    except OSError:
-        return False
 
 
 def _executable_name(value: str) -> str:
@@ -183,7 +153,7 @@ def _package_manager_from_package(package: object) -> str | None:
 
 def _package_manager_from_lockfile(directory: Path) -> str | None:
     for name, manager in NODE_PACKAGE_MANAGER_LOCKFILES:
-        if _is_manifest_file(directory / name):
+        if is_manifest_file(directory / name):
             return manager
     return None
 
@@ -225,7 +195,7 @@ def node_package_manager_for_directory(
 
     package_data = package
     if package_data is None:
-        package_text = _read_manifest(directory_path / "package.json")
+        package_text = read_manifest_text(directory_path / "package.json", max_bytes=MAX_MANIFEST_BYTES)
         try:
             package_data = json.loads(package_text) if package_text else {}
         except ValueError:
@@ -259,7 +229,7 @@ def _node_script_from_argv(argv: list[str]) -> str:
 
 
 def _package_script_exists(root: Path, cwd: str, script: str) -> bool:
-    package_text = _read_manifest(root / cwd / "package.json")
+    package_text = read_manifest_text(root / cwd / "package.json", max_bytes=MAX_MANIFEST_BYTES)
     try:
         package = json.loads(package_text) if package_text else {}
     except ValueError:
@@ -275,9 +245,9 @@ def _package_script_exists(root: Path, cwd: str, script: str) -> bool:
 def _bun_builtin_test_is_current(root: Path, cwd: str) -> bool:
     directory = root / cwd
     return (
-        _is_manifest_file(directory / "bun.lockb")
-        or _is_manifest_file(directory / "bun.lock")
-        or _is_manifest_file(directory / "package.json")
+        is_manifest_file(directory / "bun.lockb")
+        or is_manifest_file(directory / "bun.lock")
+        or is_manifest_file(directory / "package.json")
     )
 
 
@@ -333,9 +303,9 @@ def _historical_candidate_is_current(
         return bool(script) and _package_script_exists(root, candidate.cwd, script)
     cwd = root / candidate.cwd
     if executable == "cargo":
-        return _is_manifest_file(cwd / "Cargo.toml")
+        return is_manifest_file(cwd / "Cargo.toml")
     if executable == "go":
-        return _is_manifest_file(cwd / "go.mod")
+        return is_manifest_file(cwd / "go.mod")
     return True
 
 
@@ -371,7 +341,7 @@ def discover_verification_candidates(
             found.append(candidate)
     for directory in _bounded_directories(root, ignored_paths):
         cwd = directory.relative_to(root).as_posix() or "."
-        package_text = _read_manifest(directory / "package.json")
+        package_text = read_manifest_text(directory / "package.json", max_bytes=MAX_MANIFEST_BYTES)
         if package_text:
             try:
                 package = json.loads(package_text)
@@ -388,11 +358,11 @@ def discover_verification_candidates(
                         )
                         if candidate is not None:
                             found.append(candidate)
-        if _is_manifest_file(directory / "pytest.ini"):
+        if is_manifest_file(directory / "pytest.ini"):
             candidate = _candidate(root, "python -m pytest", cwd, "pytest.ini")
             if candidate is not None:
                 found.append(candidate)
-        pyproject_text = _read_manifest(directory / "pyproject.toml")
+        pyproject_text = read_manifest_text(directory / "pyproject.toml", max_bytes=MAX_MANIFEST_BYTES)
         if pyproject_text:
             try:
                 pyproject = tomllib.loads(pyproject_text)
@@ -419,7 +389,7 @@ def discover_verification_candidates(
                 candidate = _candidate(root, "mypy .", cwd, "tool.mypy")
                 if candidate is not None:
                     found.append(candidate)
-        if _is_directory(directory / "tests"):
+        if is_real_directory(directory / "tests"):
             candidate = _candidate(
                 root,
                 "python -m unittest discover",
@@ -428,20 +398,20 @@ def discover_verification_candidates(
             )
             if candidate is not None:
                 found.append(candidate)
-        if _is_manifest_file(directory / "ruff.toml") or _is_manifest_file(
+        if is_manifest_file(directory / "ruff.toml") or is_manifest_file(
             directory / ".ruff.toml"
         ):
             candidate = _candidate(root, "ruff check .", cwd, "ruff config")
             if candidate is not None:
                 found.append(candidate)
-        if _is_manifest_file(directory / "mypy.ini") or _is_manifest_file(
+        if is_manifest_file(directory / "mypy.ini") or is_manifest_file(
             directory / ".mypy.ini"
         ):
             candidate = _candidate(root, "mypy .", cwd, "mypy config")
             if candidate is not None:
                 found.append(candidate)
         for name in MAKEFILE_NAMES:
-            makefile_text = _read_manifest(directory / name)
+            makefile_text = read_manifest_text(directory / name, max_bytes=MAX_MANIFEST_BYTES)
             if not makefile_text:
                 continue
             for target in _make_targets(makefile_text):
@@ -454,11 +424,11 @@ def discover_verification_candidates(
                 if candidate is not None:
                     found.append(candidate)
             break
-        if _is_manifest_file(directory / "Cargo.toml"):
+        if is_manifest_file(directory / "Cargo.toml"):
             candidate = _candidate(root, "cargo test", cwd, "Cargo.toml")
             if candidate is not None:
                 found.append(candidate)
-        if _is_manifest_file(directory / "go.mod"):
+        if is_manifest_file(directory / "go.mod"):
             candidate = _candidate(root, "go test ./...", cwd, "go.mod")
             if candidate is not None:
                 found.append(candidate)

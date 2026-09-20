@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.research.evidence_runtime import is_valid_runtime_ref
 from codey.utils.refs import clip, stable_ref

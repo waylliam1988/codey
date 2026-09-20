@@ -59,7 +59,7 @@ def check_failure_summary(outcome: object) -> str:
     return summary
 
 
-def _is_non_check_run_failure(item: "CheckEvidence") -> bool:
+def _is_non_check_run_failure(item: CheckEvidence) -> bool:
     return item.exit_code is None and item.error_code in NON_CHECK_RUN_ERROR_CODES
 
 

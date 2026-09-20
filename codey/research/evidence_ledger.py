@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Callable, Mapping
+from collections.abc import Callable, Mapping
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json, session_key, write_json_atomic
@@ -1492,7 +1492,7 @@ def _add_warning(payload: dict[str, object], warning: str) -> None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 __all__ = [

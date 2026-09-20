@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import math
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 from codey.ghost.hebbian import (
     HEBBIAN_SCHEMA_VERSION,
@@ -330,14 +331,14 @@ def _parse_ts(value: object) -> datetime:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _normalize_project(value: object) -> str:

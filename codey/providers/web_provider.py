@@ -55,7 +55,7 @@ class WebChatProvider:
         bring_to_front: bool = True,
         isolated: bool = False,
         fresh_tab: bool = False,
-    ) -> "WebChatProvider":
+    ) -> WebChatProvider:
         opener = getattr(browser, cls.spec.opener_name)
         return cls(opener(
             port=port,

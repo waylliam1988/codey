@@ -36,7 +36,7 @@ class SourceDocument:
         text: str,
         mime_type: str = "text/html",
         truncated: bool = False,
-    ) -> "SourceDocument":
+    ) -> SourceDocument:
         return cls(
             requested_url=requested_url,
             final_url=final_url,

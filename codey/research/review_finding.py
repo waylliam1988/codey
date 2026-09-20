@@ -14,7 +14,7 @@ claiming "fixed" is not a verification.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.research.analysis_run import REPRODUCTION_FAILED
 from codey.research.evidence_runtime import (

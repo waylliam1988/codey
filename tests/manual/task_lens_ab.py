@@ -368,8 +368,8 @@ def _reason_for_candidate(
     is_test: bool,
 ) -> str:
     task_tokens = _meaningful_tokens(task)
-    path_hits = sorted((task_tokens & _tokens(rel.replace("/", " "))))[:3]
-    symbol_hits = sorted((task_tokens & _tokens(" ".join(symbols))))[:3]
+    path_hits = sorted(task_tokens & _tokens(rel.replace("/", " ")))[:3]
+    symbol_hits = sorted(task_tokens & _tokens(" ".join(symbols)))[:3]
     reasons: list[str] = []
     if path_hits:
         reasons.append("path terms: " + "/".join(path_hits))

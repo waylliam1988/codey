@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, TypeVar
+from datetime import datetime, UTC
+from typing import Any, TypeVar
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from codey.runtime.core import cancellation
@@ -131,7 +132,7 @@ def capture_provider_failure(
         url=_safe_page_value(page, "url"),
         title=_safe_page_title(page),
         message=str(error),
-        time=(now or datetime.now(timezone.utc)).isoformat(),
+        time=(now or datetime.now(UTC)).isoformat(),
         kind=_failure_kind(error),
         stage=_failure_stage(error, action),
         facts=_failure_facts(error),

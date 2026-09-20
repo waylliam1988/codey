@@ -11,7 +11,8 @@ from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime
 import hashlib
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 import uuid
 
 from codey.ghost.event_log import (
@@ -200,7 +201,7 @@ class AffinityNode:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "AffinityNode | None":
+    def from_payload(cls, payload: object) -> AffinityNode | None:
         if not isinstance(payload, Mapping):
             return None
         kind = _clean_node_kind(payload.get("kind"))
@@ -281,7 +282,7 @@ class AffinityEdge:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "AffinityEdge | None":
+    def from_payload(cls, payload: object) -> AffinityEdge | None:
         if not isinstance(payload, Mapping):
             return None
         relation = _clean_relation(payload.get("relation"))
@@ -880,7 +881,7 @@ class GhostAffinityStore:
             return result if isinstance(result, dict) else {"nodes": 0, "edges": 0, "warnings": ["affinity_error"]}
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost affinity events are unreadable")
+                raise OSError("ghost affinity events are unreadable") from None
             raise
 
     def rebuild_from_events(self) -> bool:

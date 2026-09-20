@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable, Mapping
+from collections.abc import Callable, Mapping
 
 from codey.utils.refs import clip, digest_text
 

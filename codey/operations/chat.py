@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.agents.handoff import render_continuation_prompt, render_handoff
 from codey.agents.runner import RunResult

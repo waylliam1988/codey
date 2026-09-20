@@ -15,7 +15,7 @@ source is. Combining both is the consumer's job.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.utils.refs import clip as _clip
 from codey.utils.refs import identifier as _identifier

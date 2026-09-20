@@ -276,7 +276,7 @@ class ProviderFlowTests(unittest.TestCase):
             "f1",
         ):
             with self.subTest(reply=reply):
-                self.assertIsNone(flow.choose_candidate(request, lambda _prompt: reply))
+                self.assertIsNone(flow.choose_candidate(request, lambda _prompt, reply=reply: reply))
 
     def test_prompt_contains_no_page_or_user_content(self) -> None:
         request = flow.FlowRecoveryRequest(

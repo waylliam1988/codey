@@ -19,7 +19,7 @@ WEB_ASSET_TYPES = {
 MAX_STATIC_CACHE_ENTRIES = 64
 MAX_STATIC_CACHE_BYTES = 8 * 1024 * 1024
 _STATIC_CACHE_LOCK = threading.Lock()
-_STATIC_CACHE: OrderedDict[tuple[str, str], "_StaticCacheEntry"] = OrderedDict()
+_STATIC_CACHE: OrderedDict[tuple[str, str], _StaticCacheEntry] = OrderedDict()
 _STATIC_CACHE_BYTES = 0
 
 
@@ -213,7 +213,7 @@ def write_sse_event(
     try:
         data = json.dumps(dict(event), ensure_ascii=False)
         prefix = f"id: {event_id}\n" if event_id > 0 else ""
-        handler.wfile.write(f"{prefix}data: {data}\n\n".encode("utf-8"))
+        handler.wfile.write(f"{prefix}data: {data}\n\n".encode())
         handler.wfile.flush()
         return True
     except Exception:

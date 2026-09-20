@@ -2,6 +2,33 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - B/UP 规则打开、assistance 统一开关、completion discovery 工具（未发布）
+
+- `pyproject.toml` 打开 `B` + `UP`（债务清零后）：223 个安全自动修
+  （`UP035` / `UP017` / `UP037` / `UP012` / `UP034` / `UP041`、
+  `B009` / `B010`）+ 30 个手动修——故意转换错误的 `B904 from None`
+ （8）、相邻配对 zip 显式 `strict=False`（4）、未用循环变量下划线
+ （3）、闭包默认参数绑定（含两个 ghost 线程 helper）（12）、f-string
+  printf（1）、`capture_output`（1）、`FrozenInstanceError` 替代盲
+  `Exception`（1）。`UP017` naive→aware 时间语义经时间戳套件验证。
+  剩余 lint 债只有 `I/SIM`：`729 total (I:414, SIM:315), 494 fixable`。
+- 新增 `providers/assistance.py`：一个共享 thread-local 深度计数器，
+  `suppress_assistance` / `assistance_suppressed` / `reset_assistance`。
+  `controls` 与 `flow` 重导出开关并在 `can_teach` / `can_doctor` /
+  `request_recovery` 查它；任务边界 reset。这是故意的语义变更（原来两套
+  独立计数器、中间有递归洞），双向交叉测试 + 嵌套/reset 测试钉住。
+  所有 patch 点保留。
+- 新增 `completion/discovery.py`：`TRUSTED_EXCLUDED_DIRS`（与
+  `workspace.map` 同一词汇表，唯一故意差异：`coverage/` 也跳过）、
+  `safe_cwd`、`is_manifest_file`、`read_manifest_text`、
+  `is_real_directory`。policy 内部委托；map / policy / verification /
+  decision / engine 边界与 `VerificationCandidate` 公开面不动；两个测试
+  import 跟随搬家。
+- 验证：`ruff check .`（全仓含新规则）、`compileall`、`git diff --check`
+  通过；`tests/test_architecture.py` 全绿；定向套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3895 passed, 6 skipped, 1310 subtests passed in 269.67s`）。
+
 ## Unreleased - Close 线性化、lazy worker、import 卫生、gateway 诊断（未发布）
 
 - `AppContext.close()` 改走 `request_stop()`，不再裸 `stop_flag.set()`：

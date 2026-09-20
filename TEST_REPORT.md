@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## B/UP rules on, shared assistance switch, completion discovery tools (2026-09-20)
+
+Scope:
+
+```text
+pyproject.toml:              select += B, UP; debt comment recounted (I/SIM only)
+codey+tests+tools:           223 safe auto-fixes + 30 manual (from None,
+                             strict=False, _vars, closure binds, f-string,
+                             capture_output, FrozenInstanceError); UP017
+                             naive->aware verified via timestamp suites
+codey/providers/assistance.py (new):
+                             shared thread-local depth counter + reset;
+                             controls/flow re-export + consult it;
+                             deliberate cross-suppression semantics
+codey/completion/discovery.py (new):
+                             trusted excluded dirs, safe cwd, manifest reads,
+                             real-directory check; policy delegates, boundaries kept
+tests:                       test_provider_assistance.py (new, 4 tests);
+                             verification/discovery import updates
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (whole repo, new rules; cache lied once, fixed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`729 total (I:414, SIM:315), 494 fixable`; B/UP zero)
+- Targeted gates before the full run:
+  timestamp suites after UP017 (114 passed),
+  assistance/controls/flow/consensus/adapter (177 passed),
+  verification set (145 passed),
+  `tests/test_architecture.py` (82 passed, 316 subtests passed)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3895 passed, 6 skipped, 1310 subtests passed in 269.67s (0:04:29)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Linearized close, lazy browser worker, import hygiene, gateway diagnostics (2026-09-20)
 
 Scope:

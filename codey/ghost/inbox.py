@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 import re
 import uuid
-from typing import Iterable
+from collections.abc import Iterable
 
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -121,7 +121,7 @@ class GhostMemoryCandidate:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostMemoryCandidate | None":
+    def from_payload(cls, payload: object) -> GhostMemoryCandidate | None:
         if not isinstance(payload, dict):
             return None
         candidate_type = str(payload.get("candidate_type") or "").strip()
@@ -1148,11 +1148,11 @@ def _int_or_default(value: object, default: int) -> int:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _compact_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

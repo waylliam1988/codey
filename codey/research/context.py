@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping, Protocol
+from typing import Protocol
+from collections.abc import Callable, Iterable, Mapping
 
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult

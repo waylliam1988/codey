@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from pathlib import PurePosixPath
-from typing import Iterable
+from collections.abc import Iterable
 
 EDIT_SCOPE_PRODUCTION = "production"
 EDIT_SCOPE_TEST = "test"

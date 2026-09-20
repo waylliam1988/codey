@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from collections.abc import Sequence
 
 from codey.completion.verification_policy import VerificationCandidate, verification_candidate_lines
 

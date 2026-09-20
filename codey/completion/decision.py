@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.completion.contract import CompletionProof
 from codey.completion.verification import (

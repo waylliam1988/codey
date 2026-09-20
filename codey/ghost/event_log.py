@@ -7,7 +7,8 @@ import json
 import os
 from pathlib import Path
 import uuid
-from typing import Callable, Iterable, Literal, Mapping
+from typing import Literal
+from collections.abc import Callable, Iterable, Mapping
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file

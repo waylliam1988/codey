@@ -12,7 +12,8 @@ import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 from urllib.parse import urlparse
 
 from codey.utils.refs import digest_text
@@ -405,7 +406,7 @@ class RunTraceStore:
         project: str | Path | None,
         mode_initial: str,
         provider_initial: str,
-    ) -> "RunTraceRecorder":
+    ) -> RunTraceRecorder:
         manifest = RunTraceManifest(
             run_id=_clip(run_id, 120),
             session_id=_clip(session_id, 120),

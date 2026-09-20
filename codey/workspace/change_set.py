@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from codey.utils.change_paths import (
     change_file_paths as _change_file_paths,
@@ -65,7 +65,7 @@ class ChangeSet:
     error: str = ""
 
     @classmethod
-    def from_changes(cls, changes: Mapping[str, object] | object) -> "ChangeSet":
+    def from_changes(cls, changes: Mapping[str, object] | object) -> ChangeSet:
         if not isinstance(changes, Mapping):
             return cls(ok=False, error="invalid changes")
         raw_diff = _text(changes.get("diff"))

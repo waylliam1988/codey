@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
+from collections.abc import Mapping
 
 from codey.completion.contract import CompletionProof, project_completion_proof
 from codey.research.contract import (

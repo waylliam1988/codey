@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.research.ledger import (
     EvidenceItem,

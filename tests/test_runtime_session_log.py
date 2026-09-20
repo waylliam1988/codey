@@ -542,7 +542,7 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 ),
             )
 
-            for index in range(30):
+            for _index in range(30):
                 current = operations.load("s1", "run-1")
                 assert current is not None
                 _commit_entry_via_mutate(log,

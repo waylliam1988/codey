@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
+from collections.abc import Callable
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest

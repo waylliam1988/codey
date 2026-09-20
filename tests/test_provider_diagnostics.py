@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from types import SimpleNamespace
 from unittest import mock
 
@@ -18,7 +18,7 @@ from codey.providers.diagnostics import (
 class ProviderDiagnosticsTests(unittest.TestCase):
     def test_capture_provider_failure_keeps_only_small_page_context(self) -> None:
         page = SimpleNamespace(url="https://chat.example/c", title=lambda: "Example Chat")
-        now = datetime(2026, 6, 28, 1, 2, 3, tzinfo=timezone.utc)
+        now = datetime(2026, 6, 28, 1, 2, 3, tzinfo=UTC)
 
         failure = capture_provider_failure(
             model="StepFun",

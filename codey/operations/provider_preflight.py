@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from codey.policies.action import DECISION_DENY, ActionSubject, evaluate_action
 from codey.providers import PROVIDER_LABELS

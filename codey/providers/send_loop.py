@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator
+from typing import Any
+from collections.abc import Callable, Iterator
 
 from codey.providers import controls as controls
 from codey.providers import flow as provider_flow

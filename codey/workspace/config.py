@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Iterable
+from collections.abc import Iterable
 
 from codey.providers.capabilities import PROVIDER_CAPABILITIES
 from codey.providers.ids import normalize_provider_id

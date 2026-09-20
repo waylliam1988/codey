@@ -21,7 +21,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 from tests.manual.ab_journal import (
     TRANSCRIPT_MODE_ARCHIVE,
@@ -129,7 +130,7 @@ class ArmRunLayout:
     transcript_dir: Path
 
     @classmethod
-    def for_output(cls, output: Path, *, journal_dir: Path | None = None) -> "ArmRunLayout":
+    def for_output(cls, output: Path, *, journal_dir: Path | None = None) -> ArmRunLayout:
         output_path = Path(output)
         trace_dir = Path(journal_dir) if journal_dir is not None else journal_directory_for_output(output_path)
         return cls(
@@ -955,7 +956,7 @@ class ResultRowStore:
         arms: Sequence[str],
         summarize: Callable[[list[dict[str, Any]]], Mapping[str, Any]] | None = None,
         ok: Callable[[list[dict[str, Any]], bool], bool] | None = None,
-    ) -> "ResultRowStore":
+    ) -> ResultRowStore:
         payload = load_or_new_payload(
             output,
             probe=probe,

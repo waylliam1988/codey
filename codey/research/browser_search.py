@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 import threading
 import time
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
+from collections.abc import Callable
 import urllib.error
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
@@ -166,7 +167,7 @@ class BrowserSearchProvider:
         if not getattr(page, "_codey_research_guarded", False):
             page.route("**/*", self._guard_request)
             try:
-                setattr(page, "_codey_research_guarded", True)
+                page._codey_research_guarded = True
             except Exception:
                 pass
         return page
@@ -543,7 +544,7 @@ class BrowserSearchProvider:
     def _release_page_guard_on_browser_thread(self, page) -> None:
         try:
             page.unroute("**/*", self._guard_request)
-            setattr(page, "_codey_research_guarded", False)
+            page._codey_research_guarded = False
         except Exception:
             pass
 

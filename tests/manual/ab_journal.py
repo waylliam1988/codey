@@ -22,7 +22,8 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 from codey.storage.local_store import write_json_atomic
 

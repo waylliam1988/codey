@@ -8,7 +8,8 @@ instead of surfacing a transient failure.
 
 from __future__ import annotations
 
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
+from collections.abc import Callable
 
 from codey.runtime.core import cancellation
 from codey.providers.diagnostics import (

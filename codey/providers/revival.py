@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -151,7 +151,7 @@ def _complete_send_locked(
                 normalized_flow or inherited_flow_verification
             ),
             "built_in_profile_hash": built_in_profile_hash or current_hash,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "previous_bundle": {
                 "controls": previous_controls,
                 "revival": previous_meta,

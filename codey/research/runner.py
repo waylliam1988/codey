@@ -6,7 +6,7 @@ import queue
 import threading
 from collections import Counter
 from dataclasses import dataclass, field, replace
-from typing import Callable, Mapping
+from collections.abc import Callable, Mapping
 
 from codey.runtime.core import cancellation
 from codey.workspace.context_epoch import context_epoch_id, context_source_ref
@@ -622,7 +622,7 @@ class ResearchRunner:
                 break
             except queue.Empty:
                 if self._stop_requested():
-                    raise cancellation.TaskCancelled("task stopped")
+                    raise cancellation.TaskCancelled("task stopped") from None
         if isinstance(result, Exception):
             raise result
         return str(result or "")
@@ -1255,7 +1255,7 @@ class _Outcome:
         self.canonical = {}
 
     @classmethod
-    def error(cls, message: str) -> "_Outcome":
+    def error(cls, message: str) -> _Outcome:
         text = message if message.startswith("ERROR:") else f"ERROR: {message}"
         return cls(text)
 

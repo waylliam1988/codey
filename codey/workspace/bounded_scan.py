@@ -9,7 +9,7 @@ from __future__ import annotations
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 from codey.runtime.core import cancellation
 

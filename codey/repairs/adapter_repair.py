@@ -8,7 +8,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.repairs import adapter_overrides
 from codey.repairs.adapter_overrides import AdapterOverride

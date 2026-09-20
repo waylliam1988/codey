@@ -25,7 +25,8 @@ keeps the module unit-testable with plain fakes.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from codey.runtime.core.cancellation import TaskCancelled
 from codey.providers.diagnostics import ProviderActionError

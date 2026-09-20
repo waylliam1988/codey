@@ -14,7 +14,7 @@ import shutil
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -442,4 +442,4 @@ def _trim_generations(
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

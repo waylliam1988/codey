@@ -36,7 +36,7 @@ class _FileStamp:
 @dataclass(frozen=True)
 class _ProjectionCache:
     stamp: _FileStamp
-    entries: tuple["RuntimeLogEntry", ...]
+    entries: tuple[RuntimeLogEntry, ...]
     projection: Any
 
 

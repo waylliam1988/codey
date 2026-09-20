@@ -23,7 +23,7 @@ class OperationOutcome:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def completed(cls, *, summary: str = "", metadata: dict[str, Any] | None = None) -> "OperationOutcome":
+    def completed(cls, *, summary: str = "", metadata: dict[str, Any] | None = None) -> OperationOutcome:
         return cls("completed", summary=summary, metadata=dict(metadata or {}))
 
     @classmethod
@@ -33,11 +33,11 @@ class OperationOutcome:
         reason: str,
         summary: str = "",
         metadata: dict[str, Any] | None = None,
-    ) -> "OperationOutcome":
+    ) -> OperationOutcome:
         return cls("failed", reason=reason, summary=summary, metadata=dict(metadata or {}))
 
     @classmethod
-    def aborted(cls, *, reason: str = "", summary: str = "") -> "OperationOutcome":
+    def aborted(cls, *, reason: str = "", summary: str = "") -> OperationOutcome:
         return cls("aborted", reason=reason, summary=summary)
 
     @classmethod
@@ -47,7 +47,7 @@ class OperationOutcome:
         reason: str,
         summary: str = "",
         metadata: dict[str, Any] | None = None,
-    ) -> "OperationOutcome":
+    ) -> OperationOutcome:
         return cls("suspended", reason=reason, summary=summary, metadata=dict(metadata or {}))
 
     def to_payload(self) -> dict[str, Any]:

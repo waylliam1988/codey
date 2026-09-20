@@ -415,7 +415,7 @@ class ProbeResearchRunner(ResearchRunner):
         max_turns: int,
         provider_id: str = "",
         case_name: str = "",
-        trace: "LiveTrace | None" = None,
+        trace: LiveTrace | None = None,
     ) -> None:
         super().__init__(
             provider,

@@ -93,7 +93,7 @@ def test_events_form_a_verifiable_hash_chain(tmp_path: Path) -> None:
     assert reader.verify_hash_chain() == []
     # Chain linkage is real: each event references its predecessor.
     assert events[0]["previous_digest"].startswith("sha256:")
-    for previous, event in zip(events, events[1:]):
+    for previous, event in zip(events, events[1:], strict=False):
         assert event["previous_digest"] == previous["event_digest"]
 
 

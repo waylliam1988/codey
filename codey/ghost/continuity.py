@@ -7,11 +7,12 @@ transcript store, a truth layer, or a learning loop.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 import hashlib
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable, Mapping
 
 from codey.ghost.event_log import (
     GhostEventLog,
@@ -145,7 +146,7 @@ class GhostContinuityItem:
         return payload
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostContinuityItem | None":
+    def from_payload(cls, payload: object) -> GhostContinuityItem | None:
         if not isinstance(payload, dict):
             return None
         kind = str(payload.get("kind") or "").strip().lower()
@@ -240,7 +241,7 @@ class GhostContinuityStore:
         self,
         *,
         hebbian_store: GhostHebbianStore | None = None,
-        run_projection: "RunLedgerProjection | None" = None,
+        run_projection: RunLedgerProjection | None = None,
         knowledge_store: Any = None,
         user_focus_excerpt: str = "",
         session_id: str = "",
@@ -818,7 +819,7 @@ def _items_from_task(
 
 
 def _items_from_run_projection(
-    projection: "RunLedgerProjection | None",
+    projection: RunLedgerProjection | None,
     *,
     now: str,
     project: str,
@@ -1249,14 +1250,14 @@ def _parse_ts(value: object) -> datetime:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _normalize_project(value: object) -> str:

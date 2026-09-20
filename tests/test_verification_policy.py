@@ -5,11 +5,11 @@ from unittest import mock
 
 from codey.workspace.facts import VerifiedCommand
 from codey.workspace.config import ProjectVerificationCommand
+from codey.completion.discovery import is_manifest_file, read_manifest_text
 from codey.completion.verification_policy import (
+    MAX_MANIFEST_BYTES,
     VerificationCandidate,
     _bounded_directories,
-    _is_manifest_file,
-    _read_manifest,
     check_matches_candidate,
     check_covers_changes,
     check_covers_selected_candidate,
@@ -30,8 +30,8 @@ class VerificationPolicyTests(unittest.TestCase):
         path = mock.Mock()
         path.is_symlink.return_value = True
 
-        self.assertEqual(_read_manifest(path), "")
-        self.assertFalse(_is_manifest_file(path))
+        self.assertEqual(read_manifest_text(path, max_bytes=MAX_MANIFEST_BYTES), "")
+        self.assertFalse(is_manifest_file(path))
         path.stat.assert_not_called()
         path.read_text.assert_not_called()
         path.is_file.assert_not_called()
@@ -41,7 +41,7 @@ class VerificationPolicyTests(unittest.TestCase):
         path.is_symlink.return_value = False
         path.is_file.return_value = False
 
-        self.assertEqual(_read_manifest(path), "")
+        self.assertEqual(read_manifest_text(path, max_bytes=MAX_MANIFEST_BYTES), "")
         path.stat.assert_not_called()
         path.read_text.assert_not_called()
 

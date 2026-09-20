@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
+from collections.abc import Mapping
 
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.research.protocol_diagnostics import classify_no_json_reply

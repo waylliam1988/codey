@@ -15,7 +15,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from urllib.parse import quote
 
 from codey.research.connector_terms import (
@@ -349,7 +349,7 @@ class FetchedSource:
         source_id: str,
         document: SourceDocument,
         warnings: Iterable[object] = (),
-    ) -> "FetchedSource":
+    ) -> FetchedSource:
         return cls(
             connector_id=_connector_id(connector_id),
             source_ref=_generated_ref(source_ref, "source_ref"),

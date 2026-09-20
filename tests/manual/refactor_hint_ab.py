@@ -16,7 +16,8 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -154,7 +155,7 @@ def _count_other_source_files(root: Path, current_rel: str, symbol: str) -> tupl
 
 def _render_refactor_hint(root: Path, rel: str, blocks: list[Any]) -> str:
     notes: list[str] = []
-    for old, new in _candidate_pairs(blocks):
+    for old, _new in _candidate_pairs(blocks):
         count, limited = _count_other_source_files(root, rel, old)
         if count <= 0:
             continue

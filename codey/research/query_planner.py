@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 from codey.research.connector_terms import preferred_connector_ids
 from codey.utils.refs import (

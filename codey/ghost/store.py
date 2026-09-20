@@ -6,7 +6,7 @@ does not mark any signal as accepted long-term memory.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from codey.ghost.event_log import GhostEventLog
@@ -24,7 +24,7 @@ MAX_STORED_DIAGNOSTICS = 8
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class GhostSignalStore:

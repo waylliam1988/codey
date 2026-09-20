@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import hashlib
 import json
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import ConceptGraphBuilder, MissingConceptLink

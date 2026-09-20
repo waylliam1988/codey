@@ -21,8 +21,9 @@ Deliberately *not* owned here:
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
-from typing import Any, Iterable, TypeVar
+from datetime import datetime, UTC
+from typing import Any, TypeVar
+from collections.abc import Iterable
 
 _RowT = TypeVar("_RowT")
 
@@ -35,14 +36,14 @@ def parse_ts(value: object) -> datetime:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def decay_basis_of(

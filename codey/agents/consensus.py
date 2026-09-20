@@ -11,7 +11,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls

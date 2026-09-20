@@ -16,7 +16,7 @@ import re
 import sys
 import tempfile
 import time
-from typing import Callable
+from collections.abc import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -88,7 +88,7 @@ class _RecordingProvider:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         self.prompts.append(text)
-        method = getattr(self.inner, "send")
+        method = self.inner.send
         return method(text, timeout=timeout)
 
     def close(self) -> None:

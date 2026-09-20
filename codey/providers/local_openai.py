@@ -71,7 +71,7 @@ class LocalOpenAIProvider:
         self._messages: list[dict] = []
 
     @classmethod
-    def connect(cls, **_kwargs) -> "LocalOpenAIProvider":
+    def connect(cls, **_kwargs) -> LocalOpenAIProvider:
         endpoint = resolve_local_endpoint()
         if endpoint is None:
             return cls()

@@ -10,8 +10,8 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
-from typing import Iterable
+from datetime import datetime, UTC
+from collections.abc import Iterable
 
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
 from codey.runtime.log.entries import RuntimeLogEntry
@@ -204,7 +204,7 @@ class RuntimeOperationTerminal:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "RuntimeOperationTerminal | None":
+    def from_payload(cls, payload: object) -> RuntimeOperationTerminal | None:
         if not isinstance(payload, dict):
             return None
         try:
@@ -222,7 +222,7 @@ class RuntimeOperationTerminal:
         except RuntimeOperationTransitionError:
             return None
 
-    def identity(self) -> "RuntimeOperationTerminal":
+    def identity(self) -> RuntimeOperationTerminal:
         return replace(self, finished_at="")
 
 
@@ -286,7 +286,7 @@ class RuntimeOperationState:
         return payload
 
     @classmethod
-    def from_payload(cls, payload: object) -> "RuntimeOperationState | None":
+    def from_payload(cls, payload: object) -> RuntimeOperationState | None:
         if not isinstance(payload, dict):
             return None
         if payload.get("schema_version") != SCHEMA_VERSION or payload.get("kind") != KIND:
@@ -979,7 +979,7 @@ def _project_ref(project: object) -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _canonical_id(value: object) -> str:

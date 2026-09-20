@@ -9,10 +9,11 @@ queue from terminal task facts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, is_dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import hashlib
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 import uuid
 
 from codey.ghost.affinity import apply_affinity_work_boost
@@ -269,7 +270,7 @@ class GhostWorkItem:
         }
 
     @classmethod
-    def from_payload(cls, payload: object) -> "GhostWorkItem | None":
+    def from_payload(cls, payload: object) -> GhostWorkItem | None:
         if not isinstance(payload, dict):
             return None
         kind = _clean_kind(payload.get("kind"))
@@ -743,7 +744,7 @@ class GhostWorkQueueStore:
             return result if isinstance(result, GhostWorkItem) else None
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost work events are unreadable")
+                raise OSError("ghost work events are unreadable") from None
             raise
 
     def block_item(
@@ -810,7 +811,7 @@ class GhostWorkQueueStore:
             return result if isinstance(result, GhostWorkItem) else None
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost work events are unreadable")
+                raise OSError("ghost work events are unreadable") from None
             raise
 
     def reject_item(self, item_id: str) -> GhostWorkItem | None:
@@ -862,7 +863,7 @@ class GhostWorkQueueStore:
             return result if isinstance(result, GhostWorkItem) else None
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost work events are unreadable")
+                raise OSError("ghost work events are unreadable") from None
             raise
 
     def reconcile_stale_claims(self) -> GhostWorkSyncResult:
@@ -999,7 +1000,7 @@ class GhostWorkQueueStore:
             return result if isinstance(result, dict) else {"removed": 0, "warnings": ["work_queue_error"]}
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost work events are unreadable")
+                raise OSError("ghost work events are unreadable") from None
             raise
 
     def rebuild_from_events(self) -> bool:
@@ -1132,7 +1133,7 @@ class GhostWorkQueueStore:
             return result if isinstance(result, GhostWorkItem) else None
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
-                raise OSError("ghost work events are unreadable")
+                raise OSError("ghost work events are unreadable") from None
             raise
 
     def _sync_failed(self, reason: str) -> GhostWorkSyncResult:
@@ -1226,7 +1227,7 @@ class GhostWorkQueueStore:
             return []
         events = self._read_events_unlocked()
         if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
+            raise OSError("ghost work events are unreadable") from None
         return events
 
     def _mutate_event_log(self, decide: Any) -> object:
@@ -2504,7 +2505,7 @@ def _is_stale_claim(item: GhostWorkItem, now: str) -> bool:
 
 
 def _parse_ts(value: object) -> datetime:
-    return _parse_ts_or_none(value) or datetime.now(timezone.utc)
+    return _parse_ts_or_none(value) or datetime.now(UTC)
 
 
 def _parse_ts_or_none(value: object) -> datetime | None:
@@ -2514,8 +2515,8 @@ def _parse_ts_or_none(value: object) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _unit_float(value: object) -> float:
@@ -2542,7 +2543,7 @@ def _field(value: Any, key: str) -> object:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _future_ts(now: str, seconds: int) -> str:
@@ -2554,7 +2555,7 @@ def _future_ts(now: str, seconds: int) -> str:
     return (
         datetime.fromtimestamp(
             base.timestamp() + delta_seconds,
-            tz=timezone.utc,
+            tz=UTC,
         )
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")

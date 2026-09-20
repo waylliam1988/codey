@@ -2,6 +2,35 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - B/UP rules on, shared assistance switch, completion discovery tools (no release)
+
+- Enabled `B` + `UP` in `pyproject.toml` after clearing the debt to zero:
+  223 safe auto-fixes (`UP035`/`UP017`/`UP037`/`UP012`/`UP034`/`UP041`,
+  `B009`/`B010`) plus 30 manual fixes -- `B904 from None` on deliberate
+  error translations (8), explicit `strict=False` on adjacent-pair zips (4),
+  `_`-prefixed unused loop vars (3), default-arg closure bindings incl. two
+  threaded ghost helpers (12), f-string printf (1), `capture_output` (1),
+  `FrozenInstanceError` instead of blind `Exception` (1). `UP017`
+  naive->aware datetimes verified via timestamp suites. Remaining lint debt
+  is `I/SIM` only: `729 total (I:414, SIM:315), 494 fixable`.
+- New `providers/assistance.py`: one shared thread-local depth counter behind
+  `suppress_assistance` / `assistance_suppressed` / `reset_assistance`.
+  `controls` and `flow` re-export the switch and consult it in
+  `can_teach`/`can_doctor`/`request_recovery`; task boundaries reset it.
+  This is a deliberate semantic change (previously independent counters with
+  a recursion hole), pinned by cross-suppression tests both directions plus
+  nesting/reset tests. All existing patch points preserved.
+- New `completion/discovery.py`: `TRUSTED_EXCLUDED_DIRS` (single vocabulary
+  with `workspace.map`, one deliberate delta: `coverage/` now skipped),
+  `safe_cwd`, `is_manifest_file`, `read_manifest_text`,
+  `is_real_directory`. Policy internals delegate; map/policy/verification/
+  decision/engine boundaries and the `VerificationCandidate` surface
+  untouched; two test imports follow the move.
+- Verification: `ruff check .` (whole repo, new rules), `compileall`, and
+  `git diff --check` clean; `tests/test_architecture.py` green; targeted
+  suites green; full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`3895 passed, 6 skipped, 1310 subtests passed in 269.67s`).
+
 ## Unreleased - Linearized close, lazy browser worker, import hygiene, gateway diagnostics (no release)
 
 - `AppContext.close()` now funnels through `request_stop()` instead of a

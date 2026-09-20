@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 from codey.runtime.observe.events import RunEvent
@@ -34,7 +34,7 @@ TRUNCATED_TEXT_SUFFIX = "..."
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _clip(value: object, limit: int) -> str:
@@ -143,7 +143,7 @@ class RunLedgerStore:
         task: str,
         provider: str,
         mode: str,
-    ) -> "RunLedgerWriter":
+    ) -> RunLedgerWriter:
         writer = RunLedgerWriter(
             self.path_for(session_id, run_id),
             run_id=run_id,

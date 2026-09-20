@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import yaml
 
@@ -58,7 +58,7 @@ _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff._-]*
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().replace(microsecond=0).isoformat()
+    return datetime.now(UTC).astimezone().replace(microsecond=0).isoformat()
 
 
 def slugify(title: str, limit: int = 48) -> str:
@@ -67,7 +67,7 @@ def slugify(title: str, limit: int = 48) -> str:
 
 
 def make_id(title: str) -> str:
-    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%dT%H%M%S")
+    stamp = datetime.now(UTC).astimezone().strftime("%Y%m%dT%H%M%S")
     return f"{stamp}-{slugify(title)}-{uuid.uuid4().hex[:8]}"
 
 
@@ -113,7 +113,7 @@ class KnowledgeNote:
             self.updated = self.created
 
     @classmethod
-    def create(cls, *, type: str, title: str, body: str, **kwargs) -> "KnowledgeNote":
+    def create(cls, *, type: str, title: str, body: str, **kwargs) -> KnowledgeNote:
         note_id = kwargs.pop("id", None) or make_id(title)
         return cls(id=note_id, type=type, title=title, body=body, **kwargs)
 
@@ -175,7 +175,7 @@ class KnowledgeNote:
         return f"---\n{header}\n---\n\n{body}\n"
 
     @classmethod
-    def from_markdown(cls, text: str) -> "KnowledgeNote":
+    def from_markdown(cls, text: str) -> KnowledgeNote:
         match = _FRONTMATTER_RE.match(text.lstrip("\ufeff"))
         if not match:
             raise ValueError("note is missing a frontmatter block")

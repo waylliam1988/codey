@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from codey.utils.refs import content_digest
 from codey.utils.refs import identifier as _identifier

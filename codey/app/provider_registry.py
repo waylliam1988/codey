@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.providers import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor

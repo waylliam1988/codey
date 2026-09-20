@@ -9,7 +9,8 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any
+from collections.abc import Iterator, Sequence
 
 
 POLL_INTERVAL = 0.2

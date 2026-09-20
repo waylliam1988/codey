@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.providers.diagnostics import (

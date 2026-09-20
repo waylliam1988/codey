@@ -254,7 +254,7 @@ def _looks_like_engineering_identifier(token: str) -> bool:
     if not any(len(run) >= 4 for run in alpha_runs):
         return False
     transitions = 0
-    for left, right in zip(token, token[1:]):
+    for left, right in zip(token, token[1:], strict=False):
         if left.isalpha() and right.isalpha() and left.islower() != right.islower():
             transitions += 1
     if transitions > max(6, len(token) // 5):
@@ -296,7 +296,7 @@ def looks_sensitive_code(value: object) -> bool:
     compact = "".join(parts)
     if any(item in compact for item in _SENSITIVE_CODE_COMPOUNDS):
         return True
-    return any(pair in _SENSITIVE_CODE_PHRASES for pair in zip(parts, parts[1:]))
+    return any(pair in _SENSITIVE_CODE_PHRASES for pair in zip(parts, parts[1:], strict=False))
 
 
 __all__ = [

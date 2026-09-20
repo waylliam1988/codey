@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 import tempfile
 import unittest
@@ -878,7 +878,7 @@ class ToolResultDeliveryStoreTests(unittest.TestCase):
                 "turn": 1,
                 "items": [{"tool_index": 0, "tool_name": "read", "ref": "eff-1", "replay_class": "safe", "is_denied": False}],
                 "batch_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         with self.assertRaises(ToolResultDeliveryError) as ctx:
