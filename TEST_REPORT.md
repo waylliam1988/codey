@@ -1,5 +1,29 @@
 # Codey Test Report
 
+## Ghost timestamp parsing unified on graph_primitives (2026-09-21)
+
+Scope:
+
+```text
+codey/ghost/{continuity,directive,work_queue}.py: hand-rolled fromisoformat
+  replaced by shared graph_primitives.parse_ts (None-contract helper kept)
+docs:                        CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests` (passed)
+  `git diff --check` (passed)
+- Equivalence argument: endswith-Z vs replace-all-Z agree on all ISO
+  inputs; everything else maps to now() in both versions
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 343.18s (0:05:43)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. Net code deletion.
+
 ## Ghost time/project delegates removed, single _common seam (2026-09-21)
 
 Scope:

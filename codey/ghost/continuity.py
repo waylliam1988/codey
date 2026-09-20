@@ -11,7 +11,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +27,7 @@ from codey.ghost.event_log import (
 from codey.ghost.event_log import (
     event_file_stats as _shared_event_file_stats,
 )
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -1237,25 +1238,14 @@ def _clean_metadata(value: object) -> dict[str, object]:
 
 
 def _expires_at(now: str, days: int) -> str:
-    parsed = _parse_ts(now)
+    parsed = parse_ts(now)
     return (parsed + timedelta(days=max(1, int(days or 1)))).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _is_expired(item: GhostContinuityItem, now: str) -> bool:
     if not item.expires_at:
         return False
-    return _parse_ts(item.expires_at) <= _parse_ts(now)
-
-
-def _parse_ts(value: object) -> datetime:
-    text = str(value or "").strip().replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return datetime.now(UTC)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return parse_ts(item.expires_at) <= parse_ts(now)
 
 
 def _project_display_name(value: object) -> str:

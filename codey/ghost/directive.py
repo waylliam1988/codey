@@ -5,12 +5,12 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import (
     HEBBIAN_SCHEMA_VERSION,
     MAX_HEBBIAN_STATE_BYTES,
@@ -320,21 +320,10 @@ def _preview_decayed_node(node: GhostNode, *, now: str) -> GhostNode:
 
 
 def _decayed_weight(weight: float, basis: str, now: str, half_life_days: float) -> float:
-    age = max(0.0, (_parse_ts(now) - _parse_ts(basis)).total_seconds())
+    age = max(0.0, (parse_ts(now) - parse_ts(basis)).total_seconds())
     half_life_seconds = max(1.0, float(half_life_days) * 24.0 * 60.0 * 60.0)
     decay_rate = math.log(2.0) / half_life_seconds
     return max(0.0, min(1.0, float(weight or 0.0) * math.exp(-decay_rate * age)))
-
-
-def _parse_ts(value: object) -> datetime:
-    text = str(value or "").strip().replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return datetime.now(UTC)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _bounded_warnings(warnings: list[str]) -> tuple[str, ...]:

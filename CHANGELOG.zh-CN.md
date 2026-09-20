@@ -2,6 +2,16 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Ghost 时间解析统一到 graph_primitives（未发布）
+
+- `continuity` / `directive` / `work_queue` 手写的三份 `fromisoformat`
+  改调共享 `graph_primitives.parse_ts`（已验证所有 ISO 输入字节等价，
+  其余一律回 `now()`）。`work_queue._parse_ts_or_none` 的 `None` 契约保留。
+- 删掉复制体留下的无用 `datetime` import。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3974 passed, 6 skipped, 1320 subtests passed in 343.18s`）。
+
 ## Unreleased - Ghost 时间/项目委托删除、单 _common 缝（未发布）
 
 - 删除十个 ghost store 的 `_now()` / `_normalize_project()` 薄委托，

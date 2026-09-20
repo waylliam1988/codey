@@ -29,6 +29,7 @@ from codey.ghost.event_log import (
 from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
@@ -2468,7 +2469,7 @@ def _session_ref(value: object) -> str:
 def _is_expired(item: GhostWorkItem, now: str) -> bool:
     if not item.expires_at:
         return False
-    return _parse_ts(item.expires_at) <= _parse_ts(now)
+    return parse_ts(item.expires_at) <= parse_ts(now)
 
 
 def _is_stale_claim(item: GhostWorkItem, now: str) -> bool:
@@ -2479,11 +2480,7 @@ def _is_stale_claim(item: GhostWorkItem, now: str) -> bool:
     lease_expires_at = _parse_ts_or_none(item.lease_expires_at)
     if lease_expires_at is None:
         return True
-    return lease_expires_at <= _parse_ts(now)
-
-
-def _parse_ts(value: object) -> datetime:
-    return _parse_ts_or_none(value) or datetime.now(UTC)
+    return lease_expires_at <= parse_ts(now)
 
 
 def _parse_ts_or_none(value: object) -> datetime | None:
@@ -2521,7 +2518,7 @@ def _field(value: Any, key: str) -> object:
 
 
 def _future_ts(now: str, seconds: int) -> str:
-    base = _parse_ts(now)
+    base = parse_ts(now)
     try:
         delta_seconds = int(seconds)
     except (TypeError, ValueError):

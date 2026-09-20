@@ -2,6 +2,19 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Ghost timestamp parsing unified on graph_primitives (no release)
+
+- Replaced the hand-rolled `fromisoformat` copies in
+  `continuity` / `directive` / `work_queue` with the shared
+  `graph_primitives.parse_ts` (verified byte-equivalent on all ISO inputs;
+  both map everything else to `now()`). `work_queue._parse_ts_or_none`
+  keeps its distinct `None`-on-failure contract.
+- Deleted the now-unused `datetime` imports the copies left behind.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 343.18s`).
+
 ## Unreleased - Ghost time/project delegates removed, single _common seam (no release)
 
 - Deleted the per-module `_now()` / `_normalize_project()` thin delegates
