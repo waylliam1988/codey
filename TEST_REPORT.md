@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## Linearized close, lazy browser worker, import hygiene, gateway diagnostics (2026-09-20)
+
+Scope:
+
+```text
+codey/app/context.py:      close() via request_stop(); sibling probes moved
+                           to app/sibling_probe.py with thin delegates;
+                           lazy registry/self-repair facades
+codey/app/sibling_probe.py (new):
+                           doctor/flow recovery probes by lifecycle boundary
+codey/app/services.py:     lazy provider facades, runner=None warmup,
+                           advisors local import + TYPE_CHECKING EvidencePack
+codey/app/server.py:       local task_entry/connect_fresh imports
+codey/app/api.py:          catalog statics, lazy graph facade, gated stop
+codey/app/headless_runner.py:
+                           shell-reject via request_stop
+codey/automation/browser_worker.py:
+                           lazy default_worker() singleton, no import thread
+codey/research/__init__.py, codey/knowledge/__init__.py:
+                           lazy re-exports (providers-pattern)
+codey/research/source_gateway.py:
+                           redirect refusal records failure
+codey/research/tools.py:   OPEN_MIN_LIMIT replaces bare 500
+codey/knowledge/index.py:  add_link/replace_links_touching closed guards
+codey/providers/worker.py: _response_lock on offer/drain
+tests:                       linearization/close-gate/import-cost/B023/
+                           close-guard/concurrent-offer/redirect tests;
+                           11 seam updates follow moved code
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`942 total (B:32, UP:220, I:375, SIM:315), 677 fixable`; I-1, zero new)
+- Targeted gates before the full run:
+  shell/linearization/import-cost/P1 suites green,
+  `tests/test_server.py` + headless + browser_worker (223 passed),
+  `tests/test_architecture.py` (82 passed, 312 subtests passed),
+  research/provider/ghost selection green (re-verified inside the full run)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3891 passed, 6 skipped, 1310 subtests passed in 279.64s (0:04:39)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Ghost event_projection: shared projection mechanics, documented non-unification (2026-09-20)
 
 Scope:

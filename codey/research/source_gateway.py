@@ -166,6 +166,7 @@ class ResearchSourceGateway:
             return OpenedSource(status="error", detail=message)
         reason = check_fetch_url(page_url, use_cache=True)
         if reason:
+            self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)
             return OpenedSource(status="error", detail=f"{reason} (after redirect)")
         document = self._source_document_from_fetch(url, page, pages=pages)
         if isinstance(document, PdfSkipped):

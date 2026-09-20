@@ -308,7 +308,26 @@ class BrowserWorker:
         return result
 
 
-WORKER = BrowserWorker()
+_WORKER: BrowserWorker | None = None
+_WORKER_LOCK = threading.Lock()
+
+
+def default_worker() -> BrowserWorker:
+    """Process-wide browser worker, built on first use.
+
+    Constructing ``BrowserWorker`` starts the ``codey-browser`` thread, so
+    building it at import time penalizes every cold start (``--help``,
+    import probes) that never touches a browser. Double-checked locking
+    keeps the fast path lock-free after the first call.
+    """
+    worker = _WORKER
+    if worker is None:
+        with _WORKER_LOCK:
+            worker = _WORKER
+            if worker is None:
+                worker = BrowserWorker()
+                globals()["_WORKER"] = worker
+    return worker
 
 
 def submit(
@@ -317,7 +336,7 @@ def submit(
     on_abandoned: Callable[[], None] | None = None,
     **kwargs: Any,
 ) -> bool:
-    return WORKER.submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
+    return default_worker().submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
 def call(
@@ -326,8 +345,8 @@ def call(
     on_abandoned: Callable[[], None] | None = None,
     **kwargs: Any,
 ) -> T:
-    return WORKER.call(fn, *args, on_abandoned=on_abandoned, **kwargs)
+    return default_worker().call(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
 def health_snapshot() -> BrowserWorkerHealth:
-    return WORKER.health_snapshot()
+    return default_worker().health_snapshot()

@@ -278,6 +278,58 @@ class ShellStopLinearizationTests(unittest.TestCase):
         finally:
             ctx.close()
 
+    def test_close_waits_on_the_gate_and_sets_flag_late(self) -> None:
+        """close() linearizes like every other Stop: while the executor holds
+        the spawn gate inside a stuck spawn, a concurrent close() must stay
+        blocked with the stop flag still clear. Nails the gate against a
+        future "optimization" back to a bare set()."""
+        ctx = self._ctx()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                ticket = self._ticket(ctx, td)
+                entered: list[bool] = []
+                release = threading.Event()
+
+                def _stuck_spawn(*args, **kwargs):
+                    entered.append(True)
+                    self.assertTrue(release.wait(timeout=10))
+                    return mock.Mock(), None
+
+                completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
+                with (
+                    mock.patch.object(
+                        app_services.cancellation, "start_process", side_effect=_stuck_spawn
+                    ),
+                    mock.patch.object(
+                        app_services.cancellation, "wait_process", return_value=completed
+                    ),
+                ):
+                    executor = threading.Thread(
+                        target=app_services.execute_shell_ticket,
+                        args=(ctx, ticket),
+                        daemon=True,
+                    )
+                    executor.start()
+                    deadline = time.monotonic() + 10
+                    while not entered and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(entered, "executor never reached spawn")
+                    closer = threading.Thread(target=ctx.close, daemon=True)
+                    closer.start()
+                    time.sleep(0.3)
+                    # Still gated: close cannot set the flag from outside.
+                    self.assertTrue(closer.is_alive(), "close slipped past the gate")
+                    self.assertFalse(ctx.run_registry.stop_flag.is_set())
+                    release.set()
+                    executor.join(timeout=10)
+                    closer.join(timeout=10)
+                    self.assertFalse(executor.is_alive())
+                    self.assertFalse(closer.is_alive())
+                    self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                    self.assertTrue(ctx.closed)
+        finally:
+            ctx.close()
+
     def test_executor_holds_the_gate_across_check_and_spawn(self) -> None:
         ctx = self._ctx()
         try:

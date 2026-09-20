@@ -115,6 +115,29 @@ class GatewayOpenTests(unittest.TestCase):
         self.assertEqual(outcome.status, "skipped")
         self.assertIn("unsupported content type", outcome.detail)
 
+    def test_redirect_policy_refusal_records_failure(self) -> None:
+        from unittest import mock
+
+        import codey.research.source_gateway as gateway_module
+
+        page = dict(_HTML_PAGE, url="https://example.com/final")
+        gateway, _ledger, failures = _gateway(
+            pages={"https://example.com/article": page}
+        )
+        with mock.patch.object(
+            gateway_module,
+            "check_fetch_url",
+            side_effect=[None, "refusing final host"],
+        ):
+            outcome = gateway.open("https://example.com/article")
+        self.assertEqual(outcome.status, "error")
+        self.assertIn("after redirect", outcome.detail)
+        self.assertEqual(len(failures), 1)
+        area, action, detail, url = failures[0]
+        self.assertEqual((area, action), ("browser", "open"))
+        self.assertIn("after redirect", detail)
+        self.assertEqual(url, "https://example.com/final")
+
 
 class GatewaySearchInsideTests(unittest.TestCase):
     def _opened(self, gateway, url="https://example.com/article"):

@@ -2,6 +2,41 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Linearized close, lazy browser worker, import hygiene, gateway diagnostics (no release)
+
+- `AppContext.close()` now funnels through `request_stop()` instead of a
+  bare `stop_flag.set()`: every production Stop (UI stop, headless
+  shell-reject, shutdown close) linearizes on `_shell_spawn_gate`, closing
+  the last check-then-Popen bypass. A dedicated test pins the gate (stuck
+  spawn + concurrent close stays blocked with the flag still clear).
+- `BrowserWorker` no longer starts its thread at import: lazy
+  `default_worker()` double-checked singleton; `submit`/`call`/
+  `health_snapshot` delegate to it. Internal `WORKER.call` doubles now use
+  `default_worker().call` / module `call` (one reentrancy test needs the
+  unpatched singleton path, kept explicit).
+- Import hygiene: `services.py`/`context.py` resolve the provider registry
+  through module-level lazy facades (all existing patch points preserved);
+  `run/start_provider_warmup` default `runner=None`; advisors moves to a
+  function-local import with `EvidencePack` under `TYPE_CHECKING`;
+  `server._build_state`/`_run_task` import heavy builders locally;
+  `research/__init__.py` and `knowledge/__init__.py` re-export lazily
+  (providers-pattern). Subprocess-proven: importing
+  `server`/`api`/`context`/`services` loads no Playwright, browser,
+  registry, worker, or runner, starts no `codey-browser` thread, and skips
+  `research.advisors` / `knowledge.concepts`. Sibling probes live in
+  `app/sibling_probe.py` (`context.py` back at 955 lines).
+- Gateway redirect policy refusal now records its failure callback (was a
+  silent `ERROR`); `OPEN_MIN_LIMIT` replaces the bare `500` in tools.
+- Tests: 3 linearization + 1 close-gate + 4 import-cost + behavioral B023 +
+  close-guard + concurrent-offer + redirect-diagnostics; 10 seam updates
+  follow moved code (no compat aliases).
+- Debt at `942 total (B:32, UP:220, I:375, SIM:315), 677 fixable` (I-1, zero
+  new).
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3891 passed, 6 skipped, 1310 subtests passed in 279.64s`).
+
 ## Unreleased - Ghost event_projection: shared projection mechanics, documented non-unification (no release)
 
 - New `ghost/event_projection.py` with the two mechanics both the Hebbian

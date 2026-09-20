@@ -2,6 +2,34 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Close 线性化、lazy worker、import 卫生、gateway 诊断（未发布）
+
+- `AppContext.close()` 改走 `request_stop()`，不再裸 `stop_flag.set()`：
+  UI stop、headless shell-reject、shutdown close 全部在
+  `_shell_spawn_gate` 上线性化，堵住最后一个 check-then-Popen 旁路。
+  专用测试钉住门控（卡住的 spawn + 并发 close 保持阻塞且 flag 不提前置位）。
+- `BrowserWorker` import 时不再起线程：懒 `default_worker()` 双检单例；
+  `submit` / `call` / `health_snapshot` 委托给它。内部 `WORKER.call`
+  改 `default_worker().call` / 模块 `call`（重入测试需走未 patch 的单例
+  路径，显式保留）。
+- Import 卫生：`services.py` / `context.py` 经模块级懒 facade 解析
+  registry（patch 点全保留）；warmup `runner=None`；advisors 函数内
+  import + `EvidencePack` 进 `TYPE_CHECKING`；server 两个 builder 局部
+  import；`research/__init__.py` 与 `knowledge/__init__.py` 改懒重导出
+ （providers 同款）。子进程实测：import server/api/context/services
+  不带 Playwright / browser / registry / worker / runner，不起
+  `codey-browser` 线程，不加载 advisors / concepts。兄弟探针进
+  `app/sibling_probe.py`（`context.py` 回到 955 行）。
+- Gateway redirect 策略拒绝补失败回调（原来是静默 `ERROR`）；
+  `OPEN_MIN_LIMIT` 替换 tools 裸 `500`。
+- 测试：3 线性化 + 1 close 门 + 4 import 成本 + B023 行为化 + close
+  guard + 并发 offer + redirect 诊断；10 处 seam 更新跟随搬家（无兼容别名）。
+- 债务 `942 total (B:32, UP:220, I:375, SIM:315), 677 fixable`（I-1，零新增）。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿；定向套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3891 passed, 6 skipped, 1310 subtests passed in 279.64s`）。
+
 ## Unreleased - Ghost event_projection：共享投影机制，文档化不再合（未发布）
 
 - 新增 `ghost/event_projection.py`，只收编两家逐字节相同的两件机械：

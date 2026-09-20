@@ -4,7 +4,10 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.research.advisors import EvidencePack
 
 from codey.agents.consensus import (
     ConsensusAdvice,
@@ -19,7 +22,6 @@ from codey.policies.shell_followup import ShellFollowupInput, render_shell_follo
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers import controls as provider_controls
 from codey.providers.capabilities import rank_providers
-from codey.research.advisors import EvidencePack, run_research_advisors as run_research_advisors_core
 from codey.reviews.core import ReviewResult, parse_review_with_repair, render_review_prompt
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
@@ -439,6 +441,8 @@ def run_research_advisors(
     selected_provider_id: str,
     pack: EvidencePack,
 ) -> tuple[ConsensusAdvice, ...]:
+    from codey.research.advisors import run_research_advisors as run_research_advisors_core
+
     return run_research_advisors_core(
         selected_provider_id=selected_provider_id,
         provider_ids=tuple(PROVIDER_LABELS),

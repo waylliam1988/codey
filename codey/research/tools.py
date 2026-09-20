@@ -13,6 +13,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
     OPEN_MAX_LIMIT,
+    OPEN_MIN_LIMIT,
     SEARCH_LIMIT,
     ResearchSourceGateway,
 )
@@ -122,7 +123,7 @@ class ResearchTools:
         assert document is not None
         self.sources_read.update(outcome.read_urls)
         offset = max(0, _as_int(offset, 0))
-        limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
+        limit = min(OPEN_MAX_LIMIT, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         window = document.text[offset : offset + limit]
         more = offset + limit < len(document.text)
         body = render_opened_source(

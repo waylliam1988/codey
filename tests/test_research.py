@@ -892,7 +892,9 @@ class ResearchBoundaryTests(unittest.TestCase):
                 side_effect=AssertionError("Research search must not reenter the provider browser worker"),
             ),
         ):
-            result = browser_worker.WORKER.call(lambda: provider.search("alpha", limit=3), timeout=1.0)
+            result = browser_worker.default_worker().call(
+                lambda: provider.search("alpha", limit=3), timeout=1.0
+            )
 
         self.assertEqual(result, sentinel)
         search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)

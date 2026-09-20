@@ -908,7 +908,11 @@ class AppContext:
             return
         if not self._close_requested:
             self._close_requested = True
-            self.run_registry.stop_flag.set()
+            # Same gate as every other production Stop: a bare set() here
+            # would let close slip between an Allow's final check and Popen.
+            # request_stop emits synchronously (best-effort, registries are
+            # still alive) before durable resources release below.
+            self.request_stop()
 
         try:
             self.ghost_sleep_daemon.wait(timeout=2.0)

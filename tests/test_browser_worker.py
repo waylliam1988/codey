@@ -15,8 +15,8 @@ class BrowserWorkerTests(unittest.TestCase):
             seen.append(threading.get_ident())
             return 42
 
-        worker_id = browser_worker.WORKER.call(lambda: threading.get_ident())
-        result = browser_worker.WORKER.call(job)
+        worker_id = browser_worker.default_worker().call(lambda: threading.get_ident())
+        result = browser_worker.default_worker().call(job)
 
         self.assertEqual(result, 42)
         self.assertEqual(seen, [worker_id])

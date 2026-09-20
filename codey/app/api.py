@@ -8,7 +8,6 @@ from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
-from codey.knowledge.concepts import build_unified_research_graph
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_openai import (
     load_local_config,
@@ -18,6 +17,17 @@ from codey.providers.local_openai import (
 )
 from codey.runs.details import load_run_details
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
+
+
+def build_unified_research_graph(*args: object, **kwargs: object) -> object:
+    """Lazy facade: importing api must not load the knowledge graph stack.
+
+    Keeps its historical module-attribute name so existing
+    ``mock.patch.object(app_api, ...)`` doubles keep working.
+    """
+    from codey.knowledge.concepts import build_unified_research_graph as _build
+
+    return _build(*args, **kwargs)
 
 
 def query_list(query: dict[str, list[str]], key: str) -> list[str]:
