@@ -33,6 +33,7 @@ from codey.research.http_redirects import (
 from codey.research.pdf_extract import PDF_MAX_BYTES
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
+import contextlib
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -172,10 +173,8 @@ class BrowserSearchProvider:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
         if not getattr(page, "_codey_research_guarded", False):
             page.route("**/*", self._guard_request)
-            try:
+            with contextlib.suppress(Exception):
                 page._codey_research_guarded = True
-            except Exception:
-                pass
         return page
 
     def _ensure_search_page_on_browser_thread(self):
@@ -220,20 +219,16 @@ class BrowserSearchProvider:
             return True
 
     def _bring_to_front_on_browser_thread(self, page) -> None:
-        try:
+        with contextlib.suppress(Exception):
             page.bring_to_front()
-        except Exception:
-            pass
 
     def _guard_request(self, route) -> None:
         try:
             blocked = bool(check_fetch_url(route.request.url, use_cache=True))
         except Exception:
             blocked = True
-        try:
+        with contextlib.suppress(Exception):
             route.abort() if blocked else route.continue_()
-        except Exception:
-            pass
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
         cancellation.check()
@@ -310,10 +305,8 @@ class BrowserSearchProvider:
         if deadline is None:
             deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
         remaining_ms = int(max(250.0, (deadline - time.monotonic()) * 1000))
-        try:
+        with contextlib.suppress(Exception):
             page.set_default_navigation_timeout(min(_SEARCH_NAV_TIMEOUT_MS, remaining_ms))
-        except Exception:
-            pass
         url = active_profile["search_url"].format(query=quote_plus(query))
         cancellation.check()
         page.goto(url, wait_until="domcontentloaded")
@@ -558,10 +551,8 @@ class BrowserSearchProvider:
         if page is None:
             return
         self._release_page_guard_on_browser_thread(page)
-        try:
+        with contextlib.suppress(Exception):
             page.close()
-        except Exception:
-            pass
 
     def _discard_fetch_page_on_browser_thread(self, page) -> None:
         self._discard_page_on_browser_thread(page)
@@ -583,10 +574,8 @@ def _page_content_after_navigation(page) -> str:
         except Exception as exc:
             if not _content_retryable(exc) or time.monotonic() >= stop_at:
                 raise
-            try:
+            with contextlib.suppress(Exception):
                 page.wait_for_load_state("domcontentloaded", timeout=500)
-            except Exception:
-                pass
             cancellation.wait(_CONTENT_RETRY_TICK)
 
 
@@ -600,10 +589,8 @@ def _fetch_page_content_after_settle(page) -> tuple[str, str]:
     best_text = text
     while time.monotonic() < stop_at:
         cancellation.check()
-        try:
+        with contextlib.suppress(Exception):
             page.wait_for_load_state("networkidle", timeout=500)
-        except Exception:
-            pass
         cancellation.wait(_FETCH_SETTLE_TICK)
         html = _page_content_after_navigation(page)
         text = extract_text(html)
@@ -745,10 +732,8 @@ def _looks_like_short_fetch_challenge(normalized_text: str) -> bool:
 
 
 def _set_navigation_timeout(page, timeout_ms: int) -> None:
-    try:
+    with contextlib.suppress(Exception):
         page.set_default_navigation_timeout(timeout_ms)
-    except Exception:
-        pass
 
 
 def _search_failure_kind(exc: Exception) -> str:

@@ -51,6 +51,7 @@ from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
+import contextlib
 
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
@@ -62,10 +63,8 @@ def _close_if_discarded(store: object) -> None:
     close = getattr(store, "close", None)
     if not callable(close):
         return
-    try:
+    with contextlib.suppress(Exception):
         close()
-    except Exception:
-        pass
 
 
 MAX_CONVERSATION_STATES = 32
@@ -365,10 +364,8 @@ class AppContext:
         """Drop oldest in-memory trackers only; durable snapshots stay on disk."""
         while len(self.change_trackers) > MAX_CHANGE_TRACKERS:
             _old_key, old_tracker = self.change_trackers.popitem(last=False)
-            try:
+            with contextlib.suppress(Exception):
                 old_tracker.disable_persistence()
-            except Exception:
-                pass
 
     def reserve_run(
         self,
@@ -763,10 +760,8 @@ class AppContext:
             # still alive) before durable resources release below.
             self.request_stop()
 
-        try:
+        with contextlib.suppress(Exception):
             self.ghost_sleep_daemon.wait(timeout=2.0)
-        except Exception:
-            pass
 
         resources_closed = True
         with self.lock:

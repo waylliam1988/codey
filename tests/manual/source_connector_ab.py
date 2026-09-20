@@ -47,6 +47,7 @@ from tests.manual.ab_journal import (
     TranscriptReplayCache,
     journal_directory_for,
 )
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -513,10 +514,8 @@ def run_provider(
     finally:
         provider_controls.end_task_context()
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _load_or_new_payload(
@@ -571,10 +570,8 @@ def _detach_search_provider(provider: object) -> None:
         seen.add(id(current))
         for name in ("_fetch_page", "_search_page", "_session"):
             if hasattr(current, name):
-                try:
+                with contextlib.suppress(Exception):
                     setattr(current, name, None)
-                except Exception:
-                    pass
         current = getattr(current, "base_provider", None)
 
 

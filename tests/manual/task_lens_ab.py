@@ -58,6 +58,7 @@ from tests.manual.project_task_context import (
     render_production_project_map,
 )
 from tests.manual.zoom_project_map_ab import ProbeCase, build_deep_fixture
+import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-task-lens-ab.json"
 ARMS = ("current", "lens")
@@ -79,10 +80,8 @@ GENERIC_NAV_TOKENS = {
     "verification",
 }
 
-try:
+with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-except (AttributeError, OSError):
-    pass
 
 
 @dataclass(frozen=True)

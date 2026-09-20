@@ -20,6 +20,7 @@ from codey.workspace.map import (
     build_symbol_overview,
 )
 from tests.manual.project_task_context import render_production_project_map
+import contextlib
 
 
 @dataclass(frozen=True)
@@ -206,10 +207,8 @@ def run_self_test() -> None:
             "def big_symbol():\n    pass\n" + ("#" * (MAX_SYMBOL_FILE_BYTES + 1)),
             encoding="utf-8",
         )
-        try:
+        with contextlib.suppress(OSError):
             (root / "src" / "link.py").symlink_to(root / "src" / "router.py")
-        except OSError:
-            pass
         text = build_symbol_overview(root, "debug router dispatch test")
         assert "src/router.py" in text, text
         assert "class Router" in text, text

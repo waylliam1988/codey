@@ -40,6 +40,7 @@ from codey.workspace.paths import (
 from codey.workspace.paths import (
     safe_join as _safe_join,
 )
+import contextlib
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_SNAPSHOT_DIFF_CHARS = 240_000
@@ -319,17 +320,13 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
 
 
 def _remove_file(path: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 def _remove_dir_if_empty(directory: Path) -> None:
-    try:
+    with contextlib.suppress(OSError):
         directory.rmdir()
-    except OSError:
-        pass
 
 
 def _diff_and_counts(
@@ -449,10 +446,8 @@ class ChangeTracker:
                     self._total_bytes -= added
                 store = self.store
             if store is not None:
-                try:
+                with contextlib.suppress(Exception):
                     store.remove(self.root, rel_posix)
-                except Exception:
-                    pass
             raise
 
     def capture_after(self, rel: str) -> None:
@@ -474,10 +469,8 @@ class ChangeTracker:
             self._after_hashes[rel_posix] = digest
             store = self.store
         if store is not None:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 store.set_after_hash(self.root, rel_posix, digest)
-            except (OSError, ValueError):
-                pass
 
     def snapshots(self, paths: list[str] | None = None) -> list[Snapshot]:
         with self._lock:
@@ -572,10 +565,8 @@ class ChangeTracker:
         with self._lock:
             store = self.store
         if store is not None:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 store.remove(self.root, rel)
-            except (OSError, ValueError):
-                pass
 
     def restore(self, paths: list[str] | None = None) -> RestoreResult:
         with self._lock:

@@ -34,6 +34,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -1171,10 +1172,8 @@ def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
 
 
 def _cleanup_capture(page: Any) -> None:
-    try:
+    with contextlib.suppress(Exception):
         page.evaluate("window.__sessionTeachCleanup && window.__sessionTeachCleanup()")
-    except Exception:
-        pass
 
 
 def _usable(control: Any | None, require_enabled: bool) -> bool:

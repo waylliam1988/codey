@@ -26,6 +26,7 @@ from codey.protocols.json_codec import _balanced_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.runtime.core.models import ToolPlan
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "typed")
@@ -464,10 +465,8 @@ def run_live(
         return 0 if all(row.get("ok") for row in payload["rows"]) else 1
     finally:
         if provider is not None and not keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
         provider_controls.end_task_context()
 
 

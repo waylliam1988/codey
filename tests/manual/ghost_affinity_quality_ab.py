@@ -29,6 +29,7 @@ from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.storage.local_store import write_json_atomic
 from codey.task.model import TaskSubmission
+import contextlib
 
 RESULTS_DIR = Path(__file__).with_name("results")
 PROVIDERS = tuple(pid for pid in provider_ids() if pid != "local")
@@ -148,10 +149,8 @@ def _run_case(
         except Exception as exc:
             return _failure_row(case, arm, exc, elapsed_seconds=time.time() - started)
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | None) -> object:

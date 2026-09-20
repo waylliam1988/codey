@@ -54,6 +54,7 @@ from codey.app.http_plumbing import (
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.storage.local_store import DEFAULT_STATE_HOME
+import contextlib
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
@@ -339,10 +340,8 @@ class Handler(BaseHTTPRequestHandler):
                 return None
         finally:
             if callable(set_timeout):
-                try:
+                with contextlib.suppress(Exception):
                     connection.settimeout(previous_timeout)
-                except Exception:
-                    pass
 
     def do_GET(self) -> None:  # noqa: N802
         if not self._request_origin_allowed():
@@ -480,10 +479,8 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
     print(f"[codey] UI ready: {url}")
 
     def _run_httpd() -> None:
-        try:
+        with contextlib.suppress(KeyboardInterrupt):
             httpd.serve_forever()
-        except KeyboardInterrupt:
-            pass
 
     threading.Thread(target=_run_httpd, daemon=True).start()
     provider_services.start_provider_warmup(get_state(), delay_s=2.0)

@@ -30,6 +30,7 @@ from codey.toolchain.runtime import (
 )
 from codey.utils.references import find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+import contextlib
 
 MAX_CONSENSUS_ADVISORS = 2
 MAX_ADVICE_CHARS = 4_000
@@ -871,10 +872,8 @@ def run_project_audit(
             continue
         finally:
             if advisor is not None:
-                try:
+                with contextlib.suppress(Exception):
                     advisor.close()
-                except Exception:
-                    pass
     return tuple(reports)
 
 
@@ -976,10 +975,8 @@ def run_consensus(
             continue
         finally:
             if advisor is not None:
-                try:
+                with contextlib.suppress(Exception):
                     advisor.close()
-                except Exception:
-                    pass
 
     if not advices:
         if draft_first and owner_draft:

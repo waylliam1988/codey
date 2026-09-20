@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import contextlib
 
 DEFAULT_STATE_HOME = Path.home() / ".codey"
 MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -88,10 +89,8 @@ def write_json_atomic(
 
 
 def delete_file(path: Path) -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         path.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def backup_corrupt_file(path: Path) -> Path | None:

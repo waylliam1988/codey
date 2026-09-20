@@ -37,6 +37,7 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
+import contextlib
 
 dataclass = dataclasses.dataclass
 
@@ -413,15 +414,11 @@ def run_live(
         return store.payload
     finally:
         if not run_finished and journal is not None:
-            try:
+            with contextlib.suppress(Exception):
                 journal.record_run_complete(rows=len(store.rows), status="failed")
-            except Exception:
-                pass
         if raw_provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 raw_provider.close()
-            except Exception:
-                pass
         if journal is not None:
             journal.close()
 

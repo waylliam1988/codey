@@ -31,6 +31,7 @@ from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, prov
 from codey.runs.trace import RunTraceStore
 from codey.runtime.core.models import ToolPlan
 from codey.runtime.observe.events import render_run_event
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "candidate")
@@ -390,10 +391,8 @@ def run_live(
         if provider is not None and not keep_open:
             close = getattr(provider, "close", None)
             if callable(close):
-                try:
+                with contextlib.suppress(Exception):
                     close()
-                except Exception:
-                    pass
         provider_controls.end_task_context()
 
 

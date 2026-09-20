@@ -32,6 +32,7 @@ from codey.workspace.context_source import (
     ContextSource,
     render_context_sources_with_metadata,
 )
+import contextlib
 
 
 def open_fresh_chat(session: AgentLoopSession) -> bool:
@@ -271,7 +272,7 @@ def _send_provider_with_effect(
         reply_text = session.provider.send(prompt)
     except Exception as exc:
         if mutations is not None and effect_id:
-            try:
+            with contextlib.suppress(Exception):
                 mutations.settle_provider_effect(
                     session.session_id,
                     session.run_id,
@@ -285,8 +286,6 @@ def _send_provider_with_effect(
                         sent_state=SENT_STATE_MAYBE_SENT,
                     ),
                 )
-            except Exception:
-                pass
         raise
 
     if mutations is not None and effect_id:

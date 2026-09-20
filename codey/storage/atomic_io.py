@@ -15,6 +15,7 @@ import os
 import stat
 import uuid
 from pathlib import Path
+import contextlib
 
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 
@@ -146,10 +147,8 @@ def append_bytes_durable(path: str | Path, chunks: list[bytes] | tuple[bytes, ..
             os.fsync(handle.fileno())
     finally:
         if fd >= 0:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
 
 
 def write_text_atomic(

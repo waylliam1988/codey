@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from unittest import mock
@@ -169,10 +169,8 @@ def _run_case(
         except Exception as exc:
             return _failure_row(case, arm, exc, elapsed_seconds=time.time() - started)
         finally:
-            try:
+            with suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _new_provider(provider_id: str, provider_factory: Callable[[str], object] | None) -> object:

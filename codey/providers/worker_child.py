@@ -9,6 +9,7 @@ from pathlib import Path
 
 from codey.automation.browser import DEFAULT_PROFILE
 from codey.providers.registry import PROVIDER_TYPES
+import contextlib
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -84,10 +85,8 @@ def main(argv: list[str] | None = None) -> int:
                 payload = failure.to_dict() if hasattr(failure, "to_dict") else None
                 _reply(request_id, False, error=str(exc), failure=payload)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             provider.close()
-        except Exception:
-            pass
     return 0
 
 
@@ -105,10 +104,8 @@ def _target_id(provider) -> str:
         # not leak it for the lifetime of the page.
         detach = getattr(session, "detach", None)
         if callable(detach):
-            try:
+            with contextlib.suppress(Exception):
                 detach()
-            except Exception:
-                pass
 
 
 def _event(name: str, **payload) -> None:

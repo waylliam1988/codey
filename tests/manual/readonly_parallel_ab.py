@@ -39,6 +39,7 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
+import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-readonly-parallel-ab.json"
 PARALLEL_READONLY_TOOL_NAMES = frozenset({"read", "ls", "search"})
@@ -50,10 +51,8 @@ LIVE_MARKERS = ("MARKER_ALPHA", "MARKER_BRAVO", "MARKER_CHARLIE", "MARKER_DELTA"
 def run_agent(provider, project, task, **kwargs):
     return agent.run(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
-try:
+with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-except (AttributeError, OSError):
-    pass
 
 
 @dataclass(frozen=True)

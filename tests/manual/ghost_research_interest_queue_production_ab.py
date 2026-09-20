@@ -38,6 +38,7 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.task.model import TaskSubmission
+import contextlib
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -241,10 +242,8 @@ def _run_case(
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 state.knowledge_store.close()
-            except Exception:
-                pass
             try:
                 if provider is not None:
                     provider.close()

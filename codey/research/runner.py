@@ -62,6 +62,7 @@ from codey.workspace.context_source import (
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
+import contextlib
 
 DEFAULT_MAX_TURNS = 14
 COMPLETION_EXTENSION_TURNS = 4
@@ -640,15 +641,13 @@ class ResearchRunner:
 
     def _record_model_failure(self, action: str, error: object) -> None:
         if self.diagnostics is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.diagnostics.record(
                     "model",
                     action,
                     error,
                     model=getattr(self.provider, "location", getattr(self.provider, "name", "")),
                 )
-            except Exception:
-                pass
 
     def _topic_continuity_sources(self) -> tuple[RenderedContextSource, ...]:
         """Admit bounded topic continuity through the profile gate.

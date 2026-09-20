@@ -21,6 +21,7 @@ from codey.ghost.schema import clip_signal_text
 from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
+import contextlib
 
 ARMS = ("baseline", "directive")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -395,10 +396,8 @@ def main(argv: list[str] | None = None) -> int:
             keep_open=args.keep_open,
             isolated=args.isolated,
         ):
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
     directive_rows = [row for row in rows if row.get("arm") == "directive"]
     payload = {

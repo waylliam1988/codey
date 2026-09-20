@@ -60,6 +60,7 @@ from codey.storage.local_store import (
     delete_file,
     write_json_atomic,
 )
+import contextlib
 
 HEBBIAN_SCHEMA_VERSION = 1
 MAX_GHOST_NODES = 500
@@ -690,10 +691,8 @@ class GhostHebbianStore:
         rebuilt_nodes, rebuilt_edges = self._rebuild_state_from_events_unlocked()
         if rebuilt_nodes is None or rebuilt_edges is None:
             return [], []
-        try:
+        with contextlib.suppress(OSError, TypeError, ValueError):
             self._write_projection(rebuilt_nodes, rebuilt_edges)
-        except (OSError, TypeError, ValueError):
-            pass
         return rebuilt_nodes, rebuilt_edges
 
     def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
@@ -845,7 +844,7 @@ class GhostHebbianStore:
         ):
             return
         reason = "event_bytes_limit" if event_bytes > MAX_HEBBIAN_EVENTS_BYTES else "event_count_limit"
-        try:
+        with contextlib.suppress(OSError, TypeError, ValueError):
             self._rewrite_events_from_state(
                 nodes,
                 edges,
@@ -860,8 +859,6 @@ class GhostHebbianStore:
                     now=_now(),
                 ),
             )
-        except (OSError, TypeError, ValueError):
-            pass
 
     def _quarantine(self, path: Path) -> None:
         try:

@@ -11,6 +11,7 @@ from codey.app import http_plumbing
 from codey.app.context import MAX_CHANGE_TRACKERS, AppContext
 from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.paths import bounded_directory_entries, safe_join
+import contextlib
 
 
 class ColdstartReviewBatchTests(unittest.TestCase):
@@ -313,10 +314,8 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "closed"):
                         pool.submit(index.count).result()
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     index.close()
-                except Exception:
-                    pass
 
     def test_focused_scan_samples_across_modules_not_alphabetical_prefix(self) -> None:
         from codey.workspace import map as project_map

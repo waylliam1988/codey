@@ -42,6 +42,7 @@ from codey.workspace.map import (
     _symbols_for_file,
 )
 from tests.manual.project_task_context import render_production_project_map
+import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scoped-task-plan-ab.json"
 ARMS = ("current", "hint", "scoped")
@@ -51,10 +52,8 @@ MAX_HINT_DIRS = 5
 MAX_HINT_SYMBOLS = 3
 MAX_HINT_CHARS = 1_800
 
-try:
+with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-except (AttributeError, OSError):
-    pass
 
 
 @dataclass(frozen=True)

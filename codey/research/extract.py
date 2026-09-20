@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from html.parser import HTMLParser
+import contextlib
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
@@ -54,10 +55,8 @@ class _Extractor(HTMLParser):
 
 def extract_text(html: str) -> str:
     parser = _Extractor()
-    try:
+    with contextlib.suppress(Exception):
         parser.feed(html or "")
-    except Exception:
-        pass
     text = "".join(parser.parts)
     lines = [_SPACES_RE.sub(" ", line).strip() for line in text.splitlines()]
     text = "\n".join(line for line in lines if line is not None)
@@ -66,8 +65,6 @@ def extract_text(html: str) -> str:
 
 def extract_title(html: str) -> str:
     parser = _Extractor()
-    try:
+    with contextlib.suppress(Exception):
         parser.feed(html or "")
-    except Exception:
-        pass
     return _SPACES_RE.sub(" ", parser.title).strip()

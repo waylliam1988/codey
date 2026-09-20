@@ -7,6 +7,7 @@ from pathlib import Path
 
 from codey.agents.handoff import ConversationContext
 from codey.storage.conversation_store import ConversationStore
+import contextlib
 
 
 class ConversationRegistry:
@@ -38,10 +39,8 @@ class ConversationRegistry:
         if evicted is not None:
             oldest_id, oldest_context = evicted
             with self.store_lock:
-                try:
+                with contextlib.suppress(OSError, ValueError):
                     self.store.save(oldest_id, oldest_context)
-                except (OSError, ValueError):
-                    pass
         loaded = self.store.load(session_id)
         loaded.on_change = (
             lambda value, owner=session_id, owner_token=token: self._save(
@@ -100,10 +99,8 @@ class ConversationRegistry:
         with self.store_lock:
             if self.tokens.get(session_id) is not token:
                 return
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 self.store.save(session_id, context)
-            except (OSError, ValueError):
-                pass
 
 
 __all__ = ["ConversationRegistry"]

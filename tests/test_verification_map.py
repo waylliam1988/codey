@@ -7,6 +7,7 @@ from unittest import mock
 
 from codey.completion.verification_map import build_verification_map
 from codey.runs.work_checkpoint import CheckpointCheck
+import contextlib
 
 
 def _changes(*paths: str, diff: str = "") -> dict:
@@ -198,10 +199,8 @@ class VerificationMapTests(unittest.TestCase):
             target = tests / "real_test.py"
             target.write_text("validate_token", encoding="utf-8")
             link = tests / "test_link.py"
-            try:
+            with contextlib.suppress(OSError):
                 link.symlink_to(target)
-            except OSError:
-                pass
 
             with mock.patch("codey.completion.verification_map.MAX_TEST_FILE_BYTES", 4):
                 result = build_verification_map(

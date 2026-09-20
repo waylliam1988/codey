@@ -41,6 +41,7 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 from codey.workspace.paths import read_text_bounded
+import contextlib
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000
@@ -278,10 +279,8 @@ class GhostSleepStore:
         if report_step.ok:
             with with_file_lock(self.events_path):
                 if self._append_events([_report_event(final_report)]):
-                    try:
+                    with contextlib.suppress(OSError, TypeError, ValueError):
                         self._write_projection(final_report)
-                    except (OSError, TypeError, ValueError):
-                        pass
                     self._compact_if_needed()
                 else:
                     failed_step = GhostSleepStepResult(

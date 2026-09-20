@@ -27,6 +27,7 @@ from codey.toolchain.json_reply import (
 from codey.toolchain.json_reply import (
     normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
 )
+import contextlib
 
 PROVIDER_ID = "mimo"
 PROFILE = get_profile(PROVIDER_ID)
@@ -287,10 +288,8 @@ def _copy_last_text(page: Page) -> str:
         return ""
     deadline = time.time() + COPY_READY_TIMEOUT
     while time.time() < deadline:
-        try:
+        with contextlib.suppress(Exception):
             response.scroll_into_view_if_needed(timeout=1000)
-        except Exception:
-            pass
         action = _copy_button_after_response(page, response)
         if action is not None:
             cancellation.check()

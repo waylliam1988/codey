@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
+import contextlib
 
 
 class AtomicWriteTests(unittest.TestCase):
@@ -131,10 +132,8 @@ class AtomicWriteTests(unittest.TestCase):
                 self.assertEqual(leftovers, [])
                 self.assertEqual(target.read_text(encoding="utf-8"), "before\n")
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
-                except OSError:
-                    pass
 
     def test_write_bytes_atomic(self) -> None:
         from codey.storage.atomic_io import write_bytes_atomic

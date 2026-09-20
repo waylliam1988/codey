@@ -90,6 +90,7 @@ from codey.workspace.change_brief import (
 )
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 from codey.workspace.facts import ProjectFactsStore
+import contextlib
 
 
 def _default_is_git_repository(_project: str | Path) -> bool:
@@ -928,10 +929,8 @@ def _refresh_review_project_map(ctx: _ProjectRun) -> str:
 
 def _close_writer_for_review(ctx: _ProjectRun) -> None:
     if ctx.frame.provider is not None:
-        try:
+        with contextlib.suppress(Exception):
             ctx.frame.provider.close()
-        except Exception:
-            pass
     ctx.frame.provider = None
     assert ctx.failover is not None
     ctx.failover.provider = None
@@ -1448,10 +1447,8 @@ def _finalize_project(ctx: _ProjectRun) -> ModeOutcome:
                     ctx.result.stop_reason,
                 )
             )
-    try:
+    with contextlib.suppress(Exception):
         ctx.tracker.prune_clean()
-    except Exception:
-        pass
     ctx.frame.conversation.update_snapshot(
         replace(
             ctx.frame.conversation.snapshot,
@@ -1555,10 +1552,8 @@ def handle_project_tool_event(
             tool_index = 0
         tool_id = f"{event.turn}:{max(0, tool_index)}"
         if ok and deps.persistence.project_facts is not None:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 deps.persistence.project_facts.record_success(project, cwd, command)
-            except (OSError, ValueError):
-                pass
         update_checkpoint(
             lambda store, item: store.record_run(
                 item,

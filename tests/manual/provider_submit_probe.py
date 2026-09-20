@@ -12,6 +12,7 @@ if __package__ in (None, ""):
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
+import contextlib
 
 PROVIDER_MODULES = {
     "deepseek": deepseek,
@@ -142,10 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     finally:
         if provider is not None and (not args.keep_open or not args.fresh):
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
         provider_controls.end_task_context()
 
 

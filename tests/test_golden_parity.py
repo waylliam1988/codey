@@ -6,6 +6,7 @@ from pathlib import Path
 from codey.protocols.json_codec import JsonToolCodec
 from codey.research.controller import ResearchController, render_control_block
 from codey.research.protocols import JsonToolCodec as ResearchCodec
+import contextlib
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "golden"
 
@@ -64,10 +65,8 @@ class GoldenParityTests(unittest.TestCase):
             self._assert_fixture("controller_control_block_turn1.txt", block)
             store.close()
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 shutil.rmtree(td, ignore_errors=True)
-            except Exception:
-                pass
 
     def test_research_repair_prompt_golden(self) -> None:
         from codey.research.controller import ResearchController, ResearchControlState

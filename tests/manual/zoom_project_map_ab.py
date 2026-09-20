@@ -40,15 +40,14 @@ from codey.workspace.map import (
     build_symbol_overview,
 )
 from tests.manual.project_task_context import render_production_project_map
+import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-zoom-project-map-ab.json"
 ARMS = ("current", "zoom")
 MAX_RAW_REPLY_CHARS = 3_000
 
-try:
+with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-except (AttributeError, OSError):
-    pass
 
 
 @dataclass(frozen=True)

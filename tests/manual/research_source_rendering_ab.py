@@ -46,6 +46,7 @@ from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     TranscriptReplayCache,
 )
+import contextlib
 
 PROBE = "research_source_rendering_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -393,10 +394,8 @@ def run_provider(
     finally:
         provider_controls.end_task_context()
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _annotate_pair_regressions(rows: list[dict[str, Any]]) -> None:

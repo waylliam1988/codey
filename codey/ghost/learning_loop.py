@@ -11,6 +11,7 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.store import GhostSignalStore
+import contextlib
 
 DEFAULT_GHOST_LEARNING_TIMEOUT = 35.0
 DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT = 15.0
@@ -187,10 +188,8 @@ def _start_provider_chat(provider: SignalProvider, *, timeout: float) -> None:
 def _close_provider(provider: SignalProvider | None) -> None:
     close = getattr(provider, "close", None)
     if callable(close):
-        try:
+        with contextlib.suppress(Exception):
             close()
-        except Exception:
-            pass
 
 
 def _bounded_items(items: tuple[str, ...] | list[str]) -> tuple[str, ...]:

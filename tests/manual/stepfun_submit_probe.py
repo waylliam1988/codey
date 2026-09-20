@@ -12,6 +12,7 @@ if __package__ in (None, ""):
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider
 from codey.providers.web_drivers import stepfun
+import contextlib
 
 
 def _page_state(page) -> dict:
@@ -112,10 +113,8 @@ def main() -> int:
         return 1
     finally:
         if provider is not None and not args.keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
         provider_controls.end_task_context()
 
 

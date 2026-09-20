@@ -389,10 +389,8 @@ class WorkerChatProvider:
             cancellation.terminate_process_tree(proc, job)
         finally:
             if job is not None:
-                try:
+                with contextlib.suppress(Exception):
                     job.close()
-                except Exception:
-                    pass
 
     def _terminate(self) -> None:
         # Test doubles built via __new__ may lack both locks; a throwaway

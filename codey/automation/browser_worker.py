@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, TypeVar
 
 from codey.runtime.core import cancellation
+import contextlib
 
 T = TypeVar("T")
 _POLL_INTERVAL = 0.05
@@ -150,10 +151,8 @@ class BrowserWorker:
                     else:
                         self._completed_jobs += 1
                 if cleanup is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         cleanup()
-                    except Exception:
-                        pass
                 job.done.set()
 
     def health_snapshot(self, *, now: float | None = None) -> BrowserWorkerHealth:

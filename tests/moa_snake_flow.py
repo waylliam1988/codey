@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -453,10 +453,8 @@ def run_reviewer_matrix(
             }
         finally:
             if reviewer is not None:
-                try:
+                with suppress(Exception):
                     reviewer.close()
-                except Exception:
-                    pass
         recorder.event("explicit_review_result", **item)
         results.append(item)
     return results
@@ -496,10 +494,8 @@ def run_project_audit_matrix(project: Path, recorder: FlowRecorder) -> list[dict
             }
         finally:
             if advisor is not None:
-                try:
+                with suppress(Exception):
                     advisor.close()
-                except Exception:
-                    pass
         recorder.event("project_audit_result", **item)
         results.append(item)
     return results

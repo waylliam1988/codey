@@ -9,6 +9,7 @@ from codey.agents.consensus import MAX_CONSENSUS_ADVISORS, ConsensusAdvice, advi
 from codey.providers import controls as provider_controls
 from codey.research.source_document import compact_pages
 from codey.runtime.core import cancellation
+import contextlib
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000
@@ -179,10 +180,8 @@ def run_research_advisors(
             continue
         finally:
             if advisor is not None:
-                try:
+                with contextlib.suppress(Exception):
                     advisor.close()
-                except Exception:
-                    pass
     return tuple(reports)
 
 

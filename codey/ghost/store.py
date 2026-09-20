@@ -17,6 +17,7 @@ from codey.ghost.schema import (
     clip_signal_text,
 )
 from codey.storage.local_store import DEFAULT_STATE_HOME
+import contextlib
 
 MAX_GHOST_EVENTS = 5_000
 MAX_STORED_SIGNALS = 5
@@ -137,10 +138,8 @@ class GhostSignalStore:
         return list(read.rows)
 
     def _prune(self) -> None:
-        try:
+        with contextlib.suppress(OSError):
             self.log.prune_tail(MAX_GHOST_EVENTS)
-        except OSError:
-            pass
 
 
 def _signal_scope_match(

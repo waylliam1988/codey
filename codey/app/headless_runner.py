@@ -39,6 +39,7 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes as default_collect_changes
 from codey.workspace.changes import is_git_repository
+import contextlib
 
 SCHEMA_VERSION = 1
 HEADLESS_SESSION_PREFIX = "headless_"
@@ -103,10 +104,8 @@ class HeadlessAppContext(AppContext):
             self._emit_jsonl(payload)
         if payload_event.get("type") == "shell_request":
             self.shell_rejected = True
-            try:
+            with contextlib.suppress(Exception):
                 self.request_stop()
-            except Exception:
-                pass
             command_fields = shell_command_event_fields(payload_event)
             rejected = {
                 "schema_version": SCHEMA_VERSION,

@@ -30,6 +30,7 @@ from tests.manual.tool_args_repair_live_ab import (
     _run_agent_case,
     _summarize,
 )
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 PROBE = "tool_args_repair_dialect_pressure_ab"
@@ -221,10 +222,8 @@ def run_live(
         if provider is not None and not keep_open:
             close = getattr(provider, "close", None)
             if callable(close):
-                try:
+                with contextlib.suppress(Exception):
                     close()
-                except Exception:
-                    pass
         provider_controls.end_task_context()
 
 

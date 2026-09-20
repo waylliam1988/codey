@@ -611,10 +611,8 @@ def run_provider(
     finally:
         provider_controls.end_task_context()
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:

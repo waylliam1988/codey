@@ -27,6 +27,7 @@ from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
 from codey.storage.local_store import write_json_atomic
+import contextlib
 
 ARMS = ("baseline", "continuity")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -413,10 +414,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         provider_controls.end_task_context()
         if provider is not None and not args.keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
     _write_report(output, payload)
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
     return 0 if payload.get("ok") else 1

@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from codey.research import source_domains
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
+import contextlib
 
 MAX_SNIPPET_CHARS = 360
 MAX_CLAIM_CHARS = 260
@@ -508,10 +509,8 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
 def _freshness(text: str) -> str:
     years = []
     for match in _YEAR_RE.findall(str(text or "")):
-        try:
+        with contextlib.suppress(ValueError):
             years.append(int(match))
-        except ValueError:
-            pass
     if not years:
         return "undated"
     current = datetime.now(UTC).year

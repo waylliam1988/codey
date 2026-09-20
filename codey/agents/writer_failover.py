@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from codey.providers.diagnostics import ProviderActionError
 from codey.runtime.core.cancellation import TaskCancelled
+import contextlib
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from codey.agents.runner import RunResult
@@ -221,10 +222,8 @@ class WriterFailoverRunner:
     def _close_current(self) -> None:
         provider, self.provider = self.provider, None
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.close(provider)
-            except Exception:
-                pass
 
 
 # Public surface intentionally small: the state machine plus its data shapes.

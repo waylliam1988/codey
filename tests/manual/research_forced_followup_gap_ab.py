@@ -51,6 +51,7 @@ from tests.manual.ab_harness_common import (
 )
 from tests.manual.ab_journal import ABJournalIdentityMismatch, TranscriptReplayCache
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+import contextlib
 
 PROBE = "research_forced_followup_gap_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -621,10 +622,8 @@ def run_provider(
         if provider is not None:
             closer = getattr(provider, "close", None)
             if callable(closer):
-                try:
+                with contextlib.suppress(Exception):
                     closer()
-                except Exception:
-                    pass
 
 
 def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:

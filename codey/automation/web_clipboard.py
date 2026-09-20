@@ -8,6 +8,7 @@ import uuid
 from playwright.sync_api import Locator, Page
 
 from codey.runtime.core import cancellation
+import contextlib
 
 
 def copy_action_text(
@@ -45,10 +46,8 @@ def copy_action_text(
             cancellation.wait(0.1)
     finally:
         restore = previous if previous is not None else ""
-        try:
+        with contextlib.suppress(Exception):
             page.evaluate("(text) => navigator.clipboard.writeText(text)", restore)
-        except Exception:
-            pass
 
     if not copied or copied == sentinel:
         return ""

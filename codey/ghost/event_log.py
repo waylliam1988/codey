@@ -12,6 +12,7 @@ from typing import Literal
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file
+import contextlib
 
 BadRowPolicy = Literal["warn", "block", "quarantine_tail"]
 
@@ -168,10 +169,8 @@ class GhostEventLog:
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 temporary.unlink()
-            except OSError:
-                pass
 
     def prune_tail(self, max_rows: int) -> None:
         count = max(0, int(max_rows))

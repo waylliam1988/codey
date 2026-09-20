@@ -17,6 +17,7 @@ from codey.reviews.core import ReviewResult, parse_review_with_repair, render_re
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
+import contextlib
 
 
 def emit_review(ctx: TaskState, session_id: str, text: str) -> None:
@@ -93,10 +94,8 @@ def run_review_attempt(
             emit_review(ctx, session_id, f"{prefix} suggested changes")
         return reviewer_id, review
     finally:
-        try:
+        with contextlib.suppress(Exception):
             reviewer.close()
-        except Exception:
-            pass
 
 
 def run_review(

@@ -51,6 +51,7 @@ from tests.manual.ab_journal import (
     TranscriptReplayCache,
 )
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+import contextlib
 
 PROBE = "research_followup_quality_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -416,10 +417,8 @@ def run_provider(
     finally:
         provider_controls.end_task_context()
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _default_output(provider_id: str) -> Path:

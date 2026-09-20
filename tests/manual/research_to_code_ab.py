@@ -54,6 +54,7 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
+import contextlib
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.
@@ -663,10 +664,8 @@ def run_live(
         return 0 if verdict["ok"] else 1
     finally:
         if not run_finished and journal is not None:
-            try:
+            with contextlib.suppress(Exception):
                 journal.record_run_complete(rows=len(store.rows), status="failed")
-            except Exception:
-                pass
         try:
             if raw_provider is not None and not keep_open:
                 raw_provider.close()

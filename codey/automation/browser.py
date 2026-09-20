@@ -23,6 +23,7 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
+import contextlib
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
@@ -422,10 +423,8 @@ def _page_urls(browser: Browser) -> tuple[str, ...]:
     urls: list[str] = []
     for ctx in browser.contexts:
         for page in ctx.pages:
-            try:
+            with contextlib.suppress(Exception):
                 urls.append(str(page.url or ""))
-            except Exception:
-                pass
     return tuple(urls)
 
 
@@ -444,10 +443,8 @@ def _close_failed_warmup_page(page: Page | None, provider_id: str) -> None:
         url = ""
     if marker and marker in url:
         return
-    try:
+    with contextlib.suppress(Exception):
         page.close()
-    except Exception:
-        pass
 
 
 def warm_provider_tabs(
@@ -501,10 +498,8 @@ def warm_provider_tabs(
         _check_cancelled_connection(pw)
     finally:
         if pw is not None:
-            try:
+            with contextlib.suppress(Exception):
                 pw.stop()
-            except Exception:
-                pass
 
     return detect_open_provider_tabs(endpoint.port)
 
@@ -521,10 +516,8 @@ class Session:
     def close(self) -> None:
         try:
             if self.close_page_on_close:
-                try:
+                with contextlib.suppress(Exception):
                     self.page.close()
-                except Exception:
-                    pass
             self.pw.stop()
         finally:
             if self.process is not None:
@@ -538,14 +531,10 @@ def _terminate_browser_process(process: subprocess.Popen) -> None:
         process.terminate()
         process.wait(timeout=2)
     except Exception:
-        try:
+        with contextlib.suppress(Exception):
             process.kill()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             process.wait(timeout=2)
-        except Exception:
-            pass
 
 
 def _start_playwright_with_retry() -> Playwright:
@@ -638,10 +627,8 @@ def open_chat_page(
         )
     except Exception:
         if pw is not None:
-            try:
+            with contextlib.suppress(Exception):
                 pw.stop()
-            except Exception:
-                pass
         if endpoint.process is not None:
             _terminate_browser_process(endpoint.process)
         raise

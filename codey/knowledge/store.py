@@ -9,6 +9,7 @@ from pathlib import Path
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
+import contextlib
 
 RELATED_HEADING = "## Related"
 
@@ -180,10 +181,8 @@ class KnowledgeStore:
         self.index.close()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
     def _current_path(self, note_id: str) -> str | None:
         row = self.index.get(note_id)
@@ -203,10 +202,8 @@ class KnowledgeStore:
         if stale != self.root and self.root not in stale.parents:
             return
         if stale.is_file():
-            try:
+            with contextlib.suppress(OSError):
                 stale.unlink()
-            except OSError:
-                pass
 
     def _index_body_links(self, note: KnowledgeNote) -> None:
         for target, kind in note.wikilink_edges():

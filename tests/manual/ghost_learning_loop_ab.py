@@ -37,6 +37,7 @@ from codey.providers.registry import (
     provider_ids,
 )
 from tests.manual.ghost_directive_ab import _model_visible_context_leaked
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 BASELINE_PROMPT = "请用自然语言解释为什么回归测试重要。"
@@ -71,10 +72,8 @@ class _FreshBorrowedSession:
         self.page = page
 
     def close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.page.close()
-        except Exception:
-            pass
 
 
 def _learning_reply() -> str:
@@ -218,10 +217,8 @@ def _fresh_tab_from_main_provider(provider_id: str, main_provider: Any):
         page.goto(start_url, wait_until="domcontentloaded", timeout=60_000)
         return provider_type(_FreshBorrowedSession(page))
     except Exception:
-        try:
+        with contextlib.suppress(Exception):
             page.close()
-        except Exception:
-            pass
         raise
 
 
@@ -302,10 +299,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         provider_controls.end_task_context()
         if provider is not None and not args.keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
     _write_report(output, payload)
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
     return 0 if payload.get("ok") else 1

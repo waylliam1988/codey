@@ -51,6 +51,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+import contextlib
 
 INBOX_SCHEMA_VERSION = 1
 MAX_GHOST_EVENTS = 5_000
@@ -756,10 +757,8 @@ class GhostInboxStore:
         rows = self._rebuild_candidates_from_events_unlocked()
         if rows is None:
             return ()
-        try:
+        with contextlib.suppress(OSError, TypeError, ValueError):
             self._write_projection(rows)
-        except (OSError, TypeError, ValueError):
-            pass
         return tuple(rows)
 
     def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
@@ -886,13 +885,11 @@ class GhostInboxStore:
         if line_count <= MAX_GHOST_EVENTS and event_bytes <= MAX_EVENTS_BYTES:
             return
         reason = "event_bytes_limit" if event_bytes > MAX_EVENTS_BYTES else "event_count_limit"
-        try:
+        with contextlib.suppress(OSError, TypeError, ValueError):
             self._rewrite_events_from_candidates(
                 candidates,
                 control_event=self._compacted_event(reason),
             )
-        except (OSError, TypeError, ValueError):
-            pass
 
     def _compacted_event(self, reason: str) -> dict[str, object]:
         return _ghost_control_event(

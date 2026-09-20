@@ -22,6 +22,7 @@ from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSET
 from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.repairs.self_repair import SelfRepairJob
 from codey.runtime.core import cancellation
+import contextlib
 
 DEFAULT_REPAIR_TIMEOUT = 900.0
 DEFAULT_MODEL_TIMEOUT = 300.0
@@ -144,10 +145,8 @@ def _run_worker_job(
             last_error = str(exc)
         finally:
             if helper is not None:
-                try:
+                with contextlib.suppress(Exception):
                     helper.close()
-                except Exception:
-                    pass
     return AdapterRepairResult(False, provider_id, error=last_error)
 
 

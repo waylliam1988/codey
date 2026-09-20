@@ -21,6 +21,7 @@ from codey.research.runner import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
+import contextlib
 
 
 @dataclass(frozen=True)
@@ -255,10 +256,8 @@ class ResearchPipeline:
         finally:
             close = getattr(search, "close", None)
             if callable(close):
-                try:
+                with contextlib.suppress(Exception):
                     close()
-                except Exception:
-                    pass
 
     def _followup_block_reason(
         self,

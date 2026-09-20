@@ -33,7 +33,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -412,10 +412,8 @@ def _run_case(
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         finally:
-            try:
+            with suppress(Exception):
                 state.knowledge_store.close()
-            except Exception:
-                pass
             try:
                 if raw_provider is not None:
                     raw_provider.close()

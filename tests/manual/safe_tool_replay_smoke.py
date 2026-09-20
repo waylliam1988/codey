@@ -49,6 +49,7 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LIVE_TASK = (
@@ -723,10 +724,8 @@ def run_live_resume_smoke(
     finally:
         provider_controls.end_task_context()
         if provider is not None and not keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def main() -> None:

@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,22 +129,16 @@ def _release_os_lock(fd: int) -> None:
             import msvcrt
 
             os.lseek(fd, 0, os.SEEK_SET)
-            try:
+            with suppress(OSError):
                 msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-            except OSError:
-                pass
         else:
             import fcntl
 
-            try:
+            with suppress(OSError):
                 fcntl.flock(fd, fcntl.LOCK_UN)
-            except OSError:
-                pass
     finally:
-        try:
+        with suppress(OSError):
             os.close(fd)
-        except OSError:
-            pass
 
 
 @contextmanager

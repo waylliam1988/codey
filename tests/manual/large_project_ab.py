@@ -29,14 +29,13 @@ from codey.providers.registry import connect_provider
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
+import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
 NAVIGATION_TOOLS = ("find_references",)
 
-try:
+with contextlib.suppress(AttributeError, OSError):
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
-except (AttributeError, OSError):
-    pass
 
 
 @dataclass(frozen=True)

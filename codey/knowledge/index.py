@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 
 from codey.knowledge.note import KnowledgeNote
+import contextlib
 
 
 class KnowledgeIndex:
@@ -47,10 +48,8 @@ class KnowledgeIndex:
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
             conn.row_factory = sqlite3.Row
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute("PRAGMA busy_timeout=5000")
-            except sqlite3.OperationalError:
-                pass
             with self._read_conns_lock:
                 if self._closed:
                     conn.close()
@@ -452,16 +451,12 @@ class KnowledgeIndex:
         with self._read_conns_lock:
             read_conns, self._read_conns = set(self._read_conns), set()
         for conn in read_conns:
-            try:
+            with contextlib.suppress(Exception):
                 conn.close()
-            except Exception:
-                pass
         with self._lock:
             self._local.conn = None
-            try:
+            with contextlib.suppress(Exception):
                 self._conn.close()
-            except Exception:
-                pass
 
 
 def _fts_query(query: str) -> str:

@@ -29,6 +29,7 @@ from codey.research.controller import (
 from codey.research.protocols import JsonToolCodec, extract_json_objects
 from codey.research.runner import render_research_repair_prompt
 from codey.research.tool_contract import PROTOCOL_TOO_MANY_TOOLS
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
@@ -226,10 +227,8 @@ def main() -> int:
         return 0 if all(row.get("ok") for row in result["arms"]) else 1
     finally:
         if provider is not None and not args.keep_open:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
         provider_controls.end_task_context()
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import urllib.request
 from urllib.parse import urljoin
+import contextlib
 
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
@@ -33,10 +34,8 @@ def redirect_target(current_url: str, headers) -> str:
 
 
 def close_response(response) -> None:
-    try:
+    with contextlib.suppress(Exception):
         response.close()
-    except Exception:
-        pass
 
 
 __all__ = [

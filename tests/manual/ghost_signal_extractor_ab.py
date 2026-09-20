@@ -23,6 +23,7 @@ from codey.ghost.extractor import GhostSignalExtractor
 from codey.ghost.schema import clip_signal_text, quote_is_grounded
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
+import contextlib
 
 RESULTS_DIR = Path(tempfile.gettempdir())
 ARMS = ("baseline", "extractor")
@@ -340,10 +341,8 @@ def main(argv: list[str] | None = None) -> int:
             keep_open=args.keep_open,
             isolated=args.isolated,
         ):
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
     payload = {
         "provider": provider_id,
         "arms": list(ARMS),

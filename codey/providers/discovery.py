@@ -6,6 +6,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
+import contextlib
 
 MESSAGE_BOX = "message_box"
 SEND_BUTTON = "send_button"
@@ -147,10 +148,8 @@ def start_response_watch(page: Any) -> str:
 def stop_response_watch(page: Any, token: str) -> None:
     if not token:
         return
-    try:
+    with contextlib.suppress(Exception):
         page.evaluate(_STOP_RESPONSE_WATCH_JS, {"token": token})
-    except Exception:
-        pass
 
 
 def response_candidates(

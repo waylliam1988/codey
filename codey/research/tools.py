@@ -24,6 +24,7 @@ from codey.research.source_search import (
 )
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.utils.text_budget import clip_middle
+import contextlib
 
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
@@ -321,10 +322,8 @@ class ResearchTools:
 
     def _record_failure(self, area: str, action: str, error: object, *, url: str = "") -> None:
         if self.diagnostics is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.diagnostics.record(area, action, error, url=url, model=getattr(self.search, "name", ""))
-            except Exception:
-                pass
 
     def _provenance_problem(self, note_type: str, sources: list[str]) -> str | None:
         if not sources:

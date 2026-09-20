@@ -63,6 +63,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+import contextlib
 
 AFFINITY_SCHEMA_VERSION = 1
 MAX_AFFINITY_NODES = 500
@@ -1227,10 +1228,8 @@ class GhostAffinityStore:
         try:
             self._write_projection(nodes, edges, warnings=self.last_warnings)
         except (OSError, TypeError, ValueError):
-            try:
+            with contextlib.suppress(OSError):
                 delete_file(self.projection_path)
-            except OSError:
-                pass
             self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_projection_write_failed"))
 
     def _compact_if_needed_locked(self, nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge]) -> None:

@@ -64,6 +64,7 @@ from tests.manual.ab_journal import (
     ABJournalWriter,
 )
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
+import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -836,16 +837,12 @@ def run_provider(
             return payload
     finally:
         if not run_finished and trace is not None:
-            try:
+            with contextlib.suppress(Exception):
                 trace.record_run_complete(rows=len(store.rows), status="failed")
-            except Exception:
-                pass
         provider_controls.end_task_context()
         if provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 provider.close()
-            except Exception:
-                pass
 
 
 def _pending_case_keys(

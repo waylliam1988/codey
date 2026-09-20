@@ -42,6 +42,7 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+import contextlib
 
 if TYPE_CHECKING:
     from codey.runs.ledger_projection import RunLedgerProjection
@@ -487,10 +488,8 @@ class GhostContinuityStore:
             return ()
         rebuilt = tuple(_bounded_items(_items_from_events(events)))
         if rebuilt:
-            try:
+            with contextlib.suppress(OSError, TypeError, ValueError):
                 self._write_projection(rebuilt, now=_now(), warnings=[])
-            except (OSError, TypeError, ValueError):
-                pass
         return rebuilt
 
     def compact_if_needed(self) -> dict[str, object]:
@@ -622,10 +621,8 @@ class GhostContinuityStore:
             return
         if event_count <= MAX_CONTINUITY_EVENTS and event_bytes <= MAX_CONTINUITY_EVENTS_BYTES:
             return
-        try:
+        with contextlib.suppress(OSError):
             self._rewrite_events_from_items(items)
-        except OSError:
-            pass
 
 
 def build_ghost_continuity(
