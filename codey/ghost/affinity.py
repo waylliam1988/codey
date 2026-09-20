@@ -12,7 +12,6 @@ import hashlib
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, is_dataclass, replace
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +44,6 @@ from codey.ghost.graph_primitives import (
 )
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
-)
-from codey.ghost.graph_primitives import (
-    parse_ts as _shared_parse_ts,
 )
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
@@ -2669,10 +2665,6 @@ def _unit_float_or_none(value: object) -> float | None:
 
 def _unit_float(value: object) -> float:
     return clamp_unit_float(value, digits=6)
-
-
-def _parse_ts(value: object) -> datetime:
-    return _shared_parse_ts(value)
 
 
 def _event_read_warnings(warnings: Iterable[str]) -> tuple[str, ...]:

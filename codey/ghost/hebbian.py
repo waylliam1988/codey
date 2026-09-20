@@ -44,9 +44,6 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
 )
-from codey.ghost.graph_primitives import (
-    parse_ts as _shared_parse_ts,
-)
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
@@ -1197,10 +1194,6 @@ def _coerce_reward(value: object) -> float:
 
 def _clamp01(value: float) -> float:
     return round(max(0.0, min(1.0, float(value or 0.0))), 6)
-
-
-def _parse_ts(value: object) -> datetime:
-    return _shared_parse_ts(value)
 
 
 def _compact_timestamp() -> str:
