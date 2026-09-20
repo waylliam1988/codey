@@ -44,9 +44,11 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
-from codey.research.shape import valid_digest_ref
-from codey.research.shape import generated_ref as _generated_ref
-from codey.research.shape import safe_connector_id as _safe_connector_id
+from codey.research.guards import (
+    valid_digest_ref,
+    generated_ref as _generated_ref,
+    safe_connector_id as _safe_connector_id,
+)
 
 
 SCHEMA_VERSION = 1

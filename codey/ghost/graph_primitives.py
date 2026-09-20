@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Iterable, TypeVar
+
+_RowT = TypeVar("_RowT")
 
 
 def parse_ts(value: object) -> datetime:
@@ -94,8 +96,88 @@ def any_decay_due(
     return False
 
 
+def _node_rank(row: Any) -> tuple[Any, ...]:
+    return (
+        getattr(row, "status", "") == "active",
+        float(getattr(row, "weight", 0.0) or 0.0),
+        str(getattr(row, "updated_at", "")),
+    )
+
+
+def bound_graph_nodes(
+    rows: Iterable[_RowT],
+    *,
+    min_active_weight: float,
+    limit: int,
+) -> list[_RowT]:
+    """Keep active rows above ``min_active_weight`` (inactive rows always
+    survive the filter), active-first by weight, truncated to ``limit``.
+
+    Row protocol: ``.status`` / ``.weight`` / ``.updated_at``. Both the
+    Hebbian memory graph and the affinity preference index satisfy it with
+    different thresholds; the ranking is shared.
+    """
+    threshold = float(min_active_weight)
+    kept = [
+        row
+        for row in rows
+        if getattr(row, "status", "") != "active"
+        or float(getattr(row, "weight", 0.0) or 0.0) >= threshold
+    ]
+    kept.sort(key=_node_rank, reverse=True)
+    return kept[: max(0, int(limit or 0))]
+
+
+def bound_graph_edges(
+    rows: Iterable[_RowT],
+    *,
+    node_ids: set[str],
+    min_weight: float,
+    limit: int,
+    max_out_degree: int,
+    require_active: bool = False,
+) -> list[_RowT]:
+    """Keep edges between surviving nodes above ``min_weight`` (active-only
+    when ``require_active``), by weight, with per-endpoint degree caps."""
+    threshold = float(min_weight)
+    cap = max(0, int(limit or 0))
+    degree_cap = max(0, int(max_out_degree or 0))
+    kept = [
+        row
+        for row in rows
+        if getattr(row, "source", None) in node_ids
+        and getattr(row, "target", None) in node_ids
+        and float(getattr(row, "weight", 0.0) or 0.0) >= threshold
+        and (not require_active or getattr(row, "status", "") == "active")
+    ]
+    kept.sort(
+        key=lambda row: (
+            float(getattr(row, "weight", 0.0) or 0.0),
+            str(getattr(row, "updated_at", "")),
+        ),
+        reverse=True,
+    )
+    bounded: list[_RowT] = []
+    degree: dict[str, int] = {}
+    for row in kept:
+        if len(bounded) >= cap:
+            break
+        source = str(getattr(row, "source", ""))
+        target = str(getattr(row, "target", ""))
+        if degree.get(source, 0) >= degree_cap:
+            continue
+        if degree.get(target, 0) >= degree_cap:
+            continue
+        bounded.append(row)
+        degree[source] = degree.get(source, 0) + 1
+        degree[target] = degree.get(target, 0) + 1
+    return bounded
+
+
 __all__ = [
     "any_decay_due",
+    "bound_graph_edges",
+    "bound_graph_nodes",
     "decay_basis_of",
     "decayed_by_half_life",
     "exp_decay_factor",

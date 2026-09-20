@@ -21,17 +21,11 @@ from codey.ghost.event_log import (
 )
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
-)
-from codey.ghost.graph_primitives import (
+    bound_graph_edges as _shared_bound_graph_edges,
+    bound_graph_nodes as _shared_bound_graph_nodes,
     decay_basis_of as _shared_decay_basis_of,
-)
-from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
-)
-from codey.ghost.graph_primitives import (
     now_iso as _shared_now_iso,
-)
-from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
 )
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
@@ -1831,39 +1825,20 @@ def _any_decay_due(
 
 
 def _bounded_nodes(nodes: Iterable[AffinityNode]) -> list[AffinityNode]:
-    rows = [
-        node
-        for node in nodes
-        if isinstance(node, AffinityNode) and (node.status != "active" or node.weight >= MIN_NODE_WEIGHT)
-    ]
-    rows.sort(key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
-    return rows[:MAX_AFFINITY_NODES]
+    return _shared_bound_graph_nodes(
+        nodes, min_active_weight=MIN_NODE_WEIGHT, limit=MAX_AFFINITY_NODES
+    )
 
 
 def _bounded_edges(edges: Iterable[AffinityEdge], *, node_ids: set[str]) -> list[AffinityEdge]:
-    rows = [
-        edge
-        for edge in edges
-        if isinstance(edge, AffinityEdge)
-        and edge.source in node_ids
-        and edge.target in node_ids
-        and edge.status == "active"
-        and edge.weight >= MIN_EDGE_WEIGHT
-    ]
-    rows.sort(key=lambda item: (item.weight, item.updated_at), reverse=True)
-    bounded: list[AffinityEdge] = []
-    degree: dict[str, int] = {}
-    for edge in rows:
-        if len(bounded) >= MAX_AFFINITY_EDGES:
-            break
-        if degree.get(edge.source, 0) >= MAX_EDGE_OUT_DEGREE:
-            continue
-        if degree.get(edge.target, 0) >= MAX_EDGE_OUT_DEGREE:
-            continue
-        bounded.append(edge)
-        degree[edge.source] = degree.get(edge.source, 0) + 1
-        degree[edge.target] = degree.get(edge.target, 0) + 1
-    return bounded
+    return _shared_bound_graph_edges(
+        edges,
+        node_ids=node_ids,
+        min_weight=MIN_EDGE_WEIGHT,
+        limit=MAX_AFFINITY_EDGES,
+        max_out_degree=MAX_EDGE_OUT_DEGREE,
+        require_active=True,
+    )
 
 
 def _rows_from_events(events: Iterable[dict[str, object]]) -> tuple[list[AffinityNode], list[AffinityEdge]]:

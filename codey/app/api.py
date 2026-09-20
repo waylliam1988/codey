@@ -8,7 +8,7 @@ from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
-from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
+from codey.knowledge.concepts import build_unified_research_graph
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_openai import (
     load_local_config,
@@ -156,7 +156,8 @@ def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int,
     synthesis_id = query_value(query, "synthesis_id")
     if synthesis_id and synthesis_id not in focus_ids:
         focus_ids.insert(0, synthesis_id)
-    graph = UnifiedResearchGraphBuilder(ctx.knowledge_store).build_for_session(
+    graph = build_unified_research_graph(
+        ctx.knowledge_store,
         query_value(query, "session_id"),
         focus_ids=tuple(focus_ids),
         depth=query_int(query, "depth", 1, 1, 3),

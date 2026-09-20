@@ -8,6 +8,7 @@ from typing import Callable
 from codey.runtime.core import cancellation
 from codey.research.context import ResearchPipelineConfig
 from codey.research.guards import bounded_int as _bounded_int
+from codey.research.urls import opened_url
 from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
@@ -225,7 +226,7 @@ def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
 
 
 def _opened_source_payload(tools: ResearchTools, url: str) -> dict:
-    final_url = tools.ledger.canonical_opened_url(url) or str(url or "")
+    final_url = opened_url(tools.ledger, url)
     for item in tools.ledger.opened_sources:
         if item.final_url == final_url or item.requested_url == final_url:
             return item.to_dict()

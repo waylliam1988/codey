@@ -16,9 +16,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
-from codey.research.connector_domains import (
+from codey.research.connector_terms import (
     ARXIV_CONNECTOR_TERMS,
     LOCAL_CONNECTOR_TERMS,
     MEDICAL_CONNECTOR_TERMS,
@@ -40,13 +40,14 @@ from codey.policies.redaction import (
     looks_prompt_visible_secret,
     looks_sensitive_code,
 )
-from codey.research.shape import (
+from codey.research.guards import (
     bounded_limit as _bounded_limit,
     connector_id as _connector_id,
     valid_digest_ref,
     generated_ref as _generated_ref,
 )
 from codey.research.source_document import SourceDocument
+from codey.research.urls import host_key, parsed_url
 from codey.policies.network import check_fetch_url
 
 
@@ -1192,9 +1193,8 @@ def _connector_url_denial_reason(connector_id: str, url: str) -> str:
 def _connector_canonical_url(connector_id: str, url: str) -> str:
     text = str(url or "").strip()
     if _connector_id(connector_id) == "arxiv" and _url_host(text) == "arxiv.org":
-        try:
-            parsed = urlparse(text)
-        except ValueError:
+        parsed = parsed_url(text)
+        if not parsed.scheme and not parsed.netloc and not parsed.path:
             return text
         return parsed._replace(scheme="https", netloc="arxiv.org").geturl()
     return text
@@ -1248,10 +1248,7 @@ def _pubmed_year(article: ET.Element) -> str:
 
 
 def _pubmed_id(url: str) -> str:
-    try:
-        parsed = urlparse(str(url or "").strip())
-    except ValueError:
-        return ""
+    parsed = parsed_url(url)
     parts = [item for item in parsed.path.split("/") if item]
     return parts[0] if parts else ""
 
@@ -1264,10 +1261,7 @@ def _arxiv_id(url: str) -> str:
 
 
 def _url_host(url: str) -> str:
-    try:
-        return (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
-    except ValueError:
-        return ""
+    return host_key(url)
 
 
 def _clean_text(value: object) -> str:

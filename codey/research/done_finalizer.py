@@ -16,6 +16,7 @@ from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, sec
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger, normalize_evidence_stance
 from codey.research.object_model import ResearchClaim, build_research_record
+from codey.research.urls import opened_url
 
 _PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
 _NUMERIC_REF_RE = re.compile(rf"(?<![A-Za-z0-9_!])\[(\d+)({_PAGE_REF_SUFFIX})\]", re.IGNORECASE)
@@ -167,7 +168,7 @@ def _citable_urls(ledger: ResearchLedger) -> list[str]:
         url = str(item.source_url or "").strip()
         if not str(item.excerpt or "").strip():
             continue
-        canonical = ledger.canonical_opened_url(url) or url
+        canonical = opened_url(ledger, url)
         if canonical in final_urls and canonical not in urls:
             urls.append(canonical)
     return urls
@@ -184,7 +185,7 @@ def _source_id_numbers(
         if not source_id:
             continue
         url = str(raw_url or "").strip()
-        canonical = ledger.canonical_opened_url(url) or url
+        canonical = opened_url(ledger, url)
         number = number_for_url.get(canonical)
         if number is not None:
             numbers[source_id] = number
@@ -199,7 +200,7 @@ def _old_source_numbers(
     mapping: dict[int, int] = {}
     urls_by_number: dict[int, set[str]] = {}
     for citation in report_quality.parse_citation_rows(source_text, ledger):
-        url = ledger.canonical_opened_url(citation.url) or citation.url
+        url = opened_url(ledger, citation.url)
         if url in number_for_url:
             number = int(citation.number)
             urls = urls_by_number.setdefault(number, set())
@@ -513,7 +514,7 @@ def _derive_required_lines_from_saved_evidence(
         if normalize_evidence_stance(item.stance) != "supports":
             continue
         source_url = str(item.source_url or "").strip()
-        canonical = ledger.canonical_opened_url(source_url) or source_url
+        canonical = opened_url(ledger, source_url)
         number = number_for_url.get(canonical) or number_for_url.get(source_url)
         if number is None:
             continue
@@ -539,7 +540,7 @@ def _source_numbers_by_url(sources_text: str, ledger: ResearchLedger) -> dict[st
         raw_url = str(row.url or "").strip()
         if not raw_url:
             continue
-        canonical = ledger.canonical_opened_url(raw_url) or raw_url
+        canonical = opened_url(ledger, raw_url)
         numbers[raw_url] = int(row.number)
         numbers[canonical] = int(row.number)
     return numbers

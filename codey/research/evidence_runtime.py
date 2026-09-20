@@ -28,7 +28,7 @@ from codey.research.object_model import (
     MAX_RECORD_SOURCES,
     ResearchRecord,
 )
-from codey.research.shape import generated_ref as _generated_ref
+from codey.research.guards import generated_ref as _generated_ref
 
 
 _HEX16_RE = re.compile(r"^[0-9a-f]{16}$")

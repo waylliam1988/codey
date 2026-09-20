@@ -2,6 +2,54 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Convergence cuts: research URL/shape收口, ghost storage mechanics, unified graph demotion (no release)
+
+- New `research/urls.py` (stdlib + `utils.refs` only, honoring the
+  toolchain/runtime ban): `parsed_url` (fail-soft parse), `canonical_key` /
+  `full_key` (moved verbatim from `connector_search`, whose `_parsed`,
+  `_canonical_url_key`, `_full_url_key`, `_result_url_key` twin in
+  `controller.py`, and `_pubmed_id` / `_url_host` / `_connector_canonical_url`
+  in `source_connectors.py` all delegate now), `host_key` (single www-strip
+  spelling), and `opened_url(ledger, url)` -- the one sanctioned
+  `canonical or stripped raw` fallback replacing ~20 per-site
+  `ledger.canonical_opened_url(x) or ...` spells in `ledger.py`,
+  `record_merge.py`, `done_finalizer.py`, `object_model.py`,
+  `report_quality.py`, `controller.py`, `plan_executor.py`. Bare
+  open-table checks (skip logic, comparisons) keep calling the method.
+- Deleted `research/shape.py` (52 lines): its 5 validators move into
+  `research/guards.py`, the leaf both already depended on. All 8 importers
+  plus `runs/trace.py` updated; the `test_run_trace_only_consumes...`
+  allowlist now names `codey.research.guards` instead of `...shape`.
+- Renamed `research/connector_domains.py` to `connector_terms.py`
+  (query-term routing hints; host-trust tables were never here -- they live
+  in `source_domains.py`). Three importers plus the architecture path pin
+  updated. The Chinese term rows are intact data, not mojibake.
+- `ghost/graph_primitives.py` now also owns the shared storage mechanics:
+  `bound_graph_nodes` / `bound_graph_edges` (active-first ranking, weight
+  floors, degree caps -- the two stores differed only in thresholds) with
+  `_bounded_*` kept as thin typed delegates, and Hebbian compaction reports
+  via the shared `compact_result_payload` both stores already agreed on.
+  Decay math, clamps, ref merging, and the affinity spec-projection layer
+  stay store-local (personality untouched).
+- Deleted `knowledge/unified_graph.py` (247 lines): the composer was pure
+  presentation over the two existing builders, so it is now
+  `concepts.build_unified_research_graph(store, ...)` (no import cycle:
+  `concepts` already owned the graph import). `app/api.py`,
+  `knowledge/__init__.py`, and the knowledge/server suites call the
+  function. `concepts.py` (concept extraction for research interest) stays.
+- Net files: research 48 -> 48 (urls +, shape -), knowledge 11 -> 10.
+- Debt unchanged at `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`
+  despite two net-new modules; new files are I/SIM-clean.
+- Tests added: `test_research_urls.py` (keys, fail-soft parse, fallback,
+  broken-ledger survival); `test_ghost_graph_primitives.py` extended with
+  bounded-nodes/edges equivalence incl. degree caps. Knowledge/server
+  graph tests rewritten to the function form.
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green; targeted research (1037),
+  ghost/knowledge, server (206), and trace suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3860 passed, 6 skipped, 1303 subtests passed in 264.89s`).
+
 ## Unreleased - Correctness hardening: shell spawn gate, durable appends, worker split locks, supervisor save, cold-start catalog, ghost primitives, phased task runner (no release)
 
 - Shell `Stop -> Allow` race is now closed with an immutable

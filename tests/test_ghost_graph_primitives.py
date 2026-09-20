@@ -54,6 +54,58 @@ class GraphPrimitivesTests(unittest.TestCase):
             primitives.any_decay_due([now], now=now, min_interval_seconds=3600)
         )
 
+    def test_bound_nodes_keep_active_first_and_limits(self) -> None:
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Node:
+            status: str = "active"
+            weight: float = 0.0
+            updated_at: str = ""
+
+        rows = [
+            _Node("active", 0.9, "2026-09-20T00:00:03Z"),
+            _Node("active", 0.01, "2026-09-20T00:00:04Z"),
+            _Node("expired", 0.0, "2026-09-20T00:00:05Z"),
+            _Node("active", 0.5, "2026-09-20T00:00:06Z"),
+        ]
+        bounded = primitives.bound_graph_nodes(rows, min_active_weight=0.05, limit=2)
+        self.assertEqual([row.weight for row in bounded], [0.9, 0.5])
+        # Inactive rows survive the weight filter.
+        untruncated = primitives.bound_graph_nodes(rows, min_active_weight=0.05, limit=10)
+        self.assertEqual(len(untruncated), 3)
+        self.assertEqual(untruncated[-1].status, "expired")
+
+    def test_bound_edges_enforce_nodes_weight_and_degree(self) -> None:
+        from dataclasses import dataclass
+
+        @dataclass
+        class _Edge:
+            source: str = ""
+            target: str = ""
+            weight: float = 0.0
+            updated_at: str = ""
+            status: str = "active"
+
+        rows = [
+            _Edge("a", "b", 0.9, "2026-09-20T00:00:01Z"),
+            _Edge("a", "c", 0.8, "2026-09-20T00:00:02Z"),
+            _Edge("a", "d", 0.7, "2026-09-20T00:00:03Z"),
+            _Edge("x", "y", 0.95, "2026-09-20T00:00:04Z"),
+            _Edge("a", "b", 0.01, "2026-09-20T00:00:05Z"),
+        ]
+        bounded = primitives.bound_graph_edges(
+            rows,
+            node_ids={"a", "b", "c", "d"},
+            min_weight=0.05,
+            limit=10,
+            max_out_degree=1,
+            require_active=True,
+        )
+        # Degree cap (1 per endpoint) keeps only the strongest edge out of `a`;
+        # the off-graph (x, y) edge and the under-weight duplicate drop out.
+        self.assertEqual([(row.source, row.target) for row in bounded], [("a", "b")])
+
     def test_stores_delegate_without_changing_clamps(self) -> None:
         from codey.ghost import affinity as affinity_module
         from codey.ghost import hebbian as hebbian_module

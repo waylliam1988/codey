@@ -11,23 +11,18 @@ from typing import Iterable
 
 from codey.ghost.event_log import (
     GhostEventLog,
+    compact_result_payload as _shared_compact_payload,
     count_jsonl_rows,
     control_event as _ghost_control_event,
     event_file_stats as _shared_event_file_stats,
 )
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
-)
-from codey.ghost.graph_primitives import (
+    bound_graph_edges as _shared_bound_graph_edges,
+    bound_graph_nodes as _shared_bound_graph_nodes,
     decay_basis_of as _shared_decay_basis_of,
-)
-from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
-)
-from codey.ghost.graph_primitives import (
     now_iso as _shared_now_iso,
-)
-from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
 )
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
@@ -632,50 +627,24 @@ class GhostHebbianStore:
                 if not before["readable"]:
                     warning = str(before["warning"] or "hebbian_events_unreadable")
                     self.last_warnings = (warning,)
-                    return {
-                        "ok": False,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": [warning],
-                    }
+                    return _shared_compact_payload(False, False, before, before, [warning])
                 if not before["warning"]:
                     read = self._event_log().read_locked()
                     self._events_read_blocked = read.blocked
                     self.last_warnings = _event_read_warnings(read.warnings)
                     if self._events_read_blocked:
-                        return {
-                            "ok": False,
-                            "compacted": False,
-                            "events_before": before["events"],
-                            "events_after": before["events"],
-                            "bytes_before": before["bytes"],
-                            "bytes_after": before["bytes"],
-                            "warnings": list(self.last_warnings),
-                        }
+                        return _shared_compact_payload(
+                            False, False, before, before, self.last_warnings
+                        )
                 if before["events"] <= MAX_HEBBIAN_EVENTS and before["bytes"] <= MAX_HEBBIAN_EVENTS_BYTES:
-                    return {
-                        "ok": True,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": list(self.last_warnings),
-                    }
+                    return _shared_compact_payload(
+                        True, False, before, before, self.last_warnings
+                    )
                 nodes, edges = self._load_state_unlocked()
                 if self._events_read_blocked:
-                    return {
-                        "ok": False,
-                        "compacted": False,
-                        "events_before": before["events"],
-                        "events_after": before["events"],
-                        "bytes_before": before["bytes"],
-                        "bytes_after": before["bytes"],
-                        "warnings": list(self.last_warnings),
-                    }
+                    return _shared_compact_payload(
+                        False, False, before, before, self.last_warnings
+                    )
                 self._compact_if_needed(nodes, edges)
                 after = _shared_event_file_stats(
                     self.events_path,
@@ -683,25 +652,11 @@ class GhostHebbianStore:
                     too_large_warning="hebbian_events_too_large",
                     unreadable_warning="hebbian_events_unreadable",
                 )
-                return {
-                    "ok": True,
-                    "compacted": after != before,
-                    "events_before": before["events"],
-                    "events_after": after["events"],
-                    "bytes_before": before["bytes"],
-                    "bytes_after": after["bytes"],
-                    "warnings": list(self.last_warnings),
-                }
+                return _shared_compact_payload(
+                    True, after != before, before, after, self.last_warnings
+                )
         except (OSError, TypeError, ValueError):
-            return {
-                "ok": False,
-                "compacted": False,
-                "events_before": 0,
-                "events_after": 0,
-                "bytes_before": 0,
-                "bytes_after": 0,
-                "warnings": list(self.last_warnings),
-            }
+            return _shared_compact_payload(False, False, {}, {}, self.last_warnings)
 
     def _load_state_unlocked(self) -> tuple[list[GhostNode], list[GhostEdge]]:
         self._events_read_blocked = False
@@ -1089,29 +1044,19 @@ def _any_decay_due(
 
 
 def _bounded_nodes(nodes: Iterable[GhostNode]) -> list[GhostNode]:
-    rows = [node for node in nodes if node.weight >= MIN_NODE_WEIGHT or node.status != "active"]
-    rows.sort(key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
-    return rows[:MAX_GHOST_NODES]
+    return _shared_bound_graph_nodes(
+        nodes, min_active_weight=MIN_NODE_WEIGHT, limit=MAX_GHOST_NODES
+    )
 
 
 def _bounded_edges(edges: Iterable[GhostEdge], *, node_ids: set[str]) -> list[GhostEdge]:
-    rows = [
-        edge for edge in edges if edge.source in node_ids and edge.target in node_ids and edge.weight >= MIN_EDGE_WEIGHT
-    ]
-    rows.sort(key=lambda item: (item.weight, item.updated_at), reverse=True)
-    bounded: list[GhostEdge] = []
-    degree: dict[str, int] = {}
-    for edge in rows:
-        if len(bounded) >= MAX_GHOST_EDGES:
-            break
-        if degree.get(edge.source, 0) >= MAX_EDGE_OUT_DEGREE:
-            continue
-        if degree.get(edge.target, 0) >= MAX_EDGE_OUT_DEGREE:
-            continue
-        bounded.append(edge)
-        degree[edge.source] = degree.get(edge.source, 0) + 1
-        degree[edge.target] = degree.get(edge.target, 0) + 1
-    return bounded
+    return _shared_bound_graph_edges(
+        edges,
+        node_ids=node_ids,
+        min_weight=MIN_EDGE_WEIGHT,
+        limit=MAX_GHOST_EDGES,
+        max_out_degree=MAX_EDGE_OUT_DEGREE,
+    )
 
 
 def _node_event(node: GhostNode, *, action: str) -> dict[str, object]:

@@ -12,10 +12,10 @@ import json
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode
 
 from codey.runtime.core import cancellation
-from codey.research.connector_domains import preferred_connector_ids
+from codey.research.connector_terms import preferred_connector_ids
 from codey.research.http_redirects import (
     build_no_redirect_opener,
     close_response as _close_response,
@@ -39,7 +39,8 @@ from codey.research.source_connectors import (
     parse_pubmed_fixture,
     safe_connector_query,
 )
-from codey.research.shape import bounded_limit as _bounded_limit, connector_id as _connector_id
+from codey.research.guards import bounded_limit as _bounded_limit, connector_id as _connector_id
+from codey.research.urls import canonical_key, full_key, host_key, parsed_url
 from codey.policies.network import check_fetch_url
 
 
@@ -111,7 +112,7 @@ class ConnectorAwareSearchProvider:
 
     def fetch(self, url: str) -> dict:
         target = str(url or "").strip()
-        hit = self._hits_by_url.get(_canonical_url_key(target))
+        hit = self._hits_by_url.get(canonical_key(target))
         if hit is None:
             try:
                 hit = self._fetchable_hit_for_url(target)
@@ -174,7 +175,7 @@ class ConnectorAwareSearchProvider:
                 connector_result = self._search_connector(connector_id, safe_query, remaining)
                 for hit in connector_result.hits:
                     if hit.canonical_url:
-                        self._hits_by_url[_canonical_url_key(hit.canonical_url)] = hit
+                        self._hits_by_url[canonical_key(hit.canonical_url)] = hit
                     row = _result_from_hit(hit)
                     if row:
                         results.append(row)
@@ -420,7 +421,7 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
         url = str(row.get("url") or "").strip()
         if not url:
             continue
-        key = _canonical_url_key(url)
+        key = canonical_key(url)
         if key in seen_connector:
             continue
         seen_connector.add(key)
@@ -437,9 +438,9 @@ def _merge_results(connector_results: list[dict], base_results: list[dict], *, l
         url = str(row.get("url") or "").strip()
         if not url:
             continue
-        if _canonical_url_key(url) in seen_connector:
+        if canonical_key(url) in seen_connector:
             continue
-        key = _full_url_key(url)
+        key = full_key(url)
         if key in seen_base:
             continue
         seen_base.add(key)
@@ -523,49 +524,26 @@ def _read_url_text(url: str, *, timeout: float) -> str:
 
 
 def _is_pubmed_url(url: str) -> bool:
-    parsed = _parsed(url)
-    return (parsed.hostname or "").lower().removeprefix("www.") == "pubmed.ncbi.nlm.nih.gov"
+    return host_key(url) == "pubmed.ncbi.nlm.nih.gov"
 
 
 def _is_arxiv_url(url: str) -> bool:
-    parsed = _parsed(url)
-    return (parsed.hostname or "").lower().removeprefix("www.") == "arxiv.org" and parsed.path.startswith("/abs/")
+    parsed = parsed_url(url)
+    return host_key(url) == "arxiv.org" and parsed.path.startswith("/abs/")
 
 
 def _pubmed_id_from_url(url: str) -> str:
-    parsed = _parsed(url)
+    parsed = parsed_url(url)
     parts = [item for item in parsed.path.split("/") if item]
     return parts[0] if parts and parts[0].isdigit() else ""
 
 
 def _arxiv_id_from_url(url: str) -> str:
-    parsed = _parsed(url)
+    parsed = parsed_url(url)
     if not parsed.path.startswith("/abs/"):
         return ""
     arxiv_id = parsed.path.removeprefix("/abs/").strip("/")
     return arxiv_id if is_valid_arxiv_id(arxiv_id) else ""
-
-
-def _parsed(url: str):
-    try:
-        return urlparse(str(url or "").strip())
-    except ValueError:
-        return urlparse("")
-
-
-def _canonical_url_key(url: str) -> str:
-    parsed = _parsed(url)
-    host = (parsed.hostname or "").lower().removeprefix("www.")
-    path = (parsed.path or "").rstrip("/")
-    return f"{parsed.scheme.lower()}://{host}{path}"
-
-
-def _full_url_key(url: str) -> str:
-    parsed = _parsed(url)
-    host = (parsed.hostname or "").lower().removeprefix("www.")
-    path = (parsed.path or "").rstrip("/")
-    query = ("?" + parsed.query) if parsed.query else ""
-    return f"{parsed.scheme.lower()}://{host}{path}{query}"
 
 
 def _connector_id_for_url(url: str) -> str:

@@ -32,6 +32,7 @@ from codey.research.report_quality import (
 )
 from codey.research.runner import ResearchRunResult
 from codey.research.tools import ResearchTools
+from codey.research.urls import opened_url
 
 
 def merge_evidence_patch(
@@ -102,7 +103,7 @@ def merge_evidence_patch(
     seen_final: set[str] = set()
     final_urls: list[str] = []
     for opened in ledger.opened_sources:
-        c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url) or str(opened.final_url or opened.requested_url or "").strip()
+        c_url = opened_url(ledger, opened.final_url or opened.requested_url)
         if c_url and c_url not in seen_final:
             seen_final.add(c_url)
             final_urls.append(c_url)
@@ -224,7 +225,7 @@ def _report_evidence_items(
     preferred: list[EvidenceItem] = []
     remaining: list[EvidenceItem] = []
     for item in ledger.evidence_items:
-        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        url = opened_url(ledger, item.source_url)
         excerpt = str(item.excerpt or "").strip()
         if not url or not excerpt or url not in final_urls:
             continue
@@ -242,7 +243,7 @@ def _report_evidence_items(
 def _evidence_urls(items: Sequence[EvidenceItem], ledger: ResearchLedger) -> set[str]:
     urls: set[str] = set()
     for item in items:
-        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        url = opened_url(ledger, item.source_url)
         if url:
             urls.add(url)
     return urls
@@ -287,7 +288,7 @@ def _find_new_evidence_items(
     new_items: list[EvidenceItem] = []
     final_urls = ledger.final_url_set()
     for item in ledger.evidence_items:
-        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        url = opened_url(ledger, item.source_url)
         excerpt = str(item.excerpt or "").strip()
         if not url or not excerpt:
             continue
@@ -322,7 +323,7 @@ def _inject_new_evidence_into_sections(
 
     url_to_num: dict[str, int] = {}
     for citation in parse_citation_rows(existing_source_text, ledger):
-        canonical = ledger.canonical_opened_url(citation.url) or citation.url
+        canonical = opened_url(ledger, citation.url)
         if canonical and canonical not in url_to_num:
             url_to_num[canonical] = citation.number
 
@@ -330,7 +331,7 @@ def _inject_new_evidence_into_sections(
 
     # Pre-populate url_to_num and source_lines for all new evidence items so valid_numbers is comprehensive
     for item in new_evidence:
-        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        url = opened_url(ledger, item.source_url)
         if not url:
             continue
         if url not in url_to_num:
@@ -392,7 +393,7 @@ def _inject_new_evidence_into_sections(
             )
 
     for item in new_evidence:
-        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        url = opened_url(ledger, item.source_url)
         claim = str(item.claim or "").strip()
         excerpt = str(item.excerpt or "").strip()
         text = claim or excerpt

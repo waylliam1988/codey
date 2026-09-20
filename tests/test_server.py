@@ -1375,10 +1375,8 @@ class ResearchServerHelperTests(unittest.TestCase):
         graph = SimpleNamespace(to_dict=lambda: {"nodes": [], "edges": []})
 
         with (
-            mock.patch.object(app_api, "UnifiedResearchGraphBuilder") as builder_cls,
+            mock.patch.object(app_api, "build_unified_research_graph", return_value=graph) as build,
         ):
-            builder = builder_cls.return_value
-            builder.build_for_session.return_value = graph
             status, payload = app_api.research_graph_response(
                 state,
                 {
@@ -1395,8 +1393,8 @@ class ResearchServerHelperTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(payload, {"ok": True, "graph": {"nodes": [], "edges": []}})
-        builder_cls.assert_called_once_with(state.knowledge_store)
-        builder.build_for_session.assert_called_once_with(
+        build.assert_called_once_with(
+            state.knowledge_store,
             "s1",
             focus_ids=("synthesis-1", "fact-1"),
             depth=3,

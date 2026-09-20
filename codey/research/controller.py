@@ -10,8 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlparse
-
+from codey.research.urls import full_key, host_key, opened_url, parsed_url
 from codey.runtime.core.models import Control, ToolPlan, ToolResult
 from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
@@ -556,26 +555,15 @@ def _priority_connector_result_ids(result_rows: list[dict[str, str]], source_row
 def _is_connector_source_url(url: str) -> bool:
     if source_candidate_skip_reason(url):
         return False
-    parsed = _parsed_url(url)
-    host = (parsed.hostname or "").lower().removeprefix("www.")
-    if host == "pubmed.ncbi.nlm.nih.gov":
+    parsed = parsed_url(url)
+    if host_key(url) == "pubmed.ncbi.nlm.nih.gov":
         return True
-    return host == "arxiv.org" and parsed.path.startswith("/abs/")
-
-
-def _parsed_url(url: str):
-    try:
-        return urlparse(str(url or "").strip())
-    except ValueError:
-        return urlparse("")
+    return host_key(url) == "arxiv.org" and parsed.path.startswith("/abs/")
 
 
 def _result_url_key(url: object) -> str:
-    parsed = _parsed_url(str(url or ""))
-    host = (parsed.hostname or "").lower().removeprefix("www.")
-    path = (parsed.path or "").rstrip("/")
-    query = ("?" + parsed.query) if parsed.query else ""
-    return f"{parsed.scheme.lower()}://{host}{path}{query}" if host else ""
+    key = full_key(url)
+    return key if host_key(url) else ""
 
 
 def _open_failed(model_text: str) -> bool:
@@ -817,7 +805,7 @@ def _evidence_source_urls(ledger: object) -> set[str]:
     for item in getattr(ledger, "evidence_items", ()):
         raw = str(item.source_url or "").strip()
         if raw:
-            urls.add(ledger.canonical_opened_url(raw) or raw)
+            urls.add(opened_url(ledger, raw))
     return urls
 
 

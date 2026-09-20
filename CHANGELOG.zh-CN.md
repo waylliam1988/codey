@@ -2,6 +2,46 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 收敛三刀：research URL/shape 收口、ghost 存储机制、三图降级（未发布）
+
+- 新增 `research/urls.py`（仅 stdlib + `utils.refs`，toolchain/runtime 禁令
+  不破）：`parsed_url`（永不抛的解析）、`canonical_key` / `full_key`
+ （从 `connector_search` 逐字搬运，其 `_parsed`、controller 的双胞胎
+  `_parsed_url` / `_result_url_key`、source_connectors 的 `_pubmed_id` /
+  `_url_host` / `_connector_canonical_url` 全部改走它）、`host_key`
+ （www-strip 唯一拼写）、`opened_url(ledger, url)`（唯一合法的
+  `canonical or stripped raw` fallback），替换 `ledger.py`、
+  `record_merge.py`、`done_finalizer.py`、`object_model.py`、
+  `report_quality.py`、`controller.py`、`plan_executor.py` 约 20 处各写各的
+  fallback。纯存在性检查（跳过逻辑、比较）仍直接调方法。
+- 删除 `research/shape.py`（52 行）：5 个校验函数并入两者本来就依赖的
+  `research/guards.py`。8 个引用方 + `runs/trace.py` 更新；
+  `test_run_trace_only_consumes...` 白名单改成 `codey.research.guards`。
+- `research/connector_domains.py` 改名 `connector_terms.py`（查询词路由
+  hints；host 信任表从来不在这，在 `source_domains.py`）。三个引用方 +
+  架构路径断言更新。中文词条是正常数据，不是乱码。
+- `ghost/graph_primitives.py` 再收编共享存储机制：`bound_graph_nodes` /
+  `bound_graph_edges`（active 优先排序、权重下限、度上限——两边只差阈值），
+  `_bounded_*` 留作薄类型委托；Hebbian 压缩报告改走两边本来就共用的
+  `compact_result_payload`。衰减数学、clamp、ref 合并、affinity
+  spec 投影层不动（人格层不动）。
+- 删除 `knowledge/unified_graph.py`（247 行）：composer 是纯展示合成，
+  现为 `concepts.build_unified_research_graph(store, ...)`（无循环：
+  concepts 本来就 import graph）。`app/api.py`、`knowledge/__init__.py`、
+  knowledge/server 测试改调函数。`concepts.py`（research interest 的概念
+  抽取）保留。
+- 文件净变化：research 48 -> 48（+urls −shape），knowledge 11 -> 10。
+- 债务纹丝不动：`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`，
+  新增文件 I/SIM 全干净。
+- 新增测试：`test_research_urls.py`（key、fail-soft 解析、fallback、
+  坏 ledger 存活）；`test_ghost_graph_primitives.py` 加 bounded 等价
+  （含度上限）。knowledge/server 图测试改函数形式。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿；research 定向（1037）、ghost /
+  knowledge、server（206）、trace 套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3860 passed, 6 skipped, 1303 subtests passed in 264.89s`）。
+
 ## Unreleased - 正确性加固：shell spawn 门、耐久追加、Worker 拆锁、supervisor 落盘、冷启动 catalog、ghost 原语、分阶段 task runner（未发布）
 
 - Shell `Stop -> Allow` 竞态已收口：不可变 `ShellExecutionTicket`

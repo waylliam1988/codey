@@ -2,12 +2,11 @@
 
 from codey.knowledge.brief import KnowledgeBriefBuilder, ResearchBrief
 from codey.knowledge.changes import KnowledgeChanges, KnowledgeChangesSnapshot, RestoreResult
-from codey.knowledge.concepts import ConceptGraphBuilder
+from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
 from codey.knowledge.graph import KnowledgeGraphBuilder, ResearchGraphArtifact
 from codey.knowledge.note import NOTE_TYPES, KnowledgeNote
 from codey.knowledge.research_interest import ResearchInterestCandidate, build_research_interest_candidates, candidate_to_topic_hint
 from codey.knowledge.store import KnowledgeStore
-from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
 
 __all__ = [
     "ConceptGraphBuilder",
@@ -22,7 +21,7 @@ __all__ = [
     "ResearchGraphArtifact",
     "ResearchInterestCandidate",
     "RestoreResult",
-    "UnifiedResearchGraphBuilder",
     "build_research_interest_candidates",
+    "build_unified_research_graph",
     "candidate_to_topic_hint",
 ]

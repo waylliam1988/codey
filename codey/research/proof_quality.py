@@ -12,8 +12,8 @@ from typing import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import status_token as _status_token
+from codey.research.guards import valid_digest_ref
 from codey.research.object_model import ResearchRecord
-from codey.research.shape import valid_digest_ref
 from codey.research.source_trust import source_trust_warnings as _shared_source_trust_warnings
 from codey.utils.refs import (
     bounded_refs,

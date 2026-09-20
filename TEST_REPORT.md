@@ -1,5 +1,49 @@
 # Codey Test Report
 
+## Convergence cuts: research URL/shape narrowing, ghost storage mechanics, unified graph demotion (2026-09-20)
+
+Scope:
+
+```text
+codey/research/urls.py (new, stdlib-only):
+                           parsed_url/canonical_key/full_key/host_key/
+                           opened_url; connector_search/controller/
+                           source_connectors parse+key sites delegate
+codey/research/:           ~20 canonical_opened_url-or-raw sites ->
+                           opened_url(); shape.py deleted into guards.py;
+                           connector_domains.py -> connector_terms.py
+codey/ghost/graph_primitives.py:
+                           +bound_graph_nodes/bound_graph_edges;
+                           hebbian/affinity _bounded_* thin delegates;
+                           hebbian compaction via compact_result_payload
+codey/knowledge/:          unified_graph.py deleted; composer is now
+                           concepts.build_unified_research_graph()
+codey/app/api.py, knowledge/__init__.py, knowledge/server tests:
+                           call the function form
+tests:                       test_research_urls.py (new); primitives bounded
+                           equivalence; guards/knowledge/server suites updated
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`; unchanged)
+- Targeted gates before the full run:
+  research-wide selection (1037 passed, 350 subtests passed),
+  ghost/knowledge selection (519 passed, 177 subtests passed),
+  `tests/test_server.py` (206 passed),
+  `tests/test_architecture.py` (82 passed, 312 subtests passed)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3860 passed, 6 skipped, 1303 subtests passed in 264.89s (0:04:24)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Correctness hardening: shell spawn gate, durable appends, worker split locks, cold-start catalog, ghost primitives, phased task runner (2026-09-20)
 
 Scope:

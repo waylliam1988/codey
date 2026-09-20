@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 from typing import Mapping
 
-from codey.research.connector_domains import preferred_connector_ids
+from codey.research.connector_terms import preferred_connector_ids
 from codey.utils.refs import (
     bounded_refs,
     clip,
@@ -22,13 +22,13 @@ from codey.utils.refs import (
 )
 from codey.research.domain_profiles import EvidenceProfile
 from codey.research.guards import bounded_int as _bounded_int
-from codey.research.proof_quality import ResearchProofReview
-from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
-from codey.research.shape import (
+from codey.research.guards import (
     connector_id as _connector_id,
     valid_digest_ref,
     generated_ref as _generated_ref,
 )
+from codey.research.proof_quality import ResearchProofReview
+from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     SourceConnectorRegistry,

@@ -11,10 +11,10 @@ import hashlib
 import re
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 from codey.research.source_document import SourceDocument
 from codey.research import source_domains
+from codey.research.urls import host_key, opened_url, parsed_url
 
 MAX_SNIPPET_CHARS = 360
 MAX_CLAIM_CHARS = 260
@@ -303,7 +303,7 @@ class ResearchLedger:
             self.evidence_items.append(replace(item, note_id=note_id or item.note_id))
 
     def record_source_search(self, source_url: str, query: str, hits: list[dict]) -> None:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        final_url = opened_url(self, source_url)
         query = " ".join(str(query or "").split())
         if not final_url or not query:
             return
@@ -321,7 +321,7 @@ class ResearchLedger:
         })
 
     def source_record_for_url(self, source_url: str) -> OpenedSource | None:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        final_url = opened_url(self, source_url)
         if not final_url:
             return None
         for item in self.opened_sources:
@@ -330,11 +330,11 @@ class ResearchLedger:
         return None
 
     def source_text_for_url(self, source_url: str) -> str:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        final_url = opened_url(self, source_url)
         return self._source_texts.get(final_url) or self._source_texts.get(str(source_url or "").strip()) or ""
 
     def source_pages_for_url(self, source_url: str) -> dict[int, str]:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        final_url = opened_url(self, source_url)
         return dict(self._source_pages.get(final_url) or self._source_pages.get(str(source_url or "").strip()) or {})
 
     def best_excerpt_with_page(self, source_url: str, hint: str = "", *, page: int | None = None) -> tuple[str, int | None]:
@@ -370,18 +370,18 @@ class ResearchLedger:
         return None
 
     def page_was_read(self, source_url: str, page: int) -> bool:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "")
+        final_url = opened_url(self, source_url)
         return page in self.pages_read_for_url(final_url)
 
     def pages_read_for_url(self, source_url: str) -> set[int]:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "")
+        final_url = opened_url(self, source_url)
         for item in self.opened_sources:
             if item.final_url == final_url:
                 return set(item.pages_read)
         return set()
 
     def evidence_pages_for_url(self, source_url: str) -> set[int]:
-        final_url = self.canonical_opened_url(source_url) or str(source_url or "")
+        final_url = opened_url(self, source_url)
         return {
             int(item.page)
             for item in self.evidence_items
@@ -401,14 +401,14 @@ class ResearchLedger:
         return {item.final_url for item in self.opened_sources if item.final_url}
 
     def quality_for_url(self, url: str) -> SourceQuality:
-        final_url = self.canonical_opened_url(url) or str(url or "")
+        final_url = opened_url(self, url)
         for item in self.opened_sources:
             if item.final_url == final_url:
                 return item.quality
         return classify_source_quality(final_url, "")
 
     def source_title(self, url: str) -> str:
-        final_url = self.canonical_opened_url(url) or str(url or "")
+        final_url = opened_url(self, url)
         for item in self.opened_sources:
             if item.final_url == final_url:
                 return item.title
@@ -475,8 +475,8 @@ def now_iso() -> str:
 
 
 def classify_source_quality(url: str, text: str = "") -> SourceQuality:
-    parsed = urlparse(str(url or ""))
-    host = source_domains.strip_www(parsed.hostname)
+    parsed = parsed_url(url)
+    host = host_key(url)
     path = (parsed.path or "").lower()
     group = _independent_group(host)
     kind = "web"

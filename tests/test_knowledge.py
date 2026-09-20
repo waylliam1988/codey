@@ -12,9 +12,8 @@ from codey.knowledge import (
     KnowledgeNote,
     KnowledgeStore,
     RestoreResult,
-    UnifiedResearchGraphBuilder,
 )
-from codey.knowledge.concepts import ConceptGraphBuilder
+from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
 from codey.knowledge.concept_schema import (
     CONCEPT_EDGE_KINDS,
     clean_relations,
@@ -1142,7 +1141,7 @@ class ConceptGraphBuilderTests(unittest.TestCase):
         self.assertTrue(any("No concepts yet" in warning for warning in graph["warnings"]))
 
 
-class UnifiedResearchGraphBuilderTests(unittest.TestCase):
+class UnifiedResearchGraphTests(unittest.TestCase):
     def test_unified_graph_layers_concepts_report_notes_and_sources_by_depth(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -1172,18 +1171,15 @@ class UnifiedResearchGraphBuilderTests(unittest.TestCase):
             store.write_note(fact)
             store.link(synthesis.id, fact.id, "derives")
 
-            depth_one = UnifiedResearchGraphBuilder(store).build_for_session(
-                "s1",
+            depth_one = build_unified_research_graph(store, "s1",
                 focus_ids=(synthesis.id,),
                 depth=1,
             ).to_dict()
-            depth_two = UnifiedResearchGraphBuilder(store).build_for_session(
-                "s1",
+            depth_two = build_unified_research_graph(store, "s1",
                 focus_ids=(synthesis.id,),
                 depth=2,
             ).to_dict()
-            depth_three = UnifiedResearchGraphBuilder(store).build_for_session(
-                "s1",
+            depth_three = build_unified_research_graph(store, "s1",
                 focus_ids=(synthesis.id,),
                 depth=3,
             ).to_dict()
@@ -1233,8 +1229,7 @@ class UnifiedResearchGraphBuilderTests(unittest.TestCase):
                     )
                 )
 
-            graph = UnifiedResearchGraphBuilder(store).build_for_session(
-                "s1",
+            graph = build_unified_research_graph(store, "s1",
                 focus_ids=(synthesis.id,),
                 depth=3,
                 node_limit=8,
@@ -1285,8 +1280,7 @@ class UnifiedResearchGraphBuilderTests(unittest.TestCase):
                     )
                 )
 
-            graph = UnifiedResearchGraphBuilder(store).build_for_session(
-                "current",
+            graph = build_unified_research_graph(store, "current",
                 focus_ids=(synthesis.id,),
                 depth=3,
             ).to_dict()

@@ -24,12 +24,12 @@ from typing import Iterable, Mapping
 from codey.utils.refs import clip as _clip
 from codey.utils.refs import content_digest
 from codey.utils.refs import identifier as _identifier
+from codey.research.guards import generated_ref as _generated_ref
 from codey.research.guards import status_token as _status_token
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref as _normalize_runtime_ref,
 )
-from codey.research.shape import generated_ref as _generated_ref
 from codey.utils.text_budget import clip_middle
 
 

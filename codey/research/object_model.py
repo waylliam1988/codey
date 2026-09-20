@@ -19,6 +19,7 @@ from codey.research.ledger import (
     normalize_evidence_stance,
 )
 from codey.research.guards import status_token as _status_token
+from codey.research.urls import opened_url
 from codey.utils.refs import (
     bounded_refs as _bounded_refs,
     clip as _clip,
@@ -619,7 +620,7 @@ def _build_evidence(
 ) -> tuple[ResearchEvidence, ...]:
     rows: list[ResearchEvidence] = []
     for item in list(getattr(ledger, "evidence_items", ()))[:MAX_RECORD_EVIDENCE]:
-        final_url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        final_url = opened_url(ledger, item.source_url)
         source_id = source_ids_by_url.get(final_url) or source_ids_by_url.get(str(item.source_url or ""))
         if not source_id:
             continue

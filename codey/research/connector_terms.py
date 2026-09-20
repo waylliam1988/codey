@@ -1,4 +1,9 @@
-"""Shared domain-routing hints for Research source connectors."""
+"""Shared query-term routing hints for Research source connectors.
+
+Term tables only (which query words prefer pubmed/arxiv/local connectors).
+Host-trust tables live in ``source_domains``; the similar historical name
+(``connector_domains``) was renamed to end the confusion.
+"""
 
 from __future__ import annotations
 

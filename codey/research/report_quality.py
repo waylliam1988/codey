@@ -14,6 +14,7 @@ from codey.utils.citation_scanner import (
     source_id_refs,
 )
 from codey.research.ledger import ResearchLedger
+from codey.research.urls import opened_url
 from codey.research.provenance import provenance_problem
 from codey.reviews.report_sections import (
     heading_key as _heading_key,
@@ -446,7 +447,7 @@ def _conflicting_source_numbers(
 ) -> tuple[int, ...]:
     urls_by_number: dict[int, set[str]] = {}
     for item in source_rows:
-        canonical = ledger.canonical_opened_url(item.url) or item.url
+        canonical = opened_url(ledger, item.url)
         urls_by_number.setdefault(item.number, set()).add(canonical)
     return tuple(sorted(number for number, urls in urls_by_number.items() if len(urls) > 1))
 

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from codey.research.guards import (
     bounded_int,
+    bounded_limit,
     clip_schema_ok,
     identifier_schema_ok,
     status_token,
 )
-from codey.research.shape import bounded_limit
 
 
 def test_bounded_int_uses_default_and_bounds() -> None:
@@ -15,7 +15,7 @@ def test_bounded_int_uses_default_and_bounds() -> None:
     assert bounded_int("-1", 2, 8) == 2
 
 
-def test_shape_bounded_limit_preserves_bool_as_default() -> None:
+def test_bounded_limit_preserves_bool_as_default() -> None:
     assert bounded_limit(True, default=4, upper=8) == 4
     assert bounded_limit(False, default=4, upper=8) == 4
 
