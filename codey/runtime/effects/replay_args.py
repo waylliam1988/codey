@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
-from codey.tool_args_repair import ToolArgLimits
+from codey.toolchain.tool_args_repair import ToolArgLimits
 
 REPLAY_ARG_TEXT_MAX_CHARS = 1000
 REPLAY_READ_MAX_LINES = ToolArgLimits().read_max_lines

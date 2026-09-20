@@ -1637,7 +1637,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # tool for them, and neither surface may rename tools across domains:
         # coding keeps its read/write vocabulary and research keeps its own.
         from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
-        from codey.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+        from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
         from codey.toolchain.definition import TOOL_DEFINITIONS
 
         self.assertEqual(
@@ -1708,14 +1708,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(research_plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
 
     def test_tool_args_repair_module_is_pure_and_has_no_codey_imports(self) -> None:
-        path = ROOT / "codey" / "tool_args_repair.py"
+        path = ROOT / "codey" / "toolchain" / "tool_args_repair.py"
         modules = imported_modules(path)
         forbidden = [name for name in modules if name.startswith("codey")]
         self.assertEqual(
             forbidden,
             [],
-            f"codey/tool_args_repair.py must be pure and have no codey imports: {forbidden}",
+            f"codey/toolchain/tool_args_repair.py must be pure and have no codey imports: {forbidden}",
         )
+
+    def test_toolchain_leaves_no_orphan_tool_modules_at_package_root(self) -> None:
+        # tool_args_repair / tool_prompt live in toolchain/ next to the tool
+        # definitions they serve; the package root keeps no tool files.
+        orphans = [
+            path.name
+            for path in sorted((ROOT / "codey").glob("tool_*.py"))
+        ]
+        self.assertEqual(orphans, [])
 
     def test_tool_definitions_do_not_contain_write_file_or_create_file(self) -> None:
         from codey.toolchain.definition import TOOL_DEFINITIONS, TOOL_DEFINITION_BY_NAME

@@ -5,14 +5,14 @@ from functools import lru_cache
 import json
 from typing import Any
 
-from codey.tool_prompt import (
+from codey.toolchain.tool_prompt import (
     coding_model_tool_contract_hash,
     render_coding_system_prompt,
 )
 from codey.toolchain import definition as tool_defs
 from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
-from codey.tool_args_repair import (
+from codey.toolchain.tool_args_repair import (
     ToolArgLimits,
     ToolArgsRepairError,
     ToolArgsRepairResult,

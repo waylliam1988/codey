@@ -516,7 +516,7 @@ JsonToolCodec parser 行为未扩大
 建议文件：
 
 ```text
-codey/tool_args_repair.py
+codey/toolchain/tool_args_repair.py
 tests/test_tool_args_repair.py
 ```
 
@@ -559,7 +559,7 @@ write/write_file/create_file -> 保持 unknown tool 并在 repair prompt 中引�
 建议文件：
 
 ```text
-codey/tool_prompt.py
+codey/toolchain/tool_prompt.py
 codey/toolchain/definition.py
 codey/research/tool_contract.py
 tests/test_tool_prompt.py

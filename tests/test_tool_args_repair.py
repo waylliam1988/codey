@@ -7,7 +7,7 @@ import json
 import unittest
 from pathlib import Path
 
-from codey.tool_args_repair import (
+from codey.toolchain.tool_args_repair import (
     ToolArgLimits,
     ToolArgsRepairError,
     ToolArgsRepairResult,
@@ -23,7 +23,7 @@ class ToolArgsRepairTests(unittest.TestCase):
         )
 
     def test_pure_function_has_no_internal_subpackage_dependencies(self) -> None:
-        path = Path(__file__).resolve().parents[1] / "codey" / "tool_args_repair.py"
+        path = Path(__file__).resolve().parents[1] / "codey" / "toolchain" / "tool_args_repair.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imported = set()
         for node in ast.walk(tree):

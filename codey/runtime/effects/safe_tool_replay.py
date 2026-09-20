@@ -24,7 +24,7 @@ from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
 )
-from codey.tool_args_repair import normalize_tool_args
+from codey.toolchain.tool_args_repair import normalize_tool_args
 
 
 @dataclass(frozen=True)

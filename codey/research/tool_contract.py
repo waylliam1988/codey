@@ -152,7 +152,7 @@ def render_research_tool_contract_text(*, include_source_search: bool = True) ->
 
 
 def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
-    from codey.tool_prompt import model_visible_contract_hash
+    from codey.toolchain.tool_prompt import model_visible_contract_hash
 
     return model_visible_contract_hash(
         "research_tool_contract",

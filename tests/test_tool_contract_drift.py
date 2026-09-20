@@ -4,7 +4,7 @@ import unittest
 
 from codey.protocols.json_codec import JsonToolCodec
 from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
-from codey.tool_args_repair import (
+from codey.toolchain.tool_args_repair import (
     COMMAND_KEYS,
     EDIT_NEW_KEYS,
     EDIT_OLD_KEYS,
@@ -12,7 +12,7 @@ from codey.tool_args_repair import (
     REFERENCES_SYMBOL_KEYS,
     SEARCH_QUERY_KEYS,
 )
-from codey.tool_prompt import render_coding_tool_contract_text
+from codey.toolchain.tool_prompt import render_coding_tool_contract_text
 from codey.toolchain.definition import TOOL_DEFINITIONS
 
 EXPECTED_ARG_REPAIR_KINDS = {

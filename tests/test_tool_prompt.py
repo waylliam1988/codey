@@ -5,7 +5,7 @@ import unittest
 from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT
 from codey.research.controller import controller_action_contract_hash, controller_system_prompt
 from codey.research.protocols import JsonToolCodec as ResearchCodec
-from codey.tool_prompt import (
+from codey.toolchain.tool_prompt import (
     RenderedToolContract,
     coding_model_tool_contract_hash,
     model_visible_contract_hash,
