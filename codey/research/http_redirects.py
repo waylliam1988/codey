@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import urllib.request
 from urllib.parse import urljoin
-import contextlib
 
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 

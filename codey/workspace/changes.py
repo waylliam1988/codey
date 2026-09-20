@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import hashlib
 import shutil
@@ -40,7 +41,6 @@ from codey.workspace.paths import (
 from codey.workspace.paths import (
     safe_join as _safe_join,
 )
-import contextlib
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_SNAPSHOT_DIFF_CHARS = 240_000
@@ -610,9 +610,7 @@ class ChangeTracker:
                 continue
             if before is None:
                 try:
-                    if path.is_symlink():
-                        path.unlink()
-                    elif path.exists():
+                    if path.is_symlink() or path.exists():
                         path.unlink()
                 except OSError:
                     conflicts.append(rel)

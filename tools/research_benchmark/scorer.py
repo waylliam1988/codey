@@ -585,14 +585,12 @@ def _source_stale_facts(sources: Iterable[object]) -> tuple[int, bool]:
 
 
 def _counter_relation_present(relations: Iterable[object]) -> bool:
-    scanned = 0
-    for item in (relations or ()):
+    for scanned, item in enumerate(relations or (), start=1):
         payload = item if isinstance(item, Mapping) else _payload_of(item)
         if isinstance(payload, Mapping):
             kind = identifier(payload.get("relation_kind"), 40)
             if kind in {"refutes", "limits"}:
                 return True
-        scanned += 1
         if scanned >= MAX_RELATIONS_SCANNED:
             break
     return False

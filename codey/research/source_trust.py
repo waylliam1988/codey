@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -125,10 +126,7 @@ def project_source_trust(source: object) -> SourceTrustProjection | None:
     usable identity, so callers can drop half facts instead of guessing.
     """
 
-    if isinstance(source, Mapping):
-        get = source.get
-    else:
-        get = lambda name, default=None: getattr(source, name, default)  # noqa: E731
+    get = source.get if isinstance(source, Mapping) else partial(getattr, source)
     raw_id = str(get("source_id") or "")
     ref = _normalize_runtime_ref(raw_id, kind="source")
     host = _host_of(get("host"), get("final_url_ref"), get("requested_url_ref"))

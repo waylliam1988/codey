@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import stat
@@ -9,7 +10,6 @@ from pathlib import Path
 from unittest import mock
 
 from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
-import contextlib
 
 
 class AtomicWriteTests(unittest.TestCase):

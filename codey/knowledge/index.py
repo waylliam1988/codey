@@ -6,13 +6,13 @@ recent-note lookup, and relations.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import threading
 from pathlib import Path
 
 from codey.knowledge.note import KnowledgeNote
-import contextlib
 
 
 class KnowledgeIndex:

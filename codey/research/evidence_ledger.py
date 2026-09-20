@@ -1090,9 +1090,7 @@ def _url_ref_schema_ok(value: object) -> bool:
         return False
     if value.get("scheme") and value.get("scheme") not in {"http", "https", "file"}:
         return False
-    if "redacted" in value and not isinstance(value.get("redacted"), bool):
-        return False
-    return True
+    return not ("redacted" in value and not isinstance(value.get("redacted"), bool))
 
 
 def _project_ref_schema_ok(value: object) -> bool:

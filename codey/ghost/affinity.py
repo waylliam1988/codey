@@ -7,6 +7,7 @@ permission system, and not an execution policy.
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 import uuid
 from collections.abc import Iterable, Mapping
@@ -63,7 +64,6 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-import contextlib
 
 AFFINITY_SCHEMA_VERSION = 1
 MAX_AFFINITY_NODES = 500
@@ -2600,10 +2600,7 @@ def _valid_decay_payload(payload: object) -> bool:
         return False
     if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
         return False
-    for key in _DECAY_PAYLOAD_KEYS:
-        if not _valid_nonnegative_int_payload(payload.get(key)):
-            return False
-    return True
+    return all(_valid_nonnegative_int_payload(payload.get(key)) for key in _DECAY_PAYLOAD_KEYS)
 
 
 def _valid_nonnegative_int_payload(value: object) -> bool:
@@ -2626,7 +2623,7 @@ def _strict_payload_equal(value: object, expected: object) -> bool:
 
 def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
     allowed_keys = set(allowed)
-    return all(isinstance(key, str) and key in allowed_keys for key in value.keys())
+    return all(isinstance(key, str) and key in allowed_keys for key in value)
 
 
 def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:

@@ -23,6 +23,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 import codey.research.followup_selection as followup_selection
 import codey.research.pipeline as pipeline_module
 from codey.knowledge.store import KnowledgeStore
@@ -64,7 +66,6 @@ from tests.manual.ab_journal import (
     ABJournalWriter,
 )
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")

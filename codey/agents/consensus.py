@@ -7,6 +7,7 @@ to the selected provider, which produces the single answer shown to the user.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -30,7 +31,6 @@ from codey.toolchain.runtime import (
 )
 from codey.utils.references import find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-import contextlib
 
 MAX_CONSENSUS_ADVISORS = 2
 MAX_ADVICE_CHARS = 4_000

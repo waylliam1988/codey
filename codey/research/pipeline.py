@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
@@ -21,7 +22,6 @@ from codey.research.runner import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
-import contextlib
 
 
 @dataclass(frozen=True)

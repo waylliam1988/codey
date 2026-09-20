@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.automation.browser import PROVIDER_START_URLS
 from codey.ghost.directive import build_ghost_directive
 from codey.ghost.hebbian import GhostHebbianStore
@@ -37,7 +39,6 @@ from codey.providers.registry import (
     provider_ids,
 )
 from tests.manual.ghost_directive_ab import _model_visible_context_leaked
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 BASELINE_PROMPT = "请用自然语言解释为什么回归测试重要。"

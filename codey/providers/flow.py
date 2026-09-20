@@ -240,11 +240,11 @@ def _completion_transition_observed(
         elif terminal == PREDICATE_STOP_HIDDEN:
             if trace.seen_before_latest(PREDICATE_STOP_VISIBLE):
                 return True
-        elif terminal == PREDICATE_COPY_VISIBLE:
-            if trace.seen_before_latest(PREDICATE_TYPING_TRUE) or trace.seen_before_latest(
-                PREDICATE_STOP_VISIBLE
-            ):
-                return True
+        elif terminal == PREDICATE_COPY_VISIBLE and (
+            trace.seen_before_latest(PREDICATE_TYPING_TRUE)
+            or trace.seen_before_latest(PREDICATE_STOP_VISIBLE)
+        ):
+            return True
     return False
 
 

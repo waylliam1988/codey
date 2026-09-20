@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from pathlib import Path
 
 from codey.agents.handoff import ConversationContext
 from codey.storage.conversation_store import ConversationStore
-import contextlib
 
 
 class ConversationRegistry:

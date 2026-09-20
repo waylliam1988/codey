@@ -801,9 +801,7 @@ def _is_secret_value_boundary(token: str) -> bool:
     if not token:
         return True
     folded = token.casefold()
-    if folded in _SAFE_QUERY_STOP_TERMS or folded in _SECRET_VALUE_BOUNDARY_TERMS:
-        return True
-    return False
+    return bool(folded in _SAFE_QUERY_STOP_TERMS or folded in _SECRET_VALUE_BOUNDARY_TERMS)
 
 
 def _query_token_after(text: str, index: int) -> tuple[str, int, int, bool]:
@@ -869,9 +867,7 @@ def _unsafe_query_span(token: str) -> bool:
         return True
     if text.startswith(("/", "./", "../", "~/")):
         return True
-    if "/" in text and not _safe_scientific_slash_term(text):
-        return True
-    return False
+    return bool("/" in text and not _safe_scientific_slash_term(text))
 
 
 def _safe_scientific_slash_term(text: str) -> bool:

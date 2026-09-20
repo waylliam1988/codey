@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 from collections import Counter
@@ -62,7 +63,6 @@ from codey.workspace.context_source import (
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
-import contextlib
 
 DEFAULT_MAX_TURNS = 14
 COMPLETION_EXTENSION_TURNS = 4

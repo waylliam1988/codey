@@ -7,6 +7,7 @@ searches, opened final URLs, source quality hints, and short evidence snippets.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field, replace
@@ -15,7 +16,6 @@ from datetime import UTC, datetime
 from codey.research import source_domains
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
-import contextlib
 
 MAX_SNIPPET_CHARS = 360
 MAX_CLAIM_CHARS = 260

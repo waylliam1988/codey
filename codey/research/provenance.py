@@ -121,14 +121,13 @@ def _unopened_search_source_mentions(text: str, search_result_urls: set[str], op
         host = _source_host(url)
         if not host or _site_domain_was_opened(host, opened_hosts):
             continue
-        if host in lower or any(
+        if (host in lower or any(
             label not in opened_labels and _mentions_host_label(lower, label)
             for label in _host_labels(host)
             if label != host
-        ):
-            if host not in seen:
-                seen.add(host)
-                found.append(host)
+        )) and host not in seen:
+            seen.add(host)
+            found.append(host)
     return found
 
 

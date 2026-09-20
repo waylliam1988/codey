@@ -34,6 +34,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.knowledge.brief import KnowledgeBriefBuilder
@@ -54,7 +56,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-import contextlib
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.

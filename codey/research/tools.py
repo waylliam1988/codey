@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,7 +25,6 @@ from codey.research.source_search import (
 )
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.utils.text_budget import clip_middle
-import contextlib
 
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 

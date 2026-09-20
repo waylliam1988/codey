@@ -80,7 +80,7 @@ def changed_symbol_names(
     include_old_names: bool = True,
     max_symbols: int = MAX_CHANGED_SYMBOLS,
 ) -> tuple[str, ...]:
-    if isinstance(values, ChangeSet) or isinstance(values, Mapping):
+    if isinstance(values, (ChangeSet, Mapping)):
         symbols = changed_symbols_from_changes(values, max_symbols=max_symbols)
     elif isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
         symbols = tuple(item for item in values if isinstance(item, ChangedSymbol))

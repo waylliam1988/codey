@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from codey.repairs.self_repair import SelfRepairSupervisor
 
+import contextlib
+
 from codey.agents.handoff import ConversationContext
 from codey.app import event_bus
 from codey.app.approval_registry import ApprovalRegistry
@@ -51,7 +53,6 @@ from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
-import contextlib
 
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80

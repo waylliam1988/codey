@@ -8,6 +8,7 @@ Chrome when no usable CDP browser is available.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
@@ -23,7 +24,6 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
-import contextlib
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"

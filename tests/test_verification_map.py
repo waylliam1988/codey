@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,7 +8,6 @@ from unittest import mock
 
 from codey.completion.verification_map import build_verification_map
 from codey.runs.work_checkpoint import CheckpointCheck
-import contextlib
 
 
 def _changes(*paths: str, diff: str = "") -> dict:

@@ -353,10 +353,7 @@ def _run_case(
                 )
 
         try:
-            if provider_factory is not None:
-                raw_provider = provider_factory(session_id)
-            else:
-                raw_provider = _MainProvider()
+            raw_provider = provider_factory(session_id) if provider_factory is not None else _MainProvider()
             # Every provider (real or stub) goes through TracingProvider so
             # send/reply counters and journal transcripts are attributable to
             # one case/arm regardless of the underlying provider class.

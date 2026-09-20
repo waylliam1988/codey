@@ -8,6 +8,8 @@ research, or concepts at import time.
 
 from __future__ import annotations
 
+import contextlib
+
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
 from codey.policies.limits import REVIEW_TIMEOUT
@@ -17,7 +19,6 @@ from codey.reviews.core import ReviewResult, parse_review_with_repair, render_re
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
-import contextlib
 
 
 def emit_review(ctx: TaskState, session_id: str, text: str) -> None:

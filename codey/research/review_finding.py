@@ -395,9 +395,8 @@ def apply_finding_events(
                     status=STATUS_CONFIRMED,
                     confirmed_by=_append_reason(current.confirmed_by, event),
                 )
-        elif action == EVENT_REJECTED:
-            if current.status in {STATUS_OPEN, STATUS_ADDRESSED}:
-                updated[ref] = replace(current, status=STATUS_REJECTED)
+        elif action == EVENT_REJECTED and current.status in {STATUS_OPEN, STATUS_ADDRESSED}:
+            updated[ref] = replace(current, status=STATUS_REJECTED)
     return tuple(updated[row.finding_id] for row in rows)
 
 

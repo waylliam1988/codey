@@ -444,9 +444,7 @@ def _sanitize_research_record_payload(payload: Mapping[str, Any]) -> dict[str, A
             clean[key] = _clip(payload.get(key), 40)
         elif key in {"record_id", "run_id", "session_id", "synthesis_id"}:
             clean[key] = _clip(payload.get(key), 120)
-        elif key == "record_digest":
-            clean[key] = _clip(payload.get(key), 80)
-        elif key == "stop_reason":
+        elif key == "record_digest" or key == "stop_reason":
             clean[key] = _clip(payload.get(key), 80)
     for key in ("sources", "evidence", "claims", "assumptions", "relations"):
         clean.setdefault(key, [])

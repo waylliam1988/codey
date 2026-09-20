@@ -20,13 +20,14 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents.protocol import protocol_repair_prompt
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import _balanced_json_objects
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.runtime.core.models import ToolPlan
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "typed")
@@ -55,10 +56,7 @@ def _expected_call(name: str, **required_args: object) -> Callable[[ToolPlan], b
         call = plan.calls[0]
         if call.name != name:
             return False
-        for key, value in required_args.items():
-            if call.args.get(key) != value:
-                return False
-        return True
+        return all(call.args.get(key) == value for key, value in required_args.items())
 
     return check
 

@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import parse_review_with_repair, render_review_prompt
 from tests.manual.ab_harness_common import (
@@ -37,7 +39,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-import contextlib
 
 dataclass = dataclasses.dataclass
 

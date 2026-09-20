@@ -27,6 +27,7 @@ new /api/run calls return 409.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import sys
@@ -54,7 +55,6 @@ from codey.app.http_plumbing import (
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.storage.local_store import DEFAULT_STATE_HOME
-import contextlib
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT

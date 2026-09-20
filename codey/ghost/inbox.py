@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import uuid
 from collections.abc import Iterable
@@ -51,7 +52,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-import contextlib
 
 INBOX_SCHEMA_VERSION = 1
 MAX_GHOST_EVENTS = 5_000
@@ -876,10 +876,7 @@ class GhostInboxStore:
     def _compact_if_needed(self, candidates: Iterable[GhostMemoryCandidate]) -> None:
         try:
             event_bytes = self.events_path.stat().st_size
-            if event_bytes > MAX_EVENTS_BYTES:
-                line_count = MAX_GHOST_EVENTS + 1
-            else:
-                line_count = count_jsonl_rows(self.events_path)
+            line_count = MAX_GHOST_EVENTS + 1 if event_bytes > MAX_EVENTS_BYTES else count_jsonl_rows(self.events_path)
         except OSError:
             return
         if line_count <= MAX_GHOST_EVENTS and event_bytes <= MAX_EVENTS_BYTES:
@@ -1002,9 +999,7 @@ def _scope_filter_matches(
 ) -> bool:
     if project and candidate.scope == "project" and candidate.project != project:
         return False
-    if session_id and candidate.scope == "session" and candidate.session_id != session_id:
-        return False
-    return True
+    return not (session_id and candidate.scope == "session" and candidate.session_id != session_id)
 
 
 def _scope_applies(
@@ -1041,10 +1036,7 @@ def _scope_delete_match(
 def _status_filter(value: str | Iterable[str] | None) -> set[str]:
     if value is None:
         return set()
-    if isinstance(value, str):
-        raw_values = value.split(",")
-    else:
-        raw_values = list(value)
+    raw_values = value.split(",") if isinstance(value, str) else list(value)
     return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in CANDIDATE_STATUSES}
 
 

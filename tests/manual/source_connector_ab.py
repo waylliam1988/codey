@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -47,7 +49,6 @@ from tests.manual.ab_journal import (
     TranscriptReplayCache,
     journal_directory_for,
 )
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")

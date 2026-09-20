@@ -6,6 +6,7 @@ existing projections, compacts event logs, and writes a bounded report.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -41,7 +42,6 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 from codey.workspace.paths import read_text_bounded
-import contextlib
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000

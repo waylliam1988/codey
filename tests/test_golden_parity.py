@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import unittest
 from pathlib import Path
 
 from codey.protocols.json_codec import JsonToolCodec
 from codey.research.controller import ResearchController, render_control_block
 from codey.research.protocols import JsonToolCodec as ResearchCodec
-import contextlib
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "golden"
 

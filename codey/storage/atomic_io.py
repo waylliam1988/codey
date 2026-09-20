@@ -9,13 +9,13 @@ by platform text-mode translation.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
 import stat
 import uuid
 from pathlib import Path
-import contextlib
 
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 

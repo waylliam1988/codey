@@ -23,6 +23,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.knowledge.store import KnowledgeStore
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
@@ -51,7 +53,6 @@ from tests.manual.ab_harness_common import (
 )
 from tests.manual.ab_journal import ABJournalIdentityMismatch, TranscriptReplayCache
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
-import contextlib
 
 PROBE = "research_forced_followup_gap_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

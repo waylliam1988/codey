@@ -733,17 +733,14 @@ def _option_path_args(
         if compact_value is not None:
             refs.append(_path_arg(compact_value))
         elif arg.startswith("-"):
-            if has_value and option in path_value_options:
-                refs.append(_path_arg(value))
-            elif has_value and _looks_like_path(value):
+            if has_value and option in path_value_options or has_value and _looks_like_path(value):
                 refs.append(_path_arg(value))
             elif option in path_value_options:
                 if index + 1 < len(values):
                     refs.append(_path_arg(values[index + 1]))
                     index += 1
-            elif option in non_path_value_options:
-                if index + 1 < len(values):
-                    index += 1
+            elif option in non_path_value_options and index + 1 < len(values):
+                index += 1
         elif _should_collect_positional(arg, positional_requires_path_shape):
             refs.append(_path_arg(arg))
         index += 1

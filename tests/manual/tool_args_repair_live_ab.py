@@ -19,6 +19,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.protocols.json_codec import (
@@ -31,7 +33,6 @@ from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, prov
 from codey.runs.trace import RunTraceStore
 from codey.runtime.core.models import ToolPlan
 from codey.runtime.observe.events import render_run_event
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "candidate")
@@ -88,9 +89,10 @@ def _baseline_friction(obj: dict[str, Any]) -> tuple[str, str]:
         return "path requires path, not cwd", tool
     if tool in {"grep", "search"} and "pattern" in args and "query" not in args:
         return "grep requires a query", "search"
-    if tool in {"read_file", "read"}:
-        if isinstance(args.get("offset"), str) or isinstance(args.get("limit"), str):
-            return "offset/limit must be integers", "read"
+    if tool in {"read_file", "read"} and (
+        isinstance(args.get("offset"), str) or isinstance(args.get("limit"), str)
+    ):
+        return "offset/limit must be integers", "read"
     if tool in {"find_references", "references"} and "name" in args and "symbol" not in args:
         return "find_references requires a symbol", "references"
     if tool in {"run", "shell"} and "cmd" in args and "command" not in args:

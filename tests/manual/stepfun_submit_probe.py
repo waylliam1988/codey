@@ -9,10 +9,11 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider
 from codey.providers.web_drivers import stepfun
-import contextlib
 
 
 def _page_state(page) -> dict:

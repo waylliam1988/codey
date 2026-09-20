@@ -8,6 +8,7 @@ exercised with the current source tree as the candidate root.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import secrets
 import sys
@@ -24,7 +25,6 @@ from codey.local_store import DEFAULT_STATE_HOME  # noqa: E402
 from codey.repairs.adapter_overrides import AdapterOverride  # noqa: E402
 from codey.repairs.adapter_repair import run_worker_canary  # noqa: E402
 from codey.repairs.self_repair_worker import connect_repair_helper  # noqa: E402
-import contextlib
 
 
 def run_smoke(provider: str, *, timeout: float, state_home: Path) -> dict:

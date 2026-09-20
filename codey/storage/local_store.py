@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 from pathlib import Path
-import contextlib
 
 DEFAULT_STATE_HOME = Path.home() / ".codey"
 MAX_JSON_BYTES = 8 * 1024 * 1024

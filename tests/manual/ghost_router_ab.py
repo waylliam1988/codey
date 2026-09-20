@@ -20,6 +20,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.ghost.router import (
     ROUTER_MODES,
     GhostRouteRequest,
@@ -36,7 +38,6 @@ from codey.ghost.router import (
 from codey.ghost.schema import clip_signal_text
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
-import contextlib
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CASES = ROOT / "tests" / "fixtures" / "ghost_router_cases.jsonl"

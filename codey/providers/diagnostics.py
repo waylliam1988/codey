@@ -219,12 +219,7 @@ def _safe_fact_value(value: object) -> object | None:
 
 def _unsafe_fact_text(value: str) -> bool:
     lower = value.lower()
-    if any(
-        term in lower
-        for term in ("<html", "<body", "authorization:", "bearer ", "http://", "https://")
-    ):
-        return True
-    return False
+    return bool(any(term in lower for term in ("<html", "<body", "authorization:", "bearer ", "http://", "https://")))
 
 
 def guard_provider_page(page: Any) -> None:

@@ -268,10 +268,7 @@ def save_local_config(
     api_key: str | None = None,
 ) -> None:
     previous = load_local_config()
-    if api_key is None:
-        stored_key = str(previous.get("api_key") or "").strip()
-    else:
-        stored_key = str(api_key or "").strip()
+    stored_key = str(previous.get("api_key") or "").strip() if api_key is None else str(api_key or "").strip()
     payload = {
         "base_url": (base_url or "").strip().rstrip("/"),
         "model": (model or "").strip(),

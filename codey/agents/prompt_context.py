@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import replace
 
 from codey.agents.context import (
@@ -32,7 +33,6 @@ from codey.workspace.context_source import (
     ContextSource,
     render_context_sources_with_metadata,
 )
-import contextlib
 
 
 def open_fresh_chat(session: AgentLoopSession) -> bool:

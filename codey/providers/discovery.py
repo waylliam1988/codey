@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
-import contextlib
 
 MESSAGE_BOX = "message_box"
 SEND_BUTTON = "send_button"

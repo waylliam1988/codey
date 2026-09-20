@@ -8,6 +8,7 @@ returns one bounded JSON result to the parent.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -22,7 +23,6 @@ from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSET
 from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.repairs.self_repair import SelfRepairJob
 from codey.runtime.core import cancellation
-import contextlib
 
 DEFAULT_REPAIR_TIMEOUT = 900.0
 DEFAULT_MODEL_TIMEOUT = 300.0

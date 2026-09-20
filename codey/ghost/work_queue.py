@@ -1298,9 +1298,7 @@ def is_strict_work_continuation(value: object) -> bool:
     normalized = _normalize_continuation_text(value)
     if not normalized:
         return False
-    if normalized in _STRICT_CONTINUATION_CN or normalized in _STRICT_CONTINUATION_EN:
-        return True
-    return False
+    return bool(normalized in _STRICT_CONTINUATION_CN or normalized in _STRICT_CONTINUATION_EN)
 
 
 def mode_for_work_item(item: GhostWorkItem | None, *, project: str = "") -> str:
@@ -2012,9 +2010,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("completed_run_id"), 120):
             return False
-        if _bounded_refs(patch.get("proof_refs")):
-            return False
-        return True
+        return not _bounded_refs(patch.get("proof_refs"))
 
     if action == "complete":
         if target_status != "done" or expected_status != "running":
@@ -2027,9 +2023,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("lease_expires_at"), 80):
             return False
-        if clip_signal_text(patch.get("blocked_reason"), 120):
-            return False
-        return True
+        return not clip_signal_text(patch.get("blocked_reason"), 120)
 
     if action in {"release", "release_stale"}:
         if target_status not in {"queued", "blocked"} or expected_status != "running":
@@ -2064,9 +2058,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("completed_run_id"), 120):
             return False
-        if _bounded_refs(patch.get("proof_refs")):
-            return False
-        return True
+        return not _bounded_refs(patch.get("proof_refs"))
 
     if action == "reject":
         if target_status != "rejected" or expected_status not in {"candidate", "queued", "blocked"}:
@@ -2079,9 +2071,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("completed_run_id"), 120):
             return False
-        if _bounded_refs(patch.get("proof_refs")):
-            return False
-        return True
+        return not _bounded_refs(patch.get("proof_refs"))
 
     if action == "queue":
         if target_status != "queued" or expected_status not in {"candidate", "blocked", "rejected"}:
@@ -2099,9 +2089,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("blocked_reason"), 120):
             return False
-        if clip_signal_text(patch.get("lease_expires_at"), 80):
-            return False
-        return True
+        return not clip_signal_text(patch.get("lease_expires_at"), 80)
 
     return False
 
@@ -2325,11 +2313,7 @@ def _precondition_matches(item: GhostWorkItem, precondition: Mapping[str, object
         expected_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
         if item.started_run_id != expected_run_id:
             return False
-    if "expected_retry_count" in precondition and item.retry_count != max(
-        0, _int(precondition.get("expected_retry_count"))
-    ):
-        return False
-    return True
+    return not ("expected_retry_count" in precondition and item.retry_count != max(0, _int(precondition.get("expected_retry_count"))))
 
 
 def _transition_allowed(item: GhostWorkItem, target_status: str, *, action: str) -> bool:
@@ -2644,7 +2628,7 @@ def _strict_payload_equal(value: object, expected: object) -> bool:
 
 def _mapping_keys_within(value: Mapping[str, object], allowed: Iterable[str]) -> bool:
     allowed_keys = set(allowed)
-    return all(isinstance(key, str) and key in allowed_keys for key in value.keys())
+    return all(isinstance(key, str) and key in allowed_keys for key in value)
 
 
 def _meaningful_item_payload(item: GhostWorkItem) -> tuple[object, ...]:

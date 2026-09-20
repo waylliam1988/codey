@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import tempfile
@@ -11,7 +12,6 @@ from codey.app import http_plumbing
 from codey.app.context import MAX_CHANGE_TRACKERS, AppContext
 from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.paths import bounded_directory_entries, safe_join
-import contextlib
 
 
 class ColdstartReviewBatchTests(unittest.TestCase):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import json
 import threading
 import time
@@ -33,7 +34,6 @@ from codey.research.http_redirects import (
 from codey.research.pdf_extract import PDF_MAX_BYTES
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
-import contextlib
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -1134,9 +1134,7 @@ def _is_search_redirect(parsed) -> bool:
     params = parse_qs(parsed.query or "")
     if host.endswith("bing.com") and path.startswith("/ck/"):
         return True
-    if host.endswith("duckduckgo.com") and any(key in params for key in ("uddg", "u")):
-        return True
-    return False
+    return bool(host.endswith("duckduckgo.com") and any(key in params for key in ("uddg", "u")))
 
 
 def _search_redirect_target(parsed) -> str:

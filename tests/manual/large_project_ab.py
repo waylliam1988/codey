@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.agents.runner import run
 from codey.agents.tools import AgentToolFns
 from codey.protocols.json_codec import SYSTEM_PROMPT, JsonToolCodec
@@ -29,7 +31,6 @@ from codey.providers.registry import connect_provider
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
-import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
 NAVIGATION_TOOLS = ("find_references",)

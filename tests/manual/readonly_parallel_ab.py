@@ -32,6 +32,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.protocols.json_codec import JsonToolCodec
@@ -39,7 +41,6 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
-import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-readonly-parallel-ab.json"
 PARALLEL_READONLY_TOOL_NAMES = frozenset({"read", "ls", "search"})

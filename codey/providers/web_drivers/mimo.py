@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 
@@ -27,7 +28,6 @@ from codey.toolchain.json_reply import (
 from codey.toolchain.json_reply import (
     normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
 )
-import contextlib
 
 PROVIDER_ID = "mimo"
 PROFILE = get_profile(PROVIDER_ID)

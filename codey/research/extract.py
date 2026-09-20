@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 from html.parser import HTMLParser
-import contextlib
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {

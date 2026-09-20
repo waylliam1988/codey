@@ -20,6 +20,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.protocols import JsonToolCodec, extract_json_objects
@@ -46,7 +48,6 @@ from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     TranscriptReplayCache,
 )
-import contextlib
 
 PROBE = "research_source_rendering_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -203,7 +204,7 @@ def score_reply(reply: str, case: SourceRenderingCase) -> dict[str, Any]:
         "protocol_ok": bool(not plan.protocol_error and (tool in EXPECTED_TOOLS)),
         "protocol_error_kind": str(plan.protocol_error_kind or ""),
         "action_tool": tool or "<no_json>",
-        "action_arg_keys": sorted(str(key) for key in args.keys())[:16],
+        "action_arg_keys": sorted(str(key) for key in args)[:16],
         "action_digest": digest_json({"tool": tool, "args": args}) if obj else "",
         "unexpected_tool_action_observed": bool(tool and tool not in EXPECTED_TOOLS),
         "injection_marker_echoed": injection_marker_echoed,

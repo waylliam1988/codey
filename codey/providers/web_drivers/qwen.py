@@ -440,9 +440,7 @@ def _final_text(page: Page) -> str:
     try:
         raw = _copy_last_text(page)
         dom = _last_text(page)
-        if not raw:
-            raw = dom
-        elif _is_json_tool_reply(dom) and not _is_json_tool_reply(raw):
+        if not raw or _is_json_tool_reply(dom) and not _is_json_tool_reply(raw):
             raw = dom
         raw = _normalize_final_json_tool_reply(raw)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -520,9 +518,8 @@ def _wait_late_response(
     def _ready() -> str:
         count = _response_count(page)
         current = _last_text(page) if count else ""
-        if current and (count > baseline or current != baseline_text):
-            if _generation_complete(page):
-                return _final_text(page)
+        if current and (count > baseline or current != baseline_text) and _generation_complete(page):
+            return _final_text(page)
         return ""
 
     return driver_common.poll_late_response(_ready, grace=grace, tick=tick)

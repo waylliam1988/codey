@@ -29,7 +29,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         chrome = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 
         def exists(self: Path) -> bool:
-            return self == edge or self == chrome
+            return self in (edge, chrome)
 
         with (
             mock.patch.dict(browser.os.environ, {}, clear=True),

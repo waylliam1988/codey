@@ -351,9 +351,7 @@ def _proof_ok_without_required_gap(payload: Mapping[str, object]) -> bool:
     answer_status = identifier(payload.get("answer_status"), 40)
     if answer_status and answer_status != "answered":
         return False
-    if payload.get("answers_question") is False:
-        return False
-    return True
+    return payload.get("answers_question") is not False
 
 
 def _has_items(value: object) -> bool:

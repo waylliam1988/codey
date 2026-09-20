@@ -11,6 +11,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.toolchain.runtime import list_directory
@@ -20,7 +22,6 @@ from codey.workspace.map import (
     build_symbol_overview,
 )
 from tests.manual.project_task_context import render_production_project_map
-import contextlib
 
 
 @dataclass(frozen=True)

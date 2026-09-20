@@ -45,9 +45,8 @@ def wait_for_stable_completion(
     overall_deadline = time.time() + max(0.0, response_timeout)
     while time.time() < overall_deadline:
         cancellation.wait(tick)
-        if before_poll is not None:
-            if before_poll(ctx):
-                continue
+        if before_poll is not None and before_poll(ctx):
+            continue
         current = read_current()
         if not current:
             continue

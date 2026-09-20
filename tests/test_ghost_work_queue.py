@@ -1630,6 +1630,6 @@ def test_work_queue_transition_matrix_is_single_authority() -> None:
         },
     }
 
-    assert work_queue_module.WORK_ITEM_TRANSITION_MATRIX == expected
-    assert work_queue_module.WORK_ITEM_TRANSITION_ACTIONS == frozenset(expected)
+    assert expected == work_queue_module.WORK_ITEM_TRANSITION_MATRIX
+    assert frozenset(expected) == work_queue_module.WORK_ITEM_TRANSITION_ACTIONS
     assert set(work_queue_module._WORK_TRANSITION_PATCH_KEYS) == set(expected)

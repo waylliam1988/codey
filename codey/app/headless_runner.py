@@ -7,6 +7,7 @@ spine as the UI.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 import uuid
@@ -39,7 +40,6 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes as default_collect_changes
 from codey.workspace.changes import is_git_repository
-import contextlib
 
 SCHEMA_VERSION = 1
 HEADLESS_SESSION_PREFIX = "headless_"

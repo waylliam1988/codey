@@ -31,6 +31,8 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.agents.runner import run as default_agent_run
@@ -60,7 +62,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-import contextlib
 
 dataclass = dataclasses.dataclass
 

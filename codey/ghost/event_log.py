@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import uuid
@@ -12,7 +13,6 @@ from typing import Literal
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import delete_file
-import contextlib
 
 BadRowPolicy = Literal["warn", "block", "quarantine_tail"]
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import math
 from collections.abc import Iterable
@@ -60,7 +61,6 @@ from codey.storage.local_store import (
     delete_file,
     write_json_atomic,
 )
-import contextlib
 
 HEBBIAN_SCHEMA_VERSION = 1
 MAX_GHOST_NODES = 500
@@ -1103,9 +1103,7 @@ def _candidate_has_provenance(candidate: GhostMemoryCandidate) -> bool:
         return False
     if candidate.scope == "project" and not candidate.project:
         return False
-    if candidate.scope == "session" and not candidate.session_id:
-        return False
-    return True
+    return not (candidate.scope == "session" and not candidate.session_id)
 
 
 def _candidate_is_manual_accept(candidate: GhostMemoryCandidate) -> bool:
@@ -1182,10 +1180,7 @@ def _clean_refs(value: object, *, limit: int) -> tuple[str, ...]:
 def _status_filter(value: str | Iterable[str] | None, *, allowed: tuple[str, ...]) -> set[str]:
     if value is None:
         return set()
-    if isinstance(value, str):
-        raw_values = value.split(",")
-    else:
-        raw_values = list(value)
+    raw_values = value.split(",") if isinstance(value, str) else list(value)
     return {str(item).strip().lower() for item in raw_values if str(item).strip().lower() in allowed}
 
 

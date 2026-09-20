@@ -177,9 +177,7 @@ def _is_python_edit_payload(payload: object) -> bool:
     if not isinstance(payload, dict) or payload.get("tool") != "edit":
         return False
     args = payload.get("args")
-    if not isinstance(args, dict) or not str(args.get("path") or "").lower().endswith(".py"):
-        return False
-    return True
+    return not (not isinstance(args, dict) or not str(args.get("path") or "").lower().endswith(".py"))
 
 
 def _normalize_python_edit_content(payload: dict) -> bool:
@@ -487,10 +485,9 @@ def _chat(
                 count <= response_baseline
                 and current == baseline_text
                 and _rate_limit_visible(page)
-            ):
-                if _click_rate_limit_retry(page):
-                    ctx.reset_text_progress(sent_at=time.time())
-                    continue
+            ) and _click_rate_limit_retry(page):
+                ctx.reset_text_progress(sent_at=time.time())
+                continue
             if count <= response_baseline and current == baseline_text:
                 continue
             confirm_submission(attempt, PROVIDER_ID)

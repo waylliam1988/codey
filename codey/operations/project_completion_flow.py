@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from functools import partial
@@ -90,7 +91,6 @@ from codey.workspace.change_brief import (
 )
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 from codey.workspace.facts import ProjectFactsStore
-import contextlib
 
 
 def _default_is_git_repository(_project: str | Path) -> bool:

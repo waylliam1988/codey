@@ -7,6 +7,7 @@ user to click the control once and keep only that latest teaching.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -34,7 +35,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-import contextlib
 
 logger = logging.getLogger(__name__)
 

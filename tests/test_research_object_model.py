@@ -613,25 +613,25 @@ def test_url_refs_are_redacted_and_source_bodies_are_not_persisted() -> None:
 
 
 def test_enums_and_v1_generated_relation_kinds_are_bounded() -> None:
-    assert ANSWER_STATUSES == frozenset({
+    assert frozenset({
         "answered",
         "partial",
         "insufficient_evidence",
         "not_answered",
-    })
-    assert CLAIM_STATUSES == frozenset({
+    }) == ANSWER_STATUSES
+    assert frozenset({
         "evidence_backed",
         "unsupported",
         "assumption",
-    })
-    assert CLAIM_RELATION_KINDS == frozenset({
+    }) == CLAIM_STATUSES
+    assert frozenset({
         "supports",
         "refutes",
         "updates",
         "supersedes",
         "conflicts_with",
         "limits",
-    })
+    }) == CLAIM_RELATION_KINDS
     ledger = _ledger()
     summary = _report()
     record = build_research_record(

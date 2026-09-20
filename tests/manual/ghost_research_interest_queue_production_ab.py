@@ -22,6 +22,8 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.app import server
@@ -38,7 +40,6 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
 from codey.task.model import TaskSubmission
-import contextlib
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 

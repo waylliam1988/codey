@@ -6,6 +6,7 @@ transcript store, a truth layer, or a learning loop.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
@@ -42,7 +43,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-import contextlib
 
 if TYPE_CHECKING:
     from codey.runs.ledger_projection import RunLedgerProjection

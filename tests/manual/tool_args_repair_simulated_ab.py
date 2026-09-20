@@ -110,9 +110,10 @@ class BaselineCodecSimulator:
                 return ToolPlan(calls=[], control=None, protocol_error="edit replacements must be a list", protocol_error_kind="invalid_args"), True
             if isinstance(args.get("replacements"), dict):
                 return ToolPlan(calls=[], control=None, protocol_error="edit replacements must be a list", protocol_error_kind="invalid_args"), True
-        if tool == "read_file":
-            if isinstance(args.get("offset"), str) or isinstance(args.get("limit"), str):
-                return ToolPlan(calls=[], control=None, protocol_error="offset/limit must be integers", protocol_error_kind="invalid_args"), True
+        if tool == "read_file" and (
+            isinstance(args.get("offset"), str) or isinstance(args.get("limit"), str)
+        ):
+            return ToolPlan(calls=[], control=None, protocol_error="offset/limit must be integers", protocol_error_kind="invalid_args"), True
         if tool in ("find_references", "references") and "name" in args and "symbol" not in args:
             return ToolPlan(calls=[], control=None, protocol_error="references requires symbol", protocol_error_kind="invalid_args"), True
         if tool in ("run", "shell") and "cmd" in args and "command" not in args:

@@ -220,10 +220,11 @@ def definitions_for_tool_names(names: tuple[str, ...] | list[str] | set[str]) ->
     definitions: list[ToolDefinition] = []
     seen: set[str] = set()
     for definition in TOOL_DEFINITIONS:
-        if definition.name in requested or any(alias in requested for alias in definition.aliases):
-            if definition.name not in seen:
-                definitions.append(definition)
-                seen.add(definition.name)
+        if (definition.name in requested or any(alias in requested for alias in definition.aliases)) and (
+            definition.name not in seen
+        ):
+            definitions.append(definition)
+            seen.add(definition.name)
     return tuple(definitions)
 
 

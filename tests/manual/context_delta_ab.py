@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.agents.handoff import ConversationContext
 from codey.agents.runner import run
 from codey.agents.tools import AgentToolFns
@@ -31,7 +33,6 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
-import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-context-delta-ab.json"
 

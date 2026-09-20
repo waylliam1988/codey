@@ -442,9 +442,7 @@ def _should_delete_unsupported_claim(text: str) -> bool:
         return True
     if any(marker in lower for marker in _OPERATIONAL_MARKERS):
         return True
-    if any(marker in lower for marker in _DELETE_UNSUPPORTED_MARKERS):
-        return True
-    return False
+    return bool(any(marker in lower for marker in _DELETE_UNSUPPORTED_MARKERS))
 
 
 def _downgraded_claim_line(text: str) -> str:

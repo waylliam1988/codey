@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 from pathlib import Path
@@ -9,7 +10,6 @@ from pathlib import Path
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
-import contextlib
 
 RELATED_HEADING = "## Related"
 

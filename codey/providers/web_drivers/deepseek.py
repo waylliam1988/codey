@@ -198,9 +198,7 @@ def _final_text(page: Page) -> str:
     try:
         raw = _copy_last_text(page)
         dom = _last_text(page)
-        if not raw:
-            raw = dom
-        elif _is_json_tool_reply(dom) and not _is_json_tool_reply(raw):
+        if not raw or _is_json_tool_reply(dom) and not _is_json_tool_reply(raw):
             raw = dom
         raw = _normalize_final_json_tool_reply(raw)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):

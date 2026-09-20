@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 
 from playwright.sync_api import Locator, Page
 
 from codey.runtime.core import cancellation
-import contextlib
 
 
 def copy_action_text(

@@ -604,14 +604,7 @@ def build_coding_completion_proof(
     revision_ref = workspace_revision_ref(project or "", workspace_revision)
     fingerprint_ref = workspace_fingerprint_ref(project or "", workspace_fingerprint)
     external_refs: tuple[str, ...]
-    if run_ref:
-        external_refs = (
-            f"ledger:{run_ref}",
-            f"receipt:{run_ref}",
-            f"diff:{run_ref}",
-        )
-    else:
-        external_refs = ()
+    external_refs = (f"ledger:{run_ref}", f"receipt:{run_ref}", f"diff:{run_ref}") if run_ref else ()
     if revision_ref:
         external_refs = (*external_refs, revision_ref)
     if fingerprint_ref:

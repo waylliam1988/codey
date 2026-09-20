@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from pathlib import Path
 
 from codey.automation.browser import DEFAULT_PROFILE
 from codey.providers.registry import PROVIDER_TYPES
-import contextlib
 
 
 def main(argv: list[str] | None = None) -> int:

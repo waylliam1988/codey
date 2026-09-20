@@ -1766,17 +1766,16 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
             if depth == 0:
                 start = index
             depth += 1
-        elif char == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    try:
-                        value = json.loads(text[start : index + 1], strict=False)
-                    except json.JSONDecodeError:
-                        value = None
-                    if isinstance(value, dict):
-                        objects.append(value)
-                    start = -1
+        elif char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                try:
+                    value = json.loads(text[start : index + 1], strict=False)
+                except json.JSONDecodeError:
+                    value = None
+                if isinstance(value, dict):
+                    objects.append(value)
+                start = -1
     return objects
 
 

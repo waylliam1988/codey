@@ -25,6 +25,8 @@ from unittest.mock import Mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.agents.loop import run as run_agent_loop
 from codey.agents.request import AgentRequest
 from codey.agents.tool_execution import (
@@ -49,7 +51,6 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-import contextlib
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LIVE_TASK = (

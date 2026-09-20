@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -9,7 +10,6 @@ from codey.agents.consensus import MAX_CONSENSUS_ADVISORS, ConsensusAdvice, advi
 from codey.providers import controls as provider_controls
 from codey.research.source_document import compact_pages
 from codey.runtime.core import cancellation
-import contextlib
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000

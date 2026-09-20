@@ -16,6 +16,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import contextlib
+
 from codey.ghost.continuity import (
     CONTINUITY_SCHEMA_VERSION,
     GhostContinuityItem,
@@ -27,7 +29,6 @@ from codey.protocols import JsonToolCodec
 from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
 from codey.storage.local_store import write_json_atomic
-import contextlib
 
 ARMS = ("baseline", "continuity")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -285,10 +286,7 @@ def _model_visible_context_leaked(reply: str) -> bool:
 
 
 def _rejected_terms_absent(reply: str, rejected_terms: tuple[str, ...]) -> bool:
-    for term in rejected_terms:
-        if _has_unnegated_term(reply, term):
-            return False
-    return True
+    return all(not _has_unnegated_term(reply, term) for term in rejected_terms)
 
 
 def _has_unnegated_term(reply: str, term: str) -> bool:
@@ -296,10 +294,7 @@ def _has_unnegated_term(reply: str, term: str) -> bool:
     needle = str(term or "").strip().casefold()
     if not needle:
         return False
-    for match in re.finditer(re.escape(needle), text):
-        if not _term_is_negated(text, match.start()):
-            return True
-    return False
+    return any(not _term_is_negated(text, match.start()) for match in re.finditer(re.escape(needle), text))
 
 
 def _term_is_negated(text: str, start: int) -> bool:

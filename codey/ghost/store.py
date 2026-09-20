@@ -6,6 +6,7 @@ does not mark any signal as accepted long-term memory.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from codey.ghost._common import normalize_project as _shared_normalize_project
@@ -17,7 +18,6 @@ from codey.ghost.schema import (
     clip_signal_text,
 )
 from codey.storage.local_store import DEFAULT_STATE_HOME
-import contextlib
 
 MAX_GHOST_EVENTS = 5_000
 MAX_STORED_SIGNALS = 5

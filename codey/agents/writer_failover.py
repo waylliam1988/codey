@@ -24,13 +24,13 @@ keeps the module unit-testable with plain fakes.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codey.providers.diagnostics import ProviderActionError
 from codey.runtime.core.cancellation import TaskCancelled
-import contextlib
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from codey.agents.runner import RunResult

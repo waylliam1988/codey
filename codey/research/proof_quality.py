@@ -748,9 +748,7 @@ def _is_safe_signal_text(value: str) -> bool:
         return False
     if looks_prompt_visible_secret(text):
         return False
-    if re.fullmatch(r"[A-Za-z0-9_./+=-]{24,}", text):
-        return False
-    return True
+    return not re.fullmatch(r"[A-Za-z0-9_./+=-]{24,}", text)
 
 
 def _normalized_search_text(value: str) -> str:

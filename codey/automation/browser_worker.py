@@ -7,6 +7,7 @@ HTTP handlers and task dispatch on other threads, so all browser automation
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 import time
@@ -16,7 +17,6 @@ from enum import Enum
 from typing import Any, TypeVar
 
 from codey.runtime.core import cancellation
-import contextlib
 
 T = TypeVar("T")
 _POLL_INTERVAL = 0.05

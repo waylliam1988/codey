@@ -78,16 +78,15 @@ def ensure_result_batch_intent(
     # Slow / failover path: inspect durable store if not present in turn_state
     batches = delivery_store.load_batches(session.session_id, session.run_id)
     for b in reversed(batches):
-        if b.intent.turn == turn:
-            if not b.is_delivered and not b.send_attempts:
-                if b.intent.batch_digest == expected_digest:
-                    return b.intent.batch_id
-                # Invariant failure: an early planned batch for this exact turn exists without any send attempts,
-                # but its envelope digest does not match the results about to be delivered.
-                raise ToolResultDeliveryError(
-                    f"turn {turn} delivery batch envelope mismatch: expected digest {expected_digest!r}, "
-                    f"found early batch {b.intent.batch_id!r} with digest {b.intent.batch_digest!r}"
-                )
+        if b.intent.turn == turn and not b.is_delivered and not b.send_attempts:
+            if b.intent.batch_digest == expected_digest:
+                return b.intent.batch_id
+            # Invariant failure: an early planned batch for this exact turn exists without any send attempts,
+            # but its envelope digest does not match the results about to be delivered.
+            raise ToolResultDeliveryError(
+                f"turn {turn} delivery batch envelope mismatch: expected digest {expected_digest!r}, "
+                f"found early batch {b.intent.batch_id!r} with digest {b.intent.batch_digest!r}"
+            )
             # Note: if a batch for this turn already has send_attempts, it indicates a prior
             # provider attempt in this turn that failed or timed out. A new writer/failover run
             # may record a fresh batch for recovery tracking.

@@ -469,9 +469,8 @@ def _verification_summary(
             return "Verification monitoring incomplete", "warning"
         if receipt.verification.trust == VERIFICATION_TRUST_TRUSTED:
             return "Checks passed", "neutral"
-    if projection is not None and projection.final_changes is not None:
-        if projection.final_changes.changed_count:
-            return "Checks not recorded", "warning"
+    if projection is not None and projection.final_changes is not None and projection.final_changes.changed_count:
+        return "Checks not recorded", "warning"
     if projection is not None and projection.verified_commands:
         return f"Ran {_plural(len(projection.verified_commands), 'check')}", "neutral"
     if projection is not None and projection.stop_reason and projection.stop_reason != "done":

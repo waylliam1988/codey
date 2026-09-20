@@ -799,7 +799,8 @@ def _symbol_score(rel: str, symbols: tuple[str, ...], task: str) -> int:
             score += 2
         if len(token) >= 4 and any(token in symbol for symbol in lower_symbols):
             score += 2
-    if task_tokens & {"check", "test", "testing", "tests", "verification", "verify"}:
-        if lower_rel.startswith("tests/") or "/test_" in lower_rel:
-            score += 4
+    if (task_tokens & {"check", "test", "testing", "tests", "verification", "verify"}) and (
+        lower_rel.startswith("tests/") or "/test_" in lower_rel
+    ):
+        score += 4
     return score

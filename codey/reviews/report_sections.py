@@ -84,10 +84,7 @@ def heading_key(line: str) -> str:
 
     stripped = str(line or "").strip()
     match = _HEADING_RE.match(stripped)
-    if match:
-        title = match.group(1)
-    else:
-        title = stripped.rstrip(":：")
+    title = match.group(1) if match else stripped.rstrip(":：")
     title = normalize_heading(title)
     if not title:
         return ""

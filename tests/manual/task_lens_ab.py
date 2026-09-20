@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import contextlib
+
 from codey.agents.runner import run as run_agent
 from codey.agents.tools import AgentToolFns
 from codey.protocols.json_codec import JsonToolCodec
@@ -58,7 +60,6 @@ from tests.manual.project_task_context import (
     render_production_project_map,
 )
 from tests.manual.zoom_project_map_ab import ProbeCase, build_deep_fixture
-import contextlib
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-task-lens-ab.json"
 ARMS = ("current", "lens")

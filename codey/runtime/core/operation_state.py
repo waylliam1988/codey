@@ -375,9 +375,8 @@ class RuntimeOperationState:
                 if leaf == LEAF_COMPLETION_PROOF_RECORDED and _repair_facts_claimed(
                     repair_rounds,
                     repair_context_ref,
-                ):
-                    if not repair_context_ref or repair_rounds < 1:
-                        raise RuntimeOperationTransitionError("re-proof carries partial repair record")
+                ) and (not repair_context_ref or repair_rounds < 1):
+                    raise RuntimeOperationTransitionError("re-proof carries partial repair record")
             elif leaf == LEAF_TERMINAL:
                 proof_complete = _proof_facts_complete(proof_ref, proof_status, satisfied)
                 if _proof_facts_claimed(proof_ref, proof_status, satisfied) and not proof_complete:
