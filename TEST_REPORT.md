@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## Stop linearization, cold-start imports, small close gaps, harder tests (2026-09-20)
+
+Scope:
+
+```text
+codey/app/context.py:      request_stop() (gated flag+teach+expiry),
+                           gated claim, sibling_probe delegates,
+                           lazy registry/self-repair facades, catalog statics
+codey/app/sibling_probe.py (new):
+                           doctor/flow recovery probes by lifecycle boundary
+codey/app/services.py:     lazy provider facades, runner=None warmup defaults
+codey/app/server.py:       local task_entry/connect_fresh imports in builders
+codey/app/api.py:          catalog statics, stop_response via request_stop
+codey/app/headless_runner.py:
+                           shell-reject via request_stop
+codey/research/__init__.py: lazy re-exports (providers-pattern)
+codey/knowledge/index.py:  replace_links_touching/add_link closed guards
+codey/providers/worker.py: _response_lock on offer/drain
+tests:                       3 linearization, 4 import-cost, B023 behavioral,
+                           close-guard, concurrent-offer tests; 9 server +
+                           1 adapter seam updates
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check codey tests` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  `ruff check codey tests --select B,UP,I,SIM`
+  (`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`; unchanged)
+- Targeted gates before the full run:
+  shell/linearization/import-cost/P1 suites green,
+  `tests/test_server.py` + headless (215 passed),
+  `tests/test_architecture.py` (82 passed, 312 subtests passed),
+  coldstart/knowledge/hardening suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3868 passed, 6 skipped, 1303 subtests passed in 273.77s (0:04:33)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Convergence cuts: research URL/shape narrowing, ghost storage mechanics, unified graph demotion (2026-09-20)
 
 Scope:

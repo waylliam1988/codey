@@ -2,6 +2,41 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Stop linearization, cold-start imports, small close gaps, harder tests (no release)
+
+- P0 shell Stop is now linearized: new `AppContext.request_stop()` holds
+  `_shell_spawn_gate` across `stop_flag.set()` + teach cancel + approval
+  expiry, and `claim_shell_ticket` mints under the same gate, so Stop can no
+  longer land between the executor's final check and `Popen` -- the previous
+  window spawned side-effect commands that were only killed afterwards.
+  `api.stop_response()` and the headless shell-reject path both funnel
+  through it. (The first cut deadlocked on `ctx.lock` re-entry; the gate is
+  deliberately a separate lock with a fixed gate->lock order.)
+- Cold-start imports: `services.py` / `context.py` resolve the connection
+  registry through module-level lazy facades (patch points preserved),
+  statics come from `providers/catalog.py`, `run/start_provider_warmup`
+  default `runner=None`, `server._build_state()` imports
+  `connect_fresh_provider_tab` locally, `server._run_task` imports
+  `task_entry` locally, and `research/__init__.py` re-exports lazily
+  (providers-pattern). `import codey.app.server/api/context/services` now
+  loads no Playwright/browser/registry/worker/runner (subprocess-proven).
+  Sibling-probe handlers moved to `app/sibling_probe.py` with thin
+  `AppContext` delegates (`context.py` back under the 1000-line guardrail).
+- Small close gaps: `KnowledgeIndex.replace_links_touching` (plus `add_link`)
+  now checks `_ensure_open_locked()` like every other write path;
+  `WorkerChatProvider` serializes `_offer_response` / `_drain_responses`
+  on a `_response_lock` (restart can briefly overlap two readers).
+- Harder tests: B023 sibling assertion is behavioral (per-helper sends
+  through the real probe path); lazy-state suite asserts clean imports for
+  all four app modules; three linearization tests pin ordered/refused,
+  overlapped-never-ok, and gate-held spawn. Nine server tests and the
+  adapter self-repair test follow the moved seams (no compat aliases).
+- Debt unchanged at `943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`.
+- Verification: `ruff check codey tests`, `compileall`, and `git diff --check`
+  clean; `tests/test_architecture.py` green; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3868 passed, 6 skipped, 1303 subtests passed in 273.77s`).
+
 ## Unreleased - Convergence cuts: research URL/shape收口, ghost storage mechanics, unified graph demotion (no release)
 
 - New `research/urls.py` (stdlib + `utils.refs` only, honoring the

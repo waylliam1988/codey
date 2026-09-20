@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
+import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -182,6 +185,139 @@ class ShellApprovalEpochTests(unittest.TestCase):
         self.assertEqual(len(ctx.recorded), 1)
         self.assertFalse(ctx.recorded[0]["approved"])
         submit.assert_not_called()
+
+
+class ShellStopLinearizationTests(unittest.TestCase):
+    """request_stop() and the spawn gate linearize Stop vs Allow.
+
+    Uses a real AppContext: the gate, generation, and stop flag are the
+    production objects, so these tests pin the cross-thread contract instead
+    of the FakeCtx approximation above.
+    """
+
+    def _ctx(self) -> object:
+        from codey.app import server
+
+        return server.AppContext()
+
+    def _ticket(self, ctx: object, project: str):
+        pending = {
+            "id": "shell-1",
+            "session_id": "session-1",
+            "run_id": "run-1",
+            "command": "pytest -q",
+            "cwd": ".",
+            "project": project,
+        }
+        ctx.add_pending_shell_approval("shell-1", pending)
+        claimed, ticket = ctx.claim_shell_ticket(
+            "shell-1", timeout=30, output_limit=4000
+        )
+        self.assertIsNotNone(claimed)
+        self.assertIsNotNone(ticket)
+        return ticket
+
+    def test_stop_before_execute_refuses_without_spawn(self) -> None:
+        ctx = self._ctx()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                ticket = self._ticket(ctx, td)
+                ctx.request_stop()
+                with mock.patch.object(
+                    app_services.cancellation,
+                    "start_process",
+                    side_effect=AssertionError("Popen must not start"),
+                ):
+                    result = app_services.execute_shell_ticket(ctx, ticket)
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["error"], "command stopped")
+        finally:
+            ctx.close()
+
+    def test_overlapped_stop_never_completes_successfully(self) -> None:
+        ctx = self._ctx()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                ticket = self._ticket(ctx, td)
+                proc = mock.Mock()
+                stop_seen: list[bool] = []
+
+                def _slow_spawn(*args, **kwargs):
+                    # Widen the old check->Popen window; a production Stop
+                    # (request_stop) contends on the gate from another thread.
+                    time.sleep(0.3)
+                    return proc, None
+
+                def _stop_aware_wait(proc_arg, _job, _args, _timeout):
+                    # The gate is released before waiting, so Stop always
+                    # gets in first: joining here is deadlock-free.
+                    stopper.join(timeout=10)
+                    stop_seen.append(ctx.run_registry.stop_flag.is_set())
+                    raise app_services.cancellation.TaskCancelled("stop")
+
+                stopper = threading.Thread(target=ctx.request_stop, daemon=True)
+                with (
+                    mock.patch.object(
+                        app_services.cancellation, "start_process", side_effect=_slow_spawn
+                    ) as spawn_mock,
+                    mock.patch.object(
+                        app_services.cancellation, "wait_process", side_effect=_stop_aware_wait
+                    ),
+                ):
+                    stopper.start()
+                    time.sleep(0.05)
+                    result = app_services.execute_shell_ticket(ctx, ticket)
+                    stopper.join(timeout=10)
+            # Linearization allows exactly two outcomes, both non-success:
+            # Stop wins the gate (refused before spawn) or loses it (spawned
+            # but terminated: wait observes the flag).
+            self.assertFalse(result.get("ok", False))
+            self.assertFalse(stopper.is_alive())
+            if spawn_mock.called:
+                self.assertTrue(stop_seen and stop_seen[0])
+        finally:
+            ctx.close()
+
+    def test_executor_holds_the_gate_across_check_and_spawn(self) -> None:
+        ctx = self._ctx()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                ticket = self._ticket(ctx, td)
+                entered: list[bool] = []
+                release = threading.Event()
+
+                def _gated_spawn(*args, **kwargs):
+                    entered.append(True)
+                    self.assertTrue(release.wait(timeout=10))
+                    return mock.Mock(), None
+
+                completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
+                with (
+                    mock.patch.object(
+                        app_services.cancellation, "start_process", side_effect=_gated_spawn
+                    ),
+                    mock.patch.object(
+                        app_services.cancellation, "wait_process", return_value=completed
+                    ),
+                ):
+                    worker = threading.Thread(
+                        target=app_services.execute_shell_ticket,
+                        args=(ctx, ticket),
+                        daemon=True,
+                    )
+                    worker.start()
+                    # The executor must reach the gated spawn before Stop can
+                    # interleave between the final check and Popen.
+                    deadline = time.monotonic() + 10
+                    while not entered and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue(entered, "executor never reached spawn")
+                    self.assertFalse(ctx.run_registry.stop_flag.is_set())
+                    release.set()
+                    worker.join(timeout=10)
+                    self.assertFalse(worker.is_alive())
+        finally:
+            ctx.close()
 
 
 if __name__ == "__main__":

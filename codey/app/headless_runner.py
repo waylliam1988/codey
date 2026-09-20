@@ -98,9 +98,8 @@ class HeadlessAppContext(AppContext):
             self._emit_jsonl(payload)
         if payload_event.get("type") == "shell_request":
             self.shell_rejected = True
-            self.run_registry.stop_flag.set()
             try:
-                self.expire_pending_shell_approvals()
+                self.request_stop()
             except Exception:
                 pass
             rejected = {

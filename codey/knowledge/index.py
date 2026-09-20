@@ -333,6 +333,7 @@ class KnowledgeIndex:
                 continue
             rows.append((src_id, dst_id, str(row.get("kind") or "relates")))
         with self._lock:
+            self._ensure_open_locked()
             c = self._conn
             c.execute(
                 "DELETE FROM links"

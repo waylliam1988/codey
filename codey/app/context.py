@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import tempfile
 import threading
-import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from collections import OrderedDict
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from codey.repairs.adapter_repair import AdapterRepairResult
+    from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
 
 from codey.agents.handoff import ConversationContext
 from codey.app import services as app_services
@@ -35,23 +38,14 @@ from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.store import KnowledgeStore
-from codey.providers import (
-    DEFAULT_PROVIDER_ID,
-    borrow_open_provider,
-    connect_provider,
-    provider_tab_availability,
-)
+from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers import profile_doctor
-from codey.repairs.adapter_repair import AdapterRepairResult
-from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
-from codey.repairs.self_repair_worker import run_self_repair_worker
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
-from codey.runtime.core import cancellation
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -65,26 +59,30 @@ from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
 
 
+def _provider_registry():
+    """Import the connection registry on first use, never on module import.
+
+    The facades below keep their historical module-attribute names so
+    existing ``mock.patch.object(app_context, ...)`` doubles keep working,
+    while ``import codey.app.context`` stays Playwright-free for cold start.
+    """
+    from codey.providers import registry as _registry
+
+    return _registry
+
+
+def provider_tab_availability() -> dict:
+    return _provider_registry().provider_tab_availability()
+
+
+def connect_provider(*args: object, **kwargs: object) -> object:
+    return _provider_registry().connect_provider(*args, **kwargs)
+
+
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
-PROFILE_DOCTOR_TIMEOUT = 90.0
 SSE_REPLAY_LIMIT = 512
-def _profile_doctor_timeout(deadline: float) -> float:
-    remaining = deadline - time.monotonic()
-    return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
-
-
-def _sibling_candidates(ctx: object, request_provider_id: str, deadline: float) -> Iterator[str]:
-    """Healthy sibling ids within the deadline (shared probe preamble)."""
-    supervisor = ctx.providers.supervisor
-    for provider_id in app_services.reviewer_candidates(ctx, request_provider_id, supervisor=supervisor)[:3]:
-        cancellation.check()
-        if not supervisor.is_available(provider_id):
-            continue
-        if time.monotonic() >= deadline:
-            return
-        yield provider_id
 
 
 def _close_if_discarded(store: object) -> None:
@@ -341,6 +339,8 @@ class AppContext:
 
     @property
     def self_repair(self) -> SelfRepairSupervisor:
+        from codey.repairs.self_repair import SelfRepairSupervisor
+
         with self.lock:
             if self._self_repair is None:
                 repair_runner = (
@@ -493,6 +493,25 @@ class AppContext:
         payload = self.run_registry.record_shell_result(event)
         self.emit(payload)
 
+    def request_stop(self) -> None:
+        """Linearized Stop: flag, teach cancel, and approval expiry share one
+        gate with the shell spawn path.
+
+        ``stop_flag.set()`` alone never invalidates an in-flight Allow, so it
+        must not happen outside the spawn gate: otherwise Stop can land
+        between the executor's final check and ``Popen`` and a side-effect
+        command still spawns. Every production Stop path funnels through here
+        (UI stop, headless shell-reject); the executor side holds the same
+        gate across final-check+Popen in ``services.execute_shell_ticket``.
+        """
+        with self._shell_spawn_gate:
+            self.run_registry.stop_flag.set()
+            with self.lock:
+                self.approvals.cancel_teach()
+                events = self.approvals.expire_shell_results()
+        for event in events:
+            self.record_shell_result(event)
+
     def expire_pending_shell_approvals(self) -> None:
         """Expire every pending shell approval (task stop path).
 
@@ -526,9 +545,13 @@ class AppContext:
             return self.approvals.pop_shell(approval_id)
 
     def claim_shell_ticket(self, approval_id: str, *, timeout: int, output_limit: int):
-        return app_services.mint_shell_ticket(
-            lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
-            approval_id=approval_id, timeout=timeout, output_limit=output_limit)
+        # The claim itself linearizes against Stop: without the gate here, a
+        # Stop landing between pop and the generation snapshot would mint a
+        # ticket Stop already meant to kill. Lock order is always gate->lock.
+        with self._shell_spawn_gate:
+            return app_services.mint_shell_ticket(
+                lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
+                approval_id=approval_id, timeout=timeout, output_limit=output_limit)
 
     def approval_generation(self) -> int:
         with self.lock:
@@ -729,6 +752,9 @@ class AppContext:
         return True
 
     def _run_self_repair_job(self, job: SelfRepairJob) -> AdapterRepairResult:
+        from codey.repairs.adapter_repair import AdapterRepairResult
+        from codey.repairs.self_repair_worker import run_self_repair_worker
+
         if self.state_home is None:
             return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
         return run_self_repair_worker(
@@ -858,88 +884,19 @@ class AppContext:
         self,
         request: profile_doctor.ProfileDoctorRequest,
     ) -> str | None:
-        """Try healthy sibling tabs within one bounded recovery deadline."""
-        cancellation.check()
-        deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in _sibling_candidates(self, request.provider_id, deadline):
-            helper = borrow_open_provider(provider_id, request.page)
-            if helper is None:
-                continue
-            try:
-                helper.new_chat(timeout=_profile_doctor_timeout(deadline))
-            except cancellation.TaskCancelled:
-                helper.close()
-                raise
-            except cancellation.DeadlineExceeded:
-                helper.close()
-                return None
-            except Exception:
-                helper.close()
-                continue
-            self.set_provider_session(provider_id, None)
-            try:
-                selected = profile_doctor.choose_candidate(
-                    request,
-                    lambda prompt, helper=helper: helper.send(
-                        prompt,
-                        timeout=_profile_doctor_timeout(deadline),
-                    ),
-                )
-            except cancellation.TaskCancelled:
-                raise
-            except cancellation.DeadlineExceeded:
-                return None
-            except Exception:
-                continue
-            finally:
-                helper.close()
-            if selected:
-                return selected
-        return None
+        """Try healthy sibling tabs (logic lives in sibling_probe)."""
+        from codey.app import sibling_probe
+
+        return sibling_probe.handle_profile_doctor(self, request)
 
     def handle_flow_recovery(
         self,
         request: provider_flow.FlowRecoveryRequest,
     ) -> str | None:
-        """Ask healthy siblings to choose only among fixed flow predicates."""
-        cancellation.check()
-        deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
-        for provider_id in _sibling_candidates(self, request.provider_id, deadline):
-            helper = borrow_open_provider(provider_id, request.page)
-            if helper is None:
-                continue
-            with provider_controls.suppress_assistance():
-                try:
-                    helper.new_chat(timeout=_profile_doctor_timeout(deadline))
-                except cancellation.TaskCancelled:
-                    helper.close()
-                    raise
-                except cancellation.DeadlineExceeded:
-                    helper.close()
-                    return None
-                except Exception:
-                    helper.close()
-                    continue
-                self.set_provider_session(provider_id, None)
-                try:
-                    selected = provider_flow.choose_candidate(
-                        request,
-                        lambda prompt, helper=helper: helper.send(
-                            prompt,
-                            timeout=_profile_doctor_timeout(deadline),
-                        ),
-                    )
-                except cancellation.TaskCancelled:
-                    raise
-                except cancellation.DeadlineExceeded:
-                    return None
-                except Exception:
-                    continue
-                finally:
-                    helper.close()
-            if selected:
-                return selected
-        return None
+        """Ask healthy siblings (logic lives in sibling_probe)."""
+        from codey.app import sibling_probe
+
+        return sibling_probe.handle_flow_recovery(self, request)
 
     @property
     def closed(self) -> bool:

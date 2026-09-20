@@ -45,6 +45,7 @@ class WorkerChatProvider:
         self._proc: subprocess.Popen[str] | None = None
         self._job = None
         self._responses: queue.Queue[dict] = queue.Queue(maxsize=RESPONSE_QUEUE_MAXSIZE)
+        self._response_lock = threading.Lock()
         self._dropped_responses = 0
         # Split gates: _conn_lock guards proc lifecycle only; _request_lock
         # keeps stdin single-flight. Waiting for a response holds neither the
@@ -206,27 +207,37 @@ class WorkerChatProvider:
                     continue
                 self._offer_response(payload)
 
+    def _response_gate(self) -> threading.Lock:
+        gate = getattr(self, "_response_lock", None)
+        if gate is None:
+            gate = threading.Lock()
+            self._response_lock = gate
+        return gate
+
     def _offer_response(self, payload: dict) -> None:
         """Bounded offer into _responses: newest wins, oldest drop is counted.
 
-        Single producer (this reader thread); consumers only remove, so one
-        successful eviction always frees exactly one slot for the retry.
+        A restart can leave the old reader briefly alive next to the new one,
+        so the full/get/put sequence holds the response gate: without it two
+        readers could both evict (double drop count) or both put (one newest
+        lost). Request ids still filter stale responses either way.
         """
-        if not self._responses.full():
+        with self._response_gate():
+            if not self._responses.full():
+                try:
+                    self._responses.put_nowait(payload)
+                except queue.Full:
+                    return
+                return
+            try:
+                self._responses.get_nowait()
+            except queue.Empty:
+                return
+            self._dropped_responses = getattr(self, "_dropped_responses", 0) + 1
             try:
                 self._responses.put_nowait(payload)
             except queue.Full:
                 return
-            return
-        try:
-            self._responses.get_nowait()
-        except queue.Empty:
-            return
-        self._dropped_responses = getattr(self, "_dropped_responses", 0) + 1
-        try:
-            self._responses.put_nowait(payload)
-        except queue.Full:
-            return
 
     def _record_worker_page(self, payload: dict) -> None:
         try:
@@ -236,11 +247,12 @@ class WorkerChatProvider:
         self._target_id = str(payload.get("target_id") or "")
 
     def _drain_responses(self) -> None:
-        while True:
-            try:
-                self._responses.get_nowait()
-            except queue.Empty:
-                return
+        with self._response_gate():
+            while True:
+                try:
+                    self._responses.get_nowait()
+                except queue.Empty:
+                    return
 
     def _ensure_running_conn_locked(self) -> subprocess.Popen[str]:
         """Restart a dead worker. Caller must hold the conn lock."""

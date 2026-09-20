@@ -156,19 +156,67 @@ class KnowledgeIndexCloseTests(unittest.TestCase):
                 index.clear()
             with self.assertRaises(RuntimeError):
                 index.get("missing")
+            with self.assertRaises(RuntimeError):
+                index.add_link("a", "b")
+            with self.assertRaises(RuntimeError):
+                index.replace_links_touching(["a"], [])
             index.close()  # idempotent
 
 
 class ClosureCaptureTests(unittest.TestCase):
-    def test_doctor_lambda_binds_helper(self) -> None:
-        import inspect
+    def test_each_sibling_sends_through_its_own_helper(self) -> None:
+        """Behavioral B023: the per-iteration send lambda must close over the
+        current loop helper, not the last one. Two providers are tried in
+        sequence; each helper must receive exactly its own send."""
+        from types import SimpleNamespace
 
         from codey.app import context as app_context
+        from codey.app import sibling_probe
+        from codey.providers import profile_doctor
 
-        source = inspect.getsource(app_context.AppContext.handle_profile_doctor)
-        self.assertIn("helper=helper", source)
-        flow_source = inspect.getsource(app_context.AppContext.handle_flow_recovery)
-        self.assertIn("helper=helper", flow_source)
+        helpers: dict[str, object] = {}
+
+        def _borrow(provider_id: str, _page: object):
+            helper = mock.Mock()
+            helper.send.side_effect = (
+                lambda prompt, timeout=None, _id=provider_id: f"reply-from-{_id}"
+            )
+            helpers[provider_id] = helper
+            return helper
+
+        supervisor = mock.Mock()
+        supervisor.is_available.return_value = True
+        ctx = SimpleNamespace(
+            providers=SimpleNamespace(supervisor=supervisor),
+            set_provider_session=mock.Mock(),
+        )
+        request = profile_doctor.ProfileDoctorRequest(
+            provider_id="deepseek",
+            action="send",
+            candidates=(),
+            page=mock.Mock(),
+        )
+        seen: list[str] = []
+
+        def _choose(_request, send):
+            seen.append(send("probe"))
+            return None
+
+        with (
+            mock.patch.object(
+                sibling_probe, "borrow_open_provider", side_effect=_borrow
+            ),
+            mock.patch.object(profile_doctor, "choose_candidate", side_effect=_choose),
+        ):
+            self.assertIsNone(sibling_probe.handle_profile_doctor(ctx, request))
+        # With late binding every send would hit the last loop helper; bound
+        # lambdas hit exactly their own helper, once each.
+        self.assertEqual(len(seen), 3)
+        for provider_id, helper in helpers.items():
+            helper.send.assert_called_once()
+            self.assertIn(f"reply-from-{provider_id}", seen)
+        self.assertTrue(callable(app_context.AppContext.handle_profile_doctor))
+        self.assertTrue(callable(app_context.AppContext.handle_flow_recovery))
 
     def test_mimo_lambda_binds_builtin_ready(self) -> None:
         import inspect

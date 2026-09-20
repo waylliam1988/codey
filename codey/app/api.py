@@ -9,7 +9,7 @@ from codey.app import services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
 from codey.knowledge.concepts import build_unified_research_graph
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
+from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_openai import (
     load_local_config,
     local_config_payload,
@@ -523,9 +523,7 @@ def new_chat_response(ctx: Any, body: dict) -> tuple[int, dict]:
 
 
 def stop_response(ctx: Any) -> tuple[int, dict]:
-    ctx.run_registry.stop_flag.set()
-    ctx.cancel_pending_teach()
-    ctx.expire_pending_shell_approvals()
+    ctx.request_stop()
     return 200, {"ok": True}
 
 

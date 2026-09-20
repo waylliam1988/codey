@@ -19,6 +19,7 @@ from codey.app import http_plumbing
 from codey.app import server
 from codey.app import context as app_context
 from codey.app import services as app_services
+from codey.app import sibling_probe
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, profile_doctor
@@ -3015,9 +3016,13 @@ class RunSnapshotTests(unittest.TestCase):
         store_cls.assert_called_once_with(state_home / "vault")
 
     def test_app_context_lazily_constructs_self_repair_supervisor(self) -> None:
+        from codey.repairs import self_repair as self_repair_module
+
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td) / "state"
-            with mock.patch.object(app_context, "SelfRepairSupervisor") as supervisor_cls:
+            with mock.patch.object(
+                self_repair_module, "SelfRepairSupervisor"
+            ) as supervisor_cls:
                 state = server.AppContext(state_home)
 
                 supervisor_cls.assert_not_called()
@@ -4019,7 +4024,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            app_context,
+            sibling_probe,
             "borrow_open_provider",
             side_effect=[None, helper],
         ) as borrowed:
@@ -4034,11 +4039,11 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertGreater(helper.new_chat.call_args.kwargs["timeout"], 0)
         self.assertLessEqual(
             helper.new_chat.call_args.kwargs["timeout"],
-            app_context.PROFILE_DOCTOR_TIMEOUT,
+            sibling_probe.PROFILE_DOCTOR_TIMEOUT,
         )
         helper.send.assert_called_once()
         self.assertGreater(helper.send.call_args.kwargs["timeout"], 0)
-        self.assertLessEqual(helper.send.call_args.kwargs["timeout"], app_context.PROFILE_DOCTOR_TIMEOUT)
+        self.assertLessEqual(helper.send.call_args.kwargs["timeout"], sibling_probe.PROFILE_DOCTOR_TIMEOUT)
         helper.close.assert_called_once_with()
         self.assertTrue(state.provider_session_changed("stepfun", "old-session"))
 
@@ -4057,7 +4062,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            app_context,
+            sibling_probe,
             "borrow_open_provider",
             side_effect=[first, second],
         ) as borrowed:
@@ -4084,7 +4089,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with (
-            mock.patch.object(app_context, "borrow_open_provider", return_value=helper),
+            mock.patch.object(sibling_probe, "borrow_open_provider", return_value=helper),
             mock.patch.object(
                 server.time,
                 "monotonic",
@@ -4111,7 +4116,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(app_context, "borrow_open_provider", side_effect=[first, second]):
+        with mock.patch.object(sibling_probe, "borrow_open_provider", side_effect=[first, second]):
             selected = state.handle_profile_doctor(request)
 
         self.assertEqual(selected, "c1")
@@ -4131,7 +4136,7 @@ class SessionThreadingTests(unittest.TestCase):
             (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
         )
 
-        with mock.patch.object(app_context, "borrow_open_provider", side_effect=helpers) as borrowed:
+        with mock.patch.object(sibling_probe, "borrow_open_provider", side_effect=helpers) as borrowed:
             selected = state.handle_profile_doctor(request)
 
         self.assertIsNone(selected)
@@ -4152,7 +4157,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(app_context, "borrow_open_provider") as borrowed,
+            mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
                 state.handle_profile_doctor(request)
@@ -4201,7 +4206,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             mock.patch.object(
-                app_context,
+                sibling_probe,
                 "borrow_open_provider",
                 side_effect=[first, second],
             ) as borrowed,
@@ -4234,7 +4239,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(app_context, "borrow_open_provider") as borrowed,
+            mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
                 state.handle_flow_recovery(request)

@@ -60,11 +60,9 @@ from codey.app.http_plumbing import (
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.storage.local_store import DEFAULT_STATE_HOME
-from codey.providers import connect_fresh_provider_tab
 from codey.workspace.changes import collect_changes, is_git_repository
 from codey.providers.diagnostics import capture_provider_failure
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
@@ -87,6 +85,8 @@ _STATE_LOCK = threading.Lock()
 
 
 def _build_state() -> AppContext:
+    from codey.providers.registry import connect_fresh_provider_tab
+
     state = AppContext(DEFAULT_STATE_HOME)
     state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
     state.providers.ghost_router_provider_factory = connect_fresh_provider_tab
@@ -167,6 +167,8 @@ def _run_task(
     intent: str = "auto",
     run_id: str = "",
 ) -> None:
+    from codey.operations.task_entry import TaskRunDeps, run_task_submission
+
     state = get_state()
     deps = TaskRunDeps(
         state=state,

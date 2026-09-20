@@ -2,6 +2,36 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Stop 线性化、冷启动 import、小收尾、更硬的测试（未发布）
+
+- P0 shell Stop 线性化：新增 `AppContext.request_stop()`，在
+  `_shell_spawn_gate` 内一次做完 `stop_flag.set()` + teach 取消 + approval
+  过期；`claim_shell_ticket` 也在同一门内认领。Stop 再也不能落在执行端
+  最终检查和 `Popen` 之间——之前的窗口会让副作用命令先启动、事后才杀。
+  `api.stop_response()` 与 headless shell-reject 都改走它。（第一版复用
+  `ctx.lock` 当门导致自死锁；门必须是独立锁，顺序固定 gate->lock。）
+- 冷启动 import：`services.py` / `context.py` 经模块级懒 facade 解析
+  registry（patch 点保留），静态量走 catalog，warmup `runner=None`，
+  `server._build_state()` / `_run_task` 局部 import，
+  `research/__init__.py` 改懒重导出（providers 同款）。
+  `import codey.app.server/api/context/services` 不再带 Playwright /
+  browser / registry / worker / runner（子进程实测）。
+  兄弟探针搬到 `app/sibling_probe.py`，AppContext 只留薄委托
+  （`context.py` 回到 1000 行护栏内）。
+- 小收尾：`KnowledgeIndex.replace_links_touching`（及 `add_link`）补上
+  `_ensure_open_locked()`，与其他写路径一致；`WorkerChatProvider` 的
+  `_offer_response` / `_drain_responses` 加 `_response_lock`
+ （restart 可能让新旧 reader 短暂并存）。
+- 更硬的测试：B023 改行为断言（真探针路径、每 helper 只收自己的
+  send）；lazy-state 测四个模块的干净 import；三个线性化测试钉住有序拒
+  绝、重叠永不成功、持门 spawn。9 个 server 测试与 adapter 测试跟随新
+  接缝（无兼容别名）。
+- 债务不动：`943 total (B:32, UP:220, I:376, SIM:315), 678 fixable`。
+- 验证：`ruff check codey tests`、`compileall`、`git diff --check` 通过；
+  `tests/test_architecture.py` 全绿；定向套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3868 passed, 6 skipped, 1303 subtests passed in 273.77s`）。
+
 ## Unreleased - 收敛三刀：research URL/shape 收口、ghost 存储机制、三图降级（未发布）
 
 - 新增 `research/urls.py`（仅 stdlib + `utils.refs`，toolchain/runtime 禁令

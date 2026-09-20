@@ -16,15 +16,7 @@ from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.policies.limits import REVIEW_TIMEOUT, SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
-from codey.providers import (
-    DEFAULT_PROVIDER_ID,
-    PROVIDER_LABELS,
-    borrow_open_provider,
-    connect_existing_provider,
-    connect_fresh_provider_tab,
-    provider_tab_availability,
-    warm_provider_tabs,
-)
+from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers import controls as provider_controls
 from codey.providers.capabilities import rank_providers
 from codey.research.advisors import EvidencePack, run_research_advisors as run_research_advisors_core
@@ -44,6 +36,38 @@ from codey.operations.task_context import safe_verification_candidates
 class ShellApprovalContinuationPlan:
     continuation: str
     provider_id: str
+
+
+def _provider_registry():
+    """Import the connection registry on first use, never on module import.
+
+    These facades below keep their historical module-attribute names so
+    existing ``mock.patch.object(app_services, ...)`` doubles keep working,
+    while ``import codey.app.services`` stays Playwright-free for cold start.
+    """
+    from codey.providers import registry as _registry
+
+    return _registry
+
+
+def provider_tab_availability() -> dict:
+    return _provider_registry().provider_tab_availability()
+
+
+def warm_provider_tabs(*args: object, **kwargs: object) -> dict:
+    return _provider_registry().warm_provider_tabs(*args, **kwargs)
+
+
+def connect_existing_provider(provider_id: str) -> object:
+    return _provider_registry().connect_existing_provider(provider_id)
+
+
+def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> object:
+    return _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs)
+
+
+def borrow_open_provider(provider_id: str, owner_page: object) -> object | None:
+    return _provider_registry().borrow_open_provider(provider_id, owner_page)
 
 
 def reviewer_candidates(
@@ -136,9 +160,11 @@ def provider_status_update(provider_id: str, available: bool) -> list[dict]:
     }]
 
 
-def run_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
+def run_provider_warmup(ctx: Any, runner=None) -> None:
     import time as _time
 
+    if runner is None:
+        runner = warm_provider_tabs
     try:
         raw_statuses = runner()
         _note_availability_statuses(dict(raw_statuses), _time.monotonic())
@@ -157,7 +183,7 @@ def run_provider_warmup(ctx: Any, runner=warm_provider_tabs) -> None:
             return
 
 
-def start_provider_warmup(ctx: Any, runner=warm_provider_tabs, *, delay_s: float = 0.0) -> None:
+def start_provider_warmup(ctx: Any, runner=None, *, delay_s: float = 0.0) -> None:
     """Queue warmup; serve() passes a short delay to stay off the boot path."""
     import threading as _threading
 

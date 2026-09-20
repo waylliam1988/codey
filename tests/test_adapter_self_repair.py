@@ -1158,14 +1158,14 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
         submit.assert_not_called()
 
     def test_state_self_repair_job_spawns_process_worker_with_candidates(self) -> None:
-        from codey.app import context as app_context
         from codey.app import server
+        from codey.repairs import self_repair_worker as self_repair_worker_module
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(Path(td) / "state")
             state.provider_failover_order = lambda: ("qwen", "stepfun", "deepseek")
             with mock.patch.object(
-                app_context,
+                self_repair_worker_module,
                 "run_self_repair_worker",
                 return_value=AdapterRepairResult(True, "deepseek", generation=7),
             ) as worker:

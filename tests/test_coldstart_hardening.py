@@ -209,6 +209,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._proc = None
         provider._job = None
         provider._responses = queue.Queue(maxsize=512)
+        provider._response_lock = threading.Lock()
         provider._dropped_responses = 0
         provider._lock = threading.RLock()
         provider._conn_lock = provider._lock
@@ -251,6 +252,29 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertEqual(provider._dropped_responses, 1)
         ids = sorted(item["id"] for item in list(provider._responses.queue))
         self.assertEqual(ids, ["b", "c"])
+
+    def test_concurrent_offers_keep_newest_wins_accounting(self) -> None:
+        provider = self._provider()
+        provider._responses = queue.Queue(maxsize=8)
+        provider._dropped_responses = 0
+
+        def _offer_many(base: int) -> None:
+            for index in range(50):
+                provider._offer_response({"id": f"{base}-{index}"})
+
+        threads = [
+            threading.Thread(target=_offer_many, args=(base,), daemon=True)
+            for base in range(4)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+            self.assertFalse(thread.is_alive())
+        # Every offer is either kept or counted as dropped: 4*50 total.
+        self.assertEqual(
+            provider._responses.qsize() + provider._dropped_responses, 200
+        )
 
     def test_close_never_restarts_a_dead_worker(self) -> None:
         provider = self._provider()
