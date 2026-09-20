@@ -23,6 +23,8 @@ from codey.ghost.event_log import (
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
 from codey.policies.redaction import looks_prompt_visible_secret
@@ -1257,17 +1259,11 @@ def _parse_ts(value: object) -> datetime:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)
 
 
 def _project_display_name(value: object) -> str:

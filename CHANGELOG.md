@@ -2,6 +2,49 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Frontend O(N) dedupe, durable append, delivery fail-closed (no release)
+
+- Frontend main-thread churn: per-session `eventKeys`/`toolKeys`/`terminalRunSet`
+  (`ui_state.js` non-enumerable, `hydrateSessionIndexes`) replaces
+  `messages.some(...)` in `addToSession`/`replaceSessionMessage`/`tool_started`
+  and `terminalRuns.includes` in `markTerminalRun`; long assistant messages
+  render a preview first and stream the rest via
+  `renderMarkdownChunked` (`render.js`, `requestIdleCallback`/`rAF` fallback),
+  never a full sync render before folding. `messageCopyText`/`sseEventKey`
+  moved into assets so the inline `<script>` ratchet stays at 1650.
+- `append_bytes_durable` no longer follows symlinks: `O_WRONLY|O_CREAT|O_APPEND`
+  plus `O_BINARY`/`O_NOFOLLOW` where available, pre-open `is_symlink` refusal,
+  post-open `fstat` regular-file check, `fdopen` + `fsync`. Pinned by symlink
+  refusal, open-flags, and durability tests.
+- `ensure_result_batch_intent` is fail-closed for real runs: empty delivery
+  still returns `""`, ephemeral id-less runs without sinks still return `""`,
+  but any delivery with ids requires `delivery_store`/`session_id`/`run_id`
+  and `mutations`, otherwise raises `ToolResultDeliveryError` before any
+  provider send. Pinned by the new sink-missing test.
+- `LoopStagnation.seen_info` is now `SeenInfoLRU(256)` keyed by
+  `(tool, path, sha256(model_text)[:24])` instead of full text; evicts oldest.
+- `ConversationRegistry` saves the evicted entry outside `self.lock`
+  (`_evict_oldest_if_needed` returns the detached pair, `for_session` saves
+  via `store_lock`), detached entries stay detached. Pinned by restore-after-
+  evict and save-outside-lock tests.
+- Cold start: `knowledge/note.py` lazy-loads `yaml` (`_yaml()` inside
+  `to_markdown`/`from_markdown`; `import note` no longer pulls `yaml`).
+  Static assets (`/assets/*?v=...`) now serve
+  `Cache-Control: public, max-age=31536000, immutable`; `index.html` stays
+  `no-cache`.
+- Architecture convergence (no Ghost domain change): new
+  `app/provider_services.py` owns the registry facade; `services`/`context`
+  keep thin delegates and `sibling_probe`/`server._build_state` use the single
+  entry. New `ghost/_common.py` owns `now_iso_z`/`normalize_project`/
+  `normalize_scope`; six stores delegate, `graph_primitives.now_iso`
+  delegates too. Adapter surface drops the `driver_files` /
+  `allowed_adapter_files` forwarders (callers use `adapter_repair_surface`
+  directly), locked by the new architecture test.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3910 passed, 6 skipped, 1314 subtests passed in 281.81s`).
+
 ## Unreleased - Hermetic provider tests, assistance epoch, coverage pin (no release)
 
 - `_begin_revival_send` is fail-open on store read errors (warn + `None`

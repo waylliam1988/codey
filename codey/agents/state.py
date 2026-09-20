@@ -48,9 +48,46 @@ class LoopVerification:
     default_reminded_epoch: int | None = None
 
 
+class SeenInfoLRU:
+    """Bounded dedupe for information-tool outputs.
+
+    Keys are ``(tool_name, path, sha256(model_text)[:24])`` so long model
+    outputs never accumulate in memory. Insertion-order eviction keeps the
+    working set small and cold-start free (no extra deps, no fallback).
+    """
+
+    def __init__(self, max_items: int = 256) -> None:
+        self.max_items = max(1, int(max_items))
+        self._order: dict[tuple[str, str, str], None] = {}
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._order
+
+    def __len__(self) -> int:
+        return len(self._order)
+
+    def add(self, key: tuple[str, str, str]) -> bool:
+        if key in self._order:
+            return False
+        self._order[key] = None
+        while len(self._order) > self.max_items:
+            self._order.pop(next(iter(self._order)))
+        return True
+
+    def clear(self) -> None:
+        self._order.clear()
+
+
+def seen_info_key(tool_name: str, path: str, model_text: str) -> tuple[str, str, str]:
+    import hashlib
+
+    digest = hashlib.sha256(str(model_text or "").encode("utf-8", errors="surrogatepass")).hexdigest()[:24]
+    return (str(tool_name or ""), str(path or ""), digest)
+
+
 @dataclass
 class LoopStagnation:
-    seen_info: set[tuple[str, str, str]]
+    seen_info: SeenInfoLRU = field(default_factory=SeenInfoLRU)
     count: int = 0
 
 
@@ -137,6 +174,8 @@ __all__ = [
     "LoopStagnation",
     "LoopVerification",
     "RunResult",
+    "SeenInfoLRU",
     "emit",
+    "seen_info_key",
     "snapshot",
 ]

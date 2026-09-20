@@ -65,10 +65,6 @@ class RepairPolicyResult:
     impact: tuple[str, ...] = ()
 
 
-def allowed_adapter_files(provider_id: str) -> tuple[str, ...]:
-    return adapter_repair_surface(normalize_provider_id(provider_id))
-
-
 def readonly_reference_files(provider_id: str) -> tuple[str, ...]:
     return PROVIDER_TEST_FILES.get(normalize_provider_id(provider_id), ())
 

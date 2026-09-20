@@ -16,12 +16,12 @@ from codey.agents.consensus import (
     run_project_audit as run_project_audit_core,
 )
 from codey.agents.shell_approval import render_deferred_tool_calls
+from codey.app import provider_services as _provider_services
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.policies.limits import REVIEW_TIMEOUT, SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers import controls as provider_controls
-from codey.providers.capabilities import rank_providers
 from codey.reviews.core import ReviewResult, parse_review_with_repair, render_review_prompt
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
@@ -40,126 +40,30 @@ class ShellApprovalContinuationPlan:
     provider_id: str
 
 
-def _provider_registry():
-    """Import the connection registry on first use, never on module import.
-
-    These facades below keep their historical module-attribute names so
-    existing ``mock.patch.object(app_services, ...)`` doubles keep working,
-    while ``import codey.app.services`` stays Playwright-free for cold start.
-    """
-    from codey.providers import registry as _registry
-
-    return _registry
-
-
-def provider_tab_availability() -> dict:
-    return _provider_registry().provider_tab_availability()
-
-
-def warm_provider_tabs(*args: object, **kwargs: object) -> dict:
-    return _provider_registry().warm_provider_tabs(*args, **kwargs)
-
-
-def connect_existing_provider(provider_id: str) -> object:
-    return _provider_registry().connect_existing_provider(provider_id)
-
-
-def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> object:
-    return _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs)
-
-
-def borrow_open_provider(provider_id: str, owner_page: object) -> object | None:
-    return _provider_registry().borrow_open_provider(provider_id, owner_page)
-
-
-def reviewer_candidates(
-    ctx: Any,
-    writer_id: str,
-    *,
-    supervisor: object | None = None,
-) -> tuple[str, ...]:
-    writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
-    if supervisor is None:
-        supervisor = ctx.providers.supervisor
-    candidates = tuple(
-        provider_id
-        for provider_id in PROVIDER_LABELS
-        if provider_id != writer
-        and provider_id != "local"
-        and supervisor.is_available(provider_id)
-    )
-    return rank_providers(candidates, mode="review")
+# Single entry point lives in provider_services; these stay as thin delegates
+# so existing ``mock.patch.object(app_services, ...)`` doubles keep working.
+_provider_registry = _provider_services._provider_registry
+provider_tab_availability = _provider_services.provider_tab_availability
+warm_provider_tabs = _provider_services.warm_provider_tabs
+connect_existing_provider = _provider_services.connect_existing_provider
+connect_fresh_provider_tab = _provider_services.connect_fresh_provider_tab
+borrow_open_provider = _provider_services.borrow_open_provider
+reviewer_candidates = _provider_services.reviewer_candidates
+provider_availability = _provider_services.provider_availability
+provider_availability_from_statuses = _provider_services.provider_availability_from_statuses
+provider_payload = _provider_services.provider_payload
+provider_catalog = _provider_services.provider_catalog
+provider_status_update = _provider_services.provider_status_update
+reset_provider_availability_cache = _provider_services.reset_provider_availability_cache
+_note_availability_statuses = _provider_services._note_availability_statuses
+PROVIDER_AVAILABILITY_TTL_S = _provider_services.PROVIDER_AVAILABILITY_TTL_S
+_AVAIL_LOCK = _provider_services._AVAIL_LOCK
+_AVAIL_STATUSES = _provider_services._AVAIL_STATUSES
+_AVAIL_AT = _provider_services._AVAIL_AT
 
 
 def review_label(provider_id: str) -> str:
     return PROVIDER_LABELS.get(provider_id, provider_id)
-
-
-PROVIDER_AVAILABILITY_TTL_S = 3.0
-_AVAIL_LOCK = threading.Lock()
-_AVAIL_STATUSES: dict[str, bool] = {}
-_AVAIL_AT: list[float] = [0.0]
-
-
-def _note_availability_statuses(raw: dict[str, bool], now: float) -> None:
-    with _AVAIL_LOCK:
-        _AVAIL_STATUSES.clear()
-        _AVAIL_STATUSES.update(raw)
-        _AVAIL_AT[0] = now
-
-
-def reset_provider_availability_cache() -> None:
-    """Clear the CDP availability cache; tests call this to avoid cross-test bleed."""
-    _note_availability_statuses({}, 0.0)
-
-
-def provider_availability(ctx: Any) -> dict[str, bool]:
-    import time as _time
-
-    now = _time.monotonic()
-    with _AVAIL_LOCK:
-        cached_at = _AVAIL_AT[0]
-        cached = dict(_AVAIL_STATUSES)
-    if cached and now - cached_at < PROVIDER_AVAILABILITY_TTL_S:
-        return provider_availability_from_statuses(ctx, cached)
-    raw = provider_tab_availability()
-    _note_availability_statuses(raw, now)
-    return provider_availability_from_statuses(ctx, raw)
-
-
-def provider_availability_from_statuses(
-    ctx: Any,
-    statuses: dict[str, bool],
-) -> dict[str, bool]:
-    supervisor = ctx.providers.supervisor
-    return {
-        provider_id: available and supervisor.is_available(provider_id)
-        for provider_id, available in statuses.items()
-    }
-
-
-def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
-    statuses = statuses or {}
-    return [
-        {"id": provider_id, "label": label, "available": bool(statuses.get(provider_id))}
-        for provider_id, label in PROVIDER_LABELS.items()
-    ]
-
-
-def provider_catalog() -> list[dict]:
-    """Cheap static catalog: ids + labels only, never probes CDP or network."""
-    return [
-        {"id": provider_id, "label": label}
-        for provider_id, label in PROVIDER_LABELS.items()
-    ]
-
-
-def provider_status_update(provider_id: str, available: bool) -> list[dict]:
-    return [{
-        "id": provider_id,
-        "label": PROVIDER_LABELS.get(provider_id, provider_id),
-        "available": available,
-    }]
 
 
 def run_provider_warmup(ctx: Any, runner=None) -> None:

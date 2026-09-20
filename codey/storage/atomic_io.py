@@ -114,18 +114,42 @@ def append_bytes_durable(path: str | Path, chunks: list[bytes] | tuple[bytes, ..
     """Append chunks to ``path`` and fsync before returning.
 
     Append-only logs (run ledger, ghost events, runtime session log) must
-    survive an OS crash without losing the tail: ``open("ab")`` alone only
-    guarantees process-local visibility. Callers must already hold their
-    file lock; this helper only adds durability, never locking or rotation."""
+    survive an OS crash without losing the tail. The append never follows a
+    symlink: a symlink target is rejected before and after open, and
+    ``O_NOFOLLOW`` is used where the platform provides it. Callers must
+    already hold their file lock; this helper only adds durability, never
+    locking or rotation."""
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("ab") as handle:
-        for chunk in chunks:
-            if chunk:
-                handle.write(chunk)
-        handle.flush()
-        os.fsync(handle.fileno())
+    if target.is_symlink():
+        raise OSError(errno.ELOOP, f"refusing to append through symlink: {target}")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(target, flags, 0o666)
+    try:
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            raise
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(errno.ELOOP, f"refusing to append to non-regular file: {target}")
+        with os.fdopen(fd, "ab") as handle:
+            fd = -1
+            for chunk in chunks:
+                if chunk:
+                    handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 
 def write_text_atomic(

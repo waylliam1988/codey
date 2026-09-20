@@ -154,7 +154,7 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         verification_forbidden=forbids_verification(request.task),
         progress=progress,
         verification=verification,
-        stagnation=LoopStagnation(seen_info=set()),
+        stagnation=LoopStagnation(),
         project_instructions=project_instructions,
         session_id=request.session_id,
         run_id=request.run_id,

@@ -25,6 +25,8 @@ from codey.ghost.event_log import (
 )
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
@@ -2461,13 +2463,7 @@ def _filter_values(value: object, allowed: frozenset[str]) -> set[str]:
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)
 
 
 def _project_ref(value: object) -> str:
@@ -2543,7 +2539,7 @@ def _field(value: Any, key: str) -> object:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _future_ts(now: str, seconds: int) -> str:

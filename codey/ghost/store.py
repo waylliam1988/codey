@@ -6,9 +6,10 @@ does not mark any signal as accepted long-term memory.
 
 from __future__ import annotations
 
-from datetime import datetime, UTC
 from pathlib import Path
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost.event_log import GhostEventLog
 from codey.ghost.schema import (
     SCHEMA_VERSION,
@@ -24,7 +25,7 @@ MAX_STORED_DIAGNOSTICS = 8
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 class GhostSignalStore:
@@ -164,10 +165,4 @@ def _signal_scope_match(
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)

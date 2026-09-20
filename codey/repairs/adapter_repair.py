@@ -16,10 +16,10 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.providers.diagnostics import FAILURE_READINESS_STALE, sanitize_failure_facts
 from codey.providers.worker import WorkerChatProvider
 from codey.repairs.journal import RepairJournal
+from codey.repairs.adapter_surface import adapter_repair_surface
 from codey.repairs.policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,
-    allowed_adapter_files,
     readonly_reference_files,
     validate_candidate,
 )
@@ -51,7 +51,7 @@ def run_adapter_repair(
     failure_facts: dict[str, object] | None = None,
 ) -> AdapterRepairResult:
     journal = journal or RepairJournal(state_home)
-    if not allowed_adapter_files(provider_id):
+    if not adapter_repair_surface(provider_id):
         # Fail closed before any model call: an unknown provider has no
         # repair surface, so there is nothing to sandbox and nothing to
         # install.
@@ -140,16 +140,16 @@ def _render_repair_prompt(
     failure_facts: dict[str, object] | None = None,
 ) -> str:
     files = []
-    for rel in (*allowed_adapter_files(provider_id), *readonly_reference_files(provider_id)):
+    for rel in (*adapter_repair_surface(provider_id), *readonly_reference_files(provider_id)):
         path = root / rel
         try:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             content = ""
         files.append(f"--- {rel} ---\n{content[:20_000]}")
-    allowed = ", ".join(allowed_adapter_files(provider_id))
+    allowed = ", ".join(adapter_repair_surface(provider_id))
     readonly = ", ".join(readonly_reference_files(provider_id))
-    example_path = (allowed_adapter_files(provider_id) or ("codey/provider.py",))[0]
+    example_path = (adapter_repair_surface(provider_id) or ("codey/provider.py",))[0]
     failure_context = _render_failure_context(failure_kind, failure_stage, failure_facts)
     return (
         "Repair this Codey web provider adapter in a temporary sandbox.\n"
@@ -208,7 +208,7 @@ def _apply_model_reply(provider_id: str, root: Path, reply: str) -> None:
     files = data.get("files")
     if not isinstance(files, list):
         raise ValueError("repair reply missing files list")
-    allowed = set(allowed_adapter_files(provider_id))
+    allowed = set(adapter_repair_surface(provider_id))
     for item in files:
         if not isinstance(item, dict):
             continue
@@ -243,7 +243,7 @@ def _run_static_checks(
 ) -> tuple[str, ...]:
     commands: list[tuple[str, list[str]]] = []
     python_files = [
-        rel for rel in allowed_adapter_files(provider_id) if rel.endswith(".py")
+        rel for rel in adapter_repair_surface(provider_id) if rel.endswith(".py")
     ]
     if python_files:
         commands.append(("py_compile", [sys.executable, "-B", "-m", "py_compile", *python_files]))

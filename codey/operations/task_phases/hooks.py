@@ -9,7 +9,11 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from codey.agents.shell_approval import ShellApprovalRequest
+from codey.agents.shell_approval import (
+    ShellApprovalRequest,
+    shell_command_payload,
+    shell_command_text,
+)
 from codey.operations.context import RunHooks, RunWork
 from codey.operations.project_completion_flow import (
     ProjectCompletionDeps,
@@ -127,7 +131,9 @@ def build_hooks(
         if not project:
             return
         cwd_rel = approval.cwd or "."
-        risk = classify_shell_risk(approval.command)
+        command = shell_command_text(approval.command)
+        command_fields = shell_command_payload(command)
+        risk = classify_shell_risk(command)
         approval_id = "shell_" + uuid.uuid4().hex[:12]
         deferred_tool_calls = [item.to_payload() for item in approval.deferred_calls]
         provider_label = current_provider_id() if current_provider_id is not None else ""
@@ -136,7 +142,11 @@ def build_hooks(
             "session_id": session_id,
             "project": project,
             "cwd": cwd_rel or ".",
-            "command": approval.command,
+            "command": command,
+            "command_preview": command_fields["command"],
+            "command_sha256": command_fields["command_sha256"],
+            "command_chars": command_fields["command_chars"],
+            "command_truncated": command_fields["command_truncated"],
             "risk_label": risk.label,
             "risk_title": risk.title,
             "risk_detail": risk.detail,
@@ -155,7 +165,7 @@ def build_hooks(
             "id": approval_id,
             "project": project,
             "cwd": pending["cwd"],
-            "command": approval.command,
+            **command_fields,
             "risk_label": risk.label,
             "risk_title": risk.title,
             "risk_detail": risk.detail,

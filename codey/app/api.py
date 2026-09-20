@@ -6,6 +6,7 @@ from typing import Any
 from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
+from codey.agents.shell_approval import shell_command_event_fields
 from codey.app import services
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
@@ -396,7 +397,7 @@ def _stopped_shell_denial(
         "id": approval_id,
         "approved": False,
         "status": "stopped",
-        "command": command,
+        **shell_command_event_fields(pending or {"command": command}),
         "cwd": pending["cwd"],
         "output": "Task stopped; command approval expired.",
         "exit_code": None,
@@ -427,7 +428,7 @@ def shell_approval_response(
             "session_id": session_id,
             "id": approval_id,
             "approved": False,
-            "command": command,
+            **shell_command_event_fields(pending),
             "cwd": pending["cwd"],
             "output": "Denied by user.",
             "exit_code": None,
@@ -464,7 +465,7 @@ def shell_approval_response(
         "id": approval_id,
         "approved": True,
         "status": str(result.get("status") or "exit"),
-        "command": command,
+        **shell_command_event_fields(pending or {"command": command}),
         "cwd": pending["cwd"],
         "output": result.get("output") or result.get("error") or "",
         "exit_code": result.get("exit_code"),

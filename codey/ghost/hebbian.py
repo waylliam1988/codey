@@ -32,6 +32,7 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
+from codey.ghost._common import normalize_project as _shared_normalize_project
 from codey.ghost._warnings import slice_event_warnings
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
@@ -1132,13 +1133,7 @@ def _scope_ref_for_filter(scope: str, *, project: str, session_id: str) -> str:
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)
 
 
 def _edge_key(edge: GhostEdge) -> tuple[str, str, str]:

@@ -49,10 +49,6 @@ SHARED_WEB_ADAPTER_FILES = (
 )
 
 
-def driver_files(provider_id: str) -> tuple[str, ...]:
-    return PROVIDER_DRIVER_FILES.get(normalize_provider_id(provider_id), ())
-
-
 def adapter_repair_surface(provider_id: str) -> tuple[str, ...]:
     """Every file one provider's self-repair may replace.
 
@@ -60,7 +56,7 @@ def adapter_repair_surface(provider_id: str) -> tuple[str, ...]:
     combination with a real driver surface, never alone.
     """
 
-    driver = driver_files(provider_id)
+    driver = PROVIDER_DRIVER_FILES.get(normalize_provider_id(provider_id), ())
     if not driver:
         return ()
     return (*driver, *SHARED_WEB_ADAPTER_FILES)

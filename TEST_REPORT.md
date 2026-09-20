@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## Frontend dedupe, durable append, delivery fail-closed (2026-09-20)
+
+Scope:
+
+```text
+codey/web/assets/ui_state.js:   hydrateSessionIndexes/ensure/track (Set, non-enumerable)
+codey/web/assets/render.js:     renderMarkdownChunked/renderAssistantBody/isLongMessage
+codey/web/index.html:           O(1) dedupe, preview-first, dropSessionMessages, budget 1650
+codey/storage/atomic_io.py:    append_bytes_durable O_NOFOLLOW + fstat regular check
+codey/agents/result_delivery.py: fail-closed (ephemeral bypass only when no ids/sinks)
+codey/agents/state.py:         SeenInfoLRU(256) + seen_info_key sha256[:24]
+codey/agents/tool_execution.py: use seen_info_key
+codey/agents/loop.py:          LoopStagnation() default
+codey/app/conversation_registry.py: evict-then-save outside self.lock
+codey/knowledge/note.py:       lazy _yaml()
+codey/app/http_plumbing.py:    assets immutable, index no-cache
+codey/app/provider_services.py (new): single registry entry
+codey/app/services.py/context.py/sibling_probe.py/server.py: thin delegates
+codey/ghost/_common.py (new):  now_iso_z/normalize_project/normalize_scope
+codey/ghost/*:                 six stores delegate; graph_primitives.now_iso delegates
+codey/repairs/:                drop driver_files/allowed_adapter_files forwarders
+tests:                         atomic/delivery/seen/conversation/http/architecture/ui/
+                                ledger/sandwich/server/coldstart updates + test_seen_info.py
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed)
+  `python -m compileall -q codey` (passed)
+  `git diff --check` (passed)
+  B/UP debt: zero (rules on); I/SIM unchanged
+- Targeted gates: ui/atomic/delivery/seen/conversation/http/architecture/
+  ghost/provider/adapter suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3910 passed, 6 skipped, 1314 subtests passed in 281.81s (0:04:41)`)
+  (First full run hit one flaky `test_foreign_host_header_is_rejected...`
+  `ConnectionAbortedError 10053`; single retry passed, second full run clean.)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Hermetic provider tests, assistance epoch, coverage pin (2026-09-20)
 
 Scope:

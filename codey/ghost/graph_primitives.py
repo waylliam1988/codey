@@ -43,7 +43,9 @@ def parse_ts(value: object) -> datetime:
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    from codey.ghost._common import now_iso_z
+
+    return now_iso_z()
 
 
 def decay_basis_of(

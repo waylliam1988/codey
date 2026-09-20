@@ -1391,7 +1391,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
             task="finish the task",
             session_id=self.session_id,
             run_id=self.run_id,
+            runtime_mutations=self.line,
             runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )
 
@@ -1423,7 +1425,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
             max_turns=1,
             session_id=self.session_id,
             run_id=self.run_id,
+            runtime_mutations=self.line,
             runtime_effects=self.effects,
+            tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )
 

@@ -355,7 +355,9 @@ def record_tool_outcome(
         turn_state.made_progress = True
     produced_information = outcome.ok or outcome.exit_code is not None
     if call.name in INFORMATION_TOOL_NAMES and produced_information:
-        sig = (call.name, path, model_text)
+        from codey.agents.state import seen_info_key
+
+        sig = seen_info_key(call.name, path, model_text)
         if sig not in session.stagnation.seen_info:
             session.stagnation.seen_info.add(sig)
             turn_state.made_progress = True

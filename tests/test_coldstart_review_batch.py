@@ -157,9 +157,9 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
 
     def test_provider_availability_ttl_caches_cdp_scan(self) -> None:
-        from codey.app import services as app_services
+        from codey.app import provider_services
 
-        app_services.reset_provider_availability_cache()
+        provider_services.reset_provider_availability_cache()
         with tempfile.TemporaryDirectory() as td:
             state = AppContext(td)
             try:
@@ -169,15 +169,15 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     calls.append(1)
                     return {"deepseek": True}
 
-                with mock.patch.object(app_services, "provider_tab_availability", fake_scan):
-                    first = app_services.provider_availability(state)
-                    second = app_services.provider_availability(state)
+                with mock.patch.object(provider_services, "provider_tab_availability", fake_scan):
+                    first = provider_services.provider_availability(state)
+                    second = provider_services.provider_availability(state)
             finally:
                 state.close()
         self.assertTrue(first["deepseek"])
         self.assertTrue(second["deepseek"])
         self.assertEqual(len(calls), 1)
-        app_services.reset_provider_availability_cache()
+        provider_services.reset_provider_availability_cache()
 
     def test_knowledge_read_notes_batches_single_roundtrip(self) -> None:
         from codey.knowledge.note import KnowledgeNote

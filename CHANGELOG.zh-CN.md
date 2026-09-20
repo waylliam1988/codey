@@ -2,6 +2,45 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 前端 O(N) 去重、持久化 append、delivery fail-closed（未发布）
+
+- 前端主线程 churn：每个 session 维护非持久化 `eventKeys`/`toolKeys`/
+  `terminalRunSet`（`ui_state.js`，`hydrateSessionIndexes`，不可枚举所以不进
+  `localStorage`/服务端），`addToSession`/`replaceSessionMessage`/
+  `tool_started` 不再 `messages.some(...)`，`markTerminalRun` 不再
+  `includes` 线性扫；长回复先渲染 preview，展开再经 `renderMarkdownChunked`
+  （`render.js`，`requestIdleCallback`/`rAF` 降级）分片渲染，不再先全量同步
+  渲染再折叠。`messageCopyText`/`sseEventKey` 下沉到 asset，inline
+  `<script>` 卡尺保持 1650。
+- `append_bytes_durable` 不再跟随 symlink：`O_WRONLY|O_CREAT|O_APPEND` +
+  平台有的 `O_BINARY`/`O_NOFOLLOW`，open 前 `is_symlink` 拒绝，open 后
+  `fstat` 校验 regular file，`fdopen` + `fsync`。symlink 拒绝、open flags、
+  正常 append 三个测试钉住。
+- `ensure_result_batch_intent` 对真实 run fail-closed：空 delivery 仍返回
+  `""`，无 id 无 sink 的临时内存 run 仍返回 `""`，其余只要有 delivery 就要
+  求 `delivery_store`/`session_id`/`run_id`/`mutations`，缺一直接抛
+  `ToolResultDeliveryError`，不发 provider。新增缺 sink 测试钉住。
+- `LoopStagnation.seen_info` 改为 `SeenInfoLRU(256)`，key 为
+  `(tool, path, sha256(model_text)[:24])`，不再存全文，超限驱逐最旧。
+- `ConversationRegistry` 驱逐前在 `self.lock` 外保存（`_evict` 只 detach 并
+  返回 pair，`for_session` 出锁后经 `store_lock` 保存），被驱逐对象保持
+  detach，晚写不回灌。驱逐恢复 + 出锁保存两个测试钉住。
+- 冷启动：`knowledge/note.py` 删顶层 `import yaml`，`to_markdown`/
+  `from_markdown` 内 `_yaml()` 懒加载（`import note` 不再拉 `yaml`）。
+  版本化静态资源（`/assets/*?v=...`）回
+  `Cache-Control: public, max-age=31536000, immutable`，`index.html` 保持
+  `no-cache`。
+- 架构收敛（不动 Ghost 领域）：新增 `app/provider_services.py` 做 registry
+  单一入口，`services`/`context` 只留薄委托，`sibling_probe`/
+  `server._build_state` 走单入口。新增 `ghost/_common.py` 收
+  `now_iso_z`/`normalize_project`/`normalize_scope`，六个 store 只留委托，
+  `graph_primitives.now_iso` 也委托过去。Adapter 删 `driver_files`/
+  `allowed_adapter_files` 纯转发（直调 `adapter_repair_surface`），架构测试
+  锁住 surface。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3910 passed, 6 skipped, 1314 subtests passed in 281.81s`）。
+
 ## Unreleased - Provider 测试隔离、assistance epoch、coverage 钉子（未发布）
 
 - `_begin_revival_send` 读 store 失败时 fail-open（warn + `None` recipe），

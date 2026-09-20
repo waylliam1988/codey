@@ -33,6 +33,41 @@ class ConversationRegistryTests(unittest.TestCase):
         self.assertEqual(set(registry.contexts), {"chat-3", "chat-1"})
         self.assertEqual(fresh.snapshot.goal, "")
 
+    def test_eviction_saves_last_state_and_stale_writes_do_not_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            registry = ConversationRegistry(td, max_states=2)
+            old = registry.for_session("chat-1")
+            old.update_snapshot(ConversationSnapshot(mode="chat", goal="keep me"))
+            registry.for_session("chat-2")
+            # Evict chat-1; the pre-evict state must be durable.
+            registry.for_session("chat-3")
+
+            # Detached: late writes must not repopulate the store.
+            self.assertIsNone(old.on_change)
+            old.update_snapshot(ConversationSnapshot(mode="chat", goal="stale"))
+
+            fresh = registry.for_session("chat-1")
+
+        self.assertEqual(fresh.snapshot.goal, "keep me")
+
+    def test_evict_save_runs_outside_registry_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            registry = ConversationRegistry(td, max_states=1)
+            registry.for_session("chat-1").update_snapshot(
+                ConversationSnapshot(mode="chat", goal="keep me")
+            )
+            real_save = registry.store.save
+            seen_locked: list[bool] = []
+
+            def _probing_save(session_id: str, context) -> None:
+                seen_locked.append(registry.lock.locked())
+                return real_save(session_id, context)
+
+            registry.store.save = _probing_save  # type: ignore[method-assign]
+            registry.for_session("chat-2")
+
+        self.assertEqual(seen_locked, [False])
+
     def test_forget_removes_store_and_detaches_callback(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             registry = ConversationRegistry(td, max_states=4)

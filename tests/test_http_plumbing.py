@@ -43,9 +43,10 @@ class HttpPlumbingTests(unittest.TestCase):
             http_plumbing.send_file(third, path, "application/javascript")
 
         self.assertEqual(first.status, 200)
-        self.assertEqual(first.sent_headers["Cache-Control"], "no-cache")
+        self.assertEqual(first.sent_headers["Cache-Control"], "public, max-age=31536000, immutable")
         self.assertEqual(first.wfile.getvalue(), b"console.log('one');")
         self.assertEqual(second.status, 304)
+        self.assertEqual(second.sent_headers["Cache-Control"], "public, max-age=31536000, immutable")
         self.assertEqual(second.sent_headers["Content-Length"], "0")
         self.assertEqual(second.wfile.getvalue(), b"")
         self.assertEqual(third.status, 200)
@@ -67,9 +68,11 @@ class HttpPlumbingTests(unittest.TestCase):
                 http_plumbing.send_index(second)
 
         self.assertEqual(first.status, 200)
+        self.assertEqual(first.sent_headers["Cache-Control"], "no-cache")
         self.assertIn(__version__.encode("utf-8"), first.wfile.getvalue())
         self.assertNotIn(b"__CODEY_VERSION__", first.wfile.getvalue())
         self.assertEqual(second.status, 304)
+        self.assertEqual(second.sent_headers["Cache-Control"], "no-cache")
         self.assertEqual(second.wfile.getvalue(), b"")
 
 

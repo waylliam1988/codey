@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 
@@ -10,6 +11,8 @@ from codey.runtime.core.models import ToolCall
 
 MAX_DEFERRED_TOOL_CALLS = 8
 MAX_DEFERRED_TEXT_CHARS = 240
+MAX_APPROVAL_COMMAND_CHARS = 1_000
+TRUNCATED_COMMAND_MARKER = "\n[truncated; command_sha256={digest}]"
 
 
 @dataclass(frozen=True)
@@ -43,7 +46,7 @@ class ShellApprovalRequest:
         deferred = tuple(self.deferred_calls[:MAX_DEFERRED_TOOL_CALLS])
         return {
             "cwd": _bounded_text(self.cwd or ".", MAX_DEFERRED_TEXT_CHARS),
-            "command": _bounded_text(self.command, MAX_DEFERRED_TEXT_CHARS),
+            **shell_command_payload(self.command),
             "deferred_tool_count": len(self.deferred_calls),
             "deferred_tool_calls": [item.to_payload() for item in deferred],
         }
@@ -88,11 +91,88 @@ def _render_deferred_tool_call(row: Mapping[str, object]) -> str:
     return " ".join(parts)
 
 
+def shell_command_payload(
+    command: object,
+    *,
+    limit: int = MAX_APPROVAL_COMMAND_CHARS,
+) -> dict[str, object]:
+    """Bounded approval-card command plus full-text identity metadata."""
+
+    full = shell_command_text(command)
+    digest = _sha256_text(full)
+    truncated = len(full) > max(0, int(limit))
+    return {
+        "command": _bounded_command_text(full, limit, digest=digest),
+        "command_sha256": digest,
+        "command_chars": len(full),
+        "command_truncated": truncated,
+    }
+
+
+def shell_command_event_fields(
+    record: Mapping[str, object],
+    *,
+    limit: int = MAX_APPROVAL_COMMAND_CHARS,
+) -> dict[str, object]:
+    """Return event-safe command fields from a pending approval record.
+
+    New pending records carry ``command_preview`` from the original full
+    command. Legacy/test records may only carry ``command``; bound them here
+    so any event path remains safe by default.
+    """
+
+    digest = str(record.get("command_sha256") or "").strip().lower()
+    has_digest = _is_sha256_hex(digest)
+    preview = str(record.get("command_preview") or "")
+    if not preview and has_digest:
+        preview = _bounded_command_text(
+            str(record.get("command") or ""),
+            limit,
+            digest=digest,
+        )
+    if preview:
+        payload: dict[str, object] = {"command": preview}
+        if has_digest:
+            payload["command_sha256"] = digest
+        chars = _nonnegative_int(record.get("command_chars"))
+        if chars:
+            payload["command_chars"] = chars
+        if "command_truncated" in record:
+            payload["command_truncated"] = bool(record.get("command_truncated"))
+        else:
+            payload["command_truncated"] = len(str(record.get("command") or "")) > limit
+        return payload
+    return shell_command_payload(record.get("command"), limit=limit)
+
+
+def shell_command_text(command: object) -> str:
+    return str(command or "").strip()
+
+
 def _bounded_text(value: object, limit: int) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
         return text
     return text[:limit].rstrip()
+
+
+def _bounded_command_text(text: str, limit: int, *, digest: str) -> str:
+    if limit <= 0:
+        return ""
+    if len(text) <= limit:
+        return text
+    marker = TRUNCATED_COMMAND_MARKER.format(digest=digest)
+    if len(marker) >= limit:
+        return marker[:limit]
+    return text[: limit - len(marker)].rstrip() + marker
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()
+
+
+def _is_sha256_hex(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
 
 
 def _nonnegative_int(value: object) -> int:
@@ -107,7 +187,11 @@ def _nonnegative_int(value: object) -> int:
 
 __all__ = [
     "DeferredToolCall",
+    "MAX_APPROVAL_COMMAND_CHARS",
     "ShellApprovalRequest",
     "deferred_tool_call_from_call",
     "render_deferred_tool_calls",
+    "shell_command_event_fields",
+    "shell_command_payload",
+    "shell_command_text",
 ]

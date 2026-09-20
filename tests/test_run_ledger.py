@@ -270,7 +270,7 @@ class RunLedgerStoreTests(unittest.TestCase):
     def test_append_failure_disables_writer_without_raising(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             writer = RunLedgerWriter(Path(td) / "ledger.jsonl", run_id="run", session_id="session")
-            with mock.patch.object(Path, "open", side_effect=OSError("no disk")):
+            with mock.patch("codey.storage.atomic_io.os.open", side_effect=OSError("no disk")):
                 writer.append("info", text="fails")
                 writer.append("info", text="ignored")
 

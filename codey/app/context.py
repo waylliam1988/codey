@@ -59,24 +59,13 @@ from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
 
 
-def _provider_registry():
-    """Import the connection registry on first use, never on module import.
+from codey.app import provider_services as _provider_services
 
-    The facades below keep their historical module-attribute names so
-    existing ``mock.patch.object(app_context, ...)`` doubles keep working,
-    while ``import codey.app.context`` stays Playwright-free for cold start.
-    """
-    from codey.providers import registry as _registry
-
-    return _registry
-
-
-def provider_tab_availability() -> dict:
-    return _provider_registry().provider_tab_availability()
-
-
-def connect_provider(*args: object, **kwargs: object) -> object:
-    return _provider_registry().connect_provider(*args, **kwargs)
+# Single entry point lives in provider_services; these stay as thin delegates
+# so existing ``mock.patch.object(app_context, ...)`` doubles keep working.
+_provider_registry = _provider_services._provider_registry
+provider_tab_availability = _provider_services.provider_tab_availability
+connect_provider = _provider_services.connect_provider
 
 
 REVIEW_FIX_TURNS = 12

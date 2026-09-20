@@ -26,15 +26,27 @@ def ensure_result_batch_intent(
     turn: int,
 ) -> str:
     """Find existing matching batch intent or record durable batch intent (fail-closed)."""
+    if not turn_state.delivery_items:
+        return ""
     delivery_store = session.tool_result_delivery
     mutations = session.runtime_mutations
     if (
         delivery_store is None
-        or not session.session_id
-        or not session.run_id
-        or not turn_state.delivery_items
+        and mutations is None
+        and not session.session_id
+        and not session.run_id
     ):
+        # Ephemeral in-memory runs (unit tests, ad-hoc FakeProvider loops):
+        # no ids and no sinks, so there is nothing durable to preserve.
         return ""
+    if delivery_store is None:
+        raise ToolResultDeliveryError(
+            f"turn {turn} has delivery items but no durable delivery store"
+        )
+    if not session.session_id or not session.run_id:
+        raise ToolResultDeliveryError(
+            f"turn {turn} has delivery items but missing session_id/run_id"
+        )
 
     raw_items: list[DeliveryBatchItem] = []
     for item in turn_state.delivery_items:
@@ -81,7 +93,9 @@ def ensure_result_batch_intent(
             # may record a fresh batch for recovery tracking.
 
     if mutations is None:
-        return ""
+        raise ToolResultDeliveryError(
+            f"turn {turn} has delivery items but no runtime mutations sink"
+        )
     batch_id = new_batch_id(session.run_id, turn)
     intent = DeliveryBatchIntent(
         batch_id=batch_id,

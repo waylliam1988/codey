@@ -16,6 +16,7 @@ from unittest import mock
 from codey import __version__
 from codey.app import api as app_api
 from codey.app import http_plumbing
+from codey.app import provider_services as provider_services
 from codey.app import server
 from codey.app import context as app_context
 from codey.app import services as app_services
@@ -31,6 +32,7 @@ from codey.runtime.observe.events import RunEvent, run_event_payload, run_event_
 from codey.agents.handoff import ConversationSnapshot
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.runtime.core.models import ToolCall
+from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
@@ -579,16 +581,16 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(payload, [{"id": "deepseek", "label": "DeepSeek", "available": True}])
 
     def test_provider_availability_reads_cdp_tabs_without_connecting(self) -> None:
-        app_services.reset_provider_availability_cache()
+        provider_services.reset_provider_availability_cache()
         with (
             mock.patch.object(
-                app_services,
+                provider_services,
                 "provider_tab_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ) as detected,
-            mock.patch.object(app_services, "connect_existing_provider") as connected,
+            mock.patch.object(provider_services, "connect_existing_provider") as connected,
         ):
-            statuses = app_services.provider_availability(server.AppContext())
+            statuses = provider_services.provider_availability(server.AppContext())
 
         self.assertEqual(
             statuses,
@@ -598,7 +600,7 @@ class ProviderStatusTests(unittest.TestCase):
         connected.assert_not_called()
 
     def test_health_filter_excludes_open_provider_from_helpers(self) -> None:
-        app_services.reset_provider_availability_cache()
+        provider_services.reset_provider_availability_cache()
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             state.providers.supervisor.record_failure(
@@ -616,7 +618,7 @@ class ProviderStatusTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(
-                    app_services,
+                    provider_services,
                     "provider_tab_availability",
                     return_value={
                         "deepseek": True,
@@ -626,8 +628,8 @@ class ProviderStatusTests(unittest.TestCase):
                     },
                 ),
             ):
-                statuses = app_services.provider_availability(state)
-                reviewers = app_services.reviewer_candidates(state, "deepseek")
+                statuses = provider_services.provider_availability(state)
+                reviewers = provider_services.reviewer_candidates(state, "deepseek")
 
         self.assertFalse(statuses["qwen"])
         self.assertNotIn("qwen", reviewers)
@@ -3397,6 +3399,40 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
         self.assertEqual(submit.call_args.args[5], app_services.DEFAULT_PROVIDER_ID)
 
+    def test_shell_approval_response_bounds_legacy_pending_command_event(self) -> None:
+        state = server.AppContext()
+        command = "python -c \"print('" + ("x" * 1600) + "')\""
+        with tempfile.TemporaryDirectory() as td:
+            state.add_pending_shell_approval("shell-1", {
+                "id": "shell-1",
+                "session_id": "session-1",
+                "run_id": "run-1",
+                "project": td,
+                "command": command,
+                "cwd": ".",
+                "continue_after": False,
+            })
+            with mock.patch.object(app_services, "execute_shell_ticket", return_value={
+                "ok": True,
+                "exit_code": 0,
+                "output": "ok",
+                "truncated": False,
+            }) as execute:
+                status, payload = app_api.shell_approval_response(
+                    state,
+                    {"id": "shell-1", "approved": True},
+                    submit_task_after_slot_release=mock.Mock(),
+                )
+
+        event = payload["event"]
+        ticket = execute.call_args.args[1]
+        self.assertEqual(status, 200)
+        self.assertEqual(ticket.command, command)
+        self.assertLessEqual(len(event["command"]), MAX_APPROVAL_COMMAND_CHARS)
+        self.assertTrue(event["command_truncated"])
+        self.assertRegex(event["command_sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn("[truncated; command_sha256=", event["command"])
+
     def test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks(self) -> None:
         active = app_context.RunSnapshot(
             run_id="run-1",
@@ -4663,6 +4699,35 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(shell_event["risk_label"], "dependency_install")
         self.assertEqual(shell_event["risk_title"], "Dependency install")
         self.assertIn("install scripts", shell_event["risk_detail"])
+
+    def test_shell_request_bounds_command_preview_and_carries_full_hash(self) -> None:
+        state = server.AppContext()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        command = "python -c \"print('" + ("x" * 1600) + "')\""
+        provider.send.return_value = json.dumps({
+            "tool": "shell",
+            "args": {"path": ".", "command": command},
+        })
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+        ):
+            server._run_task("session-1", td, "Run long command", 8, False, "deepseek")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        shell_event = next(event for event in emitted if event["type"] == "shell_request")
+        self.assertLessEqual(len(shell_event["command"]), MAX_APPROVAL_COMMAND_CHARS)
+        self.assertTrue(shell_event["command_truncated"])
+        self.assertRegex(shell_event["command_sha256"], r"^[0-9a-f]{64}$")
+        self.assertIn("[truncated; command_sha256=", shell_event["command"])
 
     def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
         state = server.AppContext()

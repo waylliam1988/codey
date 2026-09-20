@@ -106,13 +106,15 @@ def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> No
 
 
 def send_file(handler: BaseHTTPRequestHandler, path: Path, ctype: str) -> None:
+    # Version-pinned assets (/assets/*?v=__CODEY_VERSION__): immutable for a year.
+    # index.html itself stays no-cache via send_index().
     entry = _cached_file(path, transform_name="raw")
     if _request_etag_matches(handler, entry.etag):
-        _send_not_modified(handler, entry.etag)
+        _send_not_modified(handler, entry.etag, immutable=True)
         return
     handler.send_response(200)
     handler.send_header("Content-Type", ctype)
-    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("Cache-Control", "public, max-age=31536000, immutable")
     handler.send_header("ETag", entry.etag)
     handler.send_header("Content-Length", str(len(entry.body)))
     handler.end_headers()
@@ -183,9 +185,12 @@ def _request_etag_matches(handler: BaseHTTPRequestHandler, etag: str) -> bool:
     return any(item.strip() in {"*", etag} for item in header.split(","))
 
 
-def _send_not_modified(handler: BaseHTTPRequestHandler, etag: str) -> None:
+def _send_not_modified(handler: BaseHTTPRequestHandler, etag: str, *, immutable: bool = False) -> None:
     handler.send_response(304)
-    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header(
+        "Cache-Control",
+        "public, max-age=31536000, immutable" if immutable else "no-cache",
+    )
     handler.send_header("ETag", etag)
     handler.send_header("Content-Length", "0")
     handler.end_headers()

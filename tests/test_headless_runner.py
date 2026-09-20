@@ -8,6 +8,7 @@ from unittest import mock
 
 from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.runner import RunResult
+from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
 from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, headless_event_payload, run_headless
 from codey.runtime.core.operation_state import RuntimeOperationStore
@@ -195,6 +196,41 @@ class HeadlessRunnerTests(unittest.TestCase):
         rejected = next(row for row in rows if row["type"] == "shell_rejected")
         self.assertEqual(rejected["reason"], "headless_default_deny")
         self.assertEqual(rejected["command"], "python setup.py install")
+
+    def test_shell_rejected_bounds_command_preview_and_keeps_full_hash(self) -> None:
+        rows: list[dict[str, object]] = []
+        command = "python -c \"print('" + ("x" * 1600) + "')\""
+
+        def fake_agent(request: AgentRequest):
+            assert request.on_shell_request is not None
+            request.on_shell_request(ShellApprovalRequest(
+                cwd=".",
+                command=command,
+            ))
+            return RunResult("shell command requires approval", "approval", 1)
+
+        with tempfile.TemporaryDirectory() as td:
+            result = run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="run long shell",
+                    provider_id="qwen",
+                    max_turns=3,
+                    session_id="session-1",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=rows.append,
+                agent_run=fake_agent,
+                collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+
+        self.assertEqual(result.exit_code, 1)
+        rejected = next(row for row in rows if row["type"] == "shell_rejected")
+        self.assertLessEqual(len(str(rejected["command"])), MAX_APPROVAL_COMMAND_CHARS)
+        self.assertTrue(rejected["command_truncated"])
+        self.assertRegex(str(rejected["command_sha256"]), r"^[0-9a-f]{64}$")
+        self.assertIn("[truncated; command_sha256=", str(rejected["command"]))
 
     def test_readonly_planning_uses_readonly_profile_without_change_tracker(self) -> None:
         seen: dict[str, object] = {}

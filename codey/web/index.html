@@ -538,16 +538,16 @@ function statusRow(prefix, text, opts = {}) {
   return div;
 }
 
-function messageCopyText(m) {
-  return m && typeof m.text === 'string' ? m.text : '';
-}
 // Markdown / copy / tool-line helpers live in /assets/render.js (window.CodeyRender).
+const messageCopyText = window.CodeyRender.messageCopyText;
 const copyText = window.CodeyRender.copyText;
 const addMessageCopyButton = window.CodeyRender.addMessageCopyButton;
 const renderMarkdown = window.CodeyRender.renderMarkdown;
 const FOLDABLE_TOOL_KINDS = window.CodeyRender.FOLDABLE_TOOL_KINDS;
 const standaloneToolEl = window.CodeyRender.standaloneToolEl;
 const appendOrFoldTool = window.CodeyRender.appendOrFoldTool;
+const hydrateSessionIndexes = window.CodeyUiState.hydrateSessionIndexes;
+const ensureSessionIndexes = window.CodeyUiState.ensureSessionIndexes;
 
 function appendMessageNode(chat, m) {
   if (m.type === 'user') {
@@ -577,15 +577,13 @@ function appendMessageNode(chat, m) {
     div.appendChild(label);
     const body = document.createElement('div');
     body.className = 'body md';
-    renderMarkdown(body, m.text);
     div.appendChild(body);
-    if (m.text.split('\n').length > 6 || m.text.length > 400) {
-      const toggle = document.createElement('div');
-      toggle.className = 'toggle'; toggle.textContent = 'Collapse';
-      toggle.onclick = () => {
-        const collapsed = body.classList.toggle('collapsed');
-        toggle.textContent = collapsed ? 'Expand' : 'Collapse';
-      };
+    const toggle = document.createElement('div');
+    toggle.className = 'toggle';
+    const ctl = window.CodeyRender.renderAssistantBody(body, m.text || '', toggle);
+    if (ctl.long) {
+      toggle.textContent = 'Expand';
+      toggle.onclick = () => { const on = ctl.isExpanded(); if (on) ctl.collapse(); else ctl.expand(); toggle.textContent = on ? 'Expand' : 'Collapse'; };
       div.appendChild(toggle);
     }
     addMessageCopyButton(div, messageCopyText(m));
@@ -677,6 +675,12 @@ function appendMessageNode(chat, m) {
     const cmd = document.createElement('div');
     cmd.className = 'shell-command';
     cmd.textContent = '$ ' + (m.command || '');
+    const commandHash = m.commandSha256 || '';
+    const commandIntegrity = document.createElement('div');
+    commandIntegrity.className = 'sc-note';
+    commandIntegrity.textContent = m.commandTruncated && commandHash
+      ? `Command preview truncated · full sha256 ${commandHash}`
+      : '';
     const error = document.createElement('div');
     error.className = 'sc-error';
     error.hidden = true;
@@ -693,6 +697,7 @@ function appendMessageNode(chat, m) {
     actions.append(deny, approve);
     card.append(title, meta);
     if (note.textContent) card.appendChild(note);
+    if (commandIntegrity.textContent) card.appendChild(commandIntegrity);
     card.append(cmd, error, actions);
     div.appendChild(card);
     chat.appendChild(div);
@@ -1034,10 +1039,7 @@ function setStatus(text, kind) {
   }
 }
 
-function sseEventKey(data, fallback = '') {
-  const eventId = Number(data.event_id || 0);
-  return Number.isFinite(eventId) && eventId > 0 ? `sse:${eventId}` : fallback;
-}
+const sseEventKey = (data, fallback = '') => window.CodeySse.eventKey(data, fallback);
 
 function handleServerEvent(data) {
   const runId = (data.run_id || '').toString();
@@ -1068,7 +1070,7 @@ function handleServerEvent(data) {
     const rawToolId = (data.tool_id || '').toString();
     const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
     const s = sessions.find(x => x.id === sid);
-    if (s && toolKey && s.messages.some(item => item.toolKey === toolKey)) return;
+    if (s && toolKey) { ensureSessionIndexes(s); if (s._toolKeys.has(toolKey)) return; }
     addToSession(sid, {
       type: 'tool_pending',
       toolKey,
@@ -1234,6 +1236,9 @@ function handleServerEvent(data) {
       type: 'shell_request',
       id: data.id,
       command: data.command,
+      commandSha256: data.command_sha256,
+      commandChars: data.command_chars,
+      commandTruncated: !!data.command_truncated,
       cwd: data.cwd,
       project: data.project,
       riskLabel: data.risk_label,
@@ -1252,6 +1257,9 @@ function handleServerEvent(data) {
       approved: !!data.approved,
       shellStatus: data.status || '',
       command: data.command,
+      commandSha256: data.command_sha256,
+      commandChars: data.command_chars,
+      commandTruncated: !!data.command_truncated,
       cwd: data.cwd,
       output: data.output,
       exitCode: data.exit_code,
@@ -1357,9 +1365,11 @@ function connectEvents() {
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
   if (!s) return false;
-  if (m.eventKey && s.messages.some(item => item.eventKey === m.eventKey)) return false;
+  ensureSessionIndexes(s);
+  if (m.eventKey && s._eventKeys.has(m.eventKey)) return false;
   if ((m.type === 'limit' || m.type === 'pause' || m.type === 'teach' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
   s.messages.push(m);
+  window.CodeyUiState.trackSessionMessage(s, m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
   return true;
@@ -1368,10 +1378,12 @@ function addToSession(sid, m) {
 function replaceSessionMessage(sid, predicate, message) {
   const s = sessions.find(x => x.id === sid);
   if (!s) return false;
-  if (message.eventKey && s.messages.some(item => item.eventKey === message.eventKey)) return false;
+  ensureSessionIndexes(s);
+  if (message.eventKey && s._eventKeys.has(message.eventKey)) return false;
   const index = s.messages.findIndex(predicate);
   if (index < 0) return false;
   s.messages[index] = message;
+  window.CodeyUiState.trackSessionMessage(s, message);
   persistActive();
   if (sid === activeId) {
     const existingNode = message.toolKey && Array.from($('chat').children).find(el => el.dataset && el.dataset.toolKey === message.toolKey);
@@ -1393,32 +1405,29 @@ function markTerminalRun(sid, runId) {
   if (!runId) return true;
   const s = sessions.find(x => x.id === sid);
   if (!s) return false;
-  if (s.terminalRuns.includes(runId)) return false;
+  ensureSessionIndexes(s);
+  if (s._terminalRunSet.has(runId)) return false;
   s.terminalRuns = [...s.terminalRuns, runId].slice(-32);
+  hydrateSessionIndexes(s);
   persistActive();
   return true;
 }
 
-function removeTeachMessage(sessionId, teachId) {
+function dropSessionMessages(sessionId, pred) {
   const s = sessions.find(x => x.id === sessionId);
   if (!s) return;
   const before = s.messages.length;
-  s.messages = s.messages.filter(m => !(m.type === 'teach' && (!teachId || m.id === teachId)));
-  if (s.messages.length !== before) {
-    persistActive();
-    if (sessionId === activeId) renderChat();
-  }
+  s.messages = s.messages.filter((m) => !pred(m));
+  if (s.messages.length === before) return;
+  hydrateSessionIndexes(s);
+  persistActive();
+  if (sessionId === activeId) renderChat();
 }
-
+function removeTeachMessage(sessionId, teachId) {
+  dropSessionMessages(sessionId, (m) => m.type === 'teach' && (!teachId || m.id === teachId));
+}
 function removeShellRequest(sessionId, approvalId) {
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return;
-  const before = s.messages.length;
-  s.messages = s.messages.filter(m => !(m.type === 'shell_request' && m.id === approvalId));
-  if (s.messages.length !== before) {
-    persistActive();
-    if (sessionId === activeId) renderChat();
-  }
+  dropSessionMessages(sessionId, (m) => m.type === 'shell_request' && m.id === approvalId);
 }
 
 function addSendError(sessionId, eventKey = '', runId = '') {

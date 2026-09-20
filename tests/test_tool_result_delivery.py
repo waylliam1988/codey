@@ -1511,7 +1511,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
@@ -1601,7 +1601,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
@@ -1670,7 +1670,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
@@ -1690,6 +1690,87 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         )
         with self.assertRaises(ToolResultDeliveryError):
             ensure_result_batch_intent(session, turn_state, 1)
+
+    def test_ensure_result_batch_intent_fails_closed_without_durable_sink(self) -> None:
+        provider = MockDeliveryProvider()
+        codec = JsonToolCodec()
+        base_kwargs: dict = {
+            "request": AgentRequest(provider=provider, project=self.project_dir, task="t", codec=codec),
+            "provider": provider,
+            "project": self.project_dir,
+            "user_task": "t",
+            "codec": codec,
+            "max_turns": 5,
+            "stagnant_turns": 3,
+            "on_event": lambda e: None,
+            "on_shell_request": None,
+            "stop_flag": None,
+            "fresh_chat": False,
+            "strict_fresh_chat": False,
+            "change_tracker": None,
+            "conversation": None,
+            "active_provider_id": "mock",
+            "handoff": "",
+            "project_facts": "",
+            "research_context": "",
+            "project_map": "",
+            "project_config_warnings": "",
+            "work_checkpoint": "",
+            "verification_candidates": (),
+            "verification_candidate_loader": None,
+            "coding_context_enabled": True,
+            "ghost_directive": "",
+            "ghost_continuity": "",
+            "completion_repair_context": "",
+            "completion_repair_context_payload": None,
+            "profile": profile_for_name("coding_writer"),
+            "tool_fns": DEFAULT_TOOL_FNS,
+            "trace_recorder": None,
+            "trace": Mock(),
+            "system_prompt_text": "",
+            "project_text": str(self.project_dir),
+            "verification_required": False,
+            "verification_forbidden": True,
+            "progress": LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
+            "verification": LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
+            "stagnation": LoopStagnation(),
+            "project_instructions": [],
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+        }
+
+        def _turn_state() -> TurnState:
+            return TurnState(
+                results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
+                delivery_items=[
+                    ToolResultDeliveryItem(turn=1, tool_index=0, tool_name="read", ref="ref-1")
+                ],
+            )
+
+        # Empty delivery is still a no-op (no provider send needed).
+        empty_session = AgentLoopSession(
+            **base_kwargs, runtime_mutations=None, runtime_effects=self.effects, tool_result_delivery=None
+        )
+        self.assertEqual(
+            ensure_result_batch_intent(empty_session, TurnState(results=[], delivery_items=[]), 1), ""
+        )
+        # Any real delivery without a sink must fail closed, never send.
+        for kwargs in (
+            {"runtime_mutations": None, "runtime_effects": self.effects, "tool_result_delivery": self.delivery},
+            {"runtime_mutations": self.line, "runtime_effects": self.effects, "tool_result_delivery": None},
+            {
+                "runtime_mutations": self.line,
+                "runtime_effects": self.effects,
+                "tool_result_delivery": self.delivery,
+                "session_id": "",
+            },
+        ):
+            session = AgentLoopSession(**(base_kwargs | kwargs))
+            with self.assertRaises(ToolResultDeliveryError):
+                ensure_result_batch_intent(session, _turn_state(), 1)
+            with self.assertRaises(ToolResultDeliveryError):
+                deliver_turn_results(session, _turn_state(), 1)
+        self.assertEqual(len(provider.prompts), 0)
 
     def test_ensure_result_batch_intent_rejects_digest_mismatch_for_same_turn(self) -> None:
         # Pre-record batch intent for turn 1 with tool "read"
@@ -1758,7 +1839,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
@@ -1837,7 +1918,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
@@ -2506,7 +2587,7 @@ class AgentPromptParityTests(unittest.TestCase):
             verification_forbidden=True,
             progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
             verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(seen_info=set()),
+            stagnation=LoopStagnation(),
             project_instructions=[],
         )
 

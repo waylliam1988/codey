@@ -59,6 +59,11 @@ function ingestServerEvent(data) {
   deps.handleServerEvent(data);
 }
 
+function eventKey(data, fallback = '') {
+  const eventId = Number((data && data.event_id) || 0);
+  return Number.isFinite(eventId) && eventId > 0 ? `sse:${eventId}` : fallback;
+}
+
 async function acceptRunResponse(response, sessionId) {
   const data = await response.json();
   const runId = data.run_id || null;
@@ -113,5 +118,6 @@ window.CodeySse = {
   connect,
   reconcileRunState,
   acceptRunResponse,
+  eventKey,
 };
 })();

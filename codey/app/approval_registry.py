@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.run_registry import RunSnapshot
 
 
@@ -88,7 +89,7 @@ class ApprovalRegistry:
                 "session_id": pending.get("session_id") or "",
                 "id": pending.get("id") or "",
                 "approved": False,
-                "command": pending.get("command") or "",
+                **shell_command_event_fields(pending),
                 "cwd": pending.get("cwd") or "",
                 "output": output,
                 "exit_code": None,

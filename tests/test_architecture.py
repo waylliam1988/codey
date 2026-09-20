@@ -1818,6 +1818,47 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
 
+    def test_adapter_repair_surface_is_closed_and_has_no_forwarders(self) -> None:
+        # Security boundary: repair may only touch one provider driver plus
+        # the shared web files. New files need an explicit test update, and
+        # pure forwarder helpers must not come back.
+        from codey.repairs.adapter_surface import (
+            PROVIDER_DRIVER_FILES,
+            SHARED_WEB_ADAPTER_FILES,
+            adapter_repair_surface,
+        )
+
+        self.assertEqual(
+            set(PROVIDER_DRIVER_FILES),
+            {"deepseek", "qwen", "mimo", "stepfun", "glm"},
+        )
+        self.assertEqual(
+            tuple(SHARED_WEB_ADAPTER_FILES),
+            (
+                "codey/providers/web_provider.py",
+                "codey/providers/web_driver.py",
+                "codey/providers/web_drivers/common.py",
+                "codey/providers/profiles.py",
+                "codey/providers/profiles.json",
+                "codey/providers/controls.py",
+                "codey/providers/flow.py",
+                "codey/providers/send_loop.py",
+                "codey/providers/submission.py",
+                "codey/providers/timeouts.py",
+                "codey/automation/web_clipboard.py",
+                "codey/automation/browser.py",
+            ),
+        )
+        self.assertEqual(adapter_repair_surface("unknown-provider"), ())
+        self.assertEqual(
+            adapter_repair_surface("deepseek"),
+            (*PROVIDER_DRIVER_FILES["deepseek"], *SHARED_WEB_ADAPTER_FILES),
+        )
+        surface_source = (ROOT / "codey" / "repairs" / "adapter_surface.py").read_text(encoding="utf-8")
+        self.assertNotIn("def driver_files(", surface_source)
+        policy_source = (ROOT / "codey" / "repairs" / "policy.py").read_text(encoding="utf-8")
+        self.assertNotIn("def allowed_adapter_files(", policy_source)
+
     def test_long_files_do_not_grow(self) -> None:
         # 1000-line guardrail (warning-grade): the files above the line are
         # known cohesive stores/flows. They must shrink over time; this test

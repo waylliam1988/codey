@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.runner import run as default_agent_run
+from codey.agents.shell_approval import shell_command_event_fields
 from codey.workspace.changes import collect_changes as default_collect_changes
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
@@ -103,13 +104,14 @@ class HeadlessAppContext(AppContext):
                 self.request_stop()
             except Exception:
                 pass
+            command_fields = shell_command_event_fields(payload_event)
             rejected = {
                 "schema_version": SCHEMA_VERSION,
                 "type": "shell_rejected",
                 "run_id": str(payload_event.get("run_id") or ""),
                 "session_id": str(payload_event.get("session_id") or ""),
                 "reason": "headless_default_deny",
-                "command": clip_event_text(payload_event.get("command") or ""),
+                **command_fields,
                 "cwd": clip_event_text(payload_event.get("cwd") or ".", 240),
             }
             self._emit_jsonl(rejected)
@@ -297,11 +299,12 @@ def headless_event_payload(event: dict) -> dict[str, object] | None:
     if event_type == "info":
         return {**common, "text": clip_event_text(event.get("text") or "")}
     if event_type == "shell_request":
+        command_fields = shell_command_event_fields(event)
         payload = {
             **common,
             "id": clip_event_text(event.get("id") or "", 80),
             "cwd": clip_event_text(event.get("cwd") or ".", 240),
-            "command": clip_event_text(event.get("command") or ""),
+            **command_fields,
             "deferred_tool_count": _int_or_zero(event.get("deferred_tool_count")),
         }
         deferred = event.get("deferred_tool_calls")

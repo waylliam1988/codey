@@ -144,6 +144,52 @@ class AtomicWriteTests(unittest.TestCase):
             write_bytes_atomic(path, b"\x00\x01\x02")
             self.assertEqual(path.read_bytes(), b"\x00\x01\x02")
 
+    def test_append_is_durable_and_keeps_content(self) -> None:
+        from codey.storage.atomic_io import append_bytes_durable
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "run.log")
+            append_bytes_durable(path, [b"hello ", b"world\n"])
+            append_bytes_durable(path, [b"second\n", b""])
+            self.assertEqual(path.read_bytes(), b"hello world\nsecond\n")
+
+    def test_append_refuses_symlink(self) -> None:
+        from codey.storage.atomic_io import append_bytes_durable
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.log"
+            target.write_bytes(b"victim\n")
+            link = root / "link.log"
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {exc}")
+            with self.assertRaises(OSError):
+                append_bytes_durable(link, [b"pwned\n"])
+            self.assertEqual(target.read_bytes(), b"victim\n")
+
+    def test_append_uses_no_follow_open_flags(self) -> None:
+        from codey.storage import atomic_io
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "flags.log")
+            seen: dict[str, object] = {}
+            real_open = os.open
+
+            def _recording_open(file, flags, *args):
+                seen["flags"] = int(flags)
+                return real_open(file, flags, *args)
+
+            with mock.patch.object(atomic_io.os, "open", side_effect=_recording_open):
+                atomic_io.append_bytes_durable(path, [b"x\n"])
+            flags = int(seen["flags"])
+            self.assertTrue(flags & os.O_WRONLY)
+            self.assertTrue(flags & os.O_CREAT)
+            self.assertTrue(flags & os.O_APPEND)
+            if hasattr(os, "O_NOFOLLOW"):
+                self.assertTrue(flags & os.O_NOFOLLOW)
+
     def test_write_json_atomic(self) -> None:
         from codey.storage.atomic_io import write_json_atomic
         import json

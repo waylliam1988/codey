@@ -39,7 +39,6 @@ from codey.providers.supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPE
 from codey.repairs.policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,
-    allowed_adapter_files,
     validate_candidate,
 )
 from codey.repairs.sandbox import create_repair_sandbox
@@ -586,10 +585,9 @@ class RepairPolicyTests(unittest.TestCase):
     def test_unknown_provider_has_empty_repair_surface(self) -> None:
         # Fail closed: the shared web files are never granted on their own;
         # they only widen a known provider's driver surface.
-        self.assertEqual(allowed_adapter_files("unknown_provider"), ())
         self.assertEqual(adapter_repair_surface("unknown_provider"), ())
 
-        known = allowed_adapter_files("qwen")
+        known = adapter_repair_surface("qwen")
         self.assertIn("codey/providers/web_drivers/qwen.py", known)
         self.assertIn("codey/providers/web_provider.py", known)
 

@@ -12,10 +12,16 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 
-import yaml
-
 from codey.knowledge.concept_schema import clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
+
+
+def _yaml():
+    # Lazy: keep `import codey.knowledge.note` (and AppContext/serve boot)
+    # free of the yaml import tax until a note is actually serialized.
+    import yaml
+
+    return yaml
 
 NOTE_TYPES = (
     "source",
@@ -165,7 +171,7 @@ class KnowledgeNote:
         return data
 
     def to_markdown(self) -> str:
-        header = yaml.safe_dump(
+        header = _yaml().safe_dump(
             self.frontmatter(),
             allow_unicode=True,
             sort_keys=False,
@@ -179,7 +185,7 @@ class KnowledgeNote:
         match = _FRONTMATTER_RE.match(text.lstrip("\ufeff"))
         if not match:
             raise ValueError("note is missing a frontmatter block")
-        meta = yaml.safe_load(match.group(1)) or {}
+        meta = _yaml().safe_load(match.group(1)) or {}
         if not isinstance(meta, dict):
             raise ValueError("note frontmatter is not a mapping")
         return cls(

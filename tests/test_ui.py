@@ -117,7 +117,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const provider = currentProviderId();", send_click)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", COMPOSER_JS)
         self.assertIn("intent: 'project'", COMPOSER_JS)
-        self.assertIn("provider: PROVIDERS.includes(s.provider)", UI_STATE_JS)
+        self.assertIn("provider: PROVIDERS.includes(raw.provider)", UI_STATE_JS)
         self.assertIn("Continue the unfinished task in this same conversation.", COMPOSER_JS)
         self.assertNotIn("Continue the unfinished Codey task", HTML)
 
@@ -341,9 +341,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("title.textContent = 'Approval required'", HTML)
         self.assertIn("className = 'sc-note'", HTML)
         self.assertIn("${riskTitle || 'Shell command'}", HTML)
+        self.assertIn("full sha256", HTML)
         self.assertIn("riskLabel: data.risk_label", HTML)
         self.assertIn("riskTitle: data.risk_title", HTML)
         self.assertIn("riskDetail: data.risk_detail", HTML)
+        self.assertIn("commandSha256: data.command_sha256", HTML)
+        self.assertIn("commandTruncated: !!data.command_truncated", HTML)
 
     def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
         self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", PROVIDER_UI_JS)
@@ -434,7 +437,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (restore) restore.disabled = !current || !current.restoreable;", HTML)
         self.assertIn("markResearchRestoreAvailability(data.research_restore_runs || [])", HTML)
         self.assertIn("function normalizeStoredResearchRun(run)", UI_STATE_JS)
-        self.assertIn("s.researchRuns.slice(-32).map(normalizeStoredResearchRun)", UI_STATE_JS)
+        self.assertIn("raw.researchRuns", UI_STATE_JS)
+        self.assertIn(".slice(-32).map(normalizeStoredResearchRun)", UI_STATE_JS)
         self.assertNotIn("...run, restoreable: false", HTML)
         self.assertIn('<script src="/assets/research_runs.js?v=__CODEY_VERSION__"></script>', HTML)
         self.assertIn("window.CodeyResearchRuns.init({", HTML)
@@ -622,7 +626,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         started_block = HTML[started_start:started_end]
         self.assertIn("const rawToolId = (data.tool_id || '').toString();", started_block)
         self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", started_block)
-        self.assertIn("s.messages.some(item => item.toolKey === toolKey)", started_block)
+        self.assertIn("s._toolKeys.has(toolKey)", started_block)
         self.assertIn("type: 'tool_pending'", started_block)
         self.assertIn("pending: true", started_block)
         self.assertIn("activity: (data.activity || '').toString().slice(0, 200)", started_block)
@@ -810,8 +814,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_chat_messages_and_titles_remain_local_persistent(self) -> None:
         self.assertIn("const LS_SESSIONS = 'codey:sessions';", UI_STATE_JS)
-        self.assertIn("messages: Array.isArray(s.messages) ? s.messages : []", UI_STATE_JS)
-        self.assertIn("title: s.title || 'New chat'", UI_STATE_JS)
+        self.assertIn("messages: Array.isArray(raw.messages) ? raw.messages : []", UI_STATE_JS)
+        self.assertIn("title: raw.title || 'New chat'", UI_STATE_JS)
         self.assertIn("function safeLocalSet(key, value)", UI_STATE_JS)
         self.assertIn("function saveSessions(arr)", UI_STATE_JS)
         self.assertIn("safeLocalSet(LS_SESSIONS, JSON.stringify(arr))", UI_STATE_JS)
@@ -863,8 +867,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("<strong>$1</strong>", RENDER_JS)
         self.assertIn("body.className = 'body md'", HTML)
         self.assertNotIn("body.className = 'body md collapsed'", HTML)
-        self.assertIn("toggle.className = 'toggle'; toggle.textContent = 'Collapse';", HTML)
-        self.assertIn("renderMarkdown(body, m.text)", HTML)
+        self.assertIn("toggle.className = 'toggle';", HTML)
+        self.assertIn("window.CodeyRender.renderAssistantBody(body", HTML)
+        self.assertIn("function renderMarkdownChunked(container, text", RENDER_JS)
         self.assertNotIn("body.textContent = m.text;", UI_SOURCE)
         self.assertIn("/^#{1,6}\\s+/.test(line)", RENDER_JS)
         self.assertIn("line.match(/^(#{1,6})\\s+(.*)$/)", RENDER_JS)

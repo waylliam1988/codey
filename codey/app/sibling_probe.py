@@ -18,7 +18,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from codey.app import services as app_services
+from codey.app import provider_services as provider_services
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers import profile_doctor
@@ -33,15 +33,13 @@ def _profile_doctor_timeout(deadline: float) -> float:
 
 
 def borrow_open_provider(provider_id: str, owner_page: Any) -> Any | None:
-    from codey.providers import registry as _registry
-
-    return _registry.borrow_open_provider(provider_id, owner_page)
+    return provider_services.borrow_open_provider(provider_id, owner_page)
 
 
 def _sibling_candidates(ctx: Any, request_provider_id: str, deadline: float):
     """Healthy sibling ids within the recovery deadline (shared preamble)."""
     supervisor = ctx.providers.supervisor
-    for provider_id in app_services.reviewer_candidates(
+    for provider_id in provider_services.reviewer_candidates(
         ctx, request_provider_id, supervisor=supervisor
     )[:3]:
         cancellation.check()

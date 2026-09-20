@@ -98,6 +98,44 @@ function appendCodeBlock(container, code) {
   addCodeCopyButton(pre, code);
   container.appendChild(pre);
 }
+const LONG_MESSAGE_CHARS = 400;
+const LONG_MESSAGE_LINES = 6;
+const CHUNKED_RENDER_CHARS = 2000;
+const CHUNKED_RENDER_LINES = 80;
+
+function isLongMessage(text) {
+  const value = String(text == null ? '' : text);
+  if (value.length > LONG_MESSAGE_CHARS) return true;
+  let breaks = 0;
+  for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
+    breaks++;
+    if (breaks >= LONG_MESSAGE_LINES) return true;
+  }
+  return false;
+}
+
+function previewSlice(text) {
+  const value = String(text == null ? '' : text);
+  const lines = value.split('\n');
+  const head = lines.slice(0, LONG_MESSAGE_LINES).join('\n');
+  if (head.length >= LONG_MESSAGE_CHARS || lines.length > LONG_MESSAGE_LINES) {
+    return head.slice(0, LONG_MESSAGE_CHARS);
+  }
+  return value.slice(0, LONG_MESSAGE_CHARS);
+}
+
+function scheduleIdleChunk(fn) {
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(fn, { timeout: 50 });
+    return;
+  }
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => setTimeout(fn, 0));
+    return;
+  }
+  setTimeout(fn, 0);
+}
+
 function renderMarkdown(container, text) {
   const lines = String(text == null ? '' : text).split('\n');
   let listStack = [];
@@ -189,6 +227,79 @@ function renderMarkdown(container, text) {
     container.appendChild(p);
   }
   flushList();
+}
+
+function needsChunkedRender(text) {
+  const value = String(text == null ? '' : text);
+  if (value.length > CHUNKED_RENDER_CHARS) return true;
+  let breaks = 0;
+  for (let idx = value.indexOf('\n'); idx !== -1; idx = value.indexOf('\n', idx + 1)) {
+    breaks++;
+    if (breaks > CHUNKED_RENDER_LINES) return true;
+  }
+  return false;
+}
+
+function renderMarkdownChunked(container, text, done) {
+  const value = String(text == null ? '' : text);
+  const lines = value.split('\n');
+  const step = 120;
+  let idx = 0;
+  container.innerHTML = '';
+  const scratch = document.createElement('div');
+  const flushScratch = () => {
+    while (scratch.firstChild) container.appendChild(scratch.firstChild);
+  };
+  const pump = () => {
+    const slice = lines.slice(idx, idx + step).join('\n');
+    const tmp = document.createElement('div');
+    renderMarkdown(tmp, idx === 0 ? slice : '\n' + slice);
+    while (tmp.firstChild) scratch.appendChild(tmp.firstChild);
+    idx += step;
+    if (idx < lines.length) {
+      scheduleIdleChunk(pump);
+      return;
+    }
+    flushScratch();
+    if (typeof done === 'function') done();
+  };
+  // Keep first paint fast: render a small preview synchronously, then stream rest.
+  const head = lines.slice(0, 30).join('\n');
+  renderMarkdown(container, lines.length > 30 ? head : value);
+  if (lines.length <= 30 && !needsChunkedRender(value)) {
+    if (typeof done === 'function') done();
+    return;
+  }
+  container.innerHTML = '';
+  scheduleIdleChunk(pump);
+}
+
+function renderAssistantBody(body, text, toggle) {
+  const value = String(text == null ? '' : text);
+  const long = isLongMessage(value);
+  if (!long) {
+    renderMarkdown(body, value);
+    return { collapsed: false, long: false };
+  }
+  // Long text: preview first, never full sync render before folding.
+  renderMarkdown(body, previewSlice(value));
+  body.classList.add('collapsed');
+  if (toggle) toggle.textContent = 'Expand';
+  let expanded = false;
+  const expand = () => {
+    if (expanded) return;
+    expanded = true;
+    body.classList.remove('collapsed');
+    if (needsChunkedRender(value)) renderMarkdownChunked(body, value);
+    else { body.innerHTML = ''; renderMarkdown(body, value); }
+  };
+  const collapse = () => {
+    expanded = false;
+    body.innerHTML = '';
+    renderMarkdown(body, previewSlice(value));
+    body.classList.add('collapsed');
+  };
+  return { collapsed: true, long: true, expand, collapse, isExpanded: () => expanded };
 }
 
 // ============================ tool line rendering ============================
@@ -286,10 +397,15 @@ function receiptChangedCount(receipt, changes) {
   return fromReceipt > 0 ? fromReceipt : Number((changes && changes.changed_count) || 0);
 }
 
+function messageCopyText(m) {
+  return m && typeof m.text === 'string' ? m.text : '';
+}
+
 window.CodeyRender = {
   escapeHtml,
   receiptSummary,
   receiptChangedCount,
+  messageCopyText,
   copyText,
   addMessageCopyButton,
   applyBold,
@@ -297,6 +413,13 @@ window.CodeyRender = {
   addCodeCopyButton,
   appendCodeBlock,
   renderMarkdown,
+  renderMarkdownChunked,
+  renderAssistantBody,
+  isLongMessage,
+  needsChunkedRender,
+  previewSlice,
+  LONG_MESSAGE_CHARS,
+  LONG_MESSAGE_LINES,
   FOLDABLE_TOOL_KINDS,
   toolRowEl,
   foldCountLabel,

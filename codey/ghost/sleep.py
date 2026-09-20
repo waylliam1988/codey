@@ -7,7 +7,6 @@ existing projections, compacts event logs, and writes a bounded report.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
 import json
 from pathlib import Path
 from time import perf_counter
@@ -25,6 +24,8 @@ from codey.ghost.event_log import (
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.storage.event_state import reset_event_backed_state
@@ -753,13 +754,7 @@ def _scope_matches_report(
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)
 
 
 def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
@@ -782,7 +777,7 @@ def _probe_file(path: Path, *, max_bytes: int, kind: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _bounded_warnings(warnings: Iterable[object]) -> tuple[str, ...]:

@@ -63,7 +63,7 @@ function safeLocalSet(key, value) {
 function saveSessions(arr) { safeLocalSet(LS_SESSIONS, JSON.stringify(arr)); }
 function saveProjects(arr) { safeLocalSet(LS_PROJECTS, JSON.stringify(arr)); }
 function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) {
-  return { id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider, research: false };
+  return hydrateSessionIndexes({ id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider, research: false });
 }
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
@@ -94,20 +94,74 @@ function normalizeStoredResearchRun(run) {
   };
 }
 
+function defineSessionIndexes(s) {
+  // Non-enumerable so JSON.stringify(localStorage/server) stays clean.
+  if (!s._eventKeys || !(s._eventKeys instanceof Set)) {
+    Object.defineProperty(s, '_eventKeys', { value: new Set(), writable: true, enumerable: false, configurable: true });
+  }
+  if (!s._toolKeys || !(s._toolKeys instanceof Set)) {
+    Object.defineProperty(s, '_toolKeys', { value: new Set(), writable: true, enumerable: false, configurable: true });
+  }
+  if (!s._terminalRunSet || !(s._terminalRunSet instanceof Set)) {
+    Object.defineProperty(s, '_terminalRunSet', { value: new Set(), writable: true, enumerable: false, configurable: true });
+  }
+  return s;
+}
+
+function hydrateSessionIndexes(s) {
+  if (!s || typeof s !== 'object') return s;
+  defineSessionIndexes(s);
+  s._eventKeys.clear();
+  s._toolKeys.clear();
+  s._terminalRunSet.clear();
+  for (const m of (Array.isArray(s.messages) ? s.messages : [])) {
+    if (m && m.eventKey) s._eventKeys.add(m.eventKey);
+    if (m && m.toolKey) s._toolKeys.add(m.toolKey);
+  }
+  for (const runId of (Array.isArray(s.terminalRuns) ? s.terminalRuns : [])) {
+    if (runId) s._terminalRunSet.add(runId);
+  }
+  return s;
+}
+
+function ensureSessionIndexes(s) {
+  if (!s || typeof s !== 'object') return s;
+  if (!(s._eventKeys instanceof Set) || !(s._toolKeys instanceof Set) || !(s._terminalRunSet instanceof Set)) {
+    return hydrateSessionIndexes(s);
+  }
+  return s;
+}
+
+function trackSessionMessage(s, m) {
+  ensureSessionIndexes(s);
+  if (m && m.eventKey) s._eventKeys.add(m.eventKey);
+  if (m && m.toolKey) s._toolKeys.add(m.toolKey);
+}
+
+function untrackSessionMessages(s, removed) {
+  // Removal paths (filter) are rare; rebuild is cheaper than diffing.
+  if (!s) return;
+  if (Array.isArray(removed) && removed.length === 0) return;
+  hydrateSessionIndexes(s);
+}
+
 function normalizeSessions(value) {
-  return (Array.isArray(value) ? value : []).map(s => ({
-    id: s.id || uid(),
-    title: s.title || 'New chat',
-    messages: Array.isArray(s.messages) ? s.messages : [],
-    terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
-    researchRuns: Array.isArray(s.researchRuns)
-      ? s.researchRuns.slice(-32).map(normalizeStoredResearchRun)
-      : [],
-    createdAt: s.createdAt || Date.now(),
-    projectId: s.projectId || null,
-    provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
-    research: !!s.research,
-  }));
+  return (Array.isArray(value) ? value : []).map(raw => {
+    const s = {
+      id: raw.id || uid(),
+      title: raw.title || 'New chat',
+      messages: Array.isArray(raw.messages) ? raw.messages : [],
+      terminalRuns: Array.isArray(raw.terminalRuns) ? raw.terminalRuns.slice(-32) : [],
+      researchRuns: Array.isArray(raw.researchRuns)
+        ? raw.researchRuns.slice(-32).map(normalizeStoredResearchRun)
+        : [],
+      createdAt: raw.createdAt || Date.now(),
+      projectId: raw.projectId || null,
+      provider: PROVIDERS.includes(raw.provider) ? raw.provider : DEFAULT_PROVIDER,
+      research: !!raw.research,
+    };
+    return hydrateSessionIndexes(s);
+  });
 }
 function normalizeProjects(value) {
   return (Array.isArray(value) ? value : []).map(p => ({
@@ -277,6 +331,10 @@ window.CodeyUiState = {
   setProviders,
   uid,
   defaultSession,
+  hydrateSessionIndexes,
+  ensureSessionIndexes,
+  trackSessionMessage,
+  untrackSessionMessages,
   pathName,
   pathKey,
   apply: applyUiState,
