@@ -7,9 +7,10 @@ from unittest import mock
 from codey.providers.diagnostics import ControlMissing
 from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import stepfun
+from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 
-class StepFunDriverTests(unittest.TestCase):
+class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def test_wait_ready_accepts_visible_message_box(self) -> None:
         page = mock.Mock()
         box = mock.Mock()

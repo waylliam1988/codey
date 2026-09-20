@@ -893,7 +893,11 @@ def _invalidate_flow_cache(path: Path, provider_id: str) -> None:
 def _begin_revival_send(provider_id: str, page: Any) -> None:
     _abort_revival_send(provider_id)
     profile_digest = provider_flow.profile_hash(get_profile(provider_id))
-    flow_recipe = _load_flow_cached(CONTROL_STORE, provider_id, profile_digest)
+    try:
+        flow_recipe = _load_flow_cached(CONTROL_STORE, provider_id, profile_digest)
+    except (OSError, ValueError) as exc:
+        logger.warning("Failed to load revival flow for %s: %s", provider_id, exc)
+        flow_recipe = None
     _revival_attempts()[provider_id] = _RevivalSend(
         host=_page_host(page),
         staged={},

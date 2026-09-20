@@ -748,6 +748,20 @@ class VerificationPolicyTests(unittest.TestCase):
         self.assertFalse(any(item.name == ".hidden" for item in directories))
         self.assertFalse(any(item.name == "NODE_MODULES" for item in directories))
 
+    def test_directory_scan_skips_coverage_output(self) -> None:
+        # Coverage output is never a trustworthy verification root: the
+        # shared excluded-dirs vocabulary covers it, unlike the old
+        # policy-local subset.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in ("src", "coverage", "tests"):
+                (root / name).mkdir()
+            directories = tuple(_bounded_directories(root))
+
+        self.assertTrue(any(item.name == "src" for item in directories))
+        self.assertTrue(any(item.name == "tests" for item in directories))
+        self.assertFalse(any(item.name == "coverage" for item in directories))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Hermetic provider tests, assistance epoch, coverage pin (2026-09-20)
+
+Scope:
+
+```text
+codey/providers/controls.py: fail-open _begin_revival_send (warn + None)
+tests/provider_control_testkit.py (new):
+                           IsolatedProviderControlsMixin (temp store + reset)
+tests/test_{deepseek,glm,mimo,qwen,stepfun}.py:
+                           inherit the mixin
+tests/test_provider_controls.py:
+                           whole module under the mixin + per-test store patch
+codey/providers/assistance.py:
+                           reset bumps epoch; nested exit restores conditionally
+codey/completion/discovery.py:
+                           blank-line hygiene
+tests:                       nested-reset, coverage-exclusion tests
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed; cache lied once, no-cache documented)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+  B/UP debt: zero (rules on); I/SIM unchanged
+- Hermeticity proof: driver + controls suites green under a fake HOME with
+  zero `.provider-controls.json.lock` sidecars outside temp dirs
+- Targeted gates: provider/verification/assistance suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3895 passed, 6 skipped, 1310 subtests passed in 269.67s (0:04:29)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## B/UP rules on, shared assistance switch, completion discovery tools (2026-09-20)
 
 Scope:

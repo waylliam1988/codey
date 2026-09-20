@@ -26,11 +26,16 @@ _context = threading.local()
 @contextmanager
 def suppress_assistance() -> Iterator[None]:
     depth = int(getattr(_context, "assistance_depth", 0))
+    epoch = int(getattr(_context, "assistance_epoch", 0))
     _context.assistance_depth = depth + 1
     try:
         yield
     finally:
-        _context.assistance_depth = depth
+        # A task-boundary reset inside the region retires this guard: only
+        # restore the stashed depth when no reset intervened, otherwise a
+        # cleared switch would flicker back on while unwinding.
+        if int(getattr(_context, "assistance_epoch", 0)) == epoch:
+            _context.assistance_depth = depth
 
 
 def assistance_suppressed() -> bool:
@@ -40,6 +45,7 @@ def assistance_suppressed() -> bool:
 def reset_assistance() -> None:
     if hasattr(_context, "assistance_depth"):
         delattr(_context, "assistance_depth")
+    _context.assistance_epoch = int(getattr(_context, "assistance_epoch", 0)) + 1
 
 
 __all__ = [

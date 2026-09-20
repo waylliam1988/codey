@@ -9,9 +9,10 @@ from codey.runtime.core import cancellation
 from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import glm
 from codey.research.protocols import JsonToolCodec
+from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 
-class GlmDriverTests(unittest.TestCase):
+class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def test_cancelled_chat_exits_before_touching_page(self) -> None:
         event = threading.Event()
         event.set()

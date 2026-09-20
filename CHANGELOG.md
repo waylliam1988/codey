@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Hermetic provider tests, assistance epoch, coverage pin (no release)
+
+- `_begin_revival_send` is fail-open on store read errors (warn + `None`
+  recipe), matching `_complete_revival_send` / `_update_learned_control`:
+  a locked or unreadable control store can no longer break provider sends
+  or poison hermetic runs.
+- New `tests/provider_control_testkit.py` (`IsolatedProviderControlsMixin`):
+  temp `CONTROL_STORE` + task-context reset per test. All five web driver
+  suites and the whole `test_provider_controls.py` module run under it --
+  verified with a fake `HOME`: zero `.provider-controls.json.lock` sidecars
+  outside temp dirs (previously one leaked from unpatched revival paths).
+- `assistance` reset now bumps an epoch; nested `suppress_assistance`
+  regions only restore their stashed depth when no reset intervened, so a
+  task-boundary reset inside nested suppression stays cleared instead of
+  flickering back on. Pinned by the exact nested-reset test.
+- `coverage/` exclusion in trusted discovery pinned by an explicit test
+  (the single deliberate delta of the shared excluded-dirs vocabulary).
+- Verification: `ruff check . --no-cache` (cache lied once mid-batch;
+  no-cache is now the documented gate), `compileall`, and `git diff --check`
+  clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3895 passed, 6 skipped, 1310 subtests passed in 269.67s`).
+
 ## Unreleased - B/UP rules on, shared assistance switch, completion discovery tools (no release)
 
 - Enabled `B` + `UP` in `pyproject.toml` after clearing the debt to zero:

@@ -6,9 +6,10 @@ from pathlib import Path
 from unittest import mock
 
 from codey.providers import controls as controls
+from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 
-class ProviderControlsTests(unittest.TestCase):
+class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def tearDown(self) -> None:
         controls.set_teach_handler(None)
         controls.set_doctor_handler(None)
@@ -381,7 +382,8 @@ class ProviderControlsTests(unittest.TestCase):
         page = mock.Mock(url="https://chat.qwen.ai/")
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            controls._begin_revival_send("qwen", page)
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                controls._begin_revival_send("qwen", page)
             for action, fingerprint in (
                 (controls.CONTROL_MESSAGE_BOX, {"tag": "textarea"}),
                 (controls.CONTROL_SEND_BUTTON, {"tag": "button", "aria_label": "Send"}),
@@ -408,7 +410,8 @@ class ProviderControlsTests(unittest.TestCase):
         locator.is_enabled.return_value = True
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            controls._begin_revival_send("qwen", page)
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                controls._begin_revival_send("qwen", page)
             controls._remember_pending(
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
@@ -457,35 +460,38 @@ class ProviderControlsTests(unittest.TestCase):
         locator = mock.Mock()
         locator.is_visible.return_value = True
         locator.is_enabled.return_value = True
-        controls._begin_revival_send("qwen", page)
-        controls._remember_pending(
-            "qwen",
-            controls.CONTROL_SEND_BUTTON,
-            page,
-            controls.fingerprint_from_click({"tag": "button", "role": "button"}),
-            locator,
-        )
-        controls._remember_source(
-            "qwen",
-            controls.CONTROL_SEND_BUTTON,
-            "pending",
-        )
-        controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                controls._begin_revival_send("qwen", page)
+                controls._remember_pending(
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                    page,
+                    controls.fingerprint_from_click({"tag": "button", "role": "button"}),
+                    locator,
+                )
+                controls._remember_source(
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                    "pending",
+                )
+                controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON)
 
-        controls.reject_control("qwen", controls.CONTROL_SEND_BUTTON)
+                controls.reject_control("qwen", controls.CONTROL_SEND_BUTTON)
 
-        self.assertIsNone(
-            controls.pending_control(
-                page,
-                "qwen",
-                controls.CONTROL_SEND_BUTTON,
-                require_enabled=True,
-            )
-        )
-        self.assertEqual(
-            controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
-            "",
-        )
+                self.assertIsNone(
+                    controls.pending_control(
+                        page,
+                        "qwen",
+                        controls.CONTROL_SEND_BUTTON,
+                        require_enabled=True,
+                    )
+                )
+                self.assertEqual(
+                    controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+                    "",
+                )
 
     def test_failed_provider_send_discards_staged_controls(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
@@ -507,8 +513,9 @@ class ProviderControlsTests(unittest.TestCase):
                 )
                 raise TimeoutError("network timeout")
 
-            with self.assertRaisesRegex(TimeoutError, "network timeout"):
-                failing_send(page)
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                with self.assertRaisesRegex(TimeoutError, "network timeout"):
+                    failing_send(page)
 
             self.assertFalse(path.exists())
             self.assertNotIn("qwen", controls._revival_attempts())

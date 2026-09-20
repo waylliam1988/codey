@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath
 
 from codey.workspace.map import EXCLUDED_DIRS as _MAP_EXCLUDED_DIRS
 
-
 TRUSTED_EXCLUDED_DIRS = _MAP_EXCLUDED_DIRS
 """Directory names never descended during trusted verification discovery.
 

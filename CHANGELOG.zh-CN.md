@@ -2,6 +2,25 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Provider 测试隔离、assistance epoch、coverage 钉子（未发布）
+
+- `_begin_revival_send` 读 store 失败时 fail-open（warn + `None` recipe），
+  与 `_complete_revival_send` / `_update_learned_control` 对齐：锁住或坏掉
+  的 control store 不再阻断发送、不再污染 hermetic 测试。
+- 新增 `tests/provider_control_testkit.py`（`IsolatedProviderControlsMixin`）：
+  每个测试独立 temp `CONTROL_STORE` + task 上下文复位。五个 web driver
+  套件与整个 `test_provider_controls.py` 全跑在里面——fake `HOME` 验证：
+  temp 目录外零 `.provider-controls.json.lock` 残留（以前有未 patch 的
+  revival 路径漏一个）。
+- `assistance` reset 递增 epoch；嵌套 suppress 退出时只在 epoch 未变时
+  恢复旧 depth，任务边界 reset 后不再 flicker 回 true。精确嵌套测试钉住。
+- trusted discovery 的 `coverage/` 排除补显式测试（共享排除词汇的唯一
+  故意差异）。
+- 验证：`ruff check . --no-cache`（本批发现缓存撒谎一次，no-cache 记为
+  门控）、`compileall`、`git diff --check` 通过；定向套件全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3895 passed, 6 skipped, 1310 subtests passed in 269.67s`）。
+
 ## Unreleased - B/UP 规则打开、assistance 统一开关、completion discovery 工具（未发布）
 
 - `pyproject.toml` 打开 `B` + `UP`（债务清零后）：223 个安全自动修

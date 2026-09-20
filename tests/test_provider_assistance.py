@@ -81,6 +81,14 @@ class AssistanceSuppressionTests(unittest.TestCase):
             provider_flow.end_task_context()
             self.assertFalse(assistance_module.assistance_suppressed())
 
+    def test_reset_inside_nested_suppress_stays_cleared(self) -> None:
+        with provider_controls.suppress_assistance():
+            with provider_flow.suppress_assistance():
+                provider_flow.begin_task_context("new-session")
+                self.assertFalse(assistance_module.assistance_suppressed())
+            self.assertFalse(assistance_module.assistance_suppressed())
+        self.assertFalse(assistance_module.assistance_suppressed())
+
 
 if __name__ == "__main__":
     unittest.main()

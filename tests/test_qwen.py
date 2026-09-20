@@ -12,9 +12,10 @@ from codey.storage.local_store import read_json, write_json_atomic
 from codey.providers.diagnostics import ControlMissing
 from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import qwen
+from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 
-class QwenDriverTests(unittest.TestCase):
+class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def tearDown(self) -> None:
         qwen.controls.end_task_context()
 
