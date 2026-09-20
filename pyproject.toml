@@ -53,7 +53,15 @@ target-version = "py311"
 # W (trailing whitespace/newline) is enforced, and B/UP were enabled once
 # their debt hit zero (`ruff check codey tests tools --select B,UP` clean as
 # of 2026-09-20). I/SIM stay off until that debt is paid down
-# (`ruff check codey tests --select I,SIM`: I:414, SIM:315, 729 total,
-# 494 fixable as of 2026-09-20); enabling them now would only force unrelated
+# (`ruff check codey tests tools --select I,SIM`: I:425, SIM:321, 746 total,
+# 506 fixable as of 2026-09-21); enabling them now would only force unrelated
 # fixes into every batch.
 select = ["E4", "E7", "E9", "F", "W", "B", "UP"]
+
+[tool.mypy]
+# Baseline only, not a CI gate (CI runs ruff + pytest + node --check):
+# `python -m mypy codey` reports 493 errors in 106 files as of 2026-09-21.
+# New code should add annotations (TaskState-style Protocols over Any);
+# ratchet the count down, never up.
+python_version = "3.11"
+ignore_missing_imports = true

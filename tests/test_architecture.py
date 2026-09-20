@@ -1841,6 +1841,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 service_offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(service_offenders, [])
 
+    def test_mypy_baseline_config_exists_but_does_not_gate(self) -> None:
+        # mypy is baseline-only (493 errors / 106 files as of 2026-09-21):
+        # config must exist so counts are reproducible, CI stays ruff+pytest.
+        import tomllib
+
+        pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        mypy = pyproject.get("tool", {}).get("mypy", {})
+        self.assertEqual(mypy.get("python_version"), "3.11")
+        self.assertTrue(mypy.get("ignore_missing_imports"))
+
     def test_adapter_repair_surface_is_closed_and_has_no_forwarders(self) -> None:
         # Security boundary: repair may only touch one provider driver plus
         # the shared web files. New files need an explicit test update, and
