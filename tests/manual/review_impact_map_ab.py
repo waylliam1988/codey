@@ -22,11 +22,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from codey.completion.verification_map import render_verification_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import ReviewResult, parse_review_with_repair, render_review_prompt
 from codey.reviews.impact_map import render_review_impact_map
-from codey.completion.verification_map import render_verification_map
-
 
 ARMS = ("current", "impact_map")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-review-impact-map-ab.json"

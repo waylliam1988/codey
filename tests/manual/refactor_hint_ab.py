@@ -14,25 +14,24 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
-from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from tests.manual.project_task_context import render_production_project_map
-
 
 ARMS = ("baseline", "hint")
 

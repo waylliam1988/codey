@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-
 TRUNCATED_RESULT_NOTICE = (
     "[truncated result: omitted content may contain relevant "
     "errors or code. Do not assume omitted content is clean. "

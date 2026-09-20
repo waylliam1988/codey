@@ -8,7 +8,6 @@ from collections.abc import Iterable
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.utils.refs import clip, identifier
 
-
 _SNAKE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 
 

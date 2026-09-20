@@ -7,7 +7,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-
 MESSAGE_BOX = "message_box"
 SEND_BUTTON = "send_button"
 

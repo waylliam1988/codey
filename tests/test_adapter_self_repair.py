@@ -5,28 +5,17 @@ import io
 import json
 import shutil
 import subprocess
-from collections import deque
 import tempfile
 import threading
 import time
 import unittest
+from collections import deque
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.app import consensus_service
-from codey.repairs import adapter_overrides
-from codey.repairs.adapter_repair import (
-    AdapterRepairResult,
-    _render_repair_prompt,
-    _run_static_checks,
-    run_adapter_repair,
-    run_worker_canary,
-)
-from codey.repairs.adapter_surface import adapter_repair_surface
 from codey.agents.runner import RunResult
-from codey.providers.worker import WorkerChatProvider, _failure_from_response
+from codey.app import consensus_service, server
+from codey.app import task_submit as task_submit
 from codey.providers import worker_child as provider_worker_child
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
@@ -36,7 +25,17 @@ from codey.providers.diagnostics import (
     ProviderActionError,
     ProviderFailure,
 )
-from codey.providers.supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPEN
+from codey.providers.supervisor import STATE_DEGRADED, STATE_OPEN, ProviderHealth
+from codey.providers.worker import WorkerChatProvider, _failure_from_response
+from codey.repairs import adapter_overrides
+from codey.repairs.adapter_repair import (
+    AdapterRepairResult,
+    _render_repair_prompt,
+    _run_static_checks,
+    run_adapter_repair,
+    run_worker_canary,
+)
+from codey.repairs.adapter_surface import adapter_repair_surface
 from codey.repairs.policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,

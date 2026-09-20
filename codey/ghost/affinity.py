@@ -7,17 +7,22 @@ permission system, and not an execution policy.
 from __future__ import annotations
 
 import ast
+import hashlib
+import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import datetime
-import hashlib
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Mapping
-import uuid
 
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
+)
+from codey.ghost.event_log import (
     compact_result_payload as _compact_payload,
+)
+from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
 from codey.ghost.event_projection import (
@@ -26,16 +31,30 @@ from codey.ghost.event_projection import (
 )
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
+)
+from codey.ghost.graph_primitives import (
     bound_graph_edges as _shared_bound_graph_edges,
+)
+from codey.ghost.graph_primitives import (
     bound_graph_nodes as _shared_bound_graph_nodes,
+)
+from codey.ghost.graph_primitives import (
     decay_basis_of as _shared_decay_basis_of,
+)
+from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
+)
+from codey.ghost.graph_primitives import (
     now_iso as _shared_now_iso,
+)
+from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
 )
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
+from codey.runtime.core import cancellation
+from codey.storage.event_state import reset_event_backed_state
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     backup_corrupt_file,
@@ -44,10 +63,6 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-from codey.storage.event_state import reset_event_backed_state
-from codey.storage.file_lock import with_file_lock
-from codey.runtime.core import cancellation
-
 
 AFFINITY_SCHEMA_VERSION = 1
 MAX_AFFINITY_NODES = 500

@@ -1,5 +1,5 @@
-from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.completion.verification_policy import VerificationCandidate
+from codey.workspace.coding_context import CodingContext, render_coding_context
 
 
 def test_render_coding_context_omits_empty_block() -> None:

@@ -8,8 +8,8 @@ import pytest
 
 from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.trace import RunTraceStore
-from tests.manual import completion_enforcement_ab as harness
 from tests.manual import ab_harness_common as common
+from tests.manual import completion_enforcement_ab as harness
 from tests.manual.ab_harness_common import open_journal_for_output
 
 

@@ -67,9 +67,8 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                 }],
                 "projects": [],
             })
-            from codey.storage import local_store  # noqa: F401 (documents the wrong patch target)
-
             import codey.storage.ui_state_store as ui_mod
+            from codey.storage import local_store  # noqa: F401 (documents the wrong patch target)
 
             with mock.patch.object(
                 ui_mod, "read_json_strict", side_effect=OSError("disk gone")
@@ -214,10 +213,11 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             self.assertNotIn("missing", missing)
 
     def test_research_notes_response_has_no_per_note_index_get(self) -> None:
+        from types import SimpleNamespace
+
         from codey.app import api as app_api
         from codey.knowledge.note import KnowledgeNote
         from codey.knowledge.store import KnowledgeStore
-        from types import SimpleNamespace
 
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(td)
@@ -301,6 +301,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
 
     def test_knowledge_index_close_fails_cleanly_on_reuse(self) -> None:
         from concurrent.futures import ThreadPoolExecutor
+
         from codey.knowledge.index import KnowledgeIndex
 
         with tempfile.TemporaryDirectory() as td:

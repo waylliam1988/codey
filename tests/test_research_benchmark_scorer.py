@@ -15,19 +15,19 @@ from codey.research.brief_projection import (
 )
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
 from codey.research.proof_quality import ResearchProofReview
-from tools.research_benchmark.scorer import (
-    OBSERVABLE_NAMES,
-    ResearchRegressionInput,
-    build_regression_report,
-    observe_false_completion,
-    verdict_from_metrics,
-)
 from codey.research.reproducibility import ReproducibilityCapsule
 from codey.research.review_finding import (
     FINDING_STALE_SOURCE,
     GAP_FOLLOWUP_SEARCH,
     PlannerGap,
     ReviewFindingRecord,
+)
+from tools.research_benchmark.scorer import (
+    OBSERVABLE_NAMES,
+    ResearchRegressionInput,
+    build_regression_report,
+    observe_false_completion,
+    verdict_from_metrics,
 )
 
 RECORD_REF = "research_record:" + "1a2b3c4d5e6f7788"

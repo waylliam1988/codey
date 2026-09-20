@@ -25,28 +25,27 @@ from urllib.parse import urlparse
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.providers import controls as provider_controls
 from codey.knowledge.store import KnowledgeStore
+from codey.providers import controls as provider_controls
+from codey.providers.registry import connect_provider, provider_ids
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.proof_quality import review_research_proof
 from codey.research.protocols import extract_json_objects
 from codey.research.runner import ResearchRunner
-from codey.providers.registry import connect_provider, provider_ids
-
-from tests.manual.ab_journal import (
-    ABJournalIdentityMismatch,
-    ABJournalReader,
-    ABJournalWriter,
-    TRANSCRIPT_MODE_ARCHIVE,
-    TRANSCRIPT_MODE_DIGEST_ONLY,
-    TranscriptReplayCache,
-    journal_directory_for,
-)
 from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     row_has_terminal_failure,
     upsert_case_row,
+)
+from tests.manual.ab_journal import (
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    ABJournalIdentityMismatch,
+    ABJournalReader,
+    ABJournalWriter,
+    TranscriptReplayCache,
+    journal_directory_for,
 )
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

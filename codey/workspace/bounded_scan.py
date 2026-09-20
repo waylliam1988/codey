@@ -7,12 +7,11 @@ index, cache results, or infer semantics.
 from __future__ import annotations
 
 import stat
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable, Iterable, Iterator
 
 from codey.runtime.core import cancellation
-
 
 DEFAULT_MAX_SCAN_FILES = 1_000
 DEFAULT_MAX_SCAN_DIRS = 250

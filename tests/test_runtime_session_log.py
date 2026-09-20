@@ -5,22 +5,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.log.session_projection import reduce_session
-from codey.runtime.write.drive import peek_next_action
-from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_TOOL_CALL,
-    RuntimeEffectIntent,
-    RuntimeEffectSettlement,
-    RuntimeEffectStore,
-)
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.core.operation_reducer import ACTION_CONTINUE
 from codey.runtime.core.operation_state import (
     LEAF_WRITER_RUNNING,
     RuntimeOperationStore,
     mark_terminal,
 )
+from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectIntent,
+    RuntimeEffectSettlement,
+    RuntimeEffectStore,
+)
 from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.effects.tool_result_delivery import (
+    DeliveryBatchIntent,
+    DeliveryBatchItem,
+    compute_batch_digest,
+)
 from codey.runtime.log.compaction import _compact_entries
 from codey.runtime.log.session_log import (
     RuntimeLogCorruption,
@@ -28,11 +30,9 @@ from codey.runtime.log.session_log import (
     RuntimeLogWriteError,
     RuntimeSessionLog,
 )
-from codey.runtime.effects.tool_result_delivery import (
-    DeliveryBatchIntent,
-    DeliveryBatchItem,
-    compute_batch_digest,
-)
+from codey.runtime.log.session_projection import reduce_session
+from codey.runtime.write.drive import peek_next_action
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
 def _commit_entries_via_mutate(

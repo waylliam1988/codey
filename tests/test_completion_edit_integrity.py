@@ -8,8 +8,8 @@ from codey.completion.edit_integrity import (
     MAX_SECTION_LINES,
     REASON_DIFF_UNAVAILABLE,
     REASON_TEST_ASSERTIONS_REMOVED,
-    REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
     REASON_TEST_EDIT_WITHOUT_PRODUCTION_CHANGE,
+    REASON_TEST_EXPECTED_EXCEPTION_WIDENED,
     REASON_TEST_IMPORT_GUARDED,
     REASON_TEST_IMPORT_REMOVED,
     REASON_TEST_SKIP_ADDED,
@@ -26,7 +26,6 @@ from codey.completion.edit_integrity import (
     observe_edit_integrity,
 )
 from codey.research.evidence_runtime import is_valid_runtime_ref
-
 
 _IMPORT_REMOVAL_OLD = "import redis  # noqa: F401\n\ndef test_value():\n"
 _IMPORT_REMOVAL_NEW = "def test_value():\n"

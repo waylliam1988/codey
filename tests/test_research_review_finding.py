@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from codey.research.analysis_run import analysis_run_record
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
-from codey.utils.refs import digest_json
 from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview
 from codey.research.review_finding import (
     CONFIRMATION_SOURCES,
@@ -11,15 +10,15 @@ from codey.research.review_finding import (
     FINDING_OVERREACH,
     FINDING_STALE_SOURCE,
     FINDING_UNSUPPORTED_CLAIM,
-    PlannerGap,
-    ReviewFindingEvent,
-    ReviewFindingRecord,
     SEVERITY_CRITICAL,
     SEVERITY_WARNING,
     STATUS_ADDRESSED,
     STATUS_CONFIRMED,
     STATUS_OPEN,
     STATUS_REJECTED,
+    PlannerGap,
+    ReviewFindingEvent,
+    ReviewFindingRecord,
     apply_finding_events,
     failed_analysis_findings,
     findings_from_proof_review,
@@ -27,6 +26,7 @@ from codey.research.review_finding import (
     planner_gaps_from_findings,
     review_finding_trace_payloads,
 )
+from codey.utils.refs import digest_json
 
 
 def _stable_hex(seed: str) -> str:

@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codey.repairs.adapter_overrides import load_enabled_override
 from codey.automation.browser import (
     DEFAULT_PORT,
     DEFAULT_PROFILE,
     PROVIDER_URL_CONTAINS,
     detect_open_provider_tabs,
+)
+from codey.automation.browser import (
     warm_provider_tabs as browser_warm_provider_tabs,
 )
 from codey.providers.base import ChatProvider
@@ -31,6 +32,7 @@ from codey.providers.web_provider import (
     StepFunWebProvider,
 )
 from codey.providers.worker import WorkerChatProvider
+from codey.repairs.adapter_overrides import load_enabled_override
 
 PROVIDER_TYPES = {
     "deepseek": DeepSeekWebProvider,

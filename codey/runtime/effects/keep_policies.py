@@ -10,7 +10,6 @@ importers do not move.
 
 from __future__ import annotations
 
-
 SETTLEMENT_STATUS_ERROR = "error"
 SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
 SENT_STATE_MAYBE_SENT = "maybe_sent"

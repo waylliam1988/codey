@@ -3,10 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.runtime.observe.events import RunEvent, display_tool, run_event_ui_payload
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent, display_tool, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
-
 
 ROOT = Path(__file__).resolve().parents[1]
 TASK_PHASES_DIR = ROOT / "codey" / "operations" / "task_phases"

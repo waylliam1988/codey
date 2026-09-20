@@ -18,20 +18,21 @@ Hard rules:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
+from codey.research.evidence_runtime import (
+    EvidenceRuntimeSnapshot,
+)
+from codey.research.evidence_runtime import (
+    normalize_runtime_ref as _normalize_runtime_ref,
+)
+from codey.research.guards import generated_ref as _generated_ref
+from codey.research.guards import status_token as _status_token
 from codey.utils.refs import clip as _clip
 from codey.utils.refs import content_digest
 from codey.utils.refs import identifier as _identifier
-from codey.research.guards import generated_ref as _generated_ref
-from codey.research.guards import status_token as _status_token
-from codey.research.evidence_runtime import (
-    EvidenceRuntimeSnapshot,
-    normalize_runtime_ref as _normalize_runtime_ref,
-)
 from codey.utils.text_budget import clip_middle
-
 
 MAX_HANDOFF_CHARS = 6000
 MAX_BRIEF_CLAIMS = 16

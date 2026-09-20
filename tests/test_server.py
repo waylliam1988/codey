@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import http.client
 import json
-import socket
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -14,41 +14,35 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey import __version__
-from codey.app import api as app_api
-from codey.app import event_bus
-from codey.app import http_plumbing
-from codey.app import provider_services as provider_services
-from codey.app import task_submit as task_submit
-from codey.app import server
-from codey.app import context as app_context
-from codey.app import consensus_service
-from codey.app import review_service
-from codey.app import shell_service
-from codey.app import sibling_probe
+from codey.agents.consensus import ConsensusAdvice, ConsensusResult
+from codey.agents.handoff import ConversationSnapshot
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, profile_doctor
-from codey.runtime.core import cancellation
-from codey.workspace.changes import ChangeTracker
-from codey.workspace import changes
-from codey.agents.consensus import ConsensusAdvice, ConsensusResult
-from codey.runtime.observe.events import RunEvent, run_event_payload, run_event_ui_payload
-from codey.agents.handoff import ConversationSnapshot
-from codey.knowledge import KnowledgeNote, KnowledgeStore
-from codey.runtime.core.models import ToolCall
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
-from codey.providers import controls as provider_controls, flow as provider_flow
+from codey.app import api as app_api
+from codey.app import consensus_service, event_bus, http_plumbing, review_service, server, shell_service, sibling_probe
+from codey.app import context as app_context
+from codey.app import provider_services as provider_services
+from codey.app import task_submit as task_submit
+from codey.completion.verification_policy import VerificationCandidate
+from codey.knowledge import KnowledgeNote, KnowledgeStore
+from codey.operations.project_completion_flow import project_has_user_files
+from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, profile_doctor
+from codey.providers import controls as provider_controls
+from codey.providers import flow as provider_flow
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
-from codey.operations.project_completion_flow import project_has_user_files
+from codey.runtime.core import cancellation
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent, run_event_payload, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
+from codey.workspace import changes
+from codey.workspace.changes import ChangeTracker
 from tests.app_state import make_app_state
-from codey.completion.verification_policy import VerificationCandidate
-
 
 VALID_SHA256 = "a" * 64
 
@@ -2798,8 +2792,8 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertNotIn("evidence_quote", encoded)
 
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
-        from codey.ghost.continuity import build_ghost_continuity
         from codey.ghost.affinity import GhostAffinityStore
+        from codey.ghost.continuity import build_ghost_continuity
         from codey.ghost.router import (
             GhostRouteDecision,
             GhostRouteRequest,

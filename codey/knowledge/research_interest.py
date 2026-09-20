@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
 import json
-from typing import Any
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
+from typing import Any
 
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import ConceptGraphBuilder, MissingConceptLink
 from codey.knowledge.note import clean_open_questions
 from codey.knowledge.store import KnowledgeStore
-
 
 MAX_RESEARCH_INTEREST_CANDIDATES = 8
 MAX_RESEARCH_INTEREST_REFS = 10

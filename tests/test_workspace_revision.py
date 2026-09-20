@@ -3,8 +3,8 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 from codey.storage.file_lock import LockTimeout, with_file_lock
 from codey.workspace.revision import (

@@ -11,16 +11,14 @@ from unittest import mock
 
 from codey.runtime.core import cancellation
 from codey.toolchain import runtime as tool_runtime
-from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.utils.references import find_reference_hints
 from codey.toolchain.runtime import (
     EDIT_FAILURE_MAX_CHARS,
     EDIT_FAILURE_MAX_LINE_CHARS,
-    EditBlock,
     LONG_LINE_MARKER,
     MAX_REPLACEMENTS,
     READ_MAX_CHARS,
     READ_MAX_LINES,
+    EditBlock,
     edit_file,
     find_references,
     read_file,
@@ -28,7 +26,8 @@ from codey.toolchain.runtime import (
     run_command_raw,
     write_file,
 )
-
+from codey.utils.references import find_reference_hints
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 VALID_SHA256 = "a" * 64
 

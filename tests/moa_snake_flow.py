@@ -8,28 +8,26 @@ import subprocess
 import sys
 import time
 import traceback
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Iterator
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.providers import controls as provider_controls
-from codey.app import provider_services
-from codey.app import server as codey_server
-from codey.app import sibling_probe
-from codey.policies.limits import REVIEW_TIMEOUT
-from codey.workspace.changes import collect_changes, is_git_repository
 from codey.agents.consensus import run_project_audit_advisor
+from codey.app import provider_services, sibling_probe
+from codey.app import server as codey_server
+from codey.policies.limits import REVIEW_TIMEOUT
+from codey.providers import controls as provider_controls
 from codey.providers.registry import (
     connect_existing_provider,
     provider_tab_availability,
 )
 from codey.reviews.core import parse_review_with_repair, render_review_prompt
-
+from codey.workspace.changes import collect_changes, is_git_repository
 
 WRITER_ID = "deepseek"
 ADVISOR_IDS = ("glm", "stepfun", "qwen")

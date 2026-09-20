@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
-from collections.abc import Callable, Iterable, Mapping
 
-from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.proof_quality import ResearchProofReview, proof_review_trace_payload
 from codey.research.query_planner import ResearchPlan, research_plan_trace_payload
@@ -14,6 +13,7 @@ from codey.research.review_finding import (
     planner_gap_trace_payloads,
     review_finding_trace_payloads,
 )
+from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 
 
 class ResearchTraceSink(Protocol):

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from io import BytesIO
-import re
 from typing import Any
 
 from codey.research.source_document import SourceDocument, SourcePage

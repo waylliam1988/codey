@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from codey.runtime.core.models import ToolCall
-
 
 MAX_DEFERRED_TOOL_CALLS = 8
 MAX_DEFERRED_TEXT_CHARS = 240

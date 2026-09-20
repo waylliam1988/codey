@@ -21,12 +21,12 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from tests.manual.ab_harness_common import timestamp, write_json_atomic
 from tests.manual.research_scorers.followup_quality import followup_usefulness
 from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
 )
-from tests.manual.ab_harness_common import timestamp, write_json_atomic
 
 PROBE = "research_experiment_gate"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

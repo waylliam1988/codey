@@ -8,9 +8,9 @@ import time
 import unittest
 from pathlib import Path
 
+from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.ghost.work_queue import GhostWorkQueueStore
 
 
 class ResetEventBackedStateTests(unittest.TestCase):

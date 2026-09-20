@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.constants import MAX_REPLACEMENTS
 
-
 MAX_ACCIDENTAL_TOOL_CALLS = 8
 MAX_PARALLEL_CALLS = 4
 

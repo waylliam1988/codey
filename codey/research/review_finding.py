@@ -13,18 +13,17 @@ claiming "fixed" is not a verification.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 
 from codey.research.analysis_run import REPRODUCTION_FAILED
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref,
 )
-from codey.utils.refs import bounded_refs, identifier, stable_ref
-from codey.research.proof_quality import MAX_DIAGNOSTICS, ProofDiagnostic, ResearchProofReview
 from codey.research.guards import generated_ref as _generated_ref
-
+from codey.research.proof_quality import MAX_DIAGNOSTICS, ProofDiagnostic, ResearchProofReview
+from codey.utils.refs import bounded_refs, identifier, stable_ref
 
 FINDING_UNSUPPORTED_CLAIM = "unsupported_claim"
 FINDING_CITATION_MISMATCH = "citation_mismatch"

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from collections.abc import Sequence
 
 from codey.policies.command_line import split_run_command
 from codey.storage.local_store import (
@@ -16,7 +16,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-
 
 SCHEMA_VERSION = 1
 MAX_VERIFIED_COMMANDS = 8

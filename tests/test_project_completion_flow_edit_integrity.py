@@ -16,18 +16,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
+from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.completion import engine as completion_engine_module
 from codey.completion.edit_integrity import observe_edit_integrity
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.runs.ledger_projection import event_with_projected_receipt
 from codey.runs.receipt import build_task_receipt
-from codey.runtime.observe.events import RunEvent
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.toolchain.runtime import ToolOutcome
 
 

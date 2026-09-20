@@ -16,7 +16,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 SCHEMA_VERSION = 1
 RuntimeEntryKind = Literal[
     "operation_started",

@@ -7,12 +7,11 @@ diff and returns structured feedback that can be passed back to the writer.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 from codey.workspace.change_set import ChangeAnchor, ChangeSet
-
 
 MAX_REVIEW_DIFF_CHARS = 60_000
 MAX_REVIEW_LOG_CHARS = 8_000

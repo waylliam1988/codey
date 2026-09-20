@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -20,14 +22,12 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-from codey.storage.file_lock import with_file_lock
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
     valid_workspace_fingerprint,
     valid_workspace_revision,
     workspace_fingerprint,
 )
-
 
 SCHEMA_VERSION = 1
 MAX_CHECKPOINT_BYTES = 64 * 1024

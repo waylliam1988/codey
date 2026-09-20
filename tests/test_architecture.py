@@ -7,7 +7,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 EVENT_MATRIX_PATH = ROOT / "docs" / "codey_event_matrix.md"
 TASK_FLOW_PATH = ROOT / "codey" / "operations" / "task_flow.py"
@@ -1637,8 +1636,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # tool for them, and neither surface may rename tools across domains:
         # coding keeps its read/write vocabulary and research keeps its own.
         from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
-        from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
         from codey.toolchain.definition import TOOL_DEFINITIONS
+        from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
 
         self.assertEqual(
             {spec.name for spec in TOOL_DEFINITIONS},
@@ -1727,7 +1726,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(orphans, [])
 
     def test_tool_definitions_do_not_contain_write_file_or_create_file(self) -> None:
-        from codey.toolchain.definition import TOOL_DEFINITIONS, TOOL_DEFINITION_BY_NAME
+        from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME, TOOL_DEFINITIONS
 
         all_names = {name for spec in TOOL_DEFINITIONS for name in (spec.name, *spec.aliases)}
         self.assertNotIn("write_file", all_names)

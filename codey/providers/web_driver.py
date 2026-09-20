@@ -8,10 +8,9 @@ instead of surfacing a transient failure.
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
 from collections.abc import Callable
+from typing import Any, TypeVar
 
-from codey.runtime.core import cancellation
 from codey.providers.diagnostics import (
     ProviderActionError,
     ResponseMissing,
@@ -19,6 +18,7 @@ from codey.providers.diagnostics import (
     run_provider_action,
 )
 from codey.providers.timeouts import start_deadline
+from codey.runtime.core import cancellation
 
 WEB_DEADLINE_MARGIN_SECONDS = 5.0
 

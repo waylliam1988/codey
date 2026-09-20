@@ -135,9 +135,9 @@ def test_tracing_provider_forwards_timeouts_only_when_configured() -> None:
 
 def test_tracing_provider_journals_send_reply(tmp_path: Path) -> None:
     from tests.manual.ab_journal import (
+        TRANSCRIPT_MODE_ARCHIVE,
         ABJournalWriter,
         TranscriptReplayCache,
-        TRANSCRIPT_MODE_ARCHIVE,
         verify_event_chain,
     )
 

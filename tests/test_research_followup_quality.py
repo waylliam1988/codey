@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from tests.manual import research_followup_quality_ab
+from tests.manual.ab_journal import TRANSCRIPT_MODE_ARCHIVE, TRANSCRIPT_MODE_DIGEST_ONLY
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
     score_source_finalizer_row,
 )
-from tests.manual import research_followup_quality_ab
-from tests.manual.ab_journal import TRANSCRIPT_MODE_ARCHIVE, TRANSCRIPT_MODE_DIGEST_ONLY
 
 
 def test_followup_quality_ab_transcript_mode_defaults_to_archive() -> None:

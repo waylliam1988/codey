@@ -13,9 +13,8 @@ from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
 from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
 )
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.log.session_log import RuntimeSessionLog
-
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 CLEAN_SOURCE_DIFF = (
     "diff --git a/src/mod.py b/src/mod.py\n"

@@ -24,13 +24,22 @@ from codey.storage.local_store import (
 from codey.utils.change_paths import change_file_paths
 from codey.workspace.paths import (
     content_hash as _content_hash,
+)
+from codey.workspace.paths import (
     ensure_not_symlink as _ensure_not_symlink,
+)
+from codey.workspace.paths import (
     path_hash as _path_hash,
+)
+from codey.workspace.paths import (
     read_text_bounded as _read_text_bounded,
+)
+from codey.workspace.paths import (
     read_text_or_none as _read_text_or_none,
+)
+from codey.workspace.paths import (
     safe_join as _safe_join,
 )
-
 
 MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_SNAPSHOT_DIFF_CHARS = 240_000

@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest import mock
 
 from codey.automation import browser
-from codey.storage import local_store
 from codey.providers import controls as provider_controls
+from codey.storage import local_store
 from codey.storage.ui_state_store import UiStateStore
 
 

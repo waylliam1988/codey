@@ -14,7 +14,6 @@ from codey.ghost.schema import (
 from codey.ghost.typed_fields import extractor_metadata_guidance
 from codey.utils.text_budget import clip_middle
 
-
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_TOO_MANY_JSON = "too_many_json"
 PROTOCOL_INVALID_SCHEMA = "invalid_schema"

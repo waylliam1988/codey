@@ -19,9 +19,9 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -35,7 +35,6 @@ from codey.research.report_quality import parse_citation_rows, review_report_qua
 from codey.research.source_document import SourceDocument
 from codey.reviews.report_sections import parse_sections
 from tests.manual import source_connector_ab as connector
-
 
 PROBE = "research_finalizer_replay_projection"
 TARGET_GAPS = (

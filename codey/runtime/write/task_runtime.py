@@ -13,8 +13,8 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.log.session_log import RuntimeSessionLog
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.kind import resolve_task_kind
 from codey.task.model import TaskSubmission
 

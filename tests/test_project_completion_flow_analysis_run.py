@@ -16,9 +16,9 @@ from codey.operations.project_completion_flow import (
     VerificationAccess,
     handle_project_tool_event,
 )
+from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
 

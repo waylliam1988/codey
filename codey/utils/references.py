@@ -7,10 +7,11 @@ only returns stable text matches that help the agent decide which files to read.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable
 
+from codey.utils.scan_report import ScanReport
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
     DEFAULT_MAX_SCAN_DIRS,
@@ -19,7 +20,6 @@ from codey.workspace.bounded_scan import (
     iter_bounded_files,
     iter_provided_files,
 )
-from codey.utils.scan_report import ScanReport
 
 REFERENCE_MAX_RESULTS = 80
 REFERENCE_MAX_FILE_BYTES = 512 * 1024

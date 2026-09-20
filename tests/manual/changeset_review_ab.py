@@ -28,7 +28,6 @@ from codey.reviews.core import (
     render_review_prompt,
 )
 
-
 ARMS = ("baseline", "current")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-changeset-review-ab.json"
 MAX_REVIEW_DIFF_CHARS = 60_000

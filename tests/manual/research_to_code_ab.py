@@ -36,12 +36,12 @@ if __package__ in (None, ""):
 
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.providers import controls as provider_controls
-from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.utils.text_budget import clip_middle
 from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import (
@@ -54,7 +54,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.

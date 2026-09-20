@@ -3,24 +3,28 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field, replace
 from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 
+from codey.research.ledger import ResearchLedger
+from codey.research.provenance import provenance_problem
+from codey.research.urls import opened_url
+from codey.reviews.report_sections import (
+    heading_key as _heading_key,
+)
+from codey.reviews.report_sections import (
+    missing_required_sections as _missing_required_sections,
+)
+from codey.reviews.report_sections import (
+    parse_sections,
+    section_title,
+)
 from codey.utils.citation_scanner import (
     CitationRef,
     citation_ref_items,
     citation_refs,
     source_id_ref_items,
     source_id_refs,
-)
-from codey.research.ledger import ResearchLedger
-from codey.research.urls import opened_url
-from codey.research.provenance import provenance_problem
-from codey.reviews.report_sections import (
-    heading_key as _heading_key,
-    missing_required_sections as _missing_required_sections,
-    parse_sections,
-    section_title,
 )
 
 _SOURCE_LINE_RE = re.compile(

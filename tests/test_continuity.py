@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.workspace import changes
 from codey.app import server
+from codey.workspace import changes
 
 
 class LocalContinuityTests(unittest.TestCase):

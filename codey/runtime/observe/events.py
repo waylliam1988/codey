@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
 
-
 MAX_EVENT_TEXT_CHARS = 1_000
 MAX_EVENT_RESULT_CHARS = 200
 TRUNCATED_TEXT_SUFFIX = "..."

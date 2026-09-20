@@ -4,14 +4,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
-from codey.operations.context import RunFrame, RunHooks
-from codey.operations.result import ModeOutcome
-from codey.operations.task_state import TaskState
 from codey.ghost.work_queue import GhostWorkItem
 from codey.knowledge.research_interest import (
     build_research_interest_candidates,
     candidate_to_topic_hint,
 )
+from codey.operations.context import RunFrame, RunHooks
+from codey.operations.result import ModeOutcome
+from codey.operations.task_state import TaskState
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
@@ -29,6 +29,8 @@ from codey.research.query_planner import build_research_plan, research_plan_trac
 from codey.research.runner import ResearchRunner
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY,
+)
+from codey.research.topic_continuity import (
     MAX_TOPIC_CLAIM_REFS,
     project_topic_continuity,
 )

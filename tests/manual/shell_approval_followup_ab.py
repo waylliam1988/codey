@@ -21,12 +21,11 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.app.shell_service import build_shell_approval_continuation
+from codey.completion.verification_policy import VerificationCandidate
+from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
-from codey.app.shell_service import build_shell_approval_continuation
-from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
-from codey.completion.verification_policy import VerificationCandidate
-
 
 ARMS = ("baseline", "full")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-shell-approval-followup-ab.json"

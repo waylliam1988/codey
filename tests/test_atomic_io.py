@@ -191,8 +191,9 @@ class AtomicWriteTests(unittest.TestCase):
                 self.assertTrue(flags & os.O_NOFOLLOW)
 
     def test_write_json_atomic(self) -> None:
-        from codey.storage.atomic_io import write_json_atomic
         import json
+
+        from codey.storage.atomic_io import write_json_atomic
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td, "data.json")

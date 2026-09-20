@@ -7,15 +7,15 @@ from codey.agents.prompt_context import (
     initial_reply,
     send_prompt,
 )
-from codey.agents.result_delivery import (
-    deliver_recovered_results,
-    deliver_turn_results,
-)
 from codey.agents.protocol import protocol_repair_prompt
 from codey.agents.request import (
     DEFAULT_MAX_TURNS,
     DEFAULT_STAGNANT_TURNS,
     AgentRequest,
+)
+from codey.agents.result_delivery import (
+    deliver_recovered_results,
+    deliver_turn_results,
 )
 from codey.agents.state import (
     AgentLoopSession,
@@ -47,8 +47,8 @@ from codey.agents.verification_driver import (
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.protocols.json_codec import PROTOCOL_NO_JSON
-from codey.runtime.observe.events import RunEvent
 from codey.runtime.core.models import ToolPlan
+from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelopeSection,

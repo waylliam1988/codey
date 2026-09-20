@@ -15,10 +15,10 @@ import json
 import sys
 import tempfile
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -29,7 +29,6 @@ from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
 from codey.research.runner import ResearchRunner
@@ -37,11 +36,11 @@ from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
     AB_FAILURE_PROVIDER,
+    TRANSCRIPT_MODE_FLAGS,
     ABJournalWriter,
     ArmRunLayout,
     FixtureDocument,
     ResultRowStore,
-    TRANSCRIPT_MODE_FLAGS,
     TracingProvider,
     attach_research_record_payload,
     bind_row_evidence_refs,
@@ -51,7 +50,7 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalIdentityMismatch, TranscriptReplayCache
-
+from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 
 PROBE = "research_forced_followup_gap_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

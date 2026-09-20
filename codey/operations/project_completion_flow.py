@@ -48,6 +48,12 @@ from codey.operations.provider_preflight import (
 )
 from codey.operations.research_flow import research_payload as _research_payload
 from codey.operations.result import ModeOutcome
+from codey.operations.task_context import (
+    ProjectTaskContextBuilder,
+    safe_project_map,
+    safe_verification_candidates,
+)
+from codey.operations.task_state import TaskState
 from codey.providers import PROVIDER_LABELS
 from codey.providers.capabilities import rank_providers
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
@@ -68,9 +74,9 @@ from codey.runtime.core.operation_state import (
     LEAF_COMPLETION_PROOF_RECORDED,
     RuntimeOperationTransitionError,
 )
+from codey.runtime.log.session_log import RuntimeLogError
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.log.session_log import RuntimeLogError
 from codey.runtime.observe.terminalizer import task_done_event
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
@@ -84,12 +90,6 @@ from codey.workspace.change_brief import (
 )
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 from codey.workspace.facts import ProjectFactsStore
-from codey.operations.task_context import (
-    ProjectTaskContextBuilder,
-    safe_project_map,
-    safe_verification_candidates,
-)
-from codey.operations.task_state import TaskState
 
 
 def _default_is_git_repository(_project: str | Path) -> bool:

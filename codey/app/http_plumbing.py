@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from collections import OrderedDict
 import json
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-import threading
 
 from codey import __version__
-
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 WEB_ASSET_DIR = WEB_DIR / "assets"

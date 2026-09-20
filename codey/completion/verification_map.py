@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from collections.abc import Sequence
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.changed_symbols import changed_symbol_names
@@ -22,7 +22,6 @@ from codey.workspace.map import (
     SECRET_SUFFIXES,
 )
 from codey.workspace.paths import is_test_path as _is_test_path
-
 
 MAX_CHANGED_FILES = 20
 MAX_SCAN_FILES = 400

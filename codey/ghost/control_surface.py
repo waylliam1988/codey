@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.ghost.affinity import GhostAffinityStore
@@ -16,7 +16,6 @@ from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
-
 
 CONTROL_SURFACE_SCHEMA_VERSION = 1
 MAX_SUMMARY_ITEMS = 20

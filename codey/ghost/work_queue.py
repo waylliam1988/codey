@@ -8,26 +8,33 @@ queue from terminal task facts.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, is_dataclass, replace
-from datetime import datetime, UTC
 import hashlib
+import uuid
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, is_dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Mapping
-import uuid
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.event_log import (
     GhostEventLog,
+)
+from codey.ghost.event_log import (
     compact_result_payload as _compact_payload,
+)
+from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
+from codey.policies.prompt_safety import is_prompt_visible_text_safe
+from codey.storage.event_state import reset_event_backed_state
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -37,10 +44,6 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-from codey.storage.event_state import reset_event_backed_state
-from codey.storage.file_lock import with_file_lock
-from codey.policies.prompt_safety import is_prompt_visible_text_safe
-
 
 WORK_QUEUE_SCHEMA_VERSION = 1
 MAX_WORK_ITEMS = 200

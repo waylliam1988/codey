@@ -9,11 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
-    EFFECT_CATEGORY_TOOL_CALL,
-    RuntimeEffectProjection,
-)
 from codey.runtime.core.operation_state import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
@@ -28,9 +23,14 @@ from codey.runtime.core.operation_state import (
     LEAF_WRITER_SETTLED,
     LEAVES,
 )
+from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectProjection,
+)
 from codey.runtime.effects.replay_policy import ReplayClass, is_replayable_safe_tool
-from codey.runtime.log.session_view import SessionView, pending_for
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
+from codey.runtime.log.session_view import SessionView, pending_for
 
 ACTION_CONTINUE = "continue_operation"
 ACTION_FAIL_INVARIANT = "fail_invariant"

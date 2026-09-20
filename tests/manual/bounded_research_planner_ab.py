@@ -23,6 +23,21 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import codey.research.followup_selection as followup_selection
+import codey.research.pipeline as pipeline_module
+from codey.knowledge.store import KnowledgeStore
+from codey.providers import controls as provider_controls
+from codey.providers.registry import connect_provider, provider_ids
+from codey.research.context import ResearchContext, ResearchPipelineConfig
+from codey.research.evidence_followup import run_evidence_followup
+from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
+from codey.research.plan_executor import PlanExecutionResult
+from codey.research.proof_quality import review_research_proof
+from codey.research.protocols import extract_json_objects
+from codey.research.query_planner import QueryCandidate, ResearchPlan
+from codey.research.runner import ResearchRunner
+from codey.research.tools import ResearchTools, clone_research_tools
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
@@ -48,23 +63,7 @@ from tests.manual.ab_journal import (
     ABJournalReader,
     ABJournalWriter,
 )
-from codey.providers import controls as provider_controls
-from codey.knowledge.store import KnowledgeStore
-from codey.providers.registry import connect_provider, provider_ids
-from codey.research.context import ResearchContext, ResearchPipelineConfig
-from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.research.evidence_followup import run_evidence_followup
-import codey.research.followup_selection as followup_selection
-import codey.research.pipeline as pipeline_module
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
-from codey.research.plan_executor import PlanExecutionResult
-from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
-from codey.research.proof_quality import review_research_proof
-from codey.research.protocols import extract_json_objects
-from codey.research.query_planner import QueryCandidate, ResearchPlan
-from codey.research.runner import ResearchRunner
-from codey.research.tools import ResearchTools, clone_research_tools
-
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")

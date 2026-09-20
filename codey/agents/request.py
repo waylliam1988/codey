@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
-from collections.abc import Callable
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
-from codey.providers import ChatProvider
 from codey.protocols import ProtocolCodec
-from codey.runtime.observe.events import RunEvent, print_run_event
+from codey.providers import ChatProvider
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome
 
 DEFAULT_MAX_TURNS = 50

@@ -20,7 +20,6 @@ from codey.workspace.context_epoch import (
     context_epoch_id,
 )
 
-
 DEFAULT_PROMPT_SEPARATOR = "\n\n"
 MODEL_BOUNDARY_FRESHNESS = frozenset((PROVIDER_TURN_BOUNDARY,))
 MAX_PROMPT_SOURCE_REFS = 64

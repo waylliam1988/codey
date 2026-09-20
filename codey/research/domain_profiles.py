@@ -19,8 +19,8 @@ Design rules locked by tests:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
 
 GENERAL_PROFILE_ID = "general"
 BUILTIN_PROFILE_IDS = (

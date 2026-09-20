@@ -10,15 +10,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
+from codey.providers.diagnostics import ProviderFailure
+from codey.runs.receipt import task_receipt_from_payload
 from codey.runtime.observe.events import RunEvent
 from codey.storage.file_lock import with_file_lock
-from codey.runs.receipt import task_receipt_from_payload
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
-from codey.providers.diagnostics import ProviderFailure
-
 
 SCHEMA_VERSION = 1
 MAX_TEXT_CHARS = 1_000

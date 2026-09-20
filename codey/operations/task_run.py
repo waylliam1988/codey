@@ -9,10 +9,10 @@ Mode behavior lives in the mode flow modules.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass, replace
 import functools
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -22,24 +22,24 @@ from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
 from codey.operations.recovery import recover_effects_for_resume
 from codey.operations.task_phases import (
+    build_hooks,
+    build_run_work,
+    claim_or_route_ghost_work,
+    connect_and_build_frame,
     dispatch_run_mode,
+    ensure_run_reserved_and_started,
+    finish_mode_outcome,
     finish_run_operation,
     ghost_task_deps,
     open_run_ledger,
     open_run_trace,
     project_completion_deps,
+    record_provider_failure_event,
     record_route_trace,
     review_flow_deps,
-    start_run_operation,
-    build_hooks,
-    build_run_work,
-    claim_or_route_ghost_work,
-    connect_and_build_frame,
-    ensure_run_reserved_and_started,
-    finish_mode_outcome,
-    record_provider_failure_event,
     settle_cancelled_run,
     settle_error_run,
+    start_run_operation,
 )
 from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls
@@ -55,7 +55,6 @@ from codey.runtime.observe.terminalizer import (
 from codey.task.kind import resolve_task_kind, trace_mode, ui_mode
 from codey.task.model import TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult, load_project_config
-
 
 logger = logging.getLogger(__name__)
 

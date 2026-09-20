@@ -41,7 +41,6 @@ from codey.completion.edit_integrity import (
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.utils.refs import clip, identifier
 
-
 RECEIPT_SCHEMA_VERSION = 1
 
 VERIFICATION_TRUST_TRUSTED = "trusted"

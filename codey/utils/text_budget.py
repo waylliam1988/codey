@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 OUTPUT_OMISSION_MARKER = "\n\n... middle of output omitted ...\n\n"
 _PYTHON_FRAME_RE = re.compile(r'^\s*File "([^"]+)", line \d+(?:, in .*)?$')
 _NODE_FRAME_RE = re.compile(r"^\s*at\s+")

@@ -14,14 +14,13 @@ source is. Combining both is the consumer's job.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
-from codey.utils.refs import clip as _clip
-from codey.utils.refs import identifier as _identifier
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-
+from codey.utils.refs import clip as _clip
+from codey.utils.refs import identifier as _identifier
 
 # Low-dimensional, cross-domain source classes. Concrete sites/databases are
 # deliberately not classes; they would turn this into a domain knowledge base.

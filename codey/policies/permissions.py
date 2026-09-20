@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "ghost_continuity",
     "ghost_directive",

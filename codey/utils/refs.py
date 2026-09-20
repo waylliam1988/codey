@@ -16,7 +16,6 @@ import json
 import re
 from collections.abc import Iterable
 
-
 DEFAULT_REF_LIMIT = 12
 
 

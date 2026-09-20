@@ -12,7 +12,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 
 PATH_ARG_KEYS = ("path", "cwd")

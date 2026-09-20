@@ -28,20 +28,38 @@ EvidenceLedger / ResearchRecord / release claims.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
-from dataclasses import dataclass
 import json
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 from unittest import mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents.request import AgentRequest
+from codey.agents.runner import RunResult
+from codey.app import server
+from codey.app import task_submit as task_submit
+from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.research_interest import build_research_interest_candidates
+from codey.knowledge.store import KnowledgeStore
+from codey.operations import research_flow as research_flow_module
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
+from codey.research.context import ResearchContext
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
+from codey.research.pipeline import ResearchIterationRun
+from codey.research.report_quality import review_report_quality
+from codey.research.runner import ResearchRunResult
+from codey.reviews.core import ReviewResult
+from codey.task.model import TaskSubmission
 from tests.manual.ab_harness_common import (
     AB_FAILURE_CODEY,
     AB_FAILURE_NONE,
@@ -55,24 +73,6 @@ from tests.manual.ab_harness_common import (
     write_arm_manifest,
 )
 from tests.manual.ab_journal import ABJournalWriter
-from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult
-from codey.knowledge.note import KnowledgeNote
-from codey.knowledge.research_interest import build_research_interest_candidates
-from codey.knowledge.store import KnowledgeStore
-from codey.research.context import ResearchContext
-from codey.research.ledger import ResearchLedger
-from codey.research.object_model import build_research_record
-from codey.research.pipeline import ResearchIterationRun
-from codey.research.report_quality import review_report_quality
-from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
-from codey.research.runner import ResearchRunResult
-from codey.reviews.core import ReviewResult
-from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
-from codey.operations import research_flow as research_flow_module
-from codey.app import server
-from codey.app import task_submit as task_submit
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "continuity")

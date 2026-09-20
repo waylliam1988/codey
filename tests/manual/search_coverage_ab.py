@@ -23,12 +23,10 @@ if __package__ in (None, ""):
 
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.providers import controls as provider_controls
 from codey.agents.tools import AgentToolFns
-from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
-from codey.utils.scan_report import ScanReport
+from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.toolchain.runtime import (
     SEARCH_EXCLUDED_DIRS,
     SEARCH_MAX_DIR_ENTRIES,
@@ -40,10 +38,13 @@ from codey.toolchain.runtime import (
     ToolOutcome,
     _byte_limit_label,
     _raw_path_symlink_reason,
-    read_file as runtime_read_file,
     safe_join,
 )
-
+from codey.toolchain.runtime import (
+    read_file as runtime_read_file,
+)
+from codey.utils.scan_report import ScanReport
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-search-coverage-ab.json"

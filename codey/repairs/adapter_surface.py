@@ -24,7 +24,6 @@ from __future__ import annotations
 
 from codey.providers.ids import normalize_provider_id
 
-
 PROVIDER_DRIVER_FILES = {
     "deepseek": ("codey/providers/web_drivers/deepseek.py",),
     "qwen": ("codey/providers/web_drivers/qwen.py",),

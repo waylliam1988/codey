@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
+import codey.ghost.work_queue as work_queue_module
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-import codey.ghost.work_queue as work_queue_module
-from codey.runtime.core import cancellation
+from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.runs.work_checkpoint import WorkCheckpointStore
+from codey.runtime.core import cancellation
+from codey.task.model import TaskSubmission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 
@@ -480,8 +480,8 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         # Real observable facts (edit + passing check): under 0.4.13 a
         # claimed green with no local observation would block this run.
         def _fake_agent_run(request: AgentRequest):
-            from codey.runtime.observe.events import RunEvent
             from codey.runtime.core.models import ToolCall
+            from codey.runtime.observe.events import RunEvent
             from codey.toolchain.runtime import ToolOutcome
 
             request.on_event(RunEvent.tool_finished(

@@ -7,7 +7,6 @@ import re
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.policies.prompt_safety import contains_prompt_control_text
 
-
 SLOT_PHRASES = {
     "format": "format",
     "freshness": "freshness",

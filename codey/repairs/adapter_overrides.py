@@ -10,16 +10,22 @@ installing a partial web adapter.
 
 from __future__ import annotations
 
-import shutil
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import codey
 from codey import __version__
+from codey.providers.diagnostics import (
+    FAILURE_CONTROL_MISSING,
+    FAILURE_READINESS_STALE,
+    FAILURE_RESPONSE_MISSING,
+)
+from codey.providers.ids import normalize_provider_id
 from codey.repairs.adapter_surface import adapter_repair_surface
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
@@ -28,13 +34,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-from codey.providers.diagnostics import (
-    FAILURE_CONTROL_MISSING,
-    FAILURE_READINESS_STALE,
-    FAILURE_RESPONSE_MISSING,
-)
-from codey.providers.ids import normalize_provider_id
-
 
 STATUS_CANDIDATE = "candidate"
 STATUS_PROVISIONAL = "provisional"

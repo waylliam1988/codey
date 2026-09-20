@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, UTC
 import hashlib
 import math
-from pathlib import Path
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from pathlib import Path
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
-    compact_result_payload as _shared_compact_payload,
     count_jsonl_rows,
+)
+from codey.ghost.event_log import (
+    compact_result_payload as _shared_compact_payload,
+)
+from codey.ghost.event_log import (
     control_event as _ghost_control_event,
+)
+from codey.ghost.event_log import (
     event_file_stats as _shared_event_file_stats,
 )
 from codey.ghost.event_projection import (
@@ -22,27 +30,36 @@ from codey.ghost.event_projection import (
 )
 from codey.ghost.graph_primitives import (
     any_decay_due as _shared_any_decay_due,
+)
+from codey.ghost.graph_primitives import (
     bound_graph_edges as _shared_bound_graph_edges,
+)
+from codey.ghost.graph_primitives import (
     bound_graph_nodes as _shared_bound_graph_nodes,
+)
+from codey.ghost.graph_primitives import (
     decay_basis_of as _shared_decay_basis_of,
+)
+from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
+)
+from codey.ghost.graph_primitives import (
     now_iso as _shared_now_iso,
+)
+from codey.ghost.graph_primitives import (
     parse_ts as _shared_parse_ts,
 )
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._warnings import slice_event_warnings
+from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     delete_file,
     write_json_atomic,
 )
-
 
 HEBBIAN_SCHEMA_VERSION = 1
 MAX_GHOST_NODES = 500

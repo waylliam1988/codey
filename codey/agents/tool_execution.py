@@ -25,15 +25,14 @@ from codey.policies.action import (
     ActionSubject,
     evaluate_action,
 )
-from codey.runtime.observe.events import RunEvent
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.observe.events import RunEvent
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
     render_tool_activity,
 )
 from codey.toolchain.runtime import ToolOutcome, safe_join
-
 
 SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
 INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
@@ -210,9 +209,9 @@ def settle_tool_call_effect(
         return
     from codey.runtime.effects.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
-        RuntimeEffectSettlement,
         SETTLEMENT_STATUS_ERROR,
         SETTLEMENT_STATUS_OK,
+        RuntimeEffectSettlement,
     )
     status = SETTLEMENT_STATUS_OK if outcome.ok else SETTLEMENT_STATUS_ERROR
     error_code = str(outcome.error_code or ("" if outcome.ok else "error"))

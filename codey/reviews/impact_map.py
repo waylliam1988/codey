@@ -8,17 +8,16 @@ possible callers and tests without expanding Codey's product surface.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
 from codey.runtime.core import cancellation
+from codey.utils.references import REFERENCE_EXCLUDED_DIRS, find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.change_set import ChangeSet
 from codey.workspace.changed_symbols import ChangedSymbol, changed_symbols_from_changes
 from codey.workspace.paths import is_test_path as _is_test_path
-from codey.utils.references import REFERENCE_EXCLUDED_DIRS, find_reference_hints
-
 
 MAX_CHANGED_SYMBOLS = 3
 MAX_REFS_PER_SYMBOL = 4

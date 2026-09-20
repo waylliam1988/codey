@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import (
     RunCommandRawResult,
     ToolOutcome,

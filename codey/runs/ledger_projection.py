@@ -6,8 +6,8 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
-from codey.runs.receipt import TaskReceipt, task_receipt_from_payload
 from codey.runs.ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore, read_ledger
+from codey.runs.receipt import TaskReceipt, task_receipt_from_payload
 
 
 @dataclass(frozen=True)

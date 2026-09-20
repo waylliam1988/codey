@@ -9,18 +9,16 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable, Mapping, Sequence
 
-from codey.runtime.core import cancellation
-from codey.providers import controls as provider_controls
-from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.agents.handoff import ConversationSnapshot
+from codey.protocols import JsonToolCodec
+from codey.providers import controls as provider_controls
+from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
-from codey.protocols import JsonToolCodec
-from codey.utils.references import find_reference_hints
 from codey.toolchain.runtime import (
     READ_MAX_CHARS,
     SEARCH_MAX_FILE_BYTES,
@@ -30,7 +28,8 @@ from codey.toolchain.runtime import (
     read_file,
     safe_join,
 )
-
+from codey.utils.references import find_reference_hints
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 MAX_CONSENSUS_ADVISORS = 2
 MAX_ADVICE_CHARS = 4_000

@@ -10,8 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any
-from codey.research.urls import full_key, host_key, opened_url, parsed_url
-from codey.runtime.core.models import Control, ToolPlan, ToolResult
+
 from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
@@ -21,6 +20,8 @@ from codey.research.tool_contract import (
     tool_example,
 )
 from codey.research.url_selection import source_candidate_skip_reason
+from codey.research.urls import full_key, host_key, opened_url, parsed_url
+from codey.runtime.core.models import Control, ToolPlan, ToolResult
 
 CONTROLLER_DISPLAY_LIMIT = 8
 FINAL_REPORT_SECTION_MARKERS = ("结论", "关键证据", "反证与限制", "来源质量", "搜索覆盖", "来源")

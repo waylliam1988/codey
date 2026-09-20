@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey.providers import send_loop as send_loop
 from codey.providers import flow as provider_flow
+from codey.providers import send_loop as send_loop
 from codey.providers.diagnostics import ResponseMissing
 from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import base as driver_base

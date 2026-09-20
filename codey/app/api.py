@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
-from codey.app import provider_services
-from codey.app import shell_service
+from codey.app import provider_services, shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS

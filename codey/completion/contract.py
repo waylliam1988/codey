@@ -21,12 +21,11 @@ Status derivation is a hard gate, not a score:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
 
-from codey.utils.refs import bounded_refs, digest_text, identifier, stable_ref
 from codey.policies.redaction import looks_prompt_visible_secret
-
+from codey.utils.refs import bounded_refs, digest_text, identifier, stable_ref
 
 COMPLETION_CONTRACT_PREFIX = "completion_contract"
 COMPLETION_PROOF_PREFIX = "completion_proof"

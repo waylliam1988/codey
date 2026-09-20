@@ -8,28 +8,28 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from codey.workspace.config import (
-    ProjectConfigLoadResult,
-    ProjectVerificationCommand,
-    load_project_config,
-    render_project_config_warnings,
-)
-from codey.runtime.core import cancellation
-from codey.workspace.facts import ProjectFactsStore, VerifiedCommand
-from codey.knowledge.brief import KnowledgeBriefBuilder
-from codey.knowledge.store import KnowledgeStore
-from codey.workspace.map import MAX_PROJECT_MAP_CHARS, render_project_map
 from codey.completion.verification_policy import (
     VerificationCandidate,
     discover_verification_candidates,
     verification_candidate_lines,
 )
+from codey.knowledge.brief import KnowledgeBriefBuilder
+from codey.knowledge.store import KnowledgeStore
 from codey.runs.work_checkpoint import (
     CheckpointCheck,
     WorkCheckpoint,
     WorkCheckpointStore,
     render_work_checkpoint,
 )
+from codey.runtime.core import cancellation
+from codey.workspace.config import (
+    ProjectConfigLoadResult,
+    ProjectVerificationCommand,
+    load_project_config,
+    render_project_config_warnings,
+)
+from codey.workspace.facts import ProjectFactsStore, VerifiedCommand
+from codey.workspace.map import MAX_PROJECT_MAP_CHARS, render_project_map
 
 
 @dataclass(frozen=True)

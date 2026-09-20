@@ -19,9 +19,8 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 from codey.research.protocols import extract_json_objects
-
+from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 DEFAULT_INPUTS = (

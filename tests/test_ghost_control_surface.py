@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.affinity import GhostAffinityStore
+from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult

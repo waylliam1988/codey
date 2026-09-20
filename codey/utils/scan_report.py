@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 MAX_SCAN_REPORT_EXAMPLES = 3
 
 

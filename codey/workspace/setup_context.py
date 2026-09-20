@@ -5,13 +5,11 @@ from __future__ import annotations
 import json
 import shutil
 import tomllib
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
+from codey.completion.verification_policy import node_package_manager_for_directory
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.map import EXCLUDED_DIRS, LOCK_FILENAMES, MANIFEST_NAMES, _path_blocked
-from codey.completion.verification_policy import node_package_manager_for_directory
-
 
 MAX_SETUP_CONTEXT_CHARS = 2_200
 MAX_SETUP_SCAN_FILES = 300

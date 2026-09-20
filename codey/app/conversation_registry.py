@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import threading
+from pathlib import Path
 
 from codey.agents.handoff import ConversationContext
 from codey.storage.conversation_store import ConversationStore

@@ -6,15 +6,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.app import context as app_context
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.app import consensus_service
-from codey.app import review_service
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.runtime.observe.events import RunEvent
-from codey.runtime.core.models import ToolCall
+from codey.app import consensus_service, review_service, server
+from codey.app import context as app_context
+from codey.app import task_submit as task_submit
 from codey.runs.ledger import (
     RunLedgerStore,
     RunLedgerWriter,
@@ -24,9 +20,10 @@ from codey.runs.ledger_projection import (
     build_task_receipt_from_projection,
     load_run_projection,
 )
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.runtime import ToolOutcome
-
 
 VALID_SHA256 = "a" * 64
 

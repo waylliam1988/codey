@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 
 from codey.providers import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
-
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 
-
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)、]\s+)")
 _HEADING_NUMBER_RE = re.compile(

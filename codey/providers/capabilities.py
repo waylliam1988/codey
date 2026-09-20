@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Literal
-from collections.abc import Iterable
 
 from codey.providers.ids import normalize_provider_id
-
 
 ProviderFit = Literal["ok", "avoid"]
 Reliability = Literal["high", "medium", "low"]

@@ -3,22 +3,22 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.workspace.facts import VerifiedCommand
-from codey.workspace.config import ProjectVerificationCommand
 from codey.completion.discovery import is_manifest_file, read_manifest_text
 from codey.completion.verification_policy import (
     MAX_MANIFEST_BYTES,
     VerificationCandidate,
     _bounded_directories,
-    check_matches_candidate,
     check_covers_changes,
     check_covers_selected_candidate,
+    check_matches_candidate,
     discover_verification_candidates,
     node_package_manager_for_directory,
     select_verification_candidate,
     selected_verification_candidate_lines,
     verification_candidate_lines,
 )
+from codey.workspace.config import ProjectVerificationCommand
+from codey.workspace.facts import VerifiedCommand
 
 # Commands in coverage tests carry no filesystem operands, so any real
 # directory satisfies the canonicalizer; which() is mocked per test.

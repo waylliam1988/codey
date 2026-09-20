@@ -15,11 +15,10 @@ fetches sources, and never imports runtime layers.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
-from codey.utils.refs import content_digest
-from codey.utils.refs import identifier as _identifier
+from codey.research.guards import generated_ref as _generated_ref
 from codey.research.object_model import (
     MAX_RECORD_ASSUMPTIONS,
     MAX_RECORD_CLAIMS,
@@ -28,8 +27,8 @@ from codey.research.object_model import (
     MAX_RECORD_SOURCES,
     ResearchRecord,
 )
-from codey.research.guards import generated_ref as _generated_ref
-
+from codey.utils.refs import content_digest
+from codey.utils.refs import identifier as _identifier
 
 _HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
 _BOUNDED_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")

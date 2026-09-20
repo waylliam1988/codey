@@ -40,8 +40,9 @@ class GoldenParityTests(unittest.TestCase):
         # minimal ledger to produce a deterministic block
         import tempfile
         from pathlib import Path
-        from codey.knowledge.store import KnowledgeStore
+
         from codey.knowledge.changes import KnowledgeChanges
+        from codey.knowledge.store import KnowledgeStore
         from codey.research.tools import ResearchTools
 
         class FakeSearch:
@@ -69,10 +70,10 @@ class GoldenParityTests(unittest.TestCase):
                 pass
 
     def test_research_repair_prompt_golden(self) -> None:
-        from codey.research.tool_contract import PROTOCOL_DISALLOWED_TOOL
         from codey.research.controller import ResearchController, ResearchControlState
         from codey.research.protocols import JsonToolCodec as ResearchCodec
         from codey.research.runner import render_research_repair_prompt
+        from codey.research.tool_contract import PROTOCOL_DISALLOWED_TOOL
         from codey.runtime.core.models import ToolPlan
 
         state = ResearchControlState(

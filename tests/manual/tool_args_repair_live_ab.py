@@ -21,17 +21,16 @@ if __package__ in (None, ""):
 
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.providers import controls as provider_controls
-from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.protocols.json_codec import (
     PROTOCOL_INVALID_ARGS,
     JsonToolCodec,
     _balanced_json_objects,
 )
-from codey.runtime.observe.events import render_run_event
-from codey.runtime.core.models import ToolPlan
+from codey.providers import controls as provider_controls
+from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runs.trace import RunTraceStore
-
+from codey.runtime.core.models import ToolPlan
+from codey.runtime.observe.events import render_run_event
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "candidate")

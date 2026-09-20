@@ -11,14 +11,12 @@ import subprocess
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
-from codey.runtime.core import cancellation
-from codey.storage.atomic_io import write_text_atomic
 from codey.policies.action import (
-    ActionSubject,
     DECISION_DENY,
+    ActionSubject,
     evaluate_action,
 )
 from codey.policies.run_command_semantics import (
@@ -27,6 +25,17 @@ from codey.policies.run_command_semantics import (
     is_allowed_run_command,
     is_suite_run_command,
 )
+from codey.runtime.core import cancellation
+from codey.runtime.core.models import (
+    json_safe_projection,
+    model_text_with_audit_markers,
+    normalized_managed_output,
+)
+from codey.storage.atomic_io import write_text_atomic
+from codey.toolchain.constants import MAX_REPLACEMENTS
+from codey.utils.references import find_reference_hints
+from codey.utils.scan_report import render_scan_coverage
+from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
     DEFAULT_MAX_SCAN_DIRS,
@@ -37,16 +46,6 @@ from codey.workspace.bounded_scan import (
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
 from codey.workspace.paths import read_text_bounded_no_follow as _read_text_bounded_no_follow
 from codey.workspace.paths import safe_join
-from codey.runtime.core.models import (
-    json_safe_projection,
-    model_text_with_audit_markers,
-    normalized_managed_output,
-)
-from codey.utils.references import find_reference_hints
-from codey.utils.scan_report import render_scan_coverage
-from codey.toolchain.constants import MAX_REPLACEMENTS
-from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
-
 
 SEARCH_EXCLUDED_DIRS = {
     ".git",

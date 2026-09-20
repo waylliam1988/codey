@@ -6,8 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.app_state import make_app_state
 from codey.research.pipeline import ResearchPipeline
+from tests.app_state import make_app_state
 
 
 class ResearchChangesSessionTests(unittest.TestCase):

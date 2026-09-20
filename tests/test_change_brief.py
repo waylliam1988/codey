@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.workspace.change_brief import new_project_change_brief, project_audit_change_brief
 from codey.agents.consensus import ConsensusAdvice
+from codey.workspace.change_brief import new_project_change_brief, project_audit_change_brief
 
 
 class ChangeBriefTests(unittest.TestCase):

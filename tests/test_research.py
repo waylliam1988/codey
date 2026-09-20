@@ -12,15 +12,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.automation import browser_worker
-from codey.runtime.core import cancellation
 from codey.agents.consensus import ConsensusAdvice
-from codey.runtime.observe.events import RunEvent, run_event_payload
+from codey.automation import browser_worker
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
-from codey.runtime.core.models import ToolCall, ToolResult
-from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
+from codey.policies.network import check_fetch_url
 from codey.research import browser_search
-from codey.research.browser_search import BrowserSearchProvider, RESEARCH_CDP_PORT, RESEARCH_PROFILE
+from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
+from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
 from codey.research.controller import (
     OpenTarget,
     ResearchControlState,
@@ -31,18 +29,20 @@ from codey.research.controller import (
 )
 from codey.research.done_finalizer import finalize_done_answer
 from codey.research.ledger import EvidenceItem, ResearchLedger
-from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
-from codey.research.provenance import provenance_problem
-from codey.research.protocols import JsonToolCodec
 from codey.research.object_model import build_research_record
+from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.proof_quality import review_research_proof
+from codey.research.protocols import JsonToolCodec
+from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
-from codey.research.tools import ResearchTools
 from codey.research.tool_contract import research_tool_contract_hash
-from codey.policies.network import check_fetch_url
+from codey.research.tools import ResearchTools
+from codey.runtime.core import cancellation
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.observe.events import RunEvent, run_event_payload
 
 
 class FakeProvider:
@@ -4809,8 +4809,8 @@ class ConceptRelationsTests(unittest.TestCase):
         )
 
     def test_run_concept_tags_ranks_run_note_tags_and_skips_machine_or_inactive_tags(self) -> None:
-        from codey.research.runner import _run_concept_tags
         from codey.knowledge import KnowledgeNote
+        from codey.research.runner import _run_concept_tags
 
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

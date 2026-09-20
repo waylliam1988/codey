@@ -10,17 +10,19 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any
 from collections.abc import Callable
+from typing import Any
 
-from codey.runtime.core import cancellation
 from codey.providers.controls import (
     CONTROL_MESSAGE_BOX,
     locate_control,
     locate_response,
+)
+from codey.providers.controls import (
     response_count as _controls_response_count,
 )
 from codey.providers.profiles import ProviderProfile
+from codey.runtime.core import cancellation
 
 
 def message_box(

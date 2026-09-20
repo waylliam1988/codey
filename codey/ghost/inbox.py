@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import datetime, UTC
-from pathlib import Path
 import re
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from pathlib import Path
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
     count_jsonl_rows,
+)
+from codey.ghost.event_log import (
     control_event as _ghost_control_event,
+)
+from codey.ghost.event_log import (
     event_file_stats as _shared_event_file_stats,
 )
 from codey.ghost.gate import (
@@ -25,19 +32,18 @@ from codey.ghost.gate import (
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import (
     SCHEMA_VERSION as SIGNAL_SCHEMA_VERSION,
+)
+from codey.ghost.schema import (
     SIGNAL_KINDS,
     SIGNAL_SCOPES,
     GhostSignal,
     GhostSignalParseResult,
     clip_signal_text,
 )
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
-from codey.ghost._warnings import slice_event_warnings
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
+from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -45,7 +51,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-
 
 INBOX_SCHEMA_VERSION = 1
 MAX_GHOST_EVENTS = 5_000

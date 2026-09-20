@@ -20,19 +20,22 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.providers import controls as provider_controls
 from codey.ghost.router import (
-    GhostRouteDecision as RouterDecision,
-    GhostRouteRequest,
     ROUTER_MODES,
+    GhostRouteRequest,
     normalize_route_mode,
     parse_route_reply,
-    render_route_prompt as render_production_route_prompt,
     route_error_cost,
 )
+from codey.ghost.router import (
+    GhostRouteDecision as RouterDecision,
+)
+from codey.ghost.router import (
+    render_route_prompt as render_production_route_prompt,
+)
 from codey.ghost.schema import clip_signal_text
+from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
-
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CASES = ROOT / "tests" / "fixtures" / "ghost_router_cases.jsonl"

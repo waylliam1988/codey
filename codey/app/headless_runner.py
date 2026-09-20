@@ -10,32 +10,35 @@ from __future__ import annotations
 import json
 import sys
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.runner import run as default_agent_run
 from codey.agents.shell_approval import shell_command_event_fields
-from codey.workspace.changes import collect_changes as default_collect_changes
-from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
-from codey.storage.local_store import DEFAULT_STATE_HOME
-from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
-from codey.providers import (
-    DEFAULT_PROVIDER_ID,
-    connect_fresh_provider_tab as default_connect_fresh_provider_tab,
-    connect_provider as default_connect_provider,
-)
 from codey.app.context import (
-    AppContext,
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
+    AppContext,
 )
-from codey.workspace.changes import is_git_repository
-from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
-
+from codey.providers import (
+    DEFAULT_PROVIDER_ID,
+)
+from codey.providers import (
+    connect_fresh_provider_tab as default_connect_fresh_provider_tab,
+)
+from codey.providers import (
+    connect_provider as default_connect_provider,
+)
+from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
+from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
+from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.task.model import TaskSubmission
+from codey.workspace.changes import collect_changes as default_collect_changes
+from codey.workspace.changes import is_git_repository
 
 SCHEMA_VERSION = 1
 HEADLESS_SESSION_PREFIX = "headless_"

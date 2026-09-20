@@ -14,14 +14,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from codey.runtime.core import cancellation
-from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.automation.browser import DEFAULT_PORT
+from codey.providers import controls as provider_controls
+from codey.providers import flow as provider_flow
 from codey.providers.diagnostics import sanitize_failure_facts
 from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSETS
-from codey.providers import controls as provider_controls, flow as provider_flow
+from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.repairs.self_repair import SelfRepairJob
-
+from codey.runtime.core import cancellation
 
 DEFAULT_REPAIR_TIMEOUT = 900.0
 DEFAULT_MODEL_TIMEOUT = 300.0

@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-
 WEB_DIR = Path(__file__).resolve().parents[1] / "codey" / "web"
 ASSET_DIR = WEB_DIR / "assets"
 HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")

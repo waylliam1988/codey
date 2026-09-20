@@ -246,9 +246,9 @@ def test_gate_verdict_rejects_missing_repeat() -> None:
 
 def test_tracing_provider_journals_send_reply_and_transcript(tmp_path) -> None:
     from tests.manual.ab_journal import (
+        TRANSCRIPT_MODE_ARCHIVE,
         ABJournalWriter,
         TranscriptReplayCache,
-        TRANSCRIPT_MODE_ARCHIVE,
         verify_event_chain,
     )
 

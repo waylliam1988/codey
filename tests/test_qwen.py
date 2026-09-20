@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import unittest
-import threading
 import tempfile
+import threading
+import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime.core import cancellation
 from codey.providers import revival as provider_revival
-from codey.storage.local_store import read_json, write_json_atomic
 from codey.providers.diagnostics import ControlMissing
 from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import qwen
+from codey.runtime.core import cancellation
+from codey.storage.local_store import read_json, write_json_atomic
 from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 

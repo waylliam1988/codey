@@ -7,13 +7,13 @@ HTTP handlers and task dispatch on other threads, so all browser automation
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum
 import queue
 import threading
 import time
-from typing import Any, TypeVar
 from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, TypeVar
 
 from codey.runtime.core import cancellation
 

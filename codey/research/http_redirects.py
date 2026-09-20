@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from urllib.parse import urljoin
 import urllib.request
+from urllib.parse import urljoin
 
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import tempfile
 import threading
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -17,10 +17,9 @@ from codey.ghost.work_queue import (
     is_strict_work_continuation,
     proof_refs_from_task_event,
 )
-from codey.storage.local_store import delete_file
 from codey.runs.ledger_projection import RunLedgerProjection
 from codey.runs.work_checkpoint import WorkCheckpointStore
-
+from codey.storage.local_store import delete_file
 
 FRESH_TS = "2999-01-01T00:00:00Z"
 

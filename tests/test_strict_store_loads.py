@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.ghost.router import _read_json_dict, MAX_ROUTER_STATE_BYTES
+from codey.ghost.router import MAX_ROUTER_STATE_BYTES, _read_json_dict
 from codey.ghost.sleep import GhostSleepStore
 from codey.providers import controls as provider_controls
 from codey.providers import revival as provider_revival

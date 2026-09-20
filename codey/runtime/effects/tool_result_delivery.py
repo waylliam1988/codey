@@ -15,12 +15,12 @@ Does not import agents, provider, ghost, operations, or tool runners.
 
 from __future__ import annotations
 
+import hashlib
+import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, UTC
-import hashlib
+from datetime import UTC, datetime
 from typing import Any
-import uuid
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.keep_policies import (

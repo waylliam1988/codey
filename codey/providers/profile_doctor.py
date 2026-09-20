@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
-from collections.abc import Callable, Iterable
 
-from codey.runtime.core import cancellation
 from codey.providers.discovery import Discovery
-
+from codey.runtime.core import cancellation
 
 MAX_CANDIDATES = 8
 MAX_LABEL = 64

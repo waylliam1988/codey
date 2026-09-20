@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT
+from codey.protocols.json_codec import SYSTEM_PROMPT, JsonToolCodec
 from codey.research.controller import controller_action_contract_hash, controller_system_prompt
 from codey.research.protocols import JsonToolCodec as ResearchCodec
+from codey.toolchain.definition import TOOL_DEFINITIONS
 from codey.toolchain.tool_prompt import (
     RenderedToolContract,
     coding_model_tool_contract_hash,
@@ -13,7 +14,6 @@ from codey.toolchain.tool_prompt import (
     render_coding_tool_contract,
     render_coding_tool_contract_text,
 )
-from codey.toolchain.definition import TOOL_DEFINITIONS
 
 
 class ToolPromptTests(unittest.TestCase):

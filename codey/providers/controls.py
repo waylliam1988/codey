@@ -12,19 +12,21 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 from urllib.parse import urlparse
 
-from codey.runtime.core import cancellation
-from codey.providers import profile_doctor
-from codey.providers.assistance import assistance_suppressed, suppress_assistance
 from codey.providers import discovery as discovery
 from codey.providers import flow as provider_flow
+from codey.providers import profile_doctor
 from codey.providers import revival as provider_revival
+from codey.providers.assistance import assistance_suppressed, suppress_assistance
+from codey.providers.diagnostics import ResponseMissing
+from codey.providers.profiles import get_profile
+from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -32,8 +34,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-from codey.providers.diagnostics import ResponseMissing
-from codey.providers.profiles import get_profile
 
 logger = logging.getLogger(__name__)
 

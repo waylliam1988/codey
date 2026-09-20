@@ -13,16 +13,41 @@ import json
 import mimetypes
 import re
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Iterable, Mapping
 from urllib.parse import quote
 
+from codey.policies.network import check_fetch_url
+from codey.policies.redaction import (
+    SECRET_MARKER_RE,
+    SECRET_SHAPE_RE,
+    looks_prompt_visible_secret,
+    looks_sensitive_code,
+)
 from codey.research.connector_terms import (
     ARXIV_CONNECTOR_TERMS,
     LOCAL_CONNECTOR_TERMS,
     MEDICAL_CONNECTOR_TERMS,
 )
+from codey.research.guards import (
+    bounded_limit as _bounded_limit,
+)
+from codey.research.guards import (
+    connector_id as _connector_id,
+)
+from codey.research.guards import (
+    generated_ref as _generated_ref,
+)
+from codey.research.guards import (
+    valid_digest_ref,
+)
+from codey.research.identity import (
+    path_ref,
+    sanitize_research_url_ref,
+)
+from codey.research.source_document import SourceDocument
+from codey.research.urls import host_key, parsed_url
 from codey.utils.refs import (
     bounded_refs,
     clip,
@@ -30,26 +55,6 @@ from codey.utils.refs import (
     identifier,
     stable_ref,
 )
-from codey.research.identity import (
-    path_ref,
-    sanitize_research_url_ref,
-)
-from codey.policies.redaction import (
-    SECRET_MARKER_RE,
-    SECRET_SHAPE_RE,
-    looks_prompt_visible_secret,
-    looks_sensitive_code,
-)
-from codey.research.guards import (
-    bounded_limit as _bounded_limit,
-    connector_id as _connector_id,
-    valid_digest_ref,
-    generated_ref as _generated_ref,
-)
-from codey.research.source_document import SourceDocument
-from codey.research.urls import host_key, parsed_url
-from codey.policies.network import check_fetch_url
-
 
 CONNECTOR_STATUS_AVAILABLE = "available"
 CONNECTOR_STATUS_FIXTURE = "fixture"

@@ -18,26 +18,32 @@ import time
 
 from playwright.sync_api import Page
 
-from codey.runtime.core import cancellation
+from codey.automation.web_clipboard import copy_action_text
 from codey.providers import controls as controls
 from codey.providers import flow as provider_flow
 from codey.providers import send_loop as send_loop
-from codey.providers.profiles import get_profile
 from codey.providers.diagnostics import ControlMissing, RateLimited
-from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
-from codey.providers.web_drivers import base as driver_base
-from codey.providers.web_drivers import common as driver_common
-from codey.toolchain.json_reply import (
-    is_json_tool_reply as _is_json_tool_reply,
-    looks_like_json_tool_reply as _looks_like_json_tool_reply,
-    normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
-    repair_missing_trailing_braces_json_tool_reply as _repair_missing_trailing_braces_json_tool_reply,
-)
+from codey.providers.profiles import get_profile
 from codey.providers.submission import (
     SendAttempt,
     confirm_submission,
 )
-from codey.automation.web_clipboard import copy_action_text
+from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers.web_drivers import base as driver_base
+from codey.providers.web_drivers import common as driver_common
+from codey.runtime.core import cancellation
+from codey.toolchain.json_reply import (
+    is_json_tool_reply as _is_json_tool_reply,
+)
+from codey.toolchain.json_reply import (
+    looks_like_json_tool_reply as _looks_like_json_tool_reply,
+)
+from codey.toolchain.json_reply import (
+    normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
+)
+from codey.toolchain.json_reply import (
+    repair_missing_trailing_braces_json_tool_reply as _repair_missing_trailing_braces_json_tool_reply,
+)
 
 PROVIDER_ID = "deepseek"
 PROFILE = get_profile(PROVIDER_ID)

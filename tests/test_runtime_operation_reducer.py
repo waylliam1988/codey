@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
-    EFFECT_CATEGORY_TOOL_CALL,
-    RuntimeEffectIntent,
-    RuntimeEffectProjection,
-    RuntimeEffectSettlement,
-)
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
     ACTION_FAIL_INVARIANT,
@@ -36,15 +29,21 @@ from codey.runtime.core.operation_state import (
     lane_for_run,
     operation_id_for_run,
 )
+from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectIntent,
+    RuntimeEffectProjection,
+    RuntimeEffectSettlement,
+)
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.session_view import SessionView
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
     DeliveryBatchProjection,
     compute_batch_digest,
 )
-
+from codey.runtime.log.session_view import SessionView
 
 SESSION_ID = "sess-reducer"
 RUN_ID = "run-reducer"

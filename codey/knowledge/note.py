@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from codey.knowledge.concept_schema import clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe

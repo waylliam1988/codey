@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import codey.app.cli as cli
+from codey.app.server import AppContext
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import (
     GhostInboxStore,
@@ -20,8 +21,6 @@ from codey.ghost.inbox import (
 )
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
-from codey.app.server import AppContext
-
 
 ROOT = Path(__file__).resolve().parents[1]
 

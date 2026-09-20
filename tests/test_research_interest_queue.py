@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
+from codey.ghost.affinity import AffinityHint
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.concepts import ConceptGraphBuilder
@@ -14,7 +15,6 @@ from codey.knowledge.research_interest import (
     apply_research_affinity_hints,
     build_research_interest_candidates,
 )
-from codey.ghost.affinity import AffinityHint
 from codey.knowledge.store import KnowledgeStore
 
 

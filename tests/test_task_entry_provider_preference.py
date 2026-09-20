@@ -7,18 +7,18 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
+from codey.app import server
+from codey.app import task_submit as task_submit
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     ProviderActionError,
     ProviderFailure,
 )
-from codey.workspace.config import preferred_provider_for
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.workspace.config import preferred_provider_for
 
 
 def _failure(kind: str = "response_missing") -> ProviderActionError:

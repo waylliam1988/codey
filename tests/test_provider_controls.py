@@ -699,7 +699,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 provider_flow.end_task_context()
 
     def test_persisted_flow_unreadable_final_response_triggers_rollback(self) -> None:
-        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers import flow as provider_flow
+        from codey.providers import revival as provider_revival
         from codey.providers.diagnostics import ResponseMissing
 
         page = mock.Mock(url="https://chat.qwen.ai/")
@@ -774,7 +775,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                         self.assertEqual(meta["failures"], expected)
 
     def test_builtin_completion_read_failure_is_not_attributed_to_flow(self) -> None:
-        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers import flow as provider_flow
+        from codey.providers import revival as provider_revival
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         generating = provider_flow.FlowObservation(stop_visible=True)
@@ -835,7 +837,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
 
     def test_control_and_flow_failure_are_counted_once_per_send(self) -> None:
-        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers import flow as provider_flow
+        from codey.providers import revival as provider_revival
         from codey.providers.diagnostics import ResponseMissing
 
         page = mock.Mock(url="https://chat.qwen.ai/")
@@ -918,7 +921,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         self.assertEqual(provider[controls.CONTROL_RESPONSE]["failures"], 1)
 
     def test_transient_failure_does_not_penalize_persisted_flow(self) -> None:
-        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers import flow as provider_flow
+        from codey.providers import revival as provider_revival
         from codey.providers.submission import SubmissionUncertain
 
         page = mock.Mock(url="https://chat.qwen.ai/")

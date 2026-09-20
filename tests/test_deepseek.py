@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import unittest
 import threading
 import time
+import unittest
 from unittest import mock
 
-from codey.runtime.core import cancellation
 from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import deepseek
+from codey.runtime.core import cancellation
 from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 

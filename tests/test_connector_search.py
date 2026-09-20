@@ -14,7 +14,6 @@ from codey.research.connector_search import ConnectorAwareSearchProvider, _read_
 from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec
 from codey.research.tools import ResearchTools
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "research_connectors"
 

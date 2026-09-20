@@ -3,26 +3,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
-from collections.abc import Callable, Mapping
 
-from codey.storage.file_lock import with_file_lock
-from codey.storage.local_store import read_json, session_key, write_json_atomic
 from codey.research.guards import (
     clip_schema_ok as _clip_schema_ok,
-    identifier_schema_ok as _identifier_schema_ok,
 )
-from codey.utils.refs import (
-    bounded_refs,
-    clip,
-    content_digest,
-    digest_text,
-    identifier,
-    nonnegative_int,
-    stable_ref,
+from codey.research.guards import (
+    identifier_schema_ok as _identifier_schema_ok,
 )
 from codey.research.identity import project_ref
 from codey.research.object_model import (
@@ -34,7 +25,17 @@ from codey.research.object_model import (
     RESEARCH_RECORD_SCHEMA_VERSION,
     ResearchRecord,
 )
-
+from codey.storage.file_lock import with_file_lock
+from codey.storage.local_store import read_json, session_key, write_json_atomic
+from codey.utils.refs import (
+    bounded_refs,
+    clip,
+    content_digest,
+    digest_text,
+    identifier,
+    nonnegative_int,
+    stable_ref,
+)
 
 EVIDENCE_LEDGER_SCHEMA_VERSION = 1
 EVIDENCE_LEDGER_KIND = "research_evidence_ledger"

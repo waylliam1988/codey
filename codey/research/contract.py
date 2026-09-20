@@ -25,15 +25,14 @@ from codey.completion.contract import (
     completion_check,
     safe_run_ref,
 )
-from codey.utils.refs import bounded_refs, identifier
+from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.proof_quality import ResearchProofReview, proof_ref_for_review
 from codey.research.review_finding import (
     SEVERITY_CRITICAL,
     STATUS_OPEN,
     findings_from_proof_review,
 )
-from codey.research.evidence_runtime import normalize_runtime_ref
-
+from codey.utils.refs import bounded_refs, identifier
 
 DOMAIN = "research"
 

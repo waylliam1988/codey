@@ -1,25 +1,27 @@
 from __future__ import annotations
 
-import unittest
 import tempfile
+import unittest
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.runtime.core import cancellation
-from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
-from codey.repairs.adapter_overrides import AdapterOverride
-from codey.providers.diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
 from codey.providers import (
     DeepSeekWebProvider,
     GlmWebProvider,
     MimoWebProvider,
-    StepFunWebProvider,
     QwenWebProvider,
+    StepFunWebProvider,
+    local_openai,
+    registry,
     web_driver,
+    web_provider,
 )
-from codey.providers import local_openai, registry, web_provider
+from codey.providers.diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
+from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
+from codey.repairs.adapter_overrides import AdapterOverride
+from codey.runtime.core import cancellation
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):

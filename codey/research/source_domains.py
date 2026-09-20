@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from codey.utils.refs import is_valid_hostname as _is_valid_hostname
 
-
 GOV_SUFFIXES = (
     "gov",
     "mil",

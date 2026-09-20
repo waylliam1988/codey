@@ -6,9 +6,9 @@ injection explicit without changing the Agent's observable serial tool flow.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import EditBlock, ToolOutcome

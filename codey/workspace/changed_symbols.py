@@ -7,12 +7,11 @@ It only reports obvious declarations that changed in the visible diff.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from collections.abc import Mapping, Sequence
 
 from codey.workspace.change_set import ChangeSet
-
 
 MAX_CHANGED_SYMBOLS = 8
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")

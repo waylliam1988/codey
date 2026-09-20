@@ -8,12 +8,12 @@ from unittest import mock
 
 import pytest
 
+import codey.research.followup_selection as followup_selection_module
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, ResearchPipelineConfig, RunTraceResearchSink
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore
-import codey.research.followup_selection as followup_selection_module
 from codey.research.followup_selection import ResearchCandidateScore, candidate_score, selects_candidate
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record

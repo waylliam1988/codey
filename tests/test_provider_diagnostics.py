@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest import mock
 

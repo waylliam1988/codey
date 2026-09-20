@@ -7,16 +7,14 @@ from unittest import mock
 
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.app import consensus_service
-from codey.app import review_service
 from codey.agents.runner import RunResult
+from codey.app import consensus_service, review_service, server
+from codey.app import task_submit as task_submit
+from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import CheckEvidence
-from codey.runtime.core.models import ToolCall
-from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
 from codey.toolchain.runtime import ToolOutcome
+from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
 
 
 class FakeProvider:

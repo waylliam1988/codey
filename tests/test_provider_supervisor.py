@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime.core import cancellation
 from codey.providers.diagnostics import FAILURE_READINESS_STALE, ProviderFailure
 from codey.providers.supervisor import (
     STATE_AUTH_REQUIRED,
@@ -17,6 +16,7 @@ from codey.providers.supervisor import (
     ProviderSupervisor,
     run_half_open_canary,
 )
+from codey.runtime.core import cancellation
 
 
 def failure(kind: str) -> ProviderFailure:

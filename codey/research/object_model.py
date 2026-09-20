@@ -8,41 +8,56 @@ or UI surface.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from collections.abc import Iterable, Mapping
 
+from codey.research.guards import status_token as _status_token
+from codey.research.identity import (
+    path_ref,
+    project_ref,
+    sanitize_research_url_ref,
+)
 from codey.research.ledger import (
     EvidenceItem,
     OpenedSource,
     ResearchLedger,
     normalize_evidence_stance,
 )
-from codey.research.guards import status_token as _status_token
-from codey.research.urls import opened_url
-from codey.utils.refs import (
-    bounded_refs as _bounded_refs,
-    clip as _clip,
-    digest_json as _digest_json,
-    content_digest,
-    digest_text as _digest_text,
-    identifier as _identifier,
-    nonnegative_int as _nonnegative_int,
-    normalize_text as _normalize_text,
-    stable_ref as _stable_ref,
-)
-from codey.research.identity import (
-    path_ref,
-    project_ref,
-    sanitize_research_url_ref,
-)
-from codey.reviews.report_sections import parse_sections
 from codey.research.report_quality import (
     ReportQualityReview,
     citation_ref_items,
     parse_citation_rows,
 )
-
+from codey.research.urls import opened_url
+from codey.reviews.report_sections import parse_sections
+from codey.utils.refs import (
+    bounded_refs as _bounded_refs,
+)
+from codey.utils.refs import (
+    clip as _clip,
+)
+from codey.utils.refs import (
+    content_digest,
+)
+from codey.utils.refs import (
+    digest_json as _digest_json,
+)
+from codey.utils.refs import (
+    digest_text as _digest_text,
+)
+from codey.utils.refs import (
+    identifier as _identifier,
+)
+from codey.utils.refs import (
+    nonnegative_int as _nonnegative_int,
+)
+from codey.utils.refs import (
+    normalize_text as _normalize_text,
+)
+from codey.utils.refs import (
+    stable_ref as _stable_ref,
+)
 
 MAX_RECORD_SOURCES = 24
 MAX_RECORD_EVIDENCE = 48

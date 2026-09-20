@@ -39,8 +39,7 @@ def run_task(
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
     # must not load operations/service modules/research (see test_server_lazy_state).
-    from codey.app import consensus_service
-    from codey.app import review_service
+    from codey.app import consensus_service, review_service
     from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations.task_entry import TaskRunDeps, run_task_submission
 

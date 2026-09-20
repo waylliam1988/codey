@@ -20,10 +20,10 @@ import math
 import os
 import re
 import time
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Mapping
 
 from codey.storage.local_store import write_json_atomic
 

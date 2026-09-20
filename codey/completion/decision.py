@@ -14,9 +14,9 @@ the receipt says; it only states what the local facts support.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable, Mapping
 
 from codey.completion.contract import CompletionProof
 from codey.completion.verification import (

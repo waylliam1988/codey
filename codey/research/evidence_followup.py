@@ -10,17 +10,16 @@ enforcement.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable, Sequence
 
-from codey.runtime.core import cancellation
-from codey.utils.refs import clip
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools
-
+from codey.runtime.core import cancellation
+from codey.utils.refs import clip
 
 _SOURCE_ID_FORBIDDEN_RE = re.compile(r"\b(?:s\d+|source_id|result_id|hit_id)\b", re.IGNORECASE)
 _ALLOWED_KNOWLEDGE_WRITE_ARGS = frozenset({"type", "title", "body", "sources", "evidence"})

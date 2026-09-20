@@ -19,42 +19,41 @@ import json
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 from urllib.parse import urlparse
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.providers import controls as provider_controls
 from codey.knowledge.store import KnowledgeStore
+from codey.providers import controls as provider_controls
+from codey.providers.registry import connect_provider, provider_ids
+from codey.research import report_quality as report_quality_module
+from codey.research import runner as runner_module
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.ledger import ResearchLedger
+from codey.research.proof_quality import review_research_proof
+from codey.research.runner import ResearchRunner
 from codey.reviews.report_sections import (
     REQUIRED_SECTIONS,
     parse_sections,
     section_title,
 )
-from codey.research import report_quality as report_quality_module
-from codey.research import runner as runner_module
-from codey.research.ledger import ResearchLedger
-from codey.research.proof_quality import review_research_proof
-from codey.research.runner import ResearchRunner
-from tests.manual.research_scorers.source_finalizer_scoring import (
-    aggregate_source_finalizer_rows,
-    paired_source_finalizer_deltas,
-    rate_rows,
-    score_source_finalizer_row,
-)
-from codey.providers.registry import connect_provider, provider_ids
-
 from tests.manual import source_connector_ab as base
 from tests.manual.ab_harness_common import (
     attach_research_record_payload,
     row_has_terminal_failure,
     upsert_case_row,
+)
+from tests.manual.research_scorers.source_finalizer_scoring import (
+    aggregate_source_finalizer_rows,
+    paired_source_finalizer_deltas,
+    rate_rows,
+    score_source_finalizer_row,
 )
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

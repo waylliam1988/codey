@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from codey.utils.change_paths import (
     change_file_paths as _change_file_paths,
+)
+from codey.utils.change_paths import (
     safe_change_path as _safe_relpath,
 )
-
 
 MAX_SUMMARY_FILES = 20
 MAX_SUMMARY_HUNKS = 60

@@ -11,8 +11,8 @@ from __future__ import annotations
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
 from codey.policies.limits import REVIEW_TIMEOUT
-from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers import controls as provider_controls
+from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.reviews.core import ReviewResult, parse_review_with_repair, render_review_prompt
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation

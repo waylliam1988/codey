@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from codey.providers.flow import normalize_recipe, serialize_recipe
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     StoreCorruption,
@@ -14,8 +15,6 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
-from codey.providers.flow import normalize_recipe, serialize_recipe
-
 
 REVIVAL_KEY = "_revival"
 REVIVAL_ACTIONS = ("message_box", "send_button", "response")

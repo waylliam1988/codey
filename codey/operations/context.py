@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Callable
-
-from codey.agents.shell_approval import ShellApprovalRequest
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.request import RecoveredToolOutcome
+from codey.agents.shell_approval import ShellApprovalRequest
 from codey.ghost.work_queue import GhostWorkItem
-
 from codey.providers.diagnostics import ProviderFailure
-from codey.runtime.core.operation_state import RuntimeOperationState
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
+from codey.runtime.core.operation_state import RuntimeOperationState
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission

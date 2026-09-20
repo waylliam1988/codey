@@ -13,8 +13,8 @@ from codey.providers.capabilities import (
     rank_providers,
 )
 from codey.providers.diagnostics import FAILURE_KINDS, ProviderFailure
-from codey.providers.supervisor import ProviderSupervisor
 from codey.providers.registry import PROVIDER_LABELS
+from codey.providers.supervisor import ProviderSupervisor
 
 
 def _failure(kind: str = "response_missing") -> ProviderFailure:

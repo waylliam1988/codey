@@ -22,10 +22,9 @@ Hard rules:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
-from codey.utils.refs import digest_json, identifier, nonnegative_int, stable_ref
 from codey.research.brief_projection import (
     ANSWER_STATUSES,
     CLAIM_STATUSES,
@@ -40,7 +39,7 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import project_source_set
-
+from codey.utils.refs import digest_json, identifier, nonnegative_int, stable_ref
 
 MAX_FINDINGS_SCANNED = 64
 MAX_RELATIONS_SCANNED = 64

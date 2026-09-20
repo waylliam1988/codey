@@ -4,8 +4,8 @@ import pytest
 
 from codey.agents.handoff import ConversationContext
 from codey.runtime.core.models import ToolCall
-from codey.toolchain.runtime import ToolOutcome
 from codey.runtime.observe.events import RunEvent
+from codey.toolchain.runtime import ToolOutcome
 from tests.manual import context_delta_ab
 
 

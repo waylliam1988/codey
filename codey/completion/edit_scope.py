@@ -15,8 +15,8 @@ conservative direction for every downstream integrity rule.
 from __future__ import annotations
 
 import re
-from pathlib import PurePosixPath
 from collections.abc import Iterable
+from pathlib import PurePosixPath
 
 EDIT_SCOPE_PRODUCTION = "production"
 EDIT_SCOPE_TEST = "test"

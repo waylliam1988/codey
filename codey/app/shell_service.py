@@ -16,6 +16,7 @@ from pathlib import Path
 
 from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.run_registry import RunSnapshot
+from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_state import TaskState
 from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
@@ -23,7 +24,6 @@ from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
-from codey.operations.task_context import safe_verification_candidates
 
 
 @dataclass(frozen=True)

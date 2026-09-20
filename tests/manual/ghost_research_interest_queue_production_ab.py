@@ -8,15 +8,15 @@ stubs so this probe does not write project files or run shell commands.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 from unittest import mock
 
 if __package__ in (None, ""):
@@ -24,20 +24,20 @@ if __package__ in (None, ""):
 
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
+from codey.app import server
+from codey.app import task_submit as task_submit
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
-from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
-from codey.app import server
-from codey.app import task_submit as task_submit
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 

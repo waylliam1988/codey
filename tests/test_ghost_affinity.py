@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import tempfile
 import threading
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -17,7 +17,6 @@ from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.research_interest import ResearchInterestCandidate
-
 
 FRESH_TS = "2999-01-01T00:00:00Z"
 

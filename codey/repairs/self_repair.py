@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from collections.abc import Callable
 
-from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.providers.diagnostics import (
     FAILURE_CONTROL_MISSING,
     FAILURE_READINESS_STALE,
@@ -17,9 +16,9 @@ from codey.providers.diagnostics import (
     sanitize_failure_facts,
 )
 from codey.providers.ids import normalize_provider_id
-from codey.providers.supervisor import ProviderHealth, STATE_OPEN
+from codey.providers.supervisor import STATE_OPEN, ProviderHealth
+from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.journal import RepairJournal
-
 
 STRUCTURAL_FAILURES = {
     FAILURE_CONTROL_MISSING,

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
 from collections.abc import Mapping
+from typing import Any, Protocol
 
-from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.research.protocol_diagnostics import classify_no_json_reply
 from codey.research.tool_contract import (
     PROTOCOL_INVALID_ARGS,
@@ -17,6 +16,7 @@ from codey.research.tool_contract import (
     research_tool_contract_hash,
     validate_tool_args,
 )
+from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 
 MAX_CALLS_PER_TURN = 1
 _EXACT_TOOL_OBJECT_KEYS = frozenset({"tool", "args"})

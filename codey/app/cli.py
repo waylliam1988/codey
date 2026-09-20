@@ -29,8 +29,8 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
-    from codey.providers import controls as provider_controls
     from codey.providers import connect_provider
+    from codey.providers import controls as provider_controls
 
     prompt = " ".join(args.prompt)
     _safe_print("[codey] attaching browser ...", file=sys.stderr)
@@ -87,10 +87,10 @@ def cmd_agent(args: argparse.Namespace) -> int:
         )
         return result.exit_code
 
-    from codey.providers import controls as provider_controls
     from codey.agents.runner import run
-    from codey.runtime.observe.events import render_run_event
     from codey.providers import connect_provider
+    from codey.providers import controls as provider_controls
+    from codey.runtime.observe.events import render_run_event
 
     project.mkdir(parents=True, exist_ok=True)
     provider_controls.begin_task_context(f"cli-agent:{args.provider}")

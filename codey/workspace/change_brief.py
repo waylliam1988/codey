@@ -7,9 +7,8 @@ Writer and Reviewer judge the same intent without adding a spec workflow.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Sequence
-
+from dataclasses import dataclass
 
 MAX_BRIEF_CHARS = 8_000
 MAX_FIELD_CHARS = 2_000

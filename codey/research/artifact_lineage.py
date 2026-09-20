@@ -9,8 +9,8 @@ Managed Outputs are stored as UTF-8 text in v1.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from codey.research.evidence_runtime import is_valid_runtime_ref
 from codey.utils.refs import clip, stable_ref

@@ -15,7 +15,6 @@ from codey.ghost.schema import (
 )
 from codey.ghost.typed_fields import is_renderable_signal_typed_field
 
-
 MIN_CANDIDATE_CONFIDENCE = 0.45
 STYLE_AUTO_ACCEPT_CONFIDENCE = 0.85
 

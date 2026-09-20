@@ -5,15 +5,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.app import consensus_service
-from codey.app import review_service
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.runtime.observe.events import RunEvent
-from codey.runtime.core.models import ToolCall
+from codey.app import consensus_service, review_service, server
+from codey.app import task_submit as task_submit
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
 from codey.toolchain.runtime import ToolOutcome
 
 _POST_TASK_SIDEEFFECT_PATCHES: list[mock.Mock] = []

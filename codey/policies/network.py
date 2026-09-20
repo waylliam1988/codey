@@ -14,12 +14,12 @@ blocked.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import ipaddress
 import socket
 import threading
 import time
+from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urlparse
 
 from codey.utils.refs import is_valid_hostname

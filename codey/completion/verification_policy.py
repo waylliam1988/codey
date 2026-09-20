@@ -6,15 +6,10 @@ import json
 import re
 import shutil
 import tomllib
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from collections.abc import Iterable, Sequence
 
-from codey.policies.command_line import split_run_command
-from codey.policies.run_command_semantics import (
-    RunCommandPolicyError,
-    canonical_run_command,
-)
 from codey.completion.discovery import (
     TRUSTED_EXCLUDED_DIRS,
     is_manifest_file,
@@ -23,8 +18,12 @@ from codey.completion.discovery import (
     safe_cwd,
 )
 from codey.completion.edit_scope import is_document_path
+from codey.policies.command_line import split_run_command
+from codey.policies.run_command_semantics import (
+    RunCommandPolicyError,
+    canonical_run_command,
+)
 from codey.workspace.config import path_matches_ignored_prefix
-
 
 MAX_SCAN_DIRS = 160
 MAX_SCAN_ENTRIES = 2_000

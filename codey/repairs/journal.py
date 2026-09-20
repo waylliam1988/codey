@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from codey.storage.local_store import DEFAULT_STATE_HOME
-
 
 MAX_JOURNAL_BYTES = 512 * 1024
 MAX_RECORD_CHARS = 8_000

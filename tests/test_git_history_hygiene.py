@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SEMVER_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
 RELEASE_SUBJECT_RE = re.compile(r"^release(?:\s|-)\d+\.\d+\.\d+\b", re.IGNORECASE)

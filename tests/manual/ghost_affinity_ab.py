@@ -8,37 +8,37 @@ safe stubs so this probe does not edit files or run shell commands.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
+from dataclasses import dataclass
+from pathlib import Path
 from unittest import mock
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import codey.ghost.affinity as affinity_module
+import codey.ghost.work_queue as work_queue_module
+from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.agents.runner import RunResult
-import codey.ghost.affinity as affinity_module
 from codey.ghost.affinity import AffinityNode
 from codey.ghost.hebbian import GhostNode
-import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.storage.local_store import write_json_atomic
+from codey.task.model import TaskSubmission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 

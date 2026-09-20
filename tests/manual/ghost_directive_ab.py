@@ -8,20 +8,19 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.providers import controls as provider_controls
 from codey.ghost.directive import render_ghost_directive
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.schema import clip_signal_text
 from codey.protocols import JsonToolCodec
+from codey.providers import controls as provider_controls
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
-
 
 ARMS = ("baseline", "directive")
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

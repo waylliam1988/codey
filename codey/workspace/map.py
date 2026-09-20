@@ -9,18 +9,21 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from collections.abc import Iterable, Sequence
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import path_matches_ignored_prefix
 from codey.workspace.paths import (
     bounded_directory_entries as _bounded_directory_entries,
+)
+from codey.workspace.paths import (
     is_test_path as _is_test_path,
+)
+from codey.workspace.paths import (
     read_text_bounded,
 )
-
 
 MAX_PROJECT_MAP_CHARS = 7_000
 MAX_DIRECTORY_ENTRIES = 180

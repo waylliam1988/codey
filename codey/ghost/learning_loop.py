@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
-from collections.abc import Callable
 
 from codey.ghost.extractor import GhostSignalExtractor, SignalProvider
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.store import GhostSignalStore
-
 
 DEFAULT_GHOST_LEARNING_TIMEOUT = 35.0
 DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT = 15.0

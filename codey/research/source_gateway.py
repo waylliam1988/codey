@@ -24,6 +24,7 @@ import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
 from codey.research.pdf_extract import (
     PDF_DEFAULT_PAGES,
@@ -40,7 +41,6 @@ from codey.research.source_search import (
     search_text,
 )
 from codey.research.url_selection import source_candidate_skip_reason
-from codey.policies.network import check_fetch_url
 from codey.runtime.core import cancellation
 
 OPEN_DEFAULT_LIMIT = 6000

@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 
-
 DEFAULT_STATE_HOME = Path.home() / ".codey"
 MAX_JSON_BYTES = 8 * 1024 * 1024
 

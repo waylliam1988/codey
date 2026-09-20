@@ -7,13 +7,13 @@ import unittest
 from pathlib import Path
 
 from codey.completion.contract import (
+    CHECK_NOT_APPLICABLE,
+    CHECK_NOT_RUN,
+    CHECK_PASS,
     COMPLETION_BLOCKED,
     COMPLETION_COMPLETE,
     COMPLETION_COMPLETE_WITH_LIMITATIONS,
     COMPLETION_FAILED,
-    CHECK_NOT_APPLICABLE,
-    CHECK_NOT_RUN,
-    CHECK_PASS,
 )
 from codey.completion.decision import (
     BLOCKED_ENVIRONMENT_FAILURE,
@@ -23,6 +23,10 @@ from codey.completion.decision import (
 from codey.completion.verification import (
     ENVIRONMENT_FAILURE_REASON_CODES,
     ENVIRONMENT_FAILURE_SIGNATURES,
+    FAILURE_ENVIRONMENT,
+    FAILURE_PRODUCT,
+    FAILURE_UNKNOWN,
+    FAILURE_VERIFICATION_UNAVAILABLE,
     LIMITATION_DOCS_ONLY_CHANGE,
     LIMITATION_INHERITED_VERIFICATION,
     LIMITATION_VERIFICATION_FORBIDDEN_BY_USER,
@@ -37,10 +41,6 @@ from codey.completion.verification import (
     VERIFICATION_FRESH_FAIL,
     VERIFICATION_FRESH_PASS,
     VERIFICATION_UNOBSERVED,
-    FAILURE_ENVIRONMENT,
-    FAILURE_PRODUCT,
-    FAILURE_UNKNOWN,
-    FAILURE_VERIFICATION_UNAVAILABLE,
     VerificationProvenance,
     build_coding_completion_proof,
     classify_verification_failure,
@@ -54,11 +54,10 @@ from codey.completion.verification import (
     repairable_failure_class,
     verification_provenance,
 )
-from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.runtime.observe.events import RunEvent
 from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.toolchain.runtime import ToolOutcome
-
 
 FINGERPRINT = "sha256:" + ("1" * 64)
 OTHER_FINGERPRINT = "sha256:" + ("2" * 64)

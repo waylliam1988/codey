@@ -5,14 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
-from collections.abc import Callable
 
-from codey.runtime.core import cancellation
 from codey.providers.assistance import assistance_suppressed, reset_assistance, suppress_assistance
 from codey.providers.profiles import ProviderProfile
-
+from codey.runtime.core import cancellation
 
 STAGE_INPUT = "input"
 STAGE_SUBMISSION = "submission"

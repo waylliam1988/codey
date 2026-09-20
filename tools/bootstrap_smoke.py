@@ -13,8 +13,6 @@ if __package__ in (None, ""):
 
 from codey.agents.runner import run
 from codey.providers import controls as provider_controls
-from codey.workspace.changes import ChangeTracker, collect_changes
-from codey.runtime.observe.events import render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import (
     has_reviewable_changes,
@@ -22,7 +20,8 @@ from codey.reviews.core import (
     render_review_prompt,
     render_writer_followup,
 )
-
+from codey.runtime.observe.events import render_run_event
+from codey.workspace.changes import ChangeTracker, collect_changes
 
 BUGGY_DIFF_AND_COUNTS = (
     "def _diff_and_counts(path: str, before: str | None, after: str | None) -> tuple[str, int, int]:\n"

@@ -15,12 +15,10 @@ from playwright.sync_api import Page, expect, sync_playwright
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.runtime.core import cancellation
-from codey.providers import controls as provider_controls
-from codey.app import provider_services
+from codey.app import provider_services, sibling_probe
 from codey.app import server as codey_server
-from codey.app import sibling_probe
-
+from codey.providers import controls as provider_controls
+from codey.runtime.core import cancellation
 
 TASK = (
     "Create result.txt containing exactly 'browser e2e passed' and run the tests. "

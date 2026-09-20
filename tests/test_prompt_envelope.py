@@ -5,8 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.research.controller import controller_system_prompt
+from codey.research.runner import ResearchRunner
 from codey.runtime.core import cancellation
-from codey.workspace.context_source import ContextSource, render_context_sources_with_metadata
 from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
@@ -14,8 +15,7 @@ from codey.runtime.observe.prompt_envelope import (
     is_model_boundary_freshness,
     record_provider_send_prompt,
 )
-from codey.research.controller import controller_system_prompt
-from codey.research.runner import ResearchRunner
+from codey.workspace.context_source import ContextSource, render_context_sources_with_metadata
 
 
 class _Trace:

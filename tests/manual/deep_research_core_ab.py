@@ -23,21 +23,21 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey.runtime.core import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.runtime.core.models import Control, ToolPlan
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
-from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
+from codey.research.protocols import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
+from codey.research.protocols import JsonToolCodec
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
-from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
+from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
 from codey.research.tools import ResearchTools
-
+from codey.runtime.core import cancellation
+from codey.runtime.core.models import Control, ToolPlan
 
 ARMS = ("baseline", "source_search", "thin_gate", "deep_core")
 PROFILES = ("cheap", "full")

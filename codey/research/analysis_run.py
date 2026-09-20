@@ -15,17 +15,17 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
+from codey.policies.redaction import looks_prompt_visible_secret
+from codey.research.identity import path_ref
 from codey.utils.refs import (
     clip,
     digest_json,
     digest_text,
     stable_ref,
 )
-from codey.policies.redaction import looks_prompt_visible_secret
-from codey.research.identity import path_ref
 
 ANALYSIS_RUN_REF_PREFIX = "analysis_run:"
 CAPTURE_OUTPUT_CAPTURED = "output_captured"

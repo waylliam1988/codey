@@ -6,27 +6,29 @@ existing projections, compacts event logs, and writes a bounded report.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+import uuid
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from collections.abc import Callable, Iterable, Mapping
-import uuid
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.event_log import (
     GhostEventLog,
-    control_event as _ghost_control_event,
     count_jsonl_rows,
+)
+from codey.ghost.event_log import (
+    control_event as _ghost_control_event,
 )
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
@@ -39,7 +41,6 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 from codey.workspace.paths import read_text_bounded
-
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000

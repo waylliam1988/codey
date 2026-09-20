@@ -7,12 +7,12 @@ from dataclasses import fields
 from pathlib import Path
 from unittest import mock
 
-from codey.operations import task_context as operations_task_context
 from codey.knowledge import KnowledgeNote, KnowledgeStore
-from codey.workspace.facts import ProjectFactsStore
-from codey.workspace.revision import workspace_fingerprint
+from codey.operations import task_context as operations_task_context
 from codey.operations.task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.runs.work_checkpoint import WorkCheckpointStore
+from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.revision import workspace_fingerprint
 
 
 class BrokenFacts:

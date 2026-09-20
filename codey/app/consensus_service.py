@@ -17,7 +17,11 @@ if TYPE_CHECKING:
 from codey.agents.consensus import (
     ConsensusAdvice,
     ConsensusResult,
+)
+from codey.agents.consensus import (
     run_consensus as run_consensus_core,
+)
+from codey.agents.consensus import (
     run_project_audit as run_project_audit_core,
 )
 from codey.app import provider_services as providers

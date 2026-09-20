@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
-import tempfile
 
+from codey.runs.trace import RunTraceStore
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.runtime.observe.prompt_surface import (
@@ -13,7 +14,6 @@ from codey.runtime.observe.prompt_surface import (
     prompt_surface_id,
     validate_prompt_surface_payload,
 )
-from codey.runs.trace import RunTraceStore
 
 
 class _BrokenTrace:

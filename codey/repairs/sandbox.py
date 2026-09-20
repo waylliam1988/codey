@@ -24,7 +24,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-
 _COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache")
 
 

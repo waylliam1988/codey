@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 
 from codey.research.domain_profiles import (
-    BUILTIN_PROFILES,
     BUILTIN_PROFILE_IDS,
-    EvidenceProfile,
+    BUILTIN_PROFILES,
     GENERAL_PROFILE,
     MAX_MERGE_PROFILES,
+    EvidenceProfile,
     merge_profiles,
     resolve_profile,
 )

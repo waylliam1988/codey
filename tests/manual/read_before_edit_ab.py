@@ -6,10 +6,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -18,10 +18,9 @@ from codey.agents import loop as agent_loop
 from codey.agents import runner as agent
 from codey.agents.request import AgentRequest
 from codey.providers import controls as provider_controls
-from codey.runtime.observe.events import RunEvent, render_run_event
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
+from codey.runtime.observe.events import RunEvent, render_run_event
 from tests.manual.project_task_context import render_production_project_map
-
 
 GUARD_MESSAGE = "read_file required before editing existing file:"
 ARMS = ("baseline", "guard")

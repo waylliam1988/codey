@@ -9,15 +9,9 @@ into a session-global view (messages, evidence, ghost, completion).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
 
-from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
-    EFFECT_CATEGORY_TOOL_CALL,
-    RuntimeEffectProjection,
-    effects_from_entries,
-)
 from codey.runtime.core.operation_state import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
@@ -32,8 +26,14 @@ from codey.runtime.core.operation_state import (
     operation_is_open,
     operation_state_from_entries,
 )
-from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectProjection,
+    effects_from_entries,
+)
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, batches_from_entries
+from codey.runtime.log.entries import RuntimeLogEntry
 
 
 @dataclass(frozen=True)

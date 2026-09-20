@@ -20,7 +20,6 @@ from codey.runs.receipt import (
 )
 from tests.test_completion_edit_integrity import IMPORT_REMOVAL_DIFF, _GreenDecision
 
-
 CLEAN_SOURCE_DIFF = (
     "diff --git a/src/mod.py b/src/mod.py\n"
     "--- a/src/mod.py\n"

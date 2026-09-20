@@ -9,20 +9,19 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.policies.action import (
-    ActionSubject,
     DECISION_DENY,
     MAX_MANAGED_OUTPUT_BYTES,
+    ActionSubject,
     evaluate_action,
 )
-from codey.storage.local_store import session_key, write_json_atomic
 from codey.runtime.core import cancellation
+from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
-
 
 MAX_METADATA_BYTES = 16 * 1024
 MAX_COMMAND_CHARS = 500

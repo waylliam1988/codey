@@ -18,7 +18,6 @@ from codey.ghost.schema import (
 )
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
-
 MAX_GHOST_EVENTS = 5_000
 MAX_STORED_SIGNALS = 5
 MAX_STORED_DIAGNOSTICS = 8

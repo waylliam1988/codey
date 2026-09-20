@@ -12,16 +12,16 @@ completion operation. This module owns only the diff-review lifecycle:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from collections.abc import Callable
 
-from codey.runtime.core import cancellation
 from codey.agents.runner import RunResult
-from codey.runtime.observe.execution_evidence import CheckEvidence
-from codey.reviews.core import has_reviewable_changes, render_writer_followup
-from codey.completion.verification_policy import VerificationCandidate
 from codey.agents.writer_failover import CheckpointView
+from codey.completion.verification_policy import VerificationCandidate
+from codey.reviews.core import has_reviewable_changes, render_writer_followup
+from codey.runtime.core import cancellation
+from codey.runtime.observe.execution_evidence import CheckEvidence
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,6 @@ from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
 
-
 PROVIDER_MODULES = {
     "deepseek": deepseek,
     "mimo": mimo,

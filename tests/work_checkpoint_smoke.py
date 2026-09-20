@@ -18,16 +18,16 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.agents.runner import run
-from codey.workspace.changes import ChangeTracker, collect_changes
-from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.completion.verification_map import render_verification_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.reviews.core import (
     parse_review_with_repair,
     render_review_prompt,
     render_writer_followup,
 )
-from codey.completion.verification_map import render_verification_map
 from codey.runs.work_checkpoint import WorkCheckpointStore, render_work_checkpoint
+from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.workspace.changes import ChangeTracker, collect_changes
 
 
 def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:

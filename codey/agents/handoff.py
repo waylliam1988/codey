@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, replace
 from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 
 from codey.runtime.core import cancellation
 

@@ -9,6 +9,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from codey.app.server import AppContext
 from codey.ghost.extractor import GhostSignalExtractor
 from codey.ghost.schema import (
     MAX_SIGNALS_PER_TURN,
@@ -18,10 +19,8 @@ from codey.ghost.schema import (
 )
 from codey.ghost.signal_codec import GhostSignalCodec
 from codey.ghost.store import GhostSignalStore
-from codey.app.server import AppContext
 from tests.manual import ghost_signal_extractor_ab as ghost_ab
 from tests.manual.ghost_signal_extractor_ab import _should_close_provider
-
 
 ROOT = Path(__file__).resolve().parents[1]
 

@@ -3,22 +3,21 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.runtime.core.models import ToolCall
 from codey.protocols import JsonToolCodec
-from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
-
+from codey.runtime.core.models import ToolCall
 from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     READ_ONLY_RUNTIME_TOOL_NAMES,
     RESULT_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
-    TOOL_DEFINITIONS,
     TOOL_DEFINITION_BY_NAME,
+    TOOL_DEFINITIONS,
     definitions_for_permissions,
     definitions_for_tool_names,
     public_example,
     render_tool_activity,
 )
+from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
 
 
 class ToolDefinitionTests(unittest.TestCase):

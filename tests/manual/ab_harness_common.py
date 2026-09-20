@@ -18,11 +18,11 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 from tests.manual.ab_journal import (
     TRANSCRIPT_MODE_ARCHIVE,
@@ -1304,9 +1304,9 @@ def fixture_network_policy_bypass(
 ) -> Iterator[None]:
     """Allow *.test fixture hosts through the network policy, scoped."""
 
+    from codey.policies import network as network_module
     from codey.research import plan_executor as research_plan_executor_module
     from codey.research import tools as research_tools_module
-    from codey.policies import network as network_module
 
     original = (
         network_module.check_fetch_url,

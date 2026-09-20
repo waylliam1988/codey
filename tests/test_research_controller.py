@@ -4,12 +4,11 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from codey.runtime.core.models import ToolCall, ToolResult
 from codey.research.controller import (
     CONTROLLER_DISPLAY_LIMIT,
     OpenTarget,
-    ResearchControlState,
     ResearchController,
+    ResearchControlState,
     controller_system_prompt,
     format_controller_results,
     render_control_block,
@@ -19,6 +18,7 @@ from codey.research.protocols import JsonToolCodec
 from codey.research.runner import render_research_repair_prompt
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tool_contract import PROTOCOL_NO_JSON
+from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def tools_for(ledger: ResearchLedger) -> SimpleNamespace:

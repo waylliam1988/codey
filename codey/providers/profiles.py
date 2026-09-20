@@ -8,7 +8,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-
 PROFILE_PATH = Path(__file__).with_name("profiles.json")
 SCHEMA_VERSION = 1
 

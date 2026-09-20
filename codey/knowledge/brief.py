@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codey.utils.citation_scanner import citation_ref_items
 from codey.knowledge.store import KnowledgeStore
 from codey.reviews.report_sections import parse_sections
+from codey.utils.citation_scanner import citation_ref_items
 from codey.utils.refs import clip as _clip
 from codey.utils.text_budget import clip_middle
-
 
 BRIEF_TOTAL_LIMIT = 6000
 SECTION_ITEM_LIMIT = 5

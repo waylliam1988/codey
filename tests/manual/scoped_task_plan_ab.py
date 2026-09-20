@@ -29,6 +29,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codey.providers import controls as provider_controls
+from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
+from codey.toolchain.runtime import list_directory
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.map import (
     EXCLUDED_DIRS,
@@ -39,8 +41,6 @@ from codey.workspace.map import (
     _symbol_score,
     _symbols_for_file,
 )
-from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.toolchain.runtime import list_directory
 from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scoped-task-plan-ab.json"

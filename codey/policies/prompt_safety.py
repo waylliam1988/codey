@@ -11,7 +11,6 @@ import re
 
 from codey.policies.redaction import looks_prompt_visible_secret
 
-
 _INTERNAL_CONTEXT_RE = re.compile(
     r"\b(?:ghost|work\s*queue|workitem|local\s+context|ghost\s*directive|concept\s+graph)\b",
     re.IGNORECASE,

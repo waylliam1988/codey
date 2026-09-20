@@ -7,8 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.app import provider_services
-from codey.app import shell_service
+from codey.app import provider_services, shell_service
 from codey.app.context import AppContext
 from codey.app.event_bus import RUN_EVENT_TYPES, stamp_run_scope
 from codey.operations.task_state import TaskState
@@ -150,7 +149,7 @@ class MovedGlueTests(unittest.TestCase):
             clock=lambda: 100.0,
         )
         from codey.providers.diagnostics import ProviderFailure
-        from codey.providers.supervisor import ProviderHealth, STATE_OPEN
+        from codey.providers.supervisor import STATE_OPEN, ProviderHealth
 
         supervisor.maybe_enqueue(
             "qwen",

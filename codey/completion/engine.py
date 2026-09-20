@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable, Mapping
 
 from codey.completion.decision import (
     CompletionDecision,
@@ -17,7 +17,6 @@ from codey.completion.edit_integrity import (
 )
 from codey.completion.verification import build_coding_completion_proof
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-
 
 COMPLETION_BLOCKED_NOTES = {
     "unobserved": (

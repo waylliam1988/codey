@@ -18,13 +18,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.providers.ids import normalize_provider_id
 from codey.repairs.adapter_surface import (
     PROVIDER_DRIVER_FILES,
     SHARED_WEB_ADAPTER_FILES,
     adapter_repair_surface,
 )
-from codey.providers.ids import normalize_provider_id
-
 
 IMPACT_PROVIDER_LOCAL = "provider_local"
 IMPACT_SHARED_WEB_SURFACE = "shared_web_surface"

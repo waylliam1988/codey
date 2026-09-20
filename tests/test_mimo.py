@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import threading
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.runtime.core import cancellation
 from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import mimo
+from codey.runtime.core import cancellation
 from tests.provider_control_testkit import IsolatedProviderControlsMixin
 
 

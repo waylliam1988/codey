@@ -12,20 +12,20 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents.protocol import protocol_repair_prompt
-from codey.providers import controls as provider_controls
-from codey.runtime.core.models import ToolPlan
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import _balanced_json_objects
+from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
+from codey.runtime.core.models import ToolPlan
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "typed")

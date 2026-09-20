@@ -9,11 +9,11 @@ from unittest import mock
 from codey.agents.request import AgentRequest, ShellApprovalRequest
 from codey.agents.runner import RunResult
 from codey.agents.shell_approval import MAX_APPROVAL_COMMAND_CHARS
-from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, headless_event_payload, run_headless
+from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.log.session_log import RuntimeSessionLog
-from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
 from codey.toolchain.runtime import ToolOutcome
 
 

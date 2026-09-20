@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from codey import __version__

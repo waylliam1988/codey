@@ -13,9 +13,9 @@ from codey.runtime.core.operation_state import (
     operation_state_entry,
 )
 from codey.runtime.effects.effect_records import (
+    SENT_STATE_SETTLED,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
-    SENT_STATE_SETTLED,
     effect_intent_entry,
     effect_settlement_entry,
     find_effect,

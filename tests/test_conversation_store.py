@@ -7,13 +7,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import consensus_service
+from codey.agents.handoff import ConversationSnapshot
+from codey.app import consensus_service, server
 from codey.storage.conversation_store import (
     MAX_PERSISTED_CONVERSATIONS,
     ConversationStore,
 )
-from codey.agents.handoff import ConversationSnapshot
 
 
 class ConversationStoreTests(unittest.TestCase):

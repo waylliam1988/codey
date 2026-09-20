@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from collections.abc import Callable
 
 from codey.providers import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import ProviderFailure

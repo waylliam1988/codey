@@ -8,28 +8,27 @@ the stronger local Affinity association for the target answer-structure preferen
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.agents.runner import RunResult
 from codey.ghost.hebbian import GhostNode
-from codey.storage.local_store import write_json_atomic
-from codey.providers.registry import connect_fresh_provider_tab, provider_ids
-from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
-
+from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.storage.local_store import write_json_atomic
+from codey.task.model import TaskSubmission
 
 RESULTS_DIR = Path(__file__).with_name("results")
 PROVIDERS = tuple(pid for pid in provider_ids() if pid != "local")

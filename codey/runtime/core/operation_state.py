@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, replace
-from datetime import datetime, UTC
 from collections.abc import Iterable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
 from codey.runtime.log.entries import RuntimeLogEntry

@@ -16,12 +16,11 @@ from pathlib import Path
 
 from codey.policies.network import DEFAULT_NETWORK_POLICY
 from codey.policies.permissions import PermissionProfile, profile_for_name
-from codey.utils.refs import digest_text
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
-
+from codey.utils.refs import digest_text
 
 logger = logging.getLogger(__name__)
 

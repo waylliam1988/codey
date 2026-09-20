@@ -14,15 +14,22 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode
 
-from codey.runtime.core import cancellation
+from codey.policies.network import check_fetch_url
 from codey.research.connector_terms import preferred_connector_ids
+from codey.research.guards import bounded_limit as _bounded_limit
+from codey.research.guards import connector_id as _connector_id
 from codey.research.http_redirects import (
     build_no_redirect_opener,
+)
+from codey.research.http_redirects import (
     close_response as _close_response,
+)
+from codey.research.http_redirects import (
     is_redirect_status as _is_redirect_status,
+)
+from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
-from codey.utils.refs import clip
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     MAX_CONNECTOR_HITS,
@@ -39,10 +46,9 @@ from codey.research.source_connectors import (
     parse_pubmed_fixture,
     safe_connector_query,
 )
-from codey.research.guards import bounded_limit as _bounded_limit, connector_id as _connector_id
 from codey.research.urls import canonical_key, full_key, host_key, parsed_url
-from codey.policies.network import check_fetch_url
-
+from codey.runtime.core import cancellation
+from codey.utils.refs import clip
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
 CONNECTOR_RESULT_LIMIT = 2

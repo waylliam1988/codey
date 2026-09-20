@@ -10,32 +10,48 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Mapping
 from urllib.parse import urlparse
 
-from codey.utils.refs import digest_text
-
-from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.completion.contract import (
     CHECK_STATUSES as _COMPLETION_CHECK_STATUSES,
+)
+from codey.completion.contract import (
     COMPLETION_COMPLETE_WITH_LIMITATIONS as _COMPLETION_COMPLETE_WITH_LIMITATIONS,
-    COMPLETION_SATISFIED_STATUSES as _COMPLETION_SATISFIED_STATUSES,
+)
+from codey.completion.contract import (
     COMPLETION_DOMAINS as _COMPLETION_TRACE_DOMAINS,
+)
+from codey.completion.contract import (
+    COMPLETION_SATISFIED_STATUSES as _COMPLETION_SATISFIED_STATUSES,
+)
+from codey.completion.contract import (
     COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
+)
+from codey.completion.contract import (
     MAX_COMPLETION_CHECKS as _MAX_COMPLETION_CHECKS,
 )
 from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_SEVERITIES as _EDIT_INTEGRITY_SEVERITIES,
+)
+from codey.completion.edit_integrity import (
     EDIT_INTEGRITY_STATUSES as _EDIT_INTEGRITY_STATUSES,
 )
-from codey.workspace.context_epoch import admission_from_rendered_source, valid_context_epoch_ref
-from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
+from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
+from codey.research.guards import (
+    generated_ref as _generated_ref,
+)
+from codey.research.guards import (
+    safe_connector_id as _safe_connector_id,
+)
+from codey.research.guards import (
+    valid_digest_ref,
+)
 from codey.research.review_finding import (
     FINDING_KINDS,
     FINDING_SEVERITIES,
@@ -45,12 +61,10 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
-from codey.research.guards import (
-    valid_digest_ref,
-    generated_ref as _generated_ref,
-    safe_connector_id as _safe_connector_id,
-)
-
+from codey.runtime.observe.prompt_envelope import is_model_boundary_freshness
+from codey.storage.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
+from codey.utils.refs import digest_text
+from codey.workspace.context_epoch import admission_from_rendered_source, valid_context_epoch_ref
 
 SCHEMA_VERSION = 1
 TRACE_KIND = "run_trace_manifest"

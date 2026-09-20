@@ -6,31 +6,35 @@ transcript store, a truth layer, or a learning loop.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, UTC
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from collections.abc import Iterable, Mapping
 
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
+from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
     count_jsonl_rows,
+)
+from codey.ghost.event_log import (
     control_event as _ghost_control_event,
+)
+from codey.ghost.event_log import (
     event_file_stats as _shared_event_file_stats,
 )
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.ghost._common import normalize_project as _shared_normalize_project
-from codey.ghost._common import now_iso_z as _shared_now_iso
-from codey.ghost._warnings import bounded_warnings, event_read_warnings
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
 from codey.policies.redaction import looks_prompt_visible_secret
+from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
-from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,

@@ -8,12 +8,12 @@ together.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, UTC
 import hashlib
 import json
-from typing import Any
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.keep_policies import (
@@ -22,11 +22,11 @@ from codey.runtime.effects.keep_policies import (
     SETTLEMENT_STATUS_INTERRUPTED,
     keep_effect_pair_for_compaction,
 )
+from codey.runtime.effects.replay_args import validate_replay_args_shape
 from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
 )
-from codey.runtime.effects.replay_args import validate_replay_args_shape
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.storage.local_store import session_key
 

@@ -24,10 +24,10 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -43,13 +43,13 @@ from codey.research.evidence_runtime import (
     snapshot_from_research_record,
 )
 from codey.research.proof_quality import review_research_proof
-from tools.research_benchmark.scorer import build_regression_report
 from codey.research.reproducibility import build_reproducibility_capsule
 from codey.research.review_finding import (
     findings_from_proof_review,
     planner_gaps_from_findings,
 )
 from tests.manual.research_benchmark_suite import load_suite
+from tools.research_benchmark.scorer import build_regression_report
 
 PROBE = "longitudinal_research_harness_ab"
 FIXTURE_FILES_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "research_benchmark"

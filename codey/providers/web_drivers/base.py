@@ -5,12 +5,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from codey.providers import controls
+from codey.providers import controls, send_loop
 from codey.providers import flow as provider_flow
-from codey.providers import send_loop
 from codey.providers.diagnostics import ResponseMissing
-from codey.providers.submission import SendAttempt, confirm_submission
-from codey.providers.submission import SubmissionUncertain
+from codey.providers.submission import SendAttempt, SubmissionUncertain, confirm_submission
 from codey.runtime.core import cancellation
 
 

@@ -5,17 +5,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.ghost.affinity import AffinityHint
 from codey.ghost.directive import (
     GhostDirective,
     build_ghost_directive,
     render_ghost_directive,
 )
-from codey.ghost.affinity import AffinityHint
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.typed_fields import is_renderable_typed_field, render_typed_field
-
 
 FRESH_TS = "2999-01-01T00:00:00Z"
 

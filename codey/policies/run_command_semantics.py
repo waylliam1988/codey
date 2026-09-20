@@ -15,7 +15,6 @@ from pathlib import Path
 
 from codey.policies.command_line import split_run_command
 
-
 _WINDOWS_DRIVE_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _PATH_SUFFIXES = frozenset({
     ".cfg",

@@ -8,13 +8,13 @@ import unittest
 from pathlib import Path
 
 from codey.agents import runner as agent
+from codey.agents.handoff import ConversationContext
 from codey.agents.request import AgentRequest
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     project_repair_context,
 )
 from codey.workspace.context_epoch import context_epoch_id
-from codey.agents.handoff import ConversationContext
 
 
 class FakeProvider:

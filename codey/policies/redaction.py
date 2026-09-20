@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-
 _LATIN_SECRET_MARKER = (
     r"api[\s_-]?key|access[\s_-]?key|api[\s_-]?token|access[\s_-]?token|"
     r"auth[\s_-]?token|bearer[\s_-]?token|id[\s_-]?token|secrets?|client[\s_-]?secret|"

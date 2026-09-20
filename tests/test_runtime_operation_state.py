@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.core.operation_state import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
@@ -20,10 +19,10 @@ from codey.runtime.core.operation_state import (
     LEAF_TOOL_EFFECT_PENDING,
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
+    LEAVES,
+    SCHEMA_VERSION,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    SCHEMA_VERSION,
-    LEAVES,
     completion_proof_satisfied,
     mark_completion_blocked,
     mark_completion_proof_recorded,
@@ -43,6 +42,7 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
 from codey.runtime.log.session_projection import reduce_session
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 PROOF_OK = "completion_proof:0123456789abcdef"
 PROOF_FAIL = "completion_proof:fedcba9876543210"

@@ -45,17 +45,16 @@ from codey.completion.contract import (
     safe_run_ref,
 )
 from codey.completion.edit_scope import is_document_path
-from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
-from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.completion.verification_policy import (
     check_covers_selected_candidate,
 )
+from codey.research.evidence_runtime import normalize_runtime_ref
+from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.workspace.revision import (
     valid_workspace_fingerprint,
     workspace_fingerprint_ref,
     workspace_revision_ref,
 )
-
 
 CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
 LIMITATION_DOCS_ONLY_CHANGE = "docs_only_change"

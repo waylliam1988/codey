@@ -209,18 +209,18 @@ def _send_provider_with_effect(
     effect_id = ""
     if mutations is not None and session.session_id and session.run_id:
         session.provider_send_index += 1
+        from codey.runtime.core.operation_state import DRIVER_REPAIR, DRIVER_WRITER
         from codey.runtime.effects.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
-            RuntimeEffectIntent,
-            RuntimeEffectSettlement,
-            SETTLEMENT_STATUS_ERROR,
-            SETTLEMENT_STATUS_OK,
             SENT_STATE_MAYBE_SENT,
             SENT_STATE_SETTLED,
+            SETTLEMENT_STATUS_ERROR,
+            SETTLEMENT_STATUS_OK,
+            RuntimeEffectIntent,
+            RuntimeEffectSettlement,
             compute_args_digest,
             new_effect_id,
         )
-        from codey.runtime.core.operation_state import DRIVER_REPAIR, DRIVER_WRITER
         from codey.runtime.effects.replay_policy import provider_replay_policy
 
         replay_decision = provider_replay_policy(purpose)

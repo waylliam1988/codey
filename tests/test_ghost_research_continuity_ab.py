@@ -7,10 +7,9 @@ from unittest import mock
 
 from codey.agents.runner import RunResult
 from codey.app import task_submit as task_submit
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.registry import DEFAULT_PROVIDER_ID
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
-
 from tests.manual import ghost_research_continuity_ab as ab
 from tests.manual.ab_journal import (
     TRANSCRIPT_MODE_ARCHIVE,

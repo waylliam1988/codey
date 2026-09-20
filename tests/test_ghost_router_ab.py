@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.manual import ghost_router_ab
-from tests.manual import ghost_router_production_ab
+from tests.manual import ghost_router_ab, ghost_router_production_ab
 
 
 def test_self_test_router_beats_current_auto_baseline() -> None:

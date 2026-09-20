@@ -8,26 +8,32 @@ caller so this module stays storage-and-policy only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, UTC
 import hashlib
 import json
-from pathlib import Path
 import re
-from typing import Protocol
-from collections.abc import Callable, Iterable
 import uuid
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Protocol
 
-from codey.runtime.core import cancellation
+from codey.ghost._warnings import map_event_warnings
 from codey.ghost.event_log import (
     GhostEventLog,
+)
+from codey.ghost.event_log import (
     compact_result_payload as _compact_payload,
+)
+from codey.ghost.event_log import (
     control_event as _ghost_control_event,
+)
+from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
-from codey.ghost._warnings import map_event_warnings
+from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
@@ -39,7 +45,6 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-
 
 ROUTER_SCHEMA_VERSION = 1
 MAX_ROUTER_TASK_CHARS = 900

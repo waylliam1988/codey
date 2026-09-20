@@ -7,7 +7,6 @@ Host-trust tables live in ``source_domains``; the similar historical name
 
 from __future__ import annotations
 
-
 MEDICAL_CONNECTOR_TERMS = frozenset({
     "biomedical",
     "cancer",

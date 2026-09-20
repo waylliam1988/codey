@@ -4,12 +4,12 @@ import json
 import tempfile
 from pathlib import Path
 
-from codey.utils.refs import content_digest, digest_text, stable_ref
 from codey.research.identity import (
     path_ref,
     project_ref,
     sanitize_research_url_ref,
 )
+from codey.utils.refs import content_digest, digest_text, stable_ref
 
 
 def test_url_ref_redacts_query_values_keys_and_malformed_userinfo_before_digest() -> None:

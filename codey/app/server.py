@@ -36,7 +36,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from codey.providers import controls as provider_controls, flow as provider_flow
 from codey import __version__
 from codey.app import api as app_api
 from codey.app import provider_services as provider_services
@@ -52,6 +51,8 @@ from codey.app.http_plumbing import (
     sse_replay_cursor,
     write_sse_event,
 )
+from codey.providers import controls as provider_controls
+from codey.providers import flow as provider_flow
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -75,11 +76,10 @@ _STATE_LOCK = threading.Lock()
 
 
 def _build_state() -> AppContext:
-    from codey.app.provider_services import connect_fresh_provider_tab
-
     import functools
 
     from codey.app import sibling_probe
+    from codey.app.provider_services import connect_fresh_provider_tab
 
     state = AppContext(DEFAULT_STATE_HOME)
     state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab

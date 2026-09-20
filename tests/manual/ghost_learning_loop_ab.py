@@ -15,29 +15,28 @@ import json
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from codey.automation.browser import PROVIDER_START_URLS
 from codey.ghost.directive import build_ghost_directive
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.learning_loop import GhostLearningLoop, GhostLearningTurn
 from codey.ghost.store import GhostSignalStore
-from codey.automation.browser import PROVIDER_START_URLS
+from codey.providers import controls as provider_controls
 from codey.providers.registry import (
     PROVIDER_TYPES,
     connect_fresh_provider_tab,
     connect_provider,
     provider_ids,
 )
-from codey.providers import controls as provider_controls
 from tests.manual.ghost_directive_ab import _model_visible_context_leaked
-
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 BASELINE_PROMPT = "请用自然语言解释为什么回归测试重要。"

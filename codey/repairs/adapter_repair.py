@@ -6,17 +6,16 @@ import json
 import secrets
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
-from codey.repairs import adapter_overrides
-from codey.repairs.adapter_overrides import AdapterOverride
-from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.providers.diagnostics import FAILURE_READINESS_STALE, sanitize_failure_facts
 from codey.providers.worker import WorkerChatProvider
-from codey.repairs.journal import RepairJournal
+from codey.repairs import adapter_overrides
+from codey.repairs.adapter_overrides import AdapterOverride
 from codey.repairs.adapter_surface import adapter_repair_surface
+from codey.repairs.journal import RepairJournal
 from codey.repairs.policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,
@@ -24,7 +23,7 @@ from codey.repairs.policy import (
     validate_candidate,
 )
 from codey.repairs.sandbox import RepairSandbox, create_repair_sandbox
-
+from codey.storage.local_store import DEFAULT_STATE_HOME
 
 RepairModel = Callable[[str], str]
 

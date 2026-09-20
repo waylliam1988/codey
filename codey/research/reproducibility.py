@@ -7,8 +7,8 @@ facts. v1 performs no re-execution; statuses only describe captured evidence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
 from codey.research.analysis_run import (
     CAPTURE_NOT_CAPTURED,

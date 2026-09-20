@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
 PROTOCOL_TOO_MANY_TOOLS = "too_many_tools"

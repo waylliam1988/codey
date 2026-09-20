@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from codey.runtime.core.outcome import OperationOutcome
 
+
 @dataclass(frozen=True)
 class OperationIntent:
     objective_ref: str

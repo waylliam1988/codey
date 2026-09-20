@@ -13,7 +13,6 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 
-
 SCHEMA_VERSION = 1
 MAX_UI_STATE_BYTES = 16 * 1024 * 1024
 MAX_SESSIONS = 200

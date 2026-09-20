@@ -7,17 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from codey.utils.refs import digest_text
 from codey.policies.redaction import (
+    looks_prompt_visible_secret,
     looks_secret_marker,
     looks_secret_shape,
-    looks_prompt_visible_secret,
 )
 from codey.research.source_connectors import (
     FetchedSource,
-    SourceHit,
     SourceConnectorRegistry,
     SourceConnectorSpec,
+    SourceHit,
     built_in_connector_registry,
     connector_query_has_secret_signal,
     fetch_csv_tsv_file,
@@ -31,7 +30,7 @@ from codey.research.source_connectors import (
     source_result_from_hits,
 )
 from codey.research.source_document import SourceDocument
-
+from codey.utils.refs import digest_text
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "research_connectors"

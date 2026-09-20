@@ -21,7 +21,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-
 LOCK_TIMEOUT_SECONDS = 10.0
 LOCK_POLL_INTERVAL = 0.02
 

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore
 from codey.runs.ledger_projection import (
     ChangesSummary,
@@ -12,9 +13,7 @@ from codey.runs.ledger_projection import (
     load_run_projection,
     project_run_ledger,
 )
-from codey.completion.edit_integrity import observe_edit_integrity
 from codey.runs.receipt import build_task_receipt
-
 
 CLEAN_SOURCE_DIFF = (
     "diff --git a/src/mod.py b/src/mod.py\n"

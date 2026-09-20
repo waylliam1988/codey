@@ -13,13 +13,13 @@ from codey.knowledge import (
     KnowledgeStore,
     RestoreResult,
 )
-from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
 from codey.knowledge.concept_schema import (
     CONCEPT_EDGE_KINDS,
     clean_relations,
     concept_tags,
     normalize_concept,
 )
+from codey.knowledge.concepts import ConceptGraphBuilder, build_unified_research_graph
 from codey.knowledge.note import LINK_KINDS
 
 

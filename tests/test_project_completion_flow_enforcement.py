@@ -8,23 +8,23 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from codey.agents.request import AgentRequest
+from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.agents.request import AgentRequest
-from codey.operations import project_completion_flow as project_completion_module
-from codey.agents.runner import RunResult
-from codey.completion.engine import COMPLETION_BLOCKED_NOTES
 from codey.completion.decision import BLOCKED_TURN_BUDGET_EXHAUSTED
+from codey.completion.engine import COMPLETION_BLOCKED_NOTES
+from codey.completion.verification_policy import VerificationCandidate
+from codey.operations import project_completion_flow as project_completion_module
 from codey.operations.project_completion_flow import (
     COMPLETION_REPAIR_FOLLOWUP,
     blocked_result,
 )
-from codey.runtime.observe.events import RunEvent
-from codey.runtime.core.models import ToolCall
-from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
+from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
-from codey.completion.verification_policy import VerificationCandidate
 
 
 class _Provider:

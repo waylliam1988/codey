@@ -31,14 +31,15 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.agents.request import AgentRequest
+from codey.agents.runner import RunResult
+from codey.agents.runner import run as default_agent_run
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.agents.request import AgentRequest
-from codey.agents.runner import RunResult, run as default_agent_run
-from codey.runtime.observe.events import RunEvent
-from codey.runtime.core.models import ToolCall
-from codey.task.model import TaskSubmission
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
+from codey.runtime.core.models import ToolCall
+from codey.runtime.observe.events import RunEvent
+from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.changes import collect_changes as default_collect_changes
 from tests.manual.ab_harness_common import (
@@ -734,9 +735,9 @@ def run_live(
     transcript_mode: str = "digest-only",
     rerun_failed: bool = False,
 ) -> dict[str, Any]:
-    from codey.providers.registry import connect_provider
-
     import time
+
+    from codey.providers.registry import connect_provider
 
     raw_provider = None
     results_dir = Path(__file__).parent / "results"

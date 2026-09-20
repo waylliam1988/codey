@@ -5,28 +5,34 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from pathlib import Path
 import threading
 import time
-from typing import Any, TypeVar
-from collections.abc import Callable
 import urllib.error
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, TypeVar
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
-from codey.runtime.core import cancellation
 from codey.automation import browser_worker
 from codey.automation.browser import DEFAULT_PORT, open_chat_page
-from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.policies.network import check_fetch_url
 from codey.research.extract import extract_text, extract_title
 from codey.research.http_redirects import (
     build_no_redirect_opener,
+)
+from codey.research.http_redirects import (
     close_response as _close_response,
+)
+from codey.research.http_redirects import (
     is_redirect_status as _is_redirect_status,
+)
+from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
 from codey.research.pdf_extract import PDF_MAX_BYTES
-from codey.policies.network import check_fetch_url
+from codey.runtime.core import cancellation
+from codey.storage.local_store import DEFAULT_STATE_HOME
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"

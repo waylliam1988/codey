@@ -10,10 +10,10 @@ inside the queue layer.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
 from codey.completion.contract import CompletionProof, project_completion_proof
 from codey.research.contract import (
@@ -22,9 +22,8 @@ from codey.research.contract import (
     research_external_refs,
 )
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.utils.refs import identifier
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
-
+from codey.utils.refs import identifier
 
 RESEARCH_QUEUE_KINDS = frozenset({"research", "open_question"})
 

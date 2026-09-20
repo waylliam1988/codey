@@ -30,7 +30,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey.runtime.core import cancellation
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import SupportRef, _missing_suggestions
 from codey.knowledge.note import KnowledgeNote
@@ -41,6 +40,7 @@ from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
 from codey.research.tools import ResearchTools
+from codey.runtime.core import cancellation
 
 ARMS = ("baseline", "concept")
 DEFAULT_MAX_TURNS = 12

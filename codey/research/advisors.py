@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 
-from codey.runtime.core import cancellation
+from codey.agents.consensus import MAX_CONSENSUS_ADVISORS, ConsensusAdvice, advisor_ids
 from codey.providers import controls as provider_controls
-from codey.agents.consensus import ConsensusAdvice, MAX_CONSENSUS_ADVISORS, advisor_ids
 from codey.research.source_document import compact_pages
+from codey.runtime.core import cancellation
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000

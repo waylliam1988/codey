@@ -7,10 +7,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import codey.app.cli as cli
 from codey.agents.runner import RunResult
 from codey.app.cli import _safe_print
 from codey.app.headless_runner import HeadlessResult
-import codey.app.cli as cli
 
 
 class AsciiStream:

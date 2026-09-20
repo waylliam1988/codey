@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 PROMPT_SURFACE_SCHEMA_VERSION = 1
 

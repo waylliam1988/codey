@@ -11,9 +11,9 @@ import codey.research.evidence_ledger as evidence_ledger_module
 from codey.research.evidence_ledger import (
     EVIDENCE_LEDGER_KIND,
     EVIDENCE_LEDGER_SCHEMA_VERSION,
-    EvidenceLedgerStore,
     MAX_EVIDENCE_LEDGER_BYTES,
     MAX_LEDGER_EVIDENCE,
+    EvidenceLedgerStore,
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import (

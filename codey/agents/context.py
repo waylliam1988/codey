@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY as COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
+)
+from codey.completion.repair_context import (
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
 )
 from codey.policies.permissions import allows_context_source
+from codey.runs.work_checkpoint import MAX_WORK_CHECKPOINT_PROMPT_CHARS
 from codey.runtime.observe.prompt_envelope import (
     PromptEnvelope,
     PromptEnvelopeSection,
@@ -23,7 +26,6 @@ from codey.workspace.context_source import (
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
-from codey.runs.work_checkpoint import MAX_WORK_CHECKPOINT_PROMPT_CHARS
 
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000

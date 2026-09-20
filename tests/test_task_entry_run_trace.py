@@ -5,21 +5,21 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
 from codey.agents.consensus import ConsensusResult
 from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
-from codey.runs.trace import digest_text
+from codey.app import server
+from codey.app import task_submit as task_submit
+from codey.operations.prompting import record_local_context_trace
+from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.operations.prompting import record_local_context_trace
+from codey.runs.trace import digest_text
 from codey.task.model import TaskSubmission
-from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
 RESEARCH_ITERATION = "codey.operations.research_flow.run_research_iteration"
 

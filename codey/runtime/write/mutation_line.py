@@ -10,25 +10,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from codey.runtime.effects.effect_records import (
-    EFFECT_CATEGORY_PROVIDER_SEND,
-    EFFECT_CATEGORY_TOOL_CALL,
-    RuntimeEffectError,
-    RuntimeEffectIntent,
-    RuntimeEffectSettlement,
-)
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    mark_completion_blocked as state_mark_completion_blocked,
-    mark_completion_proof_recorded as state_mark_completion_proof_recorded,
-    mark_repair_context_admitted as state_mark_repair_context_admitted,
-    mark_repair_running as state_mark_repair_running,
-    mark_repair_settled as state_mark_repair_settled,
-    mark_terminal as state_mark_terminal,
-    mark_writer_running as state_mark_writer_running,
-    mark_writer_settled as state_mark_writer_settled,
     new_operation_state,
     operation_is_open,
     operation_state_entry,
@@ -36,10 +21,41 @@ from codey.runtime.core.operation_state import (
     outcome_for_terminal,
     start_entries,
 )
+from codey.runtime.core.operation_state import (
+    mark_completion_blocked as state_mark_completion_blocked,
+)
+from codey.runtime.core.operation_state import (
+    mark_completion_proof_recorded as state_mark_completion_proof_recorded,
+)
+from codey.runtime.core.operation_state import (
+    mark_repair_context_admitted as state_mark_repair_context_admitted,
+)
+from codey.runtime.core.operation_state import (
+    mark_repair_running as state_mark_repair_running,
+)
+from codey.runtime.core.operation_state import (
+    mark_repair_settled as state_mark_repair_settled,
+)
+from codey.runtime.core.operation_state import (
+    mark_terminal as state_mark_terminal,
+)
+from codey.runtime.core.operation_state import (
+    mark_writer_running as state_mark_writer_running,
+)
+from codey.runtime.core.operation_state import (
+    mark_writer_settled as state_mark_writer_settled,
+)
+from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    EFFECT_CATEGORY_TOOL_CALL,
+    RuntimeEffectError,
+    RuntimeEffectIntent,
+    RuntimeEffectSettlement,
+)
+from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view
-from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
 from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
 from codey.runtime.write.provider_effects import (
     build_provider_begin_rows,

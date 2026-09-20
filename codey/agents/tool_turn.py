@@ -17,12 +17,12 @@ Decomposes tool execution in a turn into:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Sequence
 
-from codey.agents.state import AgentLoopSession
 from codey.agents.shell_approval import DeferredToolCall, deferred_tool_call_from_call
+from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import (
     TurnState,
     build_tool_call_intent,

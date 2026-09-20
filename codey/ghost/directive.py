@@ -2,28 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, UTC
 import math
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable
 
-from codey.ghost.hebbian import (
-    HEBBIAN_SCHEMA_VERSION,
-    MAX_HEBBIAN_STATE_BYTES,
-    GhostHebbianStore,
-    GhostNode,
-    MIN_NODE_WEIGHT,
-    NODE_HALF_LIFE_DAYS,
-)
-from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost._common import normalize_project as _shared_normalize_project
 from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost._warnings import bounded_warnings
+from codey.ghost.hebbian import (
+    HEBBIAN_SCHEMA_VERSION,
+    MAX_HEBBIAN_STATE_BYTES,
+    MIN_NODE_WEIGHT,
+    NODE_HALF_LIFE_DAYS,
+    GhostHebbianStore,
+    GhostNode,
+)
+from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
 from codey.storage.local_store import StoreCorruption, read_json_strict
-
 
 DEFAULT_DIRECTIVE_BUDGET = 900
 MAX_DIRECTIVE_LINE_CHARS = 160

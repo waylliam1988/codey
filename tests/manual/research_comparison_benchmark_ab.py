@@ -33,15 +33,14 @@ import json
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping, Sequence
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.research_benchmark.scorer import ResearchRegressionReport
 from tests.manual.ab_harness_common import write_json_atomic
 from tests.manual.longitudinal_research_harness_ab import (
     QUESTION,
@@ -52,6 +51,7 @@ from tests.manual.longitudinal_research_harness_ab import (
     evaluate_round,
 )
 from tests.manual.research_benchmark_suite import load_suite
+from tools.research_benchmark.scorer import ResearchRegressionReport
 
 PROBE = "research_comparison_benchmark_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"

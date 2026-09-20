@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from codey.completion.verification_policy import VerificationCandidate, verification_candidate_lines
-
 
 MAX_OUTPUT_SCAN_CHARS = 4_000
 MAX_HINTS = 5

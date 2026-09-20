@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from codey.runs.work_checkpoint import (
-    MAX_CHECKPOINT_BYTES,
     MAX_CHANGED_FILES,
+    MAX_CHECKPOINT_BYTES,
     MAX_COMMAND_CHARS,
     MAX_REL_PATH_CHARS,
     MAX_STOP_REASON_CHARS,

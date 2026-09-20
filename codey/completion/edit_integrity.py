@@ -18,8 +18,8 @@ EvidenceLedger, authorizes a tool, or changes a PermissionProfile.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 from codey.completion.edit_scope import (
     EDIT_SCOPE_FIXTURE,
@@ -32,7 +32,6 @@ from codey.completion.edit_scope import (
     task_authorizes_test_edit,
 )
 from codey.utils.refs import clip, digest_text, identifier, stable_ref
-
 
 EDIT_INTEGRITY_SCHEMA_VERSION = 1
 

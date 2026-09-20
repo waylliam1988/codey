@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
-from codey.runtime.core import cancellation
+from codey.policies.network import check_fetch_url
 from codey.research.context import ResearchPipelineConfig
 from codey.research.guards import bounded_int as _bounded_int
-from codey.research.urls import opened_url
-from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
 from codey.research.url_selection import source_candidate_skip_reason
-from codey.policies.network import check_fetch_url
+from codey.research.urls import opened_url
+from codey.runtime.core import cancellation
+from codey.utils.refs import clip
 
 
 @dataclass(frozen=True)

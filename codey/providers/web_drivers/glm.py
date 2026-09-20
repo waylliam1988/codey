@@ -7,18 +7,18 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey.runtime.core import cancellation
 from codey.providers import controls as controls
 from codey.providers import flow as provider_flow
 from codey.providers import send_loop as send_loop
-from codey.providers.profiles import get_profile
 from codey.providers.diagnostics import ControlMissing, RateLimited
-from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
-from codey.providers.web_drivers import common as driver_common
+from codey.providers.profiles import get_profile
 from codey.providers.submission import (
     SendAttempt,
     confirm_submission,
 )
+from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers.web_drivers import common as driver_common
+from codey.runtime.core import cancellation
 
 PROVIDER_ID = "glm"
 PROFILE = get_profile(PROVIDER_ID)

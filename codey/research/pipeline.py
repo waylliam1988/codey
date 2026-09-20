@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
-from collections.abc import Callable, Mapping
 
-from codey.runtime.core import cancellation
+import codey.research.followup_selection as followup_selection
+from codey.research.brief_projection import project_research_brief
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.evidence_runtime import snapshot_from_research_record
-import codey.research.followup_selection as followup_selection
-from codey.research.brief_projection import project_research_brief
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.query_planner import ResearchPlan, build_research_plan
@@ -21,6 +20,7 @@ from codey.research.review_finding import findings_from_proof_review, planner_ga
 from codey.research.runner import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
+from codey.runtime.core import cancellation
 
 
 @dataclass(frozen=True)

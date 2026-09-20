@@ -21,9 +21,9 @@ Deliberately *not* owned here:
 from __future__ import annotations
 
 import math
-from datetime import datetime, UTC
-from typing import Any, TypeVar
 from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 _RowT = TypeVar("_RowT")
 

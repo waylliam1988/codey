@@ -27,7 +27,6 @@ from typing import Any
 
 from codey.policies.redaction import looks_prompt_visible_secret
 
-
 COMPLETION_REPAIR_SCHEMA_VERSION = 1
 _PROJECTION_KIND = "completion_repair_context_projection"
 CONTEXT_SOURCE_KEY = "completion_repair_context"

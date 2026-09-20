@@ -7,11 +7,10 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterator, Sequence
-
 
 POLL_INTERVAL = 0.2
 _context = threading.local()

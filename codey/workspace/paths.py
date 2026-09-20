@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import errno
 import hashlib
 import os
 import stat
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-
 
 _WINDOWS_RESERVED_STEMS = frozenset({
     "con",

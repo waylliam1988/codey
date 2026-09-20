@@ -9,26 +9,23 @@ input.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
+from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.connector_terms import preferred_connector_ids
-from codey.utils.refs import (
-    bounded_refs,
-    clip,
-    digest_text,
-    identifier,
-    stable_ref,
-)
 from codey.research.domain_profiles import EvidenceProfile
 from codey.research.guards import bounded_int as _bounded_int
 from codey.research.guards import (
     connector_id as _connector_id,
-    valid_digest_ref,
+)
+from codey.research.guards import (
     generated_ref as _generated_ref,
 )
+from codey.research.guards import (
+    valid_digest_ref,
+)
 from codey.research.proof_quality import ResearchProofReview
-from codey.policies.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     SourceConnectorRegistry,
@@ -36,7 +33,13 @@ from codey.research.source_connectors import (
     safe_connector_query_terms,
     safe_connector_signal_text,
 )
-
+from codey.utils.refs import (
+    bounded_refs,
+    clip,
+    digest_text,
+    identifier,
+    stable_ref,
+)
 
 MAX_PLAN_QUERIES = 8
 MAX_PLAN_SOURCES = 12

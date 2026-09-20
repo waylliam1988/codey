@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
-from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
+from codey.runtime.core import cancellation
 
 
 class SubmissionUncertain(TimeoutError):

@@ -18,9 +18,9 @@ from codey.ghost.learning_loop import (
     GhostLearningTurn,
 )
 from codey.ghost.router import (
+    GhostRouter,
     GhostRouteRequest,
     GhostRouteResult,
-    GhostRouter,
 )
 from codey.ghost.work_queue import (
     GhostWorkItem,
@@ -44,7 +44,6 @@ from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchComplet
 from codey.runs.ledger_projection import load_run_projection
 from codey.runtime.core import cancellation
 from codey.utils.refs import digest_text
-
 
 PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
 PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0

@@ -23,7 +23,6 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 
-
 SCHEMA_VERSION = 1
 MAX_PERSISTED_CONVERSATIONS = 64
 SNAPSHOT_FIELDS = {field.name for field in fields(ConversationSnapshot)}

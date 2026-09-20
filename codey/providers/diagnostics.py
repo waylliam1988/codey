@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, UTC
-from typing import Any, TypeVar
 from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 from urllib.parse import urlparse
 
-from codey.runtime.core import cancellation
 from codey.providers.flow import (
     STAGE_COMPLETION,
     STAGE_INPUT,
@@ -14,7 +13,7 @@ from codey.providers.flow import (
     STAGE_RETRY,
     STAGES,
 )
-
+from codey.runtime.core import cancellation
 
 T = TypeVar("T")
 FAILURE_TRANSIENT = "transient"

@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import math
 import tempfile
 import unittest
+from dataclasses import replace
 from unittest import mock
 
 from codey.ghost.hebbian import (
     EDGE_LEARNING_RATE,
     HEBBIAN_SCHEMA_VERSION,
-    NODE_LEARNING_RATE,
     NODE_KINDS,
+    NODE_LEARNING_RATE,
     GhostHebbianStore,
     GhostNode,
 )

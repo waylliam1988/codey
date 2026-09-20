@@ -5,30 +5,14 @@ from __future__ import annotations
 import queue
 import threading
 from collections import Counter
-from dataclasses import dataclass, field, replace
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 
-from codey.runtime.core import cancellation
-from codey.workspace.context_epoch import context_epoch_id, context_source_ref
-from codey.workspace.context_source import (
-    ContextSource,
-    RenderedContextSource,
-    render_context_sources_with_metadata,
-)
-from codey.runtime.observe.events import RunEvent
-from codey.policies.permissions import allows_context_source, profile_for_name
-from codey.runtime.observe.prompt_envelope import (
-    FailOpenPromptTrace,
-    PromptEnvelope,
-    PromptEnvelopeSection,
-    RenderedPromptSection,
-    record_provider_send_prompt,
-)
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote, clean_open_questions
 from codey.knowledge.store import KnowledgeStore
-from codey.runtime.core.models import ToolResult, normalized_managed_output
+from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.controller import (
     ResearchController,
@@ -40,8 +24,8 @@ from codey.research.controller import (
 )
 from codey.research.done_finalizer import finalize_done_answer
 from codey.research.object_model import ResearchRecord, build_research_record
-from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
+from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.source_document import compact_pages
 from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
 from codey.research.tool_contract import (
@@ -58,7 +42,25 @@ from codey.research.tool_contract import (
 from codey.research.tools import ResearchTools, clone_research_tools
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_SOURCE_KEY,
+)
+from codey.research.topic_continuity import (
     DEFAULT_TOPIC_BUDGET_CHARS,
+)
+from codey.runtime.core import cancellation
+from codey.runtime.core.models import ToolResult, normalized_managed_output
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.prompt_envelope import (
+    FailOpenPromptTrace,
+    PromptEnvelope,
+    PromptEnvelopeSection,
+    RenderedPromptSection,
+    record_provider_send_prompt,
+)
+from codey.workspace.context_epoch import context_epoch_id, context_source_ref
+from codey.workspace.context_source import (
+    ContextSource,
+    RenderedContextSource,
+    render_context_sources_with_metadata,
 )
 
 DEFAULT_MAX_TURNS = 14

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
+from codey.runs.work_checkpoint import CheckpointCheck
+from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence, check_failure_summary
-from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
-from codey.runs.work_checkpoint import CheckpointCheck
 
 FINGERPRINT = "sha256:" + ("1" * 64)
 

@@ -7,9 +7,10 @@ does not call models, fetch sources, inspect raw webpages, or read Ghost state.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 
+from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import status_token as _status_token
 from codey.research.guards import valid_digest_ref
@@ -23,8 +24,6 @@ from codey.utils.refs import (
     nonnegative_int,
     stable_ref,
 )
-from codey.policies.redaction import looks_prompt_visible_secret
-
 
 MAX_GAPS = 12
 MAX_SIGNALS = 8

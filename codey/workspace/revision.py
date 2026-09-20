@@ -12,15 +12,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Iterable
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import project_key, write_json_atomic
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import path_matches_ignored_prefix
-
 
 SCHEMA_VERSION = 1
 INITIAL_WORKSPACE_REVISION = 1

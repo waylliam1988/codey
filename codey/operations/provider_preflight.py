@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Callable
 
 from codey.operations.task_state import TaskState
 from codey.policies.action import DECISION_DENY, ActionSubject, evaluate_action
