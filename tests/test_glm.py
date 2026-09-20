@@ -18,9 +18,8 @@ class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         event.set()
         page = mock.Mock()
 
-        with cancellation.scope(event):
-            with self.assertRaises(cancellation.TaskCancelled):
-                glm.chat(page, "hello")
+        with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+            glm.chat(page, "hello")
 
         page.locator.assert_not_called()
         page.goto.assert_not_called()
@@ -422,10 +421,9 @@ class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(glm, "_submitted_question_count", return_value=0),
             mock.patch.object(glm.controls, "start_response_watch") as start_watch,
             mock.patch.object(glm.controls, "stop_response_watch") as stop_watch,
-            mock.patch.object(glm.controls, "reject_control"),
+            mock.patch.object(glm.controls, "reject_control"),self.assertRaisesRegex(RuntimeError, "click failed")
         ):
-            with self.assertRaisesRegex(RuntimeError, "click failed"):
-                glm.chat(page, "hello", response_timeout=1, tick=0)
+            glm.chat(page, "hello", response_timeout=1, tick=0)
 
         start_watch.assert_called_once_with(page, glm.PROVIDER_ID)
         stop_watch.assert_called_once_with(page, glm.PROVIDER_ID)
@@ -499,10 +497,9 @@ class GlmDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(glm, "_submitted_question_count", side_effect=[0, 2]),
             mock.patch.object(glm.controls, "control_has_text", return_value=True),
             mock.patch.object(glm.controls, "confirm_control"),
-            mock.patch.object(glm.cancellation, "wait"),
+            mock.patch.object(glm.cancellation, "wait"),self.assertRaisesRegex(RuntimeError, "more than once")
         ):
-            with self.assertRaisesRegex(RuntimeError, "more than once"):
-                glm.chat(page, "hello", response_timeout=1, tick=0)
+            glm.chat(page, "hello", response_timeout=1, tick=0)
 
         self.assertEqual(attempt.method, "click")
 

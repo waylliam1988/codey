@@ -264,16 +264,15 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
         self.assertEqual(degraded.verified_facts, "")
 
     def test_project_map_render_failure_degrades_to_empty_map(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.object(operations_task_context, "render_project_map", side_effect=RuntimeError("boom")):
-                context = ProjectTaskContextBuilder().build(
-                    project=Path(td),
-                    task="task",
-                    session_id="s",
-                    run_id="r",
-                    continue_task=False,
-                    provider_session_changed=False,
-                )
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(operations_task_context, "render_project_map", side_effect=RuntimeError("boom")):
+            context = ProjectTaskContextBuilder().build(
+                project=Path(td),
+                task="task",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
 
         self.assertEqual(context.project_map, "")
 

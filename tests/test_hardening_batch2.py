@@ -68,9 +68,8 @@ class CancellationPropagationTests(unittest.TestCase):
                 store,
                 "_load_state_for_read_unlocked",
                 side_effect=cancellation.TaskCancelled("stop"),
-            ):
-                with self.assertRaises(cancellation.TaskCancelled):
-                    store.list_nodes()
+            ), self.assertRaises(cancellation.TaskCancelled):
+                store.list_nodes()
 
     def test_affinity_cross_store_specs_reraise_cancel(self) -> None:
         from codey.ghost import affinity as affinity_module
@@ -98,17 +97,16 @@ class CancellationPropagationTests(unittest.TestCase):
             store = ManagedOutputStore(Path(td))
             with mock.patch.object(
                 store, "_run_dir", side_effect=cancellation.TaskCancelled("stop")
-            ):
-                with self.assertRaises(cancellation.TaskCancelled):
-                    store.write_run_output(
-                        session_id="s",
-                        run_id="r",
-                        tool_id="t",
-                        permission_profile="p",
-                        command="c",
-                        cwd=".",
-                        text="x",
-                    )
+            ), self.assertRaises(cancellation.TaskCancelled):
+                store.write_run_output(
+                    session_id="s",
+                    run_id="r",
+                    tool_id="t",
+                    permission_profile="p",
+                    command="c",
+                    cwd=".",
+                    text="x",
+                )
 
 
 class PostBodyCoercionTests(unittest.TestCase):
@@ -528,10 +526,9 @@ class WorkerBusyMappingTests(unittest.TestCase):
             mock.patch.object(server_module, "STATE", state),
             mock.patch.object(
                 task_submit_module, "submit_browser_task", return_value=False
-            ),
+            ),self.assertRaises(BrowserWorkerBusy)
         ):
-            with self.assertRaises(BrowserWorkerBusy):
-                server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
+            server_module._submit_task("s", None, "do it", 3, False, "qwen", "auto")
         state.release_run.assert_called_once_with("run-1")
 
 

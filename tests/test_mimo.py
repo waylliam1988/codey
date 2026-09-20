@@ -18,9 +18,8 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         event.set()
         page = mock.Mock()
 
-        with cancellation.scope(event):
-            with self.assertRaises(cancellation.TaskCancelled):
-                mimo.chat(page, "hello")
+        with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+            mimo.chat(page, "hello")
 
         page.locator.assert_not_called()
         page.goto.assert_not_called()
@@ -35,10 +34,9 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(mimo, "_dismiss_known_notice"),
             mock.patch.object(mimo, "_message_box", return_value=mock.Mock()),
             mock.patch.object(mimo, "_generation_active", return_value=True),
-            mock.patch.object(mimo.cancellation, "wait"),
+            mock.patch.object(mimo.cancellation, "wait"),self.assertRaisesRegex(TimeoutError, "input did not appear")
         ):
-            with self.assertRaisesRegex(TimeoutError, "input did not appear"):
-                mimo.wait_ready(page, timeout=0)
+            mimo.wait_ready(page, timeout=0)
 
     def test_dismisses_only_profiled_announcement_close_button(self) -> None:
         page = mock.Mock()
@@ -579,9 +577,9 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(mimo, "_message_box", return_value=textarea),
             mock.patch.object(mimo, "_send_button", return_value=None),
             mock.patch.object(mimo, "_generation_active", return_value=True),
+            self.assertRaisesRegex(TimeoutError, "still generating"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "still generating"):
-                mimo._submit(page, baseline=0, submitted_text="hello")
+            mimo._submit(page, baseline=0, submitted_text="hello")
 
         textarea.press.assert_not_called()
 
@@ -624,10 +622,9 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(mimo, "_response_count", return_value=0),
             mock.patch.object(mimo.controls, "start_response_watch") as start_watch,
             mock.patch.object(mimo.controls, "stop_response_watch") as stop_watch,
-            mock.patch.object(mimo.controls, "reject_control"),
+            mock.patch.object(mimo.controls, "reject_control"),self.assertRaisesRegex(RuntimeError, "click failed")
         ):
-            with self.assertRaisesRegex(RuntimeError, "click failed"):
-                mimo.chat(page, "hello", response_timeout=1, tick=0)
+            mimo.chat(page, "hello", response_timeout=1, tick=0)
 
         start_watch.assert_called_once_with(page, mimo.PROVIDER_ID)
         stop_watch.assert_called_once_with(page, mimo.PROVIDER_ID)
@@ -815,10 +812,9 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         with (
             mock.patch.object(mimo, "_copy_last_text", return_value=""),
             mock.patch.object(mimo, "_generation_complete", return_value=False),
-            mock.patch.object(mimo, "_last_text") as last_text,
+            mock.patch.object(mimo, "_last_text") as last_text,self.assertRaisesRegex(RuntimeError, "still generating")
         ):
-            with self.assertRaisesRegex(RuntimeError, "still generating"):
-                mimo._final_text(object())
+            mimo._final_text(object())
 
         last_text.assert_not_called()
 
@@ -827,9 +823,9 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(mimo, "_copy_last_text", return_value=""),
             mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo, "_last_text", return_value=""),
+            self.assertRaisesRegex(RuntimeError, "raw Xiaomi MiMo response"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "raw Xiaomi MiMo response"):
-                mimo._final_text(object())
+            mimo._final_text(object())
 
 
 if __name__ == "__main__":

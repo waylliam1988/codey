@@ -338,18 +338,17 @@ class ProviderRevivalTests(unittest.TestCase):
                 revival,
                 "write_json_atomic",
                 side_effect=OSError("interrupted"),
-            ):
-                with self.assertRaisesRegex(OSError, "interrupted"):
-                    revival.complete_send(
-                        path,
-                        "qwen",
-                        "chat.qwen.ai",
-                        {},
-                        set(),
-                        set(),
-                        staged_flow=self.FLOW,
-                        built_in_profile_hash="profile-v1",
-                    )
+            ), self.assertRaisesRegex(OSError, "interrupted"):
+                revival.complete_send(
+                    path,
+                    "qwen",
+                    "chat.qwen.ai",
+                    {},
+                    set(),
+                    set(),
+                    staged_flow=self.FLOW,
+                    built_in_profile_hash="profile-v1",
+                )
 
             self.assertEqual(path.read_bytes(), before)
             self.assertEqual(

@@ -16,10 +16,10 @@ class ProviderSendLoopTests(unittest.TestCase):
         with (
             mock.patch.object(send_loop.controls, "start_response_watch") as start,
             mock.patch.object(send_loop.controls, "stop_response_watch") as stop,
+            send_loop.response_watch(page, "glm"),
         ):
-            with send_loop.response_watch(page, "glm"):
-                start.assert_called_once_with(page, "glm")
-                stop.assert_not_called()
+            start.assert_called_once_with(page, "glm")
+            stop.assert_not_called()
 
         stop.assert_called_once_with(page, "glm")
 
@@ -28,10 +28,10 @@ class ProviderSendLoopTests(unittest.TestCase):
         with (
             mock.patch.object(send_loop.controls, "start_response_watch"),
             mock.patch.object(send_loop.controls, "stop_response_watch") as stop,
+            self.assertRaisesRegex(RuntimeError, "boom"),
+            send_loop.response_watch(page, "glm"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "boom"):
-                with send_loop.response_watch(page, "glm"):
-                    raise RuntimeError("boom")
+            raise RuntimeError("boom")
 
         stop.assert_called_once_with(page, "glm")
 
@@ -196,31 +196,33 @@ class ProviderSendLoopTests(unittest.TestCase):
         with (
             mock.patch.object(send_loop.controls, "recover_response", return_value=None),
             mock.patch.object(send_loop.controls, "reject_control") as reject,
+            self.assertRaisesRegex(SubmissionUncertain, "uncertain"),
         ):
-            with self.assertRaisesRegex(SubmissionUncertain, "uncertain"):
-                send_loop.recover_or_raise(
-                    ctx,
-                    attempt,
-                    read_final=mock.Mock(),
-                    read_late=mock.Mock(return_value=""),
-                    response_timeout=12.0,
-                    uncertain_message="uncertain",
-                )
+            send_loop.recover_or_raise(
+                ctx,
+                attempt,
+                read_final=mock.Mock(),
+                read_late=mock.Mock(return_value=""),
+                response_timeout=12.0,
+                uncertain_message="uncertain",
+            )
 
         reject.assert_called_once_with("glm", send_loop.controls.CONTROL_SEND_BUTTON)
 
     def test_recover_or_raise_raises_response_missing_after_confirmed_timeout(self) -> None:
         ctx = send_loop.ProviderSendContext(object(), "glm", "GLM", 12.0)
-        with mock.patch.object(send_loop.controls, "recover_response", return_value=None):
-            with self.assertRaisesRegex(ResponseMissing, "GLM response timed out after 7s"):
-                send_loop.recover_or_raise(
-                    ctx,
-                    SendAttempt(phase="confirmed", method="click"),
-                    read_final=mock.Mock(),
-                    read_late=mock.Mock(return_value=""),
-                    response_timeout=7.0,
-                    uncertain_message="uncertain",
-                )
+        with (
+            mock.patch.object(send_loop.controls, "recover_response", return_value=None),
+            self.assertRaisesRegex(ResponseMissing, "GLM response timed out after 7s"),
+        ):
+            send_loop.recover_or_raise(
+                ctx,
+                SendAttempt(phase="confirmed", method="click"),
+                read_final=mock.Mock(),
+                read_late=mock.Mock(return_value=""),
+                response_timeout=7.0,
+                uncertain_message="uncertain",
+            )
 
     def test_stable_completion_uses_fixed_overall_deadline_after_progress_reset(self) -> None:
         clock = {"now": 100.0, "ticks": 0}
@@ -244,20 +246,20 @@ class ProviderSendLoopTests(unittest.TestCase):
             mock.patch.object(driver_base.time, "time", side_effect=now),
             mock.patch.object(driver_base.cancellation, "wait", side_effect=wait),
             mock.patch.object(driver_base.controls, "recover_response", return_value=None),
+            self.assertRaises(ResponseMissing),
         ):
-            with self.assertRaises(ResponseMissing):
-                driver_base.wait_for_stable_completion(
-                    ctx,
-                    attempt,
-                    response_timeout=3.0,
-                    stable_ticks=2,
-                    tick=1.0,
-                    min_wait=0.0,
-                    read_current=mock.Mock(return_value=""),
-                    read_final=mock.Mock(return_value=""),
-                    read_late=mock.Mock(return_value=""),
-                    uncertain_message="uncertain",
-                )
+            driver_base.wait_for_stable_completion(
+                ctx,
+                attempt,
+                response_timeout=3.0,
+                stable_ticks=2,
+                tick=1.0,
+                min_wait=0.0,
+                read_current=mock.Mock(return_value=""),
+                read_final=mock.Mock(return_value=""),
+                read_late=mock.Mock(return_value=""),
+                uncertain_message="uncertain",
+            )
 
         self.assertLessEqual(clock["ticks"], 4)
 

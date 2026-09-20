@@ -37,10 +37,8 @@ class FileLockTests(unittest.TestCase):
 
     def test_lock_is_reentrant_within_thread(self) -> None:
         target = self.root / "test_state.json"
-        with with_file_lock(target, timeout_seconds=2.0):
-            with with_file_lock(target, timeout_seconds=2.0):
-                with with_file_lock(target, timeout_seconds=2.0):
-                    pass
+        with with_file_lock(target, timeout_seconds=2.0), with_file_lock(target, timeout_seconds=2.0), with_file_lock(target, timeout_seconds=2.0):
+            pass
 
     def test_threads_mutually_exclude(self) -> None:
         target = self.root / "shared_file.json"
@@ -81,9 +79,8 @@ class FileLockTests(unittest.TestCase):
         t.start()
         started.wait(timeout=2.0)
         try:
-            with self.assertRaises(LockTimeout):
-                with with_file_lock(target, timeout_seconds=0.2):
-                    pass
+            with self.assertRaises(LockTimeout), with_file_lock(target, timeout_seconds=0.2):
+                pass
         finally:
             stop.set()
             t.join()
@@ -123,9 +120,8 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             self.assertEqual(line.strip(), "ACQUIRED")
 
             # Main process should time out trying to acquire while child holds it
-            with self.assertRaises(LockTimeout):
-                with with_file_lock(target, timeout_seconds=0.2):
-                    pass
+            with self.assertRaises(LockTimeout), with_file_lock(target, timeout_seconds=0.2):
+                pass
 
             proc.wait(timeout=3.0)
             self.assertEqual(proc.returncode, 0)
@@ -195,9 +191,8 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
         t.start()
         started.wait(timeout=2.0)
         try:
-            with self.assertRaises(LockTimeout):
-                with with_file_lock(target, timeout_seconds=0.1):
-                    pass
+            with self.assertRaises(LockTimeout), with_file_lock(target, timeout_seconds=0.1):
+                pass
         finally:
             release_holder.set()
             t.join()

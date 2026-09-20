@@ -95,15 +95,13 @@ class ToolArgsRepairTests(unittest.TestCase):
 
     def test_read_rejects_invalid_numbers(self) -> None:
         for invalid in (True, False, 0, -1, "0", "-5", 1.5, "abc"):
-            with self.subTest(invalid=invalid):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("read", {"path": "app.py", "offset": invalid}, limits=self.limits)
+            with self.subTest(invalid=invalid), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("read", {"path": "app.py", "offset": invalid}, limits=self.limits)
 
     def test_read_rejects_explicit_null_numbers(self) -> None:
         for name in ("offset", "limit"):
-            with self.subTest(name=name):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("read", {"path": "app.py", name: None}, limits=self.limits)
+            with self.subTest(name=name), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("read", {"path": "app.py", name: None}, limits=self.limits)
 
     def test_read_rejects_limit_exceeding_max(self) -> None:
         with self.assertRaises(ToolArgsRepairError):
@@ -131,9 +129,8 @@ class ToolArgsRepairTests(unittest.TestCase):
             {"path": "a.py", "replacements": [{"old_string": "x"}]},
         )
         for args in cases:
-            with self.subTest(args=args):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("edit", args, limits=self.limits)
+            with self.subTest(args=args), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("edit", args, limits=self.limits)
 
     def test_edit_explicit_empty_new_string_aliases_are_deletions(self) -> None:
         cases = (
@@ -225,15 +222,12 @@ class ToolArgsRepairTests(unittest.TestCase):
     def test_text_args_reject_non_string_types_and_blanks(self) -> None:
         invalid_values = (0, False, None, [], {}, "", "   ")
         for inv in invalid_values:
-            with self.subTest(tool="search", val=inv):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("search", {"query": inv, "path": "."}, limits=self.limits)
-            with self.subTest(tool="references", val=inv):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("references", {"symbol": inv, "path": "."}, limits=self.limits)
-            with self.subTest(tool="run", val=inv):
-                with self.assertRaises(ToolArgsRepairError):
-                    normalize_tool_args("run", {"command": inv, "path": "."}, limits=self.limits)
+            with self.subTest(tool="search", val=inv), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("search", {"query": inv, "path": "."}, limits=self.limits)
+            with self.subTest(tool="references", val=inv), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("references", {"symbol": inv, "path": "."}, limits=self.limits)
+            with self.subTest(tool="run", val=inv), self.assertRaises(ToolArgsRepairError):
+                normalize_tool_args("run", {"command": inv, "path": "."}, limits=self.limits)
 
     def test_text_args_preserve_explicit_non_blank_strings(self) -> None:
         search = normalize_tool_args("search", {"query": " needle ", "path": "."}, limits=self.limits)
@@ -273,9 +267,8 @@ class ToolArgsRepairTests(unittest.TestCase):
 
         for tool, args in defaults:
             for bad_path in ("", "   ", None):
-                with self.subTest(tool=tool, bad_path=bad_path):
-                    with self.assertRaises(ToolArgsRepairError):
-                        normalize_tool_args(tool, {**args, "path": bad_path}, limits=self.limits)
+                with self.subTest(tool=tool, bad_path=bad_path), self.assertRaises(ToolArgsRepairError):
+                    normalize_tool_args(tool, {**args, "path": bad_path}, limits=self.limits)
 
     def test_unknown_argument_fields_fail_closed(self) -> None:
         cases = (

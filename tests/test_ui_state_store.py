@@ -259,9 +259,8 @@ class UiStateStoreTests(unittest.TestCase):
             with mock.patch(
                 "codey.storage.ui_state_store.write_json_atomic",
                 side_effect=OSError("disk full"),
-            ):
-                with self.assertRaises(OSError):
-                    store.save(second)
+            ), self.assertRaises(OSError):
+                store.save(second)
 
             self.assertEqual(store._cached_state, first)
 

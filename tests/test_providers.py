@@ -73,9 +73,8 @@ class DeepSeekWebProviderTests(unittest.TestCase):
             deepseek,
             "chat",
             side_effect=TimeoutError("response timed out"),
-        ):
-            with self.assertRaises(ProviderActionError) as raised:
-                provider.send("hello")
+        ), self.assertRaises(ProviderActionError) as raised:
+            provider.send("hello")
 
         self.assertIsInstance(raised.exception.__cause__, TimeoutError)
         self.assertIsNotNone(provider.last_failure)

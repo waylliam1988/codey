@@ -35,9 +35,8 @@ class LocalStoreTests(unittest.TestCase):
             path = Path(td) / "state.json"
             local_store.write_json_atomic(path, {"value": "old"})
 
-            with mock.patch.object(local_store.os, "replace", side_effect=OSError("busy")):
-                with self.assertRaisesRegex(OSError, "busy"):
-                    local_store.write_json_atomic(path, {"value": "new"})
+            with mock.patch.object(local_store.os, "replace", side_effect=OSError("busy")), self.assertRaisesRegex(OSError, "busy"):
+                local_store.write_json_atomic(path, {"value": "new"})
 
             self.assertEqual(local_store.read_json(path), {"value": "old"})
             self.assertEqual(list(path.parent.glob("*.tmp")), [])

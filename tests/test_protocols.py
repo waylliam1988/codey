@@ -131,9 +131,8 @@ class JsonToolCodecTests(unittest.TestCase):
 
     def test_non_coding_profiles_cannot_construct_coding_codec(self) -> None:
         for profile in ("chat", "research", "reviewer"):
-            with self.subTest(profile=profile):
-                with self.assertRaises(ValueError):
-                    JsonToolCodec(permission_profile=profile)
+            with self.subTest(profile=profile), self.assertRaises(ValueError):
+                JsonToolCodec(permission_profile=profile)
 
     def test_system_prompt_limits_content_to_new_file_creation(self) -> None:
         prompt = JsonToolCodec().system_prompt()

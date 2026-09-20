@@ -441,9 +441,8 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session.runtime_mutations,
             "begin_tool_batch",
             side_effect=RuntimeError("intent write failed"),
-        ):
-            with self.assertRaises(RuntimeError):
-                _run_loop(session, reply_json)
+        ), self.assertRaises(RuntimeError):
+            _run_loop(session, reply_json)
 
         # Tool should NOT have been executed
         self.assertEqual(len(executed_tools), 0)

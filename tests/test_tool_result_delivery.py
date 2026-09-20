@@ -1616,9 +1616,8 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             session.runtime_mutations,
             "begin_provider_effect",
             side_effect=ToolResultDeliveryError("disk full"),
-        ):
-            with self.assertRaises(ToolResultDeliveryError):
-                deliver_turn_results(session, res.turn_state, 1)
+        ), self.assertRaises(ToolResultDeliveryError):
+            deliver_turn_results(session, res.turn_state, 1)
 
         # Provider send MUST NOT have been called!
         self.assertEqual(len(provider.prompts), 0)

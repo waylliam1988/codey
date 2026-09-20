@@ -69,9 +69,8 @@ class SettlePropagationTests(unittest.TestCase):
                 runtime.mutations,
                 "mark_terminal",
                 side_effect=RuntimeOperationTransitionError("boom"),
-            ):
-                with self.assertRaises(RuntimeOperationTransitionError):
-                    runtime._settle_if_open(_submission(), SimpleNamespace(summary="", status="completed", reason=""))
+            ), self.assertRaises(RuntimeOperationTransitionError):
+                runtime._settle_if_open(_submission(), SimpleNamespace(summary="", status="completed", reason=""))
 
     def test_settle_is_noop_when_inner_flow_already_settled(self) -> None:
         from codey.runtime.core.outcome import OperationOutcome
@@ -595,27 +594,26 @@ class AppContextLifecycleTests(unittest.TestCase):
             ctx._knowledge_store = store_mock
             ctx.evidence_ledgers = evidence_mock
             assert ctx._ephemeral_runtime_home is not None
-            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
-                with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                    cleanup_mock.side_effect = [PermissionError("locked"), None]
+            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True), mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
+                cleanup_mock.side_effect = [PermissionError("locked"), None]
 
-                    ctx.close()
+                ctx.close()
 
-                    store_mock.close.assert_called_once()
-                    evidence_mock.close.assert_called_once()
-                    self.assertIsNone(ctx._knowledge_store)
-                    self.assertFalse(ctx._knowledge_store_enabled)
-                    self.assertIsNone(ctx.evidence_ledgers)
-                    self.assertIsNotNone(ctx._ephemeral_runtime_home)
-                    self.assertFalse(ctx.closed)
+                store_mock.close.assert_called_once()
+                evidence_mock.close.assert_called_once()
+                self.assertIsNone(ctx._knowledge_store)
+                self.assertFalse(ctx._knowledge_store_enabled)
+                self.assertIsNone(ctx.evidence_ledgers)
+                self.assertIsNotNone(ctx._ephemeral_runtime_home)
+                self.assertFalse(ctx.closed)
 
-                    ctx.close()
+                ctx.close()
 
-                    store_mock.close.assert_called_once()
-                    evidence_mock.close.assert_called_once()
-                    self.assertEqual(cleanup_mock.call_count, 2)
-                    self.assertIsNone(ctx._ephemeral_runtime_home)
-                    self.assertTrue(ctx.closed)
+                store_mock.close.assert_called_once()
+                evidence_mock.close.assert_called_once()
+                self.assertEqual(cleanup_mock.call_count, 2)
+                self.assertIsNone(ctx._ephemeral_runtime_home)
+                self.assertTrue(ctx.closed)
         finally:
             ctx._resources_closed = True
 

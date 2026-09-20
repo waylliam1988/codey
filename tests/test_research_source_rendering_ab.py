@@ -171,21 +171,20 @@ def test_source_rendering_provider_connect_failure_preserves_existing_result(tmp
     output.write_text(json.dumps(old_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     before = output.read_text(encoding="utf-8")
 
-    with mock.patch("tests.manual.research_source_rendering_ab.connect_provider", side_effect=RuntimeError("no tab")):
-        with pytest.raises(RuntimeError, match="no tab"):
-            harness.run_provider(
-                "mimo",
-                cases=(harness.CASES["tool_injection"],),
-                arms=("baseline",),
-                repeats=1,
-                port=9222,
-                output=output,
-                send_timeout=1,
-                new_chat_timeout=1,
-                open_if_missing=False,
-                rerun_failed=True,
-                trace=None,
-                layout=harness.ArmRunLayout.for_output(output),
-            )
+    with mock.patch("tests.manual.research_source_rendering_ab.connect_provider", side_effect=RuntimeError("no tab")), pytest.raises(RuntimeError, match="no tab"):
+        harness.run_provider(
+            "mimo",
+            cases=(harness.CASES["tool_injection"],),
+            arms=("baseline",),
+            repeats=1,
+            port=9222,
+            output=output,
+            send_timeout=1,
+            new_chat_timeout=1,
+            open_if_missing=False,
+            rerun_failed=True,
+            trace=None,
+            layout=harness.ArmRunLayout.for_output(output),
+        )
 
     assert output.read_text(encoding="utf-8") == before

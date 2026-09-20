@@ -133,9 +133,8 @@ def test_connector_live_search_reuses_single_safe_query_for_routing_and_api_requ
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
     original = connector_search.safe_connector_query
 
-    with mock.patch("codey.research.connector_search.safe_connector_query", wraps=original) as safe:
-        with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
-            provider.search("clinical cancer therapy", limit=3)
+    with mock.patch("codey.research.connector_search.safe_connector_query", wraps=original) as safe, mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
+        provider.search("clinical cancer therapy", limit=3)
 
     assert safe.call_count == 1
 
@@ -344,9 +343,8 @@ def test_connector_request_timeout_never_rounds_past_remaining_budget() -> None:
     with mock.patch("codey.research.connector_search.time.monotonic", return_value=10.0):
         assert provider._request_timeout() == pytest.approx(0.25)
 
-    with mock.patch("codey.research.connector_search.time.monotonic", return_value=10.06):
-        with pytest.raises(TimeoutError, match="budget exhausted"):
-            provider._request_timeout()
+    with mock.patch("codey.research.connector_search.time.monotonic", return_value=10.06), pytest.raises(TimeoutError, match="budget exhausted"):
+        provider._request_timeout()
 
 
 def test_connector_redirects_share_single_request_timeout_budget() -> None:
@@ -371,9 +369,9 @@ def test_connector_redirects_share_single_request_timeout_budget() -> None:
         mock.patch("codey.research.connector_search.check_fetch_url", return_value=None),
         mock.patch.object(connector_search._CONNECTOR_OPENER, "open", side_effect=open_redirect),
         mock.patch("codey.research.connector_search.time.monotonic", side_effect=[10.0, 10.1, 10.8, 11.1]),
+        pytest.raises(TimeoutError, match="connector request timed out"),
     ):
-        with pytest.raises(TimeoutError, match="connector request timed out"):
-            _read_url_text("https://export.arxiv.org/api/query", timeout=1.0)
+        _read_url_text("https://export.arxiv.org/api/query", timeout=1.0)
 
     assert observed_timeouts == pytest.approx([0.9, 0.2])
 
@@ -384,10 +382,8 @@ def test_connector_http_user_agent_does_not_name_product() -> None:
     response.headers.get_content_charset.return_value = "utf-8"
     response.__enter__.return_value = response
 
-    with mock.patch("codey.research.connector_search.urllib.request.Request") as request:
-        with mock.patch("codey.research.connector_search.check_fetch_url", return_value=None):
-            with mock.patch.object(connector_search._CONNECTOR_OPENER, "open", return_value=response):
-                assert _read_url_text("https://export.arxiv.org/api/query", timeout=1) == "{}"
+    with mock.patch("codey.research.connector_search.urllib.request.Request") as request, mock.patch("codey.research.connector_search.check_fetch_url", return_value=None), mock.patch.object(connector_search._CONNECTOR_OPENER, "open", return_value=response):
+        assert _read_url_text("https://export.arxiv.org/api/query", timeout=1) == "{}"
 
     headers = request.call_args.kwargs["headers"]
     assert headers["User-Agent"] == "Research Connector"

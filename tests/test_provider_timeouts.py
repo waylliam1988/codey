@@ -22,9 +22,8 @@ class ProviderTimeoutTests(unittest.TestCase):
         self.assertEqual(ready_seconds, 2.5)
 
     def test_exhausted_deadline_fails_before_another_wait(self) -> None:
-        with mock.patch.object(provider_timeouts.time, "monotonic", return_value=10.0):
-            with self.assertRaisesRegex(TimeoutError, "budget was exhausted"):
-                provider_timeouts.remaining(10.0, 90.0)
+        with mock.patch.object(provider_timeouts.time, "monotonic", return_value=10.0), self.assertRaisesRegex(TimeoutError, "budget was exhausted"):
+            provider_timeouts.remaining(10.0, 90.0)
 
 
 if __name__ == "__main__":

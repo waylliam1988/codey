@@ -270,9 +270,8 @@ class ReviewImpactMapTests(unittest.TestCase):
         with mock.patch(
             "codey.reviews.impact_map.render_review_impact_map",
             side_effect=cancellation.TaskCancelled("stop"),
-        ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                safe_review_impact_map("E:/demo", {})
+        ), self.assertRaises(cancellation.TaskCancelled):
+            safe_review_impact_map("E:/demo", {})
 
     def test_render_budget_is_explicit(self) -> None:
         changes = {

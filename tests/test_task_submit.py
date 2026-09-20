@@ -53,16 +53,14 @@ class TaskSubmitTests(unittest.TestCase):
         state = _FakeState(reserved=True)
         with mock.patch.object(
             task_submit, "submit_browser_task", side_effect=RuntimeError("boom")
-        ):
-            with self.assertRaises(RuntimeError):
-                task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
+        ), self.assertRaises(RuntimeError):
+            task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
         self.assertEqual(state.released, ["run-1"])
 
     def test_submit_task_raises_busy_and_releases(self) -> None:
         state = _FakeState(reserved=True)
-        with mock.patch.object(task_submit, "submit_browser_task", return_value=False):
-            with self.assertRaises(BrowserWorkerBusy):
-                task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=False), self.assertRaises(BrowserWorkerBusy):
+            task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
         self.assertEqual(state.released, ["run-1"])
 
     def test_after_slot_release_returns_none_when_stopped(self) -> None:

@@ -93,9 +93,9 @@ class BootstrapSmokeTests(unittest.TestCase):
             mock.patch.object(bootstrap_smoke.provider_controls, "begin_task_context") as begin_context,
             mock.patch.object(bootstrap_smoke.provider_controls, "end_task_context") as end_context,
             mock.patch.object(bootstrap_smoke, "connect_provider", side_effect=RuntimeError("offline")),
+            self.assertRaisesRegex(RuntimeError, "offline"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "offline"):
-                bootstrap_smoke.run_bootstrap_smoke("stepfun", port=9222, max_turns=8)
+            bootstrap_smoke.run_bootstrap_smoke("stepfun", port=9222, max_turns=8)
 
         begin_context.assert_called_once_with("bootstrap-smoke:stepfun")
         end_context.assert_called_once_with()
@@ -119,10 +119,9 @@ class BootstrapSmokeTests(unittest.TestCase):
                 bootstrap_smoke,
                 "run",
                 return_value=mock.Mock(stop_reason="done", summary="done", turns=1),
-            ),
+            ),self.assertRaisesRegex(RuntimeError, "CDP disconnected")
         ):
-            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
-                bootstrap_smoke.run_bootstrap_smoke("qwen", port=9222, max_turns=8)
+            bootstrap_smoke.run_bootstrap_smoke("qwen", port=9222, max_turns=8)
 
         end_context.assert_called_once_with()
 

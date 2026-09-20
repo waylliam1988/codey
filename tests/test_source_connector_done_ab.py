@@ -130,22 +130,21 @@ def test_source_connector_done_provider_connect_failure_preserves_existing_resul
     _write_json(output, old_payload)
     before = output.read_text(encoding="utf-8")
 
-    with mock.patch("tests.manual.source_connector_done_ab.connect_provider", side_effect=RuntimeError("no tab")):
-        with pytest.raises(RuntimeError, match="no tab"):
-            source_connector_done_ab.run_provider(
-                "deepseek",
-                cases=(source_connector_done_ab.CASES["arxiv"],),
-                arms=("batch",),
-                samples=1,
-                port=9222,
-                output=output,
-                max_turns=1,
-                send_timeout=1,
-                new_chat_timeout=1,
-                open_if_missing=False,
-                rerun_failed=True,
-                trace=None,
-                run_id="result",
-            )
+    with mock.patch("tests.manual.source_connector_done_ab.connect_provider", side_effect=RuntimeError("no tab")), pytest.raises(RuntimeError, match="no tab"):
+        source_connector_done_ab.run_provider(
+            "deepseek",
+            cases=(source_connector_done_ab.CASES["arxiv"],),
+            arms=("batch",),
+            samples=1,
+            port=9222,
+            output=output,
+            max_turns=1,
+            send_timeout=1,
+            new_chat_timeout=1,
+            open_if_missing=False,
+            rerun_failed=True,
+            trace=None,
+            run_id="result",
+        )
 
     assert output.read_text(encoding="utf-8") == before

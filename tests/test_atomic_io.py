@@ -117,12 +117,11 @@ class AtomicWriteTests(unittest.TestCase):
             target.write_text("before\n", encoding="utf-8")
             os.chmod(target, stat.S_IREAD)
             try:
-                with self.assertRaises(PermissionError):
-                    with mock.patch(
-                        "codey.storage.atomic_io.os.replace",
-                        side_effect=PermissionError("read-only target"),
-                    ):
-                        write_text_atomic(target, "after\n")
+                with self.assertRaises(PermissionError), mock.patch(
+                    "codey.storage.atomic_io.os.replace",
+                    side_effect=PermissionError("read-only target"),
+                ):
+                    write_text_atomic(target, "after\n")
 
                 leftovers = [
                     item.name
@@ -233,9 +232,8 @@ class AtomicWriteTests(unittest.TestCase):
                     with self.assertRaises(PermissionError):
                         atomic_io.write_text_atomic(secret, "after\n", mode=0o600)
                 else:
-                    with patches[1]:
-                        with self.assertRaises(PermissionError):
-                            atomic_io.write_text_atomic(secret, "after\n", mode=0o600)
+                    with patches[1], self.assertRaises(PermissionError):
+                        atomic_io.write_text_atomic(secret, "after\n", mode=0o600)
 
             self.assertEqual(secret.read_text(encoding="utf-8"), "before\n")
 
@@ -300,10 +298,9 @@ class AtomicWriteTests(unittest.TestCase):
                 "fsync",
                 side_effect=OSError(errno.EIO, "io error"),
             ),
-            mock.patch.object(atomic_io.os, "close"),
+            mock.patch.object(atomic_io.os, "close"),self.assertRaises(OSError)
         ):
-            with self.assertRaises(OSError):
-                atomic_io._fsync_dir(target)
+            atomic_io._fsync_dir(target)
 
 
 if __name__ == "__main__":

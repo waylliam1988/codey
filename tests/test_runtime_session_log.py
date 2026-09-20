@@ -218,60 +218,46 @@ class RuntimeSessionLogTests(unittest.TestCase):
                 "state",
             ),
         ):
-            with self.subTest(case=case):
-                with tempfile.TemporaryDirectory() as td:
-                    log = RuntimeSessionLog(Path(td))
-                    line = RuntimeMutationLine(log)
-                    line.accept_operation(
-                        session_id="s1",
-                        run_id="run-torn-terminal",
-                        project="",
-                        provider_id="deepseek",
-                        turn_budget=5,
-                        max_repair_rounds=1,
-                        task_kind="project",
-                    )
-                    running = line.mark_writer_running(
-                        "s1",
-                        "run-torn-terminal",
-                        provider_id="deepseek",
-                    )
-                    assert running is not None
-                    terminal = mark_terminal(
-                        running,
-                        stop_reason="error",
-                        summary_chars=5,
-                        turns=1,
-                        max_turns=5,
-                        provider="deepseek",
-                    )
-                    payloads = {
-                        "effect": (
-                            "operation_effect",
-                            {"effect_kind": "runtime_effect", "ref": "effect:torn"},
-                        ),
-                        "state": ("operation_state", terminal.to_payload()),
-                        "settled": ("operation_settled", {"outcome": "failed"}),
-                    }
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as td:
+                log = RuntimeSessionLog(Path(td))
+                line = RuntimeMutationLine(log)
+                line.accept_operation(
+                    session_id="s1",
+                    run_id="run-torn-terminal",
+                    project="",
+                    provider_id="deepseek",
+                    turn_budget=5,
+                    max_repair_rounds=1,
+                    task_kind="project",
+                )
+                running = line.mark_writer_running(
+                    "s1",
+                    "run-torn-terminal",
+                    provider_id="deepseek",
+                )
+                assert running is not None
+                terminal = mark_terminal(
+                    running,
+                    stop_reason="error",
+                    summary_chars=5,
+                    turns=1,
+                    max_turns=5,
+                    provider="deepseek",
+                )
+                payloads = {
+                    "effect": (
+                        "operation_effect",
+                        {"effect_kind": "runtime_effect", "ref": "effect:torn"},
+                    ),
+                    "state": ("operation_state", terminal.to_payload()),
+                    "settled": ("operation_settled", {"outcome": "failed"}),
+                }
 
-                    path = log.path_for("s1")
-                    batch_id = f"batch-torn-terminal-{case}"
-                    with path.open("ab") as handle:
-                        for index, name in enumerate(first_payloads):
-                            kind, payload = payloads[name]
-                            handle.write(
-                                RuntimeLogEntry(
-                                    session_id="s1",
-                                    lane=running.lane,
-                                    operation_id=running.operation_id,
-                                    kind=kind,
-                                    payload=payload,
-                                    batch_id=batch_id,
-                                    batch_index=index,
-                                    batch_count=3,
-                                ).to_json_line().encode("utf-8")
-                            )
-                        kind, payload = payloads[trailing_payload]
+                path = log.path_for("s1")
+                batch_id = f"batch-torn-terminal-{case}"
+                with path.open("ab") as handle:
+                    for index, name in enumerate(first_payloads):
+                        kind, payload = payloads[name]
                         handle.write(
                             RuntimeLogEntry(
                                 session_id="s1",
@@ -279,32 +265,45 @@ class RuntimeSessionLogTests(unittest.TestCase):
                                 operation_id=running.operation_id,
                                 kind=kind,
                                 payload=payload,
-                                batch_id=f"batch-after-crash-{case}",
-                                batch_index=0,
-                                batch_count=1,
+                                batch_id=batch_id,
+                                batch_index=index,
+                                batch_count=3,
                             ).to_json_line().encode("utf-8")
                         )
+                    kind, payload = payloads[trailing_payload]
+                    handle.write(
+                        RuntimeLogEntry(
+                            session_id="s1",
+                            lane=running.lane,
+                            operation_id=running.operation_id,
+                            kind=kind,
+                            payload=payload,
+                            batch_id=f"batch-after-crash-{case}",
+                            batch_index=0,
+                            batch_count=1,
+                        ).to_json_line().encode("utf-8")
+                    )
 
-                    repaired_entries = log.entries("s1")
-                    recovered = RuntimeOperationStore(log).load("s1", "run-torn-terminal")
-                    assert recovered is not None
-                    action = peek_next_action(
-                        log,
-                        session_id="s1",
-                        run_id="run-torn-terminal",
-                    )
-                    projection = reduce_session(repaired_entries)
+                repaired_entries = log.entries("s1")
+                recovered = RuntimeOperationStore(log).load("s1", "run-torn-terminal")
+                assert recovered is not None
+                action = peek_next_action(
+                    log,
+                    session_id="s1",
+                    run_id="run-torn-terminal",
+                )
+                projection = reduce_session(repaired_entries)
 
-                    self.assertEqual(recovered.leaf, LEAF_WRITER_RUNNING)
-                    self.assertEqual(action.kind, ACTION_CONTINUE)
-                    self.assertEqual(
-                        projection.operations[running.operation_id].status,
-                        "open",
-                    )
-                    self.assertEqual(
-                        projection.operations[running.operation_id].effect_refs,
-                        [],
-                    )
+                self.assertEqual(recovered.leaf, LEAF_WRITER_RUNNING)
+                self.assertEqual(action.kind, ACTION_CONTINUE)
+                self.assertEqual(
+                    projection.operations[running.operation_id].status,
+                    "open",
+                )
+                self.assertEqual(
+                    projection.operations[running.operation_id].effect_refs,
+                    [],
+                )
 
     def test_projection_cache_replays_after_external_append_changes_file_size(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -654,15 +653,14 @@ class RuntimeSessionLogTests(unittest.TestCase):
 
     def test_unwired_tool_entries_are_not_runtime_log_schema(self) -> None:
         for kind in ("tool_invocation", "tool_settled"):
-            with self.subTest(kind=kind):
-                with self.assertRaises(RuntimeLogCorruption):
-                    RuntimeLogEntry(
-                        session_id="s1",
-                        lane="current",
-                        operation_id="op-1",
-                        kind=kind,
-                        payload={"invocation_id": "tool-1"},
-                    )
+            with self.subTest(kind=kind), self.assertRaises(RuntimeLogCorruption):
+                RuntimeLogEntry(
+                    session_id="s1",
+                    lane="current",
+                    operation_id="op-1",
+                    kind=kind,
+                    payload={"invocation_id": "tool-1"},
+                )
 
     def test_rejects_record_after_operation_settlement(self) -> None:
         entries = (
@@ -744,9 +742,8 @@ class RuntimeSessionLogTests(unittest.TestCase):
         )
 
         for entries in cases:
-            with self.subTest(entries=entries):
-                with self.assertRaises(RuntimeLogCorruption):
-                    reduce_session(entries)
+            with self.subTest(entries=entries), self.assertRaises(RuntimeLogCorruption):
+                reduce_session(entries)
 
     def test_mutate_compacts_state_history_before_log_limit_bricks_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -865,9 +862,8 @@ class RuntimeSessionLogTests(unittest.TestCase):
         )
 
         for payload in invalid_cases:
-            with self.subTest(payload=payload):
-                with self.assertRaises(RuntimeLogCorruption):
-                    RuntimeLogEntry.from_payload(payload)
+            with self.subTest(payload=payload), self.assertRaises(RuntimeLogCorruption):
+                RuntimeLogEntry.from_payload(payload)
 
 
 class SessionLogDurableAppendTests(unittest.TestCase):

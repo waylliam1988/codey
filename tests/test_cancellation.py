@@ -17,9 +17,8 @@ class CancellationTests(unittest.TestCase):
         event = threading.Event()
         event.set()
 
-        with cancellation.scope(event):
-            with self.assertRaises(cancellation.TaskCancelled):
-                cancellation.wait(30)
+        with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+            cancellation.wait(30)
 
     def test_scope_restores_previous_event(self) -> None:
         outer = threading.Event()
@@ -38,12 +37,11 @@ class CancellationTests(unittest.TestCase):
                 "monotonic",
                 side_effect=[9.0, 9.0, 10.0],
             ),
-            mock.patch.object(cancellation.time, "sleep") as sleep,
+            mock.patch.object(cancellation.time, "sleep") as sleep,cancellation.deadline_scope(10.0)
         ):
-            with cancellation.deadline_scope(10.0):
-                self.assertEqual(cancellation.current_deadline(), 10.0)
-                with self.assertRaises(cancellation.DeadlineExceeded):
-                    cancellation.wait(30)
+            self.assertEqual(cancellation.current_deadline(), 10.0)
+            with self.assertRaises(cancellation.DeadlineExceeded):
+                cancellation.wait(30)
 
         sleep.assert_called_once_with(1.0)
         self.assertIsNone(cancellation.current_deadline())
@@ -57,9 +55,8 @@ class CancellationTests(unittest.TestCase):
     def test_user_cancellation_wins_over_expired_deadline(self) -> None:
         event = threading.Event()
         event.set()
-        with cancellation.scope(event), cancellation.deadline_scope(0.0):
-            with self.assertRaises(cancellation.TaskCancelled):
-                cancellation.check()
+        with cancellation.scope(event), cancellation.deadline_scope(0.0), self.assertRaises(cancellation.TaskCancelled):
+            cancellation.check()
 
     def test_deadline_uses_process_tree_cleanup(self) -> None:
         proc = mock.Mock()
@@ -75,13 +72,13 @@ class CancellationTests(unittest.TestCase):
                 side_effect=[None, cancellation.DeadlineExceeded("timed out")],
             ),
             mock.patch.object(cancellation, "_terminate_process_tree") as terminate,
+            self.assertRaises(cancellation.DeadlineExceeded),
         ):
-            with self.assertRaises(cancellation.DeadlineExceeded):
-                cancellation.run_process(
-                    [sys.executable, "worker.py"],
-                    cwd=".",
-                    timeout=30,
-                )
+            cancellation.run_process(
+                [sys.executable, "worker.py"],
+                cwd=".",
+                timeout=30,
+            )
 
         expected_job = job if os.name == "nt" else None
         terminate.assert_called_once_with(proc, expected_job)
@@ -168,19 +165,18 @@ class CancellationTests(unittest.TestCase):
             started = time.monotonic()
             stopper.start()
             try:
-                with cancellation.scope(event):
-                    with self.assertRaises(cancellation.TaskCancelled):
-                        cancellation.run_process(
-                            [
-                                sys.executable,
-                                str(parent),
-                                str(parent_pid),
-                                str(child),
-                                str(child_pid),
-                            ],
-                            cwd=root,
-                            timeout=30,
-                        )
+                with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+                    cancellation.run_process(
+                        [
+                            sys.executable,
+                            str(parent),
+                            str(parent_pid),
+                            str(child),
+                            str(child_pid),
+                        ],
+                        cwd=root,
+                        timeout=30,
+                    )
             finally:
                 stopper.join(timeout=15)
 

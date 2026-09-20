@@ -914,9 +914,9 @@ class ResearchBoundaryTests(unittest.TestCase):
                 side_effect=TimeoutError("browser worker call timed out"),
             ),
             mock.patch("codey.research.browser_search._search_browser_worker", return_value=fake_worker),
+            self.assertRaises(TimeoutError),
         ):
-            with self.assertRaises(TimeoutError):
-                provider.search("alpha", limit=3)
+            provider.search("alpha", limit=3)
 
         self.assertEqual(
             provider.worker_health(),
@@ -1266,9 +1266,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         timer.start()
         started = time.monotonic()
         try:
-            with cancellation.scope(event):
-                with self.assertRaises(cancellation.TaskCancelled):
-                    browser_worker.call(slow)
+            with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+                browser_worker.call(slow)
         finally:
             timer.cancel()
 
@@ -4755,10 +4754,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             mock.patch(
                 "codey.research.browser_search.cancellation.check",
                 side_effect=[None, None, None, cancellation.TaskCancelled("stop")],
-            ),
+            ),self.assertRaises(cancellation.TaskCancelled)
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                BrowserSearchProvider().fetch("https://example.com/report.pdf")
+            BrowserSearchProvider().fetch("https://example.com/report.pdf")
 
         self.assertEqual(response.calls, 1)
 
@@ -5032,14 +5030,12 @@ class NetworkPolicyTests(unittest.TestCase):
         mock_page.goto.side_effect = cancellation.TaskCancelled("operation cancelled")
         provider._fetch_page = mock_page
 
-        with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page):
-            with unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
-                with unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
-                    with self.assertRaises(cancellation.TaskCancelled):
-                        provider._fetch_on_browser_thread("https://example.com/item")
+        with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page), unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None), unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
+            with self.assertRaises(cancellation.TaskCancelled):
+                provider._fetch_on_browser_thread("https://example.com/item")
 
-                    discard_mock.assert_called_once_with(mock_page)
-                    self.assertIsNone(provider._fetch_page)
+            discard_mock.assert_called_once_with(mock_page)
+            self.assertIsNone(provider._fetch_page)
 
     def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
         from codey.research.browser_search import BrowserSearchProvider
@@ -5075,14 +5071,12 @@ class NetworkPolicyTests(unittest.TestCase):
         provider._fetch_page = page
         cancel_event = threading.Event()
 
-        with cancellation.scope(cancel_event):
-            with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page):
-                with unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
-                    with self.assertRaises(cancellation.TaskCancelled):
-                        provider._fetch_on_browser_thread("https://example.com/item")
+        with cancellation.scope(cancel_event), unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page), unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
+            with self.assertRaises(cancellation.TaskCancelled):
+                provider._fetch_on_browser_thread("https://example.com/item")
 
-                    self.assertTrue(page.closed)
-                    self.assertIsNone(provider._fetch_page)
+            self.assertTrue(page.closed)
+            self.assertIsNone(provider._fetch_page)
 
 
     def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:
@@ -5178,10 +5172,9 @@ class NetworkPolicyTests(unittest.TestCase):
             {"location": "https://example.com/final"},
             close_tracker,
         )
-        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
-            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
-                mock_open.side_effect = [redirect_error, FinalResponse(b"after http error redirect")]
-                result = _read_url_text("https://example.com/start", timeout=2.0)
+        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open, unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+            mock_open.side_effect = [redirect_error, FinalResponse(b"after http error redirect")]
+            result = _read_url_text("https://example.com/start", timeout=2.0)
 
         self.assertEqual(result, "after http error redirect")
         close_tracker.close.assert_called_once()

@@ -77,9 +77,9 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         with (
             mock.patch.dict(browser.os.environ, {}, clear=True),
             mock.patch.object(Path, "is_file", return_value=False),
+            self.assertRaisesRegex(FileNotFoundError, "Edge or Google Chrome"),
         ):
-            with self.assertRaisesRegex(FileNotFoundError, "Edge or Google Chrome"):
-                browser._find_browser()
+            browser._find_browser()
 
     def test_launch_browser_uses_detected_chrome_profile_for_default_profile(self) -> None:
         exe = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
@@ -227,13 +227,13 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         with (
             mock.patch.object(browser, "_ensure_cdp_endpoint", return_value=browser.CdpEndpoint(9222)),
             mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+            self.assertRaisesRegex(RuntimeError, "no existing provider tab"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "no existing provider tab"):
-                browser.open_chat_page(
-                    "https://example.test/",
-                    "example.test",
-                    open_if_missing=False,
-                )
+            browser.open_chat_page(
+                "https://example.test/",
+                "example.test",
+                open_if_missing=False,
+            )
 
         browser_obj.contexts[0].new_page.assert_not_called()
         pw.stop.assert_called_once_with()
@@ -422,9 +422,9 @@ class BrowserProviderWrapperTests(unittest.TestCase):
                 return_value=browser.CdpEndpoint(9222),
             ) as ensure,
             mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+            self.assertRaisesRegex(TimeoutError, "attach hung"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "attach hung"):
-                browser.open_chat_page("https://chat.qwen.ai/", "chat.qwen.ai")
+            browser.open_chat_page("https://chat.qwen.ai/", "chat.qwen.ai")
 
         ensure.assert_called_once()
         pw.stop.assert_called_once_with()
@@ -576,9 +576,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             checked_ports.append(port)
             return True
 
-        with mock.patch.object(browser, "_port_open", side_effect=port_open):
-            with self.assertRaisesRegex(RuntimeError, "no free isolated CDP port"):
-                browser._find_free_isolated_cdp_port(9444)
+        with mock.patch.object(browser, "_port_open", side_effect=port_open), self.assertRaisesRegex(RuntimeError, "no free isolated CDP port"):
+            browser._find_free_isolated_cdp_port(9444)
 
         self.assertEqual(checked_ports, list(range(9444, 9453)))
 
@@ -625,16 +624,16 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_find_free_isolated_cdp_port", return_value=9444),
             mock.patch.object(browser, "_launch_browser", return_value=process),
             mock.patch.object(browser, "_wait_port", side_effect=TimeoutError("no port")),
+            self.assertRaisesRegex(TimeoutError, "no port"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "no port"):
-                browser._ensure_cdp_endpoint(
-                    preferred=9444,
-                    profile=Path("worker-profile"),
-                    start_url="https://chat.qwen.ai/",
-                    url_contains="chat.qwen.ai",
-                    open_if_missing=True,
-                    isolated=True,
-                )
+            browser._ensure_cdp_endpoint(
+                preferred=9444,
+                profile=Path("worker-profile"),
+                start_url="https://chat.qwen.ai/",
+                url_contains="chat.qwen.ai",
+                open_if_missing=True,
+                isolated=True,
+            )
 
         process.terminate.assert_called_once()
         process.wait.assert_called_once_with(timeout=2)
@@ -695,17 +694,16 @@ class BrowserProviderWrapperTests(unittest.TestCase):
                 browser,
                 "_wait_port",
                 side_effect=browser.cancellation.TaskCancelled("stop"),
-            ),
+            ),self.assertRaises(browser.cancellation.TaskCancelled)
         ):
-            with self.assertRaises(browser.cancellation.TaskCancelled):
-                browser._ensure_cdp_endpoint(
-                    preferred=9444,
-                    profile=Path("worker-profile"),
-                    start_url="https://chat.qwen.ai/",
-                    url_contains="chat.qwen.ai",
-                    open_if_missing=True,
-                    isolated=True,
-                )
+            browser._ensure_cdp_endpoint(
+                preferred=9444,
+                profile=Path("worker-profile"),
+                start_url="https://chat.qwen.ai/",
+                url_contains="chat.qwen.ai",
+                open_if_missing=True,
+                isolated=True,
+            )
 
         find_port.assert_called_once()
         launch.assert_called_once()
@@ -721,15 +719,15 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
             mock.patch.object(browser, "_launch_browser", return_value=process),
             mock.patch.object(browser, "_wait_port", side_effect=TimeoutError("no port")),
+            self.assertRaisesRegex(TimeoutError, "no port"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "no port"):
-                browser._ensure_cdp_endpoint(
-                    preferred=9444,
-                    profile=Path("profile"),
-                    start_url="https://chat.qwen.ai/",
-                    url_contains="chat.qwen.ai",
-                    open_if_missing=True,
-                )
+            browser._ensure_cdp_endpoint(
+                preferred=9444,
+                profile=Path("profile"),
+                start_url="https://chat.qwen.ai/",
+                url_contains="chat.qwen.ai",
+                open_if_missing=True,
+            )
 
         process.terminate.assert_called_once()
         process.wait.assert_called_once_with(timeout=2)
@@ -992,9 +990,9 @@ class PlaywrightStartupTests(unittest.TestCase):
         with (
             mock.patch.object(browser, "sync_playwright", return_value=manager),
             mock.patch.object(browser.cancellation, "wait"),
+            self.assertRaisesRegex(RuntimeError, "Playwright failed to initialize"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "Playwright failed to initialize"):
-                browser._start_playwright_with_retry()
+            browser._start_playwright_with_retry()
 
     def test_start_playwright_race_detection_accepts_quoted_attribute(self) -> None:
         exc = AttributeError('"PlaywrightContextManager" object has no attribute "_playwright"')

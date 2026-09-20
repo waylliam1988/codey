@@ -729,9 +729,8 @@ class RepairSandboxTests(unittest.TestCase):
                 "",
                 "   ",
             ):
-                with self.subTest(reference=bad):
-                    with self.assertRaises(ValueError):
-                        create_repair_sandbox(root, extra_files=(bad,))
+                with self.subTest(reference=bad), self.assertRaises(ValueError):
+                    create_repair_sandbox(root, extra_files=(bad,))
             self.assertFalse((root / "outside.txt").exists())
             self.assertEqual(_repair_temp_roots(), before)
 
@@ -1645,10 +1644,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
                 "_request",
                 side_effect=ProviderActionError(failure),
             ),
-            mock.patch("codey.providers.worker.record_failure") as record,
+            mock.patch("codey.providers.worker.record_failure") as record,self.assertRaises(ProviderActionError)
         ):
-            with self.assertRaises(ProviderActionError):
-                WorkerChatProvider.new_chat(provider, timeout=1.0)
+            WorkerChatProvider.new_chat(provider, timeout=1.0)
 
         record.assert_called_once_with(
             "qwen",

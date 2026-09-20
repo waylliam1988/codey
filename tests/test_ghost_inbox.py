@@ -800,9 +800,8 @@ class GhostSignalStoreScopeTests(unittest.TestCase):
 class GhostCliTests(unittest.TestCase):
     def test_ghost_help_mentions_signals_for_export_and_reset(self) -> None:
         stdout = io.StringIO()
-        with mock.patch("sys.stdout", stdout):
-            with self.assertRaises(SystemExit) as raised:
-                cli.main(["ghost", "--help"])
+        with mock.patch("sys.stdout", stdout), self.assertRaises(SystemExit) as raised:
+            cli.main(["ghost", "--help"])
 
         self.assertEqual(raised.exception.code, 0)
         help_text = " ".join(stdout.getvalue().split())

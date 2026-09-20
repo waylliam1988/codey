@@ -83,10 +83,8 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
     def test_flow_recorder_writes_checkpoints_and_failure_breakpoints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             recorder = moa_snake_flow.FlowRecorder(td)
-            with mock.patch("builtins.print"):
-                with self.assertRaisesRegex(RuntimeError, "boom"):
-                    with recorder.stage("probe"):
-                        raise RuntimeError("boom")
+            with mock.patch("builtins.print"), self.assertRaisesRegex(RuntimeError, "boom"), recorder.stage("probe"):
+                raise RuntimeError("boom")
 
             checkpoint = json.loads(recorder.state_path.read_text(encoding="utf-8"))
             events = moa_snake_flow.read_jsonl(recorder.events_path)

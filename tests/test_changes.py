@@ -296,9 +296,8 @@ class ChangeTrackerTests(unittest.TestCase):
                     tracker.capture_before("b.py")
 
             other = ChangeTracker(root, SnapshotStore(Path(state_td) / "other"))
-            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_TOTAL_BYTES", 2):
-                with self.assertRaisesRegex(ValueError, "size limit"):
-                    other.capture_before("b.py")
+            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_TOTAL_BYTES", 2), self.assertRaisesRegex(ValueError, "size limit"):
+                other.capture_before("b.py")
 
     def test_binary_file_without_text_baseline_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -621,9 +620,8 @@ class ChangeTrackerTests(unittest.TestCase):
             file_path.write_text("initial", encoding="utf-8")
 
             # Patch _update_manifest_locked to raise error during manifest write
-            with mock.patch.object(store, "_update_manifest_locked", side_effect=OSError("disk full")):
-                with self.assertRaises(OSError):
-                    tracker.capture_before("temp.txt")
+            with mock.patch.object(store, "_update_manifest_locked", side_effect=OSError("disk full")), self.assertRaises(OSError):
+                tracker.capture_before("temp.txt")
 
             # Verify memory state rolled back
             self.assertFalse(tracker.has_snapshots)

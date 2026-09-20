@@ -894,48 +894,47 @@ class CrashPositionTests(unittest.TestCase):
             ),
         ]
         for commits, expected_phase, expected_text in positions:
-            with self.subTest(phase=expected_phase):
-                with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-                    state_home = Path(td) / "state"
-                    log = RuntimeSessionLog(state_home)
-                    store = RuntimeOperationStore(log)
-                    line = RuntimeMutationLine(log)
-                    started = line.accept_operation(
-                        session_id=SESSION,
-                        run_id="run-crash",
-                        project=str(Path(td) / "project"),
-                        provider_id="deepseek",
-                        turn_budget=6,
-                        max_repair_rounds=1,
-                    )
-                    assert started is not None
-                    for commit in commits:
-                        # A crash means no further commits happen; the last
-                        # committed phase must survive on disk.
-                        current = store.load(SESSION, "run-crash")
-                        assert current is not None
-                        commit(line)
+            with self.subTest(phase=expected_phase), tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+                state_home = Path(td) / "state"
+                log = RuntimeSessionLog(state_home)
+                store = RuntimeOperationStore(log)
+                line = RuntimeMutationLine(log)
+                started = line.accept_operation(
+                    session_id=SESSION,
+                    run_id="run-crash",
+                    project=str(Path(td) / "project"),
+                    provider_id="deepseek",
+                    turn_budget=6,
+                    max_repair_rounds=1,
+                )
+                assert started is not None
+                for commit in commits:
+                    # A crash means no further commits happen; the last
+                    # committed phase must survive on disk.
+                    current = store.load(SESSION, "run-crash")
+                    assert current is not None
+                    commit(line)
 
-                    # The run opened a ledger but never wrote run_finished.
-                    ledgers = RuntimeOperationLedgersStub(state_home)
-                    ledgers.open_interrupted(SESSION, "run-crash")
+                # The run opened a ledger but never wrote run_finished.
+                ledgers = RuntimeOperationLedgersStub(state_home)
+                ledgers.open_interrupted(SESSION, "run-crash")
 
-                    # A fresh process would build a fresh store.
-                    recovered_store = RuntimeOperationStore(RuntimeSessionLog(state_home))
-                    recovered = recovered_store.load(SESSION, "run-crash")
-                    assert recovered is not None
-                    self.assertEqual(recovered.leaf, expected_phase)
+                # A fresh process would build a fresh store.
+                recovered_store = RuntimeOperationStore(RuntimeSessionLog(state_home))
+                recovered = recovered_store.load(SESSION, "run-crash")
+                assert recovered is not None
+                self.assertEqual(recovered.leaf, expected_phase)
 
-                    summary = load_run_details(
-                        run_ledgers=ledgers,
-                        run_traces=None,
-                        runtime_operations=recovered_store,
-                        session_id=SESSION,
-                        run_id="run-crash",
-                    )
-                    progress = [row.to_jsonable() for row in summary.rows if row.label == "Progress"]
-                    self.assertEqual(len(progress), 1)
-                    self.assertEqual(progress[0]["value"], expected_text)
+                summary = load_run_details(
+                    run_ledgers=ledgers,
+                    run_traces=None,
+                    runtime_operations=recovered_store,
+                    session_id=SESSION,
+                    run_id="run-crash",
+                )
+                progress = [row.to_jsonable() for row in summary.rows if row.label == "Progress"]
+                self.assertEqual(len(progress), 1)
+                self.assertEqual(progress[0]["value"], expected_text)
 
     def test_stale_non_terminal_snapshot_never_shows_progress_after_finished_run(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

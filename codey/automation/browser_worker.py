@@ -117,12 +117,11 @@ class BrowserWorker:
 
             failed = False
             try:
-                with cancellation.scope(job.cancel_event):
-                    with cancellation.deadline_scope(job.deadline):
-                        result = job.fn(*job.args, **job.kwargs)
-                        with job.lock:
-                            if not job.abandoned and job.state != _JobState.ABANDONED:
-                                job.slot.append(result)
+                with cancellation.scope(job.cancel_event), cancellation.deadline_scope(job.deadline):
+                    result = job.fn(*job.args, **job.kwargs)
+                    with job.lock:
+                        if not job.abandoned and job.state != _JobState.ABANDONED:
+                            job.slot.append(result)
             except Exception as exc:
                 failed = True
                 with job.lock:
@@ -234,9 +233,8 @@ class BrowserWorker:
             else:
                 active_deadline = caller_deadline if caller_deadline is not None else timeout_deadline
 
-            with cancellation.scope(caller_event):
-                with cancellation.deadline_scope(active_deadline):
-                    return fn(*args, **kwargs)
+            with cancellation.scope(caller_event), cancellation.deadline_scope(active_deadline):
+                return fn(*args, **kwargs)
 
         caller_event = cancellation.current_event()
         caller_deadline = cancellation.current_deadline()

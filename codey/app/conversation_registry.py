@@ -38,9 +38,8 @@ class ConversationRegistry:
         # cannot stall emit/subscribe or other sessions.
         if evicted is not None:
             oldest_id, oldest_context = evicted
-            with self.store_lock:
-                with contextlib.suppress(OSError, ValueError):
-                    self.store.save(oldest_id, oldest_context)
+            with self.store_lock, contextlib.suppress(OSError, ValueError):
+                self.store.save(oldest_id, oldest_context)
         loaded = self.store.load(session_id)
         loaded.on_change = (
             lambda value, owner=session_id, owner_token=token: self._save(

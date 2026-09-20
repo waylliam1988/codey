@@ -315,9 +315,8 @@ class ProviderFlowTests(unittest.TestCase):
             cancellation,
             "check",
             side_effect=cancellation.TaskCancelled("stop"),
-        ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                flow.choose_candidate(request, mock.Mock())
+        ), self.assertRaises(cancellation.TaskCancelled):
+            flow.choose_candidate(request, mock.Mock())
 
     def test_profile_hash_is_stable_and_profile_sensitive(self) -> None:
         profile = SimpleNamespace(

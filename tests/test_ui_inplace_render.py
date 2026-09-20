@@ -35,14 +35,12 @@ def _join_live_handler_threads(httpd: object, timeout: float = 0.5) -> list[obje
 
 class UiInPlaceRenderHarnessTests(unittest.TestCase):
     def test_browser_unavailable_skips_outside_ci(self) -> None:
-        with mock.patch.dict(os.environ, {"CI": "", "GITHUB_ACTIONS": ""}):
-            with self.assertRaises(unittest.SkipTest):
-                _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
+        with mock.patch.dict(os.environ, {"CI": "", "GITHUB_ACTIONS": ""}), self.assertRaises(unittest.SkipTest):
+            _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
 
     def test_browser_unavailable_fails_in_ci(self) -> None:
-        with mock.patch.dict(os.environ, {"CI": "true"}):
-            with self.assertRaises(AssertionError):
-                _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
+        with mock.patch.dict(os.environ, {"CI": "true"}), self.assertRaises(AssertionError):
+            _skip_or_fail_browser_unavailable("missing browser", RuntimeError("boom"))
 
     def test_join_live_handler_threads_returns_threads_that_remain_alive(self) -> None:
         class FakeThread:

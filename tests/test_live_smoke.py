@@ -58,9 +58,8 @@ class LiveSmokeTests(unittest.TestCase):
             self.assertFalse(live_smoke._verify_fixture(root, "discussion")["ok"])
 
     def test_main_supports_json_output_flag(self) -> None:
-        with mock.patch.object(live_smoke, "run_smoke", return_value={"ok": True, "summary": "done"}):
-            with mock.patch("builtins.print") as print_mock:
-                code = live_smoke.main(["--json"])
+        with mock.patch.object(live_smoke, "run_smoke", return_value={"ok": True, "summary": "done"}), mock.patch("builtins.print") as print_mock:
+            code = live_smoke.main(["--json"])
 
         self.assertEqual(code, 0)
         self.assertTrue(print_mock.called)
@@ -92,9 +91,9 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke.provider_controls, "begin_task_context") as begin_context,
             mock.patch.object(live_smoke.provider_controls, "end_task_context") as end_context,
             mock.patch.object(live_smoke, "connect_provider", side_effect=RuntimeError("offline")),
+            self.assertRaisesRegex(RuntimeError, "offline"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "offline"):
-                live_smoke.run_smoke("qwen", "edit", 9222, 8)
+            live_smoke.run_smoke("qwen", "edit", 9222, 8)
 
         begin_context.assert_called_once_with("live-smoke:qwen:edit")
         end_context.assert_called_once_with()
@@ -111,10 +110,9 @@ class LiveSmokeTests(unittest.TestCase):
                 live_smoke,
                 "run",
                 return_value=mock.Mock(stop_reason="done", summary="done", turns=1),
-            ),
+            ),self.assertRaisesRegex(RuntimeError, "CDP disconnected")
         ):
-            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
-                live_smoke.run_smoke("deepseek", "create", 9222, 8)
+            live_smoke.run_smoke("deepseek", "create", 9222, 8)
 
         end_context.assert_called_once_with()
 

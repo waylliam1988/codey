@@ -24,9 +24,8 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         event.set()
         page = mock.Mock()
 
-        with cancellation.scope(event):
-            with self.assertRaises(cancellation.TaskCancelled):
-                qwen.chat(page, "hello")
+        with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+            qwen.chat(page, "hello")
 
         page.locator.assert_not_called()
         page.goto.assert_not_called()
@@ -95,10 +94,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def test_late_grace_does_not_swallow_total_deadline(self) -> None:
         with (
             cancellation.deadline_scope(qwen.time.monotonic()),
-            mock.patch.object(qwen, "_response_count", return_value=0),
+            mock.patch.object(qwen, "_response_count", return_value=0),self.assertRaises(cancellation.DeadlineExceeded)
         ):
-            with self.assertRaises(cancellation.DeadlineExceeded):
-                qwen._wait_late_response(mock.Mock(), 0, grace=60, tick=1)
+            qwen._wait_late_response(mock.Mock(), 0, grace=60, tick=1)
 
     def test_learned_input_failure_reaches_revival_health(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
@@ -126,9 +124,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 mock.patch.object(qwen, "_message_box", side_effect=learned_message_box),
                 mock.patch.object(qwen, "_visible_locator", return_value=None),
                 mock.patch.object(qwen, "_fill_message_until_stable", side_effect=ControlMissing("input lost")),
+                self.assertRaises(ControlMissing),
             ):
-                with self.assertRaises(ControlMissing):
-                    qwen.chat(page, "hello")
+                qwen.chat(page, "hello")
 
             meta = read_json(path)["qwen"]["_revival"]
 
@@ -230,9 +228,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 mock.patch.object(qwen, "_submit", side_effect=uncertain_submit),
                 mock.patch.object(qwen, "_wait_late_response", return_value=""),
                 mock.patch.object(qwen.controls, "recover_response", return_value=None),
+                self.assertRaises(SubmissionUncertain),
             ):
-                with self.assertRaises(SubmissionUncertain):
-                    qwen.chat(page, "hello", response_timeout=0)
+                qwen.chat(page, "hello", response_timeout=0)
 
             provider = read_json(path)["qwen"]
 
@@ -273,9 +271,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 mock.patch.object(qwen, "_submit", side_effect=failed_submit),
                 mock.patch.object(qwen, "_wait_late_response", return_value=""),
                 mock.patch.object(qwen.controls, "recover_response", return_value=None),
+                self.assertRaises(SubmissionUncertain),
             ):
-                with self.assertRaises(SubmissionUncertain):
-                    qwen.chat(page, "hello", response_timeout=0)
+                qwen.chat(page, "hello", response_timeout=0)
 
             provider = read_json(path)["qwen"]
 
@@ -317,9 +315,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         with (
             mock.patch.object(qwen, "_message_box", return_value=textarea),
             mock.patch.object(qwen, "_model_selector_text", return_value="Qwen3.7-Plus"),
+            self.assertRaisesRegex(TimeoutError, "model selector"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "model selector"):
-                qwen.wait_ready(page, timeout=0)
+            qwen.wait_ready(page, timeout=0)
 
     def test_wait_ready_rejects_changing_model_selector_until_timeout(self) -> None:
         page = mock.Mock()
@@ -347,9 +345,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 ],
             ),
             mock.patch.object(qwen.cancellation, "wait", side_effect=advance),
+            self.assertRaisesRegex(TimeoutError, "model selector"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "model selector"):
-                qwen.wait_ready(page, timeout=1)
+            qwen.wait_ready(page, timeout=1)
 
     def test_new_chat_tolerates_qwen_redirect_abort_before_ready(self) -> None:
         page = mock.Mock()
@@ -466,10 +464,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         with (
             mock.patch.object(qwen, "_fill_message", return_value="hello "),
             mock.patch.object(qwen, "_composer_accepts_submission", return_value=False),
-            mock.patch.object(qwen.cancellation, "wait"),
+            mock.patch.object(qwen.cancellation, "wait"),self.assertRaisesRegex(ControlMissing, "did not keep")
         ):
-            with self.assertRaisesRegex(ControlMissing, "did not keep"):
-                qwen._fill_message_until_stable(page, textarea, "hello")
+            qwen._fill_message_until_stable(page, textarea, "hello")
 
     def test_composer_accepts_submission_requires_enabled_send_button(self) -> None:
         page = mock.Mock()
@@ -673,9 +670,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(qwen, "_send_button", return_value=send),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
             mock.patch.object(qwen, "_composer_value", return_value=""),
+            self.assertRaisesRegex(ControlMissing, "lost the message"),
         ):
-            with self.assertRaisesRegex(ControlMissing, "lost the message"):
-                qwen._submit(page, baseline=0, submitted_text="hello ")
+            qwen._submit(page, baseline=0, submitted_text="hello ")
 
         send.click.assert_not_called()
 
@@ -696,13 +693,12 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(qwen, "_wait_late_response", return_value=""),
             mock.patch.object(qwen.controls, "recover_response", return_value=None),
             mock.patch.object(qwen.controls, "reject_control"),
-            mock.patch.object(qwen.cancellation, "wait"),
+            mock.patch.object(qwen.cancellation, "wait"),self.assertRaisesRegex(
+            SubmissionUncertain,
+            "click failed with ValueError",
+        ) as caught
         ):
-            with self.assertRaisesRegex(
-                SubmissionUncertain,
-                "click failed with ValueError",
-            ) as caught:
-                qwen.chat(page, "hello", response_timeout=0)
+            qwen.chat(page, "hello", response_timeout=0)
 
         self.assertNotIn("private", str(caught.exception))
 
@@ -717,10 +713,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(qwen, "_response_count", return_value=0),
             mock.patch.object(qwen.controls, "start_response_watch") as start_watch,
             mock.patch.object(qwen.controls, "stop_response_watch") as stop_watch,
-            mock.patch.object(qwen.controls, "reject_control"),
+            mock.patch.object(qwen.controls, "reject_control"),self.assertRaisesRegex(RuntimeError, "fill failed")
         ):
-            with self.assertRaisesRegex(RuntimeError, "fill failed"):
-                qwen.chat(page, "hello", response_timeout=1, tick=0)
+            qwen.chat(page, "hello", response_timeout=1, tick=0)
 
         start_watch.assert_called_once_with(page, qwen.PROVIDER_ID)
         stop_watch.assert_called_once_with(page, qwen.PROVIDER_ID)
@@ -844,9 +839,8 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_chat_does_not_repeat_whole_send_after_slow_submit_confirmation(self) -> None:
         page = mock.Mock()
-        with mock.patch.object(qwen, "_chat", side_effect=SubmissionUncertain("uncertain")) as chat_once:
-            with self.assertRaisesRegex(SubmissionUncertain, "uncertain"):
-                qwen.chat(page, "hello", response_timeout=1)
+        with mock.patch.object(qwen, "_chat", side_effect=SubmissionUncertain("uncertain")) as chat_once, self.assertRaisesRegex(SubmissionUncertain, "uncertain"):
+            qwen.chat(page, "hello", response_timeout=1)
 
         chat_once.assert_called_once_with(page, "hello", 1, 2, 0.8, 1.5)
 
@@ -854,9 +848,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page = mock.Mock()
         with (
             mock.patch.object(qwen, "_chat", side_effect=TimeoutError("input missing")) as chat_once,
+            self.assertRaisesRegex(TimeoutError, "input missing"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "input missing"):
-                qwen.chat(page, "hello", response_timeout=1)
+            qwen.chat(page, "hello", response_timeout=1)
 
         chat_once.assert_called_once()
 
@@ -1036,9 +1030,9 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(qwen, "_resolve_preference", return_value=False),
             mock.patch.object(qwen, "_copy_last_text", return_value=""),
             mock.patch.object(qwen, "_last_text", return_value=""),
+            self.assertRaisesRegex(RuntimeError, "Qwen Studio response"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "Qwen Studio response"):
-                qwen._final_text(object())
+            qwen._final_text(object())
 
 
 if __name__ == "__main__":

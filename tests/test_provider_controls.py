@@ -513,9 +513,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 )
                 raise TimeoutError("network timeout")
 
-            with mock.patch.object(controls, "CONTROL_STORE", path):
-                with self.assertRaisesRegex(TimeoutError, "network timeout"):
-                    failing_send(page)
+            with mock.patch.object(controls, "CONTROL_STORE", path), self.assertRaisesRegex(TimeoutError, "network timeout"):
+                failing_send(page)
 
             self.assertFalse(path.exists())
             self.assertNotIn("qwen", controls._revival_attempts())
@@ -976,9 +975,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                     TimeoutError("network stalled"),
                     SubmissionUncertain("submission uncertain"),
                 ):
-                    with self.subTest(error=type(error).__name__):
-                        with self.assertRaises(type(error)):
-                            failing_send(page, error)
+                    with self.subTest(error=type(error).__name__), self.assertRaises(type(error)):
+                        failing_send(page, error)
 
             self.assertEqual(path.read_bytes(), before)
 

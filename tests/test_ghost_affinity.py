@@ -1239,9 +1239,8 @@ def test_affinity_decay_propagates_projection_write_failure_warning() -> None:
                 ),
                 session_id="s1",
             )
-        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")):
-            with mock.patch("codey.ghost.affinity._now", return_value="2026-05-01T00:00:00Z"):
-                result = affinity.decay()
+        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")), mock.patch("codey.ghost.affinity._now", return_value="2026-05-01T00:00:00Z"):
+            result = affinity.decay()
 
     assert result["decayed_nodes"] > 0
     assert "affinity_projection_write_failed" in result["warnings"]

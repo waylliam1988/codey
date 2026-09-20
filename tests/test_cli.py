@@ -73,10 +73,9 @@ class ProviderCliTests(unittest.TestCase):
             mock.patch("codey.providers.connect_provider", return_value=provider),
             mock.patch("codey.providers.controls.begin_task_context"),
             mock.patch("codey.providers.controls.end_task_context") as end_context,
-            mock.patch.object(cli, "_safe_print"),
+            mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "CDP disconnected")
         ):
-            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
-                cli.cmd_chat(args)
+            cli.cmd_chat(args)
 
         end_context.assert_called_once_with()
 
@@ -90,10 +89,9 @@ class ProviderCliTests(unittest.TestCase):
             mock.patch("codey.agents.runner.run", return_value=mock.Mock(summary="done")),
             mock.patch("codey.providers.controls.begin_task_context"),
             mock.patch("codey.providers.controls.end_task_context") as end_context,
-            mock.patch.object(cli, "_safe_print"),
+            mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "CDP disconnected")
         ):
-            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
-                cli.cmd_agent(args)
+            cli.cmd_agent(args)
 
         end_context.assert_called_once_with()
 
@@ -104,10 +102,9 @@ class ProviderCliTests(unittest.TestCase):
             mock.patch("codey.providers.connect_provider", side_effect=RuntimeError("offline")),
             mock.patch("codey.providers.controls.begin_task_context") as begin_context,
             mock.patch("codey.providers.controls.end_task_context") as end_context,
-            mock.patch.object(cli, "_safe_print"),
+            mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "offline")
         ):
-            with self.assertRaisesRegex(RuntimeError, "offline"):
-                cli.cmd_agent(args)
+            cli.cmd_agent(args)
 
         begin_context.assert_called_once_with("cli-agent:stepfun")
         end_context.assert_called_once_with()

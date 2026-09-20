@@ -212,9 +212,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun, "_fresh_response_text", return_value=""),
             mock.patch.object(stepfun, "_latest_response_text", return_value="old reply"),
             mock.patch.object(stepfun.controls, "reject_control") as reject,
+            self.assertRaisesRegex(RuntimeError, "StepFun response"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "StepFun response"):
-                stepfun._final_text(page, baseline=2)
+            stepfun._final_text(page, baseline=2)
 
         reject.assert_called_once_with(stepfun.PROVIDER_ID, stepfun.controls.CONTROL_RESPONSE)
 
@@ -287,10 +287,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         with (
             mock.patch.object(stepfun, "_fill_message", return_value="hello") as fill,
             mock.patch.object(stepfun, "_composer_retains_text", return_value=False),
-            mock.patch.object(stepfun.cancellation, "wait"),
+            mock.patch.object(stepfun.cancellation, "wait"),self.assertRaisesRegex(ControlMissing, "did not keep")
         ):
-            with self.assertRaisesRegex(ControlMissing, "did not keep"):
-                stepfun._fill_message_until_stable(textarea, "hello")
+            stepfun._fill_message_until_stable(textarea, "hello")
 
         self.assertEqual(fill.call_count, stepfun.COMPOSER_REFILL_ATTEMPTS)
 
@@ -330,9 +329,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun, "_send_button", return_value=None),
             mock.patch.object(stepfun.controls, "confirm_control") as confirm,
             mock.patch.object(stepfun.controls, "reject_control") as reject,
+            self.assertRaisesRegex(ControlMissing, "send button"),
         ):
-            with self.assertRaisesRegex(ControlMissing, "send button"):
-                stepfun.chat(page, "hello", response_timeout=120)
+            stepfun.chat(page, "hello", response_timeout=120)
 
         confirm.assert_called_once_with(stepfun.PROVIDER_ID, stepfun.controls.CONTROL_MESSAGE_BOX)
         reject.assert_called_once_with(
@@ -359,9 +358,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
         with (
             mock.patch.object(stepfun, "_send_button", return_value=None),
             mock.patch.object(stepfun.controls, "reject_control") as reject,
+            self.assertRaisesRegex(ControlMissing, "send button"),
         ):
-            with self.assertRaisesRegex(ControlMissing, "send button"):
-                stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
 
         textarea.press.assert_not_called()
         reject.assert_called_once_with(
@@ -452,10 +451,9 @@ class StepFunDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(stepfun.send_loop, "response_watch", return_value=nullcontext()),
             mock.patch.object(stepfun, "_submit", return_value=attempt),
             mock.patch.object(stepfun.cancellation, "wait"),
-            mock.patch.object(stepfun.controls, "reject_control") as reject,
+            mock.patch.object(stepfun.controls, "reject_control") as reject,self.assertRaises(SubmissionUncertain)
         ):
-            with self.assertRaises(SubmissionUncertain):
-                stepfun.chat(page, "hello", response_timeout=120)
+            stepfun.chat(page, "hello", response_timeout=120)
 
         reject.assert_not_called()
 

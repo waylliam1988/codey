@@ -724,18 +724,18 @@ class ProviderStatusTests(unittest.TestCase):
         with (
             cancellation.scope(event),
             mock.patch.object(provider_services, "connect_existing_provider") as connected,
+            self.assertRaises(cancellation.TaskCancelled),
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                review_service.run_review(
-                    server.AppContext(),
-                    session_id="session-1",
-                    project="E:/demo",
-                    task="task",
-                    writer_summary="done",
-                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
-                    recent_log="",
-                    writer_id="deepseek",
-                )
+            review_service.run_review(
+                server.AppContext(),
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                recent_log="",
+                writer_id="deepseek",
+            )
 
         connected.assert_not_called()
 
@@ -946,18 +946,18 @@ class ProviderStatusTests(unittest.TestCase):
         with (
             mock.patch.object(provider_services, "reviewer_candidates", return_value=()),
             mock.patch.object(provider_services, "connect_fresh_provider_tab", return_value=reviewer),
+            self.assertRaises(cancellation.TaskCancelled),
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                review_service.run_review(
-                    state,
-                    session_id="session-1",
-                    project="E:/demo",
-                    task="task",
-                    writer_summary="done",
-                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
-                    recent_log="",
-                    writer_id="deepseek",
-                )
+            review_service.run_review(
+                state,
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                recent_log="",
+                writer_id="deepseek",
+            )
 
         reviewer.close.assert_called_once_with()
 
@@ -974,18 +974,18 @@ class ProviderStatusTests(unittest.TestCase):
             mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=fail_and_cancel),
             mock.patch.object(provider_services, "connect_fresh_provider_tab") as connect_self_review,
+            self.assertRaises(cancellation.TaskCancelled),
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                review_service.run_review(
-                    state,
-                    session_id="session-1",
-                    project="E:/demo",
-                    task="task",
-                    writer_summary="done",
-                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
-                    recent_log="",
-                    writer_id="deepseek",
-                )
+            review_service.run_review(
+                state,
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                recent_log="",
+                writer_id="deepseek",
+            )
 
         connect_self_review.assert_not_called()
 
@@ -4178,9 +4178,9 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             cancellation.scope(event),
             mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
+            self.assertRaises(cancellation.TaskCancelled),
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                sibling_probe.handle_profile_doctor(state, request)
+            sibling_probe.handle_profile_doctor(state, request)
 
         borrowed.assert_not_called()
 
@@ -4260,9 +4260,9 @@ class SessionThreadingTests(unittest.TestCase):
         with (
             cancellation.scope(event),
             mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
+            self.assertRaises(cancellation.TaskCancelled),
         ):
-            with self.assertRaises(cancellation.TaskCancelled):
-                sibling_probe.handle_flow_recovery(state, request)
+            sibling_probe.handle_flow_recovery(state, request)
 
         borrowed.assert_not_called()
 

@@ -355,21 +355,20 @@ class HeadlessRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             project = Path(td, "project")
             state_home = Path(td, "state")
-            with mock.patch("codey.app.headless_runner.run_task_submission", side_effect=RuntimeError("boom in submission")):
-                with mock.patch.object(HeadlessAppContext, "close", autospec=True) as mock_close:
-                    with self.assertRaises(RuntimeError) as cm:
-                        run_headless(
-                            HeadlessRequest(
-                                project=project,
-                                task="failing task",
-                                provider_id="qwen",
-                                state_home=state_home,
-                            ),
-                            emit_jsonl=lambda _row: None,
-                            connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
-                        )
-                    self.assertIn("boom in submission", str(cm.exception))
-                    mock_close.assert_called_once()
+            with mock.patch("codey.app.headless_runner.run_task_submission", side_effect=RuntimeError("boom in submission")), mock.patch.object(HeadlessAppContext, "close", autospec=True) as mock_close:
+                with self.assertRaises(RuntimeError) as cm:
+                    run_headless(
+                        HeadlessRequest(
+                            project=project,
+                            task="failing task",
+                            provider_id="qwen",
+                            state_home=state_home,
+                        ),
+                        emit_jsonl=lambda _row: None,
+                        connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+                    )
+                self.assertIn("boom in submission", str(cm.exception))
+                mock_close.assert_called_once()
 
 
 if __name__ == "__main__":

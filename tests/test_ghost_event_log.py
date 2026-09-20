@@ -16,13 +16,12 @@ from codey.ghost.event_log import (
 
 class GhostEventLogTests(unittest.TestCase):
     def test_invalid_bad_row_policy_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            with self.assertRaises(ValueError):
-                GhostEventLog(
-                    Path(td) / "events.jsonl",
-                    schema_version=1,
-                    bad_row_policy="ignore",  # type: ignore[arg-type]
-                )
+        with tempfile.TemporaryDirectory() as td, self.assertRaises(ValueError):
+            GhostEventLog(
+                Path(td) / "events.jsonl",
+                schema_version=1,
+                bad_row_policy="ignore",  # type: ignore[arg-type]
+            )
 
     def test_default_policy_blocks_on_first_bad_row(self) -> None:
         with tempfile.TemporaryDirectory() as td:

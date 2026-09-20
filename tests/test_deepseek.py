@@ -17,9 +17,8 @@ class DeepSeekTimeoutTests(IsolatedProviderControlsMixin, unittest.TestCase):
         event.set()
         page = mock.Mock()
 
-        with cancellation.scope(event):
-            with self.assertRaises(cancellation.TaskCancelled):
-                deepseek.chat(page, "hello")
+        with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+            deepseek.chat(page, "hello")
 
         page.locator.assert_not_called()
         page.goto.assert_not_called()
@@ -33,9 +32,9 @@ class DeepSeekTimeoutTests(IsolatedProviderControlsMixin, unittest.TestCase):
             with (
                 cancellation.scope(event),
                 mock.patch.object(deepseek, "_message_box", return_value=None),
+                self.assertRaises(cancellation.TaskCancelled),
             ):
-                with self.assertRaises(cancellation.TaskCancelled):
-                    deepseek.wait_ready(object(), timeout=30)
+                deepseek.wait_ready(object(), timeout=30)
         finally:
             timer.cancel()
 
@@ -201,10 +200,9 @@ class DeepSeekTimeoutTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mock.patch.object(deepseek, "_response_count", return_value=0),
             mock.patch.object(deepseek.controls, "start_response_watch") as start_watch,
             mock.patch.object(deepseek.controls, "stop_response_watch") as stop_watch,
-            mock.patch.object(deepseek.controls, "reject_control"),
+            mock.patch.object(deepseek.controls, "reject_control"),self.assertRaisesRegex(RuntimeError, "click failed")
         ):
-            with self.assertRaisesRegex(RuntimeError, "click failed"):
-                deepseek.chat(page, "hello", response_timeout=1, tick=0)
+            deepseek.chat(page, "hello", response_timeout=1, tick=0)
 
         start_watch.assert_called_once_with(page, deepseek.PROVIDER_ID)
         stop_watch.assert_called_once_with(page, deepseek.PROVIDER_ID)

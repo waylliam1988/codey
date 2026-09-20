@@ -345,14 +345,13 @@ class ToolOutcomeTests(unittest.TestCase):
             started = time.monotonic()
             timer.start()
             try:
-                with cancellation.scope(event):
-                    with self.assertRaises(cancellation.TaskCancelled):
-                        run_command(
-                            root,
-                            ".",
-                            "python -m unittest sleep_test.Sleep.test_sleep",
-                            permission_profile="coding_writer",
-                        )
+                with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
+                    run_command(
+                        root,
+                        ".",
+                        "python -m unittest sleep_test.Sleep.test_sleep",
+                        permission_profile="coding_writer",
+                    )
             finally:
                 timer.cancel()
 
@@ -635,14 +634,13 @@ class ToolOutcomeTests(unittest.TestCase):
         run_process.assert_not_called()
 
     def test_run_policy_denies_pytest_plugin_loading_before_process_launch(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch("codey.toolchain.runtime.cancellation.run_process") as run_process:
-                outcome = run_command_raw(
-                    Path(td),
-                    ".",
-                    "pytest -p evil_plugin",
-                    permission_profile="coding_writer",
-                )
+        with tempfile.TemporaryDirectory() as td, mock.patch("codey.toolchain.runtime.cancellation.run_process") as run_process:
+            outcome = run_command_raw(
+                Path(td),
+                ".",
+                "pytest -p evil_plugin",
+                permission_profile="coding_writer",
+            )
 
         self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
         assert isinstance(outcome, tool_runtime.ToolOutcome)

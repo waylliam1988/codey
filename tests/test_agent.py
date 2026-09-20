@@ -896,16 +896,15 @@ class RunLoopTests(unittest.TestCase):
         def stopped_listing(_root: Path, _path: str) -> tool_runtime.ToolOutcome:
             raise cancellation.TaskCancelled("task stopped")
 
-        with tempfile.TemporaryDirectory() as td:
-            with self.assertRaises(cancellation.TaskCancelled):
-                run_agent(
-                    provider,
-                    Path(td),
-                    "Stop during context assembly",
-                    on_event=lambda _event: None,
-                    fresh_chat=False,
-                    tool_fns=AgentToolFns(list_directory=stopped_listing),
-                )
+        with tempfile.TemporaryDirectory() as td, self.assertRaises(cancellation.TaskCancelled):
+            run_agent(
+                provider,
+                Path(td),
+                "Stop during context assembly",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(list_directory=stopped_listing),
+            )
 
         self.assertEqual(provider.sent, [])
 
@@ -1689,16 +1688,15 @@ class RunLoopTests(unittest.TestCase):
         provider = FakeProvider('{"tool":"done","args":{"summary":"unused"}}')
         provider.new_chat = mock.Mock(side_effect=RuntimeError("button missing"))
 
-        with tempfile.TemporaryDirectory() as td:
-            with self.assertRaisesRegex(RuntimeError, "button missing"):
-                run_agent(
-                    provider,
-                    Path(td),
-                    "Continue safely",
-                    on_event=lambda _event: None,
-                    fresh_chat=True,
-                    strict_fresh_chat=True,
-                )
+        with tempfile.TemporaryDirectory() as td, self.assertRaisesRegex(RuntimeError, "button missing"):
+            run_agent(
+                provider,
+                Path(td),
+                "Continue safely",
+                on_event=lambda _event: None,
+                fresh_chat=True,
+                strict_fresh_chat=True,
+            )
 
         self.assertEqual(provider.sent, [])
 
