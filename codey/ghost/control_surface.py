@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.ghost.affinity import GhostAffinityStore
@@ -12,6 +11,8 @@ from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.router import GhostRouteStore
+from codey.ghost._common import normalize_project as _shared_normalize_project
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
@@ -671,17 +672,11 @@ def _bounded_unique(values: Iterable[object]) -> list[str]:
 
 
 def _normalize_project(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    try:
-        return clip_signal_text(Path(text).expanduser().resolve(), 240)
-    except (OSError, RuntimeError, ValueError):
-        return clip_signal_text(text, 240)
+    return _shared_normalize_project(value)
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 def _unavailable_payload() -> dict[str, object]:

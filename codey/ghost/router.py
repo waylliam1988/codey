@@ -14,7 +14,6 @@ import re
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -32,6 +31,7 @@ from codey.ghost.event_log import (
     event_file_stats as _event_file_stats,
 )
 from codey.ghost.numbers import clamp_unit_float
+from codey.ghost._common import now_iso_z as _shared_now_iso
 from codey.ghost.schema import clip_signal_text
 from codey.runtime.core import cancellation
 from codey.storage.event_state import reset_event_backed_state
@@ -1117,7 +1117,7 @@ def _list(value: object) -> list:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _shared_now_iso()
 
 
 __all__ = [

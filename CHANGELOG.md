@@ -2,6 +2,40 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review fixes + real process-kill recovery (no release)
+
+- Fixed a real UI bug in `renderMarkdownChunked`: fixed 120-line slices
+  were parsed independently, forking fenced-code/list/blockquote state.
+  Stateful content (fences, quotes, long lists via `hasStatefulBlocks`)
+  now renders in one idle pass; plain paragraphs still stream.
+  `renderAssistantBody` carries a render token so collapse cancels queued
+  pumps, and previews never leave a fence open. Covered by a JS behavior
+  test (content assertions, same pattern as the existing UI suite).
+- Deleted the dead `api._shell_claim_expired` helper (production uses
+  `shell_service` claim/execute paths); its epoch-fail-closed assertion
+  moved to `shell_service._approval_generation_current` coverage.
+- `test_long_files_do_not_grow`: dropped stale `operations/task_run.py`
+  entries and added the reverse assertion so shrunk files must leave the
+  baseline.
+- Ghost `_common` convergence finished for `control_surface` and `router`;
+  removed the unused `provider_controls` re-export from
+  `provider_services` (lazy-state suite still green).
+- Static cache narrowed: `send_file(..., immutable=...)` is immutable only
+  for `?v=`-pinned `/assets/*`; icon and unpinned assets stay revalidating.
+  Covered by plumbing + end-to-end header tests.
+- Stress harness pushed to real processes: `tests/stress/kill_worker.py`
+  child + `test_proc_kill_recovery.py` terminate real processes
+  (`Popen.kill`: TerminateProcess/SIGKILL), restart in recover mode, and
+  assert canonical convergence, double-recover idempotence, and
+  kill-vs-uninterrupted equivalence. The kill tests caught one real bug:
+  `world.canonical()` derived run ids from memory-only state, hiding
+  committed delivery batches after restart; run ids now come from durable
+  rows.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 319.09s`).
+
 ## Unreleased - Fault-injection + restart-recovery acceptance, P0-P4 (no release)
 
 - New `tests/stress/` acceptance system: the only question asked is

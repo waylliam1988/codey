@@ -364,29 +364,6 @@ def run_submit_response(
     return 200, {"ok": True, "run_id": run_id}
 
 
-def _shell_claim_expired(ctx: Any, claimed_generation: int) -> bool:
-    """True when a Stop landed after the Allow claimed its approval.
-
-    Missing epoch accessor on legacy fakes means "no epoch tracking", so
-    treat as not-expired. Any other read failure fails closed (expired).
-    """
-    try:
-        stop_set = bool(ctx.run_registry.stop_flag.is_set())
-    except (AttributeError, TypeError):
-        stop_set = False
-    except Exception:
-        return True
-    if stop_set:
-        return True
-    try:
-        current_generation = int(ctx.approval_generation())
-    except (AttributeError, TypeError):
-        return False
-    except Exception:
-        return True
-    return int(claimed_generation or 0) != int(current_generation or 0)
-
-
 def _stopped_shell_denial(
     ctx: Any, pending: dict, approval_id: str, session_id: str, command: object
 ) -> tuple[int, dict]:

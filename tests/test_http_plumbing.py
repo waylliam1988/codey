@@ -43,15 +43,37 @@ class HttpPlumbingTests(unittest.TestCase):
             http_plumbing.send_file(third, path, "application/javascript")
 
         self.assertEqual(first.status, 200)
-        self.assertEqual(first.sent_headers["Cache-Control"], "public, max-age=31536000, immutable")
+        self.assertEqual(first.sent_headers["Cache-Control"], "no-cache")
         self.assertEqual(first.wfile.getvalue(), b"console.log('one');")
         self.assertEqual(second.status, 304)
-        self.assertEqual(second.sent_headers["Cache-Control"], "public, max-age=31536000, immutable")
+        self.assertEqual(second.sent_headers["Cache-Control"], "no-cache")
         self.assertEqual(second.sent_headers["Content-Length"], "0")
         self.assertEqual(second.wfile.getvalue(), b"")
         self.assertEqual(third.status, 200)
         self.assertNotEqual(third.sent_headers["ETag"], etag)
         self.assertEqual(third.wfile.getvalue(), b"console.log('changed');")
+
+    def test_send_file_immutable_only_when_version_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "asset.js"
+            path.write_text("console.log('one');", encoding="utf-8")
+            pinned = _Handler()
+            http_plumbing.send_file(
+                pinned, path, "application/javascript", immutable=True
+            )
+            etag = pinned.sent_headers["ETag"]
+            renotified = _Handler({"If-None-Match": etag})
+            http_plumbing.send_file(
+                renotified, path, "application/javascript", immutable=True
+            )
+
+        self.assertEqual(
+            pinned.sent_headers["Cache-Control"], "public, max-age=31536000, immutable"
+        )
+        self.assertEqual(renotified.status, 304)
+        self.assertEqual(
+            renotified.sent_headers["Cache-Control"], "public, max-age=31536000, immutable"
+        )
 
     def test_send_index_caches_rendered_version(self) -> None:
         with tempfile.TemporaryDirectory() as td:

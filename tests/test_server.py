@@ -1605,6 +1605,35 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn("application/javascript", ctype)
         self.assertIn("window.CodeyResearchGraph", body)
 
+    def test_asset_cache_control_follows_version_pin(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/assets/render.js?v=9.9.9")
+            pinned = conn.getresponse()
+            pinned.read()
+            pinned_cache = pinned.getheader("Cache-Control") or ""
+            conn.close()
+
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/assets/render.js")
+            unpinned = conn.getresponse()
+            unpinned.read()
+            unpinned_cache = unpinned.getheader("Cache-Control") or ""
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(pinned.status, 200)
+        self.assertIn("immutable", pinned_cache)
+        self.assertEqual(unpinned.status, 200)
+        self.assertNotIn("immutable", unpinned_cache)
+
     def test_unknown_web_asset_returns_404(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)

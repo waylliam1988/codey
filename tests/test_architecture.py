@@ -1935,7 +1935,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/router.py",
             "ghost/work_queue.py",
             "operations/project_completion_flow.py",
-            "operations/task_run.py",
             "providers/controls.py",
             "research/browser_search.py",
             "research/evidence_ledger.py",
@@ -1946,6 +1945,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "toolchain/runtime.py",
         }
         self.assertEqual(set(over_limit) - baseline, set())
+        # Reverse direction: a baseline entry that shrank back under the
+        # line must leave the baseline, or regrowth up to the old ceiling
+        # would never alarm.
+        self.assertEqual(baseline - set(over_limit), set())
         ceiling = {
             "agents/consensus.py": 1100,
             "ghost/affinity.py": 2750,
@@ -1955,7 +1958,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "ghost/router.py": 1180,
             "ghost/work_queue.py": 2750,
             "operations/project_completion_flow.py": 1750,
-            "operations/task_run.py": 1200,
             "providers/controls.py": 1400,
             "research/browser_search.py": 1230,
             "research/evidence_ledger.py": 1550,

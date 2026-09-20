@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Review 修补 + 真进程 kill 恢复（未发布）
+
+- 修了一个真 UI bug：`renderMarkdownChunked` 按固定 120 行独立解析，
+  会切断 fenced code/list/blockquote 状态。有状态内容（`hasStatefulBlocks`
+  判 fence/quote/长列表）改走一次 idle 全量渲染，纯段落继续流式；
+  `renderAssistantBody` 加 render token，折叠取消排队 pump；preview 永不
+  留未闭合 fence。JS 行为测试沿用现有 UI 套件的 content 断言模式。
+- 删除死的 `api._shell_claim_expired`（生产走 `shell_service`），其
+  epoch-fail-closed 断言移到 `shell_service` 覆盖。
+- `test_long_files_do_not_grow` 去掉过期 `task_run.py` 条目，加反向断言，
+  缩回去的文件必须离场。
+- Ghost `_common` 收尾 `control_surface`/`router`；删
+  `provider_services` 无用 `provider_controls` re-export（lazy 测试仍绿）。
+- 静态缓存收窄：`send_file(..., immutable=...)` 仅 `?v=` 的 `/assets/*`
+  immutable，icon 与未 pin 资源保持 revalidate；plumbing + 端到端 header
+  测试覆盖。
+- Stress 推向真进程：`kill_worker.py` 子进程 + `test_proc_kill_recovery.py`
+  真 `Popen.kill`（TerminateProcess/SIGKILL），recover 模式重开，断言
+  canonical 收敛、双恢复幂等、kill 与不 kill 等价。kill 测试抓到一个真
+  bug：`world.canonical()` 从内存态取 run id，重启后藏起已提交 delivery；
+  现改为从 durable 行派生。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3974 passed, 6 skipped, 1320 subtests passed in 319.09s`）。
+
 ## Unreleased - 故障注入 + 重启恢复验收 P0-P4（未发布）
 
 - 新增 `tests/stress/` 验收体系：只问故障 + 重启后 durable facts 是否收敛，

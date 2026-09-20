@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## Review fixes + real process-kill recovery (2026-09-21)
+
+Scope:
+
+```text
+codey/web/assets/render.js:  hasStatefulBlocks single-pass, render token cancel,
+                             fence-closing preview (P1 UI bug fix)
+codey/app/api.py:            delete dead _shell_claim_expired
+codey/app/event_bus.py:      unchanged (already correct)
+codey/ghost/control_surface.py + router.py: delegate to _common
+codey/app/provider_services.py: drop unused provider_controls re-export
+codey/app/http_plumbing.py + server.py: immutable only for ?v= assets
+tests/stress/kill_worker.py (new) + test_proc_kill_recovery.py (new):
+                             real Popen.kill, recover mode, convergence
+tests:                         JS behavior test, epoch migration, baseline
+                                reverse assertion, header tests
+docs:                        CHANGELOG.md, CHANGELOG.zh-CN.md
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+- Inline script budget held at 1650 (changes confined to assets/)
+- Targeted gates: ui/architecture/plumbing/server/hardening/shell/stress green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3974 passed, 6 skipped, 1320 subtests passed in 319.09s (0:05:19)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. No production logic changed except the listed fixes.
+
 ## Fault-injection + restart-recovery acceptance, P0-P4 (2026-09-21)
 
 Scope:

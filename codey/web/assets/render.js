@@ -118,10 +118,13 @@ function previewSlice(text) {
   const value = String(text == null ? '' : text);
   const lines = value.split('\n');
   const head = lines.slice(0, LONG_MESSAGE_LINES).join('\n');
-  if (head.length >= LONG_MESSAGE_CHARS || lines.length > LONG_MESSAGE_LINES) {
-    return head.slice(0, LONG_MESSAGE_CHARS);
-  }
-  return value.slice(0, LONG_MESSAGE_CHARS);
+  const sliced = (head.length >= LONG_MESSAGE_CHARS || lines.length > LONG_MESSAGE_LINES)
+    ? head.slice(0, LONG_MESSAGE_CHARS)
+    : value.slice(0, LONG_MESSAGE_CHARS);
+  // Never leave a preview fence open: an unclosed ``` would swallow the
+  // rest of the preview into one code block.
+  const fences = (sliced.match(/```/g) || []).length;
+  return fences % 2 === 1 ? sliced + '\n```' : sliced;
 }
 
 function scheduleIdleChunk(fn) {
@@ -240,17 +243,54 @@ function needsChunkedRender(text) {
   return false;
 }
 
-function renderMarkdownChunked(container, text, done) {
+const STATEFUL_LIST_ITEM_LIMIT = 10;
+
+function hasStatefulBlocks(text) {
+  // Fences, quotes, and long lists carry parser state (listStack, fence,
+  // quote runs) across lines: parsing them in fixed slices would fork or
+  // drop that state. Short lists are order-independent enough to stream.
   const value = String(text == null ? '' : text);
+  if (/^\s*```/m.test(value)) return true;
+  if (/^\s*>\s?/m.test(value)) return true;
+  let items = 0;
+  const re = /^(\s*)([-*]|\d+[.)])\s+/gm;
+  let m;
+  while ((m = re.exec(value)) !== null) {
+    items++;
+    if (items > STATEFUL_LIST_ITEM_LIMIT) return true;
+  }
+  return false;
+}
+
+function renderMarkdownChunked(container, text, done, isCurrent) {
+  const alive = typeof isCurrent === 'function' ? isCurrent : () => true;
+  const value = String(text == null ? '' : text);
+  const finish = () => { if (alive() && typeof done === 'function') done(); };
+  if (!needsChunkedRender(value)) {
+    if (!alive()) return;
+    container.innerHTML = '';
+    renderMarkdown(container, value);
+    finish();
+    return;
+  }
+  if (hasStatefulBlocks(value)) {
+    // One idle render with intact parser state; the caller already shows a
+    // preview, so there is no sync-parse flash here.
+    scheduleIdleChunk(() => {
+      if (!alive()) return;
+      container.innerHTML = '';
+      renderMarkdown(container, value);
+      finish();
+    });
+    return;
+  }
   const lines = value.split('\n');
   const step = 120;
   let idx = 0;
   container.innerHTML = '';
   const scratch = document.createElement('div');
-  const flushScratch = () => {
-    while (scratch.firstChild) container.appendChild(scratch.firstChild);
-  };
   const pump = () => {
+    if (!alive()) return;
     const slice = lines.slice(idx, idx + step).join('\n');
     const tmp = document.createElement('div');
     renderMarkdown(tmp, idx === 0 ? slice : '\n' + slice);
@@ -260,17 +300,10 @@ function renderMarkdownChunked(container, text, done) {
       scheduleIdleChunk(pump);
       return;
     }
-    flushScratch();
-    if (typeof done === 'function') done();
+    if (!alive()) return;
+    while (scratch.firstChild) container.appendChild(scratch.firstChild);
+    finish();
   };
-  // Keep first paint fast: render a small preview synchronously, then stream rest.
-  const head = lines.slice(0, 30).join('\n');
-  renderMarkdown(container, lines.length > 30 ? head : value);
-  if (lines.length <= 30 && !needsChunkedRender(value)) {
-    if (typeof done === 'function') done();
-    return;
-  }
-  container.innerHTML = '';
   scheduleIdleChunk(pump);
 }
 
@@ -286,14 +319,18 @@ function renderAssistantBody(body, text, toggle) {
   body.classList.add('collapsed');
   if (toggle) toggle.textContent = 'Expand';
   let expanded = false;
+  let renderToken = 0;
   const expand = () => {
     if (expanded) return;
     expanded = true;
+    const my = ++renderToken;
+    const alive = () => my === renderToken;
     body.classList.remove('collapsed');
-    if (needsChunkedRender(value)) renderMarkdownChunked(body, value);
+    if (needsChunkedRender(value)) renderMarkdownChunked(body, value, undefined, alive);
     else { body.innerHTML = ''; renderMarkdown(body, value); }
   };
   const collapse = () => {
+    renderToken++;
     expanded = false;
     body.innerHTML = '';
     renderMarkdown(body, previewSlice(value));
@@ -415,6 +452,7 @@ window.CodeyRender = {
   renderMarkdown,
   renderMarkdownChunked,
   renderAssistantBody,
+  hasStatefulBlocks,
   isLongMessage,
   needsChunkedRender,
   previewSlice,

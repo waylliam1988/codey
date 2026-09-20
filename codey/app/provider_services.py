@@ -14,7 +14,6 @@ import time as _time
 
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
-from codey.providers import controls as provider_controls  # noqa: F401  (re-export for probes)
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
 from codey.utils.refs import clip, digest_text

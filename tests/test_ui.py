@@ -884,6 +884,26 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("parent.lastLi.appendChild(next);", RENDER_JS)
         self.assertIn("background: var(--panel-2)", STYLE_SOURCE)
 
+    def test_chunked_render_keeps_stateful_blocks_and_cancel(self) -> None:
+        # A >120-line fenced block must render in one idle pass, never as
+        # independently parsed 120-line slices (fence/list/quote state would
+        # fork). A collapse must cancel queued pumps via a render token.
+        self.assertIn("function hasStatefulBlocks(text)", RENDER_JS)
+        self.assertIn("/^\\s*```/m.test(value)", RENDER_JS)
+        self.assertIn("/^\\s*>\\s?/m.test(value)", RENDER_JS)
+        self.assertIn("function renderMarkdownChunked(container, text, done, isCurrent)", RENDER_JS)
+        self.assertIn("if (!alive()) return;", RENDER_JS)
+        self.assertIn("scheduleIdleChunk(() => {", RENDER_JS)
+        self.assertIn("let renderToken = 0;", RENDER_JS)
+        self.assertIn("const my = ++renderToken;", RENDER_JS)
+        self.assertIn("() => my === renderToken", RENDER_JS)
+        self.assertIn("renderToken++;", RENDER_JS)
+        self.assertIn("renderMarkdownChunked(body, value, undefined, alive)", RENDER_JS)
+        self.assertIn("if (hasStatefulBlocks(value)) {", RENDER_JS)
+        self.assertIn("while (scratch.firstChild) container.appendChild(scratch.firstChild);", RENDER_JS)
+        # Preview must never leave a fence open.
+        self.assertIn("fences % 2 === 1", RENDER_JS)
+
     def test_inline_code_spans_are_not_bolded(self) -> None:
         self.assertIn("function applyBold(segment)", RENDER_JS)
         self.assertIn("out += applyBold(escaped.slice(last, m.index));", RENDER_JS)

@@ -55,7 +55,7 @@ class ApprovalFailClosedTests(unittest.TestCase):
         ctx = SimpleNamespace()
         ctx.run_registry = SimpleNamespace(stop_flag=threading.Event())
         ctx.approval_generation = mock.Mock(side_effect=OSError("boom"))
-        self.assertTrue(app_api._shell_claim_expired(ctx, 0))
+        self.assertFalse(shell_service._approval_generation_current(ctx, 0))
 
 
 class CancellationPropagationTests(unittest.TestCase):

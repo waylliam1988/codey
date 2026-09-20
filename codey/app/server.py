@@ -307,8 +307,8 @@ class Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, payload: dict) -> None:
         send_json(self, status, payload)
 
-    def _send_file(self, path: Path, ctype: str) -> None:
-        send_file(self, path, ctype)
+    def _send_file(self, path: Path, ctype: str, *, immutable: bool = False) -> None:
+        send_file(self, path, ctype, immutable=immutable)
 
     def _send_index(self) -> None:
         send_index(self)
@@ -357,7 +357,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
             else:
-                self._send_file(asset[0], asset[1])
+                pinned = "v" in parse_qs(url.query)
+                self._send_file(asset[0], asset[1], immutable=pinned)
             return
         if url.path == "/icon.ico":
             icon = WEB_DIR / "icon.ico"

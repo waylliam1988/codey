@@ -100,7 +100,6 @@ class StressWorld:
         self._batch_seq = 0
         self._ghost_seq = 0
         self._approval_seq = 0
-        self._runs: list[str] = []
         self._open()
 
     # -- lifecycle -----------------------------------------------------
@@ -147,8 +146,6 @@ class StressWorld:
     # -- operation envelope ----------------------------------------------
 
     def accept_operation(self, run_id: str, provider_id: str = "mock") -> None:
-        if run_id not in self._runs:
-            self._runs.append(run_id)
         self.line.accept_operation(
             session_id=self.session_id,
             run_id=run_id,
@@ -325,8 +322,14 @@ class StressWorld:
         ghost_rows = [
             {key: row[key] for key in sorted(row)} for row in self.ghost_rows()
         ]
+        # Run ids come from durable rows, never from memory: _runs is empty
+        # after a restart and must not hide committed batches.
+        durable_runs = sorted({
+            str(row.get("payload", {}).get("run_id") or "")
+            for row in rows
+        } - {""})
         batches = []
-        for run_id in self._runs:
+        for run_id in durable_runs:
             undelivered = {
                 b.intent.batch_id
                 for b in self.delivery.undelivered_replayable_batches(self.session_id, run_id)
