@@ -10,14 +10,14 @@ tests/stress/model.py:     ExpectedOutcome, canonical facts, normalize, fold
 tests/stress/faults.py:    seeded FaultController (no business-state contact)
 tests/stress/oracle.py:    InvariantChecker (7 invariants)
 tests/stress/world.py:     StressWorld, FakeClock, FakeProvider (3 modes)
-tests/stress/test_p0_idempotence.py: R(R(S))==R(S), torn tail, ephemeral-empty
-tests/stress/test_p1_provider.py:   timeout dual modes, kill-point matrix
-tests/stress/test_p2_shell_race.py: 1000 seeded Allow/Stop interleavings
-tests/stress/test_p2_worker.py:     generation isolation on a real worker
-tests/stress/test_p2_self_repair.py: journal crash semantics (honest: no auto-replay)
-tests/stress/test_p3_ghost.py:     rebuild/replay/rewrite/projection equivalence
-tests/stress/test_p3_sse.py:       reconnect/replay/duplicates/overflow marker
-tests/stress/test_p4_mixed.py:     1000 seeded mixed ops + kills + replay check
+tests/stress/test_recovery_idempotence.py: R(R(S))==R(S), torn tail, ephemeral-empty
+tests/stress/test_provider_timeout_recovery.py: timeout dual modes, kill-point matrix
+tests/stress/test_shell_stop_allow_race.py: 1000 seeded Allow/Stop interleavings
+tests/stress/test_browser_worker_generations.py: generation isolation on a real worker
+tests/stress/test_self_repair_journal_recovery.py: journal crash semantics (honest: no auto-replay)
+tests/stress/test_ghost_log_replay.py: rebuild/replay/rewrite/projection equivalence
+tests/stress/test_sse_reconnect_duplicates.py: reconnect/replay/duplicates/overflow marker
+tests/stress/test_mixed_workload_convergence.py: 1000 seeded mixed ops + kills + replay check
 docs:                        CHANGELOG.md, CHANGELOG.zh-CN.md
 ```
 
