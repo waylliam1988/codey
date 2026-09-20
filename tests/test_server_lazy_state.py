@@ -60,14 +60,25 @@ class ServerLazyStateTests(unittest.TestCase):
     def test_context_import_loads_no_browser_stack(self) -> None:
         self.assertEqual(_heavy_after_import("codey.app.context"), [])
 
-    def test_services_import_loads_no_browser_stack(self) -> None:
-        self.assertEqual(_heavy_after_import("codey.app.services"), [])
+    def test_service_modules_import_loads_no_browser_stack(self) -> None:
+        for dotted in (
+            "codey.app.review_service",
+            "codey.app.consensus_service",
+            "codey.app.shell_service",
+            "codey.app.provider_services",
+            "codey.app.task_submit",
+            "codey.operations.task_state",
+        ):
+            with self.subTest(module=dotted):
+                self.assertEqual(_heavy_after_import(dotted), [])
 
     def test_import_starts_no_browser_thread(self) -> None:
         script = (
             "import threading; "
             "before = sorted(t.name for t in threading.enumerate()); "
-            "import codey.app.api, codey.app.context, codey.app.server, codey.app.services; "
+            "import codey.app.api, codey.app.context, codey.app.server, "
+            "codey.app.review_service, codey.app.consensus_service, "
+            "codey.app.shell_service, codey.app.provider_services; "
             "after = sorted(t.name for t in threading.enumerate()); "
             "print(','.join(sorted(set(after) - set(before))))"
         )
@@ -83,7 +94,10 @@ class ServerLazyStateTests(unittest.TestCase):
     def test_import_loads_no_advisors_or_concepts(self) -> None:
         script = (
             "import sys; "
-            "import codey.app.api, codey.app.context, codey.app.server, codey.app.services; "
+            "import codey.app.api, codey.app.context, codey.app.server, "
+            "codey.app.review_service, codey.app.consensus_service, "
+            "codey.app.shell_service, codey.app.provider_services, "
+            "codey.app.task_submit; "
             "loaded = sorted(m for m in sys.modules "
             "if m in ('codey.research.advisors', 'codey.knowledge.concepts')); "
             "print(','.join(loaded))"

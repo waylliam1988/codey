@@ -5,19 +5,19 @@ that reserves a run, queues the browser worker, or builds ``TaskRunDeps``
 lives here so the task path is importable without the HTTP layer.
 
 Import cost: this module stays light at import time. The agent runner, task
-entry, services, and workspace scans load inside ``run_task`` on first use,
-never on ``import codey.app.task_submit`` (cold start).
+entry, service modules, and workspace scans load inside ``run_task`` on first
+use, never on ``import codey.app.task_submit`` (cold start).
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
 
 from codey.agents.runner import run as agent_run
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.automation.browser_worker import submit as submit_browser_task
+from codey.operations.task_state import TaskState
 from codey.providers.diagnostics import capture_provider_failure
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
@@ -35,11 +35,12 @@ def run_task(
     intent: str = "auto",
     run_id: str = "",
     *,
-    get_state: Callable[[], Any],
+    get_state: Callable[[], TaskState],
 ) -> None:
     # Heavy task stack stays lazy: importing this module (and server.py)
-    # must not load operations/services/research (see test_server_lazy_state).
-    from codey.app import services as app_services
+    # must not load operations/service modules/research (see test_server_lazy_state).
+    from codey.app import consensus_service
+    from codey.app import review_service
     from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations.task_entry import TaskRunDeps, run_task_submission
 
@@ -48,11 +49,11 @@ def run_task(
         state=state,
         agent_run=agent_run,
         collect_changes=collect_changes,
-        run_review=lambda **kwargs: app_services.run_review(state, **kwargs),
+        run_review=lambda **kwargs: review_service.run_review(state, **kwargs),
         capture_provider_failure=capture_provider_failure,
-        run_consensus=lambda **kwargs: app_services.run_consensus(state, **kwargs),
-        run_project_audit=lambda **kwargs: app_services.run_project_audit(state, **kwargs),
-        run_research_advisors=lambda **kwargs: app_services.run_research_advisors(state, **kwargs),
+        run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
+        run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),
+        run_research_advisors=lambda **kwargs: consensus_service.run_research_advisors(state, **kwargs),
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,
@@ -87,7 +88,9 @@ def run_task(
         state = get_state()
         if state.sync_ghost_maintenance:
             state.wait_for_ghost_sleep()
-        state.kick_self_repair()
+        supervisor = state.self_repair
+        if supervisor is not None:
+            supervisor.kick_if_idle(state.is_busy)
 
 
 def submit_task(
@@ -99,7 +102,7 @@ def submit_task(
     provider_id: str,
     intent: str = "auto",
     *,
-    get_state: Callable[[], Any],
+    get_state: Callable[[], TaskState],
     abort_if_stopped: bool = False,
 ) -> str | None:
     reserved = get_state().reserve_run(
@@ -143,7 +146,7 @@ def submit_task_after_slot_release(
     provider_id: str,
     intent: str = "auto",
     *,
-    get_state: Callable[[], Any],
+    get_state: Callable[[], TaskState],
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
 ) -> str | None:

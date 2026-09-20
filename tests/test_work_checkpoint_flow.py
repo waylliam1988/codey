@@ -7,7 +7,8 @@ from unittest import mock
 
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.app import services as app_services
+from codey.app import consensus_service
+from codey.app import review_service
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.observe.events import RunEvent
@@ -40,7 +41,7 @@ def setUpModule() -> None:
     """
 
     for name in ("run_project_audit", "run_consensus", "run_research_advisors"):
-        patcher = mock.patch.object(app_services, name, return_value=None)
+        patcher = mock.patch.object(consensus_service, name, return_value=None)
         patcher.start()
         _POST_TASK_SIDEEFFECT_PATCHES.append(patcher)
 
@@ -130,7 +131,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=resumed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(
-                    app_services,
+                    review_service,
                     "run_review",
                     return_value=None,
                 ),
@@ -203,7 +204,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ) as get_provider,
                 mock.patch.object(task_submit, "agent_run", side_effect=writer) as agent_run,
                 mock.patch.object(
-                    app_services,
+                    review_service,
                     "run_review",
                     return_value=None,
                 ) as run_review,
@@ -388,7 +389,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                         "files": [{"path": "app.py", "status": "M"}],
                     },
                 ),
-                mock.patch.object(app_services, "run_review", return_value=None),
+                mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task(
                     "session-hash-takeover",
@@ -585,7 +586,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_review", return_value=None),
+                mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
 
@@ -651,7 +652,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_review", review),
+                mock.patch.object(review_service, "run_review", review),
             ):
                 server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek")
 
@@ -699,7 +700,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=RunResult("done", "done", 1, False, True, False),
                 ),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_review", review),
+                mock.patch.object(review_service, "run_review", review),
                 mock.patch(
                     "codey.operations.project_completion_flow.render_verification_map",
                     side_effect=RuntimeError("scan failed"),
@@ -765,7 +766,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=RunResult("done", "done", 1, False, False, False),
                 ),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_review", return_value=None),
+                mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
 
@@ -810,7 +811,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=completed),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_review", return_value=None),
+                mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task(
                     "session-1",

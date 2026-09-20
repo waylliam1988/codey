@@ -21,6 +21,7 @@ from codey.operations.task_phases.lifecycle import (
     _update_checkpoint_safely,
     finish_run_operation,
 )
+from codey.operations.task_state import TaskState
 from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError
 from codey.runs.ledger import RunLedgerWriter
@@ -35,7 +36,7 @@ from codey.task.kind import ui_mode
 
 def settle_cancelled_run(
     deps: Any,
-    state: Any,
+    state: TaskState,
     work: RunWork | None,
     ghost_deps: GhostTaskPolicyDeps,
     *,
@@ -91,7 +92,7 @@ def settle_cancelled_run(
 
 def settle_error_run(
     deps: Any,
-    state: Any,
+    state: TaskState,
     exc: Exception,
     work: RunWork | None,
     ghost_deps: GhostTaskPolicyDeps,

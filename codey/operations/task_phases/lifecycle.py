@@ -9,6 +9,7 @@ from typing import Any
 
 from codey.operations.context import RunWork
 from codey.operations.project_completion_flow import MAX_COMPLETION_REPAIR_ROUNDS
+from codey.operations.task_state import TaskState
 from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -25,7 +26,7 @@ class _Reservation:
 
 
 def ensure_run_reserved_and_started(
-    state: Any,
+    state: TaskState,
     request: TaskSubmission,
 ) -> tuple[_Reservation | None, OperationOutcome | None]:
     """Reserve the run slot and mark it started; pure orchestration, no mode logic."""

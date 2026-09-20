@@ -6,6 +6,7 @@ from typing import Any
 
 from codey.operations.context import RunFrame, RunHooks
 from codey.operations.result import ModeOutcome
+from codey.operations.task_state import TaskState
 from codey.ghost.work_queue import GhostWorkItem
 from codey.knowledge.research_interest import (
     build_research_interest_candidates,
@@ -37,7 +38,7 @@ from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 
 @dataclass(frozen=True)
 class ResearchFlowDeps:
-    state: Any
+    state: TaskState
     knowledge_store: Any
     evidence_ledgers: Any
     search_factory: Callable[[], object]

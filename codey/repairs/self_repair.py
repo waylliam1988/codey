@@ -58,6 +58,7 @@ class SelfRepairSupervisor:
         self._lock = threading.Lock()
         self._queued: dict[str, SelfRepairJob] = {}
         self._last_enqueued: dict[str, float] = {}
+        self._kick_running = False
 
     def maybe_enqueue(
         self,
@@ -140,6 +141,51 @@ class SelfRepairSupervisor:
         retry_at = self.clock() + REPAIR_COOLDOWN_SECONDS
         with self._lock:
             self._queued[key] = replace(job, next_retry_at=retry_at)
+
+    def kick_if_idle(self, is_busy: Callable[[], bool]) -> bool:
+        """Run at most one queued repair while the main task slot is idle."""
+        if not self.pending():
+            return False
+        has_due_work = getattr(self, "has_due_work", None)
+        if callable(has_due_work) and not has_due_work():
+            return False
+        with self._lock:
+            if is_busy() or self._kick_running:
+                return False
+            self._kick_running = True
+
+        def _worker() -> None:
+            try:
+                self.run_pending_once()
+            finally:
+                with self._lock:
+                    self._kick_running = False
+
+        threading.Thread(target=_worker, name="codey-self-repair", daemon=True).start()
+        return True
+
+
+def run_self_repair_job(
+    *,
+    state_home: str | Path | None,
+    providers,
+    job: SelfRepairJob,
+) -> AdapterRepairResult:
+    """Run one repair job with sibling helpers from the provider registry."""
+    from codey.app import provider_services
+    from codey.repairs.self_repair_worker import run_self_repair_worker
+
+    if state_home is None:
+        return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
+    return run_self_repair_worker(
+        job,
+        helper_ids=providers.self_repair_candidates(
+            job.provider_id,
+            ordered=provider_services.provider_failover_order(providers),
+        ),
+        state_home=state_home,
+        source_root=Path(__file__).resolve().parents[1],
+    )
 
 
 def _is_repairable_failure(failure: ProviderFailure, health: ProviderHealth) -> bool:

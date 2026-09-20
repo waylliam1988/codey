@@ -17,6 +17,7 @@ from codey.operations.prompting import (
     record_secondary_input_prepared_trace,
 )
 from codey.operations.result import ModeOutcome
+from codey.operations.task_state import TaskState
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 
@@ -24,7 +25,7 @@ from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_pr
 def run_chat_mode(
     frame: RunFrame,
     *,
-    state: Any,
+    state: TaskState,
     run_consensus: Callable[..., Any] | None,
     ghost_directive: Callable[..., Any],
     ghost_continuity: Callable[..., Any],

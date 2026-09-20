@@ -15,12 +15,15 @@ from unittest import mock
 
 from codey import __version__
 from codey.app import api as app_api
+from codey.app import event_bus
 from codey.app import http_plumbing
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app import server
 from codey.app import context as app_context
-from codey.app import services as app_services
+from codey.app import consensus_service
+from codey.app import review_service
+from codey.app import shell_service
 from codey.app import sibling_probe
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
@@ -381,7 +384,7 @@ class GitChangesTests(unittest.TestCase):
 class ApprovedShellTests(unittest.TestCase):
     def test_execute_approved_shell_runs_in_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = app_services.execute_approved_shell(
+            data = shell_service.execute_approved_shell(
                 server.AppContext(),
                 td,
                 ".",
@@ -396,26 +399,26 @@ class ApprovedShellTests(unittest.TestCase):
     def test_execute_approved_shell_status_is_stable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ctx = server.AppContext()
-            empty = app_services.execute_approved_shell(ctx, td, ".", "   ")
+            empty = shell_service.execute_approved_shell(ctx, td, ".", "   ")
             self.assertEqual(empty["status"], "spawn_error")
             self.assertFalse(empty["ok"])
 
-            stopped = app_services._stopped_shell_result()
+            stopped = shell_service._stopped_shell_result()
             self.assertEqual(stopped["status"], "stopped")
             self.assertTrue(stopped["stopped"])
 
             with mock.patch.object(
-                app_services.cancellation,
+                cancellation,
                 "wait_process",
                 side_effect=subprocess.TimeoutExpired("cmd", 1),
             ):
-                timed_out = app_services.execute_approved_shell(ctx, td, ".", "sleep 5")
+                timed_out = shell_service.execute_approved_shell(ctx, td, ".", "sleep 5")
             self.assertEqual(timed_out["status"], "timeout")
             self.assertFalse(timed_out["ok"])
 
     def test_execute_approved_shell_rejects_escaped_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = app_services.execute_approved_shell(
+            data = shell_service.execute_approved_shell(
                 server.AppContext(),
                 td,
                 "..",
@@ -434,16 +437,16 @@ class ApprovedShellTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(app_services, "SHELL_OUTPUT_LIMIT", 80),
+            mock.patch.object(shell_service, "SHELL_OUTPUT_LIMIT", 80),
             mock.patch.object(
-                app_services.cancellation, "start_process",
+                cancellation, "start_process",
                 return_value=(mock.Mock(), mock.Mock()),
             ) as start_process,
             mock.patch.object(
-                app_services.cancellation, "wait_process", return_value=completed
+                cancellation, "wait_process", return_value=completed
             ),
         ):
-            data = app_services.execute_approved_shell(
+            data = shell_service.execute_approved_shell(
                 server.AppContext(),
                 td,
                 ".",
@@ -457,7 +460,7 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("middle of output omitted", data["output"])
 
     def test_shell_approval_continuation_includes_post_approval_checklist(self) -> None:
-        prompt = app_services.build_shell_approval_continuation(
+        prompt = shell_service.build_shell_approval_continuation(
             command="npm install",
             result={"exit_code": 0, "output": "added 10 packages", "truncated": False},
             post_approval_instructions=(
@@ -487,7 +490,7 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertLess(prompt.index("Post-approval checklist"), prompt.index("Follow-up hints"))
 
     def test_shell_approval_continuation_lists_deferred_tool_calls(self) -> None:
-        prompt = app_services.build_shell_approval_continuation(
+        prompt = shell_service.build_shell_approval_continuation(
             command="git status --short",
             result={"exit_code": 0, "output": "clean", "truncated": False},
             deferred_tool_calls=({
@@ -502,14 +505,14 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("Reissue only the calls that are still correct", prompt)
 
     def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
-        with mock.patch.object(app_services, "safe_setup_context", return_value="Setup Context"):
-            setup = app_services.shell_continuation_setup_context(
+        with mock.patch.object(shell_service, "safe_setup_context", return_value="Setup Context"):
+            setup = shell_service.shell_continuation_setup_context(
                 {
                     "project": "E:/demo",
                     "risk_label": "dependency_install",
                 }
             )
-            generic = app_services.shell_continuation_setup_context(
+            generic = shell_service.shell_continuation_setup_context(
                 {
                     "project": "E:/demo",
                     "risk_label": "generic",
@@ -520,9 +523,9 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertEqual(generic, "")
 
     def test_shell_followup_verification_candidates_are_limited_to_relevant_risks(self) -> None:
-        with mock.patch.object(app_services, "safe_verification_candidates", return_value=("candidate",)) as discover:
-            dependency = app_services.shell_followup_verification_candidates("E:/demo", "dependency_install")
-            generic = app_services.shell_followup_verification_candidates("E:/demo", "generic")
+        with mock.patch.object(shell_service, "safe_verification_candidates", return_value=("candidate",)) as discover:
+            dependency = shell_service.shell_followup_verification_candidates("E:/demo", "dependency_install")
+            generic = shell_service.shell_followup_verification_candidates("E:/demo", "generic")
 
         self.assertEqual(dependency, ("candidate",))
         self.assertEqual(generic, ())
@@ -531,18 +534,14 @@ class ApprovedShellTests(unittest.TestCase):
     def test_shell_followup_hints_passes_result_setup_and_candidates(self) -> None:
         candidate = VerificationCandidate("npm test", "frontend", "package.json")
         with (
-            mock.patch.object(
-                app_services,
-                "shell_followup_verification_candidates",
+            mock.patch.object(shell_service, "shell_followup_verification_candidates",
                 return_value=(candidate,),
             ) as discover,
-            mock.patch.object(
-                app_services,
-                "render_shell_followup",
+            mock.patch.object(shell_service, "render_shell_followup",
                 return_value="Follow-up hints:\n- ok",
             ) as render,
         ):
-            text = app_services.shell_followup_hints(
+            text = shell_service.shell_followup_hints(
                 pending={
                     "project": "E:/demo",
                     "risk_label": "dependency_install",
@@ -566,7 +565,7 @@ class ApprovedShellTests(unittest.TestCase):
 
 class ProviderStatusTests(unittest.TestCase):
     def test_provider_payload_marks_available_models(self) -> None:
-        payload = app_services.provider_payload({"deepseek": True, "stepfun": False})
+        payload = provider_services.provider_payload({"deepseek": True, "stepfun": False})
 
         by_id = {item["id"]: item for item in payload}
         self.assertTrue(by_id["deepseek"]["available"])
@@ -578,7 +577,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(set(by_id["deepseek"]), {"id", "label", "available"})
 
     def test_provider_status_update_only_reports_changed_model(self) -> None:
-        payload = app_services.provider_status_update("deepseek", True)
+        payload = provider_services.provider_status_update("deepseek", True)
 
         self.assertEqual(payload, [{"id": "deepseek", "label": "DeepSeek", "available": True}])
 
@@ -640,8 +639,8 @@ class ProviderStatusTests(unittest.TestCase):
 
     def test_reviewer_candidates_keep_ui_terms_out_of_payload(self) -> None:
         state = server.AppContext()
-        reviewers = app_services.reviewer_candidates(state, "deepseek")
-        payload = app_services.provider_payload({"deepseek": True, "mimo": True})
+        reviewers = provider_services.reviewer_candidates(state, "deepseek")
+        payload = provider_services.provider_payload({"deepseek": True, "mimo": True})
 
         self.assertNotIn("local", reviewers)
         self.assertNotIn("deepseek", reviewers)
@@ -669,7 +668,7 @@ class ProviderStatusTests(unittest.TestCase):
             )
             events = state.subscribe()
 
-            app_services.run_provider_warmup(
+            provider_services.run_provider_warmup(
                 state,
                 runner=lambda: {
                     "deepseek": True,
@@ -696,7 +695,7 @@ class ProviderStatusTests(unittest.TestCase):
         def fail() -> dict[str, bool]:
             raise RuntimeError("browser unavailable")
 
-        app_services.run_provider_warmup(state, runner=fail)
+        provider_services.run_provider_warmup(state, runner=fail)
 
         event = events.get_nowait()
         self.assertEqual(event["type"], "status")
@@ -708,11 +707,11 @@ class ProviderStatusTests(unittest.TestCase):
         runner = mock.Mock()
 
         state = server.AppContext()
-        with mock.patch.object(app_services, "submit_browser_task") as submit:
-            result = app_services.start_provider_warmup(state, runner=runner)
+        with mock.patch.object(provider_services, "submit_browser_task") as submit:
+            result = provider_services.start_provider_warmup(state, runner=runner)
 
         self.assertIsNone(result)
-        submit.assert_called_once_with(app_services.run_provider_warmup, state, runner)
+        submit.assert_called_once_with(provider_services.run_provider_warmup, state, runner)
 
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
         state = server.AppContext()
@@ -721,7 +720,7 @@ class ProviderStatusTests(unittest.TestCase):
             "provider_tab_availability",
             return_value={"qwen": True, "glm": True},
         ):
-            order = state.provider_failover_order()
+            order = provider_services.provider_failover_order(state.providers)
 
         self.assertEqual(order, ("qwen", "glm", "deepseek", "mimo", "stepfun"))
 
@@ -730,10 +729,10 @@ class ProviderStatusTests(unittest.TestCase):
         event.set()
         with (
             cancellation.scope(event),
-            mock.patch.object(app_services, "connect_existing_provider") as connected,
+            mock.patch.object(provider_services, "connect_existing_provider") as connected,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                app_services.run_review(
+                review_service.run_review(
                     server.AppContext(),
                     session_id="session-1",
                     project="E:/demo",
@@ -762,17 +761,15 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
-            mock.patch.object(
-                app_services,
-                "safe_review_impact_map",
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(review_service, "safe_review_impact_map",
                 return_value=(
                     "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
                 ),
             ) as impact_map,
         ):
-            reviewed = app_services.run_review(
+            reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
                 project="E:/demo",
@@ -806,11 +803,11 @@ class ProviderStatusTests(unittest.TestCase):
         impact = "Review Impact Map (bounded hints; not coverage proof):\n- oldName: src/view.ts:2 (call)"
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
-            mock.patch.object(app_services, "safe_review_impact_map") as impact_map,
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(review_service, "safe_review_impact_map") as impact_map,
         ):
-            reviewed = app_services.run_review(
+            reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
                 project="E:/demo",
@@ -843,11 +840,11 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
-            mock.patch.object(app_services, "safe_review_impact_map") as impact_map,
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(review_service, "safe_review_impact_map") as impact_map,
         ):
-            reviewed = app_services.run_review(
+            reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
                 project="E:/demo",
@@ -879,19 +876,15 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(
-                app_services,
-                "connect_existing_provider",
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider",
                 side_effect=RuntimeError("not open"),
             ) as connect_existing,
-            mock.patch.object(
-                app_services,
-                "connect_fresh_provider_tab",
+            mock.patch.object(provider_services, "connect_fresh_provider_tab",
                 return_value=reviewer,
             ) as connect_self_review,
         ):
-            reviewed = app_services.run_review(
+            reviewed = review_service.run_review(
                 state,
                 session_id="session-1",
                 project="E:/demo",
@@ -928,10 +921,10 @@ class ProviderStatusTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            reviewed = app_services.run_review(
+            reviewed = review_service.run_review(
                 state,
                 session_id="session-review-trace",
                 project="E:/demo",
@@ -957,11 +950,11 @@ class ProviderStatusTests(unittest.TestCase):
         reviewer.send.side_effect = cancellation.TaskCancelled("task stopped")
 
         with (
-            mock.patch.object(app_services, "reviewer_candidates", return_value=()),
-            mock.patch.object(app_services, "connect_fresh_provider_tab", return_value=reviewer),
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=()),
+            mock.patch.object(provider_services, "connect_fresh_provider_tab", return_value=reviewer),
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                app_services.run_review(
+                review_service.run_review(
                     state,
                     session_id="session-1",
                     project="E:/demo",
@@ -984,12 +977,12 @@ class ProviderStatusTests(unittest.TestCase):
 
         with (
             cancellation.scope(event),
-            mock.patch.object(app_services, "reviewer_candidates", return_value=("stepfun",)),
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=fail_and_cancel),
-            mock.patch.object(app_services, "connect_fresh_provider_tab") as connect_self_review,
+            mock.patch.object(provider_services, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=fail_and_cancel),
+            mock.patch.object(provider_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                app_services.run_review(
+                review_service.run_review(
                     state,
                     session_id="session-1",
                     project="E:/demo",
@@ -2110,19 +2103,15 @@ class ConsensusConnectionTests(unittest.TestCase):
         advisor.send.return_value = "advisor note"
 
         with (
-            mock.patch.object(
-                app_services,
-                "provider_availability",
+            mock.patch.object(provider_services, "provider_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
-            mock.patch.object(app_services, "borrow_open_provider", return_value=advisor) as borrowed,
-            mock.patch.object(
-                app_services,
-                "connect_existing_provider",
+            mock.patch.object(provider_services, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(provider_services, "connect_existing_provider",
                 side_effect=AssertionError("should borrow sibling tab"),
             ),
         ):
-            result = app_services.run_consensus(
+            result = consensus_service.run_consensus(
                 state,
                 selected_provider=selected,
                 selected_provider_id="deepseek",
@@ -2147,20 +2136,16 @@ class ConsensusConnectionTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch.object(
-                app_services,
-                "provider_availability",
+            mock.patch.object(provider_services, "provider_availability",
                 return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
-            mock.patch.object(app_services, "borrow_open_provider", return_value=advisor) as borrowed,
-            mock.patch.object(
-                app_services,
-                "connect_existing_provider",
+            mock.patch.object(provider_services, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(provider_services, "connect_existing_provider",
                 side_effect=AssertionError("should borrow sibling tab"),
             ),
         ):
             Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
-            reports = app_services.run_project_audit(
+            reports = consensus_service.run_project_audit(
                 state,
                 project=td,
                 selected_provider=selected,
@@ -3322,7 +3307,7 @@ class RunSnapshotTests(unittest.TestCase):
             try:
                 with (
                     mock.patch.object(server, "STATE", state),
-                    mock.patch.object(app_services, "execute_shell_ticket", return_value={
+                    mock.patch.object(shell_service, "execute_shell_ticket", return_value={
                         "ok": True,
                         "exit_code": 0,
                         "output": "ok",
@@ -3367,14 +3352,14 @@ class RunSnapshotTests(unittest.TestCase):
         submit = mock.Mock(return_value=None)
 
         with (
-            mock.patch.object(app_services, "execute_shell_ticket", return_value={
+            mock.patch.object(shell_service, "execute_shell_ticket", return_value={
                 "ok": True,
                 "exit_code": 0,
                 "output": "ok",
                 "truncated": False,
             }) as execute,
-            mock.patch.object(app_services, "safe_setup_context", return_value="Setup Context") as setup,
-            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+            mock.patch.object(shell_service, "safe_setup_context", return_value="Setup Context") as setup,
+            mock.patch.object(shell_service, "build_shell_approval_continuation", return_value="Continue prompt") as build,
         ):
             status, payload = app_api.shell_approval_response(
                 state,
@@ -3399,7 +3384,7 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(submit.call_args.args[1])
         self.assertEqual(submit.call_args.args[2], "Continue prompt")
         self.assertEqual(submit.call_args.args[3], app_api.DEFAULT_MAX_TURNS)
-        self.assertEqual(submit.call_args.args[5], app_services.DEFAULT_PROVIDER_ID)
+        self.assertEqual(submit.call_args.args[5], DEFAULT_PROVIDER_ID)
 
     def test_shell_approval_response_bounds_legacy_pending_command_event(self) -> None:
         state = server.AppContext()
@@ -3414,7 +3399,7 @@ class RunSnapshotTests(unittest.TestCase):
                 "cwd": ".",
                 "continue_after": False,
             })
-            with mock.patch.object(app_services, "execute_shell_ticket", return_value={
+            with mock.patch.object(shell_service, "execute_shell_ticket", return_value={
                 "ok": True,
                 "exit_code": 0,
                 "output": "ok",
@@ -3458,11 +3443,11 @@ class RunSnapshotTests(unittest.TestCase):
         result = {"ok": True, "exit_code": 0, "output": "ok", "truncated": False}
 
         with (
-            mock.patch.object(app_services, "shell_continuation_setup_context", return_value="Setup Context") as setup,
-            mock.patch.object(app_services, "shell_followup_hints", return_value="Follow-up hints") as hints,
-            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+            mock.patch.object(shell_service, "shell_continuation_setup_context", return_value="Setup Context") as setup,
+            mock.patch.object(shell_service, "shell_followup_hints", return_value="Follow-up hints") as hints,
+            mock.patch.object(shell_service, "build_shell_approval_continuation", return_value="Continue prompt") as build,
         ):
-            plan = app_services.build_shell_approval_continuation_plan(
+            plan = shell_service.build_shell_approval_continuation_plan(
                 pending=pending,
                 result=result,
                 active_run=active,
@@ -3503,11 +3488,11 @@ class RunSnapshotTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(app_services, "shell_continuation_setup_context", return_value="") as setup,
-            mock.patch.object(app_services, "shell_followup_hints", return_value="") as hints,
-            mock.patch.object(app_services, "build_shell_approval_continuation", return_value="Continue prompt") as build,
+            mock.patch.object(shell_service, "shell_continuation_setup_context", return_value="") as setup,
+            mock.patch.object(shell_service, "shell_followup_hints", return_value="") as hints,
+            mock.patch.object(shell_service, "build_shell_approval_continuation", return_value="Continue prompt") as build,
         ):
-            plan = app_services.build_shell_approval_continuation_plan(
+            plan = shell_service.build_shell_approval_continuation_plan(
                 pending=pending,
                 result={"ok": True, "exit_code": 0, "output": "ok", "truncated": False},
                 active_run=active,
@@ -3519,16 +3504,16 @@ class RunSnapshotTests(unittest.TestCase):
         build.assert_called_once()
 
     def test_ghost_post_turn_warning_is_whitelisted_for_run_events(self) -> None:
-        self.assertIn("ghost_post_turn_warning", app_context.RUN_EVENT_TYPES)
+        self.assertIn("ghost_post_turn_warning", event_bus.RUN_EVENT_TYPES)
 
 
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.consensus_patch = mock.patch.object(app_services, "run_consensus", return_value=None)
+        self.consensus_patch = mock.patch.object(consensus_service, "run_consensus", return_value=None)
         self.consensus_mock = self.consensus_patch.start()
-        self.project_audit_patch = mock.patch.object(app_services, "run_project_audit", return_value=())
+        self.project_audit_patch = mock.patch.object(consensus_service, "run_project_audit", return_value=())
         self.project_audit_mock = self.project_audit_patch.start()
-        self.research_advisors_patch = mock.patch.object(app_services, "run_research_advisors", return_value=None)
+        self.research_advisors_patch = mock.patch.object(consensus_service, "run_research_advisors", return_value=None)
         self.research_advisors_mock = self.research_advisors_patch.start()
         self._real_getaddrinfo = socket.getaddrinfo
 
@@ -3560,7 +3545,8 @@ class SessionThreadingTests(unittest.TestCase):
         state = server.AppContext(path)
         state.kick_ghost_sleep = mock.Mock(return_value=False)
         state.wait_for_ghost_sleep = mock.Mock(return_value=True)
-        state.kick_self_repair = mock.Mock(return_value=False)
+        state.self_repair = mock.Mock()
+        state.self_repair.kick_if_idle.return_value = False
         return state
 
     def test_conversation_state_is_bounded(self) -> None:
@@ -4033,7 +4019,9 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_controls, "resolve_captured_control", return_value=button) as resolve,
         ):
             slot: list[object] = []
-            thread = threading.Thread(target=lambda: slot.append(state.handle_control_teach(request)))
+            thread = threading.Thread(
+                target=lambda: slot.append(sibling_probe.handle_control_teach(state, request))
+            )
             thread.start()
             emitted = events.get(timeout=1)
             pending_id = emitted["id"]
@@ -4066,7 +4054,7 @@ class SessionThreadingTests(unittest.TestCase):
             "borrow_open_provider",
             side_effect=[None, helper],
         ) as borrowed:
-            selected = state.handle_profile_doctor(request)
+            selected = sibling_probe.handle_profile_doctor(state, request)
 
         self.assertEqual(selected, "c1")
         self.assertEqual(
@@ -4104,7 +4092,7 @@ class SessionThreadingTests(unittest.TestCase):
             "borrow_open_provider",
             side_effect=[first, second],
         ) as borrowed:
-            selected = state.handle_profile_doctor(request)
+            selected = sibling_probe.handle_profile_doctor(state, request)
 
         self.assertEqual(selected, "c1")
         self.assertEqual(
@@ -4134,7 +4122,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[100.0, 101.0, 105.0, 110.0],
             ),
         ):
-            selected = state.handle_profile_doctor(request)
+            selected = sibling_probe.handle_profile_doctor(state, request)
 
         self.assertEqual(selected, "c1")
         self.assertEqual(helper.new_chat.call_args.kwargs["timeout"], 85.0)
@@ -4155,7 +4143,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(sibling_probe, "borrow_open_provider", side_effect=[first, second]):
-            selected = state.handle_profile_doctor(request)
+            selected = sibling_probe.handle_profile_doctor(state, request)
 
         self.assertEqual(selected, "c1")
         first.close.assert_called_once_with()
@@ -4175,7 +4163,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with mock.patch.object(sibling_probe, "borrow_open_provider", side_effect=helpers) as borrowed:
-            selected = state.handle_profile_doctor(request)
+            selected = sibling_probe.handle_profile_doctor(state, request)
 
         self.assertIsNone(selected)
         self.assertEqual(borrowed.call_count, 3)
@@ -4198,7 +4186,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                state.handle_profile_doctor(request)
+                sibling_probe.handle_profile_doctor(state, request)
 
         borrowed.assert_not_called()
 
@@ -4251,7 +4239,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_controls, "_handler", mock.Mock()),
             mock.patch.object(provider_controls, "_doctor_handler", mock.Mock()),
         ):
-            selected = state.handle_flow_recovery(request)
+            selected = sibling_probe.handle_flow_recovery(state, request)
 
         self.assertEqual(selected, "f1")
         self.assertEqual(
@@ -4280,7 +4268,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(sibling_probe, "borrow_open_provider") as borrowed,
         ):
             with self.assertRaises(cancellation.TaskCancelled):
-                state.handle_flow_recovery(request)
+                sibling_probe.handle_flow_recovery(state, request)
 
         borrowed.assert_not_called()
 
@@ -4316,7 +4304,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.run_registry.provider_id(), "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_request.change_tracker)
-        self.assertIs(provider_flow._handler.__self__, state)
+        self.assertIs(provider_flow._handler.func, sibling_probe.handle_flow_recovery)
+        self.assertIs(provider_flow._handler.args[0], state)
         for name in provider_controls._TASK_CONTEXT_FIELDS:
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
@@ -4399,7 +4388,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(
                     task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}
                 ),
-                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
                 mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
             ):
@@ -4465,7 +4454,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(app_services, "run_project_audit", return_value=()),
+            mock.patch.object(consensus_service, "run_project_audit", return_value=()),
         ):
             server._run_task(
                 "session-hybrid-fallback",
@@ -4589,7 +4578,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(app_services, "run_project_audit", return_value=()),
+            mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             mock.patch(
                 "codey.operations.project_completion_flow.rank_providers",
                 return_value=("glm", "stepfun"),
@@ -4654,7 +4643,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": []},
             ),
-            mock.patch.object(app_services, "run_project_audit", return_value=()),
+            mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             mock.patch(
                 "codey.operations.project_completion_flow.rank_providers",
                 return_value=("stepfun", "mimo"),
@@ -4690,7 +4679,7 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
             server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
 
@@ -4718,7 +4707,7 @@ class SessionThreadingTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", return_value=provider),
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
             server._run_task("session-1", td, "Run long command", 8, False, "deepseek")
 
@@ -4837,7 +4826,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(app_services, "run_research_advisors", None),
+                mock.patch.object(consensus_service, "run_research_advisors", None),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -5096,7 +5085,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.operations.research_flow.BrowserSearchProvider", return_value=Search()),
-                mock.patch.object(app_services, "run_research_advisors", None),
+                mock.patch.object(consensus_service, "run_research_advisors", None),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 server._run_task(
@@ -5791,8 +5780,8 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=_verified_writer_agent_run("complete"),
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
-            mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
             # A pytest manifest gives the run a selectable verification
             # candidate covering app.py.
@@ -5869,8 +5858,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
-                mock.patch.object(app_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
+                mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+                mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
                 server._run_task(
                     "session-memory",
@@ -5949,9 +5938,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 side_effect=[{"ok": False, "error": "snapshot unavailable"}, final_changes],
             ) as collect_changes,
-            mock.patch.object(
-                app_services,
-                "connect_existing_provider",
+            mock.patch.object(provider_services, "connect_existing_provider",
                 return_value=reviewer,
             ) as connect_review,
         ):
@@ -6003,8 +5990,8 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value=changes,
             ) as collect_changes,
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer) as connect_review,
-            mock.patch.object(app_services, "connect_fresh_provider_tab") as connect_self_review,
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as connect_review,
+            mock.patch.object(provider_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 8, False, "deepseek")
@@ -6058,7 +6045,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ) as agent_run,
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -6113,14 +6100,10 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ) as agent_run,
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(
-                app_services,
-                "connect_existing_provider",
+            mock.patch.object(provider_services, "connect_existing_provider",
                 side_effect=RuntimeError("not open"),
             ),
-            mock.patch.object(
-                app_services,
-                "connect_fresh_provider_tab",
+            mock.patch.object(provider_services, "connect_fresh_provider_tab",
                 return_value=reviewer,
             ) as connect_self_review,
         ):
@@ -6201,7 +6184,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 side_effect=[changes, repaired_changes],
             ) as collect_changes,
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-review-failover", td, "task", 12, False, "deepseek")
@@ -6258,7 +6241,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ),
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
@@ -6309,7 +6292,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ],
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
@@ -6359,7 +6342,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ],
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
@@ -6398,10 +6381,8 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
-            mock.patch.object(
-                app_services,
-                "connect_fresh_provider_tab",
+            mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(provider_services, "connect_fresh_provider_tab",
                 side_effect=RuntimeError("self-review failed"),
             ) as connect_self_review,
         ):
@@ -6448,7 +6429,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -6497,7 +6478,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, False, True),
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -6530,7 +6511,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
-            mock.patch.object(app_services, "connect_existing_provider") as connect_review,
+            mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -6569,7 +6550,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "collect_changes",
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
-            mock.patch.object(app_services, "connect_existing_provider") as connect_review,
+            mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
             server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
@@ -6731,7 +6712,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=write_and_finish,
             ) as agent_run,
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer) as review_connect,
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
             server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
@@ -6790,7 +6771,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("implemented", "done", 1, False, True),
             ),
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
             mock.patch(
                 "codey.completion.verification_policy.shutil.which",
                 return_value="exe",
@@ -6891,7 +6872,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("implemented", "done", 2, True, True, True),
             ) as agent_run,
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
-            mock.patch.object(app_services, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
 
@@ -7222,7 +7203,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(app_services, "start_provider_warmup") as warmup,
+            mock.patch.object(provider_services, "start_provider_warmup") as warmup,
         ):
             httpd = mock.Mock()
             httpd.server_address = ("127.0.0.1", 43210)
@@ -7250,7 +7231,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
-            mock.patch.object(app_services, "start_provider_warmup") as warmup,
+            mock.patch.object(provider_services, "start_provider_warmup") as warmup,
             mock.patch.object(server, "_wait_for_manual_browser", side_effect=KeyboardInterrupt) as fallback,
             mock.patch("builtins.print") as printed,
         ):

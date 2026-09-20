@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## TaskState protocol, services split, assembly-only AppContext (2026-09-21)
+
+Scope:
+
+```text
+codey/operations/task_state.py (new): TaskState Protocol, stdlib-only runtime
+codey/operations/*:            state: Any -> TaskState (spine, flows, phases)
+codey/app/review_service.py (new): run_review*, emit_review
+codey/app/consensus_service.py (new): run_consensus/audit/advisors
+codey/app/shell_service.py (new): tickets, claim, execution, continuation
+codey/app/provider_services.py: + review_label, warmup, open_provider_session,
+                                 provider_failover_order
+codey/app/services.py:         DELETED (arch test locks retirement)
+codey/app/context.py:          assembly only (moves to services/sibling/repairs)
+codey/app/sibling_probe.py:    + handle_control_teach (from context)
+codey/app/event_bus.py:        + RUN_EVENT_TYPES, stamp_run_scope
+codey/repairs/self_repair.py:  + kick_if_idle, run_self_repair_job
+codey/app/task_submit.py:      supervisor kick via self_repair
+tests:                         seams retargeted, test_task_state.py (new),
+                                self-repair kick tests rewritten, dead
+                                failover lambdas restored-then-kept as live seam
+docs:                        TEST_REPORT.md, CHANGELOG.md, CHANGELOG.zh-CN.md,
+                             ROADMAP.zh-CN.md (services line)
+```
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed)
+  `python -m compileall -q codey tests tools` (passed)
+  `git diff --check` (passed)
+- Lazy-start invariant: `test_server_lazy_state` green (new service modules
+  covered, `import server` loads no browser/research stack)
+- Targeted gates: state/protocol/split/service/server/shell/repair suites green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3929 passed, 6 skipped, 1320 subtests passed in 273.25s (0:04:33)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Provider single entry, server task_submit split (2026-09-20)
 
 Scope:

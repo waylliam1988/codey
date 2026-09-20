@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Callable
 
+from codey.operations.task_state import TaskState
 from codey.policies.action import DECISION_DENY, ActionSubject, evaluate_action
 from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
@@ -40,7 +41,7 @@ def provider_fallback_policy_decision(
 
 def connect_provider_with_preflight(
     *,
-    state: Any,
+    state: TaskState,
     run_id: str,
     provider_id: str,
     supervisor: Any | None,

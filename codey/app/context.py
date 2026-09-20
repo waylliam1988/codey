@@ -10,20 +10,18 @@ from __future__ import annotations
 
 import tempfile
 import threading
-import uuid
 from collections.abc import Callable
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from codey.repairs.adapter_repair import AdapterRepairResult
-    from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
+    from codey.repairs.self_repair import SelfRepairSupervisor
 
 from codey.agents.handoff import ConversationContext
-from codey.app import services as app_services
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
+from codey.app import event_bus
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.ghost_daemon import GhostSleepDaemon
 from codey.app.knowledge_indexer import KnowledgeIndexer
@@ -38,10 +36,6 @@ from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.store import KnowledgeStore
-from codey.providers.catalog import DEFAULT_PROVIDER_ID
-from codey.providers import controls as provider_controls
-from codey.providers import flow as provider_flow
-from codey.providers import profile_doctor
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
@@ -59,12 +53,8 @@ from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
 
 
-from codey.app import provider_services as _provider_services
-
-
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
-CONTROL_TEACH_TIMEOUT = 300.0
 SSE_REPLAY_LIMIT = 512
 
 
@@ -81,20 +71,8 @@ def _close_if_discarded(store: object) -> None:
 
 MAX_CONVERSATION_STATES = 32
 MAX_CHANGE_TRACKERS = 32
-RUN_EVENT_TYPES = {
-    "task_start",
-    "turn",
-    "tool",
-    "info",
-    "reply",
-    "review",
-    "shell_request",
-    "shell_result",
-    "ghost_post_turn_warning",
-    "teach_request",
-    "task_done",
-    "status",
-}
+
+
 class AppContext:
     def __init__(
         self,
@@ -169,7 +147,6 @@ class AppContext:
             run_once=self._run_ghost_sleep_once,
         )
         self._self_repair: SelfRepairSupervisor | None = None
-        self._self_repair_running = False
         self.snapshot_store = (
             SnapshotStore(state_home) if state_home else SnapshotStore()
         )
@@ -322,12 +299,18 @@ class AppContext:
 
     @property
     def self_repair(self) -> SelfRepairSupervisor:
-        from codey.repairs.self_repair import SelfRepairSupervisor
+        import functools
+
+        from codey.repairs.self_repair import SelfRepairSupervisor, run_self_repair_job
 
         with self.lock:
             if self._self_repair is None:
                 repair_runner = (
-                    self._run_self_repair_job
+                    functools.partial(
+                        run_self_repair_job,
+                        state_home=self.state_home,
+                        providers=self.providers,
+                    )
                     if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME
                     else None
                 )
@@ -485,7 +468,7 @@ class AppContext:
         between the executor's final check and ``Popen`` and a side-effect
         command still spawns. Every production Stop path funnels through here
         (UI stop, headless shell-reject); the executor side holds the same
-        gate across final-check+Popen in ``services.execute_shell_ticket``.
+        gate across final-check+Popen in ``shell_service.execute_shell_ticket``.
         """
         with self._shell_spawn_gate:
             self.run_registry.stop_flag.set()
@@ -526,15 +509,6 @@ class AppContext:
     def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
         with self.lock:
             return self.approvals.pop_shell(approval_id)
-
-    def claim_shell_ticket(self, approval_id: str, *, timeout: int, output_limit: int):
-        # The claim itself linearizes against Stop: without the gate here, a
-        # Stop landing between pop and the generation snapshot would mint a
-        # ticket Stop already meant to kill. Lock order is always gate->lock.
-        with self._shell_spawn_gate:
-            return app_services.mint_shell_ticket(
-                lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
-                approval_id=approval_id, timeout=timeout, output_limit=output_limit)
 
     def approval_generation(self) -> int:
         with self.lock:
@@ -671,16 +645,10 @@ class AppContext:
 
     def emit(self, event: dict) -> None:
         with self.lock:
-            payload = dict(event)
-            active = self.run_registry.current()
-            if (
-                active is not None
-                and payload.get("type") in RUN_EVENT_TYPES
-                and not payload.get("run_id")
-                and payload.get("session_id") in (None, active.session_id)
-            ):
-                payload["run_id"] = active.run_id
-                payload.setdefault("session_id", active.session_id)
+            payload = event_bus.stamp_run_scope(
+                dict(event),
+                self.run_registry.current(),
+            )
         self.event_bus.emit(payload)
 
     def subscribe(self) -> EventSubscriber:
@@ -700,61 +668,21 @@ class AppContext:
             max_event_id=max_event_id,
         )
 
-    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
-        self.set_run_status("connecting")
-        self.emit({"type": "status", "status": "connecting"})
-        provider = _provider_services.connect_provider(provider_id)
-        self.set_run_status("running")
-        self.emit({
-            "type": "providers",
-            "providers": _provider_services.provider_status_update(provider_id, True),
-        })
-        return provider
+    def get_provider(self, provider_id: str):
+        """Thin seam for tests: connect via the single provider entry point."""
+        from codey.app import provider_services
 
-    def kick_self_repair(self) -> bool:
-        """Run at most one queued adapter repair while the main task slot is idle."""
-        supervisor = getattr(self, "self_repair", None)
-        if supervisor is None or not supervisor.pending():
-            return False
-        has_due_work = getattr(supervisor, "has_due_work", None)
-        if callable(has_due_work) and not has_due_work():
-            return False
-        with self.lock:
-            if self.is_busy() or self._self_repair_running:
-                return False
-            self._self_repair_running = True
-
-        def _worker() -> None:
-            try:
-                supervisor.run_pending_once()
-            finally:
-                with self.lock:
-                    self._self_repair_running = False
-
-        threading.Thread(target=_worker, name="codey-self-repair", daemon=True).start()
-        return True
-
-    def _run_self_repair_job(self, job: SelfRepairJob) -> AdapterRepairResult:
-        from codey.repairs.adapter_repair import AdapterRepairResult
-        from codey.repairs.self_repair_worker import run_self_repair_worker
-
-        if self.state_home is None:
-            return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
-        return run_self_repair_worker(
-            job,
-            helper_ids=self._self_repair_model_candidates(job.provider_id),
-            state_home=self.state_home,
-            source_root=Path(__file__).resolve().parents[1],
-        )
-
-    def _self_repair_model_candidates(self, broken_provider_id: str) -> tuple[str, ...]:
-        return self.providers.self_repair_candidates(
-            broken_provider_id,
-            ordered=self.provider_failover_order(),
-        )
+        return provider_services.open_provider_session(self, provider_id)
 
     def provider_failover_order(self) -> tuple[str, ...]:
-        return self.providers.failover_order(_provider_services.provider_tab_availability)
+        """Thin seam: open tabs first, then registry order.
+
+        Read via ``getattr`` by ``task_phases.build_hooks`` so task doubles
+        can override the order without a provider registry.
+        """
+        from codey.app import provider_services
+
+        return provider_services.provider_failover_order(self.providers)
 
     def conversation_for(self, session_id: str) -> ConversationContext:
         return self.conversation_registry.for_session(session_id)
@@ -819,67 +747,6 @@ class AppContext:
     def set_provider_session(self, provider_id: str, session_id: str | None) -> None:
         with self.lock:
             self.providers.set_session(provider_id, session_id)
-
-    def handle_control_teach(self, request: provider_controls.ControlTeachRequest):
-        while True:
-            teach_id = "teach_" + uuid.uuid4().hex[:12]
-            token = provider_controls.start_click_capture(request.page)
-            pending = {
-                "id": teach_id,
-                "request": request,
-                "token": token,
-                "event": threading.Event(),
-                "cancelled": False,
-            }
-            with self.lock:
-                active = self.current_run()
-                run_id = active.run_id if active is not None and active.session_id == request.session_id else ""
-                pending["ui_event"] = {
-                    "type": "teach_request",
-                    "run_id": run_id,
-                    "session_id": request.session_id,
-                    "id": teach_id,
-                    "text": request.message,
-                }
-                self.approvals.add_teach(teach_id, pending)
-            self.emit(pending["ui_event"])
-            if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
-                self.pop_pending_teach(teach_id)
-                provider_controls.cancel_click_capture(request.page)
-                raise TimeoutError("Timed out waiting for Resume")
-            if pending.get("cancelled"):
-                provider_controls.cancel_click_capture(request.page)
-                raise provider_controls.ControlTeachCancelled("control teaching was cancelled")
-            try:
-                captured = provider_controls.finish_click_capture(
-                    request.page,
-                    token,
-                    request.action,
-                    timeout=1.0,
-                )
-                return provider_controls.resolve_captured_control(request, captured)
-            except ValueError:
-                continue
-            finally:
-                self.pop_pending_teach(teach_id)
-
-    def handle_profile_doctor(
-        self,
-        request: profile_doctor.ProfileDoctorRequest,
-    ) -> str | None:
-        """Try healthy sibling tabs (logic lives in sibling_probe)."""
-        from codey.app import sibling_probe
-
-        return sibling_probe.handle_profile_doctor(self, request)
-
-    def handle_flow_recovery(
-        self,
-        request: provider_flow.FlowRecoveryRequest,
-    ) -> str | None:
-        """Ask healthy siblings (logic lives in sibling_probe)."""
-        from codey.app import sibling_probe
-
-        return sibling_probe.handle_flow_recovery(self, request)
 
     @property
     def closed(self) -> bool:

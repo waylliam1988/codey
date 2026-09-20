@@ -1816,12 +1816,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_retired_compatibility_shims_do_not_exist(self) -> None:
         self.assertFalse((ROOT / "codey" / "workspace" / "task_context.py").exists())
         self.assertFalse((ROOT / "codey" / "reviews" / "scan_report.py").exists())
+        # services.py was split into review/consensus/shell_service (+ provider
+        # warmup into provider_services): no forwarder facade may come back.
+        self.assertFalse((ROOT / "codey" / "app" / "services.py").exists())
         offenders: list[str] = []
         for path in sorted((ROOT / "codey").rglob("*.py")):
             imported = imported_modules(path)
             if "codey.workspace.task_context" in imported or "codey.reviews.scan_report" in imported:
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
+        service_offenders: list[str] = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            imported = imported_modules(path)
+            if "codey.app.services" in imported:
+                service_offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(service_offenders, [])
 
     def test_adapter_repair_surface_is_closed_and_has_no_forwarders(self) -> None:
         # Security boundary: repair may only touch one provider driver plus

@@ -9,7 +9,8 @@ from unittest import mock
 from codey.app import context as app_context
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.app import services as app_services
+from codey.app import consensus_service
+from codey.app import review_service
 from codey.agents.request import AgentRequest
 from codey.agents.runner import RunResult
 from codey.runtime.observe.events import RunEvent
@@ -368,8 +369,8 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_project_audit", return_value=()),
-                mock.patch.object(app_services, "run_review", return_value=None),
+                mock.patch.object(consensus_service, "run_project_audit", return_value=()),
+                mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
 
@@ -442,7 +443,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
-                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             ):
                 server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
 
@@ -462,7 +463,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
-                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-error-ledger",

@@ -19,6 +19,7 @@ from codey.operations.project_completion_flow import (
     ProjectCompletionDeps,
     handle_project_tool_event,
 )
+from codey.operations.task_state import TaskState
 from codey.policies.shell_risk import classify_shell_risk
 from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderFailure
@@ -56,7 +57,7 @@ def record_provider_failure_event(
 
 def build_hooks(
     deps: Any,
-    state: Any,
+    state: TaskState,
     work: RunWork,
     *,
     session_id: str,

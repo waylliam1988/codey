@@ -770,7 +770,12 @@ codey.operations.ghost_context           prompt-time Ghost context
 codey.operations.ghost_post_turn         terminal-event Ghost projections
 codey.app.http_plumbing                  Host/Origin/static/JSON/SSE transport helpers
 codey.app.api                            ordinary JSON endpoint payloads
-codey.app.services                       provider/review/consensus/shell service calls
+codey.app.provider_services              provider registry/availability/warmup single entry
+codey.app.review_service                 second-model review runs
+codey.app.consensus_service              consensus/audit/research-advisor runs
+codey.app.shell_service                  shell tickets, execution, continuation
+codey.app.task_submit                    run reservation + TaskRunDeps assembly + queueing
+codey.operations.task_state              TaskState Protocol (spine contract, zero runtime imports)
 codey.runtime.observe.terminalizer       terminal task_done event + turn accounting
 codey.task.model                         TaskSubmission model-only boundary
 ```

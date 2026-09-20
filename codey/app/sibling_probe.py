@@ -1,28 +1,29 @@
-"""Borrowed-tab sibling probes for provider recovery.
+"""Provider-control flows that need a live task state.
 
-When one provider's controls or flow break, a healthy sibling tab can answer
-a bounded chooser question (profile-doctor candidate, flow predicate) without
-opening a new browser context. This module owns that plumbing: candidate
-iteration, tab borrowing, greeting, and choosing. ``AppContext`` keeps thin
-delegates (``handle_profile_doctor`` / ``handle_flow_recovery``) so existing
-wiring and doubles keep working; the logic lives here by lifecycle boundary,
-not by file size.
+Borrowed-tab sibling probes (profile-doctor, flow recovery) plus the
+click-capture teach loop: candidate iteration, tab borrowing, and choosing.
+Callers bind these with the state (``functools.partial(handle_*, ctx)``);
+``AppContext`` itself stays assembly-only and owns none of this logic.
 
 Import cost: the registry (Playwright-backed) loads only when a probe runs.
-Everything else here is light, but this module is still imported lazily from
-the ``AppContext`` delegates to keep ``import codey.app.context`` cheap.
+Everything else here is light.
 """
 
 from __future__ import annotations
 
+import threading
 import time
+import uuid
 from typing import Any
 
 from codey.app import provider_services as provider_services
+from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers import profile_doctor
 from codey.runtime.core import cancellation
+
+CONTROL_TEACH_TIMEOUT = 300.0
 
 PROFILE_DOCTOR_TIMEOUT = 90.0
 
@@ -36,7 +37,7 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> Any | None:
     return provider_services.borrow_open_provider(provider_id, owner_page)
 
 
-def _sibling_candidates(ctx: Any, request_provider_id: str, deadline: float):
+def _sibling_candidates(ctx: TaskState, request_provider_id: str, deadline: float):
     """Healthy sibling ids within the recovery deadline (shared preamble)."""
     supervisor = ctx.providers.supervisor
     for provider_id in provider_services.reviewer_candidates(
@@ -51,7 +52,7 @@ def _sibling_candidates(ctx: Any, request_provider_id: str, deadline: float):
 
 
 def handle_profile_doctor(
-    ctx: Any,
+    ctx: TaskState,
     request: profile_doctor.ProfileDoctorRequest,
 ) -> str | None:
     """Try healthy sibling tabs within one bounded recovery deadline."""
@@ -95,7 +96,7 @@ def handle_profile_doctor(
 
 
 def handle_flow_recovery(
-    ctx: Any,
+    ctx: TaskState,
     request: provider_flow.FlowRecoveryRequest,
 ) -> str | None:
     """Ask healthy siblings to choose only among fixed flow predicates."""
@@ -139,9 +140,56 @@ def handle_flow_recovery(
     return None
 
 
+def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeachRequest):
+    """Run the click-capture loop for one provider-control teach request."""
+    while True:
+        teach_id = "teach_" + uuid.uuid4().hex[:12]
+        token = provider_controls.start_click_capture(request.page)
+        pending = {
+            "id": teach_id,
+            "request": request,
+            "token": token,
+            "event": threading.Event(),
+            "cancelled": False,
+        }
+        with ctx.lock:
+            active = ctx.current_run()
+            run_id = active.run_id if active is not None and active.session_id == request.session_id else ""
+            pending["ui_event"] = {
+                "type": "teach_request",
+                "run_id": run_id,
+                "session_id": request.session_id,
+                "id": teach_id,
+                "text": request.message,
+            }
+            ctx.approvals.add_teach(teach_id, pending)
+        ctx.emit(pending["ui_event"])
+        if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
+            ctx.pop_pending_teach(teach_id)
+            provider_controls.cancel_click_capture(request.page)
+            raise TimeoutError("Timed out waiting for Resume")
+        if pending.get("cancelled"):
+            provider_controls.cancel_click_capture(request.page)
+            raise provider_controls.ControlTeachCancelled("control teaching was cancelled")
+        try:
+            captured = provider_controls.finish_click_capture(
+                request.page,
+                token,
+                request.action,
+                timeout=1.0,
+            )
+            return provider_controls.resolve_captured_control(request, captured)
+        except ValueError:
+            continue
+        finally:
+            ctx.pop_pending_teach(teach_id)
+
+
 __all__ = [
+    "CONTROL_TEACH_TIMEOUT",
     "PROFILE_DOCTOR_TIMEOUT",
     "borrow_open_provider",
+    "handle_control_teach",
     "handle_flow_recovery",
     "handle_profile_doctor",
 ]

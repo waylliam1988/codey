@@ -10,7 +10,8 @@ import unittest
 from unittest import mock
 
 from codey.app import api as app_api
-from codey.app import services as app_services
+from codey.app import shell_service
+from codey.runtime.core import cancellation
 
 
 class _FakeRegistry:
@@ -20,37 +21,23 @@ class _FakeRegistry:
 
 class _FakeCtx:
     def __init__(self, pending: dict, generation_at_pop: int, generation_now: int) -> None:
-        self._pending = pending
-        self._generation_at_pop = generation_at_pop
+        from codey.app.approval_registry import ApprovalRegistry
+
         self._generation_now = generation_now
         self.run_registry = _FakeRegistry()
         self.recorded: list[dict] = []
         self.lock = threading.Lock()
         self._shell_spawn_gate = threading.Lock()
+        # Production claim path needs a real registry: seed the pop-time
+        # generation on the record and the read-time generation on the
+        # counter directly (a Stop between them is what these tests pin).
+        self.approvals = ApprovalRegistry()
+        self.approvals.add_shell("shell-1", dict(pending))
+        self.approvals._pending_shell["shell-1"]["_approval_generation"] = generation_at_pop
+        self.approvals._generation = generation_now
 
     def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
-        pending = dict(self._pending)
-        pending["_approval_generation"] = self._generation_at_pop
-        return pending
-
-    def claim_shell_ticket(
-        self, approval_id: str, *, timeout: int, output_limit: int
-    ) -> tuple[dict | None, object | None]:
-        from codey.app.services import ShellExecutionTicket
-
-        pending = dict(self._pending)
-        claimed = self._generation_at_pop
-        pending.pop("_approval_generation", None)
-        if self.run_registry.stop_flag.is_set() or claimed != self._generation_now:
-            return pending, None
-        ticket = ShellExecutionTicket(
-            command=str(pending.get("command") or ""),
-            cwd=__import__("pathlib").Path(".").resolve(),
-            generation=claimed,
-            timeout=timeout,
-            output_limit=output_limit,
-        )
-        return pending, ticket
+        return self.approvals.pop_shell(approval_id)
 
     def approval_generation(self) -> int:
         return self._generation_now
@@ -74,7 +61,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
     def test_stale_claim_returns_stopped_without_executing(self) -> None:
         ctx = _FakeCtx(_pending(), generation_at_pop=3, generation_now=4)
         with mock.patch.object(
-            app_api.services, "execute_shell_ticket", side_effect=AssertionError("must not execute")
+            shell_service, "execute_shell_ticket", side_effect=AssertionError("must not execute")
         ):
             status, payload = app_api.shell_approval_response(
                 ctx,
@@ -91,7 +78,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
         ctx = _FakeCtx(_pending(), generation_at_pop=7, generation_now=7)
         ctx.run_registry.stop_flag.set()
         with mock.patch.object(
-            app_api.services, "execute_shell_ticket", side_effect=AssertionError("must not execute")
+            shell_service, "execute_shell_ticket", side_effect=AssertionError("must not execute")
         ):
             status, _ = app_api.shell_approval_response(
                 ctx,
@@ -107,7 +94,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
             "codey.runtime.core.cancellation.start_process",
             side_effect=AssertionError("Popen must not start"),
         ):
-            result = app_services.execute_approved_shell(
+            result = shell_service.execute_approved_shell(
                 ctx, ".", ".", "pytest -q", expected_approval_generation=1
             )
 
@@ -121,7 +108,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
             "codey.runtime.core.cancellation.start_process",
             side_effect=AssertionError("Popen must not start"),
         ):
-            result = app_services.execute_approved_shell(
+            result = shell_service.execute_approved_shell(
                 ctx, ".", ".", "pytest -q", expected_approval_generation=5
             )
 
@@ -134,7 +121,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
         import pathlib
 
         ctx = _FakeCtx(_pending(), generation_at_pop=5, generation_now=5)
-        ticket = app_services.ShellExecutionTicket(
+        ticket = shell_service.ShellExecutionTicket(
             command="pytest -q",
             cwd=pathlib.Path(".").resolve(),
             generation=5,
@@ -149,12 +136,12 @@ class ShellApprovalEpochTests(unittest.TestCase):
         with (
             mock.patch.object(ctx, "approval_generation", side_effect=_bumped_generation),
             mock.patch.object(
-                app_services.cancellation,
+                cancellation,
                 "start_process",
                 side_effect=AssertionError("Popen must not start"),
             ),
         ):
-            result = app_services.execute_shell_ticket(ctx, ticket)
+            result = shell_service.execute_shell_ticket(ctx, ticket)
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "command stopped")
 
@@ -164,7 +151,7 @@ class ShellApprovalEpochTests(unittest.TestCase):
         ctx = _FakeCtx(pending, generation_at_pop=9, generation_now=9)
         submit = mock.Mock()
         with mock.patch.object(
-            app_api.services,
+            shell_service,
             "execute_shell_ticket",
             return_value={
                 "ok": False,
@@ -210,8 +197,8 @@ class ShellStopLinearizationTests(unittest.TestCase):
             "project": project,
         }
         ctx.add_pending_shell_approval("shell-1", pending)
-        claimed, ticket = ctx.claim_shell_ticket(
-            "shell-1", timeout=30, output_limit=4000
+        claimed, ticket = shell_service.claim_shell_ticket(
+            ctx, "shell-1", timeout=30, output_limit=4000
         )
         self.assertIsNotNone(claimed)
         self.assertIsNotNone(ticket)
@@ -224,11 +211,11 @@ class ShellStopLinearizationTests(unittest.TestCase):
                 ticket = self._ticket(ctx, td)
                 ctx.request_stop()
                 with mock.patch.object(
-                    app_services.cancellation,
+                    cancellation,
                     "start_process",
                     side_effect=AssertionError("Popen must not start"),
                 ):
-                    result = app_services.execute_shell_ticket(ctx, ticket)
+                    result = shell_service.execute_shell_ticket(ctx, ticket)
             self.assertFalse(result["ok"])
             self.assertEqual(result["error"], "command stopped")
         finally:
@@ -253,20 +240,20 @@ class ShellStopLinearizationTests(unittest.TestCase):
                     # gets in first: joining here is deadlock-free.
                     stopper.join(timeout=10)
                     stop_seen.append(ctx.run_registry.stop_flag.is_set())
-                    raise app_services.cancellation.TaskCancelled("stop")
+                    raise cancellation.TaskCancelled("stop")
 
                 stopper = threading.Thread(target=ctx.request_stop, daemon=True)
                 with (
                     mock.patch.object(
-                        app_services.cancellation, "start_process", side_effect=_slow_spawn
+                        cancellation, "start_process", side_effect=_slow_spawn
                     ) as spawn_mock,
                     mock.patch.object(
-                        app_services.cancellation, "wait_process", side_effect=_stop_aware_wait
+                        cancellation, "wait_process", side_effect=_stop_aware_wait
                     ),
                 ):
                     stopper.start()
                     time.sleep(0.05)
-                    result = app_services.execute_shell_ticket(ctx, ticket)
+                    result = shell_service.execute_shell_ticket(ctx, ticket)
                     stopper.join(timeout=10)
             # Linearization allows exactly two outcomes, both non-success:
             # Stop wins the gate (refused before spawn) or loses it (spawned
@@ -298,14 +285,14 @@ class ShellStopLinearizationTests(unittest.TestCase):
                 completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
                 with (
                     mock.patch.object(
-                        app_services.cancellation, "start_process", side_effect=_stuck_spawn
+                        cancellation, "start_process", side_effect=_stuck_spawn
                     ),
                     mock.patch.object(
-                        app_services.cancellation, "wait_process", return_value=completed
+                        cancellation, "wait_process", return_value=completed
                     ),
                 ):
                     executor = threading.Thread(
-                        target=app_services.execute_shell_ticket,
+                        target=shell_service.execute_shell_ticket,
                         args=(ctx, ticket),
                         daemon=True,
                     )
@@ -346,14 +333,14 @@ class ShellStopLinearizationTests(unittest.TestCase):
                 completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
                 with (
                     mock.patch.object(
-                        app_services.cancellation, "start_process", side_effect=_gated_spawn
+                        cancellation, "start_process", side_effect=_gated_spawn
                     ),
                     mock.patch.object(
-                        app_services.cancellation, "wait_process", return_value=completed
+                        cancellation, "wait_process", return_value=completed
                     ),
                 ):
                     worker = threading.Thread(
-                        target=app_services.execute_shell_ticket,
+                        target=shell_service.execute_shell_ticket,
                         args=(ctx, ticket),
                         daemon=True,
                     )

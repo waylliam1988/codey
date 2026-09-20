@@ -8,7 +8,7 @@ from collections.abc import Callable
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app import provider_services
-from codey.app import services
+from codey.app import shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
@@ -442,7 +442,8 @@ def shell_approval_response(
     # Internal epoch, never leaked to events/UI.
     from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 
-    pending, ticket = ctx.claim_shell_ticket(
+    pending, ticket = shell_service.claim_shell_ticket(
+        ctx,
         approval_id,
         timeout=SHELL_TIMEOUT,
         output_limit=SHELL_OUTPUT_LIMIT,
@@ -456,7 +457,7 @@ def shell_approval_response(
     if ticket is None:
         return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
 
-    result = services.execute_shell_ticket(ctx, ticket)
+    result = shell_service.execute_shell_ticket(ctx, ticket)
     if result.get("status") == "stopped" or result.get("stopped"):
         return _stopped_shell_denial(ctx, pending, approval_id, session_id, command)
     event = {
@@ -481,7 +482,7 @@ def shell_approval_response(
         if ctx.run_registry.stop_flag.is_set():
             continuation_stopped = True
         else:
-            continuation_plan = services.build_shell_approval_continuation_plan(
+            continuation_plan = shell_service.build_shell_approval_continuation_plan(
                 pending=pending,
                 result=result,
                 active_run=ctx.current_run(),

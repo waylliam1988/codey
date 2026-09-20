@@ -9,6 +9,7 @@ from codey.agents.handoff import (
     render_handoff,
     render_recovered_handoff,
 )
+from codey.operations.task_state import TaskState
 from codey.task.kind import conversation_mode
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 
@@ -26,7 +27,7 @@ class ConversationPlan:
 
 def build_conversation_plan(
     *,
-    state: Any,
+    state: TaskState,
     session_id: str,
     provider_id: str,
     provider: Any,

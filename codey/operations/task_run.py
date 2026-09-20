@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+import functools
 import logging
 from pathlib import Path
 from typing import Any
 
+from codey.app import sibling_probe
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
@@ -39,6 +41,7 @@ from codey.operations.task_phases import (
     settle_cancelled_run,
     settle_error_run,
 )
+from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.runtime.core import cancellation
@@ -59,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TaskRunDeps:
-    state: Any
+    state: TaskState
     agent_run: Callable
     collect_changes: Callable
     run_review: Callable
@@ -86,7 +89,7 @@ class TaskRunDeps:
     runtime_effects: Any = None
 
 
-def prepare_submission(state: Any, request: TaskSubmission) -> TaskSubmission | None:
+def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmission | None:
     if request.run_id:
         active = state.current_run()
         if active is None:
@@ -115,7 +118,7 @@ def prepare_submission(state: Any, request: TaskSubmission) -> TaskSubmission | 
     return replace(request, run_id=reserved.run_id)
 
 
-def release_unstarted_submission(state: Any, request: TaskSubmission) -> None:
+def release_unstarted_submission(state: TaskState, request: TaskSubmission) -> None:
     if not request.run_id:
         return
     try:
@@ -133,7 +136,7 @@ class _RunSetup:
     get their own helper below so this orchestrator stays a readable
     phase list instead of a 300-line closure nest."""
 
-    state: Any
+    state: TaskState
     request: TaskSubmission
     run_id: str
     session_id: str
@@ -230,9 +233,9 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
     trace_sink = FailOpenPromptTrace(trace)
     project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
 
-    provider_controls.set_teach_handler(state.handle_control_teach)
-    provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
-    provider_flow.set_recovery_handler(getattr(state, "handle_flow_recovery", None))
+    provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
+    provider_controls.set_doctor_handler(functools.partial(sibling_probe.handle_profile_doctor, state))
+    provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
     provider_controls.begin_task_context(session_id)
     state.run_registry.set_last_provider_failure(None)
     previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)

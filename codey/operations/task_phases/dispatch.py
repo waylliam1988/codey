@@ -37,6 +37,7 @@ from codey.operations.research_flow import (
 )
 from codey.operations.result import ModeOutcome
 from codey.operations.review_flow import ReviewFlowDeps, run_review_mode
+from codey.operations.task_state import TaskState
 from codey.providers.capabilities import rank_providers
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
@@ -46,7 +47,7 @@ from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_f
 
 def connect_and_build_frame(
     deps: Any,
-    state: Any,
+    state: TaskState,
     request: TaskSubmission,
     work: RunWork,
     *,

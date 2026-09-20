@@ -2,6 +2,32 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - TaskState 协议、services 拆分、AppContext 只做装配（未发布）
+
+- 新增 `operations/task_state.py`：`TaskState` Protocol（运行时零导入），
+  替代 `TaskRunDeps.state: Any` 与整条 task 脊柱的 `state: Any`
+ （`task_run`、`task_phases/*`、各 flow、`ghost_post_turn`、
+  `provider_preflight`、`task_submit`）。`ghost_context` 保留诚实的鸭子
+  `Any`（`getattr` 缺省，缺 ghost 也能跑）。
+- 删除 `app/services.py`，拆为 `app/review_service.py`（`run_review*`）、
+  `app/consensus_service.py`（consensus/audit/advisors）、
+  `app/shell_service.py`（ticket、`claim`、执行、continuation）；warmup +
+  `review_label` 进 `provider_services`。调用方与 mock 锚点全迁，架构测试
+  锁死（`services.py` 不得存在、无 `codey.app.services` import）。
+- `AppContext` 只做装配：`get_provider` 流程、`claim_shell_ticket`、teach
+  循环、sibling 恢复方法、自修复 job 接线、`provider_failover_order` 搬到
+  `provider_services` / `shell_service` / `sibling_probe` / `repairs`。
+  保留：构造、store 薄委托、lock/gate 协调（`request_stop`、`finish_run`）、
+  close。`get_provider` 留作薄测试缝（60+ 用例依赖）；
+  `provider_failover_order` 留作 `build_hooks` 读取的活接缝。
+- run-scope 盖章策略从 `context.emit` 下沉为纯函数
+  `event_bus.stamp_run_scope`；`RUN_EVENT_TYPES` 归 `event_bus`。
+- `SelfRepairSupervisor.kick_if_idle` 自带 kick  guard + 线程；
+  `run_self_repair_job` 回到 `repairs`。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3929 passed, 6 skipped, 1320 subtests passed in 273.25s`）。
+
 ## Unreleased - Provider 单一入口、server 拆 task_submit（未发布）
 
 - 新增 `app/provider_services.py`：provider registry 单一入口

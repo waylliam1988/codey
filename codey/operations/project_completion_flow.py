@@ -89,6 +89,7 @@ from codey.operations.task_context import (
     safe_project_map,
     safe_verification_candidates,
 )
+from codey.operations.task_state import TaskState
 
 
 def _default_is_git_repository(_project: str | Path) -> bool:
@@ -134,7 +135,7 @@ class RuntimeAccess:
 
 @dataclass(frozen=True)
 class ProjectCompletionDeps:
-    state: Any
+    state: TaskState
     agent: AgentAccess
     verification: VerificationAccess
     review: ReviewAccess
@@ -360,7 +361,7 @@ class _ProjectRun:
     config_result: ProjectConfigLoadResult | None = None
     research_result: Any = None
     research_pipeline_result: Any = None
-    state: Any = None
+    state: TaskState | None = None
     request: Any = None
     context_builder: ProjectTaskContextBuilder | None = None
     project_context: Any = None

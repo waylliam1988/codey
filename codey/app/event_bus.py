@@ -11,6 +11,39 @@ from collections import deque
 logger = logging.getLogger(__name__)
 
 
+RUN_EVENT_TYPES = {
+    "task_start",
+    "turn",
+    "tool",
+    "info",
+    "reply",
+    "review",
+    "shell_request",
+    "shell_result",
+    "ghost_post_turn_warning",
+    "teach_request",
+    "task_done",
+    "status",
+}
+
+
+def stamp_run_scope(payload: dict, active) -> dict:
+    """Fill the active run/session onto a run-scoped event payload.
+
+    Pure helper (no bus state): run-scoped types without an explicit run_id
+    inherit the active run when the session matches or is unset.
+    """
+    if (
+        active is not None
+        and payload.get("type") in RUN_EVENT_TYPES
+        and not payload.get("run_id")
+        and payload.get("session_id") in (None, active.session_id)
+    ):
+        payload["run_id"] = active.run_id
+        payload.setdefault("session_id", active.session_id)
+    return payload
+
+
 class SsePayload(dict):
     """Queue payload with an SSE cursor that stays out of the JSON body."""
 

@@ -39,7 +39,7 @@ from urllib.parse import parse_qs, urlparse
 from codey.providers import controls as provider_controls, flow as provider_flow
 from codey import __version__
 from codey.app import api as app_api
-from codey.app import services as app_services
+from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
 from codey.app.http_plumbing import (
@@ -77,12 +77,18 @@ _STATE_LOCK = threading.Lock()
 def _build_state() -> AppContext:
     from codey.app.provider_services import connect_fresh_provider_tab
 
+    import functools
+
+    from codey.app import sibling_probe
+
     state = AppContext(DEFAULT_STATE_HOME)
     state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
     state.providers.ghost_router_provider_factory = connect_fresh_provider_tab
-    provider_controls.set_teach_handler(state.handle_control_teach)
-    provider_controls.set_doctor_handler(state.handle_profile_doctor)
-    provider_flow.set_recovery_handler(state.handle_flow_recovery)
+    provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
+    provider_controls.set_doctor_handler(
+        functools.partial(sibling_probe.handle_profile_doctor, state)
+    )
+    provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
     return state
 
 
@@ -480,7 +486,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             pass
 
     threading.Thread(target=_run_httpd, daemon=True).start()
-    app_services.start_provider_warmup(get_state(), delay_s=2.0)
+    provider_services.start_provider_warmup(get_state(), delay_s=2.0)
 
     def _run_webview() -> None:
         import webview

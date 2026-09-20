@@ -215,8 +215,10 @@ class ClosureCaptureTests(unittest.TestCase):
         for provider_id, helper in helpers.items():
             helper.send.assert_called_once()
             self.assertIn(f"reply-from-{provider_id}", seen)
-        self.assertTrue(callable(app_context.AppContext.handle_profile_doctor))
-        self.assertTrue(callable(app_context.AppContext.handle_flow_recovery))
+        self.assertTrue(callable(sibling_probe.handle_profile_doctor))
+        self.assertTrue(callable(sibling_probe.handle_flow_recovery))
+        self.assertFalse(hasattr(app_context.AppContext, "handle_profile_doctor"))
+        self.assertFalse(hasattr(app_context.AppContext, "handle_flow_recovery"))
 
     def test_mimo_lambda_binds_builtin_ready(self) -> None:
         import inspect

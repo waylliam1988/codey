@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import shutil
 import subprocess
@@ -17,9 +18,10 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.providers import controls as provider_controls
-from codey.app import context as app_context
-from codey.app import services as app_services
+from codey.app import provider_services
 from codey.app import server as codey_server
+from codey.app import sibling_probe
+from codey.policies.limits import REVIEW_TIMEOUT
 from codey.workspace.changes import collect_changes, is_git_repository
 from codey.agents.consensus import run_project_audit_advisor
 from codey.providers.registry import (
@@ -241,9 +243,9 @@ class TimedProvider:
 def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_server.AppContext]:
     state = codey_server.AppContext(state_home)
     original_state = codey_server.STATE
-    original_connect_provider = app_context.connect_provider
-    original_connect_existing = app_services.connect_existing_provider
-    original_borrow_open_provider = app_services.borrow_open_provider
+    original_connect_provider = provider_services.connect_provider
+    original_connect_existing = provider_services.connect_existing_provider
+    original_borrow_open_provider = provider_services.borrow_open_provider
 
     def wrap(provider, provider_id: str, role: str):
         if provider is None:
@@ -266,19 +268,25 @@ def patched_server(recorder: FlowRecorder, state_home: Path) -> Iterator[codey_s
 
     try:
         codey_server.STATE = state
-        app_context.connect_provider = timed_connect_provider
-        app_services.connect_existing_provider = timed_connect_existing
-        app_services.borrow_open_provider = timed_borrow_open_provider
-        provider_controls.set_teach_handler(state.handle_control_teach)
-        provider_controls.set_doctor_handler(state.handle_profile_doctor)
+        provider_services.connect_provider = timed_connect_provider
+        provider_services.connect_existing_provider = timed_connect_existing
+        provider_services.borrow_open_provider = timed_borrow_open_provider
+        provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
+        provider_controls.set_doctor_handler(
+            functools.partial(sibling_probe.handle_profile_doctor, state)
+        )
         yield state
     finally:
         codey_server.STATE = original_state
-        app_context.connect_provider = original_connect_provider
-        app_services.connect_existing_provider = original_connect_existing
-        app_services.borrow_open_provider = original_borrow_open_provider
-        provider_controls.set_teach_handler(original_state.handle_control_teach)
-        provider_controls.set_doctor_handler(original_state.handle_profile_doctor)
+        provider_services.connect_provider = original_connect_provider
+        provider_services.connect_existing_provider = original_connect_existing
+        provider_services.borrow_open_provider = original_borrow_open_provider
+        provider_controls.set_teach_handler(
+            functools.partial(sibling_probe.handle_control_teach, original_state)
+        )
+        provider_controls.set_doctor_handler(
+            functools.partial(sibling_probe.handle_profile_doctor, original_state)
+        )
 
 
 def reset_project(project: Path, artifacts: Path) -> Path | None:
@@ -418,10 +426,10 @@ def run_reviewer_matrix(
                 recent_log="",
             )
             with provider_controls.suppress_assistance():
-                reply = reviewer.send(prompt, timeout=app_services.REVIEW_TIMEOUT)
+                reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
                 review = parse_review_with_repair(
                     reply,
-                    lambda repair, reviewer=reviewer: reviewer.send(repair, timeout=app_services.REVIEW_TIMEOUT),
+                    lambda repair, reviewer=reviewer: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
                 )
             item = {
                 "provider": provider_id,

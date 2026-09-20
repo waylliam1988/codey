@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import shutil
 import sys
@@ -16,8 +17,9 @@ if __package__ in (None, ""):
 
 from codey.runtime.core import cancellation
 from codey.providers import controls as provider_controls
-from codey.app import services as app_services
+from codey.app import provider_services
 from codey.app import server as codey_server
+from codey.app import sibling_probe
 
 
 TASK = (
@@ -472,30 +474,28 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     _make_project(project)
 
     original_state = codey_server.STATE
-    original_connect_provider = codey_server.connect_provider
-    original_connect_fresh_provider_tab = codey_server.connect_fresh_provider_tab
-    original_provider_tab_availability = codey_server.provider_tab_availability
-    original_service_connect_existing = app_services.connect_existing_provider
-    original_service_connect_fresh_provider_tab = app_services.connect_fresh_provider_tab
-    original_service_provider_tab_availability = app_services.provider_tab_availability
+    original_connect_provider = provider_services.connect_provider
+    original_connect_existing_provider = provider_services.connect_existing_provider
+    original_connect_fresh_provider_tab = provider_services.connect_fresh_provider_tab
+    original_provider_tab_availability = provider_services.provider_tab_availability
     original_pick_folder = codey_server.pick_folder
     writer = ScriptedWriter()
     httpd: codey_server.CodeyHTTPServer | None = None
     try:
         codey_server.STATE = codey_server.AppContext(temp_root / "state")
-        provider_controls.set_teach_handler(codey_server.STATE.handle_control_teach)
-        codey_server.connect_provider = lambda provider_id: writer
-        codey_server.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
-        codey_server.provider_tab_availability = lambda: {
+        provider_controls.set_teach_handler(
+            functools.partial(sibling_probe.handle_control_teach, codey_server.STATE)
+        )
+        provider_services.connect_provider = lambda provider_id: writer
+        provider_services.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
+        provider_services.provider_tab_availability = lambda: {
             "deepseek": True,
             "mimo": True,
             "qwen": True,
             "stepfun": True,
             "glm": True,
         }
-        app_services.connect_existing_provider = lambda provider_id: ScriptedReviewer()
-        app_services.connect_fresh_provider_tab = lambda provider_id: ScriptedReviewer()
-        app_services.provider_tab_availability = codey_server.provider_tab_availability
+        provider_services.connect_existing_provider = lambda provider_id: ScriptedReviewer()
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
 
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
@@ -527,15 +527,18 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             httpd.shutdown()
             httpd.server_close()
         codey_server.STATE = original_state
-        codey_server.connect_provider = original_connect_provider
-        codey_server.connect_fresh_provider_tab = original_connect_fresh_provider_tab
-        codey_server.provider_tab_availability = original_provider_tab_availability
-        app_services.connect_existing_provider = original_service_connect_existing
-        app_services.connect_fresh_provider_tab = original_service_connect_fresh_provider_tab
-        app_services.provider_tab_availability = original_service_provider_tab_availability
+        provider_services.connect_provider = original_connect_provider
+        provider_services.connect_fresh_provider_tab = original_connect_fresh_provider_tab
+        provider_services.provider_tab_availability = original_provider_tab_availability
+        provider_services.connect_existing_provider = original_connect_existing_provider
         codey_server.pick_folder = original_pick_folder
-        provider_controls.set_teach_handler(original_state.handle_control_teach)
-        provider_controls.set_doctor_handler(original_state.handle_profile_doctor)
+        if original_state is not None:
+            provider_controls.set_teach_handler(
+                functools.partial(sibling_probe.handle_control_teach, original_state)
+            )
+            provider_controls.set_doctor_handler(
+                functools.partial(sibling_probe.handle_profile_doctor, original_state)
+            )
         shutil.rmtree(temp_root, ignore_errors=True)
 
 

@@ -15,7 +15,7 @@ from unittest import mock
 
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.app import services as app_services
+from codey.app import consensus_service
 from codey.repairs import adapter_overrides
 from codey.repairs.adapter_repair import (
     AdapterRepairResult,
@@ -1092,7 +1092,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                     side_effect=[failure, RunResult("done", "done", 1, False, False)],
                 ),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
-                mock.patch.object(app_services, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             ):
                 server._run_task("session-self-repair", td, "task", 8, False, "deepseek")
 
@@ -1114,24 +1114,24 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
             state = server.AppContext(Path(td) / "state")
-            state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
-            state.self_repair.maybe_enqueue(
+            supervisor = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
+            supervisor.maybe_enqueue(
                 "qwen",
                 _failure(FAILURE_RESPONSE_MISSING),
                 ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
             )
 
-            self.assertTrue(state.kick_self_repair())
+            self.assertTrue(supervisor.kick_if_idle(state.is_busy))
             self.assertTrue(ran.wait(2.0))
             deadline = time.time() + 2.0
-            while state._self_repair_running and time.time() < deadline:
+            while supervisor._kick_running and time.time() < deadline:
                 time.sleep(0.01)
-            self.assertFalse(state._self_repair_running)
-            self.assertEqual(state.self_repair.pending(), ())
+            self.assertFalse(supervisor._kick_running)
+            self.assertEqual(supervisor.pending(), ())
 
     def test_state_runs_self_repair_without_browser_worker(self) -> None:
-        from codey.app import server
-
+        # kick_if_idle never touches the browser worker queue: the repair
+        # runs on its own thread via the supervisor runner.
         with tempfile.TemporaryDirectory() as td:
             ran = threading.Event()
 
@@ -1139,44 +1139,45 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ran.set()
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
-            state = server.AppContext(Path(td) / "state")
-            state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
-            state.self_repair.maybe_enqueue(
+            supervisor = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
+            supervisor.maybe_enqueue(
                 "qwen",
                 _failure(FAILURE_RESPONSE_MISSING),
                 ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
             )
-            with mock.patch.object(task_submit, "submit_browser_task") as submit:
-                self.assertTrue(state.kick_self_repair())
-                self.assertTrue(ran.wait(2.0))
-                deadline = time.time() + 2.0
-                while state._self_repair_running and time.time() < deadline:
-                    time.sleep(0.01)
-                self.assertFalse(state._self_repair_running)
-
-        submit.assert_not_called()
+            self.assertTrue(supervisor.kick_if_idle(lambda: False))
+            self.assertTrue(ran.wait(2.0))
+            deadline = time.time() + 2.0
+            while supervisor._kick_running and time.time() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(supervisor._kick_running)
 
     def test_state_self_repair_job_spawns_process_worker_with_candidates(self) -> None:
-        from codey.app import server
         from codey.repairs import self_repair_worker as self_repair_worker_module
+        from codey.repairs.self_repair import run_self_repair_job
 
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(Path(td) / "state")
-            state.provider_failover_order = lambda: ("qwen", "stepfun", "deepseek")
-            with mock.patch.object(
+        providers = mock.Mock()
+        providers.self_repair_candidates.return_value = ("qwen", "stepfun", "deepseek")
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(
                 self_repair_worker_module,
                 "run_self_repair_worker",
                 return_value=AdapterRepairResult(True, "deepseek", generation=7),
-            ) as worker:
-                result = state._run_self_repair_job(SelfRepairJob("deepseek", FAILURE_RESPONSE_MISSING))
+            ) as worker,
+        ):
+            result = run_self_repair_job(
+                state_home=td,
+                providers=providers,
+                job=SelfRepairJob("deepseek", FAILURE_RESPONSE_MISSING),
+            )
 
         self.assertTrue(result.ok)
         worker.assert_called_once()
-        self.assertEqual(worker.call_args.kwargs["helper_ids"], ("qwen", "stepfun"))
+        self.assertEqual(worker.call_args.kwargs["helper_ids"], ("qwen", "stepfun", "deepseek"))
+        self.assertEqual(str(worker.call_args.kwargs["state_home"]), td)
 
     def test_state_does_not_start_self_repair_while_busy(self) -> None:
-        from codey.app import server
-
         with tempfile.TemporaryDirectory() as td:
             ran = threading.Event()
 
@@ -1184,25 +1185,23 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ran.set()
                 return mock.Mock(ok=True, provider_id=job.provider_id, generation=1, error="")
 
-            state = server.AppContext(Path(td) / "state")
-            state.run_registry.set_busy(True)
-            state.self_repair = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
-            state.self_repair.maybe_enqueue(
+            supervisor = SelfRepairSupervisor(td, runner=runner, clock=lambda: 100.0)
+            supervisor.maybe_enqueue(
                 "qwen",
                 _failure(FAILURE_RESPONSE_MISSING),
                 ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_RESPONSE_MISSING),
             )
 
-            self.assertFalse(state.kick_self_repair())
+            self.assertFalse(supervisor.kick_if_idle(lambda: True))
             self.assertFalse(ran.wait(0.1))
-            self.assertEqual(len(state.self_repair.pending()), 1)
+            self.assertEqual(len(supervisor.pending()), 1)
 
     def test_state_accepts_new_user_run_while_self_repair_is_running(self) -> None:
         from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(Path(td) / "state")
-            state._self_repair_running = True
+            state.self_repair._kick_running = True
 
             reserved = state.reserve_run(
                 session_id="s",

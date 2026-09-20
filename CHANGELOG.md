@@ -2,6 +2,36 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - TaskState protocol, services split, assembly-only AppContext (no release)
+
+- New `operations/task_state.py`: `TaskState` Protocol (stdlib-only at
+  runtime) replacing `TaskRunDeps.state: Any` plus all `state: Any` params
+  across the task spine (`task_run`, `task_phases/*`, flows, `ghost_post_turn`,
+  `provider_preflight`, `task_submit`). `ghost_context` keeps honest
+  duck-typed `Any` (`getattr` with defaults, works without ghost stores).
+- `app/services.py` deleted, split into `app/review_service.py`
+  (`run_review*`, `emit_review`), `app/consensus_service.py`
+  (`run_consensus`, `run_project_audit`, `run_research_advisors`), and
+  `app/shell_service.py` (tickets, `claim_shell_ticket`, execution,
+  continuation). Warmup + `review_label` moved to `provider_services`.
+  All callers and mock seams migrated; architecture test locks the
+  retirement (`services.py` must not exist, no `codey.app.services` import).
+- `AppContext` is assembly-only now: `get_provider` flow, `claim_shell_ticket`,
+  the teach capture loop, sibling recovery methods, self-repair job wiring,
+  and `provider_failover_order` moved to `provider_services` / `shell_service` /
+  `sibling_probe` / `repairs`. Kept: construction, thin store delegates,
+  lock/gate coordination (`request_stop`, `finish_run`), close/teardown.
+  `get_provider` stays as a thin test seam over the single entry point;
+  `provider_failover_order` stays as a thin seam read by `build_hooks`.
+- Run-scope stamp policy moved from `context.emit` to pure
+  `event_bus.stamp_run_scope`; `RUN_EVENT_TYPES` lives in `event_bus`.
+- `SelfRepairSupervisor.kick_if_idle` owns the kick guard + thread;
+  `run_self_repair_job` lives in `repairs` next to the worker.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3929 passed, 6 skipped, 1320 subtests passed in 273.25s`).
+
 ## Unreleased - Provider single entry, server task_submit split (no release)
 
 - New `app/provider_services.py`: the single provider-registry entry point

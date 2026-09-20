@@ -38,6 +38,7 @@ from codey.operations.research_flow import (
     record_research_proof_review_trace,
     research_queue_item_title,
 )
+from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.runs.ledger_projection import load_run_projection
@@ -52,7 +53,7 @@ PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
 
 @dataclass(frozen=True)
 class GhostTaskPolicyDeps:
-    state: Any
+    state: TaskState
     run_ledgers: Any = None
     evidence_ledgers: Any = None
     work_checkpoints: Any = None
@@ -487,7 +488,7 @@ def complete_or_block_work_item(
         return
 
 
-def _ghost_learning_enabled(state: Any) -> bool:
+def _ghost_learning_enabled(state: TaskState) -> bool:
     inbox_store = getattr(state, "ghost_inbox", None)
     if inbox_store is None:
         return True

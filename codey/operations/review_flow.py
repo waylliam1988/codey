@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
 
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.operations.context import RunFrame
 from codey.operations.project_completion_flow import record_review_input_prepared_trace
 from codey.operations.result import ModeOutcome
+from codey.operations.task_state import TaskState
 from codey.reviews.core import has_reviewable_changes
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
@@ -20,7 +20,7 @@ from codey.runtime.observe.terminalizer import task_done_event
 
 @dataclass(frozen=True)
 class ReviewFlowDeps:
-    state: Any
+    state: TaskState
     collect_changes: Callable
     run_review: Callable
     is_git_repository: Callable[[str | Path], bool]

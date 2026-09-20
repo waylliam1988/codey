@@ -1,9 +1,7 @@
 """Single provider-registry entry point for the app layer.
 
-``context.py`` and ``services.py`` historically each carried their own
-``_provider_registry()`` facade to stay Playwright-free on import. This module
-owns that facade once; both callers delegate so mocks on the old attribute
-paths keep working while new code imports here directly.
+Provider connection, availability, labels, and tab warmup live here. Callers
+across ``app/`` import this module directly; there is exactly one facade.
 
 Import cost: this module is light (catalog labels + lazy registry import).
 The Playwright-backed registry loads only inside the functions below.
@@ -13,11 +11,13 @@ from __future__ import annotations
 
 import threading
 import time as _time
-from typing import Any
 
+from codey.automation.browser_worker import submit as submit_browser_task
+from codey.operations.task_state import TaskState
 from codey.providers import controls as provider_controls  # noqa: F401  (re-export for probes)
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
 from codey.providers.capabilities import rank_providers
+from codey.utils.refs import clip, digest_text
 
 
 def _provider_registry():
@@ -52,7 +52,7 @@ def borrow_open_provider(provider_id: str, owner_page: object) -> object | None:
 
 
 def reviewer_candidates(
-    ctx: Any,
+    ctx: TaskState,
     writer_id: str,
     *,
     supervisor: object | None = None,
@@ -88,7 +88,7 @@ def reset_provider_availability_cache() -> None:
     _note_availability_statuses({}, 0.0)
 
 
-def provider_availability(ctx: Any) -> dict[str, bool]:
+def provider_availability(ctx: TaskState) -> dict[str, bool]:
     now = _time.monotonic()
     with _AVAIL_LOCK:
         cached_at = _AVAIL_AT[0]
@@ -101,7 +101,7 @@ def provider_availability(ctx: Any) -> dict[str, bool]:
 
 
 def provider_availability_from_statuses(
-    ctx: Any,
+    ctx: TaskState,
     statuses: dict[str, bool],
 ) -> dict[str, bool]:
     supervisor = ctx.providers.supervisor
@@ -135,6 +135,64 @@ def provider_status_update(provider_id: str, available: bool) -> list[dict]:
     }]
 
 
+def review_label(provider_id: str) -> str:
+    return PROVIDER_LABELS.get(provider_id, provider_id)
+
+
+def provider_failover_order(providers) -> tuple[str, ...]:
+    """Order providers by open tabs first, then registry order."""
+    return providers.failover_order(provider_tab_availability)
+
+
+def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID):
+    """Connect a provider and announce it on the session event stream."""
+    ctx.set_run_status("connecting")
+    ctx.emit({"type": "status", "status": "connecting"})
+    provider = connect_provider(provider_id)
+    ctx.set_run_status("running")
+    ctx.emit({
+        "type": "providers",
+        "providers": provider_status_update(provider_id, True),
+    })
+    return provider
+
+
+def run_provider_warmup(ctx: TaskState, runner=None) -> None:
+    if runner is None:
+        runner = warm_provider_tabs
+    try:
+        raw_statuses = runner()
+        _note_availability_statuses(dict(raw_statuses), _time.monotonic())
+        statuses = provider_availability_from_statuses(ctx, raw_statuses)
+        ctx.emit({"type": "providers", "providers": provider_payload(statuses)})
+    except Exception as exc:
+        text = f"{type(exc).__name__}: {exc}"
+        try:
+            ctx.emit({
+                "type": "status",
+                "status": "Provider warmup failed",
+                "detail": clip(text, 240),
+                "error_ref": digest_text(text)[:24],
+            })
+        except Exception:
+            return
+
+
+def start_provider_warmup(ctx: TaskState, runner=None, *, delay_s: float = 0.0) -> None:
+    """Queue warmup; serve() passes a short delay to stay off the boot path."""
+    import threading as _threading
+
+    def _delayed() -> None:
+        submit_browser_task(run_provider_warmup, ctx, runner)
+
+    if delay_s <= 0:
+        _delayed()
+        return
+    timer = _threading.Timer(delay_s, _delayed)
+    timer.daemon = True
+    timer.start()
+
+
 __all__ = [
     "PROVIDER_AVAILABILITY_TTL_S",
     "borrow_open_provider",
@@ -145,9 +203,14 @@ __all__ = [
     "provider_availability_from_statuses",
     "provider_catalog",
     "provider_payload",
+    "open_provider_session",
+    "provider_failover_order",
     "provider_status_update",
     "provider_tab_availability",
     "reset_provider_availability_cache",
+    "review_label",
     "reviewer_candidates",
+    "run_provider_warmup",
+    "start_provider_warmup",
     "warm_provider_tabs",
 ]

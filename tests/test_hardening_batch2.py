@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.app import api as app_api
-from codey.app import services as app_services
+from codey.app import shell_service
 from codey.runtime.core import cancellation
 
 
@@ -26,7 +26,7 @@ class ApprovalFailClosedTests(unittest.TestCase):
     def test_generation_read_error_is_not_current(self) -> None:
         ctx = SimpleNamespace()
         ctx.approval_generation = mock.Mock(side_effect=OSError("disk hiccup"))
-        self.assertFalse(app_services._approval_generation_current(ctx, 0))
+        self.assertFalse(shell_service._approval_generation_current(ctx, 0))
 
     def test_generation_error_never_executes_shell(self) -> None:
         ctx = SimpleNamespace()
@@ -37,7 +37,7 @@ class ApprovalFailClosedTests(unittest.TestCase):
             "codey.runtime.core.cancellation.start_process",
             side_effect=AssertionError("Popen must not start"),
         ):
-            result = app_services.execute_approved_shell(
+            result = shell_service.execute_approved_shell(
                 ctx, ".", ".", "pytest -q", expected_approval_generation=0
             )
         self.assertFalse(result["ok"])
@@ -49,7 +49,7 @@ class ApprovalFailClosedTests(unittest.TestCase):
             side_effect=cancellation.TaskCancelled("stop")
         )
         with self.assertRaises(cancellation.TaskCancelled):
-            app_services._approval_generation_current(ctx, 0)
+            shell_service._approval_generation_current(ctx, 0)
 
     def test_claim_expiry_read_error_fails_closed(self) -> None:
         ctx = SimpleNamespace()
