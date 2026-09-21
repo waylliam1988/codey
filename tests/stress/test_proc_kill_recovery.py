@@ -5,6 +5,12 @@ terminate it with ``Popen.kill()`` (TerminateProcess on Windows, SIGKILL on
 POSIX) while it idles at a checkpoint, then respawn it in recover mode. The
 oracle compares canonical durable facts: kill must be indistinguishable
 from a clean exit, and double recovery must be idempotent.
+
+Scope: the kill always lands at an IDLE checkpoint, so everything asserted
+here was already fsynced and acknowledged. That establishes Real Process
+Crash Recovery, not Crash Safety -- kills inside a write (torn rows,
+partial batches, pre/post rename, torn journal tails) live in
+``test_crash_point_matrix``.
 """
 
 from __future__ import annotations

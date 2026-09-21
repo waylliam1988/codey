@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Crash-point matrix for durable writes (no release)
+
+- New `tests/stress/test_crash_point_matrix.py`: 7 internal critical
+  points (session torn row, full-write-no-ack, ghost partial batch, ghost
+  torn row, atomic replace pre/post rename, journal torn tail), each built
+  by stopping a real production write path at the point, then a real
+  `Popen.kill()` and fresh-process recovery with oracle checks.
+- Found and fixed one hole: a torn repair-journal tail crashed recovery
+  itself (`JSONDecodeError` in the canonical reader). The reader now skips
+  undecodable journal lines (same precedent as the run ledger read path);
+  production code untouched (journal is write-only there).
+- `test_proc_kill_recovery` docstring rescoped: the idle-checkpoint suite
+  is Real Process Crash Recovery; this matrix is Crash Safety.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; targeted suites green; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3981 passed, 6 skipped, 1320 subtests passed in 344.74s`).
+
 ## Unreleased - Ghost timestamp parsing unified on graph_primitives (no release)
 
 - Replaced the hand-rolled `fromisoformat` copies in

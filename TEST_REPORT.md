@@ -1,5 +1,52 @@
 # Codey Test Report
 
+## Crash-point matrix: kill inside every durable write (2026-09-21)
+
+Scope:
+
+```text
+tests/stress/kill_worker.py:            new crashpoint mode (fault hooks stop
+  a real production write path at the critical point, then idle for the kill)
+tests/stress/test_crash_point_matrix.py: 7 points x real Popen.kill() x recover
+tests/stress/test_proc_kill_recovery.py: docstring scope renamed to Recovery
+tests/stress/world.py:                  canonical journal read skips torn tails
+```
+
+Matrix (each: prefix bytes on disk -> rendezvous -> REAL kill -> fresh
+process recover -> oracle assert_valid + R(R(S))==R(S)):
+
+- `session-torn-row`: torn intent row repaired, baseline intent survives
+- `session-full-no-ack`: fsynced-but-unacknowledged intent stays durable
+- `ghost-partial-batch`: 2-of-5 chunks leave exactly the 2-row prefix
+- `ghost-torn-row`: bad tail skipped, good rows kept (warn policy)
+- `primitive-replace-pre-rename`: original intact, orphan tmp ignored,
+  post-crash writes still work
+- `primitive-replace-post-rename`: new content visible, no tmp left
+- `journal-torn-tail`: FOUND HOLE -> torn tail crashed recovery itself
+  (`world.py:360 json.loads` JSONDecodeError in the recover child);
+  fixed by skipping undecodable journal lines (run-ledger precedent).
+  Production journal is write-only, so the fix is reader-side only.
+
+Deliberately uncovered: flush-vs-fsync orderings (page cache survives a
+process kill, so they are vacuous here) and OS-crash/power-loss semantics;
+the repair journal also has no fsync (audit trail: tail may be lost, never
+corrupt). The old idle-checkpoint suite is now documented as Recovery,
+this matrix as Safety.
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests` (passed)
+  `git diff --check` (passed)
+- Targeted: `test_crash_point_matrix + test_proc_kill_recovery`
+  (`10 passed in 16.73s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3981 passed, 6 skipped, 1320 subtests passed in 344.74s (0:05:44)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. Production code untouched (test harness only).
+
 ## Ghost timestamp parsing unified on graph_primitives (2026-09-21)
 
 Scope:

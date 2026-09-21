@@ -356,10 +356,17 @@ class StressWorld:
         journal_path = self.journal.path
         if journal_path is not None and journal_path.exists():
             for line in journal_path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
+                if not line.strip():
+                    continue
+                try:
                     record = json.loads(line)
-                    record.pop("time", None)
-                    journal_events.append(record)
+                except json.JSONDecodeError:
+                    # Torn tail from a mid-flush kill: the audit trail loses
+                    # its tail, but recovery must not die with it (cf. the
+                    # run ledger read path, which skips bad lines the same way).
+                    continue
+                record.pop("time", None)
+                journal_events.append(record)
         return DurableSnapshot(
             log_rows=tuple(rows),
             ghost_rows=tuple(ghost_rows),

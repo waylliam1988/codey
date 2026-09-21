@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 耐久写入临界点矩阵（未发布）
+
+- 新增 `tests/stress/test_crash_point_matrix.py`：7 个内部临界点
+  （session 撕裂行、无 ack 全写入、ghost 部分批次、ghost 撕裂行、
+  原子替换 rename 前/后、journal 撕裂尾），每个点都是把真实生产写路径
+  停在临界点，再真 `Popen.kill()`，新进程恢复后走 oracle 断言。
+- 抓到并修好一个洞：撕裂的 journal 尾部会直接炸掉 recover
+ （canonical 读侧 `JSONDecodeError`）。读侧改为跳过不可解码行
+  （与 run ledger 读路径同先例）；生产代码未动（journal 在生产只写不读）。
+- `test_proc_kill_recovery` 文档重定范围：idle-checkpoint 套件是
+  Real Process Crash Recovery，本矩阵才是 Crash Safety。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check` 通过；
+  定向套件全绿；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3981 passed, 6 skipped, 1320 subtests passed in 344.74s`）。
+
 ## Unreleased - Ghost 时间解析统一到 graph_primitives（未发布）
 
 - `continuity` / `directive` / `work_queue` 手写的三份 `fromisoformat`
