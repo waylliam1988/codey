@@ -171,8 +171,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tier", choices=sorted(TIERS), default="")
     parser.add_argument("--check-every", type=int, default=500)
     # Ignored by .gitignore: failure scripts can be tens of thousands of
-    # lines and must never land in the repo (see the 41k-line incident).
-    parser.add_argument("--artifacts", default=".e2e-artifacts")
+    # lines and must never be tracked. Resolved against the package dir so
+    # the CLI behaves the same from any cwd.
+    parser.add_argument(
+        "--artifacts",
+        default=str(Path(__file__).resolve().parent / "artifacts"),
+    )
     parser.add_argument("--shrink", dest="shrink", action="store_true", default=True)
     parser.add_argument("--no-shrink", dest="shrink", action="store_false")
     parser.add_argument("--shrink-budget", type=int, default=120)

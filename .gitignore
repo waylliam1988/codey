@@ -20,6 +20,7 @@ dist/
 tests/manual/results/*
 # Soak failure artifacts: large recorded scripts, never committed.
 soak-failure-*.json
+tests/stress/artifacts/
 
 # External reference projects checked out locally for design comparison.
 reference-projects/
