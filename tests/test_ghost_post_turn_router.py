@@ -104,7 +104,7 @@ def _run_and_wait_for_local_maintenance(
     request: TaskSubmission,
 ) -> None:
     run_task_submission(runner, request)
-    state.wait_for_ghost_sleep(timeout=2)
+    assert state.wait_for_ghost_sleep(timeout=30)
 
 
 def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> None:

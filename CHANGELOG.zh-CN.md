@@ -2,6 +2,15 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 修 CI WinError 32：断言 ghost-sleep daemon join（未发布）
+
+- GitHub Windows Python 3.13 在删临时目录时挂了一个测试：ghost
+  sleep daemon 线程还拿着 events 锁文件。31 处调用忽略了
+  `wait_for_ghost_sleep(timeout=2)` 的返回值，负载高时 2s join 会
+  过期。现全部改为断言 `wait_for_ghost_sleep(timeout=30)`
+  （线程结束立刻返回），并补一个 daemon 语义单元测试。仅测试，
+  生产未动。
+
 ## Unreleased - Review 后续：Level 4 + 精确 no-ack（未发布）
 
 - session no-ack 崩溃点精确化：fault 在真实 fsync 之后、调用者观察到

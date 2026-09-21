@@ -269,7 +269,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
@@ -312,7 +312,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
@@ -375,7 +375,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
@@ -410,7 +410,7 @@ def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             run_task_submission(runner, TaskSubmission("s1", None, "继续查 pytest 变化", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
 
     router_factory.assert_called_once()
@@ -446,7 +446,7 @@ def test_post_turn_sync_harvests_research_interest_candidates() -> None:
 
             with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
                 run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
-                state.wait_for_ghost_sleep(timeout=2)
+                assert state.wait_for_ghost_sleep(timeout=30)
             items = state.ghost_work_queue.list_items(status="queued", session_id="s1")
         finally:
             state.knowledge_store.close()
@@ -507,7 +507,7 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             run_task_submission(runner, TaskSubmission("s1", str(project), "continue", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -552,7 +552,7 @@ def test_project_followup_without_proof_blocks_item() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             run_task_submission(runner, TaskSubmission("s1", str(project), "continue", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
 
     assert state.run_registry.last_terminal_event()["mode"] == "agent"
@@ -582,7 +582,7 @@ def test_review_item_consumes_into_review_without_writer() -> None:
             side_effect=AssertionError("review should not connect main provider"),
         ):
             run_task_submission(runner, TaskSubmission("s1", str(project), "下一个", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
 
     agent_run.assert_not_called()
@@ -600,7 +600,7 @@ def test_no_queued_item_falls_back_to_router() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
     router_factory.assert_called_once()
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
@@ -619,7 +619,7 @@ def test_claimed_item_is_released_on_stop() -> None:
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items()[0]
 
     assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"

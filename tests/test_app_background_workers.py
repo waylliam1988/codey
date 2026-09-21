@@ -68,6 +68,29 @@ class GhostSleepDaemonTests(unittest.TestCase):
         self.assertEqual(daemon.last_error, "RuntimeError: sleep failed")
         self.assertTrue(daemon.last_error_ref.startswith("sha256:"))
 
+    def test_wait_reports_false_while_worker_holds_resources(self) -> None:
+        # Callers must not ignore this: a False return means the worker
+        # thread (and its lock files) is still alive, so deleting the
+        # state directory now races it on Windows (WinError 32).
+        release = threading.Event()
+        started = threading.Event()
+
+        def _block(_payload: dict[str, object]) -> None:
+            started.set()
+            release.wait(timeout=30)
+
+        daemon = GhostSleepDaemon(
+            lock=threading.Lock(),
+            is_busy=lambda: False,
+            stop_requested=lambda: False,
+            run_once=_block,
+        )
+        self.assertTrue(daemon.kick({"run_id": "run-1"}))
+        self.assertTrue(started.wait(timeout=5))
+        self.assertFalse(daemon.wait(0.05))
+        release.set()
+        self.assertTrue(daemon.wait(5))
+
 
 class KnowledgeIndexerTests(unittest.TestCase):
     def test_schedule_rebuilds_once_and_runs_pending_pass(self) -> None:

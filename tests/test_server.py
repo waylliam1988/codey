@@ -3814,7 +3814,7 @@ class SessionThreadingTests(unittest.TestCase):
                 project="project-1",
                 run_projection={"run": 1},
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         self.assertTrue(kicked)
         self.assertEqual([row["run_id"] for row in seen], ["run-1", "run-2"])

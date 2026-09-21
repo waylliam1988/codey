@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## CI WinError 32 on 3.13: ignored daemon wait raced tmpdir cleanup (2026-09-21)
+
+Symptom (GitHub Windows, Python 3.13 only; 3.11/3.12 green):
+
+```text
+PermissionError: [WinError 32] ... state\ghost\.sleep_events.jsonl.lock
+tests/test_task_entry_run_trace.py:918 TemporaryDirectory cleanup
+```
+
+Root cause (version-agnostic race, first observed on 3.13): the ghost
+sleep daemon runs `run_once` on a background thread holding the events
+lock file. Callers did `state.wait_for_ghost_sleep(timeout=2)` and
+**ignored the bool**: on a loaded 655 s CI run the 2 s join can expire
+while the thread still holds the fd, and `TemporaryDirectory` cleanup
+immediately hits WinError 32 on Windows. Why only 3.13 is unexplained
+from here (no 3.13 runner locally; likely machine/timing, not language
+semantics) -- the race itself exists on every version, so the fix does
+not depend on that answer.
+
+Fix (tests only, production untouched):
+
+- 31 bare `state.wait_for_ghost_sleep(timeout=2)` call sites across
+  `test_task_entry_run_trace`, `test_task_entry_provider_preference`,
+  `test_ghost_post_turn_{affinity,router,work_queue}`, `test_server`
+  became `assert state.wait_for_ghost_sleep(timeout=30)`: join returns
+  as soon as the thread ends (no slowdown in the common case), and a
+  future overload fails loudly by name instead of as a cleanup flake.
+- New `test_wait_reports_false_while_worker_holds_resources` pins the
+  daemon semantics the asserts rely on (`wait` is False while blocked).
+- `tests/manual/` has 6 identical bare sites but is excluded from CI;
+  left untouched.
+
+Verification (local, 3.12):
+
+- `ruff check` on all touched files (passed)
+- Affected files: `test_app_background_workers + test_task_entry_run_trace`
+  (`21 passed`), provider_preference + 3 ghost_post_turn files
+  (`31 passed`), ghost-sleep subset of `test_server` (`6 passed`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release.
+
 ## Review follow-ups: precise no-ack, model self-check, regression/, Level 4 (2026-09-21)
 
 Scope:

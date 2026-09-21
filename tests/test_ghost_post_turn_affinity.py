@@ -228,7 +228,7 @@ def test_task_entry_uses_affinity_to_order_strict_continue_work_items() -> None:
             mock.patch(RESEARCH_ITERATION, research_iteration),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
     assert research_iteration.call_count == 1
@@ -271,7 +271,7 @@ def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
             run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         nodes = state.ghost_affinity.list_nodes(kind="user_preference")
 
     assert len(nodes) == 1
@@ -296,7 +296,7 @@ def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("chat")):
             run_task_submission(runner, TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
     assert items[favored.id].status == "queued"
@@ -315,7 +315,7 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
             return_value=_Provider(error=RuntimeError("raw SECRET_TOKEN_FIXTURE provider failure")),
         ):
             run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         nodes = state.ghost_affinity.list_nodes(kind="provider_behavior", session_id="s1")
         raw = state.ghost_affinity.events_path.read_text(encoding="utf-8")
 

@@ -157,7 +157,7 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 "deepseek",
                 intent="project",
             ))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
     # Without the preference the tie-broken order would try stepfun first;
     # the soft preference moves glm to the front of the failover candidates.
@@ -208,7 +208,7 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                 "stepfun",
                 intent="project",
             ))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
     # The user picked stepfun; the project preference must not replace it,
     # not even when the preferred provider sits earlier in every ranking.
@@ -273,7 +273,7 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 "deepseek",
                 intent="project",
             ))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
     assert calls[1] == "StepFun Chat"
     assert state.run_registry.last_terminal_event()["provider"] == "stepfun"
@@ -306,7 +306,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
                 "deepseek",
                 intent="auto",
             ))
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
         route.assert_called_once()
 
     # The started run must end with a bounded error terminal event, not a

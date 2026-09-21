@@ -218,7 +218,7 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
                     intent="project",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-trace", run_id)
@@ -290,7 +290,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
                         intent="auto",
                     )
                 )
-                state.wait_for_ghost_sleep(timeout=2)
+                assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-research-trace", run_id)
@@ -369,7 +369,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
                     intent="research",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         assert state.evidence_ledgers is not None
         snapshot = state.evidence_ledgers.load(
@@ -497,7 +497,7 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                         intent="hybrid",
                     )
                 )
-                state.wait_for_ghost_sleep(timeout=2)
+                assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-hybrid-trace", run_id)
@@ -567,7 +567,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                     intent="project",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-secondary-trace", run_id)
@@ -611,7 +611,7 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
                     intent="chat",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-consensus-trace", run_id)
@@ -647,7 +647,7 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
                     intent="chat",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-chat-provenance", run_id)
@@ -689,7 +689,7 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
                     intent="chat",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, session_id, run_id)
@@ -733,7 +733,7 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
                     intent="project",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-project-audit-prepared", run_id)
@@ -767,7 +767,7 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
                     intent="project",
                 )
             )
-            state.wait_for_ghost_sleep(timeout=2)
+            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-fallback-trace", run_id)
@@ -831,7 +831,7 @@ def _run_project_task(state: server.AppContext, project: Path, session_id: str, 
                 intent="project",
             )
         )
-        state.wait_for_ghost_sleep(timeout=2)
+        assert state.wait_for_ghost_sleep(timeout=30)
     run_id = state.run_registry.last_terminal_event()["run_id"]
     return _trace_payload(state, session_id, run_id)
 

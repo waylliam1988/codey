@@ -2,6 +2,17 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fix CI WinError 32: assert ghost-sleep daemon join (no release)
+
+- GitHub Windows Python 3.13 failed one test at `TemporaryDirectory`
+  cleanup: the ghost sleep daemon thread still held the events lock
+  file because 31 call sites ignored the bool from
+  `wait_for_ghost_sleep(timeout=2)` and the 2 s join can expire on a
+  loaded runner. They now assert
+  `wait_for_ghost_sleep(timeout=30)` (join returns immediately when
+  done), plus one daemon unit test pinning the wait semantics.
+  Tests only; production untouched.
+
 ## Unreleased - Review follow-ups: Level 4 + precise no-ack (no release)
 
 - The session no-ack crash point is now precise: the fault fires after
