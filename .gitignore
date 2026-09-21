@@ -18,6 +18,8 @@ dist/
 .readonly-parallel-ab*.json
 .shell-approval-followup-ab*.json
 tests/manual/results/*
+# Soak failure artifacts: large recorded scripts, never committed.
+soak-failure-*.json
 
 # External reference projects checked out locally for design comparison.
 reference-projects/

@@ -170,7 +170,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--operations", type=int, default=0)
     parser.add_argument("--tier", choices=sorted(TIERS), default="")
     parser.add_argument("--check-every", type=int, default=500)
-    parser.add_argument("--artifacts", default=".")
+    # Ignored by .gitignore: failure scripts can be tens of thousands of
+    # lines and must never land in the repo (see the 41k-line incident).
+    parser.add_argument("--artifacts", default=".e2e-artifacts")
     parser.add_argument("--shrink", dest="shrink", action="store_true", default=True)
     parser.add_argument("--no-shrink", dest="shrink", action="store_false")
     parser.add_argument("--shrink-budget", type=int, default=120)
@@ -235,6 +237,7 @@ def _handle_failure(
         "shrunk": shrunk,
     }
     path = Path(args.artifacts) / f"soak-failure-seed{seed}-step{failure.index}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(artifact, indent=2, sort_keys=True, default=str), encoding="utf-8")
     print(f"Artifact: {path}")
     print(f"Replay: python -m tests.stress.soak --seed {seed} "
