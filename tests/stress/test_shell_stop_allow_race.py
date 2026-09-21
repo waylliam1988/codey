@@ -12,23 +12,19 @@ import tempfile
 import threading
 import time
 import unittest
-from types import SimpleNamespace
 from unittest import mock
 
 from codey.app import shell_service
 from codey.app.approval_registry import ApprovalRegistry
 from codey.runtime.core import cancellation
 from tests.stress.oracle import InvariantChecker
+from tests.stress.scheduler import counting_spawn, shell_ctx
 
 
 def _ctx(approvals: ApprovalRegistry):
-    return SimpleNamespace(
-        _shell_spawn_gate=threading.Lock(),
-        lock=threading.Lock(),
-        approvals=approvals,
-        run_registry=SimpleNamespace(stop_flag=threading.Event()),
-        approval_generation=approvals.current_generation,
-    )
+    # Canonical shell harness lives in scheduler.py (shared with soak);
+    # this test only adapts the pending-request shape.
+    return shell_ctx(approvals)
 
 
 def _pending(project: str) -> dict:
@@ -43,22 +39,7 @@ def _pending(project: str) -> dict:
 
 
 def _fake_spawn_counter(spawns: list, order: list):
-    proc = mock.Mock()
-    proc.stdout = "ok"
-    proc.stderr = ""
-    proc.returncode = 0
-
-    def _start(*args, **kwargs):
-        # Runs inside the spawn gate: gate-serialized with Stop's section,
-        # so the "spawn"/"stop" order below is exact (no clock needed).
-        spawns.append(time.perf_counter_ns())
-        order.append("spawn")
-        return proc, mock.Mock()
-
-    def _wait(proc_arg, _job, _command, _timeout):
-        return proc
-
-    return _start, _wait
+    return counting_spawn(spawns, order, stamp=time.perf_counter_ns)
 
 
 class ShellRaceTests(unittest.TestCase):

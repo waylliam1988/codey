@@ -35,44 +35,19 @@ Honesty notes (read before "optimizing" this file):
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
 from tests.stress.oracle import InvariantChecker
-from tests.stress.test_proc_kill_recovery import (
-    WORKER,
-    _child_env,
+from tests.stress.process import (
     _kill,
     _read_line,
     _recover_canonical,
+    _spawn_crashpoint,
     _wait_file,
 )
-
-
-def _spawn_crashpoint(point: str, state_home: Path, rendezvous: Path):
-    return subprocess.Popen(
-        [
-            sys.executable,
-            "-u",
-            str(WORKER),
-            "--mode",
-            "crashpoint",
-            "--state-home",
-            str(state_home),
-            "--point",
-            point,
-            "--rendezvous",
-            str(rendezvous),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=_child_env(),
-    )
 
 
 def _intent_ids(facts: dict) -> list[str]:

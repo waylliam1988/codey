@@ -2,6 +2,33 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Durability Lab Level 2: soak + shrink (no release)
+
+- New `tests/stress/scheduler.py`: deterministic random state machine.
+  The generator picks only phase-legal ops from lifecycle state (per-run
+  operation leaves enforced), faults are per-area weighted, clusters
+  (timeout -> restart -> retry -> duplicate -> settle) are first-class,
+  and a logical clock advances TTL-like time. The executor is
+  randomness-free, so recorded scripts replay byte-identically.
+- New `tests/stress/soak.py` CLI (`--tier pr|nightly|weekly`, calibrated
+  to ~80 durable ops/s; larger runs split into session epochs under
+  derived seeds), with failure artifacts, bounded auto-shrink, and
+  replay verification. New `tests/stress/shrink.py` (prefix bisect +
+  ddmin) reduces a failing script to a minimal repro.
+- New `tests/stress/checkpoints.py` (writer x crash-point coverage table,
+  kept honest by `test_crash_coverage.py`) and `tests/stress/process.py`
+  (shared spawn/kill/recover helpers). P0-P4 deterministic suites kept.
+- Bugs found by the soak and fixed (test harness only, production
+  untouched): double-minted effect ids, state-machine-illegal
+  generation, impure duplicate-batch forgery, Mock-poisoned journal
+  determinism, SSE cursor/overflow accounting. The 4 MB single-session
+  spine cap (loud backpressure, hit at step 5851) is respected via epoch
+  rotation and documented.
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; `tests/stress/` green; nightly 10k soak
+  green; full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`3990 passed, 6 skipped, 1320 subtests passed in 338.39s`).
+
 ## Unreleased - Crash-point matrix for durable writes (no release)
 
 - New `tests/stress/test_crash_point_matrix.py`: 7 internal critical

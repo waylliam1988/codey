@@ -81,6 +81,23 @@ class FaultController:
         self._record(RACE, target, detail=str(picked))
         return picked
 
+    def weighted(self, target: str, options: tuple[tuple[str, int], ...]) -> str:
+        """Pick one name by weight; still just a decision, never business state."""
+        if not options:
+            raise ValueError("weighted needs at least one option")
+        total = sum(weight for _, weight in options)
+        if total <= 0:
+            raise ValueError("weighted needs a positive total weight")
+        roll = self.rng.uniform(0, total)
+        for name, weight in options:
+            roll -= weight
+            if roll <= 0:
+                self._record(RACE, target, detail=name)
+                return name
+        name = options[-1][0]
+        self._record(RACE, target, detail=name)
+        return name
+
     def coin_flip(self, target: str = "") -> bool:
         if self.rng.random() < 0.5:
             self._record(RACE, target, detail="heads")

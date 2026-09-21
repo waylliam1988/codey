@@ -2,6 +2,28 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 耐久实验室 Level 2：soak + shrink（未发布）
+
+- 新增 `tests/stress/scheduler.py`：确定性随机状态机。只从生命周期
+  状态选合法 op（强制单 run 单 leaf），fault 按区域加权，故障簇
+  （timeout -> restart -> retry -> duplicate -> settle）一等公民，
+  逻辑时钟推进类 TTL 时间。executor 零随机，录制 script 字节级重放。
+- 新增 `tests/stress/soak.py` CLI（`--tier pr|nightly|weekly`，按实测
+  ~80 ops/s 校准；大 runs 按 session 分 epoch，派生 seed），带失败
+  artifact、有界自动 shrink、重放验证。新增 `tests/stress/shrink.py`
+  （前缀二分 + ddmin）把失败序列缩到最小复现。
+- 新增 `tests/stress/checkpoints.py`（writer x 崩溃点覆盖表，由
+  `test_crash_coverage.py` 看守）和 `tests/stress/process.py`
+  （共享 spawn/kill/recover）。P0-P4 确定性套件不动。
+- soak 建造过程中抓到的 bug（全在测试侧，生产未动）：effect id 双重
+  mint、违反状态机的生成、不纯的 dup batch 伪造、Mock 污染 journal
+  确定性、SSE cursor/overflow 记账。4MB 单 session 脊柱上限（5851 步
+  撞上，loud 失败非静默损坏）以 epoch 轮换尊重并文档化。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check`
+  通过；`tests/stress/` 全绿；nightly 10k soak 全绿；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`3990 passed, 6 skipped, 1320 subtests passed in 338.39s`）。
+
 ## Unreleased - 耐久写入临界点矩阵（未发布）
 
 - 新增 `tests/stress/test_crash_point_matrix.py`：7 个内部临界点

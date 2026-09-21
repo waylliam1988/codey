@@ -13,6 +13,7 @@ raises AssertionError with a replayable description on violation:
    spawn never lands after a completed Stop.
 7. completion_has_proof -- completed implies a durable proof exists.
 8. no_new_operations_on_restart -- operation ids are stable across restart.
+9. ghost_stable_across_restart -- ghost rows are identical before/after restart.
 """
 
 from __future__ import annotations
@@ -116,6 +117,18 @@ class InvariantChecker:
             _fail(
                 "no_new_operations_on_restart",
                 self._prefix(f"operation ids changed:\nbefore={sorted(before)!r}\nafter={sorted(after)!r}"),
+            )
+
+    def check_ghost_stable_across_restart(
+        self, before: list[str], after: list[str]
+    ) -> None:
+        """The ghost log is append-only: a restart must rebuild the same rows."""
+        if before != after:
+            _fail(
+                "ghost_stable_across_restart",
+                self._prefix(
+                    f"ghost rows changed across restart:\nbefore={before!r}\nafter={after!r}"
+                ),
             )
 
     def assert_valid(

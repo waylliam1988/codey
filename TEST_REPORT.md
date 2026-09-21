@@ -1,5 +1,69 @@
 # Codey Test Report
 
+## Durability Lab Level 2: soak + shrink + Level 3 systematized (2026-09-21)
+
+Scope:
+
+```text
+tests/stress/scheduler.py:  deterministic random state machine (legal-op
+  generator, per-area weighted faults, fault clusters, logical clock,
+  counter-free replayable executor) + shared shell harness
+tests/stress/soak.py:       CLI runner (pr/nightly/weekly tiers, epochs,
+  failure artifacts, auto-shrink, replay verification)
+tests/stress/shrink.py:     QuickCheck-style reducer (prefix bisect + ddmin)
+tests/stress/checkpoints.py: writer x crash-point coverage table
+tests/stress/process.py:    parent-side spawn/kill/recover helpers (moved,
+  no behavior change)
+tests/stress/test_soak.py + test_crash_coverage.py: regression tests
+tests/stress/faults.py:     +FaultController.weighted (decision-only)
+tests/stress/oracle.py:     +check_ghost_stable_across_restart
+P4/P2 untouched except P2 shell harness moved to scheduler (same behavior)
+```
+
+Bugs found by the soak while building it (all fixed, all with regression
+coverage):
+
+- Generation/execution double-minted effect ids (replay diverged at step
+  2). Fixed: generation owns ids, executor rebuilds objects counter-free.
+- Generator violated the operation state machine
+  (`provider_effect_pending -> tool_effect_pending` at step 5). Fixed:
+  per-run phase tracking + legality gates; retry clusters settle the old
+  intent as error first (never ok: no fake success).
+- Forged duplicate batch changed the ref (digest conflict raised
+  TransitionError instead of the clean dup rejection). Fixed: dup retries
+  resend the byte-identical batch + tool (P4 path).
+- `mock.Mock(ok=True)` repair runner journaled Mock attribute addresses,
+  breaking replay determinism. Fixed: real `AdapterRepairResult` stub.
+- SSE cursor counted steps, not bus events (dup emits shifted it); the
+  overflow probe shared the world bus. Fixed: per-event cursor, isolated
+  overflow bus, cursor adoption on reconnect.
+- Nightly tier hit the 4 MB single-session spine cap at step 5851 (loud
+  `RuntimeLogWriteError`, no silent loss: production backpressure, not a
+  crash-safety violation). Fixed soak-side: epoch rotation (fresh session
+  per epoch, derived seeds); ceiling documented in `soak.py`.
+
+Deliberately out of soak (documented in module docstrings): wall-clock
+browser timeouts and true thread-schedule control stay in P2 (would be
+flaky here); flush-vs-fsync orderings stay vacuous under process kill;
+no production code carries test hooks.
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests` (passed)
+  `git diff --check` (passed)
+- Targeted: `tests/stress/` (`56 passed in 65.23s`)
+- Soak CLI: 3x1500 ops seeds 827361-3 green (~18s each);
+  `--tier nightly` seed 900001 green
+  (`10000 ops, 3 epochs, 616 restarts, ~1900 faults, 380.2s`)
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3990 passed, 6 skipped, 1320 subtests passed in 338.39s (0:05:38)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. Production code untouched (one behavior-neutral read of
+  `prepare_settlement` confirmed dup-settle idempotence; no edits).
+
 ## Crash-point matrix: kill inside every durable write (2026-09-21)
 
 Scope:
