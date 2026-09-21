@@ -14,6 +14,7 @@ raises AssertionError with a replayable description on violation:
 7. completion_has_proof -- completed implies a durable proof exists.
 8. no_new_operations_on_restart -- operation ids are stable across restart.
 9. ghost_stable_across_restart -- ghost rows are identical before/after restart.
+10. model_matches_durable -- scheduler memory agrees with durable reads.
 """
 
 from __future__ import annotations
@@ -128,6 +129,24 @@ class InvariantChecker:
                 "ghost_stable_across_restart",
                 self._prefix(
                     f"ghost rows changed across restart:\nbefore={before!r}\nafter={after!r}"
+                ),
+            )
+
+    def check_model_matches_durable(
+        self, surface: str, model_ids: list[str], durable_ids: list[str]
+    ) -> None:
+        """The scheduler's lifecycle model must agree with durable reads.
+
+        The scheduler is harness memory; the world is bytes on disk. If they
+        ever disagree, one of them is wrong -- that is exactly the class of
+        bug where the harness becomes a second Runtime.
+        """
+        if sorted(model_ids) != sorted(durable_ids):
+            _fail(
+                "model_matches_durable",
+                self._prefix(
+                    f"{surface} model != durable:\nmodel={sorted(model_ids)!r}\n"
+                    f"durable={sorted(durable_ids)!r}"
                 ),
             )
 

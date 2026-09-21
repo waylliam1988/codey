@@ -396,6 +396,36 @@ class SoakScheduler:
             return {"op": EXPIRE_APPROVALS, "run": run_id, "delta": delta, "faults": ["time_passes"]}
         return {"op": TICK, "delta": delta, "faults": []}
 
+    def self_check(self, world: Any) -> None:
+        """Cross-check harness memory against durable reads.
+
+        Called at every periodic check and at the end of a run/replay. The
+        scheduler must never become a second Runtime: what it believes is
+        pending must equal what the bytes on disk say is pending. (Ghost
+        ids are execution-ordered and intentionally not tracked here;
+        ghost stability is covered by restarts + canonical.)
+        """
+        oracle = InvariantChecker()
+        durable_provider: list[str] = []
+        for run_id in self.open_runs:
+            durable_provider.extend(world.pending_provider_ids(run_id))
+        oracle.check_model_matches_durable(
+            "provider_pending", sorted(self.provider_pending), durable_provider
+        )
+        durable_batches: list[str] = []
+        for run_id in self.open_runs:
+            durable_batches.extend(
+                batch.intent.batch_id for batch in world.undelivered_batches(run_id)
+            )
+        oracle.check_model_matches_durable(
+            "tool_batches",
+            sorted(batch for batch, _ in self._tool_runs()),
+            durable_batches,
+        )
+
+    def _tool_runs(self) -> list[tuple[str, str]]:
+        return [(batch_id, run_id) for batch_id, (run_id, _, _) in self.tool_pending.items()]
+
     # -- clusters --------------------------------------------------------------
 
     def _maybe_cluster(self, world: Any) -> list[dict]:
@@ -494,6 +524,12 @@ def execute_step(scheduler: SoakScheduler, world: Any, ctx: SoakContext, step: d
     ctx.note(step)
     if op == ACCEPT:
         world.accept_operation(step["run"])
+        # Lifecycle bookkeeping, mirrored from generation: the original run
+        # already appended during next_step (skip), replay rebuilds it here.
+        if step["run"] not in scheduler.open_runs:
+            scheduler.open_runs.append(step["run"])
+            if len(scheduler.open_runs) > 64:
+                scheduler.open_runs = scheduler.open_runs[-64:]
         scheduler.run_phase[step["run"]] = "running"
     elif op == PROVIDER_SEND:
         _exec_provider_send(scheduler, world, ctx, step)
@@ -774,8 +810,10 @@ def replay_script(script: list[dict], state_home: object, *, check_every: int = 
         except Exception as exc:
             raise SoakFailure(index, step, exc) from exc
         if check_every and (index + 1) % check_every == 0:
+            scheduler.self_check(world)
             facts = oracle.check_recovery_idempotent(world.canonical)
             oracle.assert_valid(facts, unknowns=ctx.unknowns)
+    scheduler.self_check(world)
     facts = oracle.check_recovery_idempotent(world.canonical)
     oracle.assert_valid(facts, unknowns=ctx.unknowns)
     oracle.check_no_duplicate_facts([c for c in ctx.committed if not c.endswith(":dup")])

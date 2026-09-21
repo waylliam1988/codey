@@ -170,10 +170,28 @@ def _point_session_torn_row(world: Any) -> dict:
 
 
 def _point_session_full_no_ack(world: Any) -> dict:
+    """Bytes fsynced, caller killed before observing the return.
+
+    Unlike an idle-checkpoint kill, the fault fires *inside* the write
+    path: the real fsync runs, then ``_CrashPointReached`` aborts before
+    ``append_bytes_durable`` returns, so the caller never gets its ack.
+    """
     baseline = _crash_baseline(world)
     world.accept_operation("run-cp-2")
     committed = world.provider_intent("run-cp-2")
-    world.begin_provider("run-cp-2", committed)
+    real_fsync = os.fsync
+
+    def _die_after_fsync(fd: int) -> None:
+        real_fsync(fd)
+        raise _CrashPointReached("died after fsync, before ack")
+
+    with mock.patch.object(os, "fsync", _die_after_fsync):
+        try:
+            world.begin_provider("run-cp-2", committed)
+        except _CrashPointReached:
+            pass
+        else:
+            raise AssertionError("post-fsync fault did not fire")
     return {"point": "session-full-no-ack", "baseline_effect": baseline, "crashed_effect": committed.effect_id}
 
 

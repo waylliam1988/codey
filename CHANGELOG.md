@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review follow-ups: Level 4 + precise no-ack (no release)
+
+- The session no-ack crash point is now precise: the fault fires after
+  the real fsync and before the caller observes the return (previously
+  an idle-checkpoint kill under the same name).
+- New scheduler `self_check`: pending lifecycle model cross-checked
+  against durable reads at every periodic check and at the end, in both
+  generate and replay modes (10th oracle invariant
+  `model_matches_durable`). It already caught one harness-fidelity bug
+  (replay executor not rebuilding `open_runs`).
+- New `tests/stress/regression/`: kept minimal repros only -- the loud
+  session-cap contract and the conflicting batch-id rejection. Raw
+  failure JSON stays in ignored `tests/stress/artifacts/`.
+- New Level 4 `test_multiprocess_concurrency.py`: concurrent writers,
+  parent kills, and a concurrent reader over one state home; asserts
+  timing-independent properties (prefix-closed logs, clean reader
+  views, writer progress, idempotent recovery). One documented
+  boundary: a single worker performs session writes (harness counters
+  are process-local; production mints uuids).
+- Verification: `ruff check . --no-cache`, `compileall`, and
+  `git diff --check` clean; full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3993 passed, 6 skipped, 1320 subtests passed in 344.45s`).
+
 ## Unreleased - Durability Lab Level 2: soak + shrink (no release)
 
 - New `tests/stress/scheduler.py`: deterministic random state machine.

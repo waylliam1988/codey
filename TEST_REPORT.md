@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## Review follow-ups: precise no-ack, model self-check, regression/, Level 4 (2026-09-21)
+
+Scope:
+
+```text
+tests/stress/kill_worker.py:   session-full-no-ack is now precise (fault
+  fires after the real fsync, before the caller observes the return)
+tests/stress/scheduler.py:     +self_check (pending model vs durable reads,
+  periodic + final, generate and replay); executor rebuilds open_runs
+tests/stress/oracle.py:        +check_model_matches_durable (10th invariant)
+tests/stress/regression/:      NEW: loud session-cap contract + conflicting
+  batch-id rejection (shrunk value without raw JSON dumps)
+tests/stress/mp_worker.py + test_multiprocess_concurrency.py: NEW Level 4
+  (writers + killer + reader over one state_home, timing-independent)
+```
+
+Bugs found while building (all fixed, all with regression coverage):
+
+- The old no-ack point killed at idle, not between fsync and ack (§14).
+  The fault now fires inside the write path after the real fsync.
+- self_check caught the harness becoming a second Runtime (§19 class):
+  the replay executor never rebuilt `open_runs`, so replay-side checks
+  iterated an empty model. Fixed by mirroring lifecycle bookkeeping.
+- New files' failures during bring-up: ghost-only writers finished
+  before the parent's kill (fixed with deterministic pacing + strict
+  kill assertions); forged dup batch reused the tool object and hit the
+  effect-id check instead of the batch-conflict path (fixed with a fresh
+  tool intent, which also documented the two distinct rejection paths).
+
+Deliberately bounded: StressWorld id counters are process memory, so
+exactly one Level 4 worker performs session writes (production mints
+uuids); ghost concurrency is per-tag isolated. Level 4 asserts durable
+properties (prefix-closed logs, clean reader views, progress, idempotent
+recovery), never interleavings -- timing is OS-owned.
+
+Verification:
+
+- Static gates before the full run:
+  `ruff check . --no-cache` (passed, I+SIM on)
+  `python -m compileall -q codey tests` (passed)
+  `git diff --check` (passed)
+- Targeted: multiprocess test 3/3 stable (~6s each);
+  `tests/stress/` green
+- Full pytest suite:
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`3993 passed, 6 skipped, 1320 subtests passed in 344.45s (0:05:44)`)
+- Post-commit gate: `git show --check HEAD` (to verify after commit).
+- No release. Production code untouched.
+
 ## Durability Lab Level 2: soak + shrink + Level 3 systematized (2026-09-21)
 
 Scope:

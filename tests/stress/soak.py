@@ -77,8 +77,10 @@ def run_soak(
                     failure.script = script
                     raise failure from exc
                 if check_every and (index + 1) % check_every == 0:
+                    scheduler.self_check(world)
                     facts = oracle.check_recovery_idempotent(world.canonical)
                     oracle.assert_valid(facts, unknowns=ctx.unknowns)
+            scheduler.self_check(world)
             facts = oracle.check_recovery_idempotent(world.canonical)
             oracle.assert_valid(facts, unknowns=ctx.unknowns)
             oracle.check_no_duplicate_facts(

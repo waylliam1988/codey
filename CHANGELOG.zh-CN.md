@@ -2,6 +2,26 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Review 后续：Level 4 + 精确 no-ack（未发布）
+
+- session no-ack 崩溃点精确化：fault 在真实 fsync 之后、调用者观察到
+  返回之前触发（之前同名测试实际是 idle kill）。
+- scheduler 新增 `self_check`：pending 生命周期模型与 durable 读在
+  每次定期检查和结尾交叉验证，generate 和 replay 双模式（第 10 条
+  oracle 不变量 `model_matches_durable`）。它已抓到一个 harness 保真
+  bug（replay executor 未重建 `open_runs`）。
+- 新增 `tests/stress/regression/`：只保留最小 repro——loud session 上
+  限契约和冲突 batch-id 拒绝。原始失败 JSON 留在忽略的
+  `tests/stress/artifacts/`。
+- 新增 Level 4 `test_multiprocess_concurrency.py`：共享 state home 上
+  并发 writers + 父进程 kill + 并发 reader；断言与时间无关的性质
+  （前缀封闭、无 torn 读、writer 进展、恢复幂等）。一个文档化边界：
+  只有一个 worker 做 session 写（harness 计数器进程局部；生产用
+  uuid）。
+- 验证：`ruff check . --no-cache`、`compileall`、`git diff --check`
+  通过；全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`3993 passed, 6 skipped, 1320 subtests passed in 344.45s`）。
+
 ## Unreleased - 耐久实验室 Level 2：soak + shrink（未发布）
 
 - 新增 `tests/stress/scheduler.py`：确定性随机状态机。只从生命周期
