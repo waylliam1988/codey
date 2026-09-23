@@ -41,21 +41,27 @@ def _canonical_path(call: ToolCall, project: str = "") -> str:
 def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
     """Classify one call into (scope, key) for conflict planning.
 
-    Scopes: ``write`` (edit), ``read`` (read/ls/pathed search/references),
-    ``serial`` (run/shell side effects plus unpathed search/references),
-    ``other`` (everything else). Serial today; grouping only proves the
-    invariant for a future conservative parallel reader.
+    Scopes: ``write`` (edit), ``read`` (read/pathed ls/pathed
+    search/references), ``serial`` (run/shell side effects, tree-wide
+    ``ls``/search/references without a concrete path), ``other``
+    (everything else). Serial today; grouping only proves the invariant
+    for a future conservative parallel reader.
     """
     name = str(call.name or "")
     if name in ("run", "shell"):
         return ("serial", name)
     if name == "edit":
         return ("write", _canonical_path(call, project))
-    if name in ("read", "ls"):
+    if name == "read":
+        return ("read", _canonical_path(call, project))
+    if name == "ls":
+        rel = _normalize_rel(str((call.args or {}).get("path") or ""))
+        if rel == ".":
+            return ("serial", name)
         return ("read", _canonical_path(call, project))
     if name in ("search", "references"):
-        path = str((call.args or {}).get("path") or "").strip()
-        if not path or path == ".":
+        rel = _normalize_rel(str((call.args or {}).get("path") or ""))
+        if rel == ".":
             return ("serial", name)
         return ("read", _canonical_path(call, project))
     return ("other", name)
@@ -71,10 +77,16 @@ class FileMutationQueue:
         groups: list[list[int]] = []
         group_writes: list[set[str]] = []
         group_reads: list[set[str]] = []
+        group_barriers: list[bool] = []
         for index, call in enumerate(calls):
             scope, key = scope_for_call(call, project)
             if scope == "write":
-                if groups and key not in group_writes[-1] and key not in group_reads[-1]:
+                if (
+                    groups
+                    and not group_barriers[-1]
+                    and key not in group_writes[-1]
+                    and key not in group_reads[-1]
+                ):
                     # Different-file writes may share a group; same-file
                     # writes (or a write after a same-file read in the same
                     # group) serialize by starting a new group.
@@ -84,16 +96,20 @@ class FileMutationQueue:
                     groups.append([index])
                     group_writes.append({key})
                     group_reads.append(set())
+                    group_barriers.append(False)
             elif scope == "read":
                 if not groups:
                     groups.append([index])
                     group_writes.append(set())
                     group_reads.append({key})
-                elif key in group_writes[-1]:
-                    # Same-file write/read pairs never run concurrently.
+                    group_barriers.append(False)
+                elif group_barriers[-1] or key in group_writes[-1]:
+                    # A serial barrier seals the previous group, and
+                    # same-file write/read pairs never run concurrently.
                     groups.append([index])
                     group_writes.append(set())
                     group_reads.append({key})
+                    group_barriers.append(False)
                 else:
                     # Different files (or repeat reads) may share the group;
                     # a read of a file written in an earlier group is already
@@ -104,15 +120,18 @@ class FileMutationQueue:
                 groups.append([index])
                 group_writes.append(set())
                 group_reads.append(set())
-            elif groups:
+                group_barriers.append(True)
+            elif groups and not group_barriers[-1]:
                 groups[-1].append(index)
                 while len(group_writes) < len(groups):
                     group_writes.append(set())
                     group_reads.append(set())
+                    group_barriers.append(False)
             else:
                 groups.append([index])
                 group_writes.append(set())
                 group_reads.append(set())
+                group_barriers.append(False)
         return groups
 
 

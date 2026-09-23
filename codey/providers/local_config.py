@@ -268,6 +268,10 @@ def parse_local_config_update(
             else previous.native_tools_mode
         )
     window = _parse_positive_int(body.get("context_window_tokens"))
+    if "context_window_tokens" in body:
+        raw_window = body.get("context_window_tokens")
+        if raw_window is not None and str(raw_window).strip() != "" and window is None:
+            return None, "context_window_tokens must be a positive integer"
     context = previous.context
     if window is not None:
         if window <= 0:

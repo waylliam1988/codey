@@ -35,7 +35,6 @@ class ResearchToolOutput:
 
     model_text: str
     receipt_text: str = ""
-    presentation_result: str = ""
 
 
 @dataclass

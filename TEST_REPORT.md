@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## True serial barriers + minimal receipts + strict bootstrap full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/runtime/write/file_mutation_queue.py (group_barriers; tree-wide ls serial)
+codey/research/output_receipts.py     (skip head_tail_clip on override)
+codey/research/tools.py               (drop dead presentation_result field)
+codey/providers/local_config.py       (explicit non-numeric window -> 400)
+codey/web/assets/provider_ui.js       (applyRecommended before + after setProviders)
+tests/test_local_bootstrap.py         (barrier matrix, ls scopes, 400/empty window, UI ordering)
+tests/test_research_open_url_structured.py (clip-skipped, output shape)
+```
+
+Notes:
+
+- A `serial` group is now a true barrier: nothing joins it from either
+  side. Tree-wide `ls`/`search`/`references` stay serial; only concrete
+  subpaths read. Execution remains serial; grouping is proof for a future
+  conservative parallel reader.
+- Receipts do no wasted work on the override path and carry no dead
+  fields: `model_text` for the model, `receipt_text` for the store.
+- Bootstrap fails loudly on explicit bad input (`"262kk"` -> 400) and
+  stays quiet on empty (not provided). Recommended is applied both before
+  the unchanged fast path and after a catalog change, so dynamic provider
+  ids cannot be dropped.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: queue/structured/bootstrap/coldstart/research/connector/
+  deep-ab/server/architecture suites green (incl. 4 new assertions).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4098 passed, 6 skipped, 1341 subtests passed in 365.46s`).
+- No release.
+
 ## Structured open_url + window-only receipts + conservative scopes full suite (2026-09-23)
 
 Scope (production, no release):

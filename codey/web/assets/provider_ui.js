@@ -59,6 +59,12 @@ function buildProviderMenu() {
   syncProviderUI(currentProviderId());
 }
 
+function applyRecommended(data) {
+  if (data && data.recommended && window.CodeyUiState && typeof window.CodeyUiState.setRecommended === 'function') {
+    window.CodeyUiState.setRecommended(data.recommended);
+  }
+}
+
 function applyProviderConfig(data) {
   if (!data || !Array.isArray(data.providers)) return false;
   const ids = data.providers.map((item) => item && item.id).filter(Boolean);
@@ -73,12 +79,11 @@ function applyProviderConfig(data) {
     if (PROVIDER_LABELS[id] !== labels[id]) { changed = true; break; }
   }
   if (data.default && data.default !== DEFAULT_PROVIDER && labels[data.default]) changed = true;
-  if (data.recommended && window.CodeyUiState && typeof window.CodeyUiState.setRecommended === 'function') {
-    window.CodeyUiState.setRecommended(data.recommended);
-  }
+  applyRecommended(data);
   if (!changed) return false;
   if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
     window.CodeyUiState.setProviders(ids, labels, data.default);
+    applyRecommended(data);
   } else {
     PROVIDER_LABELS = labels;
     PROVIDERS = ids;

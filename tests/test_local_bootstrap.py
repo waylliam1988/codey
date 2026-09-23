@@ -200,6 +200,10 @@ def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
     assert scope_for_call(ToolCall(name="run", args={"command": "pytest"}))[0] == "serial"
     assert scope_for_call(ToolCall(name="shell", args={"command": "ls"}))[0] == "serial"
     assert scope_for_call(ToolCall(name="read", args={"path": "a.py"}))[0] == "read"
+    # Tree-wide ls stays serial; a concrete subpath stays a read.
+    assert scope_for_call(ToolCall(name="ls", args={}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="ls", args={"path": "."}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="ls", args={"path": "docs"}))[0] == "read"
     # Same-path search/edit serialize; different paths batch.
     same = [
         ToolCall(name="edit", args={"path": "a.py"}),
@@ -217,6 +221,27 @@ def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
         ToolCall(name="search", args={"query": "q"}),
     ]
     assert group_tool_calls_for_execution(unpathed, str(tmp_path)) == [[0], [1]]
+    # A serial group is a true barrier: nothing joins it from either side.
+    assert group_tool_calls_for_execution(
+        [ToolCall(name="run", args={"command": "pytest"}), ToolCall(name="edit", args={"path": "a.py"})],
+        str(tmp_path),
+    ) == [[0], [1]]
+    assert group_tool_calls_for_execution(
+        [ToolCall(name="search", args={"query": "q"}), ToolCall(name="edit", args={"path": "a.py"})],
+        str(tmp_path),
+    ) == [[0], [1]]
+    assert group_tool_calls_for_execution(
+        [ToolCall(name="shell", args={"command": "ls"}), ToolCall(name="read", args={"path": "a.py"})],
+        str(tmp_path),
+    ) == [[0], [1]]
+    assert group_tool_calls_for_execution(
+        [ToolCall(name="edit", args={"path": "a.py"}), ToolCall(name="ls", args={"path": "."})],
+        str(tmp_path),
+    ) == [[0], [1]]
+    assert group_tool_calls_for_execution(
+        [ToolCall(name="edit", args={"path": "a.py"}), ToolCall(name="ls", args={"path": "docs"})],
+        str(tmp_path),
+    ) == [[0, 1]]
 
 
 def test_open_url_full_text_receipt(tmp_path: Path) -> None:
@@ -274,3 +299,34 @@ def test_api_save_accepts_bootstrap_fields() -> None:
     assert kwargs.get("context_window_tokens") == 262144
     assert kwargs.get("context_reserve_tokens") == 32768
     assert kwargs.get("context_keep_recent_tokens") == 32000
+
+
+def test_parse_update_rejects_non_numeric_window() -> None:
+    from codey.providers.local_config import LocalProviderConfig, parse_local_config_update
+
+    previous = LocalProviderConfig(base_url="http://127.0.0.1:11434/v1", model="m", api_key="k")
+    parsed, error = parse_local_config_update(
+        {"base_url": "http://127.0.0.1:11434/v1", "model": "m", "context_window_tokens": "262kk"},
+        previous,
+    )
+    assert parsed is None
+    assert "positive integer" in error
+    # Empty means "not provided" and keeps the previous context.
+    parsed_empty, error_empty = parse_local_config_update(
+        {"base_url": "http://127.0.0.1:11434/v1", "model": "m", "context_window_tokens": ""},
+        previous,
+    )
+    assert error_empty == "" and parsed_empty is not None
+
+
+def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
+    from pathlib import Path as _Path
+
+    text = (_Path(__file__).resolve().parents[1] / "codey" / "web" / "assets" / "provider_ui.js").read_text(
+        encoding="utf-8"
+    )
+    assert "function applyRecommended(data)" in text
+    before = text.index("applyRecommended(data);")
+    assert text.index("if (!changed) return false;") > before
+    after_providers = text.index("setProviders(ids, labels, data.default);")
+    assert text.index("applyRecommended(data);", after_providers) > after_providers

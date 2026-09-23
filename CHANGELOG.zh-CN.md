@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 真 barrier、最小 receipt、严格 bootstrap（未发布）
+
+- P0：serial 组成为真 barrier。`FileMutationQueue.plan()` 新增
+  `group_barriers`，serial 组封住上一组，后续 `write`/`read`/`other`
+  都不能拼入（`run+edit`、无 path `search+edit`、`shell+read` 全部切分）。
+  无 path 或 `"."` 的 `ls` 走 `serial`，只有具体子路径才走 `read`。
+  现在仍串行执行，这是给未来并行的保险。
+- P1：receipt 最小化。有 `model_text_override` 时直接用窗口，不再算
+  `head_tail_clip()`（大页面省一次 encode）；`ResearchToolOutput` 删掉
+  无用的 `presentation_result` 死字段，只留 `model_text`/`receipt_text`
+  （展示仍由 `_opened_source_presentation(model_text)` 推导）。
+- P1：bootstrap 严格但不打扰。`parse_local_config_update()` 对显式非数字
+  `context_window_tokens`（如 `"262kk"`）直接 400，不再静默保持旧值；
+  空串仍视为“未提供”。`provider_ui.js` 抽出 `applyRecommended()`，在
+  unchanged 分支前调一次、`setProviders()` 后再调一次，避免以后动态
+  新增 provider 因 labels 未更新被丢掉。
+- 测试：补 barrier（`run+edit`、`search(无path)+edit`、`shell+read`、
+  `edit+ls .` 切分、`edit+ls docs` 同组、`ls` 矩阵）、`applyRecommended`
+  顺序、非数字 window 400、空 window 忽略、override 不调 clip、
+  `ResearchToolOutput` 字段形状。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4098 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - 结构化 open_url、只看窗口的 receipt、保守 scope（未发布）
 
 - P0：`ResearchTools.open_url()` 改为结构化返回。直接返回

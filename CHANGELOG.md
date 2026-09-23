@@ -2,6 +2,36 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - True serial barriers, minimal receipts, strict bootstrap (no release)
+
+- P0: serial groups are now true barriers. `FileMutationQueue.plan()` tracks
+  `group_barriers`; a `serial` group seals the previous group so no later
+  `write`/`read`/`other` can join it (`run+edit`, unpathed `search+edit`,
+  `shell+read` all split). Tree-wide `ls` (no path or `"."`) is `serial`;
+  only a concrete subpath stays a `read`. Execution stays serial; this is
+  future-parallel insurance only.
+- P1: receipts are minimal. `maybe_externalize_output()` skips
+  `head_tail_clip()` entirely when `model_text_override` is present (no
+  wasted encode on large pages); `ResearchToolOutput` drops the dead
+  `presentation_result` field and carries only
+  `model_text`/`receipt_text` (presentation still derives from
+  `model_text` via `_opened_source_presentation`).
+- P1: bootstrap is strict but quiet. `parse_local_config_update()` rejects
+  an explicit non-numeric `context_window_tokens` (e.g. `"262kk"`) with
+  `400` instead of silently keeping the old context; empty still means
+  "not provided". `provider_ui.js` extracts `applyRecommended()` and calls
+  it both before the no-change early return and after `setProviders()`, so
+  a future dynamic provider id cannot be dropped for missing labels.
+- Tests: extended queue barriers (`run+edit`, `search(no path)+edit`,
+  `shell+read`, `edit+ls .` split, `edit+ls docs` batches, `ls` scope
+  matrix), `applyRecommended` ordering, non-numeric window `400`, empty
+  window ignored, `head_tail_clip` not called on override, and
+  `ResearchToolOutput` field-shape assertions.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4098 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - Structured open_url, window-only receipts, conservative scopes (no release)
 
 - P0: `ResearchTools.open_url()` is now structured. It returns

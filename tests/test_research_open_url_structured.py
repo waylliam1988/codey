@@ -98,3 +98,43 @@ def test_runner_open_url_fail_closed_on_string() -> None:
         with pytest.raises(TypeError, match="must return ResearchToolOutput"):
             runner._dispatch(ToolCall("open_url", {"url": "https://example.com"}), 1, 0)
         store.close()
+
+
+def test_receipt_override_skips_head_tail_clip() -> None:
+    from types import SimpleNamespace as _NS
+
+    from codey.research import output_receipts as receipts
+
+    calls: list[str] = []
+    original = receipts.head_tail_clip
+
+    def _spy(text: str):  # type: ignore[no-untyped-def]
+        calls.append(text)
+        return original(text)
+
+    receipts.head_tail_clip = _spy  # type: ignore[method-assign]
+    try:
+        full = "WINDOW\n" + "x" * 30000 + "\nTAIL_ONLY"
+        call = _NS(name="open_url", args={"url": "https://example.com"})
+        outcome = receipts.maybe_externalize_output(
+            store=None,
+            session_id="",
+            run_id="",
+            permission_profile="research",
+            call=call,
+            output=full,
+            turn=1,
+            tool_index=0,
+            model_text_override="WINDOW",
+        )
+    finally:
+        receipts.head_tail_clip = original  # type: ignore[method-assign]
+    assert calls == []
+    assert outcome.model_text == "WINDOW"
+
+
+def test_research_tool_output_is_window_plus_receipt_only() -> None:
+    import dataclasses
+
+    names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
+    assert names == {"model_text", "receipt_text"}
