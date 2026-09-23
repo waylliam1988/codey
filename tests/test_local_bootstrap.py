@@ -308,6 +308,32 @@ def test_api_save_accepts_bootstrap_fields() -> None:
     assert kwargs.get("context_keep_recent_tokens") == 32000
 
 
+def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
+    from codey.app import api as app_api
+    from codey.providers.local_discovery import LocalEndpoint
+
+    monkeypatch.setenv("LOCAL_OPENAI_API_KEY", "env-key")
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
+    live = LocalEndpoint("http://127.0.0.1:8080/v1", ("qwen",))
+    with (
+        mock.patch.object(app_api, "load_local_config", return_value={"api_key": ""}),
+        mock.patch.object(
+            app_api, "probe_local_endpoint_detail", return_value=(live, "ok"),
+        ) as probe,
+        mock.patch.object(app_api, "save_local_config") as save,
+        mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+    ):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:8080/v1",
+            "model": "qwen",
+        })
+    assert status == 200 and payload["ok"] is True
+    # The env secret authorizes the probe but is never written to disk.
+    probe.assert_called_once_with("http://127.0.0.1:8080/v1", api_key="env-key")
+    _args, _kwargs = save.call_args
+    assert _args[2] == ""
+
+
 def test_parse_update_rejects_non_numeric_window() -> None:
     from codey.providers.local_config import LocalProviderConfig, parse_local_config_update
 
@@ -490,6 +516,22 @@ def test_bootstrap_offers_try_buttons_only_when_unconnected() -> None:
         payload = canonical.local_bootstrap_payload()
     assert payload["connected"] is False
     assert payload["candidates"] == ["http://127.0.0.1:1234/v1", "http://127.0.0.1:11434/v1"]
+
+
+def test_bootstrap_echoes_env_base_when_unconnected(monkeypatch) -> None:
+    from codey.providers import local_config as canonical
+
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
+        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", return_value=[]),
+    ):
+        payload = canonical.local_bootstrap_payload()
+    assert payload["connected"] is False
+    assert payload["base_url"] == "http://127.0.0.1:8080/v1"
 
 
 def test_bootstrap_falls_back_to_env_key_and_base(monkeypatch) -> None:

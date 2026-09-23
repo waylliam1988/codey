@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app import provider_services, shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
+from codey.env_names import LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import config_from_dict, parse_local_config_update
@@ -133,6 +135,13 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
     target_changed = bool(previous_base_url) and base_url != previous_base_url
     if not probe_key and same_target:
         probe_key = previous.api_key
+    if not probe_key:
+        env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+        env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
+        if env_key and base_url == env_base:
+            # Probe-only: the env secret authorizes this probe but is never
+            # persisted (save below still passes parsed.api_key).
+            probe_key = env_key
     if not probe_key and target_changed:
         return 400, {
             "ok": False,

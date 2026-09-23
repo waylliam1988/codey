@@ -1,5 +1,33 @@
 # Codey Test Report
 
+## Env-key save probe + visible env endpoint full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/app/api.py                      (env key for save-probe only; never persisted)
+codey/providers/local_config.py       (base_url echoes remembered address when offline)
+tests/test_local_bootstrap.py         (env-key probe + empty-at-rest; offline env-base echo)
+```
+
+Notes:
+
+- An env-only user sees connected, edits context, and hits Connect
+  without an auth failure: the save probe borrows the env key for that
+  one request while the stored config keeps no secret.
+- An env-configured but unreachable endpoint stays visible in the panel
+  input instead of rendering empty, so the user sees what is configured.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: bootstrap/server/research/noab/abab suites green (incl. 2 new
+  tests).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4106 passed, 6 skipped, 1341 subtests passed in 370.38s`).
+- No release.
+
 ## Env-aware bootstrap + quiet-when-connected + strict overrides full suite (2026-09-24)
 
 Scope (production, no release):

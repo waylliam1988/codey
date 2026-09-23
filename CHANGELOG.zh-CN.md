@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - env key 只探不存、离线回显 env 地址（未发布）
+
+- P1：保存时 env key 只用于探测。请求无 key 且目标为 env 地址时，
+  `save_local_provider_response()` 用 `LOCAL_OPENAI_API_KEY` 探测，
+  不再 auth 失败；落盘仍只写 `parsed.api_key`，env secret 永不进文件。
+- P2：离线也回显配置地址。bootstrap `base_url` 在不可达时回落到
+  remembered（存储或 env）地址，env 配置的 URL 不会显示为空输入框。
+- 测试：env key 探测 + 落盘为空断言、离线 env base 回显。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4106 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - env 感知 bootstrap、连接后安静、严格 override（未发布）
 
 - P1：bootstrap 认 env。`local_bootstrap_payload()` 无存储地址时回落

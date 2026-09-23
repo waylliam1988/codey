@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Env-key save probe, visible env endpoint (no release)
+
+- P1: saving reuses the env key for the probe only. When the request
+  carries no key for the env-configured endpoint,
+  `save_local_provider_response()` probes with `LOCAL_OPENAI_API_KEY`
+  instead of failing auth; the persisted config still receives only
+  `parsed.api_key`, so the env secret never lands on disk.
+- P2: the panel echoes the configured endpoint while offline. The
+  bootstrap `base_url` falls back to the remembered (stored-or-env)
+  address when nothing is reachable, so an env-configured URL stays
+  visible in the input instead of rendering empty.
+- Tests: env-key probe with empty-at-rest assertion, offline env-base
+  echo.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4106 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - Env-aware bootstrap, quiet-when-connected, strict overrides (no release)
 
 - P1: bootstrap honors env config. `local_bootstrap_payload()` falls back

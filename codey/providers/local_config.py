@@ -405,13 +405,13 @@ def resolve_effective_local_config(
 def local_bootstrap_payload() -> dict:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
+    env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+    remembered = config.base_url.strip() or env_base
     try:
         from codey.providers import local_discovery as discovery
 
         env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
         probe_key = config.api_key or env_key
-        env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
-        remembered = config.base_url.strip() or env_base
         endpoint = (
             discovery.probe_local_endpoint(remembered, api_key=probe_key)
             if remembered
@@ -447,7 +447,7 @@ def local_bootstrap_payload() -> dict:
             models = [config.model, *[m for m in models if m != config.model]]
     return {
         "connected": endpoint is not None,
-        "base_url": effective.base_url,
+        "base_url": effective.base_url or remembered,
         "model": effective.model,
         "models": models,
         "candidates": discovered,
