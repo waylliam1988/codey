@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
 
 from codey.ghost.extractor import GhostSignalExtractor, SignalProvider
 from codey.ghost.hebbian import GhostHebbianStore
@@ -15,14 +14,6 @@ from codey.ghost.store import GhostSignalStore
 
 DEFAULT_GHOST_LEARNING_TIMEOUT = 35.0
 DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT = 15.0
-
-
-class ClosableSignalProvider(SignalProvider, Protocol):
-    def new_chat(self, timeout: float | None = None) -> None:
-        """Start a clean provider chat if the provider supports it."""
-
-    def close(self) -> None:
-        """Release the temporary provider session."""
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,36 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## 0.5.9 - Local Model Runtime Hygiene
+
+- Local model is now the main local path, not a side adapter. Configuration,
+  endpoint discovery, and provider runtime each have one owner:
+  `local_config.py`, `local_discovery.py`, and `local_openai.py`. The old
+  `local_openai` config/discovery facades are gone, and `local_config.py`
+  accepts the strict schema-2 shape only (`native_tools_mode` plus nested
+  `context` for persisted config).
+- The local setup panel is quieter and clearer: env keys are probe-only and
+  never persisted, remembered/env endpoints stay visible while offline,
+  connected endpoints no longer show dead try-buttons, and context override
+  errors fail loudly instead of looking saved.
+- Native tool calling and local context budgets are first-class for the local
+  provider. The runtime resolves one effective local config up front and does
+  not reread disk per send.
+- Runtime ownership is cleaner. `session_log.py` is only the durable store;
+  `entries.py` owns runtime log entry/error types. Unconsumed runtime contract
+  stubs (`Operation`, `CompletionVerdict`, `key_for_call`) were removed and
+  locked by architecture tests.
+- Release hygiene removed confirmed dead convenience exports across Research,
+  Ghost, providers, web drivers, and OpenAI tool lowering while preserving the
+  Ghost learning/continuity/directive/work-queue core.
+- Research and tool UX are stricter: structured `open_url` receipts separate
+  model-visible windows from stored full text, file mutation planning has true
+  serial barriers, unknown tools serialize by default, and review policy is an
+  explicit setting instead of quiet self-review fallback.
+- Verification: `python -m ruff check .`, `git diff --check`, targeted
+  regression suites, collection (`4116 tests collected`), and final full
+  `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
+
 ## Unreleased - Env-key save probe, visible env endpoint (no release)
 
 - P1: saving reuses the env key for the probe only. When the request
@@ -147,10 +177,10 @@
   `local_bootstrap_payload()` (connection, models, mode, context, presets).
   `providers/local_discovery.py` owns candidates (LM Studio, Ollama,
   KoboldCPP `5001/v1`, generic) with parallel probing and single-resolve.
-  `local_openai.py` keeps only the provider runtime plus thin facades, so
-  existing callers and mock points keep working; per-send disk reads are
-  gone (instance budgets with capability fallback). Config file migrates to
-  schema 2 with one-time legacy-field reads.
+  `local_openai.py` keeps only the provider runtime; config and discovery
+  callers use the canonical modules directly. Per-send disk reads are gone
+  (instance budgets with capability fallback). Config storage is strict
+  canonical schema 2.
 - P1: the local panel is complete for non-experts. `GET /api/local_provider`
   returns the bootstrap payload; save goes through the canonical parse
   (credential-reuse rules unchanged); `/api/providers` adds `recommended`

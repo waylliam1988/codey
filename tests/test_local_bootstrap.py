@@ -57,7 +57,7 @@ def test_parse_update_derives_preset_and_mode() -> None:
     assert parsed2 is None and error2 != ""
 
 
-def test_canonical_roundtrip_and_legacy_migration(tmp_path: Path) -> None:
+def test_canonical_schema2_roundtrip(tmp_path: Path) -> None:
     from codey.providers import local_config as canonical
 
     path = tmp_path / "local-openai.json"
@@ -73,15 +73,20 @@ def test_canonical_roundtrip_and_legacy_migration(tmp_path: Path) -> None:
 
         assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 2
 
-        # Legacy flat shape migrates on read.
-        path.write_text(
-            json.dumps({"base_url": "http://127.0.0.1:5001/v1", "model": "g",
-                        "native_tools": False, "context_window_tokens": 8192}),
-            encoding="utf-8",
-        )
-        migrated = canonical.load_local_config()
-        assert migrated.native_tools_mode == "off"
-        assert migrated.context is not None and migrated.context.context_window_tokens == 8192
+
+def test_retired_flat_local_config_fields_are_ignored() -> None:
+    from codey.providers import local_config as canonical
+
+    loaded = canonical.config_from_dict({
+        "base_url": "http://127.0.0.1:5001/v1",
+        "model": "g",
+        "native_tools": False,
+        "context_window_tokens": 8192,
+    })
+
+    assert loaded.base_url == "http://127.0.0.1:5001/v1"
+    assert loaded.native_tools_mode == canonical.NATIVE_TOOLS_AUTO
+    assert loaded.context is None
 
 
 def test_effective_resolution(monkeypatch) -> None:
@@ -285,13 +290,13 @@ def test_api_save_accepts_bootstrap_fields() -> None:
     from codey.providers.local_discovery import LocalEndpoint
 
     with (
-        mock.patch.object(app_api, "load_local_config", return_value={"api_key": ""}),
+        mock.patch.object(app_api, "load_local_config", return_value=app_api.LocalProviderConfig(api_key="")),
         mock.patch.object(
             app_api, "probe_local_endpoint_detail",
             return_value=(LocalEndpoint("http://127.0.0.1:11434/v1", ("qwen",)), "ok"),
         ) as probe,
         mock.patch.object(app_api, "save_local_config") as save,
-        mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+        mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
     ):
         status, payload = app_api.save_local_provider_response({
             "base_url": "http://127.0.0.1:11434/v1",
@@ -301,11 +306,12 @@ def test_api_save_accepts_bootstrap_fields() -> None:
         })
     assert status == 200 and payload["ok"] is True
     probe.assert_called_once_with("http://127.0.0.1:11434/v1", api_key="")
-    _args, kwargs = save.call_args
-    assert kwargs.get("native_tools_mode") == "auto"
-    assert kwargs.get("context_window_tokens") == 262144
-    assert kwargs.get("context_reserve_tokens") == 32768
-    assert kwargs.get("context_keep_recent_tokens") == 32000
+    (saved_config,), _kwargs = save.call_args
+    assert saved_config.native_tools_mode == "auto"
+    assert saved_config.context is not None
+    assert saved_config.context.context_window_tokens == 262144
+    assert saved_config.context.context_reserve_tokens == 32768
+    assert saved_config.context.context_keep_recent_tokens == 32000
 
 
 def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
@@ -316,12 +322,12 @@ def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
     monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
     live = LocalEndpoint("http://127.0.0.1:8080/v1", ("qwen",))
     with (
-        mock.patch.object(app_api, "load_local_config", return_value={"api_key": ""}),
+        mock.patch.object(app_api, "load_local_config", return_value=app_api.LocalProviderConfig(api_key="")),
         mock.patch.object(
             app_api, "probe_local_endpoint_detail", return_value=(live, "ok"),
         ) as probe,
         mock.patch.object(app_api, "save_local_config") as save,
-        mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+        mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
     ):
         status, payload = app_api.save_local_provider_response({
             "base_url": "http://127.0.0.1:8080/v1",
@@ -330,8 +336,8 @@ def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
     assert status == 200 and payload["ok"] is True
     # The env secret authorizes the probe but is never written to disk.
     probe.assert_called_once_with("http://127.0.0.1:8080/v1", api_key="env-key")
-    _args, _kwargs = save.call_args
-    assert _args[2] == ""
+    (saved_config,), _kwargs = save.call_args
+    assert saved_config.api_key == ""
 
 
 def test_parse_update_rejects_non_numeric_window() -> None:
@@ -350,6 +356,22 @@ def test_parse_update_rejects_non_numeric_window() -> None:
         previous,
     )
     assert error_empty == "" and parsed_empty is not None
+
+
+def test_parse_update_rejects_invalid_native_tools_mode() -> None:
+    from codey.providers.local_config import LocalProviderConfig, parse_local_config_update
+
+    parsed, error = parse_local_config_update(
+        {
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "m",
+            "native_tools_mode": "sometimes",
+        },
+        LocalProviderConfig(native_tools_mode="off"),
+    )
+
+    assert parsed is None
+    assert error == "native_tools_mode must be auto, on, or off"
 
 
 def test_parse_update_rejects_non_numeric_reserve_and_keep() -> None:

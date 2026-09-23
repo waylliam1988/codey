@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
 import urllib.request
 from pathlib import Path
@@ -13,6 +12,8 @@ from codey.providers import (
     MimoWebProvider,
     QwenWebProvider,
     StepFunWebProvider,
+    local_config,
+    local_discovery,
     local_openai,
     registry,
     web_driver,
@@ -366,14 +367,6 @@ class ProviderRegistryTests(unittest.TestCase):
             self.assertIs(registry.connect_provider("local", port=9222), local)
 
     def test_local_provider_uses_first_available_default_endpoint(self) -> None:
-        seen: list[str] = []
-
-        def probe(url: str, **_kwargs):
-            seen.append(url)
-            if url == "http://127.0.0.1:11434/v1":
-                return local_openai.LocalEndpoint(url, ("llama",))
-            return None
-
         with (
             mock.patch.dict(
                 "os.environ",
@@ -384,33 +377,39 @@ class ProviderRegistryTests(unittest.TestCase):
                 },
                 clear=False,
             ),
-            mock.patch.object(local_openai, "load_local_config", return_value={}),
-            mock.patch.object(local_openai, "probe_local_endpoint", side_effect=probe),
+            mock.patch.object(
+                local_discovery,
+                "default_local_base_url",
+                return_value="http://127.0.0.1:11434/v1",
+            ) as default_base,
         ):
             provider = local_openai.LocalOpenAIProvider()
 
         self.assertEqual(provider.base_url, "http://127.0.0.1:11434/v1")
         self.assertEqual(provider.model, "local-model")
-        self.assertEqual(
-            seen,
-            ["http://127.0.0.1:1234/v1", "http://127.0.0.1:11434/v1"],
-        )
+        default_base.assert_called_once_with()
 
     def test_local_connect_prefers_remembered_config(self) -> None:
-        endpoint = local_openai.LocalEndpoint("http://127.0.0.1:5001/v1", ("gemma",))
+        endpoint = local_discovery.LocalEndpoint("http://127.0.0.1:5001/v1", ("chosen", "gemma"))
+        config = local_config.LocalProviderConfig(
+            base_url=endpoint.base_url,
+            model="chosen",
+            api_key="secret",
+        )
         with (
             mock.patch.object(
-                local_openai,
+                local_config,
                 "load_local_config",
-                return_value={"base_url": endpoint.base_url, "model": "chosen", "api_key": "secret"},
+                return_value=config,
             ),
-            mock.patch.object(local_openai, "probe_local_endpoint", return_value=endpoint),
+            mock.patch.object(local_discovery, "resolve_local_endpoint", return_value=endpoint) as resolve,
         ):
             provider = local_openai.LocalOpenAIProvider.connect()
 
         self.assertEqual(provider.base_url, endpoint.base_url)
         self.assertEqual(provider.model, "chosen")
         self.assertEqual(provider.api_key, "secret")
+        resolve.assert_called_once_with(base_url=endpoint.base_url, model="chosen", api_key="secret")
 
     def test_local_probe_sends_authorization_when_api_key_is_configured(self) -> None:
         captured = {}
@@ -430,8 +429,8 @@ class ProviderRegistryTests(unittest.TestCase):
             captured["timeout"] = timeout
             return Response()
 
-        with mock.patch.object(local_openai.urllib.request, "urlopen", side_effect=urlopen):
-            endpoint = local_openai.probe_local_endpoint(
+        with mock.patch.object(local_discovery.urllib.request, "urlopen", side_effect=urlopen):
+            endpoint = local_discovery.probe_local_endpoint(
                 "http://127.0.0.1:1234/v1",
                 api_key="secret",
                 timeout=3,
@@ -440,28 +439,6 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertIsNotNone(endpoint)
         self.assertEqual(captured["authorization"], "Bearer secret")
         self.assertEqual(captured["timeout"], 3)
-
-    def test_local_config_preserves_api_key_when_new_key_is_omitted(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "local-openai.json"
-            with mock.patch.object(local_openai, "_config_path", return_value=path):
-                local_openai.save_local_config("http://127.0.0.1:1234/v1", "old", "secret")
-                local_openai.save_local_config("http://127.0.0.1:1234/v1", "new", None)
-                preserved = local_openai.load_local_config()
-
-        self.assertEqual(preserved["api_key"], "secret")
-        self.assertEqual(preserved["model"], "new")
-
-    def test_local_config_replaces_api_key_when_new_key_is_provided(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "local-openai.json"
-            with mock.patch.object(local_openai, "_config_path", return_value=path):
-                local_openai.save_local_config("http://127.0.0.1:1234/v1", "old", "old-secret")
-                local_openai.save_local_config("http://127.0.0.1:1234/v1", "new", "new-secret")
-                config = local_openai.load_local_config()
-
-        self.assertEqual(config["api_key"], "new-secret")
-        self.assertEqual(config["model"], "new")
 
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()

@@ -40,7 +40,8 @@ from codey.runtime.core.operation_state import (
     operation_progress_text,
     operation_state_from_entries,
 )
-from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import reduce_session
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 

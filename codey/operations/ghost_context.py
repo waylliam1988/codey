@@ -46,15 +46,6 @@ def ghost_directive(
         return build_ghost_directive(None)
 
 
-def ghost_directive_text(
-    state: Any,
-    *,
-    project: str = "",
-    session_id: str = "",
-) -> str:
-    return ghost_directive(state, project=project, session_id=session_id).text
-
-
 def ghost_continuity(
     state: Any,
     *,
@@ -74,19 +65,8 @@ def ghost_continuity(
         return build_ghost_continuity(None)
 
 
-def ghost_continuity_text(
-    state: Any,
-    *,
-    project: str = "",
-    session_id: str = "",
-) -> str:
-    return ghost_continuity(state, project=project, session_id=session_id).text
-
-
 __all__ = [
     "ghost_affinity_store",
     "ghost_continuity",
-    "ghost_continuity_text",
     "ghost_directive",
-    "ghost_directive_text",
 ]

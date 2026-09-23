@@ -56,7 +56,8 @@ from codey.runtime.effects.tool_result_delivery import (
     recovered_entry,
     send_attempt_entry,
 )
-from codey.runtime.log.session_log import RuntimeLogEntry, RuntimeSessionLog
+from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view, pending_for
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 

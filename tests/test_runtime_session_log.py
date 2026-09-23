@@ -24,10 +24,12 @@ from codey.runtime.effects.tool_result_delivery import (
     compute_batch_digest,
 )
 from codey.runtime.log.compaction import _compact_entries
-from codey.runtime.log.session_log import (
+from codey.runtime.log.entries import (
     RuntimeLogCorruption,
     RuntimeLogEntry,
     RuntimeLogWriteError,
+)
+from codey.runtime.log.session_log import (
     RuntimeSessionLog,
 )
 from codey.runtime.log.session_projection import reduce_session

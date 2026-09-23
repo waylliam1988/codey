@@ -74,16 +74,16 @@ class EnvNameValueTests(unittest.TestCase):
         import inspect
 
         from codey.agents import loop
-        from codey.providers import local_config, local_openai
+        from codey.providers import local_config
         from codey.research import native_bridge
 
         source = inspect.getsource(local_config)
         self.assertIn("NATIVE_TOOLS_ENV", source)
         self.assertNotIn("CODEY_", source)
-        for module in (local_openai, loop, native_bridge):
+        for module in (local_config, loop, native_bridge):
             with self.subTest(module=module.__name__):
                 source = inspect.getsource(module)
-                self.assertIn("local_native_tools_enabled", source)
+                self.assertIn("resolve_local_native_tools", source)
                 self.assertNotIn("CODEY_", source)
 
     def test_no_brand_prefixed_name_outside_allowlist(self) -> None:

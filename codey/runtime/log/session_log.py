@@ -12,12 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codey.runtime.log.entries import (  # noqa: F401  # re-exported for compatibility
-    RuntimeLogCorruption,
-    RuntimeLogEntry,
-    RuntimeLogError,
-    RuntimeLogWriteError,
-)
+import codey.runtime.log.entries as _log_entries
 from codey.storage.atomic_io import write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, session_key
@@ -36,7 +31,7 @@ class _FileStamp:
 @dataclass(frozen=True)
 class _ProjectionCache:
     stamp: _FileStamp
-    entries: tuple[RuntimeLogEntry, ...]
+    entries: tuple[_log_entries.RuntimeLogEntry, ...]
     projection: Any
 
 
@@ -56,7 +51,7 @@ class RuntimeSessionLog:
     def path_for(self, session_id: str) -> Path:
         return self.state_home / "runtime" / "sessions" / f"{session_key(session_id)}.jsonl"
 
-    def read(self, session_id: str) -> tuple[RuntimeLogEntry, ...]:
+    def read(self, session_id: str) -> tuple[_log_entries.RuntimeLogEntry, ...]:
         path = self.path_for(session_id)
         with with_file_lock(path):
             return self._read_unlocked(session_id, repair_tail=False)
@@ -71,7 +66,7 @@ class RuntimeSessionLog:
         with with_file_lock(path):
             return self._cache_for_session_unlocked(session_id).projection
 
-    def entries(self, session_id: str) -> tuple[RuntimeLogEntry, ...]:
+    def entries(self, session_id: str) -> tuple[_log_entries.RuntimeLogEntry, ...]:
         """Return cached valid entries, repairing a torn tail before caching."""
         path = self.path_for(session_id)
         with with_file_lock(path):
@@ -103,7 +98,7 @@ class RuntimeSessionLog:
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                raise RuntimeLogWriteError("unable to delete runtime log") from exc
+                raise _log_entries.RuntimeLogWriteError("unable to delete runtime log") from exc
             finally:
                 self._projection_cache.pop(session_id, None)
 
@@ -112,20 +107,20 @@ class RuntimeSessionLog:
         session_id: str,
         *,
         repair_tail: bool,
-    ) -> tuple[RuntimeLogEntry, ...]:
+    ) -> tuple[_log_entries.RuntimeLogEntry, ...]:
         path = self.path_for(session_id)
         try:
             raw = path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return ()
         except OSError as exc:
-            raise RuntimeLogCorruption("unable to read runtime log") from exc
+            raise _log_entries.RuntimeLogCorruption("unable to read runtime log") from exc
         lines = [
             (line_no, line)
             for line_no, line in enumerate(raw.splitlines(), start=1)
             if line.strip()
         ]
-        entries: list[RuntimeLogEntry] = []
+        entries: list[_log_entries.RuntimeLogEntry] = []
         bad_tail = False
         for index, (line_no, line) in enumerate(lines):
             try:
@@ -134,10 +129,10 @@ class RuntimeSessionLog:
                 if index == len(lines) - 1:
                     bad_tail = True
                     break
-                raise RuntimeLogCorruption(f"invalid runtime log JSON at line {line_no}") from exc
-            entry = RuntimeLogEntry.from_payload(payload)
+                raise _log_entries.RuntimeLogCorruption(f"invalid runtime log JSON at line {line_no}") from exc
+            entry = _log_entries.RuntimeLogEntry.from_payload(payload)
             if entry.session_id != session_id:
-                raise RuntimeLogCorruption("runtime log entry session mismatch")
+                raise _log_entries.RuntimeLogCorruption("runtime log entry session mismatch")
             entries.append(entry)
         from codey.runtime.log.compaction import _complete_batch_prefix
 
@@ -151,7 +146,7 @@ class RuntimeSessionLog:
         self,
         session_id: str,
         mutation: Any,
-    ) -> tuple[RuntimeLogEntry, ...]:
+    ) -> tuple[_log_entries.RuntimeLogEntry, ...]:
         """Run one read/decide/commit pass under the session mutation line.
 
         The callback receives the current process-local projection and valid
@@ -182,7 +177,7 @@ class RuntimeSessionLog:
                 return ()
             batch_count = len(incoming)
             rows = tuple(
-                RuntimeLogEntry(
+                _log_entries.RuntimeLogEntry(
                     session_id=session_id,
                     lane=entry.get("lane"),
                     operation_id=entry.get("operation_id"),
@@ -196,7 +191,7 @@ class RuntimeSessionLog:
             )
             encoded_rows = tuple(row.to_json_line().encode("utf-8") for row in rows)
             if any(len(encoded) > self.max_entry_bytes for encoded in encoded_rows):
-                raise RuntimeLogWriteError("runtime log entry exceeds size limit")
+                raise _log_entries.RuntimeLogWriteError("runtime log entry exceeds size limit")
             candidate_projection = apply_entries(base_projection, rows)
             total_new_bytes = sum(len(encoded) for encoded in encoded_rows)
             if current_size + total_new_bytes > max(0, self.max_log_bytes // 2):
@@ -209,9 +204,9 @@ class RuntimeSessionLog:
                     row.to_json_line().encode("utf-8") for row in compacted
                 )
                 if any(len(encoded) > self.max_entry_bytes for encoded in encoded_compacted):
-                    raise RuntimeLogWriteError("runtime log entry exceeds size limit")
+                    raise _log_entries.RuntimeLogWriteError("runtime log entry exceeds size limit")
                 if sum(len(encoded) for encoded in encoded_compacted) > self.max_log_bytes:
-                    raise RuntimeLogWriteError("runtime log exceeds size limit")
+                    raise _log_entries.RuntimeLogWriteError("runtime log exceeds size limit")
                 write_bytes_atomic(path, b"".join(encoded_compacted))
                 self._projection_cache[session_id] = _ProjectionCache(
                     stamp=_file_stamp(path),
@@ -236,3 +231,6 @@ def _file_stamp(path: Path) -> _FileStamp:
     except FileNotFoundError:
         return _FileStamp(file_size=0, mtime_ns=0)
     return _FileStamp(file_size=stat.st_size, mtime_ns=stat.st_mtime_ns)
+
+
+__all__ = ["RuntimeSessionLog"]

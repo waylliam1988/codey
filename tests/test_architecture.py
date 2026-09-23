@@ -1821,6 +1821,87 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 strongconnect(module)
         self.assertEqual(cycles, [])
 
+    def test_runtime_log_entry_types_are_not_reexported_from_session_log(self) -> None:
+        # Cold-start API shape: entries.py owns the entry/error model.
+        # session_log.py is only the durable store boundary, not a compat facade.
+        import codey.runtime.log.session_log as session_log
+
+        self.assertEqual(getattr(session_log, "__all__", ()), ["RuntimeSessionLog"])
+        for name in (
+            "RuntimeLogEntry",
+            "RuntimeLogError",
+            "RuntimeLogCorruption",
+            "RuntimeLogWriteError",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(session_log, name))
+
+    def test_local_openai_runtime_has_no_config_or_discovery_facades(self) -> None:
+        # Local model has one owner per concern: local_openai is the provider
+        # runtime, local_config owns persistence, local_discovery owns probes.
+        import codey.providers.local_openai as local_openai
+
+        for name in (
+            "LocalEndpoint",
+            "default_local_base_url",
+            "detect_local_endpoints",
+            "load_local_config",
+            "local_config_payload",
+            "local_endpoint_available",
+            "local_native_tools_enabled",
+            "probe_local_endpoint",
+            "probe_local_endpoint_detail",
+            "resolve_local_context_budgets",
+            "resolve_local_endpoint",
+            "save_local_config",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(local_openai, name))
+
+    def test_runtime_core_has_no_unconsumed_contract_stubs(self) -> None:
+        import codey.runtime.core.operation as operation
+        import codey.runtime.core.outcome as outcome
+        import codey.runtime.write.file_mutation_queue as queue
+
+        for module, names in (
+            (operation, ("Operation",)),
+            (outcome, ("CompletionVerdict", "TaskCompletionStatus")),
+            (queue, ("key_for_call",)),
+        ):
+            for name in names:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertFalse(hasattr(module, name))
+
+    def test_confirmed_dead_convenience_exports_do_not_exist(self) -> None:
+        import codey.agents.runaway_guard as runaway_guard
+        import codey.ghost._common as ghost_common
+        import codey.ghost.affinity as ghost_affinity
+        import codey.ghost.learning_loop as ghost_learning
+        import codey.operations.ghost_context as ghost_context
+        import codey.operations.research_flow as research_flow
+        import codey.providers.base as provider_base
+        import codey.providers.error_classification as provider_errors
+        import codey.providers.web_drivers.common as web_common
+        import codey.toolchain.openai_tools as openai_tools
+
+        for module, names in (
+            (research_flow, ("record_research_result_trace", "record_evidence_ledger_write_trace")),
+            (ghost_context, ("ghost_directive_text", "ghost_continuity_text")),
+            (runaway_guard, ("repeated_failure_key",)),
+            (provider_base, ("StructuredChatProvider",)),
+            (provider_errors, ("is_auth_message",)),
+            (web_common, ("last_response_text", "clean_whitespace")),
+            (openai_tools, ("research_openai_tools",)),
+            (ghost_affinity, ("apply_affinity_research_boost",)),
+            (ghost_common, ("normalize_scope",)),
+            (ghost_learning, ("ClosableSignalProvider",)),
+        ):
+            exported = set(getattr(module, "__all__", ()))
+            for name in names:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertFalse(hasattr(module, name))
+                    self.assertNotIn(name, exported)
+
     def test_retired_compatibility_shims_do_not_exist(self) -> None:
         self.assertFalse((ROOT / "codey" / "workspace" / "task_context.py").exists())
         self.assertFalse((ROOT / "codey" / "reviews" / "scan_report.py").exists())

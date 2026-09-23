@@ -13,13 +13,14 @@ from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.env_names import LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
-from codey.providers.local_config import config_from_dict, parse_local_config_update
-from codey.providers.local_openai import (
+from codey.providers.local_config import (
+    LocalProviderConfig,
     load_local_config,
-    local_config_payload,
-    probe_local_endpoint_detail,
+    local_bootstrap_payload,
+    parse_local_config_update,
     save_local_config,
 )
+from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.runs.details import load_run_details
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
@@ -118,13 +119,13 @@ def provider_catalog_response() -> tuple[int, dict]:
 
 
 def local_provider_response() -> tuple[int, dict]:
-    return 200, {"ok": True, "local": local_config_payload()}
+    return 200, {"ok": True, "local": local_bootstrap_payload()}
 
 
 def save_local_provider_response(body: dict) -> tuple[int, dict]:
     if not isinstance(body, dict):
         return 400, {"ok": False, "error": "request body must be an object"}
-    previous = config_from_dict(load_local_config())
+    previous = load_local_config()
     parsed, error = parse_local_config_update(body, previous)
     if error or parsed is None:
         return 400, {"ok": False, "error": error or "invalid local provider update"}
@@ -158,24 +159,16 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
         }.get(reason, "could not reach an OpenAI-compatible /models endpoint")
         return 400, {"ok": False, "error": detail, "reason": reason}
     try:
-        save_local_config(
-            endpoint.base_url,
-            parsed.model or endpoint.default_model,
-            None if same_target and not parsed.api_key else parsed.api_key,
+        save_local_config(LocalProviderConfig(
+            base_url=endpoint.base_url,
+            model=parsed.model or endpoint.default_model,
+            api_key=previous.api_key if same_target and not parsed.api_key else parsed.api_key,
             native_tools_mode=parsed.native_tools_mode,
-            context_window_tokens=(
-                parsed.context.context_window_tokens if parsed.context is not None else None
-            ),
-            context_reserve_tokens=(
-                parsed.context.context_reserve_tokens if parsed.context is not None else None
-            ),
-            context_keep_recent_tokens=(
-                parsed.context.context_keep_recent_tokens if parsed.context is not None else None
-            ),
-        )
+            context=parsed.context,
+        ))
     except (OSError, ValueError) as exc:
         return 500, {"ok": False, "error": str(exc)}
-    return 200, {"ok": True, "local": local_config_payload()}
+    return 200, {"ok": True, "local": local_bootstrap_payload()}
 
 
 def research_unconfigured_response() -> tuple[int, dict]:

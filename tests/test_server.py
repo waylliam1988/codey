@@ -32,7 +32,7 @@ from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
 from codey.providers.discovery import Discovery
-from codey.providers.local_openai import LocalEndpoint
+from codey.providers.local_discovery import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.runs.ledger import read_ledger
@@ -1741,7 +1741,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.5.8")
+        self.assertEqual(__version__, "0.5.9")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -1991,10 +1991,10 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(
                     app_api,
                     "load_local_config",
-                    return_value={
-                        "base_url": "http://127.0.0.1:1234/v1",
-                        "api_key": "old-secret",
-                    },
+                    return_value=app_api.LocalProviderConfig(
+                        base_url="http://127.0.0.1:1234/v1",
+                        api_key="old-secret",
+                    ),
                 ),
                 mock.patch.object(app_api, "probe_local_endpoint_detail") as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
@@ -2033,10 +2033,10 @@ class LocalProviderApiTests(unittest.TestCase):
                 mock.patch.object(
                     app_api,
                     "load_local_config",
-                    return_value={
-                        "base_url": "http://127.0.0.1:1234/v1",
-                        "api_key": "old-secret",
-                    },
+                    return_value=app_api.LocalProviderConfig(
+                        base_url="http://127.0.0.1:1234/v1",
+                        api_key="old-secret",
+                    ),
                 ),
                 mock.patch.object(
                     app_api,
@@ -2047,7 +2047,7 @@ class LocalProviderApiTests(unittest.TestCase):
                     ),
                 ) as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
-                mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+                mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -2070,8 +2070,10 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="old-secret")
             save.assert_called_once()
-            args, kwargs = save.call_args
-            self.assertEqual(tuple(args[:3]), ("http://127.0.0.1:1234/v1", "llama", None))
+            (saved_config,), _kwargs = save.call_args
+            self.assertEqual(saved_config.base_url, "http://127.0.0.1:1234/v1")
+            self.assertEqual(saved_config.model, "llama")
+            self.assertEqual(saved_config.api_key, "old-secret")
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -2080,7 +2082,11 @@ class LocalProviderApiTests(unittest.TestCase):
         httpd, host, port = self._start_server()
         try:
             with (
-                mock.patch.object(app_api, "load_local_config", return_value={"api_key": "old-secret"}),
+                mock.patch.object(
+                    app_api,
+                    "load_local_config",
+                    return_value=app_api.LocalProviderConfig(api_key="old-secret"),
+                ),
                 mock.patch.object(
                     app_api,
                     "probe_local_endpoint_detail",
@@ -2090,7 +2096,7 @@ class LocalProviderApiTests(unittest.TestCase):
                     ),
                 ) as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
-                mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+                mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -2112,8 +2118,10 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertTrue(payload["ok"])
             probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="")
             save.assert_called_once()
-            args, kwargs = save.call_args
-            self.assertEqual(tuple(args[:3]), ("http://127.0.0.1:1234/v1", "llama", ""))
+            (saved_config,), _kwargs = save.call_args
+            self.assertEqual(saved_config.base_url, "http://127.0.0.1:1234/v1")
+            self.assertEqual(saved_config.model, "llama")
+            self.assertEqual(saved_config.api_key, "")
         finally:
             httpd.shutdown()
 

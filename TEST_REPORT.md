@@ -1,5 +1,41 @@
 # Codey Test Report
 
+## Release 0.5.9 full suite (2026-09-23)
+
+Scope (release):
+
+```text
+codey/providers/local_config.py       (strict schema-2 local config; native mode/context parsing)
+codey/providers/local_discovery.py    (canonical local endpoint probes and resolution)
+codey/providers/local_openai.py       (provider runtime only; no config/discovery facades)
+codey/runtime/log/session_log.py      (durable store only; entries.py owns entry/error types)
+codey/runtime/core + runtime/write    (dead contract stubs removed)
+codey/ghost + research + providers    (confirmed dead convenience exports removed)
+README / CHANGELOG                    (0.5.9 release docs)
+```
+
+Notes:
+
+- Local model is the primary local path: config/discovery/runtime ownership is
+  split cleanly, env secrets are probe-only, context overrides fail loudly, and
+  per-send runtime no longer rereads local config from disk.
+- Runtime storage boundaries are narrower: `session_log.py` no longer
+  re-exports log entry/error types, and unused runtime contract shells are gone.
+- Ghost remains intact as future-facing continuity/learning/work-queue
+  infrastructure; only unconsumed helper exports were pruned.
+- This report entry was written after the final full pytest run.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed).
+- `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `404 passed, 385 subtests passed in 35.49s`.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4116 tests collected in 2.63s`).
+- Full suite: `python -m pytest`
+  (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
+
 ## Env-key save probe + visible env endpoint full suite (2026-09-24)
 
 Scope (production, no release):
@@ -185,7 +221,7 @@ Scope (production, no release):
 ```text
 codey/providers/local_config.py       (new canonical config: mode/presets/parse/payload)
 codey/providers/local_discovery.py    (new candidates incl. KoboldCPP 5001, parallel probe)
-codey/providers/local_openai.py       (runtime only + thin facades, instance budgets)
+codey/providers/local_openai.py       (provider runtime only, instance budgets)
 codey/app/api.py                      (canonical save, bootstrap payload, recommended)
 codey/app/provider_services.py        (recommended_default_provider)
 codey/web/index.html + provider_ui.js + ui_state.js (local panel, presets, recommended)
@@ -205,11 +241,9 @@ Notes:
   `EffectiveLocalConfig`; api/ui/discovery never each own a config dialect.
   The UI passes at most one context number; reserve/keep derive server-side.
 - No silent fallbacks: unsupported-tools 400s keep the opt-out hint;
-  `require_web` refuses self-review loudly; legacy config fields migrate on
-  read, saves always write schema 2.
-- Facades keep every existing caller/mock point working
-  (`local_openai.load/save/probe`, `app_api.save_local_config`); server save
-  assertions were updated to the keyword-argument call shape.
+  `require_web` refuses self-review loudly; local config is strict schema 2.
+- Config/discovery callers use the canonical modules directly; server save
+  assertions track the canonical `LocalProviderConfig` call shape.
 - Runner stays under its size ceiling (1357 lines); research imports no new
   forbidden modules.
 

@@ -1257,12 +1257,6 @@ def apply_affinity_work_boost(priority: float, hints: Iterable[Any], target: str
     return _unit_float(base + boost)
 
 
-def apply_affinity_research_boost(priority: float, hints: Iterable[Any], target: str) -> float:
-    base = _unit_float(priority)
-    boost = _hint_boost(hints, target, maximum=0.14)
-    return _unit_float(base + boost)
-
-
 def _hint_boost(hints: Iterable[Any], target: str, *, maximum: float) -> float:
     clean_target = clip_signal_text(target, 120)
     boost = 0.0
@@ -2678,6 +2672,5 @@ __all__ = [
     "AffinityNode",
     "GhostAffinityStore",
     "GhostAffinitySyncResult",
-    "apply_affinity_research_boost",
     "apply_affinity_work_boost",
 ]

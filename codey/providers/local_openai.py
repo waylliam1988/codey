@@ -7,7 +7,6 @@ import json
 import os
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 from codey.env_names import (
     LOCAL_OPENAI_API_KEY_ENV as LOCAL_API_KEY_ENV,
@@ -18,26 +17,8 @@ from codey.env_names import (
 from codey.env_names import (
     LOCAL_OPENAI_MODEL_ENV as LOCAL_MODEL_ENV,
 )
-from codey.providers.local_config import CONFIG_FILE as _CONFIG_FILE
-from codey.providers.local_config import (
-    LocalProviderConfig,
-    config_from_dict,
-    resolve_effective_local_config,
-    resolve_local_context_budget,
-    resolve_local_native_tools,
-)
-from codey.providers.local_discovery import (
-    DEFAULT_BASE_URL,
-    LOCAL_BASE_URL_CANDIDATES,
-    LocalEndpoint,
-)
-from codey.storage.local_store import (
-    DEFAULT_STATE_HOME,
-    StoreCorruption,
-    backup_corrupt_file,
-    read_json_strict,
-    write_json_atomic,
-)
+from codey.providers import local_config as _local_config
+from codey.providers import local_discovery as _local_discovery
 
 DEFAULT_TIMEOUT = 180
 DEFAULT_TEMPERATURE = 0.3
@@ -66,7 +47,7 @@ class LocalOpenAIProvider:
         context_reserve_tokens: int | None = None,
         context_keep_recent_tokens: int | None = None,
     ) -> None:
-        self.base_url = (base_url or os.environ.get(LOCAL_BASE_URL_ENV) or default_local_base_url()).rstrip("/")
+        self.base_url = (base_url or os.environ.get(LOCAL_BASE_URL_ENV) or _local_discovery.default_local_base_url()).rstrip("/")
         self.model = model or os.environ.get(LOCAL_MODEL_ENV) or "local-model"
         self.api_key = api_key or os.environ.get(LOCAL_API_KEY_ENV, "")
         self.timeout = timeout
@@ -80,11 +61,15 @@ class LocalOpenAIProvider:
     @classmethod
     def connect(cls, **_kwargs) -> LocalOpenAIProvider:
         try:
-            canonical = config_from_dict(load_local_config())
-            endpoint = resolve_local_endpoint()
+            config = _local_config.load_local_config()
+            endpoint = _local_discovery.resolve_local_endpoint(
+                base_url=config.base_url,
+                model=config.model,
+                api_key=config.api_key,
+            )
             if endpoint is None:
                 return cls()
-            effective = resolve_effective_local_config(canonical, endpoint=endpoint)
+            effective = _local_config.resolve_effective_local_config(config, endpoint=endpoint)
         except Exception:
             return cls()
         return cls(
@@ -314,209 +299,6 @@ class LocalOpenAIProvider:
         return _extract_reply(body)
 
 
-def default_local_base_url() -> str:
-    """First reachable candidate (short-circuit); env/remembered first."""
-    configured = os.environ.get(LOCAL_BASE_URL_ENV, "").strip()
-    if configured:
-        return configured
-    remembered = load_local_config().get("base_url")
-    if remembered:
-        return str(remembered)
-    for candidate in LOCAL_BASE_URL_CANDIDATES:
-        if local_endpoint_available(candidate):
-            return candidate
-    return DEFAULT_BASE_URL
-
-
-def local_endpoint_available(base_url: str = "") -> bool:
-    config = load_local_config()
-    remembered_key = str(config.get("api_key") or "")
-    if base_url:
-        return probe_local_endpoint(base_url, api_key=remembered_key) is not None
-    configured = os.environ.get(LOCAL_BASE_URL_ENV, "").strip()
-    if configured:
-        return probe_local_endpoint(configured, api_key=os.environ.get(LOCAL_API_KEY_ENV, "")) is not None
-    endpoint = resolve_local_endpoint()
-    return endpoint is not None
-
-
-def probe_local_endpoint(
-    base_url: str,
-    *,
-    api_key: str = "",
-    timeout: float = 1.5,
-) -> LocalEndpoint | None:
-    """Facade over discovery (keeps the historical Optional return)."""
-    from codey.providers import local_discovery as discovery
-
-    return discovery.probe_local_endpoint(base_url, api_key=api_key, timeout=timeout)
-
-
-def probe_local_endpoint_detail(
-    base_url: str,
-    *,
-    api_key: str = "",
-    timeout: float = 1.5,
-) -> tuple[LocalEndpoint | None, str]:
-    """Facade over discovery (keeps the historical detail return)."""
-    from codey.providers import local_discovery as discovery
-
-    return discovery.probe_local_endpoint_detail(base_url, api_key=api_key, timeout=timeout)
-
-
-def detect_local_endpoints(*, api_key: str = "") -> list[LocalEndpoint]:
-    """First-hit short-circuit scan (mock-friendly); full parallel scan lives in discovery."""
-    found: list[LocalEndpoint] = []
-    seen: set[str] = set()
-    for candidate in LOCAL_BASE_URL_CANDIDATES:
-        normalized = candidate.rstrip("/")
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        endpoint = probe_local_endpoint(normalized, api_key=api_key)
-        if endpoint is not None:
-            found.append(endpoint)
-    return found
-
-
-def resolve_local_endpoint() -> LocalEndpoint | None:
-    """Remembered endpoint first, else the first reachable candidate."""
-    config = load_local_config()
-    remembered = str(config.get("base_url") or "").strip()
-    api_key = str(config.get("api_key") or "")
-    if remembered:
-        endpoint = probe_local_endpoint(remembered, api_key=api_key)
-        if endpoint is not None:
-            model = str(config.get("model") or endpoint.default_model or "")
-            models = ((model,) if model else ()) + tuple(m for m in endpoint.models if m != model)
-            return LocalEndpoint(endpoint.base_url, models)
-    detected = detect_local_endpoints(api_key=os.environ.get(LOCAL_API_KEY_ENV, ""))
-    return detected[0] if detected else None
-
-
-def load_local_config() -> dict:
-    """Legacy dict view over the canonical config (callers migrate to local_config)."""
-    from codey.providers import local_config as canonical
-
-    try:
-        raw = read_json_strict(_config_path()) or {}
-    except StoreCorruption:
-        backup_corrupt_file(_config_path())
-        raw = {}
-    except Exception:
-        return {}
-    try:
-        config = canonical.config_from_dict(raw)
-    except Exception:
-        return {}
-    view: dict[str, object] = {
-        "base_url": config.base_url,
-        "model": config.model,
-        "api_key": config.api_key,
-    }
-    if config.native_tools_mode == canonical.NATIVE_TOOLS_ON:
-        view["native_tools"] = True
-    elif config.native_tools_mode == canonical.NATIVE_TOOLS_OFF:
-        view["native_tools"] = False
-    if config.context is not None:
-        view["context_window_tokens"] = config.context.context_window_tokens
-        view["context_reserve_tokens"] = config.context.context_reserve_tokens
-        view["context_keep_recent_tokens"] = config.context.context_keep_recent_tokens
-    return view
-
-
-def local_native_tools_enabled() -> bool:
-    """Facade over the canonical resolver (env > stored mode > default)."""
-    try:
-        return resolve_local_native_tools(config_from_dict(load_local_config()))
-    except Exception:
-        return True
-
-
-def resolve_local_context_budgets() -> dict[str, int]:
-    """Legacy dict view over the canonical budget resolver."""
-    try:
-        budget = resolve_local_context_budget(config_from_dict(load_local_config()))
-    except Exception:
-        return {
-            "context_window_tokens": 32_768,
-            "context_reserve_tokens": 8_192,
-            "context_keep_recent_tokens": 12_000,
-        }
-    return {
-        "context_window_tokens": budget.context_window_tokens,
-        "context_reserve_tokens": budget.context_reserve_tokens,
-        "context_keep_recent_tokens": budget.context_keep_recent_tokens,
-    }
-
-
-def save_local_config(
-    base_url: str,
-    model: str = "",
-    api_key: str | None = None,
-    *,
-    native_tools: bool | None = None,
-    native_tools_mode: str | None = None,
-    context_window_tokens: int | None = None,
-    context_reserve_tokens: int | None = None,
-    context_keep_recent_tokens: int | None = None,
-) -> None:
-    """Legacy writer; persists the canonical schema-2 shape at the facade path."""
-    from codey.providers import local_config as canonical
-
-    try:
-        previous = canonical.config_from_dict(load_local_config())
-    except Exception:
-        previous = LocalProviderConfig()
-    stored_key = previous.api_key if api_key is None else str(api_key or "").strip()
-    mode = previous.native_tools_mode
-    if native_tools_mode is not None:
-        parsed_mode = canonical.parse_native_tools_mode(native_tools_mode)
-        if parsed_mode is not None:
-            mode = parsed_mode
-    elif native_tools is not None:
-        mode = canonical.NATIVE_TOOLS_ON if native_tools else canonical.NATIVE_TOOLS_OFF
-    context = previous.context
-    if any(v is not None for v in (context_window_tokens, context_reserve_tokens, context_keep_recent_tokens)):
-        window = context_window_tokens if context_window_tokens is not None else (
-            context.context_window_tokens if context else 0
-        )
-        try:
-            window_int = int(window)
-        except (TypeError, ValueError):
-            window_int = 0
-        if window_int > 0:
-            preset = canonical.context_budget_for_window(window_int)
-            context = canonical.LocalContextBudget(
-                window_int,
-                int(context_reserve_tokens) if context_reserve_tokens is not None else preset.context_reserve_tokens,
-                int(context_keep_recent_tokens) if context_keep_recent_tokens is not None else preset.context_keep_recent_tokens,
-                source="config",
-            )
-            if canonical.validate_context_budget(context):
-                context = previous.context
-    # Single write through the facade path (tests patch this module's path).
-    write_json_atomic(_config_path(), canonical.config_to_payload(
-        canonical.LocalProviderConfig(
-            base_url=(base_url or "").strip(),
-            model=(model or "").strip(),
-            api_key=stored_key,
-            native_tools_mode=mode,
-            context=context,
-        )
-    ), mode=0o600)
-
-
-def local_config_payload() -> dict:
-    """Facade over the canonical bootstrap payload."""
-    from codey.providers import local_config as canonical
-
-    try:
-        return canonical.local_bootstrap_payload()
-    except Exception:
-        return {"connected": False}
-
-
 def _looks_like_unsupported_tools_error(detail: object) -> bool:
     text = str(detail or "").lower()
     return any(
@@ -530,10 +312,6 @@ def _looks_like_unsupported_tools_error(detail: object) -> bool:
             "unrecognized",
         )
     )
-
-
-def _config_path() -> Path:
-    return DEFAULT_STATE_HOME / _CONFIG_FILE
 
 
 def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:

@@ -49,42 +49,6 @@ class ResearchFlowDeps:
     managed_outputs: Any = None
 
 
-def record_research_result_trace(trace: Any | None, result: Any) -> None:
-    if trace is None:
-        return
-    sink = FailOpenPromptTrace(trace)
-    sink.call("record_permission_profile", "research", phase="research")
-    sink.call(
-        "record_research_notes",
-        [
-            *getattr(result, "notes_created", ()),
-            *getattr(result, "notes_updated", ()),
-            getattr(result, "synthesis_id", ""),
-        ],
-    )
-    sink.call("record_research_sources", getattr(result, "opened_sources", ()))
-    record = getattr(result, "research_record", None)
-    if record is None:
-        return
-    summary = None
-    to_summary_payload = getattr(record, "to_summary_payload", None)
-    if callable(to_summary_payload):
-        summary = to_summary_payload()
-    elif isinstance(record, dict):
-        summary = record
-    if summary is not None:
-        sink.call("record_research_record_summary", summary)
-
-
-def record_evidence_ledger_write_trace(trace: Any | None, result: Any) -> None:
-    if trace is None or result is None:
-        return
-    to_trace_payload = getattr(result, "to_trace_payload", None)
-    if not callable(to_trace_payload):
-        return
-    FailOpenPromptTrace(trace).call("record_evidence_ledger_write", to_trace_payload())
-
-
 def record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
     if trace is None or review is None:
         return
@@ -583,10 +547,8 @@ __all__ = [
     "deps_prior_claim_refs",
     "prior_claim_refs",
     "record_evidence_ledger_write",
-    "record_evidence_ledger_write_trace",
     "record_research_plan_trace",
     "record_research_proof_review_trace",
-    "record_research_result_trace",
     "research_payload",
     "research_queue_item_title",
     "run_research_iteration",

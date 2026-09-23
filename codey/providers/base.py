@@ -34,25 +34,3 @@ class ChatProvider(Protocol):
 
     def close(self) -> None:
         """Release the local provider connection."""
-
-
-class StructuredChatProvider(Protocol):
-    name: str
-
-    def new_chat(self, timeout: float | None = None) -> None: ...
-
-    def send_turn(
-        self,
-        prompt: str,
-        tools: list[dict[str, object]] | None = None,
-        timeout: float | None = None,
-    ) -> AssistantTurn: ...
-
-    def send_tool_results(
-        self,
-        results: list[dict[str, object]],
-        tools: list[dict[str, object]] | None = None,
-        timeout: float | None = None,
-    ) -> AssistantTurn: ...
-
-    def close(self) -> None: ...

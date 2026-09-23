@@ -43,10 +43,6 @@ def result_fingerprint(result: ToolResult) -> str:
     return f"{status}:{digest}"
 
 
-def repeated_failure_key(call: ToolCall, result: ToolResult) -> str:
-    return f"{tool_fingerprint(call)}|{result_fingerprint(result)}"
-
-
 def attempt_record(
     call: ToolCall,
     result: ToolResult,
@@ -197,7 +193,6 @@ __all__ = [
     "detect_abab_cycle",
     "detect_exact_repeat",
     "detect_periodic_cycle",
-    "repeated_failure_key",
     "result_fingerprint",
     "should_block_or_remind",
     "tool_fingerprint",

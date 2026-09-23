@@ -75,7 +75,7 @@ from codey.runtime.core.operation_state import (
     LEAF_COMPLETION_PROOF_RECORDED,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.log.session_log import RuntimeLogError
+from codey.runtime.log.entries import RuntimeLogError
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.observe.terminalizer import task_done_event

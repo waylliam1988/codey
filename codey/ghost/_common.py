@@ -2,9 +2,8 @@
 
 Ghost stays domain-split (affinity/continuity/router/work_queue keep their own
 semantics). This module only owns the byte-identical helpers every store
-hand-rolled: UTC timestamps, project scope normalization, and scope validation.
-Stores call these directly; tests patch ``codey.ghost._common`` so there is
-exactly one seam.
+hand-rolled: UTC timestamps and project scope normalization. Stores call these
+directly; tests patch ``codey.ghost._common`` so there is exactly one seam.
 """
 
 from __future__ import annotations
@@ -31,11 +30,4 @@ def normalize_project(value: object) -> str:
         return clip_signal_text(text, 240)
 
 
-def normalize_scope(scope: object) -> str:
-    normalized = str(scope or "").strip().lower()
-    if normalized not in VALID_SCOPES:
-        raise ValueError("scope must be user, project, or session")
-    return normalized
-
-
-__all__ = ["VALID_SCOPES", "normalize_project", "normalize_scope", "now_iso_z"]
+__all__ = ["VALID_SCOPES", "normalize_project", "now_iso_z"]

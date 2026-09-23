@@ -68,11 +68,6 @@ def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
     return ("serial", name)
 
 
-def key_for_call(call: ToolCall, project: str = "") -> str:
-    scope, key = scope_for_call(call, project)
-    return f"{scope}:{key}"
-
-
 class FileMutationQueue:
     def plan(self, calls: Sequence[ToolCall], project: str = "") -> list[list[int]]:
         groups: list[list[int]] = []
@@ -142,4 +137,4 @@ def group_tool_calls_for_execution(
     return FileMutationQueue().plan(calls, project)
 
 
-__all__ = ["FileMutationQueue", "group_tool_calls_for_execution", "key_for_call", "scope_for_call"]
+__all__ = ["FileMutationQueue", "group_tool_calls_for_execution", "scope_for_call"]

@@ -8,9 +8,7 @@ and HTTP state stay outside this module.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
-
-from codey.runtime.core.outcome import OperationOutcome
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -25,12 +23,3 @@ class OperationContext:
     run_id: str
     lane: str = "current"
     metadata: dict[str, Any] = field(default_factory=dict)
-
-class Operation(Protocol):
-    operation_id: str
-    kind: str
-    lane: str
-    intent: OperationIntent
-
-    def run(self, context: OperationContext) -> OperationOutcome:
-        ...

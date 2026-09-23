@@ -43,9 +43,9 @@ def use_native_provider(provider: Any, provider_id: str = "") -> bool:
         pid = str(provider_id or getattr(provider, "name", "") or "").strip().lower()
     if pid == "local":
         try:
-            from codey.providers.local_openai import local_native_tools_enabled
+            from codey.providers.local_config import load_local_config, resolve_local_native_tools
 
-            return bool(local_native_tools_enabled())
+            return bool(resolve_local_native_tools(load_local_config()))
         except Exception:
             pass
     try:

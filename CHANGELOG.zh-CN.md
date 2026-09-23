@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## 0.5.9 - 本地模型主路径与 Runtime 卫生
+
+- 本地模型从“附加 provider”变成主路径：配置、端点发现、provider runtime
+  各有唯一归属，分别是 `local_config.py`、`local_discovery.py`、
+  `local_openai.py`。旧的 `local_openai` 配置/探测门面已删除；
+  `local_config.py` 只接受严格 schema 2（落盘配置用
+  `native_tools_mode` 和嵌套 `context`）。
+- 本地设置面板更安静、更明确：env key 只用于探测、不落盘；离线时仍显示
+  记住或 env 配置的地址；连上后不再显示死地址 try-button；context override
+  出错会直接报错，不再像“保存成功但其实没生效”。
+- Native tool calling 和本地 context budget 成为一等路径。runtime 启动时解析
+  一个有效本地配置，发送过程中不再反复读盘。
+- Runtime 边界更干净：`session_log.py` 只做耐久存储，runtime log 的 entry/error
+  类型由 `entries.py` 唯一拥有。未消费的 runtime 契约壳
+  （`Operation`、`CompletionVerdict`、`key_for_call`）已删除，并用架构测试锁住。
+- 发布卫生清掉 Research、Ghost、providers、web drivers、OpenAI tool lowering
+  中确认无消费者的便利出口；Ghost 的 learning、continuity、directive、work queue
+  主体保留，删的是没接线的小枝条。
+- Research 和工具体验更严格：结构化 `open_url` receipt 把“模型可见窗口”和
+  “本地保存全文”分开；文件变更规划有真正 serial barrier；未知工具默认 serial；
+  review policy 变成显式设置，不再安静地 fallback 自审。
+- 验证：`python -m ruff check .`、`git diff --check`、定向回归、测试收集
+  （`4116 tests collected`）和最终全量 `python -m pytest`
+  （`4092 passed, 24 skipped in 341.36s`）均通过。
+
 ## Unreleased - env key 只探不存、离线回显 env 地址（未发布）
 
 - P1：保存时 env key 只用于探测。请求无 key 且目标为 env 地址时，
@@ -118,9 +143,9 @@
   `native_tools_mode`（`auto/on/off`）、`parse_local_config_update()`、
   `local_bootstrap_payload()`（连接、模型、mode、context、presets）。
   `providers/local_discovery.py` 管候选（LM Studio、Ollama、KoboldCPP
-  `5001/v1`、generic）与并行探测。`local_openai.py` 只留 provider runtime
-  加薄门面，旧调用方与 mock 点零改动；每次 send 不再读盘（实例预算）。
-  配置文件迁到 schema 2，旧字段只读迁移一次。
+  `5001/v1`、generic）与并行探测。`local_openai.py` 只留 provider runtime；
+  配置和探测调用方直接使用 canonical 模块；每次 send 不再读盘（实例预算）。
+  配置文件是严格 canonical schema 2。
 - P1：小白本地面板补齐。`GET /api/local_provider` 返回 bootstrap 状态；
   保存走 canonical parse（换 target 必须显式 key 等安全规则不变）；
   `/api/providers` 加 `recommended`（默认可用回默认，否则 local，再否则

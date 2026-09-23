@@ -23,7 +23,8 @@ from codey.providers.catalog import (
     WORKER_CHILD_ENV,
 )
 from codey.providers.ids import normalize_provider_id
-from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
+from codey.providers.local_discovery import local_endpoint_available
+from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.web_provider import (
     DeepSeekWebProvider,
     GlmWebProvider,

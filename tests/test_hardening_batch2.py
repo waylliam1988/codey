@@ -300,7 +300,7 @@ class LocalProbeReasonTests(unittest.TestCase):
     def test_auth_is_distinguished(self) -> None:
         import urllib.error
 
-        from codey.providers import local_openai as local_module
+        from codey.providers import local_discovery as local_module
 
         error = urllib.error.HTTPError(
             "http://x/models", 401, "unauthorized", {}, None
@@ -319,7 +319,7 @@ class LocalProbeReasonTests(unittest.TestCase):
             local_module._extract_reply({"choices": []})
 
     def test_non_json_models_is_not_an_endpoint(self) -> None:
-        from codey.providers import local_openai as local_module
+        from codey.providers import local_discovery as local_module
 
         response = mock.Mock()
         response.read.return_value = b"not json"
@@ -337,7 +337,7 @@ class LocalProbeReasonTests(unittest.TestCase):
     def test_non_openai_payload_is_not_an_endpoint(self) -> None:
         import json as json_module
 
-        from codey.providers import local_openai as local_module
+        from codey.providers import local_discovery as local_module
 
         response = mock.Mock()
         response.read.return_value = json_module.dumps({}).encode("utf-8")
@@ -386,10 +386,10 @@ class LocalProbeReasonTests(unittest.TestCase):
             mock.patch.object(
                 local_module.urllib.request, "urlopen", return_value=response
             ) as opened,
-            mock.patch.object(app_api, "load_local_config", return_value={}),
+            mock.patch.object(app_api, "load_local_config", return_value=app_api.LocalProviderConfig()),
             mock.patch.object(app_api, "save_local_config") as saved,
             mock.patch.object(
-                app_api, "local_config_payload", return_value={"connected": True}
+                app_api, "local_bootstrap_payload", return_value={"connected": True}
             ),
         ):
             status, payload = app_api.save_local_provider_response({

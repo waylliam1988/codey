@@ -8,7 +8,6 @@ drivers keep only what is genuinely site-specific.
 
 from __future__ import annotations
 
-import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -16,7 +15,6 @@ from typing import Any
 from codey.providers.controls import (
     CONTROL_MESSAGE_BOX,
     locate_control,
-    locate_response,
 )
 from codey.providers.controls import (
     response_count as _controls_response_count,
@@ -45,10 +43,6 @@ def message_box(
 
 def response_count(provider_id: str, profile: ProviderProfile, page: Any) -> int:
     return _controls_response_count(page, provider_id, profile.selectors("response"))
-
-
-def last_response_text(provider_id: str, profile: ProviderProfile, page: Any):
-    return locate_response(page, provider_id, profile.selectors("response"))
 
 
 def rate_limit_visible(page: Any, text: str) -> bool:
@@ -88,13 +82,7 @@ def poll_late_response(
     return default()
 
 
-def clean_whitespace(value: Any, limit: int) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
-
-
 __all__ = [
-    "clean_whitespace",
-    "last_response_text",
     "message_box",
     "poll_late_response",
     "rate_limit_visible",

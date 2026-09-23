@@ -75,16 +75,9 @@ def native_tool_names(
     return tuple(_native_function_name(d) for d in _native_definitions(definitions))
 
 
-def research_openai_tools() -> list[dict[str, object]]:
-    from codey.research import tool_contract as research_contract
-
-    return research_contract.render_openai_tools()
-
-
 __all__ = [
     "NATIVE_EXCLUDED_NAMES",
     "native_tool_names",
     "openai_tool_contract_hash",
     "render_openai_tools",
-    "research_openai_tools",
 ]

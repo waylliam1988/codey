@@ -126,9 +126,9 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
     wants_native = False
     if capability is not None and getattr(capability, "supports_native_tools", False):
         try:
-            from codey.providers.local_openai import local_native_tools_enabled
+            from codey.providers.local_config import load_local_config, resolve_local_native_tools
 
-            wants_native = bool(local_native_tools_enabled())
+            wants_native = bool(resolve_local_native_tools(load_local_config()))
         except Exception:
             wants_native = bool(getattr(capability, "native_tools_default", False))
     if wants_native and callable(getattr(provider, "send_turn", None)):

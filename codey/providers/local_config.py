@@ -2,8 +2,8 @@
 
 Owns the ``local-openai.json`` shape, context-budget math, native-tools
 mode, and the bootstrap payload. ``local_openai.py`` keeps only the provider
-runtime plus thin facades; ``app/api.py`` parses through this module instead
-of understanding local config itself.
+runtime; ``app/api.py`` parses through this module instead of understanding
+local config itself.
 """
 
 from __future__ import annotations
@@ -166,23 +166,14 @@ def parse_native_tools_mode(value: object) -> str | None:
     text = str(value).strip().lower()
     if text in NATIVE_TOOLS_MODES:
         return text
-    flag = _parse_bool_flag(value)
-    if flag is True:
-        return NATIVE_TOOLS_ON
-    if flag is False:
-        return NATIVE_TOOLS_OFF
     return None
 
 
 def config_from_dict(raw: object) -> LocalProviderConfig:
-    """Coerce a raw mapping to canonical config, migrating legacy fields."""
+    """Coerce a schema-2 mapping to canonical config."""
     if not isinstance(raw, dict):
         return LocalProviderConfig()
-    mode = parse_native_tools_mode(raw.get("native_tools_mode"))
-    if mode is None:
-        # One-time migration read of the legacy flat field.
-        legacy_flag = _parse_bool_flag(raw.get("native_tools"))
-        mode = NATIVE_TOOLS_ON if legacy_flag else NATIVE_TOOLS_OFF if legacy_flag is False else NATIVE_TOOLS_AUTO
+    mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
     context_raw = raw.get("context")
     context: LocalContextBudget | None = None
     if isinstance(context_raw, dict):
@@ -193,24 +184,6 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
             candidate = LocalContextBudget(window, reserve, keep, source="config")
             if not validate_context_budget(candidate):
                 context = candidate
-    if context is None:
-        # One-time migration read of the legacy flat fields.
-        window = _parse_positive_int(raw.get("context_window_tokens"))
-        if window is not None:
-            reserve = _parse_positive_int(raw.get("context_reserve_tokens"))
-            keep = _parse_positive_int(raw.get("context_keep_recent_tokens"))
-            if reserve is not None and keep is not None:
-                candidate = LocalContextBudget(window, reserve, keep, source="config")
-                if not validate_context_budget(candidate):
-                    context = candidate
-            else:
-                context = context_budget_for_window(window)
-                context = LocalContextBudget(
-                    context.context_window_tokens,
-                    context.context_reserve_tokens,
-                    context.context_keep_recent_tokens,
-                    source="config",
-                )
     return LocalProviderConfig(
         base_url=str(raw.get("base_url") or "").strip(),
         model=str(raw.get("model") or "").strip(),
@@ -221,7 +194,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
 
 
 def load_local_config() -> LocalProviderConfig:
-    """Read the canonical config file (legacy shapes migrate on read)."""
+    """Read the canonical config file."""
     try:
         raw = read_json_strict(_config_path()) or {}
     except StoreCorruption:
@@ -273,15 +246,10 @@ def parse_local_config_update(
     # for the same target, and refuses a target change without an explicit key.
     api_key = "" if raw_key is None else str(raw_key).strip()
     mode = parse_native_tools_mode(body.get("native_tools_mode"))
+    if mode is None and "native_tools_mode" in body:
+        return None, "native_tools_mode must be auto, on, or off"
     if mode is None:
-        legacy = _parse_bool_flag(body.get("native_tools")) if "native_tools" in body else None
-        mode = (
-            NATIVE_TOOLS_ON
-            if legacy
-            else NATIVE_TOOLS_OFF
-            if legacy is False
-            else previous.native_tools_mode
-        )
+        mode = previous.native_tools_mode
     window, window_error = _parse_optional_positive_int_field(body, "context_window_tokens")
     if window_error:
         return None, window_error
@@ -374,8 +342,8 @@ def resolve_effective_local_config(
 ) -> EffectiveLocalConfig:
     """Single runtime view: agent code reads this, never raw files or env.
 
-    The endpoint comes from the caller (facades pass their mockable
-    resolver); only when omitted is discovery consulted directly.
+    The endpoint comes from the caller; only when omitted is discovery
+    consulted directly.
     """
     loaded = config if config is not None else load_local_config()
     resolved = endpoint

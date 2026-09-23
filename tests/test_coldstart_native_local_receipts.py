@@ -78,24 +78,32 @@ def test_native_format_results_is_native_wording() -> None:
 
 
 def test_local_native_tools_on_by_default_with_opt_out(monkeypatch, tmp_path: Path) -> None:
-    from codey.providers import local_openai
+    from codey.providers import local_config
     from codey.providers.capabilities import capability_for
 
     assert capability_for("local").native_tools_default is True
     monkeypatch.delenv("NATIVE_TOOLS", raising=False)
-    monkeypatch.setattr(local_openai, "load_local_config", lambda: {})
-    assert local_openai.local_native_tools_enabled() is True
+    monkeypatch.setattr(local_config, "load_local_config", lambda: local_config.LocalProviderConfig())
+    assert local_config.resolve_local_native_tools(local_config.load_local_config()) is True
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
-    assert local_openai.local_native_tools_enabled() is False
+    assert local_config.resolve_local_native_tools(local_config.load_local_config()) is False
     monkeypatch.setenv("NATIVE_TOOLS", "1")
-    assert local_openai.local_native_tools_enabled() is True
+    assert local_config.resolve_local_native_tools(local_config.load_local_config()) is True
 
     monkeypatch.delenv("NATIVE_TOOLS", raising=False)
-    monkeypatch.setattr(local_openai, "load_local_config", lambda: {"native_tools": False})
-    assert local_openai.local_native_tools_enabled() is False
-    monkeypatch.setattr(local_openai, "load_local_config", lambda: {"native_tools": True})
-    assert local_openai.local_native_tools_enabled() is True
+    monkeypatch.setattr(
+        local_config,
+        "load_local_config",
+        lambda: local_config.LocalProviderConfig(native_tools_mode=local_config.NATIVE_TOOLS_OFF),
+    )
+    assert local_config.resolve_local_native_tools(local_config.load_local_config()) is False
+    monkeypatch.setattr(
+        local_config,
+        "load_local_config",
+        lambda: local_config.LocalProviderConfig(native_tools_mode=local_config.NATIVE_TOOLS_ON),
+    )
+    assert local_config.resolve_local_native_tools(local_config.load_local_config()) is True
 
 
 def test_local_context_budgets_from_env_and_config(monkeypatch) -> None:
@@ -104,47 +112,45 @@ def test_local_context_budgets_from_env_and_config(monkeypatch) -> None:
         LOCAL_OPENAI_CONTEXT_RESERVE_ENV,
         LOCAL_OPENAI_CONTEXT_WINDOW_ENV,
     )
-    from codey.providers import local_openai
+    from codey.providers import local_config
 
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, raising=False)
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, raising=False)
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_KEEP_ENV, raising=False)
-    monkeypatch.setattr(local_openai, "load_local_config", lambda: {})
-    defaults = local_openai.resolve_local_context_budgets()
-    assert defaults["context_window_tokens"] == 32_768
-    assert defaults["context_window_tokens"] > defaults["context_reserve_tokens"] > 0
+    monkeypatch.setattr(local_config, "load_local_config", lambda: local_config.LocalProviderConfig())
+    defaults = local_config.resolve_local_context_budget(local_config.load_local_config())
+    assert defaults.context_window_tokens == 32_768
+    assert defaults.context_window_tokens > defaults.context_reserve_tokens > 0
 
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "8192")
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "2048")
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_KEEP_ENV, "3000")
-    resolved = local_openai.resolve_local_context_budgets()
-    assert resolved == {
-        "context_window_tokens": 8192,
-        "context_reserve_tokens": 2048,
-        "context_keep_recent_tokens": 3000,
-    }
+    resolved = local_config.resolve_local_context_budget(local_config.load_local_config())
+    assert (
+        resolved.context_window_tokens,
+        resolved.context_reserve_tokens,
+        resolved.context_keep_recent_tokens,
+    ) == (8192, 2048, 3000)
 
     # Invalid (reserve >= window) fails open to defaults.
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "2048")
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "4096")
-    fallback = local_openai.resolve_local_context_budgets()
-    assert fallback["context_window_tokens"] == 32_768
+    fallback = local_config.resolve_local_context_budget(local_config.load_local_config())
+    assert fallback.context_window_tokens == 32_768
 
     # Config source works when env is unset.
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, raising=False)
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, raising=False)
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_KEEP_ENV, raising=False)
     monkeypatch.setattr(
-        local_openai,
+        local_config,
         "load_local_config",
-        lambda: {
-            "context_window_tokens": 16384,
-            "context_reserve_tokens": 4096,
-            "context_keep_recent_tokens": 6000,
-        },
+        lambda: local_config.LocalProviderConfig(
+            context=local_config.LocalContextBudget(16384, 4096, 6000, source="config"),
+        ),
     )
-    from_config = local_openai.resolve_local_context_budgets()
-    assert from_config["context_window_tokens"] == 16384
+    from_config = local_config.resolve_local_context_budget(local_config.load_local_config())
+    assert from_config.context_window_tokens == 16384
 
 
 def test_research_receipt_externalizes_with_store(tmp_path: Path) -> None:

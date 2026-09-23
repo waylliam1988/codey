@@ -54,14 +54,6 @@ _QUOTA_MARKERS = (
     "payment required",
 )
 
-_AUTH_MARKERS = (
-    "invalid_api_key",
-    "invalid api key",
-    "unauthorized",
-    "authentication",
-)
-
-
 def is_context_overflow_message(text: str) -> bool:
     folded = str(text or "").lower()
     if not folded:
@@ -88,11 +80,6 @@ def is_quota_message(text: str) -> bool:
     return any(marker in folded for marker in _QUOTA_MARKERS)
 
 
-def is_auth_message(text: str) -> bool:
-    folded = str(text or "").lower()
-    return any(marker in folded for marker in _AUTH_MARKERS)
-
-
 def classify_openai_choice(choice: Mapping[str, object]) -> str:
     finish = str(choice.get("finish_reason") or "").lower()
     if finish == "length":
@@ -114,7 +101,6 @@ __all__ = [
     "ProviderErrorKind",
     "classify_http_error",
     "classify_openai_choice",
-    "is_auth_message",
     "is_context_overflow_message",
     "is_quota_message",
 ]

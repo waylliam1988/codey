@@ -429,7 +429,7 @@ def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
 
 
 def _commit_entries(log: RuntimeSessionLog, session_id: str, entries) -> None:
-    from codey.runtime.log.session_log import RuntimeLogEntry
+    from codey.runtime.log.entries import RuntimeLogEntry
 
     path = log.path_for(session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
