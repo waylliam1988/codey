@@ -30,6 +30,9 @@ def test_context_budget_validation() -> None:
     assert validate_context_budget(LocalContextBudget(8192, 8192, 1000)) != ""
     assert validate_context_budget(LocalContextBudget(8192, 2048, 9000)) != ""
     assert validate_context_budget(LocalContextBudget(32768, 8192, 12000)) == ""
+    # keep must fit inside window minus reserve, not just window.
+    assert validate_context_budget(LocalContextBudget(8192, 2048, 7000)) != ""
+    assert validate_context_budget(LocalContextBudget(8192, 2048, 6144)) == ""
 
 
 def test_parse_update_derives_preset_and_mode() -> None:
@@ -189,8 +192,14 @@ def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
     )
 
     assert scope_for_call(ToolCall(name="search", args={"query": "q", "path": "a.py"}))[0] == "read"
-    assert scope_for_call(ToolCall(name="references", args={"symbol": "s"}))[0] == "read"
+    # Unpathed search/references stay serial: future parallel readers must
+    # never run a tree-wide scan concurrently with a writer.
+    assert scope_for_call(ToolCall(name="references", args={"symbol": "s"}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="search", args={"query": "q"}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="search", args={"query": "q", "path": "."}))[0] == "serial"
     assert scope_for_call(ToolCall(name="run", args={"command": "pytest"}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="shell", args={"command": "ls"}))[0] == "serial"
+    assert scope_for_call(ToolCall(name="read", args={"path": "a.py"}))[0] == "read"
     # Same-path search/edit serialize; different paths batch.
     same = [
         ToolCall(name="edit", args={"path": "a.py"}),
@@ -202,6 +211,12 @@ def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
         ToolCall(name="search", args={"query": "q", "path": "b.py"}),
     ]
     assert group_tool_calls_for_execution(other, str(tmp_path)) == [[0, 1]]
+    # Unpathed search serializes even against unrelated writes.
+    unpathed = [
+        ToolCall(name="edit", args={"path": "a.py"}),
+        ToolCall(name="search", args={"query": "q"}),
+    ]
+    assert group_tool_calls_for_execution(unpathed, str(tmp_path)) == [[0], [1]]
 
 
 def test_open_url_full_text_receipt(tmp_path: Path) -> None:

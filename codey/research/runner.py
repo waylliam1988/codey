@@ -552,15 +552,14 @@ class ResearchRunner:
                 call, output, turn=turn, tool_index=tool_index,
             )
         if call.name == "open_url":
-            opened = self.tools.open_url_with_receipt(
+            opened = self.tools.open_url(
                 str(args.get("url") or ""),
                 offset=args.get("offset", 0),
                 limit=args.get("limit", 6000),
                 pages=str(args.get("pages") or ""),
             )
-            if isinstance(opened, str):
-                # Fixture doubles override open_url() only; fall back to it.
-                opened = ResearchToolOutput(model_text=opened)
+            if not isinstance(opened, ResearchToolOutput):
+                raise TypeError("ResearchTools.open_url must return ResearchToolOutput")
             return self._maybe_externalize_research_output(
                 call, opened.receipt_text or opened.model_text, turn=turn, tool_index=tool_index,
                 model_text_override=opened.model_text,

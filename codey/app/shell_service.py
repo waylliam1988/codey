@@ -190,6 +190,8 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             "exit_code": None,
             "output": "",
         }
+    proc = None
+    job = None
     try:
         gate = _shell_gate(ctx)
         with gate:
@@ -226,6 +228,21 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
     except subprocess.TimeoutExpired:
+        # Defensive: production wait_process() already terminated the tree,
+        # but a mocked wait (tests) or future override may not have.
+        # Without this, a live child keeps the project cwd locked and
+        # Windows TemporaryDirectory cleanup fails with WinError 32.
+        try:
+            if proc is not None:
+                cancellation.terminate_process_tree(proc, job)
+        except Exception:
+            pass
+        try:
+            close = getattr(job, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
         return {
             "ok": False,
             "status": "timeout",

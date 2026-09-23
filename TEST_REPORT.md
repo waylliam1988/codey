@@ -1,5 +1,50 @@
 # Codey Test Report
 
+## Structured open_url + window-only receipts + conservative scopes full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/research/tools.py               (open_url -> ResearchToolOutput, open_url_text, drop with_receipt)
+codey/research/runner.py              (fail-closed TypeError, receipt window wiring)
+codey/research/output_receipts.py     (model_text_override window-only fix)
+codey/research/plan_executor.py       (open_url_text for previews)
+codey/web/assets/provider_ui.js       (setRecommended before early return)
+codey/runtime/write/file_mutation_queue.py (conservative: unpathed search/references serial)
+codey/providers/local_config.py       (keep <= window - reserve)
+codey/app/shell_service.py            (defensive terminate on TimeoutExpired)
+tests/test_research_open_url_structured.py (new, 3 tests)
+tests/test_research.py + test_connector_search.py + test_deep_research_core_ab.py (migrated to .model_text)
+tests/test_local_bootstrap.py         (queue serial + keep<=window-reserve assertions)
+tests/test_server.py                  (ApprovedShell mocks start_process; no live child)
+tests/manual/deep_research_core_ab.py + concept_context_ab.py + bounded_research_planner_ab.py (structured fixtures)
+```
+
+Notes:
+
+- Internal API returns structured objects; the model/tool-message boundary
+  still receives only `model_text` strings. No provider/native codec ever
+  sees a Python object. No compat shims or duck fallbacks remain.
+- The model sees the requested window only; the store keeps the full text.
+  `ToolResult` appends the managed-output footer; receipts never leak the
+  full head/tail into the model context.
+- Serial by default: the web-model session, thinking turns, and side-effect
+  tools stay serial. The queue only proves a future conservative parallel-
+  reads invariant (pathed reads may batch; unpathed scans stay serial).
+- Small-model cold start stays deterministic: local recommended by default,
+  budgets fail open to capability defaults, shell timeouts never lock the
+  project dir on Windows.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: research/open_url/queue/bootstrap/connector/deep-ab/server/
+  architecture suites green (incl. 1 new test file, 3 tests).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4094 passed, 6 skipped, 1341 subtests passed in 368.07s`).
+- No release.
+
 ## Local Bootstrap + review policy + full-text receipts full suite (2026-09-23)
 
 Scope (production, no release):

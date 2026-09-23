@@ -79,7 +79,7 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
         store = KnowledgeStore(Path(td))
         tools = ResearchTools(provider, store, KnowledgeChanges(store.root))
         with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
-            opened = tools.open_url(results[0]["url"])
+            opened = tools.open_url(results[0]["url"]).model_text
         store.close()
 
     assert "hepatotoxicity" in opened

@@ -39,7 +39,7 @@ from codey.research.protocols import JsonToolCodec
 from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT
-from codey.research.tools import ResearchTools
+from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 
 ARMS = ("baseline", "concept")
@@ -341,12 +341,12 @@ class ProbeResearchTools(ResearchTools):
         offset: int = 0,
         limit: int = OPEN_DEFAULT_LIMIT,
         pages: str = "",
-    ) -> str:
+    ) -> ResearchToolOutput:
         url = str(url or "").strip()
         lookup = getattr(self.search, "document_for_url", lambda _url: None)
         doc = lookup(url)
         if doc is None:
-            return "ERROR: fixture URL not found: " + url
+            return ResearchToolOutput(model_text="ERROR: fixture URL not found: " + url)
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         document = SourceDocument.html(
@@ -357,22 +357,13 @@ class ProbeResearchTools(ResearchTools):
         )
         self.sources_read.add(url)
         self.ledger.record_open_document(document)
+        header = f"{doc.title}\n{doc.url}".strip()
         window = document.text[offset : offset + limit]
-        body = f"{doc.title}\n{doc.url}\n\n{window}".strip()
+        body = f"{header}\n\n{window}".strip()
         if offset + limit < len(document.text):
             body += f"\n\n[more text available: open with offset={offset + limit}]"
-        return body
-
-    def open_url_with_receipt(
-        self,
-        url: str,
-        offset: int = 0,
-        limit: int = OPEN_DEFAULT_LIMIT,
-        pages: str = "",
-    ):
-        from codey.research.tools import ResearchToolOutput
-
-        return ResearchToolOutput(model_text=self.open_url(url, offset=offset, limit=limit, pages=pages))
+        full = f"{header}\n\n{document.text}".strip()
+        return ResearchToolOutput(model_text=body, receipt_text=full)
 
 
 _FIXTURE_FRONT = """Probe fixture hard boundary:

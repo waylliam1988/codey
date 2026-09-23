@@ -401,10 +401,17 @@ class ApprovedShellTests(unittest.TestCase):
             self.assertEqual(stopped["status"], "stopped")
             self.assertTrue(stopped["stopped"])
 
-            with mock.patch.object(
-                cancellation,
-                "wait_process",
-                side_effect=subprocess.TimeoutExpired("cmd", 1),
+            with (
+                mock.patch.object(
+                    cancellation,
+                    "start_process",
+                    return_value=(mock.Mock(), mock.Mock()),
+                ),
+                mock.patch.object(
+                    cancellation,
+                    "wait_process",
+                    side_effect=subprocess.TimeoutExpired("cmd", 1),
+                ),
             ):
                 timed_out = shell_service.execute_approved_shell(ctx, td, ".", "sleep 5")
             self.assertEqual(timed_out["status"], "timeout")

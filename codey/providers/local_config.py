@@ -93,8 +93,8 @@ def validate_context_budget(budget: LocalContextBudget) -> str:
         return "context_keep_recent_tokens must be a positive integer"
     if not window > reserve:
         return "context_window_tokens must be larger than context_reserve_tokens"
-    if keep > window:
-        return "context_keep_recent_tokens must not exceed context_window_tokens"
+    if keep > window - reserve:
+        return "context_keep_recent_tokens must not exceed context_window_tokens minus context_reserve_tokens"
     return ""
 
 

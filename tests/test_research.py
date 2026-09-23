@@ -468,7 +468,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(PdfSearch(), store, KnowledgeChanges(store.root))
 
-            output = tools.open_url(url, pages="4")
+            output = tools.open_url(url, pages="4").model_text
             opened = tools.ledger.opened_sources_payload()
             store.close()
 
@@ -500,7 +500,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(PdfSearch(), store, KnowledgeChanges(store.root))
 
-            output = tools.open_url(url)
+            output = tools.open_url(url).model_text
             store.close()
 
         self.assertTrue(output.startswith("SKIPPED: PDF has no extractable text"))
@@ -554,7 +554,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
-            output = tools.open_url("https://pmc.ncbi.nlm.nih.gov/")
+            output = tools.open_url("https://pmc.ncbi.nlm.nih.gov/").model_text
             store.close()
 
         self.assertTrue(output.startswith("SKIPPED: low_value_landing_page_url"))
@@ -575,7 +575,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(RedirectSearch(), store, KnowledgeChanges(store.root))
 
-            output = tools.open_url("https://example.com/pmc-redirect")
+            output = tools.open_url("https://example.com/pmc-redirect").model_text
             store.close()
 
         self.assertTrue(output.startswith("SKIPPED: low_value_landing_page_url after redirect"))
@@ -602,7 +602,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(InjectionSearch(), store, KnowledgeChanges(store.root))
 
-            opened = tools.open_url(url)
+            opened = tools.open_url(url).model_text
             ledger_text = tools.ledger.source_text_for_url(url)
             saved = tools.knowledge_write(
                 {
@@ -673,7 +673,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
             before = tools.source_search(url, "stable-v2 endpoint")
-            opened = tools.open_url(url, limit=600)
+            opened = tools.open_url(url, limit=600).model_text
             found = tools.source_search(url, "stable-v2 endpoint")
             evidence_before_write = len(tools.ledger.evidence_items)
             saved = tools.knowledge_write(
@@ -769,7 +769,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             search = PdfSearch()
             tools = ResearchTools(search, store, KnowledgeChanges(store.root))
 
-            opened = tools.open_url(url)
+            opened = tools.open_url(url).model_text
             located = tools.source_search(url, "stratified bootstrap validation")
             pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
             evidence_after_search = len(tools.ledger.evidence_items)
@@ -790,7 +790,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     ],
                 }
             )
-            page = tools.open_url(url, pages="9")
+            page = tools.open_url(url, pages="9").model_text
             accepted = tools.knowledge_write(
                 {
                     "type": "fact",
@@ -5188,7 +5188,7 @@ class NetworkPolicyTests(unittest.TestCase):
         mock_changes = unittest.mock.MagicMock()
         tools = ResearchTools(search=mock_search, store=mock_store, changes=mock_changes)
 
-        result = tools.open_url("http://127.0.0.1/private")
+        result = tools.open_url("http://127.0.0.1/private").model_text
         self.assertTrue(result.startswith("ERROR:"))
         self.assertTrue("non-public" in result or "local/loopback" in result)
         mock_search.fetch.assert_not_called()
@@ -5209,7 +5209,7 @@ class NetworkPolicyTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             tools = ResearchTools(RedirectingSearch(), store, KnowledgeChanges(store.root))
             with mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None) as policy:
-                result = tools.open_url("https://example.com/start")
+                result = tools.open_url("https://example.com/start").model_text
             store.close()
 
         self.assertIn("Readable page body.", result)

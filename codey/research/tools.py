@@ -123,14 +123,13 @@ class ResearchTools:
             return f"no useful non-landing results; skipped {skipped} low-value landing result(s)"
         return "\n".join(lines)
 
-    def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
-        return self._open_document(url, offset=offset, limit=limit, pages=pages).model_text
-
-    def open_url_with_receipt(
-        self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
-    ) -> ResearchToolOutput:
+    def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> ResearchToolOutput:
         """Open a page once: bounded window for the model, full text for receipts."""
         return self._open_document(url, offset=offset, limit=limit, pages=pages)
+
+    def open_url_text(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
+        """String-only boundary for callers that need just model-visible text."""
+        return self.open_url(url, offset=offset, limit=limit, pages=pages).model_text
 
     def _open_document(
         self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""

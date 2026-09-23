@@ -35,7 +35,7 @@ from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
 from codey.research.source_gateway import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES
 from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
-from codey.research.tools import ResearchTools
+from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
 
@@ -386,7 +386,7 @@ class ProbeResearchTools(ResearchTools):
         offset: int = 0,
         limit: int = OPEN_DEFAULT_LIMIT,
         pages: str = "",
-    ) -> str:
+    ) -> ResearchToolOutput:
         url = str(url or "").strip()
         search_doc = getattr(self.search, "document_for_url", lambda _url: None)
         doc = search_doc(url)
@@ -399,22 +399,13 @@ class ProbeResearchTools(ResearchTools):
         if document.final_url and document.final_url != url:
             self.sources_read.add(document.final_url)
         self.ledger.record_open_document(document)
+        header = _fixture_document_header(document)
         window = document.text[offset : offset + limit]
-        body = f"{_fixture_document_header(document)}\n\n{window}".strip()
+        body = f"{header}\n\n{window}".strip()
         if offset + limit < len(document.text):
             body += f"\n\n[more text available: open with offset={offset + limit}]"
-        return _clip(body, OPEN_MAX_LIMIT)
-
-    def open_url_with_receipt(
-        self,
-        url: str,
-        offset: int = 0,
-        limit: int = OPEN_DEFAULT_LIMIT,
-        pages: str = "",
-    ):
-        from codey.research.tools import ResearchToolOutput
-
-        return ResearchToolOutput(model_text=self.open_url(url, offset=offset, limit=limit, pages=pages))
+        full = f"{header}\n\n{document.text}".strip()
+        return ResearchToolOutput(model_text=_clip(body, OPEN_MAX_LIMIT), receipt_text=full)
 
     def _source_document_from_fetch(
         self,
@@ -1882,12 +1873,12 @@ def self_test() -> int:
         before = tools.source_search(PDF_METHOD_URL, "bootstrap", 3)
         assert before.startswith("NEEDS_OPEN:")
         opened = tools.open_url(PDF_METHOD_URL)
-        assert "[page 1]" in opened
+        assert "[page 1]" in opened.model_text
         located = tools.source_search(PDF_METHOD_URL, "stratified bootstrap", 3)
         assert "p.9" in located
         assert "stratified bootstrap validation" in located
         page = tools.open_url(PDF_METHOD_URL, pages="9")
-        assert "[page 9]" in page
+        assert "[page 9]" in page.model_text
         store.close()
 
     report = (

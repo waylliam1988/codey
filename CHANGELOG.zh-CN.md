@@ -2,6 +2,38 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 结构化 open_url、只看窗口的 receipt、保守 scope（未发布）
+
+- P0：`ResearchTools.open_url()` 改为结构化返回。直接返回
+  `ResearchToolOutput`（`model_text` 窗口给模型，`receipt_text` 全文给
+  store）；`open_url_text()` 是确实只需要字符串的生产边界；
+  `open_url_with_receipt()` 删除，无兼容垫片。
+  `ResearchRunner._dispatch()` fail closed（非 `ResearchToolOutput` 直接
+  `TypeError`），模型/tool 边界仍只收 `model_text` 字符串。
+  `PlanExecutor` 与 planner 探针改用 `open_url_text()`；测试全部跟主代码
+  用 `.model_text`，不由测试决定 API。
+- P0：receipt 窗口语义修复。`maybe_externalize_output()` 有
+  `model_text_override` 时只给模型看窗口，不再给全文 head/tail；
+  managed-output footer 由 `ToolResult` 自己追加。sentinel 测试锁死
+  “模型只能看到窗口”。
+- P1：冷启动正确性。`provider_ui.js` 把 `setRecommended` 移到 early return
+  之前，后端推荐 local 一定进入 UI state；
+  `validate_context_budget()` 改为 `keep <= window - reserve`；
+  `scope_for_call()` 更保守（`run`/`shell` serial，`edit` write，
+  `read`/`ls` read，有 path 的 `search`/`references` read，无 path 或
+  `.` 的 serial）。默认仍串行，queue 只做规划保险。
+- P1：Windows shell 泄漏修复。`execute_shell_ticket()` 在 `TimeoutExpired`
+  时主动 terminate 进程树，避免 mock `wait_process` 留下活子进程锁住
+  cwd 导致 `TemporaryDirectory` 清理 `WinError 32`；对应测试同时 mock
+  `start_process`。
+- 测试：新增 `tests/test_research_open_url_structured.py`（3 个：窗口 vs
+  全文 receipt + `open_url_text`、receipt sentinel、runner 对旧字符串
+  fail closed）；所有 `open_url` 调用方跟随主代码迁移；queue 与
+  `keep <= window - reserve` 断言收紧。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4094 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - Local Bootstrap、review policy、全文 receipt（未发布）
 
 - P0：新增 Local Model Bootstrap 层。`providers/local_config.py` 为唯一

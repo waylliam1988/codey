@@ -137,7 +137,10 @@ def maybe_externalize_output(
                 "stored_truncated": ref.stored_truncated,
             }
     clipped, _ = head_tail_clip(text)
-    outcome = _Outcome(clipped, presentation_result=presentation_result) if presentation_result else _Outcome(clipped)
+    # Window wins when the caller supplies one: the model must never see the
+    # full-text head/tail. ToolResult appends the managed-output footer itself.
+    visible = model_text if model_text_override else clipped
+    outcome = _Outcome(visible, presentation_result=presentation_result) if presentation_result else _Outcome(visible)
     outcome.truncated = True
     outcome.audit.update(audit)
     outcome.audit["externalized"] = True

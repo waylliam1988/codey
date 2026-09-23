@@ -41,16 +41,23 @@ def _canonical_path(call: ToolCall, project: str = "") -> str:
 def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
     """Classify one call into (scope, key) for conflict planning.
 
-    Scopes: ``write`` (edit), ``read`` (read/ls/search/references),
-    ``serial`` (run/shell side effects), ``other`` (everything else).
+    Scopes: ``write`` (edit), ``read`` (read/ls/pathed search/references),
+    ``serial`` (run/shell side effects plus unpathed search/references),
+    ``other`` (everything else). Serial today; grouping only proves the
+    invariant for a future conservative parallel reader.
     """
     name = str(call.name or "")
-    if name == "edit":
-        return ("write", _canonical_path(call, project))
-    if name in ("read", "ls", "search", "references"):
-        return ("read", _canonical_path(call, project))
     if name in ("run", "shell"):
         return ("serial", name)
+    if name == "edit":
+        return ("write", _canonical_path(call, project))
+    if name in ("read", "ls"):
+        return ("read", _canonical_path(call, project))
+    if name in ("search", "references"):
+        path = str((call.args or {}).get("path") or "").strip()
+        if not path or path == ".":
+            return ("serial", name)
+        return ("read", _canonical_path(call, project))
     return ("other", name)
 
 

@@ -149,10 +149,10 @@ def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> 
         )
 
         before = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
-        opened = tools.open_url(ab.PDF_METHOD_URL)
+        opened = tools.open_url(ab.PDF_METHOD_URL).model_text
         located = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
         coverage = tools.ledger.coverage_payload()
-        page = tools.open_url(ab.PDF_METHOD_URL, pages="9")
+        page = tools.open_url(ab.PDF_METHOD_URL, pages="9").model_text
         evidence_count = len(tools.ledger.evidence_items)
         store.close()
 

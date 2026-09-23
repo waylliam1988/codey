@@ -2,6 +2,44 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Structured open_url, window-only receipts, conservative scopes (no release)
+
+- P0: `ResearchTools.open_url()` is now structured. It returns
+  `ResearchToolOutput` (`model_text` window for the model, `receipt_text`
+  full text for the store); `open_url_text()` is the string-only boundary
+  for callers that need just model-visible text; `open_url_with_receipt()`
+  is deleted with no compat shim. `ResearchRunner._dispatch()` is fail
+  closed (`TypeError` unless `ResearchToolOutput`), and the model/tool
+  boundary still receives only `model_text` strings. `PlanExecutor` and
+  the planner probe use `open_url_text()`; all tests follow the main code
+  via `.model_text`.
+- P0: receipt windowing is fixed. `maybe_externalize_output()` shows the
+  caller-supplied window when `model_text_override` is present instead of
+  the full-text head/tail; `ToolResult` appends the managed-output footer
+  itself. A sentinel test locks "model sees window only".
+- P1: cold-start correctness. `provider_ui.js` applies backend `recommended`
+  before the no-change early return so local stays recommended;
+  `validate_context_budget()` requires `keep <= window - reserve`;
+  `scope_for_call()` is conservative (`run`/`shell` serial, `edit` write,
+  `read`/`ls` read, pathed `search`/`references` read, unpathed
+  `search`/`references` serial). Execution stays serial; the queue is
+  planning insurance for future parallel reads only.
+- P1: Windows shell leak fixed. `execute_shell_ticket()` terminates the
+  process tree defensively on `TimeoutExpired` so a mocked `wait_process`
+  cannot leave a live child locking the project cwd (`WinError 32` on
+  `TemporaryDirectory` cleanup); `ApprovedShellTests` now mocks
+  `start_process` as well as `wait_process`.
+- Tests: new `tests/test_research_open_url_structured.py` (3 tests:
+  structured window vs full receipt + `open_url_text`, receipt sentinel,
+  runner fail-closed on legacy string); migrated every `open_url` caller
+  (`test_research`, `test_connector_search`, `test_deep_research_core_ab`,
+  manual probes) to `.model_text`/`open_url_text`; tightened queue scopes
+  and `keep <= window - reserve` assertions.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4094 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - Local Model Bootstrap, review policy, full-text receipts (no release)
 
 - P0: new Local Model Bootstrap layer. `providers/local_config.py` owns the

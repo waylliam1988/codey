@@ -193,7 +193,7 @@ class FreshMaterialPlanExecutor:
                     continue
                 seen.add(url)
                 before_opened = _opened_url_set(runtime)
-                body = runtime.open_url(url, limit=self.config.max_source_preview_chars)
+                body = runtime.open_url_text(url, limit=self.config.max_source_preview_chars)
                 text = str(body or "")
                 if text.startswith(("ERROR:", "SKIPPED:")):
                     skipped += 1

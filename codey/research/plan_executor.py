@@ -142,7 +142,7 @@ class PlanExecutor:
                     continue
                 before_opened = set(runtime.ledger.final_url_set())
                 try:
-                    body = runtime.open_url(
+                    body = runtime.open_url_text(
                         url,
                         limit=self.config.max_source_preview_chars,
                     )

@@ -73,12 +73,12 @@ function applyProviderConfig(data) {
     if (PROVIDER_LABELS[id] !== labels[id]) { changed = true; break; }
   }
   if (data.default && data.default !== DEFAULT_PROVIDER && labels[data.default]) changed = true;
+  if (data.recommended && window.CodeyUiState && typeof window.CodeyUiState.setRecommended === 'function') {
+    window.CodeyUiState.setRecommended(data.recommended);
+  }
   if (!changed) return false;
   if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
     window.CodeyUiState.setProviders(ids, labels, data.default);
-    if (data.recommended && typeof window.CodeyUiState.setRecommended === 'function') {
-      window.CodeyUiState.setRecommended(data.recommended);
-    }
   } else {
     PROVIDER_LABELS = labels;
     PROVIDERS = ids;
