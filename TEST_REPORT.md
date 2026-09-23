@@ -36,6 +36,53 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Bounded capture + pre-send context accounting full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/runtime/core/output_capture.py   (new BoundedByteCapture: head+tail, fixed blocks, omitted marker, UTF-8 edges)
+codey/runtime/core/cancellation.py     (binary pipes; required capture_limit_bytes; drain timeout; always-clean group/Job)
+codey/toolchain/runtime.py             (real process bytes + capture_truncated in audit; drain-timeout failure)
+codey/storage/managed_outputs.py       (receipt vs actual bytes separated in audit)
+codey/app/shell_service.py             (same capture limit; merged truncation; distinct drain_timeout)
+codey/repairs/self_repair_worker.py    (explicit worker limit; truncation reported, never parsed)
+codey/providers/local_openai.py        (_prepare_request: copy, append batch, compact candidate, budget check, commit)
+requirements-lock.txt + ci.yml         (single checked-in lock; 3.11/3.12/3.13 install by lock + --no-deps)
+tests/test_bounded_capture_and_context.py (new acceptance tests)
+tests/test_cancellation.py, test_run_command_characterization.py,
+test_adapter_self_repair.py, test_architecture.py, tests/stress/scheduler.py
+  (doubles updated to the new contract)
+```
+
+Notes:
+
+- "No A/B" means bounds/correctness are proven by resource-limit and
+  unit tests (bounded memory on multi-MiB dual output, UTF-8 splits,
+  drain timeout, zero HTTP calls on overflow with intact history); it
+  does not claim higher model coding success rates.
+- Existing Job Object (Windows), POSIX process groups, tool-call
+  records, and managed output are kept and patched; no new framework
+  wrapper was added.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed).
+- Targeted regression before final full suite:
+  `tests/test_bounded_capture_and_context.py + test_cancellation.py +
+  test_run_command_characterization.py + test_local_openai_native.py`
+  (`31 passed`), `test_tool_runtime.py + test_managed_outputs.py +
+  test_shell_approval_epoch.py + test_hardening_batch2.py +
+  test_adapter_self_repair.py + test_architecture.py`
+  (`311 passed, 375 subtests passed`),
+  `test_server.py + test_native_delivery.py + test_agent_native_loop.py +
+  test_coldstart_native_local_receipts.py` (`240 passed`),
+  `tests/stress/test_shell_stop_allow_race.py` (`3 passed`),
+  `tests/stress/test_soak.py` (`5 passed`).
+- Full suite: `python -m pytest`
+  (`4124 passed, 6 skipped, 1374 subtests passed in 369.96s (0:06:09)`).
+- This report entry was written after the final full pytest run.
+
 ## Env-key save probe + visible env endpoint full suite (2026-09-24)
 
 Scope (production, no release):

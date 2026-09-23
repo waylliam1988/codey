@@ -1261,6 +1261,8 @@ class SelfRepairWorkerTests(unittest.TestCase):
             returncode=0,
             stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"changed_files":["codey/providers/web_drivers/qwen.py"]}\n',
             stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with mock.patch("codey.repairs.self_repair_worker.cancellation.run_process", return_value=completed) as run:
             result = run_self_repair_worker(

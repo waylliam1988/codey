@@ -27,6 +27,39 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - 有界采集 + 发送前上下文核算（未发布）
+
+- 子进程输出改为读取时有界。新 `codey/runtime/core/output_capture.py`
+  （`BoundedByteCapture`）每路保留头 64 KiB + 尾 192 KiB（双路共约
+  512 KiB），按固定 8 KiB 块读取，累计真实字节数，接缝处标注省略字节数；
+  头尾 UTF-8 切口会被修剪，不会误报成原输出乱码。
+- `cancellation.start_process()` 改二进制管道，保留进程组/Job 归属；
+  `wait_process()`/`run_process()` 必填 `capture_limit_bytes`，双路持续泵入
+  有界缓冲，主线程管取消与截止时间；父进程退出但孙进程持管道时最多等
+  2 秒排空，否则清理进程组/Job 并报“输出管道排空超时”，不把退出码 0 +
+  不完整输出报成成功。`_terminate_process_tree()` 去掉 early-return，始终
+  按组号/Job 清理且全部有界等待；无界 `communicate()` 已删除。
+- 调用方贯穿真实字节与截断：`run_command_raw()`/
+  `project_run_command_result()` 在审计记 `process_stdout/stderr/bytes` 与
+  `capture_truncated`，并提示模型只保留头尾；managed output 存头尾 receipt
+  但审计区分实际产出与托管字节；shell 票据合并采集截断并单独报
+  `drain_timeout`；self-repair worker 截断直接报“worker 输出超限”，不解析
+  残缺 JSON。
+- 本地模型发送前先核算完整上下文：`_prepare_request()` 复制历史、一次性
+  加入本批 user/tool 消息（含全部 tool 结果，不拆 assistant tool call）、
+  对含本次输入的候选调现有 compactor，再算
+  `messages + tools + reserve <= window`；超限与压缩器异常都明确抛错，
+  HTTP 零调用、旧消息列表不动。`send()`/`send_turn()`/
+  `send_tool_results()` 共用该路径；`prompt_context.py` 的 NOT_SENT rollover
+  保留一次重试，不加新 fallback。
+- CI 单锁文件：`requirements-lock.txt` 纳入 Git，`ci.yml` 在 3.11/3.12/3.13
+  按锁安装后再 `pip install -e . --no-deps`；`pyproject.toml` 范围不变。
+- “免 A/B”指资源上限与正确性可用测试证明，不表示模型写代码成功率提高。
+- 测试：新增 `tests/test_bounded_capture_and_context.py`，并更新
+  cancellation/characterization/worker/architecture/stress 替身。
+- 验证：`python -m ruff check .` 通过；最终全量 `python -m pytest`
+  （`4124 passed, 6 skipped, 1374 subtests passed`）。
+
 ## Unreleased - env key 只探不存、离线回显 env 地址（未发布）
 
 - P1：保存时 env key 只用于探测。请求无 key 且目标为 env 地址时，

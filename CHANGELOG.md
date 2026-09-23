@@ -32,6 +32,46 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Bounded capture + pre-send context accounting (no release)
+
+- Subprocess output is now bounded at read time. New
+  `codey/runtime/core/output_capture.py` (`BoundedByteCapture`) keeps head
+  64 KiB + tail 192 KiB per stream (512 KiB total), reads in fixed 8 KiB
+  blocks, counts true bytes, and marks omitted bytes at the seam. UTF-8
+  cuts at head/tail edges are trimmed, never misreported as garbled output.
+- `cancellation.start_process()` uses binary pipes under the existing
+  process-group/Job ownership. `wait_process()`/`run_process()` require
+  `capture_limit_bytes`, pump both streams into bounded captures, enforce
+  command timeout/Stop, and fail explicitly on pipe-drain timeout (parent
+  exited but a grandchild still holds the pipe) instead of reporting exit 0
+  with incomplete output. `_terminate_process_tree()` always cleans the
+  group/Job (no early return) with bounded waits; no unbounded
+  `communicate()` remains.
+- Callers propagate real bytes and truncation: `run_command_raw()` and
+  `project_run_command_result()` record `process_stdout/stderr/bytes` plus
+  `capture_truncated` in audit and tell the model only head/tail were kept;
+  `run_command_with_managed_output()` stores the head/tail receipt while
+  auditing actual process bytes separately; shell tickets merge capture
+  truncation and report `drain_timeout` distinctly; the self-repair worker
+  reports `worker 输出超限` on truncation instead of parsing partial JSON.
+- Local provider sends are budgeted before HTTP. `_prepare_request()`
+  copies history, appends the full pending batch at once, compacts the
+  candidate with the existing tool-group-safe compactor, then checks
+  `messages + tools + reserve <= window`. Overflow and compaction failures
+  raise explicitly with zero HTTP calls and unmutated history.
+  `send()`/`send_turn()`/`send_tool_results()` share this path; the
+  provider-side rollover in `prompt_context.py` is unchanged (one retry,
+  then explicit failure).
+- CI uses one checked-in lock: `requirements-lock.txt` pins exact versions
+  and `.github/workflows/ci.yml` installs from it on 3.11/3.12/3.13, then
+  `pip install -e . --no-deps`. `pyproject.toml` ranges are unchanged.
+- "No A/B" here means bounds and correctness are proven by resource-limit
+  and unit tests; it does not claim higher model coding success rates.
+- Tests: new `tests/test_bounded_capture_and_context.py` plus updated
+  cancellation/characterization/worker/architecture/stress doubles.
+- Verification: `python -m ruff check .` clean; final full
+  `python -m pytest` (`4124 passed, 6 skipped, 1374 subtests passed`).
+
 ## Unreleased - Env-key save probe, visible env endpoint (no release)
 
 - P1: saving reuses the env key for the probe only. When the request

@@ -192,6 +192,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
         }
     proc = None
     job = None
+    capture_truncated = False
     try:
         gate = _shell_gate(ctx)
         with gate:
@@ -223,10 +224,40 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             getattr(ctx, "run_registry", None), "stop_flag", None
         )
         with cancellation.scope(stop_flag_after):
-            completed = cancellation.wait_process(proc, job, command, ticket.timeout)
+            from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
+
+            completed = cancellation.wait_process(
+                proc, job, command, ticket.timeout,
+                capture_limit_bytes=CAPTURE_LIMIT_BYTES,
+            )
+            capture_truncated = bool(
+                getattr(completed, "stdout_truncated", False)
+                or getattr(completed, "stderr_truncated", False)
+            )
             proc = completed
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
+    except cancellation.PipeDrainTimeout as exc:
+        try:
+            if proc is not None:
+                cancellation.terminate_process_tree(proc, job)
+        except Exception:
+            pass
+        try:
+            close = getattr(job, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "status": "drain_timeout",
+            "error": f"shell output pipe did not drain ({exc}); output is incomplete",
+            "exit_code": None,
+            "output": "",
+            "truncated": True,
+            "capture_truncated": True,
+        }
     except subprocess.TimeoutExpired:
         # Defensive: production wait_process() already terminated the tree,
         # but a mocked wait (tests) or future override may not have.
@@ -265,8 +296,9 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    output, truncated = clip_middle(output, ticket.output_limit)
-    return {
+    output, display_truncated = clip_middle(output, ticket.output_limit)
+    truncated = bool(display_truncated or capture_truncated)
+    result: dict = {
         "ok": True,
         "status": "exit",
         "error": None,
@@ -274,6 +306,9 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
         "output": output,
         "truncated": truncated,
     }
+    if capture_truncated:
+        result["capture_truncated"] = True
+    return result
 
 
 def execute_approved_shell(

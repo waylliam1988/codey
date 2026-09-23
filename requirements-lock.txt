@@ -1,0 +1,12 @@
+# Codey CI lock file (single source of pinned versions).
+#
+# pyproject.toml keeps ">=" ranges for users; CI installs exactly these
+# versions on Python 3.11/3.12/3.13 (Windows) and then installs the local
+# package with --no-deps so no second inconsistent list can drift.
+# Pinned 2026-09-24 from a green local run.
+playwright==1.58.0
+pywebview==6.2.1
+PyYAML==6.0.2
+pypdf==6.14.2
+pytest==9.0.3
+ruff==0.15.14

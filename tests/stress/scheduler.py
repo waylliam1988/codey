@@ -142,6 +142,10 @@ def counting_spawn(spawns: list, order: list, *, stamp: Any = None):
     proc.stdout = "ok"
     proc.stderr = ""
     proc.returncode = 0
+    proc.stdout_truncated = False
+    proc.stderr_truncated = False
+    proc.stdout_bytes = 2
+    proc.stderr_bytes = 0
 
     def _start(*args: object, **kwargs: object):
         # Runs inside the spawn gate: gate-serialized with Stop's section,
@@ -150,7 +154,14 @@ def counting_spawn(spawns: list, order: list, *, stamp: Any = None):
         order.append("spawn")
         return proc, mock.Mock()
 
-    def _wait(proc_arg: object, _job: object, _command: str, _timeout: float):
+    def _wait(
+        proc_arg: object,
+        _job: object,
+        _command: str,
+        _timeout: float,
+        *args: object,
+        **kwargs: object,
+    ):
         return proc
 
     return _start, _wait

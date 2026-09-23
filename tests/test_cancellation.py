@@ -59,13 +59,15 @@ class CancellationTests(unittest.TestCase):
             cancellation.check()
 
     def test_deadline_uses_process_tree_cleanup(self) -> None:
+        import subprocess as _subprocess
+
         proc = mock.Mock()
+        proc.stdout = None
+        proc.stderr = None
+        proc.wait.side_effect = _subprocess.TimeoutExpired("worker.py", 30)
         job = mock.Mock()
-        job_type = mock.Mock(return_value=job)
 
         with (
-            mock.patch.object(cancellation.subprocess, "Popen", return_value=proc),
-            mock.patch.object(cancellation, "_WindowsJob", job_type),
             mock.patch.object(
                 cancellation,
                 "check",
@@ -74,14 +76,15 @@ class CancellationTests(unittest.TestCase):
             mock.patch.object(cancellation, "_terminate_process_tree") as terminate,
             self.assertRaises(cancellation.DeadlineExceeded),
         ):
-            cancellation.run_process(
+            cancellation.wait_process(
+                proc,
+                job,
                 [sys.executable, "worker.py"],
-                cwd=".",
-                timeout=30,
+                30,
+                capture_limit_bytes=65536,
             )
 
-        expected_job = job if os.name == "nt" else None
-        terminate.assert_called_once_with(proc, expected_job)
+        terminate.assert_called_once_with(proc, job)
 
     @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
     def test_deadline_terminates_real_parent_and_child_processes(self) -> None:
@@ -120,6 +123,7 @@ class CancellationTests(unittest.TestCase):
                     ],
                     cwd=root,
                     timeout=30,
+                    capture_limit_bytes=65536,
                 )
 
             self.assertLess(time.monotonic() - started, 8.0)
@@ -176,6 +180,7 @@ class CancellationTests(unittest.TestCase):
                         ],
                         cwd=root,
                         timeout=30,
+                        capture_limit_bytes=65536,
                     )
             finally:
                 stopper.join(timeout=15)

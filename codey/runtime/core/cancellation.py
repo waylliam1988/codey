@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import signal
 import subprocess
 import threading
 import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +61,7 @@ if os.name == "nt":
 class _WindowsJob:
     """Own a Windows process tree and terminate it when the handle closes."""
 
-    def __init__(self, proc: subprocess.Popen[str]) -> None:
+    def __init__(self, proc: subprocess.Popen[bytes]) -> None:
         if os.name != "nt":
             raise OSError("Windows Job Objects are unavailable")
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -123,6 +124,24 @@ class TaskCancelled(RuntimeError):
 
 class DeadlineExceeded(TimeoutError):
     """Raised when a bounded provider operation exhausts its total budget."""
+
+
+class PipeDrainTimeout(RuntimeError):
+    """Parent exited but output pipes never reached EOF (grandchild holds them)."""
+
+
+@dataclasses.dataclass(frozen=True)
+class CapturedProcess:
+    """Bounded result of a spawned process (replaces CompletedProcess)."""
+
+    args: str | Sequence[str]
+    returncode: int
+    stdout: str
+    stderr: str
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 def current_event() -> threading.Event | None:
@@ -190,7 +209,7 @@ def start_process(
     cwd: str | Path,
     env: dict[str, str] | None = None,
     shell: bool = False,
-) -> tuple[subprocess.Popen[str], object]:
+) -> tuple[subprocess.Popen[bytes], object]:
     """Check cancellation once, then spawn. Callers holding a spawn gate must
     keep the gate across their final Stop check and this call so Stop cannot
     land between check and Popen."""
@@ -206,9 +225,7 @@ def start_process(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        text=False,
         shell=shell,
         **group_args,
     )
@@ -216,14 +233,78 @@ def start_process(
     return proc, job
 
 
+def _pump_stream(stream: object, capture: object) -> None:
+    from codey.runtime.core.output_capture import READ_CHUNK_BYTES
+
+    read = getattr(stream, "read", None)
+    feed = getattr(capture, "feed", None)
+    if not callable(read) or not callable(feed):
+        return
+    try:
+        while True:
+            chunk = read(READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8", errors="replace")
+            feed(bytes(chunk))
+    except (OSError, ValueError):
+        pass
+
+
+def _join_readers(threads: list[threading.Thread], *, timeout: float) -> None:
+    from codey.runtime.core.output_capture import READER_JOIN_TIMEOUT_SECONDS
+
+    budget = max(0.0, float(timeout if timeout > 0 else READER_JOIN_TIMEOUT_SECONDS))
+    deadline = time.monotonic() + budget
+    for thread in threads:
+        remaining = deadline - time.monotonic()
+        thread.join(timeout=max(0.0, remaining))
+
+
+def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
+    for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+        try:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
+
+
 def wait_process(
-    proc: subprocess.Popen[str],
+    proc: subprocess.Popen[bytes],
     job: object,
     args: str | Sequence[str],
     timeout: float,
-) -> subprocess.CompletedProcess[str]:
-    """Wait for a spawned process, terminating its tree when cancelled."""
-    deadline = time.monotonic() + max(0.0, timeout)
+    *,
+    capture_limit_bytes: int,
+) -> CapturedProcess:
+    """Wait with bounded per-stream capture; never buffers output unbounded."""
+    from codey.runtime.core.output_capture import (
+        DRAIN_TIMEOUT_SECONDS,
+        READER_JOIN_TIMEOUT_SECONDS,
+        BoundedByteCapture,
+    )
+
+    limit = max(1, int(capture_limit_bytes))
+    head = limit // 4
+    tail = limit - head
+    stdout_capture = BoundedByteCapture(head_limit=head, tail_limit=tail)
+    stderr_capture = BoundedByteCapture(head_limit=head, tail_limit=tail)
+    readers: list[threading.Thread] = []
+    for stream, capture in (
+        (proc.stdout, stdout_capture),
+        (proc.stderr, stderr_capture),
+    ):
+        if stream is None:
+            continue
+        thread = threading.Thread(
+            target=_pump_stream, args=(stream, capture), daemon=True
+        )
+        thread.start()
+        readers.append(thread)
+    deadline = time.monotonic() + max(0.0, float(timeout))
     try:
         while True:
             check()
@@ -231,23 +312,53 @@ def wait_process(
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(args, timeout)
             try:
-                stdout, stderr = proc.communicate(
-                    timeout=min(POLL_INTERVAL, remaining),
-                )
-                return subprocess.CompletedProcess(
-                    args,
-                    proc.returncode,
-                    stdout,
-                    stderr,
-                )
+                returncode = proc.wait(timeout=min(POLL_INTERVAL, remaining))
+                break
             except subprocess.TimeoutExpired:
                 continue
     except (TaskCancelled, DeadlineExceeded, subprocess.TimeoutExpired):
-        terminate_process_tree(proc, job)
+        _terminate_process_tree(proc, job)
+        _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
+        _close_pipes(proc)
+        close = getattr(job, "close", None)
+        if callable(close):
+            with suppress(Exception):
+                close()
         raise
+    try:
+        drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+        for thread in readers:
+            thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in readers):
+            _terminate_process_tree(proc, job)
+            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
+            _close_pipes(proc)
+            raise PipeDrainTimeout(
+                "output pipe drain timed out: parent exited but a child "
+                "still holds stdout/stderr; output is incomplete"
+            )
+        _close_pipes(proc)
+        try:
+            returncode = proc.returncode if proc.returncode is not None else 0
+        except Exception:
+            returncode = 0
+        stdout_done = stdout_capture.finish()
+        stderr_done = stderr_capture.finish()
+        return CapturedProcess(
+            args=args,
+            returncode=int(returncode),
+            stdout=stdout_done.text,
+            stderr=stderr_done.text,
+            stdout_bytes=stdout_done.total_bytes,
+            stderr_bytes=stderr_done.total_bytes,
+            stdout_truncated=stdout_done.truncated,
+            stderr_truncated=stderr_done.truncated,
+        )
     finally:
-        if job is not None:
-            job.close()
+        close = getattr(job, "close", None)
+        if callable(close):
+            with suppress(Exception):
+                close()
 
 
 def run_process(
@@ -257,26 +368,29 @@ def run_process(
     timeout: float,
     env: dict[str, str] | None = None,
     shell: bool = False,
-) -> subprocess.CompletedProcess[str]:
+    capture_limit_bytes: int,
+) -> CapturedProcess:
     """Run a captured process and terminate its process group when cancelled."""
     proc, job = start_process(args, cwd=cwd, env=env, shell=shell)
-    return wait_process(proc, job, args, timeout)
+    return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes)
 
 
-def attach_process_tree(proc: subprocess.Popen[str]):
+def attach_process_tree(proc: subprocess.Popen[bytes]):
     """Attach a process to the platform process-tree owner, when available."""
     if os.name != "nt":
         return None
     try:
         return _WindowsJob(proc)
     except Exception:
-        proc.kill()
-        proc.communicate()
+        with suppress(Exception):
+            proc.kill()
+        with suppress(Exception):
+            proc.wait(timeout=2)
         raise
 
 
 def terminate_process_tree(
-    proc: subprocess.Popen[str],
+    proc: subprocess.Popen[bytes],
     job=None,
 ) -> None:
     """Terminate a process and its children created in the same tree/group."""
@@ -284,23 +398,36 @@ def terminate_process_tree(
 
 
 def _terminate_process_tree(
-    proc: subprocess.Popen[str],
+    proc: subprocess.Popen[bytes],
     job: _WindowsJob | None = None,
 ) -> None:
-    if proc.poll() is not None:
-        return
     if os.name == "nt":
         if job is not None:
-            job.terminate()
-        if proc.poll() is None:
+            with suppress(Exception):
+                job.terminate()
+        with suppress(Exception):
             proc.kill()
+        try:
+            proc.wait(timeout=1)
+        except Exception:
+            with suppress(Exception):
+                proc.kill()
+            with suppress(Exception):
+                proc.wait(timeout=1)
     else:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except OSError:
-            proc.terminate()
-    try:
-        proc.communicate(timeout=1)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
+        except Exception:
+            with suppress(Exception):
+                proc.terminate()
+        try:
+            proc.wait(timeout=1)
+        except Exception:
+            with suppress(Exception):
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    with suppress(Exception):
+                        proc.kill()
+            with suppress(Exception):
+                proc.wait(timeout=1)

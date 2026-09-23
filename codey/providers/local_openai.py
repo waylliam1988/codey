@@ -89,11 +89,10 @@ class LocalOpenAIProvider:
         self._messages = []
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        if not self._messages and self.system_prompt:
-            self._messages.append({"role": "system", "content": self.system_prompt})
-        self._maybe_compact_messages()
-        self._messages.append({"role": "user", "content": text})
-        reply = self._complete(self._messages, timeout=timeout)
+        messages = self._prepare_request(
+            [{"role": "user", "content": text}], tools=None,
+        )
+        reply = self._complete(messages, timeout=timeout)
         self._messages.append({"role": "assistant", "content": reply})
         return reply
 
@@ -135,11 +134,10 @@ class LocalOpenAIProvider:
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
-        if not self._messages and self.system_prompt:
-            self._messages.append({"role": "system", "content": self.system_prompt})
-        self._maybe_compact_messages(tools=tools)
-        self._messages.append({"role": "user", "content": prompt})
-        message = self._complete_message(self._messages, tools=tools, timeout=timeout)
+        messages = self._prepare_request(
+            [{"role": "user", "content": prompt}], tools=tools,
+        )
+        message = self._complete_message(messages, tools=tools, timeout=timeout)
         return self._assistant_turn_or_fail_closed(message)
 
     def send_tool_results(
@@ -148,17 +146,18 @@ class LocalOpenAIProvider:
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
+        pending: list[dict] = []
         for item in results:
             tool_call_id = str(item.get("tool_call_id") or "")
             if not tool_call_id:
                 continue
-            self._messages.append({
+            pending.append({
                 "role": "tool",
                 "tool_call_id": tool_call_id,
                 "content": str(item.get("content") or ""),
             })
-        self._maybe_compact_messages(tools=tools)
-        message = self._complete_message(self._messages, tools=tools, timeout=timeout)
+        messages = self._prepare_request(pending, tools=tools)
+        message = self._complete_message(messages, tools=tools, timeout=timeout)
         return self._assistant_turn_or_fail_closed(message)
 
     def _context_budget(self) -> tuple[int, int, int]:
@@ -180,23 +179,58 @@ class LocalOpenAIProvider:
             self.context_keep_recent_tokens or defaults[2],
         )
 
-    def _maybe_compact_messages(self, tools: list[dict[str, object]] | None = None) -> None:
-        try:
-            from codey.agents import context_compaction as compaction
-        except Exception:
-            return
+    def _prepare_request(
+        self,
+        pending_messages: list[dict],
+        tools: list[dict[str, object]] | None = None,
+    ) -> list[dict]:
+        """Build, compact, and budget-check the next request without mutation.
+
+        Copies history, appends the full pending batch at once (never
+        splitting assistant tool_calls from their tool results), compacts
+        the candidate in place, then verifies
+        ``messages + tools + reserve <= window``. Only a passing candidate
+        is committed to ``self._messages``. Overflow and compaction
+        failures raise explicitly; nothing is sent.
+        """
+        from codey.providers import error_classification as errors
+
+        candidate: list[dict] = [dict(message) for message in self._messages]
+        if not candidate and self.system_prompt:
+            candidate.append({"role": "system", "content": self.system_prompt})
+        for item in pending_messages:
+            candidate.append(dict(item))
         window, reserve, keep = self._context_budget()
         try:
-            summary = compaction.compact_openai_messages_in_place(
-                self._messages,
+            from codey.agents import context_compaction as compaction
+
+            compaction.compact_openai_messages_in_place(
+                candidate,
                 tools=tools,
                 context_window_tokens=window,
                 reserve_tokens=reserve,
                 keep_recent_tokens=keep,
             )
-            _ = summary
-        except Exception:
-            return
+        except Exception as exc:
+            raise RuntimeError(f"local context compaction failed: {exc}") from exc
+        try:
+            from codey.agents import context_compaction as compaction_tokens
+
+            estimated = (
+                compaction_tokens.estimate_messages_tokens(candidate)
+                + compaction_tokens.estimate_tools_tokens(tools)
+                + int(reserve)
+            )
+        except Exception as exc:
+            raise RuntimeError(f"local context estimation failed: {exc}") from exc
+        if estimated > int(window):
+            raise errors.ContextOverflowError(
+                f"local model context overflow before send: estimated {estimated} "
+                f"tokens exceeds window {int(window)} "
+                f"(reserve {int(reserve)} for reply)"
+            )
+        self._messages = candidate
+        return self._messages
 
     def close(self) -> None:
         self._messages = []

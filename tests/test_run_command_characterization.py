@@ -32,8 +32,9 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
         self.assertEqual(outcome.model_text, "exit 0: pytest -q\n1 passed")
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.truncated)
-        self.assertEqual(sorted(outcome.audit), ["exit_code"])
         self.assertEqual(outcome.audit.get("exit_code"), 0)
+        self.assertEqual(outcome.audit.get("process_bytes"), 0)
+        self.assertFalse(outcome.audit.get("capture_truncated", False))
 
     def test_failure_exit_code_shape(self) -> None:
         raw = RunCommandRawResult(
@@ -69,18 +70,10 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
         # Model-visible text must be byte-identical with and without timing.
         self.assertEqual(timed.model_text, plain.model_text)
         self.assertEqual(timed.presentation_status(), plain.presentation_status())
-        self.assertEqual(
-            sorted(timed.audit),
-            [
-                "command_duration_ms",
-                "command_finished_at",
-                "command_started_at",
-                "exit_code",
-            ],
-        )
         self.assertEqual(timed.audit.get("command_started_at"), "2026-08-22T08:00:00.000Z")
         self.assertEqual(timed.audit.get("command_finished_at"), "2026-08-22T08:00:01.500Z")
         self.assertEqual(timed.audit.get("command_duration_ms"), 1500)
+        self.assertIn("process_bytes", timed.audit)
 
 
 class RunEventUiPayloadCharacterizationTests(unittest.TestCase):

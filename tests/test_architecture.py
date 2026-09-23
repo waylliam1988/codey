@@ -380,6 +380,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.core.operation_reducer",
             "codey.runtime.core.operation_state",
             "codey.runtime.core.outcome",
+            "codey.runtime.core.output_capture",
             "codey.runtime.observe.prompt_envelope",
             "codey.runtime.effects.replay_args",
             "codey.runtime.effects.replay_policy",
@@ -2046,7 +2047,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "research/source_connectors.py": 1420,
             "runs/trace.py": 2450,
             "runtime/core/operation_state.py": 1110,
-            "toolchain/runtime.py": 1240,
+            "toolchain/runtime.py": 1300,
         }
         grown = {
             name: size

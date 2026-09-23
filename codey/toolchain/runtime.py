@@ -219,6 +219,9 @@ class RunCommandRawResult:
     started_at: str = ""
     finished_at: str = ""
     duration_ms: int | None = None
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
+    capture_truncated: bool = False
 
 
 def _utc_now_iso() -> str:
@@ -1152,15 +1155,31 @@ def run_command_raw(
     started_at = _utc_now_iso()
     started_monotonic = time.monotonic()
     try:
+        from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
+
         proc = cancellation.run_process(
             argv,
             cwd=cwd,
             env=env,
             timeout=timeout,
             shell=False,
+            capture_limit_bytes=CAPTURE_LIMIT_BYTES,
         )
     except FileNotFoundError:
         return ToolOutcome.error(f"command not found: {argv[0]}")
+    except cancellation.PipeDrainTimeout as exc:
+        finished_at = _utc_now_iso()
+        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
+        return ToolOutcome.error(
+            f"command output pipe did not drain ({exc}); output is incomplete, "
+            f"not a success: {command}. Re-run a narrower command.",
+            error_code="output_drain_timeout",
+            audit={
+                "command_started_at": started_at,
+                "command_finished_at": finished_at,
+                "command_duration_ms": duration_ms,
+            },
+        )
     except subprocess.TimeoutExpired:
         finished_at = _utc_now_iso()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
@@ -1188,6 +1207,12 @@ def run_command_raw(
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
+    # Test doubles may return CompletedProcess without capture fields;
+    # real CapturedProcess always carries them.
+    capture_truncated = bool(
+        getattr(proc, "stdout_truncated", False)
+        or getattr(proc, "stderr_truncated", False)
+    )
     return RunCommandRawResult(
         command=command,
         output=output,
@@ -1196,12 +1221,22 @@ def run_command_raw(
         started_at=started_at,
         finished_at=_utc_now_iso(),
         duration_ms=duration_ms,
+        stdout_bytes=int(getattr(proc, "stdout_bytes", 0) or 0),
+        stderr_bytes=int(getattr(proc, "stderr_bytes", 0) or 0),
+        capture_truncated=capture_truncated,
     )
 
 
 def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutcome:
     output = prune_dependency_stack_frames(raw.output, root)
-    output, truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
+    output, display_truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
+    capture_truncated = bool(raw.capture_truncated)
+    truncated = bool(capture_truncated or display_truncated)
+    if capture_truncated:
+        output += (
+            "\nOnly head and tail of the process output were retained; "
+            "run a narrower command to inspect omitted content."
+        )
     display = f"exit {raw.exit_code}: {raw.command}\n{output}"
     audit: dict[str, object] = {}
     if raw.started_at:
@@ -1210,6 +1245,13 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
         audit["command_finished_at"] = raw.finished_at
     if raw.duration_ms is not None:
         audit["command_duration_ms"] = max(0, min(int(raw.duration_ms), 10**9))
+    stdout_bytes = max(0, int(raw.stdout_bytes))
+    stderr_bytes = max(0, int(raw.stderr_bytes))
+    audit["process_stdout_bytes"] = stdout_bytes
+    audit["process_stderr_bytes"] = stderr_bytes
+    audit["process_bytes"] = stdout_bytes + stderr_bytes
+    if capture_truncated:
+        audit["capture_truncated"] = True
     return ToolOutcome(
         display,
         raw.ok,
