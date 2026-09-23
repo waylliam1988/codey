@@ -90,9 +90,14 @@ def maybe_externalize_large_tool_output(
                 display_ref=call_arg(call, "path", call_arg(call, "command", "")),
                 text=text,
             )
-        except Exception:
+            failure = "" if ref is not None else "store_refused"
+        except Exception as exc:
             ref = None
-        if ref is not None:
+            failure = type(exc).__name__ or "store_error"
+        if ref is None:
+            audit["managed_output_failed"] = True
+            audit["managed_output_failure"] = failure or "store_refused"
+        else:
             clipped, _ = _head_tail_clip(text)
             audit["managed_output"] = {
                 "handle": ref.handle,
@@ -419,16 +424,6 @@ def record_tool_outcome(
     replay_class: str = "unsafe",
     is_denied: bool = False,
 ) -> None:
-    from codey.runtime.hooks import call_hooks
-
-    call_hooks(
-        getattr(session, "hooks", None),
-        "before_tool_call",
-        session=session,
-        call=call,
-        turn=turn,
-        tool_index=tool_index,
-    )
     outcome = maybe_externalize_large_tool_output(session, call, outcome, turn=turn, tool_index=tool_index)
     path = call_arg(call, "path", ".")
     model_text = outcome.model_text

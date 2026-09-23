@@ -305,6 +305,31 @@ def _handle_protocol_error(
         plan,
         previous_reply=_reply_display_text(reply),
     )
+    if _use_native(session) and not isinstance(reply, str):
+        # The assistant already emitted tool_calls: answering with a plain
+        # user repair prompt would leave dangling tool_call_ids (most
+        # OpenAI-compatible servers reject that with a 400). Answer every
+        # call id with a synthetic ERROR tool message instead, keeping the
+        # chain legal, and let the model retry on the next turn.
+        ids = [
+            str(getattr(call, "id", "") or "")
+            for call in (getattr(reply, "tool_calls", ()) or ())
+        ]
+        ids = [call_id for call_id in ids if call_id]
+        if ids:
+            from codey.agents.prompt_context import send_structured_results
+
+            err = plan.protocol_error or "invalid native tool call"
+            corrected = send_structured_results(
+                session,
+                [
+                    {"role": "tool", "tool_call_id": call_id, "content": f"ERROR: {err}"}
+                    for call_id in ids
+                ],
+                restart_request=repair,
+            )
+            _report_reply(session, turn + 1, corrected, "(after protocol correction)")
+            return corrected
     corrected = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
     _report_reply(session, turn + 1, corrected, "(after protocol correction)")
     return corrected

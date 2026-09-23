@@ -158,11 +158,10 @@ def find_safe_cut(
             cut = max(cut, group[-1] + 1)
         else:
             break
-    # Never compact when the cut leaves no tail behind the summary.
-    if cut >= total:
+    # A cut at or before the system prompt compacts nothing but would still
+    # insert a summary message: pure context growth. Refuse it.
+    if cut >= total or cut <= start:
         return 0
-    if cut <= start:
-        return cut
     return cut
 
 
@@ -194,22 +193,6 @@ def summarize_prefix_deterministically(prefix: Sequence[Mapping[str, object]]) -
         if len("\n".join(lines)) > MAX_SUMMARY_SOURCE_CHARS:
             break
     return "\n".join(lines)
-
-
-def sanitize_groups_for_summary(groups_text: str, max_chars: int = MAX_SUMMARY_SOURCE_CHARS) -> str:
-    text = str(groups_text or "")
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip() + "\n[truncated]"
-
-
-def build_compaction_summary_prompt(sanitized: str) -> str:
-    return (
-        "Summarize the earlier tool session for continuation. Keep only: goal, "
-        "key decisions, files read/modified, verification state, next step. "
-        "Omit full file bodies and full command output.\n\n"
-        f"{sanitized}"
-    )
 
 
 def compact_openai_messages(
@@ -257,7 +240,6 @@ def compact_openai_messages_in_place(
 __all__ = [
     "MAX_SUMMARY_SOURCE_CHARS",
     "SUMMARY_PREFIX_TEXT",
-    "build_compaction_summary_prompt",
     "compact_openai_messages",
     "compact_openai_messages_in_place",
     "estimate_message_tokens",
@@ -266,6 +248,5 @@ __all__ = [
     "find_safe_cut",
     "group_messages_for_compaction",
     "is_tool_group_complete",
-    "sanitize_groups_for_summary",
     "summarize_prefix_deterministically",
 ]

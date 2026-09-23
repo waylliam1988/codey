@@ -87,15 +87,56 @@ def send_native_tool_results(runner: object, tool_messages: list[dict[str, objec
         raise
 
 
-def maybe_prefetch_native_turn(runner: object, plan: object, tool_results: list) -> bool:
-    """Prefetch the next native turn right after dispatch; True when handled."""
+def take_pending_or_send(runner: object, outbound: str) -> object:
+    pending = getattr(runner, "_pending_native_turn", None)
+    if pending is not None:
+        runner._pending_native_turn = None
+        return pending
+    return runner._send_provider_structured(outbound)
+
+
+def maybe_prefetch_native_turn(
+    runner: object,
+    plan: object,
+    tool_results: list,
+    guard_message: str = "",
+) -> bool:
     if not runner._use_native_provider() or not getattr(plan, "calls", ()):
         return False
     tool_messages = runner.codec.tool_messages(tool_results)
     if not tool_messages:
         return False
+    if guard_message:
+        last = dict(tool_messages[-1])
+        last["content"] = str(last.get("content") or "") + guard_message
+        tool_messages[-1] = last
     runner._pending_native_turn = runner._send_native_tool_results(tool_messages)
     return True
+
+
+def answer_native_protocol_error(runner: object, reply_turn: object, plan: object) -> bool:
+    """Answer dangling native tool_calls with synthetic ERROR tool messages.
+
+    A text repair prompt after an assistant ``tool_calls`` block would break
+    the OpenAI tool-call chain; this keeps it legal and lets the model retry.
+    """
+    ids = [str(getattr(call, "id", "") or "") for call in (getattr(reply_turn, "tool_calls", ()) or ())]
+    ids = [call_id for call_id in ids if call_id]
+    if not ids:
+        return False
+    err = str(getattr(plan, "protocol_error", "") or "invalid native tool call")
+    runner._pending_native_turn = runner._send_native_tool_results(
+        [{"role": "tool", "tool_call_id": call_id, "content": f"ERROR: {err}"} for call_id in ids]
+    )
+    return True
+
+
+def next_message(runner: object, plan: object, pairs: list, tool_results: list) -> str | None:
+    """Guard first, then prefetch; None means the next turn is already pending."""
+    guard = record_and_check_cycle(runner, plan, pairs)
+    if maybe_prefetch_native_turn(runner, plan, tool_results, guard):
+        return None
+    return runner._format_results(tool_results) + guard
 
 
 def record_and_check_cycle(runner: object, plan: object, pairs: list) -> str:
@@ -129,11 +170,14 @@ def record_and_check_cycle(runner: object, plan: object, pairs: list) -> str:
 
 
 __all__ = [
+    "answer_native_protocol_error",
     "maybe_prefetch_native_turn",
     "native_research_tools",
+    "next_message",
     "record_and_check_cycle",
     "send_native_tool_results",
     "send_provider_structured",
+    "take_pending_or_send",
     "turn_text",
     "use_native_provider",
 ]

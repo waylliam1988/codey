@@ -936,14 +936,14 @@ def search_files(
     limit: int = SEARCH_MAX_RESULTS,
     max_results: int | None = None,
 ) -> ToolOutcome:
-    from codey.toolchain.search_page import normalize_page_args
+    from codey.toolchain.search_page import finalize_page, normalize_page_args
 
     cancellation.check()
     query = query.strip()
     if not query:
         return ToolOutcome.error("search query required")
     page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
-    collect_cap = (page_offset - 1) + page_limit + 1
+    seen_matches = 0
     start, error = _checked_tool_path(root, rel or ".", tool="grep")
     if error is not None or start is None:
         return error or ToolOutcome.error("path could not be resolved")
@@ -1010,17 +1010,18 @@ def search_files(
             clean = line.strip()
             if len(clean) > 240:
                 clean = clean[:237] + "..."
-            matches.append(f"{rel_path}:{line_no}: {clean}")
-            if len(matches) >= collect_cap:
+            # Streamed paging: count all, retain page + 1 sentinel only.
+            seen_matches += 1
+            if seen_matches >= page_offset and len(matches) < page_limit + 1:
+                matches.append(f"{rel_path}:{line_no}: {clean}")
+            if len(matches) >= page_limit + 1:
                 result_limited = True
                 break
         if result_limited:
             break
-    if not matches:
+    if not matches and page_offset == 1:
         matches.append("(no literal matches; regex is not supported)")
-    from codey.toolchain.search_page import apply_page_footer
-
-    matches = apply_page_footer(
+    matches = finalize_page(
         matches,
         result_limited=result_limited,
         query=query,

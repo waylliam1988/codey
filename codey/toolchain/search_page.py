@@ -24,16 +24,7 @@ def normalize_page_args(offset: object, limit: object, max_results: object, defa
     return start, page
 
 
-def slice_page(matches: list[str], *, offset: int, limit: int) -> tuple[list[str], bool]:
-    """Return the visible page plus whether more matches may exist."""
-    start = max(1, int(offset or 1))
-    page = max(1, int(limit or 1))
-    shown = matches[start - 1:start - 1 + page]
-    has_more = len(matches) > start - 1 + page
-    return shown, has_more
-
-
-def apply_page_footer(
+def finalize_page(
     matches: list[str],
     *,
     result_limited: bool,
@@ -42,23 +33,25 @@ def apply_page_footer(
     offset: int,
     limit: int,
 ) -> list[str]:
-    shown, _ = slice_page(matches, offset=offset, limit=limit)
-    legacy_line = (
+    """Slice the streamed page and append the footer (legacy text on page one)."""
+    shown = matches[:limit]
+    if not (result_limited or offset > 1):
+        return shown
+    legacy = (
         f"... truncated after {limit} matches; narrow the query or pass a "
         "subdirectory in path to see the rest"
+        if result_limited and offset == 1
+        else ""
     )
-    if result_limited or offset > 1:
-        shown.append(page_footer(
-            query=query,
-            path=path,
-            offset=offset,
-            limit=limit,
-            shown=len(shown),
-            has_more=result_limited,
-            legacy_truncated_line=legacy_line if result_limited and offset == 1 else "",
-        ))
-        return shown
-    return matches
+    return [*shown, page_footer(
+        query=query,
+        path=path,
+        offset=offset,
+        limit=limit,
+        shown=len(shown),
+        has_more=result_limited,
+        legacy_truncated_line=legacy,
+    )]
 
 
 def next_call_hint(*, query: str, path: str, offset: int, limit: int) -> str:
@@ -102,4 +95,4 @@ def page_footer(
     return "[grep page: no matches at this offset; try offset=1]"
 
 
-__all__ = ["apply_page_footer", "next_call_hint", "normalize_page_args", "page_footer", "slice_page"]
+__all__ = ["finalize_page", "next_call_hint", "normalize_page_args", "page_footer"]

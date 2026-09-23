@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## Native chain hardening full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/agents/{prompt_context,result_delivery,loop,tool_execution,tool_turn,context_compaction}.py
+codey/research/{protocols,runner,native_bridge}.py
+codey/toolchain/{runtime,search_page}.py  codey/providers/local_openai.py
+tests/test_native_delivery.py (+ research multi-call/fail-closed cases)
+```
+
+Fixes and how they were verified:
+
+- Delivery ledger: `deliver_turn_results` threads `batch_id` into
+  `send_structured_results`; new test asserts one batch intent, one
+  provider-effect begin carrying that batch id, one OK settlement, and a
+  `role: tool` message with the right `tool_call_id`.
+- Chain repair: bad-args native turn through a full `_run_loop` answers
+  `tool_call_id` with `ERROR:` and recovers to `done`; text `send()` is
+  never touched (fake asserts).
+- Overflow: first `send_tool_results` raising `ContextOverflowError` opens a
+  fresh chat and re-sends via `send_turn` with the results text inside;
+  no second `role: tool` send happens.
+- Research: multi-call parse (2 calls, ids preserved), `done`-with-others
+  rejected, missing-id `tool_messages` raises on both codecs, bridge
+  protocol-error answers both ids, guard runs before prefetch (existing
+  runner tests unchanged).
+- Compaction/store/search: no-op cut leaves messages untouched, refusing and
+  exploding stores set `managed_output_failed` + kind, deep-offset paging
+  (`offset=9`) ends with `end of matches`, first-page legacy truncation text
+  byte-identical.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean), size ceilings hold (runner 1356, runtime 1239).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4045 passed, 6 skipped, 1323 subtests passed in 369.67s`).
+- Native stays off by default (`CODEY_NATIVE_TOOLS=1` for Ollama/Qwen trials).
+- No release.
+
 ## Native track + NoAB rails full suite (2026-09-23)
 
 Scope (production, no release):

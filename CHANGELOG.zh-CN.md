@@ -2,6 +2,44 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Native 链路加固：账本、synthetic 修复、overflow 文本回退（未发布）
+
+- P0：所有 structured 发送全部进入 durable delivery 账本。
+  `_send_provider_with_effect` 拆成 `_begin/_fail/_settle` 加
+  `_structured_send`，`send_turn`/`send_tool_results` 与文本发送一样记录
+  provider effect、`delivery_batch_id`、发送尝试、hooks 和 prompt
+  surface。恢复层不会再以为没发出去的结果已送达。
+- P0：native protocol error 不再破坏 OpenAI tool-call 链。assistant
+  已经发出 `tool_calls` 时，loop 给每个 call id 回一条 synthetic
+  `ERROR:` tool message，而不是悬空的 user 修复 prompt；模型下一轮重试。
+  纯文本轮保持旧修复路径。
+- P1：structured overflow 不再往 fresh chat 里重发 `role: tool`
+ （非法链）。`send_structured_results` 新增 `overflow_fallback_prompt`
+  + `fallback_text`，rollover 后改走 `send_turn` 发送文本版结果；delivery
+  层把文本渲染和 reminder 透传进去。
+- P1：research native guard 真正生效——先算 guard 再 prefetch，提醒追加
+  到最后一条 prefetch tool message。research `parse_turn` 一轮执行全部
+  合法 calls（`MAX_NATIVE_CALLS_PER_TURN=4`，`done` 必须单独），
+  `tool_messages` 缺 call id 直接 fail closed；native protocol error 走
+  synthetic ERROR + pending-turn，不再用断链的文本修复。
+- P2：compaction no-op 切点修复（`cut <= start` 返回 0，不再插入空摘要
+  反增上下文）；未完成的 `assistant(tool_calls)` 组永不压缩。
+- P2：managed-output 写失败记审计（`managed_output_failed` + 失败类型），
+  不再静默降级。
+- P3：grep 分页改流式计数（全量计数，只保留 page + 1 哨兵）；收尾逻辑收到
+  `search_page.finalize_page`。
+- 味道清理：删掉未接线的 `sanitize_groups_for_summary`、
+  `build_compaction_summary_prompt`、
+  `LocalOpenAIProvider._summarize_compacted_prefix`；
+  `before_tool_call` 移到 `execute_planned_item` 真正执行前触发，不再在
+  `record_tool_outcome` 里事后触发。
+- 测试补到真实链路，不止 codec：delivery 账本（effect + batch +
+  settlement）、overflow 文本回退、坏 call 全 loop chain 修复、research
+  bridge protocol error、多 call research、store 失败审计。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4045 passed, 6 skipped, 1323 subtests passed`）。
+
 ## Unreleased - Native tool-call 通道 + NoAB 安全护栏（未发布）
 
 - 一个 Agent、两种外部协议：`ToolCall/ToolPlan/ToolResult` 仍是唯一

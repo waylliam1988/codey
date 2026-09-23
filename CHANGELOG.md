@@ -2,6 +2,50 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Native chain hardening: ledger, synthetic repair, overflow text (no release)
+
+- P0: every structured send now runs inside the durable delivery ledger.
+  `_send_provider_with_effect` was split into `_begin/_fail/_settle`
+  helpers plus `_structured_send`, so `send_turn`/`send_tool_results`
+  record provider effects, `delivery_batch_id`, send attempts, hooks, and
+  prompt surface exactly like text sends. Recovery can no longer believe an
+  unsent tool result was delivered.
+- P0: native protocol errors no longer break the OpenAI tool-call chain.
+  When the assistant already emitted `tool_calls`, the loop answers every
+  call id with a synthetic `ERROR:` tool message instead of a dangling user
+  repair prompt; the model retries on the next turn. Text-only turns keep the
+  old repair path.
+- P1: structured overflow no longer re-sends `role: tool` into a fresh chat
+  (illegal chain). `send_structured_results` takes `overflow_fallback_prompt`
+  + `fallback_text` and falls back to `send_turn` with the results as plain
+  text after the rollover; delivery threads the text rendering and reminder
+  through.
+- P1: research native guard actually fires now -- the cycle check runs before
+  the prefetch and the reminder is appended to the last prefetched tool
+  message. Research `parse_turn` executes all valid calls in a turn
+  (`MAX_NATIVE_CALLS_PER_TURN=4`, `done` must stand alone) and its
+  `tool_messages` fails closed on a missing call id; native protocol errors
+  get synthetic ERROR answers via pending-turn instead of a chain-breaking
+  text repair.
+- P2: compaction no-op cut fixed (`cut <= start` returns 0, no empty summary
+  growth); incomplete `assistant(tool_calls)` groups are never compacted.
+- P2: managed-output store failures are audited (`managed_output_failed` +
+  failure kind) instead of silently degrading to inline clips.
+- P3: grep paging is streaming (counts all matches, retains page + 1
+  sentinel); paging tail moved into `search_page.finalize_page`.
+- Smells removed: unconnected `sanitize_groups_for_summary`,
+  `build_compaction_summary_prompt`, and
+  `LocalOpenAIProvider._summarize_compacted_prefix` deleted;
+  `before_tool_call` now fires before real execution in
+  `execute_planned_item` instead of after it in `record_tool_outcome`.
+- Tests now cover the real links, not just codecs: delivery ledger
+  (effect + batch + settlement), overflow text fallback, invalid-call chain
+  repair through a full loop, research bridge protocol errors, multi-call
+  research turns, and store-failure audits.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`4045 passed, 6 skipped, 1323 subtests passed`).
+
 ## Unreleased - Native tool-call track + NoAB safety rails (no release)
 
 - One agent, two wire protocols: `ToolCall/ToolPlan/ToolResult` stays the

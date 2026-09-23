@@ -193,11 +193,6 @@ class LocalOpenAIProvider:
         except Exception:
             return
 
-    def _summarize_compacted_prefix(self, prefix: list[dict]) -> str:
-        from codey.agents import context_compaction as compaction
-
-        return compaction.summarize_prefix_deterministically(prefix)
-
     def close(self) -> None:
         self._messages = []
 

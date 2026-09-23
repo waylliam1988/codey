@@ -19,7 +19,12 @@ from codey.research.tool_contract import (
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 
 MAX_CALLS_PER_TURN = 1
+MAX_NATIVE_CALLS_PER_TURN = 4
 _EXACT_TOOL_OBJECT_KEYS = frozenset({"tool", "args"})
+
+
+class NativeToolResultError(ValueError):
+    """Raised when a native research tool result cannot be chained to its call."""
 
 
 def _known_tool_names(include_source_search: bool = True) -> set[str]:
@@ -141,11 +146,12 @@ class JsonToolCodec:
             "or outside knowledge."
         )
 
-    def parse_turn(self, turn: object) -> ToolPlan:
-        tool_calls = getattr(turn, "tool_calls", ()) or ()
+    def parse_turn(self, turn: object, *, max_calls: int = MAX_NATIVE_CALLS_PER_TURN) -> ToolPlan:
+        tool_calls = list(getattr(turn, "tool_calls", ()) or ())
         if tool_calls:
             known_tools = _known_tool_names(self.include_source_search)
-            for item in list(tool_calls)[:1]:
+            calls: list[ToolCall] = []
+            for item in tool_calls[: max(1, max_calls)]:
                 name = str(getattr(item, "name", "") or "").strip().lower()
                 args = getattr(item, "arguments", {})
                 call_id = str(getattr(item, "id", "") or "")
@@ -173,20 +179,33 @@ class JsonToolCodec:
                         protocol_error_kind=validated.error_kind or PROTOCOL_INVALID_ARGS,
                     )
                 if name == "done":
+                    if calls or len(tool_calls) > 1:
+                        return ToolPlan(
+                            calls=[],
+                            control=None,
+                            protocol_error="done must be the only call in a turn",
+                            protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
+                        )
                     self.last_control_args = dict(validated.args)
                     return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
-                call = ToolCall(name, dict(validated.args), call_id)
-                return ToolPlan(calls=[call], control=None)
+                calls.append(ToolCall(name, dict(validated.args), call_id))
+            if calls:
+                return ToolPlan(calls=calls, control=None)
         return self.parse(str(getattr(turn, "text", "") or ""))
 
     @staticmethod
     def tool_messages(results: list[ToolResult]) -> list[dict[str, object]]:
+        """Build ``role: tool`` messages; fail closed on a missing call id."""
         messages: list[dict[str, object]] = []
-        for result in results:
+        missing: list[str] = []
+        for index, result in enumerate(results):
             call_id = str(getattr(result.call, "call_id", "") or "")
             if not call_id:
+                missing.append(f"{index}:{result.call.name}")
                 continue
             messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result.model_text or "")})
+        if missing:
+            raise NativeToolResultError("research tool result missing call_id for " + ", ".join(missing))
         return messages
 
 

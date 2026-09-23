@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import replace
+from typing import Any
 
 from codey.agents.context import (
     CODING_CURRENT_CONTEXT_BUDGET,
@@ -196,16 +197,23 @@ def discard_pending_context_rows(session: AgentLoopSession) -> None:
     session.pending_repair_sections.clear()
 
 
-def _send_provider_with_effect(
+def _begin_provider_send(
     session: AgentLoopSession,
-    prompt: str,
+    desc_text: str,
     *,
     purpose: str,
     source_ref: str,
     capability_id: str = "agent_runner",
     name: str = "coding_outbound_prompt",
     delivery_batch_id: str = "",
-) -> str:
+) -> tuple[Any, str]:
+    """Open a provider-send effect and bind the prompt surface to it.
+
+    Returns ``(mutations, effect_id)``; both are empty when the run has no
+    durable sinks (unit tests, ad-hoc loops). Works for text and structured
+    sends alike: ``desc_text`` is the exact outbound surface (prompt text or
+    serialized tool messages).
+    """
     mutations = session.runtime_mutations
     effect_id = ""
     if mutations is not None and session.session_id and session.run_id:
@@ -213,12 +221,7 @@ def _send_provider_with_effect(
         from codey.runtime.core.operation_state import DRIVER_REPAIR, DRIVER_WRITER
         from codey.runtime.effects.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
-            SENT_STATE_MAYBE_SENT,
-            SENT_STATE_SETTLED,
-            SETTLEMENT_STATUS_ERROR,
-            SETTLEMENT_STATUS_OK,
             RuntimeEffectIntent,
-            RuntimeEffectSettlement,
             compute_args_digest,
             new_effect_id,
         )
@@ -236,7 +239,7 @@ def _send_provider_with_effect(
             provider_id=session.active_provider_id,
             turn=session.provider_send_index,
             display_ref=source_ref[:120],
-            args_digest=compute_args_digest(prompt),
+            args_digest=compute_args_digest(desc_text),
             replay_class=replay_decision.replay_class,
         )
         committed = mutations.begin_provider_effect(
@@ -257,7 +260,7 @@ def _send_provider_with_effect(
     record_provider_send_prompt(
         session.trace_recorder,
         name=name,
-        text=prompt,
+        text=desc_text,
         purpose=purpose,
         source_ref=source_ref,
         capability_id=capability_id,
@@ -274,30 +277,59 @@ def _send_provider_with_effect(
         getattr(session, "hooks", None),
         "before_provider_send",
         session=session,
-        prompt=prompt,
+        prompt=desc_text,
         purpose=purpose,
     )
-    try:
-        reply_text = session.provider.send(prompt)
-    except Exception as exc:
-        if mutations is not None and effect_id:
-            with contextlib.suppress(Exception):
-                mutations.settle_provider_effect(
-                    session.session_id,
-                    session.run_id,
-                    RuntimeEffectSettlement(
-                        effect_id=effect_id,
-                        effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                        session_id=session.session_id,
-                        run_id=session.run_id,
-                        status=SETTLEMENT_STATUS_ERROR,
-                        error_code=type(exc).__name__[:80],
-                        sent_state=SENT_STATE_MAYBE_SENT,
-                    ),
-                )
-        raise
+    return mutations, effect_id
 
+
+def _fail_provider_send(
+    session: AgentLoopSession,
+    mutations: Any,
+    effect_id: str,
+    exc: BaseException,
+) -> None:
     if mutations is not None and effect_id:
+        from codey.runtime.effects.effect_records import (
+            EFFECT_CATEGORY_PROVIDER_SEND,
+            SENT_STATE_MAYBE_SENT,
+            SETTLEMENT_STATUS_ERROR,
+            RuntimeEffectSettlement,
+        )
+
+        with contextlib.suppress(Exception):
+            mutations.settle_provider_effect(
+                session.session_id,
+                session.run_id,
+                RuntimeEffectSettlement(
+                    effect_id=effect_id,
+                    effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                    session_id=session.session_id,
+                    run_id=session.run_id,
+                    status=SETTLEMENT_STATUS_ERROR,
+                    error_code=type(exc).__name__[:80],
+                    sent_state=SENT_STATE_MAYBE_SENT,
+                ),
+            )
+
+
+def _settle_provider_send(
+    session: AgentLoopSession,
+    mutations: Any,
+    effect_id: str,
+    *,
+    prompt_desc: str,
+    reply_desc: str,
+    purpose: str,
+) -> None:
+    if mutations is not None and effect_id:
+        from codey.runtime.effects.effect_records import (
+            EFFECT_CATEGORY_PROVIDER_SEND,
+            SENT_STATE_SETTLED,
+            SETTLEMENT_STATUS_OK,
+            RuntimeEffectSettlement,
+        )
+
         mutations.settle_provider_effect(
             session.session_id,
             session.run_id,
@@ -311,15 +343,98 @@ def _send_provider_with_effect(
             ),
         )
 
+    from codey.runtime.hooks import call_hooks as _call_hooks
+
     _call_hooks(
         getattr(session, "hooks", None),
         "after_provider_send",
         session=session,
-        prompt=prompt,
-        reply=reply_text,
+        prompt=prompt_desc,
+        reply=reply_desc,
+        purpose=purpose,
+    )
+
+
+def _send_provider_with_effect(
+    session: AgentLoopSession,
+    prompt: str,
+    *,
+    purpose: str,
+    source_ref: str,
+    capability_id: str = "agent_runner",
+    name: str = "coding_outbound_prompt",
+    delivery_batch_id: str = "",
+) -> str:
+    mutations, effect_id = _begin_provider_send(
+        session,
+        prompt,
+        purpose=purpose,
+        source_ref=source_ref,
+        capability_id=capability_id,
+        name=name,
+        delivery_batch_id=delivery_batch_id,
+    )
+    try:
+        reply_text = session.provider.send(prompt)
+    except Exception as exc:
+        _fail_provider_send(session, mutations, effect_id, exc)
+        raise
+    _settle_provider_send(
+        session,
+        mutations,
+        effect_id,
+        prompt_desc=prompt,
+        reply_desc=reply_text,
         purpose=purpose,
     )
     return reply_text
+
+
+def _tool_messages_surface(tool_messages: list[dict[str, object]]) -> str:
+    import json as _json
+
+    try:
+        return _json.dumps(tool_messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except Exception:
+        return str(tool_messages)
+
+
+def _structured_send(
+    session: AgentLoopSession,
+    *,
+    desc_text: str,
+    purpose: str,
+    source_ref: str,
+    delivery_batch_id: str = "",
+    record_as: str | None = None,
+    send_fn: Any,
+) -> object:
+    """Run one structured provider send inside the durable delivery ledger."""
+    mutations, effect_id = _begin_provider_send(
+        session,
+        desc_text,
+        purpose=purpose,
+        source_ref=source_ref,
+        capability_id="agent_runner",
+        name="coding_structured_prompt",
+        delivery_batch_id=delivery_batch_id,
+    )
+    try:
+        turn = send_fn()
+    except Exception as exc:
+        _fail_provider_send(session, mutations, effect_id, exc)
+        raise
+    _settle_provider_send(
+        session,
+        mutations,
+        effect_id,
+        prompt_desc=desc_text,
+        reply_desc=_turn_display_text(turn),
+        purpose=purpose,
+    )
+    if session.conversation is not None and record_as is not None:
+        session.conversation.record_exchange(record_as, _turn_display_text(turn), snapshot(session))
+    return turn
 
 
 def send_handoff_summary(
@@ -463,6 +578,7 @@ def send_structured_prompt(
     prompt: str,
     *,
     restart_request: str | None = None,
+    delivery_batch_id: str = "",
 ) -> object:
     from codey.providers import error_classification as errors
 
@@ -470,14 +586,28 @@ def send_structured_prompt(
     tools = session_native_tools(session)
     bind_pending_context_rows(session, prompt)
     try:
-        turn = provider.send_turn(prompt, tools, timeout=None)
+        return _structured_send(
+            session,
+            desc_text=prompt,
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            delivery_batch_id=delivery_batch_id,
+            record_as=prompt,
+            send_fn=lambda: provider.send_turn(prompt, tools, timeout=None),
+        )
     except errors.ContextOverflowError:
         prompt = _rollover_for_overflow(session, prompt, restart_request=restart_request)
         bind_pending_context_rows(session, prompt)
-        turn = provider.send_turn(prompt, tools, timeout=None)
-    if session.conversation is not None:
-        session.conversation.record_exchange(prompt, _turn_display_text(turn), snapshot(session))
-    return turn
+        tools = session_native_tools(session)
+        return _structured_send(
+            session,
+            desc_text=prompt,
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            delivery_batch_id=delivery_batch_id,
+            record_as=prompt,
+            send_fn=lambda: provider.send_turn(prompt, tools, timeout=None),
+        )
 
 
 def send_structured_results(
@@ -485,20 +615,47 @@ def send_structured_results(
     tool_messages: list[dict[str, object]],
     *,
     restart_request: str | None = None,
+    delivery_batch_id: str = "",
+    overflow_fallback_prompt: str = "",
+    fallback_text: str = "",
 ) -> object:
+    """Deliver native tool results inside the durable delivery ledger.
+
+    On context overflow the fresh chat has no preceding assistant
+    ``tool_calls``, so re-sending ``role: tool`` messages would be an illegal
+    chain. Instead fall back to sending the results as plain text through
+    ``send_turn`` after the rollover.
+    """
     from codey.providers import error_classification as errors
 
     provider = session.provider
     tools = session_native_tools(session)
     try:
-        turn = provider.send_tool_results(tool_messages, tools, timeout=None)
+        return _structured_send(
+            session,
+            desc_text=_tool_messages_surface(tool_messages),
+            purpose="coding tool results sent to provider",
+            source_ref="provider_send:coding_tool_results",
+            delivery_batch_id=delivery_batch_id,
+            record_as="[tool_results]",
+            send_fn=lambda: provider.send_tool_results(tool_messages, tools, timeout=None),
+        )
     except errors.ContextOverflowError:
-        prompt = _rollover_for_overflow(session, restart_request or "", restart_request=restart_request)
-        _ = prompt
-        turn = provider.send_tool_results(tool_messages, tools, timeout=None)
-    if session.conversation is not None:
-        session.conversation.record_exchange("[tool_results]", _turn_display_text(turn), snapshot(session))
-    return turn
+        text = fallback_text or restart_request or "[tool_results]"
+        if overflow_fallback_prompt:
+            text = f"{text}\n\n{overflow_fallback_prompt}"
+        rolled = _rollover_for_overflow(session, text, restart_request=text)
+        bind_pending_context_rows(session, rolled)
+        tools = session_native_tools(session)
+        return _structured_send(
+            session,
+            desc_text=rolled,
+            purpose="coding tool results sent to provider (overflow text fallback)",
+            source_ref="provider_send:coding_tool_results_overflow",
+            delivery_batch_id=delivery_batch_id,
+            record_as=rolled,
+            send_fn=lambda: provider.send_turn(rolled, tools, timeout=None),
+        )
 
 
 def _turn_display_text(turn: object) -> str:

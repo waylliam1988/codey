@@ -314,15 +314,10 @@ class ResearchRunner:
             )
             try:
                 if self._use_native_provider():
-                    from codey.research.native_bridge import turn_text as _turn_text
-                    pending = getattr(self, "_pending_native_turn", None)
-                    if pending is not None:
-                        self._pending_native_turn = None
-                        reply_turn = pending
-                    else:
-                        reply_turn = self._send_provider_structured(outbound)
+                    from codey.research import native_bridge as _bridge
+                    reply_turn = _bridge.take_pending_or_send(self, outbound)
                     plan = self.codec.parse_turn(reply_turn)
-                    yield RunEvent.turn_started(turn, _turn_text(reply_turn), note=_plan_note(plan))
+                    yield RunEvent.turn_started(turn, _bridge.turn_text(reply_turn), note=_plan_note(plan))
                 else:
                     reply_text = self._send_provider(outbound)
                     plan = (
@@ -356,6 +351,9 @@ class ResearchRunner:
                     phase="research",
                     turn=turn,
                 )
+                if self._use_native_provider() and _bridge.answer_native_protocol_error(self, reply_turn, plan):
+                    message = ""
+                    continue
                 message = render_research_repair_prompt(self.codec, plan, control_state)
                 continue
             if plan.calls or plan.control is not None:
@@ -474,12 +472,10 @@ class ResearchRunner:
                 continue
             idle_turns = 0
             from codey.research import native_bridge as _bridge
-            if _bridge.maybe_prefetch_native_turn(self, plan, _tool_results(results)):
+            message = _bridge.next_message(self, plan, results, _tool_results(results))
+            if message is None:
                 message = ""
                 continue
-            message = self._format_results(_tool_results(results)) + _bridge.record_and_check_cycle(
-                self, plan, results
-            )
         synthesis_id = ""
         if summary:
             synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)

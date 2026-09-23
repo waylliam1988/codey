@@ -331,6 +331,16 @@ def execute_planned_item(
 
     effect_id = item.effect_id
     replay_decision = item.replay_decision
+    from codey.runtime.hooks import call_hooks
+
+    call_hooks(
+        getattr(session, "hooks", None),
+        "before_tool_call",
+        session=session,
+        call=item.call,
+        turn=turn,
+        tool_index=item.tool_index,
+    )
     emit_tool_started_after_intent(
         session,
         item.call,
