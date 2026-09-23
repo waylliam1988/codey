@@ -353,6 +353,9 @@ def test_idless_turn_restarts_fresh_chat_instead_of_dangling(monkeypatch, tmp_pa
     assert result.stop_reason == "done"
     assert provider.chats_opened == opened_at_start + 1
     assert provider.tool_results_seen == []
+    assert len(sent_turns) == 2
+    assert "read app" in sent_turns[1]
+    assert "app.py" in sent_turns[1]
 
 
 def test_native_mixed_done_answered_in_full(monkeypatch, tmp_path: Path) -> None:

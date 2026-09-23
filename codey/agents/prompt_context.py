@@ -37,7 +37,7 @@ from codey.workspace.context_source import (
 )
 
 
-def open_fresh_chat(session: AgentLoopSession) -> bool:
+def open_fresh_chat(session: AgentLoopSession, *, allow_reuse: bool = True) -> bool:
     emit(
         session,
         RunEvent.status(
@@ -51,12 +51,20 @@ def open_fresh_chat(session: AgentLoopSession) -> bool:
     except Exception as exc:
         if session.strict_fresh_chat:
             raise
-        emit(
-            session,
-            RunEvent.status(
-                f"[agent] could not open new chat: {exc}; reusing current tab"
-            ),
-        )
+        if allow_reuse:
+            emit(
+                session,
+                RunEvent.status(
+                    f"[agent] could not open new chat: {exc}; reusing current tab"
+                ),
+            )
+        else:
+            emit(
+                session,
+                RunEvent.status(
+                    f"[agent] could not open new chat: {exc}; cannot restart, stopping"
+                ),
+            )
         return False
     return True
 

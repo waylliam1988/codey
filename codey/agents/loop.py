@@ -80,14 +80,32 @@ def parse_reply(reply: str | object, codec: ProtocolCodec = DEFAULT_CODEC) -> To
     )
 
 
+def _bounded_native_call_summary(calls: object, *, max_calls: int = 8, max_arg_chars: int = 500) -> str:
+    """One bounded line per structured call: name, id (or missing), arguments."""
+    import json as _json
+
+    lines: list[str] = []
+    for call in list(calls or ())[: max(1, max_calls)]:
+        name = str(getattr(call, "name", "") or "?")
+        call_id = str(getattr(call, "id", "") or "")
+        args = getattr(call, "arguments", {})
+        try:
+            arg_text = _json.dumps(args, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            arg_text = str(args)
+        if len(arg_text) > max_arg_chars:
+            arg_text = arg_text[:max_arg_chars].rstrip() + "..."
+        lines.append(f"- {name} (id: {call_id or 'missing'}): {arg_text}")
+    return "\n".join(lines)
+
+
 def _reply_display_text(reply: str | object) -> str:
     if isinstance(reply, str):
         return reply
     text = str(getattr(reply, "text", "") or "")
     calls = getattr(reply, "tool_calls", ()) or ()
     if calls:
-        names = ", ".join(str(getattr(call, "name", "")) for call in calls)
-        summary = f"[tool_calls: {names}]"
+        summary = f"[tool_calls:\n{_bounded_native_call_summary(calls)}]"
         return f"{text}\n{summary}" if text else summary
     return text
 
@@ -333,16 +351,30 @@ def _handle_protocol_error(
             return corrected
         if getattr(reply, "tool_calls", None):
             # tool_calls exist but none carry an answerable id: a same-chat
-            # repair would dangle, so restart on a fresh chat instead. If the
-            # chat cannot restart, stop rather than poison the chain.
-            from codey.agents.prompt_context import open_fresh_chat
+            # repair would dangle, so restart on a fresh chat instead. The new
+            # chat gets the full project intro plus the failed calls (with
+            # arguments), not just the terse repair text. If the chat cannot
+            # restart, stop rather than poison the chain.
+            from codey.agents.prompt_context import open_fresh_chat, project_intro, send_structured_prompt
 
             emit(session, RunEvent.status(
                 "[agent] native turn has no answerable call id; restarting on a fresh chat."
             ))
-            if open_fresh_chat(session):
-                corrected = _send_followup(session, repair, restart_request=repair,
-                                           include_ghost_directive=False)
+            if open_fresh_chat(session, allow_reuse=False):
+                failed = _bounded_native_call_summary(getattr(reply, "tool_calls", ()))
+                request_text = (
+                    f"{repair}\n\nOriginal task:\n{session.user_task}\n\n"
+                    f"Failed native calls (missing ids, nothing executed):\n{failed}"
+                )
+                intro = project_intro(session, request_text, session.handoff,
+                                      include_ghost_directive=False)
+                if session.conversation is not None:
+                    session.conversation.begin_window(
+                        session.active_provider_id,
+                        "project",
+                        session.project_text,
+                    )
+                corrected = send_structured_prompt(session, intro, restart_request=request_text)
                 _report_reply(session, turn + 1, corrected, "(after protocol correction)")
                 return corrected
             return _finish(

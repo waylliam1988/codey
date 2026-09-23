@@ -1,5 +1,33 @@
 # Codey Test Report
 
+## Rich fresh-chat repair full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/agents/loop.py            (fresh-chat repair via project_intro + bounded call summary)
+codey/agents/prompt_context.py  (open_fresh_chat allow_reuse flag)
+tests/test_native_delivery.py   (repair prompt asserts original task + file path)
+```
+
+Notes:
+
+- `_reply_display_text` now renders bounded per-call lines; turn events and
+  repair prompts carry arguments (capped at 8 calls x 500 chars), which is
+  what makes the restarted chat recover without re-asking.
+- The `allow_reuse=False` path is only taken by the id-less restart branch;
+  every other `open_fresh_chat` caller keeps the reusing-tab behavior.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: native delivery/agent suites green.
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4066 passed, 6 skipped, 1333 subtests passed in 356.13s`).
+- Native stays off by default (`NATIVE_TOOLS=1` for Ollama/Qwen trials).
+- No release.
+
 ## Id-less guard + honest receipts full suite (2026-09-23)
 
 Scope (production, no release):

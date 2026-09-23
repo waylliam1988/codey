@@ -2,6 +2,22 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Rich fresh-chat repair, honest reuse log (no release)
+
+- P2: id-less restarts now carry full context. The fresh-chat repair goes
+  through `project_intro()` with the repair text plus the original task
+  plus a bounded per-call summary, instead of the terse protocol text
+  alone. `_reply_display_text()` renders structured calls as bounded
+  `name/id/arguments` lines (ids shown as `missing`, arguments kept), which
+  also improves repair prompts and turn events. The fresh-chat test asserts
+  the second prompt contains the original task and file path.
+- P3: `open_fresh_chat()` takes `allow_reuse=False` for restart-or-stop
+  paths; a failed restart logs "cannot restart, stopping" instead of the
+  misleading "reusing current tab". All other callers keep the default.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`4066 passed, 6 skipped, 1333 subtests passed`).
+
 ## Unreleased - Id-less chain guard, honest budgets and receipts (no release)
 
 - P1: a native turn whose tool_calls carry no answerable id no longer gets

@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 高信息 fresh-chat 修复、诚实重启日志（未发布）
+
+- P2：无 id 重启现在带完整上下文。fresh-chat 修复走 `project_intro()`，
+  含修复文案 + 原始任务 + 逐 call 有界摘要，不再只有干巴巴的协议文本。
+  `_reply_display_text()` 对 structured calls 输出有界 `name/id/arguments`
+  行（id 缺失标 `missing` 但保留 arguments），repair prompt 和 turn
+  事件同步受益。测试断言第二个 prompt 含原始任务和文件 path。
+- P3：`open_fresh_chat()` 新增 `allow_reuse=False` 给重启或停机路径；
+  重启失败记“cannot restart, stopping”，不再误导“reusing current tab”。
+  其他调用方保持默认。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4066 passed, 6 skipped, 1333 subtests passed`）。
+
 ## Unreleased - 无 id 链保护、诚实预算与 receipt（未发布）
 
 - P1：tool_calls 全缺可答 id 的 native 轮不再同 chat 文本修复（非本地
