@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -46,6 +47,11 @@ class ManagedOutputStoreTests(unittest.TestCase):
             self.assertEqual(metadata["original_bytes"], len(b"full output\n"))
             self.assertEqual(metadata["stored_bytes"], ref.stored_bytes)
             self.assertEqual(metadata["sha256"], ref.sha256)
+            self.assertEqual(
+                metadata["original_sha256"],
+                hashlib.sha256(b"full output\n").hexdigest(),
+            )
+            self.assertEqual(ref.original_sha256, metadata["original_sha256"])
 
     def test_path_for_rejects_escaping_handle(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -80,6 +86,48 @@ class ManagedOutputStoreTests(unittest.TestCase):
             self.assertTrue(stored.startswith("HEAD"))
             self.assertTrue(stored.endswith("TAIL"))
             self.assertIn("[... omitted ...]", stored)
+
+    def test_truncated_store_proves_original_bytes(self) -> None:
+        full = "HEAD" + ("x" * 100) + "TAIL"
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.storage.managed_outputs.MAX_MANAGED_OUTPUT_BYTES",
+            40,
+        ):
+            store = ManagedOutputStore(td)
+            ref = store.write_run_output(
+                session_id="session",
+                run_id="run",
+                tool_id="",
+                permission_profile="coding_writer",
+                command="python large.py",
+                cwd=".",
+                text=full,
+            )
+
+            assert ref is not None
+            stored = ref.path.read_text(encoding="utf-8")
+            self.assertTrue(ref.stored_truncated)
+            self.assertEqual(ref.original_sha256, hashlib.sha256(full.encode("utf-8")).hexdigest())
+            self.assertEqual(ref.sha256, hashlib.sha256(stored.encode("utf-8")).hexdigest())
+            self.assertNotEqual(ref.sha256, ref.original_sha256)
+
+            from codey.runtime.core.models import ToolCall, ToolResult
+
+            result = ToolResult(
+                call=ToolCall(name="run", args={}),
+                model_text="clipped",
+                truncated=True,
+                audit={"managed_output": {
+                    "handle": ref.handle,
+                    "original_bytes": ref.original_bytes,
+                    "stored_bytes": ref.stored_bytes,
+                    "sha256": ref.sha256,
+                    "original_sha256": ref.original_sha256,
+                    "stored_truncated": True,
+                }},
+            )
+            self.assertIn(f"original_sha256={ref.original_sha256}", result.model_text)
+            self.assertIn(f"sha256={ref.sha256}", result.model_text)
 
     def test_per_run_handle_count_is_capped(self) -> None:
         with tempfile.TemporaryDirectory() as td:

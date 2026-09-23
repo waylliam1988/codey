@@ -160,6 +160,18 @@ class JsonToolCodec:
                 ),
                 protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
             )
+        missing = [
+            str(getattr(item, "name", "") or "?")
+            for item in tool_calls
+            if not str(getattr(item, "id", "") or "")
+        ]
+        if missing:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error="native tool call without an id cannot be answered: " + ", ".join(missing),
+                protocol_error_kind=PROTOCOL_INVALID_ARGS,
+            )
         if tool_calls:
             known_tools = _known_tool_names(self.include_source_search)
             calls: list[ToolCall] = []

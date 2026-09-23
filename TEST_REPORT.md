@@ -1,5 +1,47 @@
 # Codey Test Report
 
+## Parse precheck + proven supersede full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/protocols/native_openai.py      (turn-shape precheck: empty id, mixed done)
+codey/research/protocols.py           (empty-id precheck; mixed done already failed)
+codey/runtime/write/provider_effects.py  (_require_supersedable_not_sent gate)
+codey/agents/prompt_context.py        (_fail returns proof bool; no-proof retry fails closed)
+codey/storage/conversation_store.py   (hard_limit/reserve/keep persistence, schema 1)
+codey/agents/context_compaction.py    (body-only summarizer)
+codey/runtime/core/models.py + storage/managed_outputs.py + tool_execution.py
+                                      (original_sha256 alongside stored sha256)
+tests: codec prechecks (4), mixed-done e2e, builder proof, store roundtrips (2),
+       prefix-once, truncated digest
+```
+
+Findings while building (all fixed, all with regression coverage):
+
+- The reviewer's `done_first/done_second/missing_id` probe now fails at
+  parse time with zero calls: mixed `done` -> `too_many_tools`, empty id ->
+  `invalid_args`, both orders. The mixed-done end-to-end test proves the
+  synthetic path answers every original call id before `done` completes.
+- First version of the NOT_SENT gate checked the settlement but the
+  `_fail_provider_send` edit initially truncated the function body
+  (dead code after an early return); caught by reading the file before
+  testing, fixed by rewriting the function whole.
+- Footer wording keeps `sha256=` (stored hash, pinned by existing protocol
+  tests) and appends `original_sha256=` only when truncated, so JSON golden
+  prompts for the common case are byte-identical.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean), size ceilings hold (runner 1356, runtime 1239).
+- Targeted: codec, delivery, ledger, store, compaction, protocol suites
+  green (incl. JSON golden byte-identical).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4065 passed, 6 skipped, 1333 subtests passed in 362.86s`).
+- Native stays off by default (`NATIVE_TOOLS=1` for Ollama/Qwen trials).
+- No release.
+
 ## Brand-free env names full suite (2026-09-23)
 
 Scope (production, no release):

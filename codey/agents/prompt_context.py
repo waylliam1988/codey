@@ -307,39 +307,49 @@ def _fail_provider_send(
     mutations: Any,
     effect_id: str,
     exc: BaseException,
-) -> None:
-    if mutations is not None and effect_id:
-        from codey.providers import error_classification as errors
-        from codey.runtime.effects.effect_records import (
-            EFFECT_CATEGORY_PROVIDER_SEND,
-            SENT_STATE_MAYBE_SENT,
-            SENT_STATE_NOT_SENT,
-            SETTLEMENT_STATUS_ERROR,
-            RuntimeEffectSettlement,
-        )
+) -> bool:
+    """Settle a failed send; True iff a NOT_SENT settlement was recorded.
 
-        # A context-overflow rejection deterministically produced no usable
-        # reply, so the attempt settles NOT_SENT (safe to supersede) instead
-        # of MAYBE_SENT (must never be retried blindly).
-        sent_state = (
-            SENT_STATE_NOT_SENT
-            if isinstance(exc, errors.ContextOverflowError)
-            else SENT_STATE_MAYBE_SENT
+    Only a recorded NOT_SENT settlement proves the attempt sent nothing
+    usable, which is what allows the same delivery batch to retry. Callers
+    must not supersede (or retry the batch) when this returns False.
+    """
+    if not (mutations is not None and effect_id):
+        return False
+    from codey.providers import error_classification as errors
+    from codey.runtime.effects.effect_records import (
+        EFFECT_CATEGORY_PROVIDER_SEND,
+        SENT_STATE_MAYBE_SENT,
+        SENT_STATE_NOT_SENT,
+        SETTLEMENT_STATUS_ERROR,
+        RuntimeEffectSettlement,
+    )
+
+    # A context-overflow rejection deterministically produced no usable
+    # reply, so the attempt settles NOT_SENT (safe to supersede) instead
+    # of MAYBE_SENT (must never be retried blindly).
+    sent_state = (
+        SENT_STATE_NOT_SENT
+        if isinstance(exc, errors.ContextOverflowError)
+        else SENT_STATE_MAYBE_SENT
+    )
+    try:
+        mutations.settle_provider_effect(
+            session.session_id,
+            session.run_id,
+            RuntimeEffectSettlement(
+                effect_id=effect_id,
+                effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+                session_id=session.session_id,
+                run_id=session.run_id,
+                status=SETTLEMENT_STATUS_ERROR,
+                error_code=type(exc).__name__[:80],
+                sent_state=sent_state,
+            ),
         )
-        with contextlib.suppress(Exception):
-            mutations.settle_provider_effect(
-                session.session_id,
-                session.run_id,
-                RuntimeEffectSettlement(
-                    effect_id=effect_id,
-                    effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                    session_id=session.session_id,
-                    run_id=session.run_id,
-                    status=SETTLEMENT_STATUS_ERROR,
-                    error_code=type(exc).__name__[:80],
-                    sent_state=sent_state,
-                ),
-            )
+    except Exception:
+        return False
+    return sent_state == SENT_STATE_NOT_SENT
 
 
 def _settle_provider_send(
@@ -408,10 +418,10 @@ def _send_provider_with_effect(
     try:
         reply_text = session.provider.send(prompt)
     except Exception as exc:
-        _fail_provider_send(session, mutations, effect_id, exc)
+        settled_not_sent = _fail_provider_send(session, mutations, effect_id, exc)
         from codey.providers import error_classification as errors
 
-        if isinstance(exc, errors.ContextOverflowError):
+        if settled_not_sent and isinstance(exc, errors.ContextOverflowError):
             _note_failed_effect_id(exc, effect_id)
         raise
     _settle_provider_send(
@@ -465,10 +475,10 @@ def _structured_send(
     try:
         turn = send_fn()
     except Exception as exc:
-        _fail_provider_send(session, mutations, effect_id, exc)
+        settled_not_sent = _fail_provider_send(session, mutations, effect_id, exc)
         from codey.providers import error_classification as errors
 
-        if isinstance(exc, errors.ContextOverflowError):
+        if settled_not_sent and isinstance(exc, errors.ContextOverflowError):
             _note_failed_effect_id(exc, effect_id)
         raise
     _settle_provider_send(
@@ -582,6 +592,10 @@ def send_prompt(
         )
     except errors.ContextOverflowError as exc:
         failed_effect_id = _failed_effect_id(exc)
+        if delivery_batch_id and not failed_effect_id:
+            # The failed attempt left no NOT_SENT proof: retrying the same
+            # batch would conflict, so fail closed instead of double-sending.
+            raise
         prompt = _rollover_for_overflow(
             session, prompt, restart_request=restart_request,
             include_ghost_directive=include_ghost_directive,
@@ -646,6 +660,8 @@ def send_structured_prompt(
         )
     except errors.ContextOverflowError as exc:
         failed_effect_id = _failed_effect_id(exc)
+        if delivery_batch_id and not failed_effect_id:
+            raise
         prompt = _rollover_for_overflow(session, prompt, restart_request=restart_request)
         bind_pending_context_rows(session, prompt)
         tools = session_native_tools(session)
@@ -695,6 +711,10 @@ def send_structured_results(
         )
     except errors.ContextOverflowError as exc:
         failed_effect_id = _failed_effect_id(exc)
+        if delivery_batch_id and not failed_effect_id:
+            # No NOT_SENT proof for the failed attempt: the batch stays
+            # locked rather than risking a second live send of these results.
+            raise
         resolved_fallback = fallback_text() if callable(fallback_text) else fallback_text
         text = resolved_fallback or restart_request or "[tool_results]"
         if overflow_fallback_prompt:

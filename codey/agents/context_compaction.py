@@ -166,7 +166,12 @@ def find_safe_cut(
 
 
 def summarize_prefix_deterministically(prefix: Sequence[Mapping[str, object]]) -> str:
-    lines = [SUMMARY_PREFIX_TEXT]
+    """Summarize a compacted prefix; returns the body only.
+
+    The framing line lives in exactly one place: compact_openai_messages
+    prepends SUMMARY_PREFIX_TEXT when it builds the replacement message.
+    """
+    lines: list[str] = []
     for message in prefix:
         role = str(message.get("role") or "")
         if role == "system":

@@ -8,12 +8,16 @@ mutation line commits their rows atomically.
 from __future__ import annotations
 
 from codey.runtime.core.operation_state import (
+    RuntimeOperationTransitionError,
     mark_provider_effect_pending,
     mark_provider_effect_settled,
     operation_state_entry,
 )
 from codey.runtime.effects.effect_records import (
+    EFFECT_CATEGORY_PROVIDER_SEND,
+    SENT_STATE_NOT_SENT,
     SENT_STATE_SETTLED,
+    SETTLEMENT_STATUS_ERROR,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
     effect_intent_entry,
@@ -36,6 +40,40 @@ from codey.runtime.log.session_view import (
 )
 
 
+def _require_supersedable_not_sent(
+    view: SessionView,
+    delivery_batch_id: str,
+    supersede_effect_id: str,
+) -> None:
+    """Prove the voided attempt deterministically sent nothing usable.
+
+    A matching send_attempt alone is not enough: only a provider send whose
+    settlement exists with an error status and a NOT_SENT state may be voided.
+    Anything else (unsettleled, maybe-sent, ok) keeps the batch locked.
+    """
+    if not supersede_effect_id:
+        raise RuntimeOperationTransitionError("supersede requires a failed provider effect id")
+    try:
+        matching = find_effect(view.effects, supersede_effect_id)
+    except Exception as exc:
+        raise RuntimeOperationTransitionError(
+            f"supersede requires a known provider effect: {supersede_effect_id!r}"
+        ) from exc
+    if matching.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND:
+        raise RuntimeOperationTransitionError(
+            f"supersede requires a provider send effect: {supersede_effect_id!r}"
+        )
+    settlement = matching.settlement
+    if (
+        settlement is None
+        or settlement.status != SETTLEMENT_STATUS_ERROR
+        or settlement.sent_state != SENT_STATE_NOT_SENT
+    ):
+        raise RuntimeOperationTransitionError(
+            f"supersede requires an error/NOT_SENT settlement: {supersede_effect_id!r}"
+        )
+
+
 def build_provider_begin_rows(
     projection,
     view: SessionView,
@@ -55,6 +93,7 @@ def build_provider_begin_rows(
     rows = [effect_intent_entry(prepared)]
     if delivery_batch_id:
         if supersede_effect_id:
+            _require_supersedable_not_sent(view, delivery_batch_id, supersede_effect_id)
             voided = send_superseded_entry(
                 session_id,
                 run_id,

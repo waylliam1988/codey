@@ -80,6 +80,16 @@ def test_research_native_done_must_stand_alone() -> None:
     assert not plan.calls
 
 
+def test_research_missing_id_fails_before_execution() -> None:
+    codec = JsonToolCodec()
+    plan = codec.parse_turn(AssistantTurn(
+        text="",
+        tool_calls=(ProviderToolCall(id="", name="web_search", arguments={"query": "x"}),),
+    ))
+    assert plan.protocol_error
+    assert plan.calls == []
+
+
 def test_research_tool_messages_missing_id_fails_closed() -> None:
     import pytest
 

@@ -2,6 +2,34 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Parse precheck, proven supersede, persisted budgets (no release)
+
+- P0: native turns are shape-checked before any tool executes. A missing
+  call id fails the whole turn (`invalid_args`); a `done` mixed with other
+  calls fails the whole turn (`too_many_tools`) in both orders -- no more
+  first-wins/last-wins silent drops, and no tool runs before delivery can
+  fail. Research mirrors both rules (empty id, mixed `done`, over-max).
+  The synthetic-error path answers every original call id at once.
+- P0/P1: supersede now proves NOT_SENT. `build_provider_begin_rows`
+  refuses to void an attempt unless its settlement exists with error status
+  and `NOT_SENT` state; `_fail_provider_send` reports whether the proof was
+  recorded and only then is the effect id attached for retry. Without proof,
+  a same-batch retry fails closed instead of double-sending.
+- P1: conversation capability budgets persist. `ConversationStore`
+  save/load carry `hard_limit/reserve_tokens/keep_recent_tokens`
+  (schema 1, additive; old payloads fall back to defaults) with roundtrip
+  tests.
+- P2: compaction prefix appears exactly once (summarizer returns body-only;
+  the single prepend stays in `compact_openai_messages`).
+- P2: managed-output digest semantics pinned. Receipts now carry both
+  `sha256` (stored artifact, unchanged footer text) and `original_sha256`
+  (full pre-cap bytes); the footer names `original_sha256` whenever the
+  stored copy is truncated.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  size ceilings hold (runner 1356, runtime 1239); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`4065 passed, 6 skipped, 1333 subtests passed`).
+
 ## Unreleased - Brand-free env names with lock test (no release)
 
 - BREAKING (env only, no compat shim): all `CODEY_`-prefixed names are

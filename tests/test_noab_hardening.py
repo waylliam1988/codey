@@ -50,6 +50,24 @@ def test_compact_in_place_keeps_system_and_tail() -> None:
     assert messages[-1]["content"] == "latest request"
 
 
+def test_compaction_prefix_appears_exactly_once() -> None:
+    from codey.agents.context_compaction import SUMMARY_PREFIX_TEXT
+
+    messages: list[dict] = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "old " + ("a" * 3000)},
+        {"role": "assistant", "content": "old answer " + ("b" * 3000)},
+        {"role": "user", "content": "latest request"},
+    ]
+    summary = compaction.compact_openai_messages_in_place(
+        messages, context_window_tokens=1000, reserve_tokens=500, keep_recent_tokens=100,
+    )
+    assert summary
+    assert SUMMARY_PREFIX_TEXT not in summary
+    joined = "\n".join(str(m.get("content") or "") for m in messages)
+    assert joined.count(SUMMARY_PREFIX_TEXT) == 1
+
+
 def test_overflow_classification() -> None:
     assert errors.classify_http_error(401, "unauthorized") == errors.ProviderErrorKind.AUTH
     assert errors.classify_http_error(400, "This model's maximum context length is 128k") == (

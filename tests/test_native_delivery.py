@@ -331,6 +331,25 @@ def test_native_too_many_calls_answered_in_full(monkeypatch, tmp_path: Path) -> 
     assert all(m["content"].startswith("ERROR:") for m in answered)
 
 
+def test_native_mixed_done_answered_in_full(monkeypatch, tmp_path: Path) -> None:
+    calls = (
+        ProviderToolCall(id="d", name="done", arguments={"summary": "bye"}),
+        ProviderToolCall(id="r", name="read", arguments={"path": "app.py"}),
+    )
+    provider = FakeStructuredProvider([
+        AssistantTurn(text="", tool_calls=calls),
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="d2", name="done", arguments={"summary": "ok"}),)),
+    ])
+    session, _log = _strict_ledger_session(provider, tmp_path, monkeypatch)
+    from codey.agents.prompt_context import initial_structured_reply
+
+    result = _run_loop(session, initial_structured_reply(session), start_turn=1)
+    assert result.stop_reason == "done"
+    answered = provider.tool_results_seen[0]
+    assert [m["tool_call_id"] for m in answered] == ["d", "r"]
+    assert all(m["content"].startswith("ERROR:") for m in answered)
+
+
 def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
     import json as _json
 
@@ -474,6 +493,103 @@ def test_supersede_rules_are_fail_closed(tmp_path: Path) -> None:
     with pytest.raises(ToolResultDeliveryError):
         delivered_entry(session_id, run_id, batch_id="batch-void-1", provider_effect_id="e1",
                         batches=batches())
+
+
+def _proof_harness(tmp_path: Path, tag: str):
+    from codey.runtime.effects.tool_result_delivery import (
+        DeliveryBatchIntent,
+        DeliveryBatchItem,
+        compute_batch_digest,
+    )
+
+    session_id, run_id = f"sess-proof-{tag}", f"run-proof-{tag}"
+    log = RuntimeSessionLog(tmp_path / "state")
+    line = RuntimeMutationLine(log)
+    line.accept_operation(
+        session_id=session_id, run_id=run_id, project=str(tmp_path),
+        provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
+    )
+    line.mark_writer_running(session_id, run_id, provider_id="local")
+
+    def _batch(batch_id: str) -> None:
+        items = (DeliveryBatchItem(tool_index=0, tool_name="read", ref="r0",
+                                   replay_class="safe", is_denied=False),)
+        line.begin_tool_batch(
+            session_id, run_id, intents=(),
+            delivery_intent=DeliveryBatchIntent(
+                batch_id=batch_id, session_id=session_id, run_id=run_id, turn=1,
+                items=items, batch_digest=compute_batch_digest(items)),
+        )
+
+    return log, line, session_id, run_id, _batch
+
+
+def _provider_intent(effect_id: str, session_id: str, run_id: str):
+    from codey.runtime.effects.effect_records import EFFECT_CATEGORY_PROVIDER_SEND, RuntimeEffectIntent
+    from codey.runtime.effects.replay_policy import ReplayClass
+
+    return RuntimeEffectIntent(
+        effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+        session_id=session_id, run_id=run_id, phase="writer", provider_id="local",
+        turn=1, replay_class=ReplayClass.UNSAFE)
+
+
+def _provider_settlement(effect_id: str, session_id: str, run_id: str, *, status: str, sent_state: str):
+    from codey.runtime.effects.effect_records import EFFECT_CATEGORY_PROVIDER_SEND, RuntimeEffectSettlement
+
+    return RuntimeEffectSettlement(
+        effect_id=effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
+        session_id=session_id, run_id=run_id, status=status, sent_state=sent_state)
+
+
+def test_builder_supersede_requires_not_sent_proof(tmp_path: Path) -> None:
+    import pytest
+
+    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.effects.effect_records import (
+        SENT_STATE_MAYBE_SENT,
+        SENT_STATE_NOT_SENT,
+        SETTLEMENT_STATUS_ERROR,
+        SETTLEMENT_STATUS_OK,
+    )
+    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+
+    log, line, session_id, run_id, _batch = _proof_harness(tmp_path, "a")
+    _batch("b-unproven")
+    line.begin_provider_effect(session_id, run_id, _provider_intent("e1", session_id, run_id),
+                               delivery_batch_id="b-unproven")
+    with pytest.raises(RuntimeOperationTransitionError):
+        line.begin_provider_effect(session_id, run_id, _provider_intent("e2", session_id, run_id),
+                                   delivery_batch_id="b-unproven", supersede_effect_id="e1")
+    line.settle_provider_effect(
+        session_id, run_id,
+        _provider_settlement("e1", session_id, run_id, status=SETTLEMENT_STATUS_ERROR,
+                             sent_state=SENT_STATE_MAYBE_SENT))
+    with pytest.raises(RuntimeOperationTransitionError):
+        line.begin_provider_effect(session_id, run_id, _provider_intent("e2", session_id, run_id),
+                                   delivery_batch_id="b-unproven", supersede_effect_id="e1")
+
+    _batch("b-proven")
+    line.begin_provider_effect(session_id, run_id, _provider_intent("e3", session_id, run_id),
+                               delivery_batch_id="b-proven")
+    line.settle_provider_effect(
+        session_id, run_id,
+        _provider_settlement("e3", session_id, run_id, status=SETTLEMENT_STATUS_ERROR,
+                             sent_state=SENT_STATE_NOT_SENT))
+    line.begin_provider_effect(session_id, run_id, _provider_intent("e4", session_id, run_id),
+                               delivery_batch_id="b-proven", supersede_effect_id="e3")
+    line.settle_provider_effect(
+        session_id, run_id,
+        _provider_settlement("e4", session_id, run_id, status=SETTLEMENT_STATUS_OK,
+                             sent_state="settled"))
+    store = ToolResultDeliveryStore(log)
+    batches = {b.intent.batch_id: b for b in store.load_batches(session_id, run_id)}
+    proven = batches["b-proven"]
+    assert proven.superseded_effect_ids == ("e3",)
+    assert proven.active_attempts == ("e4",)
+    assert proven.is_delivered
+    assert batches["b-unproven"].active_attempts == ("e1",)
+    assert batches["b-unproven"].is_delivered is False
 
 
 def test_voided_only_batch_stays_recoverable(tmp_path: Path) -> None:

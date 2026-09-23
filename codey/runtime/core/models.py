@@ -42,14 +42,19 @@ def _managed_output_footer(value: object) -> str:
     managed = normalized_managed_output(value)
     if not managed:
         return ""
-    return (
+    # sha256 below is always the STORED artifact hash. When the stored copy
+    # is truncated it no longer matches the full output, so the footer also
+    # carries original_sha256 (hash of the complete pre-cap bytes).
+    footer = (
         "[full output retained locally: "
         f"handle={managed['handle']}, "
         f"original_bytes={managed['original_bytes']}, "
         f"stored_bytes={managed['stored_bytes']}, "
         f"sha256={managed['sha256']}; "
-        "handle is for local audit/export, not a tool.]"
     )
+    if managed["stored_truncated"] and managed["original_sha256"]:
+        footer += f"original_sha256={managed['original_sha256']}; "
+    return footer + "handle is for local audit/export, not a tool.]"
 
 
 def normalized_managed_output(value: object) -> dict[str, object]:
@@ -63,6 +68,7 @@ def normalized_managed_output(value: object) -> dict[str, object]:
         "original_bytes": _nonnegative_int(value.get("original_bytes")),
         "stored_bytes": _nonnegative_int(value.get("stored_bytes")),
         "sha256": _managed_output_sha256(value.get("sha256")),
+        "original_sha256": _managed_output_sha256(value.get("original_sha256")),
         "stored_truncated": bool(value.get("stored_truncated")),
     }
 

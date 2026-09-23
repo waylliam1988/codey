@@ -84,6 +84,14 @@ def _nonnegative_int(value: object) -> int:
         return 0
 
 
+def _positive_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 class ConversationStore:
     """Keep one compact factual snapshot for each recent local chat."""
 
@@ -103,7 +111,9 @@ class ConversationStore:
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return ConversationContext()
         return ConversationContext(
-            hard_limit=DEFAULT_HARD_CONTEXT_TOKENS,
+            hard_limit=_positive_int(payload.get("hard_limit"), DEFAULT_HARD_CONTEXT_TOKENS),
+            reserve_tokens=_nonnegative_int(payload.get("reserve_tokens")),
+            keep_recent_tokens=_nonnegative_int(payload.get("keep_recent_tokens")),
             used_tokens=_nonnegative_int(payload.get("used_tokens")),
             provider_id=str(payload.get("provider_id") or ""),
             mode=str(payload.get("mode") or ""),
@@ -122,6 +132,9 @@ class ConversationStore:
             path,
             {
                 "schema_version": SCHEMA_VERSION,
+                "hard_limit": max(0, context.hard_limit),
+                "reserve_tokens": max(0, context.reserve_tokens),
+                "keep_recent_tokens": max(0, context.keep_recent_tokens),
                 "used_tokens": max(0, context.used_tokens),
                 "provider_id": context.provider_id,
                 "mode": context.mode,

@@ -42,6 +42,27 @@ def test_native_text_falls_back_to_json() -> None:
     assert [c.name for c in plan.calls] == ["read"]
 
 
+def test_mixed_done_fails_whole_turn_both_orders() -> None:
+    codec = NativeOpenAIToolCodec()
+    read = ProviderToolCall(id="r", name="read", arguments={"path": "app.py"})
+    done = ProviderToolCall(id="d", name="done", arguments={"summary": "bye"})
+    for calls in ((done, read), (read, done)):
+        plan = codec.parse_turn(_turn(calls=calls))
+        assert plan.protocol_error, calls
+        assert plan.calls == []
+        assert plan.control is None
+
+
+def test_missing_call_id_fails_before_execution() -> None:
+    codec = NativeOpenAIToolCodec()
+    plan = codec.parse_turn(_turn(calls=(
+        ProviderToolCall(id="", name="read", arguments={"path": "app.py"}),
+    )))
+    assert plan.protocol_error
+    assert plan.protocol_error_kind == "invalid_args"
+    assert plan.calls == []
+
+
 def test_tool_messages_keep_called_ids() -> None:
     from codey.runtime.core.models import ToolCall, ToolResult
 

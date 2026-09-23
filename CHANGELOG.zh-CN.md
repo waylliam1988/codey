@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Parse 预检、可证明的作废、可落盘预算（未发布）
+
+- P0：native 整轮先验形再执行。缺 call id 整轮失败（`invalid_args`）；
+  `done` 与其他 calls 混排、无论顺序整轮失败（`too_many_tools`）——
+  不再有 first-wins/last-wins 静默丢活，工具也不会在 delivery 必败前先
+  跑起来。research 同步三条规则（空 id、混排 `done`、超上限）；
+  synthetic 路径一次性回答全部原始 call id。
+- P0/P1：supersede 必须出示 NOT_SENT 证明。`build_provider_begin_rows`
+  只在旧 attempt 存在 error + `NOT_SENT` settlement 时才允许作废；
+  `_fail_provider_send` 返回证明是否落盘，只有落盘才挂 effect id 给重试；
+  拿不到证明就 fail closed，不复用同一 batch。
+- P1：conversation capability 预算落盘。`ConversationStore` save/load
+  携带 `hard_limit/reserve_tokens/keep_recent_tokens`（schema 1 兼容
+  新增，旧文件走默认），有 roundtrip 测试。
+- P2：compaction prefix 只出现一次（summarizer 只返 body，prepend 只留
+  在 `compact_openai_messages`）。
+- P2：managed-output digest 语义钉死。receipt 同时带 `sha256`（存储
+  artifact，footer 文案不变）和 `original_sha256`（截断前完整字节）；
+  存储被截断时 footer 点名 `original_sha256`。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；尺寸
+  天花板保持（runner 1356、runtime 1239）；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4065 passed, 6 skipped, 1333 subtests passed`）。
+
 ## Unreleased - 去品牌环境变量名 + 锁测试（未发布）
 
 - BREAKING（仅环境变量，无兼容垫片）：所有 `CODEY_` 前缀全部去掉。

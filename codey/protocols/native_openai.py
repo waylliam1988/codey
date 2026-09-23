@@ -69,6 +69,9 @@ class NativeOpenAIToolCodec:
                 ),
                 protocol_error_kind="too_many_tools",
             )
+        structural = self._precheck_turn_shape(raw_calls)
+        if structural is not None:
+            return structural
         if raw_calls:
             for item in raw_calls:
                 plan = self._parse_native_call(item.name, item.arguments, item.id)
@@ -83,11 +86,53 @@ class NativeOpenAIToolCodec:
         # No structured calls: fall back to JSON text parsing (model spoke prose).
         return self._fallback.parse(turn.text or "")
 
+    @staticmethod
+    def _precheck_turn_shape(raw_calls: list) -> ToolPlan | None:
+        """Reject unanswerable or ambiguous turns before any tool executes.
+
+        A missing call id can never be answered legally, and a `done` mixed
+        with other calls has no single meaning (first- or last-wins would
+        silently drop work). Fail the whole turn so the synthetic-error path
+        answers every original call id at once.
+        """
+        if not raw_calls:
+            return None
+        missing = [
+            str(getattr(item, "name", "") or "?")
+            for item in raw_calls
+            if not str(getattr(item, "id", "") or "")
+        ]
+        if missing:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    "native tool call without an id cannot be answered: "
+                    + ", ".join(missing)
+                ),
+                protocol_error_kind="invalid_args",
+            )
+        names = [str(getattr(item, "name", "") or "").strip().lower() for item in raw_calls]
+        if "done" in names and len(raw_calls) != 1:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error="done must be the only call in a turn",
+                protocol_error_kind="too_many_tools",
+            )
+        return None
+
     def _parse_native_call(self, name: str, args: Any, call_id: str) -> ToolPlan:
         normalized = str(name or "").strip().lower()
         if not normalized:
             return ToolPlan(calls=[], control=None, protocol_error="empty native tool name",
                             protocol_error_kind="unknown_tool")
+        if not str(call_id or ""):
+            # Belt-and-braces behind _precheck_turn_shape: no id-less call
+            # may ever reach execution, even on a direct single-call path.
+            return ToolPlan(calls=[], control=None,
+                            protocol_error=f"native tool call without an id cannot be answered: {normalized}",
+                            protocol_error_kind="invalid_args", protocol_tool_name=normalized)
         # Map OpenAI function name (runtime name) back to canonical model name.
         runtime_def = tool_defs.RUNTIME_TOOL_DEFINITION_BY_NAME.get(normalized)
         model_name = runtime_def.name if runtime_def is not None else normalized

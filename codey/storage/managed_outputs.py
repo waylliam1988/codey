@@ -38,6 +38,7 @@ class ManagedOutputRef:
     stored_bytes: int
     sha256: str
     stored_truncated: bool = False
+    original_sha256: str = ""
 
 
 class ManagedOutputStore:
@@ -78,6 +79,7 @@ class ManagedOutputStore:
                 MAX_MANAGED_OUTPUT_BYTES,
             )
             digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
+            original_digest = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
             handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
             path = self.path_for(session_id, run_id, handle)
             metadata_path = self.metadata_path_for(session_id, run_id, handle)
@@ -96,6 +98,7 @@ class ManagedOutputStore:
                     "original_bytes": original_bytes,
                     "stored_bytes": stored_bytes,
                     "sha256": digest,
+                    "original_sha256": original_digest,
                     "stored_truncated": stored_truncated,
                 },
                 max_bytes=MAX_METADATA_BYTES,
@@ -107,6 +110,7 @@ class ManagedOutputStore:
                 stored_bytes=stored_bytes,
                 sha256=digest,
                 stored_truncated=stored_truncated,
+                original_sha256=original_digest,
             )
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -214,6 +218,7 @@ def run_command_with_managed_output(
         "original_bytes": ref.original_bytes,
         "stored_bytes": ref.stored_bytes,
         "sha256": ref.sha256,
+        "original_sha256": ref.original_sha256,
         "stored_truncated": ref.stored_truncated,
     }
     return ToolOutcome(
