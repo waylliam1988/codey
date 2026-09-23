@@ -128,6 +128,8 @@ class ManagedOutputStoreTests(unittest.TestCase):
             )
             self.assertIn(f"original_sha256={ref.original_sha256}", result.model_text)
             self.assertIn(f"sha256={ref.sha256}", result.model_text)
+            self.assertIn("output receipt retained locally", result.model_text)
+            self.assertNotIn("full output retained locally", result.model_text)
 
     def test_per_run_handle_count_is_capped(self) -> None:
         with tempfile.TemporaryDirectory() as td:

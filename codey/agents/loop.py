@@ -331,6 +331,26 @@ def _handle_protocol_error(
             )
             _report_reply(session, turn + 1, corrected, "(after protocol correction)")
             return corrected
+        if getattr(reply, "tool_calls", None):
+            # tool_calls exist but none carry an answerable id: a same-chat
+            # repair would dangle, so restart on a fresh chat instead. If the
+            # chat cannot restart, stop rather than poison the chain.
+            from codey.agents.prompt_context import open_fresh_chat
+
+            emit(session, RunEvent.status(
+                "[agent] native turn has no answerable call id; restarting on a fresh chat."
+            ))
+            if open_fresh_chat(session):
+                corrected = _send_followup(session, repair, restart_request=repair,
+                                           include_ghost_directive=False)
+                _report_reply(session, turn + 1, corrected, "(after protocol correction)")
+                return corrected
+            return _finish(
+                session,
+                "native turn has no answerable call id and the chat cannot restart",
+                "protocol",
+                turn,
+            )
     corrected = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
     _report_reply(session, turn + 1, corrected, "(after protocol correction)")
     return corrected

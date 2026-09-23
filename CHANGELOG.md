@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Id-less chain guard, honest budgets and receipts (no release)
+
+- P1: a native turn whose tool_calls carry no answerable id no longer gets
+  a same-chat text repair (illegal chain on non-local providers). The loop
+  restarts on a fresh chat and repairs with text there; if the chat cannot
+  restart it stops as `protocol` instead of poisoning the chain. Covered by
+  a fake-provider test (fresh chat opened, zero same-chain tool sends).
+- P2: missing conversation budget fields now fall back to the
+  `ConversationContext` dataclass defaults instead of 0.
+- P2: managed-output footers stop claiming `full output` for truncated
+  stores -- truncated receipts read `output receipt retained locally`
+  (complete stores keep the old wording; existing protocol tests pin both).
+- P3 hygiene: removed dead `head` copy in compaction, fixed an
+  `unsettleled` typo, renamed the pure-entry supersede test so its name no
+  longer implies fail-closed behavior it does not test.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`4066 passed, 6 skipped, 1333 subtests passed`).
+
 ## Unreleased - Parse precheck, proven supersede, persisted budgets (no release)
 
 - P0: native turns are shape-checked before any tool executes. A missing

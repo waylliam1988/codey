@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Id-less guard + honest receipts full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/agents/loop.py              (id-less native turn: fresh-chat restart or protocol stop)
+codey/storage/conversation_store.py (missing budgets fall back to dataclass defaults)
+codey/runtime/core/models.py      (truncated footer reads "output receipt retained locally")
+codey/agents/context_compaction.py + runtime/write/provider_effects.py (dead code, typo)
+tests/test_native_delivery.py     (fresh-chat restart test, supersede test rename)
+tests/test_protocols.py + test_conversation_store.py (wording/default updates)
+```
+
+Notes:
+
+- The `test_protocols` footer case with `truncated=True` but a complete
+  store keeps the old `full output` wording on purpose; only
+  `stored_truncated` stores get the receipt wording (new digest test pins
+  both sides).
+- No chain-breaking paths remain for the known native edges: over-max and
+  mixed-`done` fail whole-turn with all ids answered, empty ids restart
+  fresh, malformed local blocks never persist.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: delivery, protocol, runtime, store, compaction suites green
+  (incl. JSON golden byte-identical for the common case).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4066 passed, 6 skipped, 1333 subtests passed in 358.83s`).
+- Native stays off by default (`NATIVE_TOOLS=1` for Ollama/Qwen trials).
+- No release.
+
 ## Parse precheck + proven supersede full suite (2026-09-23)
 
 Scope (production, no release):

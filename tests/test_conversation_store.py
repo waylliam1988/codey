@@ -70,11 +70,12 @@ class ConversationStoreTests(unittest.TestCase):
             )
             restored = store.load("chat-1")
 
-        from codey.agents.handoff import DEFAULT_HARD_CONTEXT_TOKENS
+        from codey.agents.handoff import DEFAULT_HARD_CONTEXT_TOKENS, ConversationContext
 
+        defaults = ConversationContext()
         self.assertEqual(restored.hard_limit, DEFAULT_HARD_CONTEXT_TOKENS)
-        self.assertEqual(restored.reserve_tokens, 0)
-        self.assertEqual(restored.keep_recent_tokens, 0)
+        self.assertEqual(restored.reserve_tokens, defaults.reserve_tokens)
+        self.assertEqual(restored.keep_recent_tokens, defaults.keep_recent_tokens)
         self.assertEqual(restored.used_tokens, 7)
 
     def test_state_reloads_same_session_and_keeps_new_session_isolated(self) -> None:

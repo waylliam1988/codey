@@ -663,6 +663,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("original_bytes=1234", prompt)
         self.assertIn("stored_bytes=1000", prompt)
         self.assertIn(f"sha256={VALID_SHA256}", prompt)
+        self.assertIn("full output retained locally", prompt)
         self.assertIn("handle is for local audit/export, not a tool", prompt)
         self.assertNotIn("read_output", prompt)
 

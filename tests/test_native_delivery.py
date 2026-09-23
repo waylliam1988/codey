@@ -331,6 +331,30 @@ def test_native_too_many_calls_answered_in_full(monkeypatch, tmp_path: Path) -> 
     assert all(m["content"].startswith("ERROR:") for m in answered)
 
 
+def test_idless_turn_restarts_fresh_chat_instead_of_dangling(monkeypatch, tmp_path: Path) -> None:
+    turns = [
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="", name="read", arguments={"path": "app.py"}),)),
+        AssistantTurn(text="", tool_calls=(ProviderToolCall(id="d", name="done", arguments={"summary": "ok"}),)),
+    ]
+    sent_turns: list[str] = []
+
+    class FreshChatProvider(FakeStructuredProvider):
+        def send_turn(self, prompt: str, tools=None, timeout=None) -> AssistantTurn:
+            sent_turns.append(prompt)
+            return self._turns.pop(0)
+
+    provider = FreshChatProvider(turns)
+    session, _log = _strict_ledger_session(provider, tmp_path, monkeypatch)
+    from codey.agents.prompt_context import initial_structured_reply
+
+    first = initial_structured_reply(session)
+    opened_at_start = provider.chats_opened
+    result = _run_loop(session, first, start_turn=1)
+    assert result.stop_reason == "done"
+    assert provider.chats_opened == opened_at_start + 1
+    assert provider.tool_results_seen == []
+
+
 def test_native_mixed_done_answered_in_full(monkeypatch, tmp_path: Path) -> None:
     calls = (
         ProviderToolCall(id="d", name="done", arguments={"summary": "bye"}),
@@ -442,7 +466,7 @@ def _delivery_harness(tmp_path: Path):
     return log, session_id, run_id
 
 
-def test_supersede_rules_are_fail_closed(tmp_path: Path) -> None:
+def test_supersede_entry_projection_semantics(tmp_path: Path) -> None:
     import pytest
 
     from codey.runtime.effects.tool_result_delivery import (

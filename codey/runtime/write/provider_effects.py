@@ -49,7 +49,7 @@ def _require_supersedable_not_sent(
 
     A matching send_attempt alone is not enough: only a provider send whose
     settlement exists with an error status and a NOT_SENT state may be voided.
-    Anything else (unsettleled, maybe-sent, ok) keeps the batch locked.
+    Anything else (unsettled, maybe-sent, ok) keeps the batch locked.
     """
     if not supersede_effect_id:
         raise RuntimeOperationTransitionError("supersede requires a failed provider effect id")

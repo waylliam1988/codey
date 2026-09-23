@@ -205,8 +205,6 @@ def compact_openai_messages(
     summary: str,
     cut_index: int,
 ) -> list[dict]:
-    head = [dict(m) for m in messages[:cut_index]]
-    _ = head
     tail = [dict(m) for m in messages[cut_index:]]
     summary_message: dict = {"role": "user", "content": f"{SUMMARY_PREFIX_TEXT}\n{summary}"}
     if tail and str(tail[0].get("role") or "") == "system":

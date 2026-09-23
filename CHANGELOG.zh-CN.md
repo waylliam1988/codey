@@ -2,6 +2,23 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 无 id 链保护、诚实预算与 receipt（未发布）
+
+- P1：tool_calls 全缺可答 id 的 native 轮不再同 chat 文本修复（非本地
+  provider 会断链）。loop 改走 fresh chat 重启后文本修复；打不开就以
+  `protocol` 停机，绝不污染链。fake provider 测试覆盖（fresh chat
+  打开一次、同链零 tool 发送）。
+- P2：conversation 缺预算字段回落到 `ConversationContext` dataclass
+  默认，不再落成 0。
+- P2：managed-output footer 不再对截断存储谎称 `full output`——截断
+  receipt 改写 `output receipt retained locally`（完整存储保持旧文案，
+  旧协议测试双边钉住）。
+- P3 卫生：删 compaction 死代码、改拼写、pure-entry supersede 测试改名
+  避免误读。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4066 passed, 6 skipped, 1333 subtests passed`）。
+
 ## Unreleased - Parse 预检、可证明的作废、可落盘预算（未发布）
 
 - P0：native 整轮先验形再执行。缺 call id 整轮失败（`invalid_args`）；

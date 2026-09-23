@@ -43,10 +43,16 @@ def _managed_output_footer(value: object) -> str:
     if not managed:
         return ""
     # sha256 below is always the STORED artifact hash. When the stored copy
-    # is truncated it no longer matches the full output, so the footer also
-    # carries original_sha256 (hash of the complete pre-cap bytes).
-    footer = (
+    # is truncated it no longer matches the full output, so the framing says
+    # receipt (not full output) and the footer also carries original_sha256
+    # (hash of the complete pre-cap bytes).
+    framing = (
         "[full output retained locally: "
+        if not managed["stored_truncated"]
+        else "[output receipt retained locally: "
+    )
+    footer = (
+        f"{framing}"
         f"handle={managed['handle']}, "
         f"original_bytes={managed['original_bytes']}, "
         f"stored_bytes={managed['stored_bytes']}, "

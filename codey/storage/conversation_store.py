@@ -77,11 +77,13 @@ def _snapshot_from_payload(payload: object) -> ConversationSnapshot:
     return ConversationSnapshot(**clean)
 
 
-def _nonnegative_int(value: object) -> int:
+def _nonnegative_int(value: object, default: int = 0) -> int:
+    if value is None:
+        return default
     try:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
-        return 0
+        return default
 
 
 def _positive_int(value: object, default: int) -> int:
@@ -110,10 +112,11 @@ class ConversationStore:
             return ConversationContext()
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
             return ConversationContext()
+        defaults = ConversationContext()
         return ConversationContext(
             hard_limit=_positive_int(payload.get("hard_limit"), DEFAULT_HARD_CONTEXT_TOKENS),
-            reserve_tokens=_nonnegative_int(payload.get("reserve_tokens")),
-            keep_recent_tokens=_nonnegative_int(payload.get("keep_recent_tokens")),
+            reserve_tokens=_nonnegative_int(payload.get("reserve_tokens"), defaults.reserve_tokens),
+            keep_recent_tokens=_nonnegative_int(payload.get("keep_recent_tokens"), defaults.keep_recent_tokens),
             used_tokens=_nonnegative_int(payload.get("used_tokens")),
             provider_id=str(payload.get("provider_id") or ""),
             mode=str(payload.get("mode") or ""),
