@@ -213,27 +213,25 @@ def run_command_with_managed_output(
             changed=projected.changed,
             truncated=projected.truncated,
         )
-    # The capture stage already kept head+tail only when truncated; the
-    # managed file is then a receipt of that head+tail, never the complete
-    # process log. Audit must separate actual process bytes from stored bytes.
-    stdout_bytes = int(getattr(raw, "stdout_bytes", 0) or 0)
-    stderr_bytes = int(getattr(raw, "stderr_bytes", 0) or 0)
-    process_bytes = max(0, stdout_bytes + stderr_bytes)
-    capture_truncated = bool(getattr(raw, "capture_truncated", False))
-    if process_bytes == 0 and not capture_truncated:
-        # Legacy test doubles carry only text; the stored text length is
-        # then the only honest byte count available.
-        process_bytes = int(ref.original_bytes)
-    stored_truncated = bool(ref.stored_truncated or capture_truncated)
+    # Two layers with distinct meanings: `managed_output` mirrors the
+    # ManagedOutputRef (and the on-disk JSON) and only describes the text
+    # fed to the store; `process_bytes`/`capture_truncated` describe the
+    # actual process output and capture-stage loss. Zero output is zero.
+    process_bytes = max(0, int(raw.stdout_bytes) + int(raw.stderr_bytes))
+    capture_truncated = bool(raw.capture_truncated)
     managed_output = {
         "handle": ref.handle,
-        "original_bytes": process_bytes,
+        "original_bytes": ref.original_bytes,
         "stored_bytes": ref.stored_bytes,
         "sha256": ref.sha256,
-        "original_sha256": "" if capture_truncated else ref.original_sha256,
-        "stored_truncated": stored_truncated,
+        "original_sha256": ref.original_sha256,
+        "stored_truncated": ref.stored_truncated,
     }
-    audit = {**dict(projected.audit), "managed_output": managed_output}
+    audit = {
+        **dict(projected.audit),
+        "managed_output": managed_output,
+        "process_bytes": process_bytes,
+    }
     if capture_truncated:
         audit["capture_truncated"] = True
     return ToolOutcome(

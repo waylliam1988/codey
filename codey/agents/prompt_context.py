@@ -335,10 +335,12 @@ def _fail_provider_send(
 
     # A context-overflow rejection deterministically produced no usable
     # reply, so the attempt settles NOT_SENT (safe to supersede) instead
-    # of MAYBE_SENT (must never be retried blindly).
+    # of MAYBE_SENT (must never be retried blindly). A pre-send preparation
+    # failure likewise sent nothing, but its call sites never roll over:
+    # only genuine overflows take the rollover retry.
     sent_state = (
         SENT_STATE_NOT_SENT
-        if isinstance(exc, errors.ContextOverflowError)
+        if isinstance(exc, (errors.ContextOverflowError, errors.RequestPrepError))
         else SENT_STATE_MAYBE_SENT
     )
     try:

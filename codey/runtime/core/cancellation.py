@@ -11,7 +11,14 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
+
+from codey.runtime.core.output_capture import (
+    DRAIN_TIMEOUT_SECONDS,
+    READ_CHUNK_BYTES,
+    READER_JOIN_TIMEOUT_SECONDS,
+    BoundedByteCapture,
+)
 
 POLL_INTERVAL = 0.2
 _context = threading.local()
@@ -130,6 +137,19 @@ class PipeDrainTimeout(RuntimeError):
     """Parent exited but output pipes never reached EOF (grandchild holds them)."""
 
 
+class ProcessOutputReadError(RuntimeError):
+    """A pipe reader failed before EOF; the captured output is incomplete."""
+
+
+@dataclasses.dataclass
+class _StreamPump:
+    """Per-stream reader state: capture plus a sticky read error."""
+
+    capture: BoundedByteCapture
+    error: BaseException | None = None
+    done: threading.Event = dataclasses.field(default_factory=threading.Event)
+
+
 @dataclasses.dataclass(frozen=True)
 class CapturedProcess:
     """Bounded result of a spawned process (replaces CompletedProcess)."""
@@ -233,29 +253,22 @@ def start_process(
     return proc, job
 
 
-def _pump_stream(stream: object, capture: object) -> None:
-    from codey.runtime.core.output_capture import READ_CHUNK_BYTES
-
-    read = getattr(stream, "read", None)
-    feed = getattr(capture, "feed", None)
-    if not callable(read) or not callable(feed):
-        return
+def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:
+    """Drain one pipe into its bounded capture; a read failure is sticky."""
     try:
         while True:
-            chunk = read(READ_CHUNK_BYTES)
+            chunk = stream.read(READ_CHUNK_BYTES)
             if not chunk:
-                break
-            if isinstance(chunk, str):
-                chunk = chunk.encode("utf-8", errors="replace")
-            feed(bytes(chunk))
-    except (OSError, ValueError):
-        pass
+                return
+            state.capture.feed(chunk)
+    except Exception as exc:
+        state.error = exc
+    finally:
+        state.done.set()
 
 
 def _join_readers(threads: list[threading.Thread], *, timeout: float) -> None:
-    from codey.runtime.core.output_capture import READER_JOIN_TIMEOUT_SECONDS
-
-    budget = max(0.0, float(timeout if timeout > 0 else READER_JOIN_TIMEOUT_SECONDS))
+    budget = max(0.0, float(timeout))
     deadline = time.monotonic() + budget
     for thread in threads:
         remaining = deadline - time.monotonic()
@@ -281,51 +294,53 @@ def wait_process(
     capture_limit_bytes: int,
 ) -> CapturedProcess:
     """Wait with bounded per-stream capture; never buffers output unbounded."""
-    from codey.runtime.core.output_capture import (
-        DRAIN_TIMEOUT_SECONDS,
-        READER_JOIN_TIMEOUT_SECONDS,
-        BoundedByteCapture,
-    )
-
     limit = max(1, int(capture_limit_bytes))
     head = limit // 4
     tail = limit - head
-    stdout_capture = BoundedByteCapture(head_limit=head, tail_limit=tail)
-    stderr_capture = BoundedByteCapture(head_limit=head, tail_limit=tail)
+    stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
+    stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
     readers: list[threading.Thread] = []
-    for stream, capture in (
-        (proc.stdout, stdout_capture),
-        (proc.stderr, stderr_capture),
+    for stream, state in (
+        (proc.stdout, stdout_state),
+        (proc.stderr, stderr_state),
     ):
         if stream is None:
+            state.done.set()
             continue
         thread = threading.Thread(
-            target=_pump_stream, args=(stream, capture), daemon=True
+            target=_pump_stream, args=(stream, state), daemon=True
         )
         thread.start()
         readers.append(thread)
-    deadline = time.monotonic() + max(0.0, float(timeout))
     try:
-        while True:
-            check()
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(args, timeout)
-            try:
-                returncode = proc.wait(timeout=min(POLL_INTERVAL, remaining))
-                break
-            except subprocess.TimeoutExpired:
-                continue
-    except (TaskCancelled, DeadlineExceeded, subprocess.TimeoutExpired):
-        _terminate_process_tree(proc, job)
-        _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
-        _close_pipes(proc)
-        close = getattr(job, "close", None)
-        if callable(close):
-            with suppress(Exception):
-                close()
-        raise
-    try:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        try:
+            while True:
+                for state in (stdout_state, stderr_state):
+                    if state.error is not None:
+                        raise ProcessOutputReadError(
+                            "failed reading command output "
+                            f"({state.error}); output is incomplete"
+                        )
+                check()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(args, timeout)
+                try:
+                    returncode = proc.wait(timeout=min(POLL_INTERVAL, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        except (
+            TaskCancelled,
+            DeadlineExceeded,
+            subprocess.TimeoutExpired,
+            ProcessOutputReadError,
+        ):
+            _terminate_process_tree(proc, job)
+            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
+            _close_pipes(proc)
+            raise
         drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
         for thread in readers:
             thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
@@ -337,13 +352,16 @@ def wait_process(
                 "output pipe drain timed out: parent exited but a child "
                 "still holds stdout/stderr; output is incomplete"
             )
+        for state in (stdout_state, stderr_state):
+            if state.error is not None:
+                _close_pipes(proc)
+                raise ProcessOutputReadError(
+                    "failed reading command output "
+                    f"({state.error}); output is incomplete"
+                )
         _close_pipes(proc)
-        try:
-            returncode = proc.returncode if proc.returncode is not None else 0
-        except Exception:
-            returncode = 0
-        stdout_done = stdout_capture.finish()
-        stderr_done = stderr_capture.finish()
+        stdout_done = stdout_state.capture.finish()
+        stderr_done = stderr_state.capture.finish()
         return CapturedProcess(
             args=args,
             returncode=int(returncode),
@@ -397,6 +415,19 @@ def terminate_process_tree(
     _terminate_process_tree(proc, job)
 
 
+def _process_group_exists(pgid: int) -> bool:
+    """Check a process group without touching its (possibly reaped) leader."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
 def _terminate_process_tree(
     proc: subprocess.Popen[bytes],
     job: _WindowsJob | None = None,
@@ -415,19 +446,22 @@ def _terminate_process_tree(
             with suppress(Exception):
                 proc.wait(timeout=1)
     else:
+        # Processes from start_process() run in a new session, so the known
+        # group id is proc.pid: no getpgid() on a possibly reaped parent.
+        pgid = proc.pid
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except Exception:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except OSError:
             with suppress(Exception):
                 proc.terminate()
-        try:
+        with suppress(Exception):
             proc.wait(timeout=1)
-        except Exception:
+        # proc.wait() only reaps the direct child; grandchildren holding
+        # pipes are judged by group existence, never by the parent's wait.
+        if _process_group_exists(pgid):
             with suppress(Exception):
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except Exception:
-                    with suppress(Exception):
-                        proc.kill()
+                os.killpg(pgid, signal.SIGKILL)
             with suppress(Exception):
                 proc.wait(timeout=1)

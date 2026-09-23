@@ -201,9 +201,9 @@ class LocalOpenAIProvider:
         for item in pending_messages:
             candidate.append(dict(item))
         window, reserve, keep = self._context_budget()
-        try:
-            from codey.agents import context_compaction as compaction
+        from codey.agents import context_compaction as compaction
 
+        try:
             compaction.compact_openai_messages_in_place(
                 candidate,
                 tools=tools,
@@ -212,17 +212,15 @@ class LocalOpenAIProvider:
                 keep_recent_tokens=keep,
             )
         except Exception as exc:
-            raise RuntimeError(f"local context compaction failed: {exc}") from exc
+            raise errors.RequestPrepError(f"local context compaction failed: {exc}") from exc
         try:
-            from codey.agents import context_compaction as compaction_tokens
-
             estimated = (
-                compaction_tokens.estimate_messages_tokens(candidate)
-                + compaction_tokens.estimate_tools_tokens(tools)
+                compaction.estimate_messages_tokens(candidate)
+                + compaction.estimate_tools_tokens(tools)
                 + int(reserve)
             )
         except Exception as exc:
-            raise RuntimeError(f"local context estimation failed: {exc}") from exc
+            raise errors.RequestPrepError(f"local context estimation failed: {exc}") from exc
         if estimated > int(window):
             raise errors.ContextOverflowError(
                 f"local model context overflow before send: estimated {estimated} "

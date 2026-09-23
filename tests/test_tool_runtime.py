@@ -358,11 +358,16 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 2.0)
 
     def test_run_command_preserves_head_and_tail_of_large_output(self) -> None:
-        completed = __import__("subprocess").CompletedProcess(
+        stdout_text = "HEAD" + ("x" * 200) + "TAIL"
+        completed = cancellation.CapturedProcess(
             ["python", "-m", "pytest", "tests/test_large.py"],
             1,
-            stdout="HEAD" + ("x" * 200) + "TAIL",
+            stdout=stdout_text,
             stderr="",
+            stdout_bytes=len(stdout_text.encode("utf-8")),
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with (
             tempfile.TemporaryDirectory() as td,
@@ -400,11 +405,15 @@ class ToolOutcomeTests(unittest.TestCase):
                 "    assert result == 42\n"
                 "AssertionError: expected 42\n"
             )
-            completed = __import__("subprocess").CompletedProcess(
+            completed = cancellation.CapturedProcess(
                 ["python", "-m", "pytest", "tests/test_fail.py"],
                 1,
                 stdout=stdout,
                 stderr="",
+                stdout_bytes=len(stdout.encode("utf-8")),
+                stderr_bytes=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
             )
 
             with (
@@ -438,11 +447,15 @@ class ToolOutcomeTests(unittest.TestCase):
                 "    internal_call()\n"
                 "AssertionError: expected 42\n"
             )
-            completed = subprocess.CompletedProcess(
+            completed = cancellation.CapturedProcess(
                 ["python", "-m", "pytest", "tests/test_fail.py"],
                 1,
                 stdout=stdout,
                 stderr="",
+                stdout_bytes=len(stdout.encode("utf-8")),
+                stderr_bytes=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
             )
 
             with mock.patch(

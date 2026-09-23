@@ -127,8 +127,7 @@ class BoundedByteCapture:
     def finish(self) -> CapturedText:
         head = bytes(self._head)
         tail = b"".join(self._tail)
-        omitted = self._total - len(head) - len(tail)
-        if omitted <= 0:
+        if self._total <= len(head) + len(tail):
             text = (head + tail).decode("utf-8", errors="replace")
             return CapturedText(
                 text=text,
@@ -140,6 +139,9 @@ class BoundedByteCapture:
         tail = _trim_leading_incomplete(tail)
         head_text = head.decode("utf-8", errors="replace")
         tail_text = tail.decode("utf-8", errors="replace")
+        # Report what the displayed text actually omits: raw middle bytes
+        # plus edge bytes dropped to avoid splitting a UTF-8 character.
+        omitted = self._total - len(head) - len(tail)
         marker = (
             f"\n[... omitted {omitted} bytes of output; "
             "showing head and tail only ...]\n"

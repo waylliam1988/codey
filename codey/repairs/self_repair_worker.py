@@ -72,13 +72,15 @@ def run_self_repair_worker(
         )
     except (subprocess.TimeoutExpired, cancellation.DeadlineExceeded):
         return AdapterRepairResult(False, job.provider_id, error="self-repair worker timed out")
-    except cancellation.PipeDrainTimeout:
-        return AdapterRepairResult(False, job.provider_id, error="worker 输出超限: pipe drain timeout")
+    except cancellation.PipeDrainTimeout as exc:
+        return AdapterRepairResult(False, job.provider_id, error=f"worker pipe drain timeout: {exc}")
+    except cancellation.ProcessOutputReadError as exc:
+        return AdapterRepairResult(False, job.provider_id, error=f"failed reading worker output: {exc}")
     except cancellation.TaskCancelled:
         return AdapterRepairResult(False, job.provider_id, error="self-repair worker cancelled")
     except OSError as exc:
         return AdapterRepairResult(False, job.provider_id, error=str(exc))
-    if bool(getattr(proc, "stdout_truncated", False) or getattr(proc, "stderr_truncated", False)):
+    if bool(proc.stdout_truncated or proc.stderr_truncated):
         return AdapterRepairResult(False, job.provider_id, error="worker 输出超限")
     return _parse_worker_result(job.provider_id, proc.stdout, proc.stderr, proc.returncode)
 

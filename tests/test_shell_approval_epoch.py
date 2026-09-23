@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 import threading
 import time
@@ -282,7 +281,11 @@ class ShellStopLinearizationTests(unittest.TestCase):
                     self.assertTrue(release.wait(timeout=10))
                     return mock.Mock(), None
 
-                completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
+                completed = cancellation.CapturedProcess(
+                    "pytest -q", 0, "out", "",
+                    stdout_bytes=3, stderr_bytes=0,
+                    stdout_truncated=False, stderr_truncated=False,
+                )
                 with (
                     mock.patch.object(
                         cancellation, "start_process", side_effect=_stuck_spawn
@@ -330,7 +333,11 @@ class ShellStopLinearizationTests(unittest.TestCase):
                     self.assertTrue(release.wait(timeout=10))
                     return mock.Mock(), None
 
-                completed = subprocess.CompletedProcess("pytest -q", 0, "out", "")
+                completed = cancellation.CapturedProcess(
+                    "pytest -q", 0, "out", "",
+                    stdout_bytes=3, stderr_bytes=0,
+                    stdout_truncated=False, stderr_truncated=False,
+                )
                 with (
                     mock.patch.object(
                         cancellation, "start_process", side_effect=_gated_spawn

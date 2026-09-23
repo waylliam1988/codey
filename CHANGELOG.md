@@ -32,6 +32,54 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Bounded-capture correctness follow-up (no release)
+
+- Reader failures are explicit failures. Each pipe reader carries sticky
+  `_StreamPump` state; `wait_process()` polls reader errors every iteration
+  and raises `ProcessOutputReadError` after terminating the tree instead of
+  waiting for a command timeout or returning exit 0 with empty output.
+  `run_command_raw()`, shell tickets (`output_read_error`), and the
+  self-repair worker map it distinctly. `wait_process()` now owns the whole
+  lifecycle in one outer `try/finally` (Job/pipes always cleaned) and uses
+  the exit code `proc.wait()` returned; unknown codes never become success.
+- POSIX cleans by known group id. `_terminate_process_tree()` uses
+  `proc.pid` as the pgid (guaranteed by `start_new_session=True`), sends
+  SIGTERM, then SIGKILL only when the group still exists; `proc.wait()`
+  only reaps the direct child and is never used as grandchild-liveness
+  proof. Windows keeps the Job Object path. A real parent-spawns-grandchild
+  test proves `PipeDrainTimeout` still kills the tree within a bounded
+  ~4s budget on both families (no auto-rerun of possibly side-effecting
+  commands, no user-configurable limit).
+- Managed-output metadata is two-layer and consistent. `managed_output`
+  mirrors `ManagedOutputRef`/on-disk JSON verbatim (stored text only);
+  `audit.process_bytes` + `audit.capture_truncated` describe actual process
+  output and capture loss, with no legacy zero-fallback. The model footer
+  says "receipt" whenever capture truncated, and `analysis_run_record()`
+  counts capture truncation toward `stored_truncated` (+ warning) so a
+  head/tail receipt is never recorded as complete output.
+- Convergence without new architecture: single `context_compaction`
+  import in `_prepare_request()`; prep/estimation failures raise
+  `RequestPrepError`, settled as NOT_SENT with no rollover retry (only true
+  `ContextOverflowError` rolls over once); `CapturedProcess` is accessed
+  directly everywhere (test doubles construct the real type);
+  `RunCommandRawResult` byte fields are required; `_join_readers()` takes
+  explicit timeouts; the shell's duplicate drain cleanup is gone; worker
+  drain vs read vs truncation errors are distinct; the omitted-bytes marker
+  is recomputed after UTF-8 edge trimming.
+- Review corrections folded in: the old `send()` compacted before appending
+  (only the pending input was unbudgeted); command output already had the
+  24k display clip, so the bound is about process memory; still no
+  auto-retry or configurable cap by design.
+- CI file renamed to `requirements-ci.txt` and honestly headed as
+  direct-dependency pins, not a full transitive lock.
+- Tests: reader-error-after-partial (both streams + all three mappings),
+  real-grandchild drain with tree-death and time bound, non-aligned UTF-8
+  omitted recount, managed JSON/audit field parity read before tmpdir
+  exit, distinct tool call IDs, restored exact audit-shape asserts,
+  prep-failure NOT_SENT settlement.
+- Verification: `python -m ruff check .` clean; final full
+  `python -m pytest` (`4133 passed, 6 skipped, 1374 subtests passed`).
+
 ## Unreleased - Bounded capture + pre-send context accounting (no release)
 
 - Subprocess output is now bounded at read time. New

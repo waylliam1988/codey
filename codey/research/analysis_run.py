@@ -162,6 +162,13 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
     captured = bool(handle and output_sha256)
     if handle and not output_sha256:
         warnings.append("managed_output_sha_invalid")
+    # A capture-truncated run stored only a head/tail receipt: it must
+    # never be recorded as a complete output, even when the store itself
+    # did not truncate further.
+    capture_truncated = bool(data.get("capture_truncated"))
+    stored_truncated = bool(managed.get("stored_truncated") or capture_truncated)
+    if capture_truncated:
+        warnings.append("capture_truncated")
 
     # The display command is a convenience, never a provenance fact: the
     # digest above is authoritative. Secret-looking commands keep only their
@@ -194,7 +201,7 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
         duration_ms=duration_ms,
         managed_output_handle=handle,
         output_sha256=output_sha256,
-        stored_truncated=bool(managed.get("stored_truncated")),
+        stored_truncated=stored_truncated,
         capture_quality=(
             CAPTURE_OUTPUT_CAPTURED if captured else CAPTURE_NOT_CAPTURED
         ),

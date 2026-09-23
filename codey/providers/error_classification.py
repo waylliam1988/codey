@@ -28,6 +28,15 @@ class OutputLengthError(RuntimeError):
         super().__init__(message)
 
 
+class RequestPrepError(RuntimeError):
+    """Pre-send request preparation failed; nothing was sent.
+
+    Compaction/estimation failures before any HTTP call settle as NOT_SENT
+    (safe: no usable reply could exist) but must never trigger the context
+    overflow rollover retry, which is reserved for genuine overflows.
+    """
+
+
 _OVERFLOW_MARKERS = (
     "context length",
     "context_length",
@@ -99,6 +108,7 @@ __all__ = [
     "ContextOverflowError",
     "OutputLengthError",
     "ProviderErrorKind",
+    "RequestPrepError",
     "classify_http_error",
     "classify_openai_choice",
     "is_context_overflow_message",

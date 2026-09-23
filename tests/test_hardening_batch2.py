@@ -267,10 +267,21 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
 class ManagedOutputFailureTests(unittest.TestCase):
     def test_write_failure_is_visible_not_silent(self) -> None:
         from codey.storage.managed_outputs import run_command_with_managed_output
-        from codey.toolchain.runtime import ToolOutcome
+        from codey.toolchain.runtime import RunCommandRawResult, ToolOutcome
 
         projected = ToolOutcome("truncated model text", True, truncated=True)
-        raw = SimpleNamespace(command="pytest -q", output="x" * 10)
+        raw = RunCommandRawResult(
+            command="pytest -q",
+            output="x" * 10,
+            ok=True,
+            exit_code=0,
+            started_at="2026-09-24T00:00:00.000Z",
+            finished_at="2026-09-24T00:00:01.000Z",
+            duration_ms=1000,
+            stdout_bytes=10,
+            stderr_bytes=0,
+            capture_truncated=False,
+        )
         store = SimpleNamespace(write_run_output=mock.Mock(return_value=None))
         with (
             mock.patch(

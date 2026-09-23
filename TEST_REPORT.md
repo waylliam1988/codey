@@ -36,6 +36,57 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Bounded-capture correctness follow-up full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/runtime/core/cancellation.py     (sticky _StreamPump errors; ProcessOutputReadError;
+                                        outer lifecycle finally; direct wait() exit code;
+                                        POSIX known-pgid TERM/KILL via group existence)
+codey/runtime/core/output_capture.py   (omitted bytes recomputed after UTF-8 edge trim)
+codey/toolchain/runtime.py             (output_read_error mapping; required byte fields; direct access)
+codey/app/shell_service.py             (output_read_error mapping; duplicate drain cleanup removed)
+codey/repairs/self_repair_worker.py    (drain vs read vs truncation errors distinct; direct access)
+codey/storage/managed_outputs.py       (managed_output mirrors ref/JSON; process_bytes + capture_truncated separate)
+codey/runtime/core/models.py            (footer says receipt when capture truncated)
+codey/research/analysis_run.py         (capture truncation counts toward stored_truncated + warning)
+codey/operations/project_completion_flow.py (capture_truncated forwarded to the record)
+codey/providers/error_classification.py (RequestPrepError: NOT_SENT, never rollover)
+codey/providers/local_openai.py        (single compaction import; prep failures raise RequestPrepError)
+codey/agents/prompt_context.py         (RequestPrepError settles NOT_SENT; rollover stays overflow-only)
+requirements-lock.txt -> requirements-ci.txt (renamed; headed as direct pins, not a full lock)
+tests/test_bounded_capture_and_context.py (reader errors, real grandchild, non-aligned UTF-8,
+                                        JSON parity, distinct call IDs, NOT_SENT settlement)
+tests/test_tool_runtime.py, test_managed_outputs.py, test_server.py,
+test_shell_approval_epoch.py, test_hardening_batch2.py,
+test_run_command_characterization.py (real CapturedProcess doubles; exact audit asserts)
+```
+
+Notes:
+
+- Keeps the ed5b304 direction; this round makes failure reporting exact:
+  read errors can no longer surface as success, reaped parents can no
+  longer skip group cleanup, and stored metadata can no longer disagree
+  with the on-disk JSON. Still no auto-retry or configurable caps.
+- "No A/B" unchanged: bounds/correctness proven by tests, not by model
+  coding success rates.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite: 666 passed
+  (`test_bounded_capture_and_context + cancellation + characterization +
+  local_openai_native + tool_runtime + managed_outputs +
+  shell_approval_epoch + hardening_batch2 + adapter_self_repair +
+  architecture + server + native_delivery + agent_native_loop +
+  coldstart_native_local_receipts + research_analysis_run +
+  project_completion_flow_analysis_run + protocols`,
+  `437 subtests passed in 92.76s`).
+- Full suite: `python -m pytest`
+  (`4133 passed, 6 skipped, 1374 subtests passed in 361.25s (0:06:01)`).
+- This report entry was written after the final full pytest run.
+
 ## Bounded capture + pre-send context accounting full suite (2026-09-24)
 
 Scope (production, no release):

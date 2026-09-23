@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +11,7 @@ from codey.policies.action import (
     MAX_MANAGED_OUTPUT_BYTES,
     MAX_MANAGED_OUTPUTS_PER_RUN,
 )
+from codey.runtime.core.cancellation import CapturedProcess
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
@@ -212,11 +212,16 @@ class ManagedOutputStoreTests(unittest.TestCase):
 
 class ManagedRunCommandTests(unittest.TestCase):
     def test_wrapper_saves_only_when_projection_is_truncated(self) -> None:
-        completed = subprocess.CompletedProcess(
+        stdout_text = "HEAD" + ("x" * 200) + "MIDDLE_SHOULD_BE_SAVED" + ("y" * 200) + "TAIL"
+        completed = CapturedProcess(
             ["python", "-m", "pytest", "tests/test_large.py"],
             1,
-            stdout="HEAD" + ("x" * 200) + "MIDDLE_SHOULD_BE_SAVED" + ("y" * 200) + "TAIL",
+            stdout=stdout_text,
             stderr="",
+            stdout_bytes=len(stdout_text.encode("utf-8")),
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with (
             tempfile.TemporaryDirectory() as td,
@@ -249,11 +254,15 @@ class ManagedRunCommandTests(unittest.TestCase):
         self.assertNotIn("MIDDLE_SHOULD_BE_SAVED", outcome.model_text)
 
     def test_wrapper_does_not_save_short_output(self) -> None:
-        completed = subprocess.CompletedProcess(
+        completed = CapturedProcess(
             ["python", "-m", "py_compile", "ok.py"],
             0,
             stdout="OK",
             stderr="",
+            stdout_bytes=2,
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with (
             tempfile.TemporaryDirectory() as td,

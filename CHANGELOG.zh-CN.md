@@ -27,6 +27,41 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - 有界采集正确性跟进（未发布）
+
+- 读取失败就是失败。每路 reader 带粘性 `_StreamPump` 状态；
+  `wait_process()` 每轮轮询 reader 错误，发现即终止进程树并抛
+  `ProcessOutputReadError`，不再等命令超时，也不再返回退出码 0 + 空输出。
+  `run_command_raw()`、shell（`output_read_error`）、self-repair worker 分别
+  明确映射。`wait_process()` 整个生命周期收进一个外层 `try/finally`
+  （Job/管道必清理），直接用 `proc.wait()` 返回的退出码，未知退出码绝不
+  当成功。
+- POSIX 按已知进程组号清理。`_terminate_process_tree()` 用 `proc.pid` 作
+  pgid（`start_new_session=True` 保证），先 SIGTERM，组仍存在才 SIGKILL；
+  `proc.wait()` 只回收直接子进程，不作为孙进程存活判断。Windows 继续 Job
+  路径。真父进程拉起继承管道孙进程的测试证明：排空超时后树必死，总耗时
+  有界（约 4 秒内）。不加副作用命令自动重跑，不加用户可配上限。
+- Managed 元数据两层同义。`managed_output` 原样镜像 `ManagedOutputRef`/
+  落盘 JSON（只描述送进存储的文本）；`audit.process_bytes` +
+  `audit.capture_truncated` 描述进程实际产出与采集丢失，删除 legacy 零值
+  反推。采集截断时 footer 只说“receipt”；`analysis_run_record()` 把采集截断
+  计入 `stored_truncated`（+ warning），头尾摘要不再被记成完整输出。
+- 不扩架构的收敛：`_prepare_request()` 单次导入 compactor；准备/估算失败抛
+  `RequestPrepError`，结算 NOT_SENT 但不 rollover（只有真超限走一次
+  rollover）；`CapturedProcess` 各处直接访问，测试构造真实类型；
+  `RunCommandRawResult` 字节字段必填；`_join_readers()` 只收明确超时；
+  shell 重复清理删除；worker 三种错误分别报告；省略字节标记按 UTF-8 修剪
+  后重算。
+- 审查校正：旧 `send()` 是先压缩后追加（漏算的只是本次输入）；命令结果早有
+  24k 展示裁剪，有界采集防的是进程内存；继续不做自动重试与可配开关。
+- CI 文件改名 `requirements-ci.txt`，头部如实写“直接依赖固定版本”，非完整
+  传递锁。
+- 测试：双路部分读取后出错及三处映射、真孙进程排空+树死亡+时间 bound、
+  非对齐 UTF-8 重算、tmpdir 退出前读 JSON 对字段、双 call ID、恢复精确审计
+  断言、准备失败 NOT_SENT 结算。
+- 验证：`python -m ruff check .` 通过；最终全量 `python -m pytest`
+  （`4133 passed, 6 skipped, 1374 subtests passed`）。
+
 ## Unreleased - 有界采集 + 发送前上下文核算（未发布）
 
 - 子进程输出改为读取时有界。新 `codey/runtime/core/output_capture.py`

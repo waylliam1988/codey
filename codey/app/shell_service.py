@@ -231,24 +231,22 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
                 capture_limit_bytes=CAPTURE_LIMIT_BYTES,
             )
             capture_truncated = bool(
-                getattr(completed, "stdout_truncated", False)
-                or getattr(completed, "stderr_truncated", False)
+                completed.stdout_truncated or completed.stderr_truncated
             )
             proc = completed
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         return _stopped_shell_result()
+    except cancellation.ProcessOutputReadError as exc:
+        return {
+            "ok": False,
+            "status": "output_read_error",
+            "error": f"failed reading shell output ({exc})",
+            "exit_code": None,
+            "output": "",
+            "truncated": True,
+        }
     except cancellation.PipeDrainTimeout as exc:
-        try:
-            if proc is not None:
-                cancellation.terminate_process_tree(proc, job)
-        except Exception:
-            pass
-        try:
-            close = getattr(job, "close", None)
-            if callable(close):
-                close()
-        except Exception:
-            pass
+        # wait_process() already terminated the tree and closed the Job.
         return {
             "ok": False,
             "status": "drain_timeout",

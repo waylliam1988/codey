@@ -1625,6 +1625,7 @@ def record_analysis_run(
                 "finished_at": audit.get("command_finished_at"),
                 "duration_ms": audit.get("command_duration_ms"),
                 "managed_output": dict(managed) if managed else {},
+                "capture_truncated": bool(audit.get("capture_truncated")),
             }
         )
         if record is None:

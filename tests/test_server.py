@@ -430,11 +430,15 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("escapes project root", data["error"])
 
     def test_execute_approved_shell_preserves_large_output_head_and_tail(self) -> None:
-        completed = subprocess.CompletedProcess(
+        completed = cancellation.CapturedProcess(
             "command",
             1,
             stdout="HEAD" + ("x" * 200) + "TAIL",
             stderr="",
+            stdout_bytes=len("HEAD" + ("x" * 200) + "TAIL"),
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with (
             tempfile.TemporaryDirectory() as td,
@@ -4388,11 +4392,15 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            completed = subprocess.CompletedProcess(
+            completed = cancellation.CapturedProcess(
                 ["python", "-m", "pytest", "tests/test_large.py"],
                 1,
                 stdout=("HEAD" + ("x" * 200) + "MIDDLE_MANAGED_OUTPUT" + ("y" * 200) + "TAIL"),
                 stderr="",
+                stdout_bytes=len("HEAD" + ("x" * 200) + "MIDDLE_MANAGED_OUTPUT" + ("y" * 200) + "TAIL"),
+                stderr_bytes=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
             )
 
             def fake_agent_run(request: AgentRequest):

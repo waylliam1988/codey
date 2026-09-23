@@ -216,12 +216,12 @@ class RunCommandRawResult:
     output: str
     ok: bool
     exit_code: int
-    started_at: str = ""
-    finished_at: str = ""
-    duration_ms: int | None = None
-    stdout_bytes: int = 0
-    stderr_bytes: int = 0
-    capture_truncated: bool = False
+    started_at: str
+    finished_at: str
+    duration_ms: int | None
+    stdout_bytes: int
+    stderr_bytes: int
+    capture_truncated: bool
 
 
 def _utc_now_iso() -> str:
@@ -1167,6 +1167,19 @@ def run_command_raw(
         )
     except FileNotFoundError:
         return ToolOutcome.error(f"command not found: {argv[0]}")
+    except cancellation.ProcessOutputReadError as exc:
+        finished_at = _utc_now_iso()
+        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
+        return ToolOutcome.error(
+            f"failed reading command output ({exc}): {command}. "
+            "Re-run a narrower command.",
+            error_code="output_read_error",
+            audit={
+                "command_started_at": started_at,
+                "command_finished_at": finished_at,
+                "command_duration_ms": duration_ms,
+            },
+        )
     except cancellation.PipeDrainTimeout as exc:
         finished_at = _utc_now_iso()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
@@ -1207,12 +1220,6 @@ def run_command_raw(
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    # Test doubles may return CompletedProcess without capture fields;
-    # real CapturedProcess always carries them.
-    capture_truncated = bool(
-        getattr(proc, "stdout_truncated", False)
-        or getattr(proc, "stderr_truncated", False)
-    )
     return RunCommandRawResult(
         command=command,
         output=output,
@@ -1221,9 +1228,9 @@ def run_command_raw(
         started_at=started_at,
         finished_at=_utc_now_iso(),
         duration_ms=duration_ms,
-        stdout_bytes=int(getattr(proc, "stdout_bytes", 0) or 0),
-        stderr_bytes=int(getattr(proc, "stderr_bytes", 0) or 0),
-        capture_truncated=capture_truncated,
+        stdout_bytes=int(proc.stdout_bytes),
+        stderr_bytes=int(proc.stderr_bytes),
+        capture_truncated=bool(proc.stdout_truncated or proc.stderr_truncated),
     )
 
 

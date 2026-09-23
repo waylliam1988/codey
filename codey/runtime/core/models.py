@@ -31,24 +31,26 @@ def model_text_with_audit_markers(
     if truncated and TRUNCATED_RESULT_NOTICE not in text:
         text = f"{text}\n{TRUNCATED_RESULT_NOTICE}"
     managed = audit.get("managed_output") if isinstance(audit, Mapping) else None
-    footer = _managed_output_footer(managed)
+    capture_truncated = bool(audit.get("capture_truncated")) if isinstance(audit, Mapping) else False
+    footer = _managed_output_footer(managed, capture_truncated=capture_truncated)
     if footer and footer not in text:
         text = f"{text}\n{footer}"
     return text
 
 
-def _managed_output_footer(value: object) -> str:
+def _managed_output_footer(value: object, *, capture_truncated: bool = False) -> str:
     managed = normalized_managed_output(value)
     if not managed:
         return ""
-    # sha256 below is always the STORED artifact hash. When the stored copy
-    # is truncated it no longer matches the full output, so the framing says
-    # receipt (not full output) and the footer also carries original_sha256
-    # (hash of the complete pre-cap bytes).
+    # sha256 below is always the STORED artifact hash. A capture-truncated
+    # run only saved an output receipt (head+tail), never the complete log,
+    # so the framing must say receipt even when the store itself did not
+    # truncate further. original_sha256 stays the hash of the stored text.
+    receipt = bool(managed["stored_truncated"] or capture_truncated)
     framing = (
-        "[full output retained locally: "
-        if not managed["stored_truncated"]
-        else "[output receipt retained locally: "
+        "[output receipt retained locally: "
+        if receipt
+        else "[full output retained locally: "
     )
     footer = (
         f"{framing}"
