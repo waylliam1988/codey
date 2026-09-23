@@ -8,6 +8,8 @@ module (never the reverse).
 
 from __future__ import annotations
 
+from codey.env_names import PROVIDER_WORKER_CHILD_ENV
+
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
@@ -27,7 +29,7 @@ PROVIDER_WORKER_PORT_OFFSETS = {
     "glm": 104,
     "stepfun": 105,
 }
-WORKER_CHILD_ENV = "CODEY_PROVIDER_WORKER_CHILD"
+WORKER_CHILD_ENV = PROVIDER_WORKER_CHILD_ENV
 
 
 def provider_ids() -> tuple[str, ...]:

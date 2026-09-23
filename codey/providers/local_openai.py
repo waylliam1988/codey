@@ -10,6 +10,15 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.env_names import (
+    LOCAL_OPENAI_API_KEY_ENV as LOCAL_API_KEY_ENV,
+)
+from codey.env_names import (
+    LOCAL_OPENAI_BASE_URL_ENV as LOCAL_BASE_URL_ENV,
+)
+from codey.env_names import (
+    LOCAL_OPENAI_MODEL_ENV as LOCAL_MODEL_ENV,
+)
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -26,9 +35,6 @@ LOCAL_BASE_URL_CANDIDATES = (
 )
 DEFAULT_TIMEOUT = 180
 DEFAULT_TEMPERATURE = 0.3
-LOCAL_BASE_URL_ENV = "CODEY_LOCAL_OPENAI_BASE_URL"
-LOCAL_MODEL_ENV = "CODEY_LOCAL_OPENAI_MODEL"
-LOCAL_API_KEY_ENV = "CODEY_LOCAL_OPENAI_API_KEY"
 _RESPONSE_PREVIEW_LIMIT = 400
 _RESPONSE_RETRIES = 1
 _CONFIG_FILE = "local-openai.json"

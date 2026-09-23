@@ -16,7 +16,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
             with mock.patch.dict(
                 browser.os.environ,
-                {browser.CODEY_BROWSER_PATH_ENV: str(chrome)},
+                {browser.BROWSER_PATH_ENV: str(chrome)},
             ):
                 found = browser._find_browser()
 

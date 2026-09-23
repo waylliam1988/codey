@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## Brand-free env names full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/env_names.py (NEW single source of truth)
+codey/agents/loop.py + research/native_bridge.py      (NATIVE_TOOLS)
+codey/automation/browser.py                            (BROWSER_PATH)
+codey/providers/local_openai.py                        (LOCAL_OPENAI_*)
+codey/providers/catalog.py + worker.py                 (PROVIDER_WORKER_CHILD, literal unified)
+codey/app/http_plumbing.py + codey/web/index.html      (__APP_VERSION__)
+tests/test_env_names.py (NEW lock test) + updated env/placeholder references
+```
+
+Renames are clean breaks with no legacy fallback (cold-start rule); the new
+lock test pins every value, asserts module constants match the single
+source, and scans the whole repo for `CODEY_` (exempt: itself,
+`env_names.py`, append-only CHANGELOG/TEST_REPORT history). Deliberately
+untouched: `codey` package/imports, CLI entry, `~/.codey` state home
+(needs a data-migration decision).
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: env lock, native delivery/agent, browser, providers,
+  adapter-repair, UI/server suites green.
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4056 passed, 6 skipped, 1333 subtests passed in 356.42s`).
+- No release.
+
 ## Delivery ledger retry + fail-closed chains full suite (2026-09-23)
 
 Scope (production, no release):

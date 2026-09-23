@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 from codey import __version__
+from codey.env_names import APP_VERSION_PLACEHOLDER
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 WEB_ASSET_DIR = WEB_DIR / "assets"
@@ -153,7 +154,7 @@ def _cached_file(path: Path, *, transform_name: str) -> _StaticCacheEntry:
             return cached
     body = path.read_bytes()
     if transform_name == "index":
-        body = body.decode("utf-8").replace("__CODEY_VERSION__", __version__).encode("utf-8")
+        body = body.decode("utf-8").replace(APP_VERSION_PLACEHOLDER, __version__).encode("utf-8")
     entry = _StaticCacheEntry(
         signature=signature,
         body=body,

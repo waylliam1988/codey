@@ -5,6 +5,7 @@ from pathlib import Path
 from codey.agents.loop import _run_loop, _setup_loop
 from codey.agents.request import AgentRequest
 from codey.agents.state import AgentLoopSession
+from codey.env_names import NATIVE_TOOLS_ENV
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import ToolOutcome
@@ -59,7 +60,7 @@ def _request(provider: FakeStructuredProvider, tmp_path: Path) -> AgentRequest:
 
 
 def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CODEY_NATIVE_TOOLS", "1")
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     provider = FakeStructuredProvider([
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_1", name="read", arguments={"path": "app.py"}),)),
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="call_2", name="done", arguments={"summary": "ok"}),)),

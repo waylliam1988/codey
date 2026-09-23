@@ -18,6 +18,7 @@ from urllib.parse import quote
 from urllib.request import urlopen
 
 from codey.automation.browser import DEFAULT_PORT
+from codey.providers.catalog import WORKER_CHILD_ENV
 from codey.providers.diagnostics import (
     FAILURE_RESPONSE_MISSING,
     ProviderActionError,
@@ -110,7 +111,7 @@ class WorkerChatProvider:
         env = dict(os.environ)
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(self.override.root) + (os.pathsep + existing if existing else "")
-        env["CODEY_PROVIDER_WORKER_CHILD"] = "1"
+        env[WORKER_CHILD_ENV] = "1"
         # Stable per-provider browser profile: the generation identifies the
         # code override, not the browser identity, so one manual login keeps
         # every later override generation usable without re-auth prompts.

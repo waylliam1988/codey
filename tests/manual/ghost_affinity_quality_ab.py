@@ -26,6 +26,7 @@ import contextlib
 from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.env_names import PROVIDER_CDP_PORT_ENV
 from codey.ghost.hebbian import GhostNode
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
@@ -395,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
-    os.environ["CODEY_PROVIDER_CDP_PORT"] = str(args.port)
+    os.environ[PROVIDER_CDP_PORT_ENV] = str(args.port)
     if args.self_test:
         payload = run_cases(args.provider, provider_factory=lambda _pid: _StubProvider(), output=args.output)
     else:

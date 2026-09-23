@@ -1008,12 +1008,13 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
         self.assertEqual(worker.call_args.args[1], fake_override)
 
     def test_registry_worker_child_env_uses_builtin_provider(self) -> None:
+        from codey.env_names import PROVIDER_WORKER_CHILD_ENV
         from codey.providers import registry
 
         provider_type = mock.Mock()
         provider_type.connect.return_value = "builtin"
         with (
-            mock.patch.dict("os.environ", {"CODEY_PROVIDER_WORKER_CHILD": "1"}),
+            mock.patch.dict("os.environ", {PROVIDER_WORKER_CHILD_ENV: "1"}),
             mock.patch.object(registry, "PROVIDER_TYPES", {"qwen": provider_type}),
             mock.patch.object(registry, "load_enabled_override") as load_override,
         ):

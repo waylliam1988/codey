@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.env_names import RUN_BROWSER_E2E_ENV
 from tools.ui_e2e import _save_screenshot, run_ui_e2e
 
 
@@ -26,8 +27,8 @@ class UiBrowserE2ETests(unittest.TestCase):
             self.assertIn("TimeoutError", marker.read_text(encoding="utf-8"))
 
     def test_complete_project_flow_in_real_edge(self) -> None:
-        if os.environ.get("CODEY_RUN_BROWSER_E2E") != "1":
-            self.skipTest("real browser E2E is opt-in via CODEY_RUN_BROWSER_E2E=1")
+        if os.environ.get(RUN_BROWSER_E2E_ENV) != "1":
+            self.skipTest(f"real browser E2E is opt-in via {RUN_BROWSER_E2E_ENV}=1")
         with tempfile.TemporaryDirectory() as artifacts:
             result = run_ui_e2e(artifacts=artifacts)
 

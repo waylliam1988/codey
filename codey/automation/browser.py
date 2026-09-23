@@ -22,6 +22,7 @@ from urllib.request import urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
+from codey.env_names import BROWSER_PATH_ENV
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
@@ -65,7 +66,6 @@ CHROME_PATHS = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
-CODEY_BROWSER_PATH_ENV = "CODEY_BROWSER_PATH"
 
 _active_cdp_port: int | None = None
 _CDP_PORT_LOCK = threading.Lock()
@@ -89,7 +89,7 @@ def _browser_profile(kind: str) -> Path:
 
 
 def _find_browser() -> BrowserExecutable:
-    configured = os.environ.get(CODEY_BROWSER_PATH_ENV, "").strip().strip('"')
+    configured = os.environ.get(BROWSER_PATH_ENV, "").strip().strip('"')
     if configured:
         path = Path(configured)
         if path.is_file():
@@ -97,7 +97,7 @@ def _find_browser() -> BrowserExecutable:
             kind = "chrome" if "chrome" in name and "edge" not in name else "edge"
             return BrowserExecutable(path, kind, _browser_profile(kind))
         raise FileNotFoundError(
-            f"{CODEY_BROWSER_PATH_ENV} points to a missing browser executable: {configured}"
+            f"{BROWSER_PATH_ENV} points to a missing browser executable: {configured}"
         )
     for p in EDGE_PATHS:
         path = Path(p)
@@ -114,7 +114,7 @@ def _find_browser() -> BrowserExecutable:
             return BrowserExecutable(path, "chrome", CHROME_PROFILE)
     raise FileNotFoundError(
         "Could not find Microsoft Edge or Google Chrome. Install one of them, "
-        f"or set {CODEY_BROWSER_PATH_ENV} to the browser executable."
+        f"or set {BROWSER_PATH_ENV} to the browser executable."
     )
 
 

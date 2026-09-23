@@ -79,7 +79,7 @@ class HttpPlumbingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             web_dir = Path(td)
             (web_dir / "index.html").write_text(
-                "<html>__CODEY_VERSION__</html>",
+                "<html>__APP_VERSION__</html>",
                 encoding="utf-8",
             )
             with mock.patch.object(http_plumbing, "WEB_DIR", web_dir):
@@ -92,7 +92,7 @@ class HttpPlumbingTests(unittest.TestCase):
         self.assertEqual(first.status, 200)
         self.assertEqual(first.sent_headers["Cache-Control"], "no-cache")
         self.assertIn(__version__.encode("utf-8"), first.wfile.getvalue())
-        self.assertNotIn(b"__CODEY_VERSION__", first.wfile.getvalue())
+        self.assertNotIn(b"__APP_VERSION__", first.wfile.getvalue())
         self.assertEqual(second.status, 304)
         self.assertEqual(second.sent_headers["Cache-Control"], "no-cache")
         self.assertEqual(second.wfile.getvalue(), b"")

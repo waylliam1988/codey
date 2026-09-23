@@ -12,13 +12,15 @@ from collections import deque
 from dataclasses import replace
 from typing import Any
 
+from codey.env_names import NATIVE_TOOLS_ENV
+
 _RESEARCH_ATTEMPT_WINDOW = 24
 
 
 def use_native_provider(provider: Any, provider_id: str = "") -> bool:
     if not (callable(getattr(provider, "send_turn", None)) and callable(getattr(provider, "send_tool_results", None))):
         return False
-    if os.environ.get("CODEY_NATIVE_TOOLS", "").strip() == "1":
+    if os.environ.get(NATIVE_TOOLS_ENV, "").strip() == "1":
         return True
     try:
         from codey.providers.capabilities import capability_for

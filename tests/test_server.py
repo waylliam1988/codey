@@ -1725,7 +1725,7 @@ class WebAssetTests(unittest.TestCase):
             thread.join(timeout=5)
 
         self.assertEqual(response.status, 200)
-        self.assertNotIn("__CODEY_VERSION__", body)
+        self.assertNotIn("__APP_VERSION__", body)
         self.assertIn(f"?v={server.__version__}", body)
 
     def test_runtime_version_matches_release_docs(self) -> None:

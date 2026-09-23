@@ -17,7 +17,7 @@ HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
 INLINE_STYLE_LINE_BUDGET = 0
 INLINE_SCRIPT_LINE_BUDGET = 1650
 
-VERSION_SUFFIX = "?v=__CODEY_VERSION__"
+VERSION_SUFFIX = "?v=__APP_VERSION__"
 
 ASSET_REFS = re.findall(r'(?:src|href)="(/assets/[^"]+)"', HTML)
 INLINE_SCRIPTS = re.findall(r"<script(?![^>]*src)[^>]*>(.*?)</script>", HTML, re.S)

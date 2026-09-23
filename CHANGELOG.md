@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Brand-free env names with lock test (no release)
+
+- BREAKING (env only, no compat shim): all `CODEY_`-prefixed names are
+  gone. New `codey/env_names.py` is the single source of truth:
+  `NATIVE_TOOLS`, `BROWSER_PATH`, `LOCAL_OPENAI_{BASE_URL,MODEL,API_KEY}`,
+  `PROVIDER_WORKER_CHILD`, `PROVIDER_CDP_PORT`, `RUN_BROWSER_E2E`, and the
+  web placeholder `__APP_VERSION__` (was `__CODEY_VERSION__`).
+- New `tests/test_env_names.py` pins every value, asserts each module
+  constant matches the single source, and scans the whole repo for any new
+  `CODEY_` occurrence (only itself, `env_names.py`, and append-only history
+  docs are exempt).
+- Deliberately NOT renamed in this batch: the `codey` package/imports, the
+  `codey` CLI entry point, and the `~/.codey` state home (renaming the state
+  dir needs a data-migration decision first).
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`4056 passed, 6 skipped, 1333 subtests passed`).
+
 ## Unreleased - Delivery ledger: not-sent retry, lazy fallback, fail-closed chains (no release)
 
 - P0: the delivery ledger can now express "deterministically unsent, safe to

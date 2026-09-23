@@ -7,6 +7,7 @@ from codey.agents.request import AgentRequest
 from codey.agents.result_delivery import deliver_recovered_results, deliver_turn_results
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState, record_tool_outcome
+from codey.env_names import NATIVE_TOOLS_ENV
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.error_classification import ContextOverflowError
 from codey.runtime.core.models import ToolCall
@@ -87,7 +88,7 @@ def _request(provider, tmp_path: Path, **extra) -> AgentRequest:
 
 
 def test_native_delivery_records_effect_and_batch(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CODEY_NATIVE_TOOLS", "1")
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     mutations = FakeMutations()
     provider = FakeStructuredProvider([
         AssistantTurn(text="", tool_calls=(ProviderToolCall(id="c9", name="done", arguments={"summary": "ok"}),)),
@@ -118,7 +119,7 @@ def test_native_delivery_records_effect_and_batch(monkeypatch, tmp_path: Path) -
 
 
 def test_native_overflow_falls_back_to_text(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CODEY_NATIVE_TOOLS", "1")
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
 
     class OverflowProvider(FakeStructuredProvider):
         def __init__(self) -> None:
@@ -147,7 +148,7 @@ def test_native_overflow_falls_back_to_text(monkeypatch, tmp_path: Path) -> None
 
 
 def test_native_protocol_error_answers_chain(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("CODEY_NATIVE_TOOLS", "1")
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     provider = FakeStructuredProvider([
         AssistantTurn(text="", tool_calls=(
             ProviderToolCall(id="c1", name="read", arguments={"path": "app.py", "offset": "nope"}),
@@ -206,7 +207,7 @@ def test_research_bridge_protocol_error() -> None:
 
 
 def _strict_ledger_session(provider, tmp_path: Path, monkeypatch) -> AgentLoopSession:
-    monkeypatch.setenv("CODEY_NATIVE_TOOLS", "1")
+    monkeypatch.setenv(NATIVE_TOOLS_ENV, "1")
     state_dir = tmp_path / "state"
     log = RuntimeSessionLog(state_dir)
     line = RuntimeMutationLine(log)

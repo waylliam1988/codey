@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 去品牌环境变量名 + 锁测试（未发布）
+
+- BREAKING（仅环境变量，无兼容垫片）：所有 `CODEY_` 前缀全部去掉。
+  新增 `codey/env_names.py` 为唯一来源：`NATIVE_TOOLS`、
+  `BROWSER_PATH`、`LOCAL_OPENAI_{BASE_URL,MODEL,API_KEY}`、
+  `PROVIDER_WORKER_CHILD`、`PROVIDER_CDP_PORT`、`RUN_BROWSER_E2E`，
+  以及 web 占位符 `__APP_VERSION__`（原 `__CODEY_VERSION__`）。
+- 新增 `tests/test_env_names.py`：钉死每个取值、断言各模块常量与单一
+  来源一致、全仓扫描杜绝新增 `CODEY_`（仅自身、`env_names.py` 和只
+  追加的历史文档豁免）。
+- 本批刻意不动：`codey` 包名/import、`codey` CLI 入口、`~/.codey`
+  状态目录（改状态目录需要先定数据迁移方案）。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4056 passed, 6 skipped, 1333 subtests passed`）。
+
 ## Unreleased - Delivery 账本：not-sent 重试、lazy fallback、fail-closed 链（未发布）
 
 - P0：账本现在能表达“确定没发出去，可以重试”。新增
