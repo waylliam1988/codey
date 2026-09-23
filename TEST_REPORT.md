@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## Env-aware bootstrap + quiet-when-connected + strict overrides full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/local_config.py       (env key/base fallback; candidates only when unconnected;
+                                       reserve/keep without window -> 400)
+tests/test_local_bootstrap.py         (env fallback, try-buttons gating, good-reserve-no-window 400)
+```
+
+Notes:
+
+- An env-only API key no longer reads as unreachable in the settings
+  panel; the remembered probe and the single parallel pass share one
+  `config-or-env` key, and the remembered address falls back to
+  `LOCAL_OPENAI_BASE_URL`. `has_api_key` is the same union.
+- Try-buttons appear only while unconnected. A live endpoint stands
+  alone; no dead URL button sits next to it to mislead a novice click.
+- A good `reserve`/`keep` without a `window` fails loudly instead of
+  returning success while keeping the old context.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: bootstrap/native/coldstart/research/connector/deep-ab/abab/
+  noab/server/architecture suites green (incl. 2 new bootstrap tests).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4104 passed, 6 skipped, 1341 subtests passed in 368.78s`).
+- No release.
+
 ## Strict context fields + serial-by-default + single-pass bootstrap full suite (2026-09-24)
 
 Scope (production, no release):

@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - env 感知 bootstrap、连接后安静、严格 override（未发布）
+
+- P1：bootstrap 认 env。`local_bootstrap_payload()` 无存储地址时回落
+  `LOCAL_OPENAI_BASE_URL`，探测统一用
+  `config.api_key or LOCAL_OPENAI_API_KEY`，纯 env key 不再显示不可用；
+  `has_api_key` 同取并集。
+- P2：连上就不打扰。candidates（未达已知 URL 的 try-button）只在未连接
+  时出现；live endpoint 旁边不再挂死地址按钮。
+- P2：override 必须带 window。无 `context_window_tokens` 却传
+  `reserve`/`keep` 直接 400，不再假成功静默保持旧值。
+- 测试：env key/base 回落（+`has_api_key`）、仅未连接时 try-button、
+  好 `reserve` 无 window 的 400。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4104 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - 严格 context 字段、默认 serial、canonical 提示、单轮探测（未发布）
 
 - P1：context 三字段同一严格规则。新增

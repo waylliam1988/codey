@@ -359,6 +359,13 @@ def test_parse_update_rejects_non_numeric_reserve_and_keep() -> None:
     )
     assert bad_alone is None
     assert "context_reserve_tokens" in alone_error
+    # A good reserve/keep without a window is also a 400, not a silent no-op.
+    good_alone, good_error = parse_local_config_update(
+        {"base_url": "http://127.0.0.1:11434/v1", "model": "m", "context_reserve_tokens": "4096"},
+        previous,
+    )
+    assert good_alone is None
+    assert "context_window_tokens required" in good_error
 
 
 def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
@@ -454,4 +461,61 @@ def test_bootstrap_single_parallel_pass_when_remembered_misses() -> None:
     assert pass_calls == ["pass"]
     assert payload["connected"] is True
     assert payload["base_url"] == live.base_url
-    assert payload["candidates"] == ["http://127.0.0.1:1234/v1"]
+    # Connected: no dead try-buttons next to the live endpoint.
+    assert payload["candidates"] == []
+
+
+def test_bootstrap_offers_try_buttons_only_when_unconnected() -> None:
+    from codey.providers import local_config as canonical
+    from codey.providers.local_discovery import LocalEndpointCandidate, LocalEndpointProbe
+
+    candidates = (
+        LocalEndpointCandidate("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1"),
+        LocalEndpointCandidate("ollama", "Ollama", "http://127.0.0.1:11434/v1"),
+    )
+
+    def fake_pass(*, api_key: str = "", timeout: float = 0.6, max_workers: int = 4) -> list[LocalEndpointProbe]:
+        del api_key, timeout, max_workers
+        return [
+            LocalEndpointProbe(candidate=candidates[0], endpoint=None, reason="unreachable"),
+            LocalEndpointProbe(candidate=candidates[1], endpoint=None, reason="unreachable"),
+        ]
+
+    config = canonical.LocalProviderConfig(base_url="http://127.0.0.1:9/v1", model="", api_key="")
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
+        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", side_effect=fake_pass),
+    ):
+        payload = canonical.local_bootstrap_payload()
+    assert payload["connected"] is False
+    assert payload["candidates"] == ["http://127.0.0.1:1234/v1", "http://127.0.0.1:11434/v1"]
+
+
+def test_bootstrap_falls_back_to_env_key_and_base(monkeypatch) -> None:
+    from codey.providers import local_config as canonical
+    from codey.providers.local_discovery import LocalEndpoint
+
+    monkeypatch.setenv("LOCAL_OPENAI_API_KEY", "env-key")
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
+    live = LocalEndpoint("http://127.0.0.1:8080/v1", ("env-model",))
+    seen: dict[str, str] = {}
+
+    def fake_probe(base_url: str, *, api_key: str = "") -> LocalEndpoint | None:
+        seen["base_url"] = base_url
+        seen["api_key"] = api_key
+        return live if base_url == live.base_url else None
+
+    config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch("codey.providers.local_discovery.probe_local_endpoint", side_effect=fake_probe),
+        mock.patch(
+            "codey.providers.local_discovery.detect_local_endpoint_probes",
+            side_effect=AssertionError("env hit must skip the parallel pass"),
+        ),
+    ):
+        payload = canonical.local_bootstrap_payload()
+    assert seen == {"base_url": live.base_url, "api_key": "env-key"}
+    assert payload["connected"] is True
+    assert payload["has_api_key"] is True

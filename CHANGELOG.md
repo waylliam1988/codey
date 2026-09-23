@@ -2,6 +2,26 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Env-aware bootstrap, quiet-when-connected, strict overrides (no release)
+
+- P1: bootstrap honors env config. `local_bootstrap_payload()` falls back
+  to `LOCAL_OPENAI_BASE_URL` when no base URL is stored and probes with
+  `config.api_key or LOCAL_OPENAI_API_KEY`, so an env-only key no longer
+  shows local as unreachable; `has_api_key` reflects the same union.
+- P2: connected means quiet. Candidates (unreachable known URLs as
+  try-buttons) render only while unconnected; a live endpoint no longer
+  sits next to a dead URL button.
+- P2: overrides need a window. `reserve`/`keep` without
+  `context_window_tokens` is a `400`
+  (`context_window_tokens required when overriding ...`) instead of a
+  fake success that silently keeps the old context.
+- Tests: env key/base fallback (+`has_api_key`), try-buttons only when
+  unconnected, good-`reserve`-without-`window` 400.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4104 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - Strict context fields, serial-by-default, canonical hint, single-pass bootstrap (no release)
 
 - P1: context fields share one strict rule. New

@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from codey.env_names import (
+    LOCAL_OPENAI_API_KEY_ENV,
+    LOCAL_OPENAI_BASE_URL_ENV,
     LOCAL_OPENAI_CONTEXT_KEEP_ENV,
     LOCAL_OPENAI_CONTEXT_RESERVE_ENV,
     LOCAL_OPENAI_CONTEXT_WINDOW_ENV,
@@ -289,6 +291,11 @@ def parse_local_config_update(
     keep, keep_error = _parse_optional_positive_int_field(body, "context_keep_recent_tokens")
     if keep_error:
         return None, keep_error
+    if window is None and (reserve is not None or keep is not None):
+        return None, (
+            "context_window_tokens required when overriding "
+            "context_reserve_tokens or context_keep_recent_tokens"
+        )
     context = previous.context
     if window is not None:
         preset = context_budget_for_window(window)
@@ -401,9 +408,12 @@ def local_bootstrap_payload() -> dict:
     try:
         from codey.providers import local_discovery as discovery
 
-        remembered = config.base_url.strip()
+        env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
+        probe_key = config.api_key or env_key
+        env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+        remembered = config.base_url.strip() or env_base
         endpoint = (
-            discovery.probe_local_endpoint(remembered, api_key=config.api_key)
+            discovery.probe_local_endpoint(remembered, api_key=probe_key)
             if remembered
             else None
         )
@@ -417,11 +427,15 @@ def local_bootstrap_payload() -> dict:
         if endpoint is not None:
             discovered: list[str] = []
         else:
-            # Single parallel pass: first reachable endpoint plus the
-            # unreachable candidates for the UI to offer.
-            probes = discovery.detect_local_endpoint_probes(api_key=config.api_key)
+            # Single parallel pass: first reachable endpoint plus, only when
+            # still unconnected, the unreachable candidates as try-buttons.
+            probes = discovery.detect_local_endpoint_probes(api_key=probe_key)
             endpoint = next((probe.endpoint for probe in probes if probe.endpoint is not None), None)
-            discovered = [probe.candidate.base_url for probe in probes if probe.endpoint is None]
+            discovered = (
+                []
+                if endpoint is not None
+                else [probe.candidate.base_url for probe in probes if probe.endpoint is None]
+            )
     except Exception:
         endpoint = None
         discovered = []
@@ -437,7 +451,7 @@ def local_bootstrap_payload() -> dict:
         "model": effective.model,
         "models": models,
         "candidates": discovered,
-        "has_api_key": bool(config.api_key),
+        "has_api_key": bool(config.api_key or os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()),
         "native_tools_mode": config.native_tools_mode,
         "native_tools": effective.native_tools,
         "context": asdict(effective.context),
