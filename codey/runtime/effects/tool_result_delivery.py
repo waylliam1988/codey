@@ -4,8 +4,10 @@ The session log is the durable fact source. This module records bounded receipts
 around the delivery of tool results to model providers:
 1. batch_intent: recorded before tool execution in a turn, capturing all planned results
 2. send_attempt: recorded when a provider send effect starts
-3. delivered: recorded when the provider request settles successfully
-4. recovered: recorded when safe results are reconstructed on resume
+3. send_superseded: voids a prior attempt that deterministically sent nothing
+   usable (e.g. a context-overflow rejection), allowing one live retry
+4. delivered: recorded when the provider request settles successfully
+5. recovered: recorded when safe results are reconstructed on resume
 
 Strictly bounded: never records raw result text, prompts, replies, stdout,
 stderr, diffs, or source bodies.
@@ -36,10 +38,12 @@ EFFECT_KIND = "tool_result_delivery"
 
 RECORD_KIND_BATCH_INTENT = "batch_intent"
 RECORD_KIND_SEND_ATTEMPT = "send_attempt"
+RECORD_KIND_SEND_SUPERSEDED = "send_superseded"
 RECORD_KIND_DELIVERED = "delivered"
 RECORD_KINDS = frozenset({
     RECORD_KIND_BATCH_INTENT,
     RECORD_KIND_SEND_ATTEMPT,
+    RECORD_KIND_SEND_SUPERSEDED,
     RECORD_KIND_DELIVERED,
     RECORD_KIND_RECOVERED,
 })
@@ -108,6 +112,20 @@ _SEND_ATTEMPT_PAYLOAD_KEYS = frozenset({
 })
 
 _DELIVERED_PAYLOAD_KEYS = frozenset({
+    "schema_version",
+    "effect_kind",
+    "record_kind",
+    "ref",
+    "batch_id",
+    "session_id",
+    "run_id",
+    "lane",
+    "operation_id",
+    "provider_effect_id",
+    "created_at",
+})
+
+_SEND_SUPERSEDED_PAYLOAD_KEYS = frozenset({
     "schema_version",
     "effect_kind",
     "record_kind",
@@ -374,12 +392,19 @@ class DeliveryRecoveredFact:
 class DeliveryBatchProjection:
     intent: DeliveryBatchIntent
     send_attempts: tuple[str, ...] = ()
+    superseded_effect_ids: tuple[str, ...] = ()
     delivered_effect_ids: tuple[str, ...] = ()
     is_delivered: bool = False
     recovered_effect_ids: tuple[str, ...] = ()
     recovered_reads: int = 0
     recovered_lookups: int = 0
     is_recovered: bool = False
+
+    @property
+    def active_attempts(self) -> tuple[str, ...]:
+        """Send attempts not voided by a send_superseded record."""
+        voided = set(self.superseded_effect_ids)
+        return tuple(eid for eid in self.send_attempts if eid not in voided)
 
     @property
     def is_all_safe(self) -> bool:
@@ -394,10 +419,14 @@ class DeliveryBatchProjection:
 
     @property
     def can_recover_before_provider_send(self) -> bool:
-        """True only if entire batch is all-safe, never delivered, and zero send attempts."""
+        """True only if entire batch is all-safe, never delivered, and no live send attempt.
+
+        Attempts voided by send_superseded (deterministically unsent, e.g. a
+        context-overflow rejection) do not block recovery.
+        """
         return (
             not self.is_delivered
-            and not bool(self.send_attempts)
+            and not bool(self.active_attempts)
             and self.is_all_safe
         )
 
@@ -476,8 +505,8 @@ def send_attempt_entry(
         raise ToolResultDeliveryError(f"cannot record send_attempt for delivered batch: {clean_batch_id!r}")
     if clean_peid in projection.send_attempts:
         return None
-    if projection.send_attempts:
-        raise ToolResultDeliveryError(f"batch already has a send_attempt: {clean_batch_id!r}")
+    if projection.active_attempts:
+        raise ToolResultDeliveryError(f"batch already has a live send_attempt: {clean_batch_id!r}")
     payload = {
         "schema_version": SCHEMA_VERSION,
         "effect_kind": EFFECT_KIND,
@@ -492,6 +521,50 @@ def send_attempt_entry(
         "created_at": datetime.now(UTC).isoformat(),
     }
     _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def send_superseded_entry(
+    session_id: str,
+    run_id: str,
+    *,
+    batch_id: str,
+    provider_effect_id: str,
+    batches: tuple[DeliveryBatchProjection, ...],
+) -> dict[str, object] | None:
+    """Void a prior send_attempt that deterministically sent nothing usable.
+
+    Returns None when already voided (idempotent). Raises when the batch is
+    unknown, already delivered, or the effect id was never attempted: a void
+    must name a real, live attempt, otherwise the ledger could hide a send.
+    """
+    clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+    clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
+    projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
+    if projection is None:
+        raise ToolResultDeliveryError(f"cannot record send_superseded for unknown batch: {clean_batch_id!r}")
+    if projection.is_delivered:
+        raise ToolResultDeliveryError(f"cannot record send_superseded for delivered batch: {clean_batch_id!r}")
+    if clean_peid in projection.superseded_effect_ids:
+        return None
+    if clean_peid not in projection.send_attempts:
+        raise ToolResultDeliveryError(
+            f"cannot record send_superseded without matching send_attempt: {clean_batch_id!r}"
+        )
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "effect_kind": EFFECT_KIND,
+        "record_kind": RECORD_KIND_SEND_SUPERSEDED,
+        "ref": f"delivery_superseded:{clean_batch_id}:{clean_peid}",
+        "batch_id": clean_batch_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "lane": lane_for_run(run_id),
+        "operation_id": operation_id_for_run(run_id),
+        "provider_effect_id": clean_peid,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_SUPERSEDED, _SEND_SUPERSEDED_PAYLOAD_KEYS)
     return delivery_record_entry(payload)
 
 
@@ -512,9 +585,9 @@ def delivered_entry(
         return None
     if projection.delivered_effect_ids:
         raise ToolResultDeliveryError(f"batch already has a delivered receipt: {clean_batch_id!r}")
-    if clean_peid not in projection.send_attempts:
+    if clean_peid not in projection.active_attempts:
         raise ToolResultDeliveryError(
-            f"cannot record delivered without matching send_attempt: {clean_batch_id!r}"
+            f"cannot record delivered without matching live send_attempt: {clean_batch_id!r}"
         )
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -614,6 +687,10 @@ def iter_delivery_records_from_entries(
             _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
             peid = payload.get("provider_effect_id")
             _require_bounded_str(peid, "provider_effect_id in send_attempt", MAX_EFFECT_ID_CHARS)
+        elif rkind == RECORD_KIND_SEND_SUPERSEDED:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_SUPERSEDED, _SEND_SUPERSEDED_PAYLOAD_KEYS)
+            peid = payload.get("provider_effect_id")
+            _require_bounded_str(peid, "provider_effect_id in send_superseded", MAX_EFFECT_ID_CHARS)
         elif rkind == RECORD_KIND_DELIVERED:
             _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
             peid = payload.get("provider_effect_id")
@@ -640,6 +717,7 @@ def batches_from_entries(
     intents: dict[str, DeliveryBatchIntent] = {}
     ordered_batch_ids: list[str] = []
     send_attempts: dict[str, list[str]] = {}
+    superseded: dict[str, list[str]] = {}
     delivered: dict[str, list[str]] = {}
     recovered_facts: dict[str, dict[str, Any]] = {}
 
@@ -688,6 +766,9 @@ def batches_from_entries(
         elif rkind == RECORD_KIND_SEND_ATTEMPT:
             send_attempts.setdefault(batch_id, []).append(payload["provider_effect_id"])
 
+        elif rkind == RECORD_KIND_SEND_SUPERSEDED:
+            superseded.setdefault(batch_id, []).append(payload["provider_effect_id"])
+
         elif rkind == RECORD_KIND_DELIVERED:
             delivered.setdefault(batch_id, []).append(payload["provider_effect_id"])
 
@@ -709,19 +790,31 @@ def batches_from_entries(
         raise ToolResultDeliveryError(
             f"orphan send_attempt records without corresponding batch_intent: {orphan_attempts}"
         )
+    orphan_superseded = set(superseded.keys()) - known_intent_ids
+    if orphan_superseded:
+        raise ToolResultDeliveryError(
+            f"orphan send_superseded records without corresponding batch_intent: {orphan_superseded}"
+        )
     orphan_delivered = set(delivered.keys()) - known_intent_ids
     if orphan_delivered:
         raise ToolResultDeliveryError(
             f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
         )
+    for bid, voided in superseded.items():
+        attempted = set(send_attempts.get(bid, ()))
+        unknown = [peid for peid in voided if peid not in attempted]
+        if unknown:
+            raise ToolResultDeliveryError(
+                f"send_superseded records without matching send_attempt: {bid!r}: {unknown}"
+            )
     conflicting_attempts = {
         bid: ids
         for bid, ids in send_attempts.items()
-        if len(ids) != 1 or len(set(ids)) != 1
+        if len([peid for peid in ids if peid not in set(superseded.get(bid, ()))]) > 1
     }
     if conflicting_attempts:
         raise ToolResultDeliveryError(
-            f"batch has conflicting send_attempt records: {conflicting_attempts}"
+            f"batch has conflicting live send_attempt records: {conflicting_attempts}"
         )
     conflicting_delivered = {
         bid: ids
@@ -747,6 +840,7 @@ def batches_from_entries(
     for bid in ordered_batch_ids:
         intent = intents[bid]
         attempts = tuple(send_attempts.get(bid, ()))
+        voided = tuple(s for s in superseded.get(bid, ()) if s in set(attempts))
         delivered_ids = tuple(delivered.get(bid, ()))
         rec = recovered_facts.get(bid)
 
@@ -754,6 +848,7 @@ def batches_from_entries(
             DeliveryBatchProjection(
                 intent=intent,
                 send_attempts=attempts,
+                superseded_effect_ids=voided,
                 delivered_effect_ids=delivered_ids,
                 is_delivered=bool(delivered_ids),
                 recovered_effect_ids=tuple(rec.get("recovered_effect_ids", ())) if rec else (),
@@ -853,6 +948,7 @@ __all__ = [
     "RECORD_KIND_DELIVERED",
     "RECORD_KIND_RECOVERED",
     "RECORD_KIND_SEND_ATTEMPT",
+    "RECORD_KIND_SEND_SUPERSEDED",
     "RECORD_KINDS",
     "DeliveryBatchItem",
     "DeliveryBatchIntent",
@@ -871,4 +967,5 @@ __all__ = [
     "prepare_batch_intent",
     "recovered_entry",
     "send_attempt_entry",
+    "send_superseded_entry",
 ]

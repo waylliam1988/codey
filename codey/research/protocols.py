@@ -148,6 +148,18 @@ class JsonToolCodec:
 
     def parse_turn(self, turn: object, *, max_calls: int = MAX_NATIVE_CALLS_PER_TURN) -> ToolPlan:
         tool_calls = list(getattr(turn, "tool_calls", ()) or ())
+        if len(tool_calls) > max(1, max_calls):
+            # Same chain rule as coding: never drop the tail silently; fail
+            # the turn so the synthetic-error path answers every call id.
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many native tool calls in one turn ({len(tool_calls)}); "
+                    f"send at most {max(1, max_calls)}"
+                ),
+                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
+            )
         if tool_calls:
             known_tools = _known_tool_names(self.include_source_search)
             calls: list[ToolCall] = []

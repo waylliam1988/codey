@@ -26,6 +26,7 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.effects.tool_result_delivery import (
     delivered_entry,
     send_attempt_entry,
+    send_superseded_entry,
 )
 from codey.runtime.log.session_view import (
     SessionView,
@@ -44,6 +45,7 @@ def build_provider_begin_rows(
     intent: RuntimeEffectIntent,
     driver: str = "",
     delivery_batch_id: str = "",
+    supersede_effect_id: str = "",
 ) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
     state = require_open_view(projection, view)
     prepared = prepare_intent(session_id, run_id, intent)
@@ -52,6 +54,27 @@ def build_provider_begin_rows(
     batches = view.batches
     rows = [effect_intent_entry(prepared)]
     if delivery_batch_id:
+        if supersede_effect_id:
+            voided = send_superseded_entry(
+                session_id,
+                run_id,
+                batch_id=delivery_batch_id,
+                provider_effect_id=supersede_effect_id,
+                batches=batches,
+            )
+            if voided is not None:
+                rows.append(voided)
+            from dataclasses import replace as _replace
+
+            batches = tuple(
+                _replace(
+                    batch,
+                    superseded_effect_ids=(*batch.superseded_effect_ids, supersede_effect_id),
+                )
+                if batch.intent.batch_id == delivery_batch_id
+                else batch
+                for batch in batches
+            )
         attempt = send_attempt_entry(
             session_id,
             run_id,

@@ -55,8 +55,22 @@ class NativeOpenAIToolCodec:
 
     def parse_turn(self, turn: AssistantTurn) -> ToolPlan:
         calls: list[ToolCall] = []
-        if turn.tool_calls:
-            for item in turn.tool_calls[: tool_defs.MAX_ACCIDENTAL_TOOL_CALLS]:
+        raw_calls = list(turn.tool_calls or ())
+        if len(raw_calls) > tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
+            # Never silently drop the tail: every call id needs an answer to
+            # keep the provider chain legal, so fail the whole turn and let
+            # the synthetic-error path answer all ids at once.
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many native tool calls in one turn ({len(raw_calls)}); "
+                    f"send at most {tool_defs.MAX_ACCIDENTAL_TOOL_CALLS}"
+                ),
+                protocol_error_kind="too_many_tools",
+            )
+        if raw_calls:
+            for item in raw_calls:
                 plan = self._parse_native_call(item.name, item.arguments, item.id)
                 if plan.protocol_error:
                     return plan

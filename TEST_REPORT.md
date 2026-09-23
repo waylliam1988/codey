@@ -1,5 +1,44 @@
 # Codey Test Report
 
+## Delivery ledger retry + fail-closed chains full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/runtime/effects/tool_result_delivery.py  (send_superseded kind, active-attempt rules)
+codey/runtime/effects/effect_records.py        (SENT_STATE_NOT_SENT)
+codey/runtime/write/provider_effects.py + mutation_line.py  (supersede_effect_id)
+codey/runtime/log/session_view.py              (pending_for joins batch by effect id)
+codey/agents/prompt_context.py                 (not-sent settle, supersede on 3 retry sites)
+codey/agents/result_delivery.py                (lazy fallback, recovered batch id)
+codey/protocols/native_openai.py + research/protocols.py   (too_many_tools whole-turn fail)
+codey/providers/local_openai.py                (malformed tool_calls fail closed)
+tests/test_native_delivery.py                  (7 new: strict overflow, recovered, rows, max+1, malformed, 2 ledger)
+```
+
+Findings while building (all fixed, all with regression coverage):
+
+- Strict-ledger overflow test first failed on `delivered`: attempts were
+  (2 attempts, 1 voided) but no delivered receipt. Root cause is one layer
+  deeper than the finding -- `pending_for` joined the batch by operation
+  turn while provider intents carry the monotonic send counter, so every
+  delivery after a run's first send missed its batch. Fixed the join to use
+  the (unique) effect id; existing delivery/reducer/recovery suites still
+  green, and previously receipt-less multi-send flows now record delivered.
+- Text-path `send_prompt` had the same latent second-attempt conflict on
+  overflow; it now supersedes through the same mechanism.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean), size ceilings hold (runner 1356, runtime 1239).
+- Targeted: native delivery/research/ABAB/ledger/reducer/recovery/agent
+  suites green (incl. JSON golden byte-identical).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4052 passed, 6 skipped, 1323 subtests passed in 350.83s`).
+- Native stays off by default (`CODEY_NATIVE_TOOLS=1` for Ollama/Qwen trials).
+- No release.
+
 ## Native chain hardening full suite (2026-09-23)
 
 Scope (production, no release):

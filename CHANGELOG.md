@@ -2,6 +2,37 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Delivery ledger: not-sent retry, lazy fallback, fail-closed chains (no release)
+
+- P0: the delivery ledger can now express "deterministically unsent, safe to
+  retry". New `send_superseded` record voids a prior attempt atomically with
+  the retry's new attempt; provider settlements gain `SENT_STATE_NOT_SENT`
+  (used for `ContextOverflowError`, vs `MAYBE_SENT` otherwise); recovery
+  treats superseded-only batches as never sent. While wiring this, found and
+  fixed the deeper cause of missing `delivered` receipts: `pending_for`
+  joined batches by operation turn while provider intents carry the send
+  counter, so every delivery after the first send of a run missed its batch;
+  the join is now by effect id (unique by construction).
+- P0: overflow retries reuse the same batch legally -- the failed effect id
+  travels on the overflow error into `supersede_effect_id`, recorded
+  atomically with the retry attempt. Covered by a strict-ledger test (real
+  session log + mutation line): 2 attempts, 1 voided, delivered on the retry.
+- P1: recovered native delivery passes `delivery_batch_id` and real fallback
+  text (was silently receipt-less); test asserts `is_delivered`.
+- P1: native fallback text is lazy (`str | Callable[[], str]`) -- the normal
+  `role: tool` path no longer builds text prompts or pollutes
+  `pending_context_rows`; test asserts both.
+- P1: over-limit native turns fail the whole turn (`too_many_tools`) so the
+  synthetic-error path answers every original call id; coding (8+1) and
+  research (4+1) end-to-end covered.
+- P2: `LocalOpenAIProvider` fails closed on unanswerable raw tool_calls
+  (missing id/name): no poisoned assistant message is stored, history resets
+  to a fresh chat, and the turn surfaces as repair-routable text.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  size ceilings hold (runner 1356, runtime 1239); full suite
+  `python -m pytest tests/ --ignore=tests/manual`
+  (`4052 passed, 6 skipped, 1323 subtests passed`).
+
 ## Unreleased - Native chain hardening: ledger, synthetic repair, overflow text (no release)
 
 - P0: every structured send now runs inside the durable delivery ledger.

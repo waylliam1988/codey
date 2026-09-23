@@ -52,9 +52,14 @@ SETTLEMENT_STATUSES = frozenset({
 })
 
 SENT_STATE_SETTLED = "settled"
+# A send that deterministically produced no usable provider reply (e.g. the
+# provider rejected the request before processing it). Unlike MAYBE_SENT, a
+# NOT_SENT attempt is safe to supersede with a retry of the same batch.
+SENT_STATE_NOT_SENT = "not_sent"
 SENT_STATES = frozenset({
     SENT_STATE_MAYBE_SENT,
     SENT_STATE_SETTLED,
+    SENT_STATE_NOT_SENT,
 })
 
 MAX_EFFECT_ID_CHARS = 128
@@ -802,6 +807,7 @@ __all__ = [
     "RuntimeEffectStore",
     "SENT_STATES",
     "SENT_STATE_MAYBE_SENT",
+    "SENT_STATE_NOT_SENT",
     "SENT_STATE_SETTLED",
     "SETTLEMENT_STATUSES",
     "SETTLEMENT_STATUS_ERROR",

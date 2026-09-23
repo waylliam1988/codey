@@ -74,10 +74,15 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
         )
         batch_id = ""
         if ids:
+            # Join by effect id, not by turn: a provider intent carries the
+            # monotonic send counter while a batch carries the agent turn, so
+            # any delivery after the first send of a run would otherwise miss
+            # its batch (and never record delivered). Effect ids are unique,
+            # so at most one batch can contain the pending attempt.
             batch_id = next(
                 (
                     batch.intent.batch_id
-                    for batch in current_batches
+                    for batch in view.batches
                     if ids[0] in batch.send_attempts
                 ),
                 "",

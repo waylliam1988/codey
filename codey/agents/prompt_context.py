@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
@@ -206,6 +207,7 @@ def _begin_provider_send(
     capability_id: str = "agent_runner",
     name: str = "coding_outbound_prompt",
     delivery_batch_id: str = "",
+    supersede_effect_id: str = "",
 ) -> tuple[Any, str]:
     """Open a provider-send effect and bind the prompt surface to it.
 
@@ -248,6 +250,7 @@ def _begin_provider_send(
             intent,
             driver=driver,
             delivery_batch_id=delivery_batch_id,
+            supersede_effect_id=supersede_effect_id,
         )
         effect_id = committed.effect_id
 
@@ -283,6 +286,22 @@ def _begin_provider_send(
     return mutations, effect_id
 
 
+def _note_failed_effect_id(exc: BaseException, effect_id: str) -> None:
+    """Stash the failed provider effect id on an overflow error.
+
+    Lets the overflow-retry site supersede exactly the attempt that failed,
+    so the delivery batch records one live retry instead of conflicting.
+    Internal to provider-send plumbing; never part of any wire format.
+    """
+    if effect_id:
+        with contextlib.suppress(Exception):
+            exc._codey_failed_effect_id = effect_id  # type: ignore[attr-defined]
+
+
+def _failed_effect_id(exc: BaseException) -> str:
+    return str(getattr(exc, "_codey_failed_effect_id", "") or "")
+
+
 def _fail_provider_send(
     session: AgentLoopSession,
     mutations: Any,
@@ -290,13 +309,23 @@ def _fail_provider_send(
     exc: BaseException,
 ) -> None:
     if mutations is not None and effect_id:
+        from codey.providers import error_classification as errors
         from codey.runtime.effects.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
             SENT_STATE_MAYBE_SENT,
+            SENT_STATE_NOT_SENT,
             SETTLEMENT_STATUS_ERROR,
             RuntimeEffectSettlement,
         )
 
+        # A context-overflow rejection deterministically produced no usable
+        # reply, so the attempt settles NOT_SENT (safe to supersede) instead
+        # of MAYBE_SENT (must never be retried blindly).
+        sent_state = (
+            SENT_STATE_NOT_SENT
+            if isinstance(exc, errors.ContextOverflowError)
+            else SENT_STATE_MAYBE_SENT
+        )
         with contextlib.suppress(Exception):
             mutations.settle_provider_effect(
                 session.session_id,
@@ -308,7 +337,7 @@ def _fail_provider_send(
                     run_id=session.run_id,
                     status=SETTLEMENT_STATUS_ERROR,
                     error_code=type(exc).__name__[:80],
-                    sent_state=SENT_STATE_MAYBE_SENT,
+                    sent_state=sent_state,
                 ),
             )
 
@@ -364,6 +393,7 @@ def _send_provider_with_effect(
     capability_id: str = "agent_runner",
     name: str = "coding_outbound_prompt",
     delivery_batch_id: str = "",
+    supersede_effect_id: str = "",
 ) -> str:
     mutations, effect_id = _begin_provider_send(
         session,
@@ -373,11 +403,16 @@ def _send_provider_with_effect(
         capability_id=capability_id,
         name=name,
         delivery_batch_id=delivery_batch_id,
+        supersede_effect_id=supersede_effect_id,
     )
     try:
         reply_text = session.provider.send(prompt)
     except Exception as exc:
         _fail_provider_send(session, mutations, effect_id, exc)
+        from codey.providers import error_classification as errors
+
+        if isinstance(exc, errors.ContextOverflowError):
+            _note_failed_effect_id(exc, effect_id)
         raise
     _settle_provider_send(
         session,
@@ -406,10 +441,17 @@ def _structured_send(
     purpose: str,
     source_ref: str,
     delivery_batch_id: str = "",
+    supersede_effect_id: str = "",
     record_as: str | None = None,
     send_fn: Any,
 ) -> object:
-    """Run one structured provider send inside the durable delivery ledger."""
+    """Run one structured provider send inside the durable delivery ledger.
+
+    Accepts an optional ``supersede_effect_id`` to void a prior attempt of
+    the same batch (deterministic overflow retry): the builder records the
+    void atomically with the new attempt, so the batch never shows two live
+    sends.
+    """
     mutations, effect_id = _begin_provider_send(
         session,
         desc_text,
@@ -418,11 +460,16 @@ def _structured_send(
         capability_id="agent_runner",
         name="coding_structured_prompt",
         delivery_batch_id=delivery_batch_id,
+        supersede_effect_id=supersede_effect_id,
     )
     try:
         turn = send_fn()
     except Exception as exc:
         _fail_provider_send(session, mutations, effect_id, exc)
+        from codey.providers import error_classification as errors
+
+        if isinstance(exc, errors.ContextOverflowError):
+            _note_failed_effect_id(exc, effect_id)
         raise
     _settle_provider_send(
         session,
@@ -533,7 +580,8 @@ def send_prompt(
             name="coding_outbound_prompt",
             delivery_batch_id=delivery_batch_id,
         )
-    except errors.ContextOverflowError:
+    except errors.ContextOverflowError as exc:
+        failed_effect_id = _failed_effect_id(exc)
         prompt = _rollover_for_overflow(
             session, prompt, restart_request=restart_request,
             include_ghost_directive=include_ghost_directive,
@@ -547,6 +595,7 @@ def send_prompt(
             capability_id="agent_runner",
             name="coding_outbound_prompt",
             delivery_batch_id=delivery_batch_id,
+            supersede_effect_id=failed_effect_id,
         )
     if session.conversation is not None:
         if opened_fresh_chat:
@@ -595,7 +644,8 @@ def send_structured_prompt(
             record_as=prompt,
             send_fn=lambda: provider.send_turn(prompt, tools, timeout=None),
         )
-    except errors.ContextOverflowError:
+    except errors.ContextOverflowError as exc:
+        failed_effect_id = _failed_effect_id(exc)
         prompt = _rollover_for_overflow(session, prompt, restart_request=restart_request)
         bind_pending_context_rows(session, prompt)
         tools = session_native_tools(session)
@@ -605,6 +655,7 @@ def send_structured_prompt(
             purpose="coding prompt sent to provider",
             source_ref="provider_send:coding",
             delivery_batch_id=delivery_batch_id,
+            supersede_effect_id=failed_effect_id,
             record_as=prompt,
             send_fn=lambda: provider.send_turn(prompt, tools, timeout=None),
         )
@@ -617,14 +668,16 @@ def send_structured_results(
     restart_request: str | None = None,
     delivery_batch_id: str = "",
     overflow_fallback_prompt: str = "",
-    fallback_text: str = "",
+    fallback_text: str | Callable[[], str] = "",
 ) -> object:
     """Deliver native tool results inside the durable delivery ledger.
 
     On context overflow the fresh chat has no preceding assistant
     ``tool_calls``, so re-sending ``role: tool`` messages would be an illegal
     chain. Instead fall back to sending the results as plain text through
-    ``send_turn`` after the rollover.
+    ``send_turn`` after the rollover. ``fallback_text`` may be a lazy factory
+    so the normal path never pays for (or pollutes context rows with) text
+    it will not send.
     """
     from codey.providers import error_classification as errors
 
@@ -640,8 +693,10 @@ def send_structured_results(
             record_as="[tool_results]",
             send_fn=lambda: provider.send_tool_results(tool_messages, tools, timeout=None),
         )
-    except errors.ContextOverflowError:
-        text = fallback_text or restart_request or "[tool_results]"
+    except errors.ContextOverflowError as exc:
+        failed_effect_id = _failed_effect_id(exc)
+        resolved_fallback = fallback_text() if callable(fallback_text) else fallback_text
+        text = resolved_fallback or restart_request or "[tool_results]"
         if overflow_fallback_prompt:
             text = f"{text}\n\n{overflow_fallback_prompt}"
         rolled = _rollover_for_overflow(session, text, restart_request=text)
@@ -653,6 +708,7 @@ def send_structured_results(
             purpose="coding tool results sent to provider (overflow text fallback)",
             source_ref="provider_send:coding_tool_results_overflow",
             delivery_batch_id=delivery_batch_id,
+            supersede_effect_id=failed_effect_id,
             record_as=rolled,
             send_fn=lambda: provider.send_turn(rolled, tools, timeout=None),
         )

@@ -301,6 +301,7 @@ class RuntimeMutationLine:
         *,
         driver: str = "",
         delivery_batch_id: str = "",
+        supersede_effect_id: str = "",
     ) -> RuntimeEffectIntent:
         committed: RuntimeEffectIntent | None = None
 
@@ -315,6 +316,7 @@ class RuntimeMutationLine:
                 intent=intent,
                 driver=driver,
                 delivery_batch_id=delivery_batch_id,
+                supersede_effect_id=supersede_effect_id,
             )
             committed = prepared
             return rows

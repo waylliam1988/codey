@@ -150,23 +150,25 @@ def deliver_turn_results(
 
         tool_messages = NativeOpenAIToolCodec.tool_messages(turn_state.results)
         if tool_messages:
-            next_prompt = build_next_tool_prompt(
-                session,
-                turn_state,
-                protocol_reminder=protocol_reminder,
-            )
+            # fallback_text stays lazy: building it eagerly would run
+            # append_coding_context and pollute pending_context_rows that a
+            # native role:tool send never binds.
+            def _fallback_text() -> str:
+                return build_next_tool_prompt(
+                    session,
+                    turn_state,
+                    protocol_reminder=protocol_reminder,
+                )
+
             return send_structured_results(
                 session,
                 tool_messages,
-                restart_request=(
-                    "Continue the unfinished task using the latest local tool results below.\n\n"
-                    f"{next_prompt}"
-                ),
+                restart_request="Continue the unfinished task using the latest local tool results.",
                 delivery_batch_id=batch_id,
                 overflow_fallback_prompt=(
                     protocol_reminder or "Continue from these results; reply with the next tool call."
                 ),
-                fallback_text=next_prompt,
+                fallback_text=_fallback_text,
             )
     next_prompt = build_next_tool_prompt(
         session,
@@ -202,10 +204,16 @@ def deliver_recovered_results(
             # Recovered calls predate native call_ids; fall back to text delivery.
             tool_messages = []
         if tool_messages:
+            def _recovered_fallback_text() -> str:
+                return build_next_tool_prompt(session, turn_state)
+
             return send_structured_results(
                 session,
                 tool_messages,
                 restart_request="Continue the unfinished task using the latest local tool results.",
+                delivery_batch_id=batch_id,
+                overflow_fallback_prompt="Continue from these results; reply with the next tool call.",
+                fallback_text=_recovered_fallback_text,
             )
     next_prompt = build_next_tool_prompt(session, turn_state)
     return send_prompt(

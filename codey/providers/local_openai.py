@@ -113,28 +113,50 @@ class LocalOpenAIProvider:
         self._messages.append({"role": "assistant", "content": reply})
         return reply
 
+    def _assistant_turn_or_fail_closed(self, message: dict) -> object:
+        """Build the AssistantTurn, failing closed on unanswerable tool_calls.
+
+        Storing a raw block with missing ids would poison the local history:
+        a later plain prompt would break the provider chain. Instead reset to
+        a fresh chat and surface text the JSON fallback can route to repair.
+        """
+        from codey.providers.base import AssistantTurn, ProviderToolCall
+
+        parsed, dropped = _parse_tool_calls(message)
+        if dropped:
+            self._messages = (
+                [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
+            )
+            text = str(message.get("content") or "")
+            if not text:
+                text = f"ERROR: local model returned {dropped} malformed tool call(s) without ids"
+            return AssistantTurn(
+                text=text,
+                tool_calls=(),
+                raw={"finish_reason": str(message.get("_finish_reason") or ""), "malformed_dropped": dropped},
+            )
+        self._messages.append(_store_assistant_message(message))
+        return AssistantTurn(
+            text=str(message.get("content") or ""),
+            tool_calls=tuple(
+                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                for call in parsed
+            ),
+            raw={"finish_reason": str(message.get("_finish_reason") or "")},
+        )
+
     def send_turn(
         self,
         prompt: str,
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
-        from codey.providers.base import AssistantTurn, ProviderToolCall
-
         if not self._messages and self.system_prompt:
             self._messages.append({"role": "system", "content": self.system_prompt})
         self._maybe_compact_messages(tools=tools)
         self._messages.append({"role": "user", "content": prompt})
         message = self._complete_message(self._messages, tools=tools, timeout=timeout)
-        self._messages.append(_store_assistant_message(message))
-        return AssistantTurn(
-            text=str(message.get("content") or ""),
-            tool_calls=tuple(
-                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
-                for call in _parse_tool_calls(message)
-            ),
-            raw={"finish_reason": str(message.get("_finish_reason") or "")},
-        )
+        return self._assistant_turn_or_fail_closed(message)
 
     def send_tool_results(
         self,
@@ -142,8 +164,6 @@ class LocalOpenAIProvider:
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
-        from codey.providers.base import AssistantTurn, ProviderToolCall
-
         for item in results:
             tool_call_id = str(item.get("tool_call_id") or "")
             if not tool_call_id:
@@ -155,15 +175,7 @@ class LocalOpenAIProvider:
             })
         self._maybe_compact_messages(tools=tools)
         message = self._complete_message(self._messages, tools=tools, timeout=timeout)
-        self._messages.append(_store_assistant_message(message))
-        return AssistantTurn(
-            text=str(message.get("content") or ""),
-            tool_calls=tuple(
-                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
-                for call in _parse_tool_calls(message)
-            ),
-            raw={"finish_reason": str(message.get("_finish_reason") or "")},
-        )
+        return self._assistant_turn_or_fail_closed(message)
 
     def _maybe_compact_messages(self, tools: list[dict[str, object]] | None = None) -> None:
         try:
@@ -446,17 +458,27 @@ def _config_path() -> Path:
     return DEFAULT_STATE_HOME / _CONFIG_FILE
 
 
-def _parse_tool_calls(message: dict) -> list[dict[str, object]]:
+def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
+    """Parse raw tool_calls, returning the usable calls plus a drop count.
+
+    A call without an id or a name can never be answered legally, so callers
+    must treat any drop as a malformed turn (fail closed) rather than storing
+    the raw block. Bad argument payloads are NOT dropped here: they keep
+    their id and flow into validation, which answers them with an error.
+    """
     raw_calls = message.get("tool_calls")
     if not isinstance(raw_calls, list):
-        return []
+        return [], 0
     parsed: list[dict[str, object]] = []
+    dropped = 0
     for item in raw_calls:
         if not isinstance(item, dict):
+            dropped += 1
             continue
         call_id = str(item.get("id") or "")
         function = item.get("function")
         if not isinstance(function, dict):
+            dropped += 1
             continue
         name = str(function.get("name") or "")
         raw_args = function.get("arguments")
@@ -471,9 +493,10 @@ def _parse_tool_calls(message: dict) -> list[dict[str, object]]:
         else:
             arguments = {}
         if not call_id or not name:
+            dropped += 1
             continue
         parsed.append({"id": call_id, "name": name, "arguments": arguments})
-    return parsed
+    return parsed, dropped
 
 
 def _store_assistant_message(message: dict) -> dict:

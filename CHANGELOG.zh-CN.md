@@ -2,6 +2,35 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Delivery 账本：not-sent 重试、lazy fallback、fail-closed 链（未发布）
+
+- P0：账本现在能表达“确定没发出去，可以重试”。新增
+  `send_superseded` 记录，重试时与新 attempt 原子提交、作废旧尝试；
+  settlement 新增 `SENT_STATE_NOT_SENT`（`ContextOverflowError` 用它，
+  其他失败仍用 `MAYBE_SENT`）；只有被作废尝试的 batch 仍可恢复。
+  排查中顺手修了 `delivered` 缺失的更深层原因：`pending_for` 用操作
+  turn 去 join，而 provider intent 带的是发送计数器，所以一个 run 里
+  第一次之后的 delivery 永远对不上 batch；现改按 effect id join
+  （构造上唯一）。
+- P0：overflow 重试合法复用同一 batch——失败 effect id 跟着 overflow
+  异常透传为 `supersede_effect_id`，与重试 attempt 原子提交。严格
+  ledger 测试覆盖（真实 session log + mutation line）：2 attempts、
+  1 作废、重试 delivered。
+- P1：recovered native 补传 `delivery_batch_id` 和真实 fallback 文本
+  （原来静默无 receipt）；测试断言 `is_delivered`。
+- P1：fallback 文本改 lazy（`str | Callable[[], str]`）——正常
+  `role: tool` 路径不再构造文本、不再污染 `pending_context_rows`；
+  测试断言双项。
+- P1：超上限 native 整轮失败（`too_many_tools`），synthetic 路径一次性
+  回答全部原始 call id；coding（8+1）、research（4+1）端到端覆盖。
+- P2：`LocalOpenAIProvider` 对无法回答的 raw tool_calls（缺 id/name）
+  直接 fail closed：不存毒化 assistant 消息，历史重置为 fresh chat，
+  本轮以可修文本返回。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；尺寸
+  天花板保持（runner 1356、runtime 1239）；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4052 passed, 6 skipped, 1323 subtests passed`）。
+
 ## Unreleased - Native 链路加固：账本、synthetic 修复、overflow 文本回退（未发布）
 
 - P0：所有 structured 发送全部进入 durable delivery 账本。
