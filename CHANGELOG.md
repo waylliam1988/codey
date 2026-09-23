@@ -2,6 +2,35 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Strict context fields, serial-by-default, canonical hint, single-pass bootstrap (no release)
+
+- P1: context fields share one strict rule. New
+  `_parse_optional_positive_int_field()` unifies `window`/`reserve`/`keep`:
+  missing or empty means not provided, non-empty but unparsable is a `400`
+  (`context_reserve_tokens="abc"`, `context_keep_recent_tokens="0"` both
+  fail instead of silently falling back to the preset).
+- P1: unknown tools are serial by default. `scope_for_call()` returns
+  `("serial", name or "unknown")` for anything outside the known
+  `run`/`shell`/`edit`/`read`/`ls`/`search`/`references` set, so a future
+  tool cannot silently batch with an `edit` (`unknown+edit` splits).
+  `other` stays reserved for explicitly parallel-safe tools (none today).
+- P2: the native-tools hint points at the canonical shape:
+  `NATIVE_TOOLS=0 or Local model > Native tools: Off
+  (local-openai.json {"native_tools_mode":"off"})` instead of the legacy
+  `{"native_tools": false}`.
+- P2: bootstrap probes once. `local_bootstrap_payload()` probes the
+  remembered endpoint directly and, only on a miss, runs a single
+  `detect_local_endpoint_probes()` pass for both the fallback endpoint and
+  the UI candidates (no more `resolve` + `detect` double round).
+- Tests: `reserve="abc"`/`keep="0"`/`reserve`-without-`window` 400s,
+  `unknown+edit` split + empty-name serial, hint-shape assertion (canonical
+  present, legacy absent), remembered-hit single probe and miss single
+  parallel pass (resolve/detect entry points assert-not-called).
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4102 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - True serial barriers, minimal receipts, strict bootstrap (no release)
 
 - P0: serial groups are now true barriers. `FileMutationQueue.plan()` tracks

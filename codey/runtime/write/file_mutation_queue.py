@@ -43,11 +43,12 @@ def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
 
     Scopes: ``write`` (edit), ``read`` (read/pathed ls/pathed
     search/references), ``serial`` (run/shell side effects, tree-wide
-    ``ls``/search/references without a concrete path), ``other``
-    (everything else). Serial today; grouping only proves the invariant
-    for a future conservative parallel reader.
+    ``ls``/search/references without a concrete path, and any unknown
+    tool). ``other`` is reserved for explicitly parallel-safe tools (none
+    today). Serial today; grouping only proves the invariant for a future
+    conservative parallel reader.
     """
-    name = str(call.name or "")
+    name = str(call.name or "") or "unknown"
     if name in ("run", "shell"):
         return ("serial", name)
     if name == "edit":
@@ -64,7 +65,7 @@ def scope_for_call(call: ToolCall, project: str = "") -> tuple[str, str]:
         if rel == ".":
             return ("serial", name)
         return ("read", _canonical_path(call, project))
-    return ("other", name)
+    return ("serial", name)
 
 
 def key_for_call(call: ToolCall, project: str = "") -> str:

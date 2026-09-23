@@ -268,7 +268,8 @@ class LocalOpenAIProvider:
                 if tools and _looks_like_unsupported_tools_error(detail):
                     message += (
                         " (local endpoint rejected native tools; disable them with "
-                        "NATIVE_TOOLS=0 or local-openai.json {\"native_tools\": false})"
+                        "NATIVE_TOOLS=0 or Local model > Native tools: Off "
+                        "(local-openai.json {\"native_tools_mode\":\"off\"}))"
                     )
                 raise RuntimeError(message) from exc
             except (urllib.error.URLError, TimeoutError) as exc:

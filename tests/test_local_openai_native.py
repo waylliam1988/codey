@@ -80,3 +80,24 @@ def test_length_finish_reason_raises_not_parsed(monkeypatch) -> None:
         assert type(exc).__name__ in ("OutputLengthError", "ContextOverflowError")
     else:
         raise AssertionError("expected truncation error")
+
+
+def test_unsupported_tools_hint_points_at_canonical_shape(monkeypatch) -> None:
+    import io
+    import urllib.error
+
+    import pytest
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    detail = b'{"error": {"message": "unsupported parameter: tool_choice"}}'
+
+    def fake_urlopen(request, timeout=None):
+        raise urllib.error.HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(detail))
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError, match="rejected native tools") as excinfo:
+        provider._post_chat([{"role": "user", "content": "hi"}], [{"type": "function"}])
+    message = str(excinfo.value)
+    assert "NATIVE_TOOLS=0" in message
+    assert '"native_tools_mode":"off"' in message
+    assert '{"native_tools": false}' not in message

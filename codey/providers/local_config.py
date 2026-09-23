@@ -126,6 +126,19 @@ def _parse_positive_int(value: object) -> int | None:
     return None
 
 
+def _parse_optional_positive_int_field(body: Mapping[str, object], key: str) -> tuple[int | None, str]:
+    """Missing/empty means not provided; non-empty but unparsable is a 400."""
+    if key not in body:
+        return None, ""
+    raw = body.get(key)
+    if raw is None or str(raw).strip() == "":
+        return None, ""
+    parsed = _parse_positive_int(raw)
+    if parsed is None:
+        return None, f"{key} must be a positive integer"
+    return parsed, ""
+
+
 def _config_path() -> Path:
     return DEFAULT_STATE_HOME / CONFIG_FILE
 
@@ -267,18 +280,18 @@ def parse_local_config_update(
             if legacy is False
             else previous.native_tools_mode
         )
-    window = _parse_positive_int(body.get("context_window_tokens"))
-    if "context_window_tokens" in body:
-        raw_window = body.get("context_window_tokens")
-        if raw_window is not None and str(raw_window).strip() != "" and window is None:
-            return None, "context_window_tokens must be a positive integer"
+    window, window_error = _parse_optional_positive_int_field(body, "context_window_tokens")
+    if window_error:
+        return None, window_error
+    reserve, reserve_error = _parse_optional_positive_int_field(body, "context_reserve_tokens")
+    if reserve_error:
+        return None, reserve_error
+    keep, keep_error = _parse_optional_positive_int_field(body, "context_keep_recent_tokens")
+    if keep_error:
+        return None, keep_error
     context = previous.context
     if window is not None:
-        if window <= 0:
-            return None, "context_window_tokens must be a positive integer"
         preset = context_budget_for_window(window)
-        reserve = _parse_positive_int(body.get("context_reserve_tokens"))
-        keep = _parse_positive_int(body.get("context_keep_recent_tokens"))
         context = LocalContextBudget(
             window,
             reserve if reserve is not None else preset.context_reserve_tokens,
@@ -388,16 +401,27 @@ def local_bootstrap_payload() -> dict:
     try:
         from codey.providers import local_discovery as discovery
 
-        endpoint = discovery.resolve_local_endpoint(
-            base_url=config.base_url,
-            model=config.model,
-            api_key=config.api_key,
+        remembered = config.base_url.strip()
+        endpoint = (
+            discovery.probe_local_endpoint(remembered, api_key=config.api_key)
+            if remembered
+            else None
         )
-        discovered = (
-            [probe.base_url for probe in discovery.detect_local_endpoints(api_key=config.api_key)]
-            if endpoint is None
-            else []
-        )
+        if endpoint is not None:
+            # Same model preference as resolve_local_endpoint().
+            wanted = (config.model or endpoint.default_model or "").strip()
+            endpoint = discovery.LocalEndpoint(
+                endpoint.base_url,
+                ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
+            )
+        if endpoint is not None:
+            discovered: list[str] = []
+        else:
+            # Single parallel pass: first reachable endpoint plus the
+            # unreachable candidates for the UI to offer.
+            probes = discovery.detect_local_endpoint_probes(api_key=config.api_key)
+            endpoint = next((probe.endpoint for probe in probes if probe.endpoint is not None), None)
+            discovered = [probe.candidate.base_url for probe in probes if probe.endpoint is None]
     except Exception:
         endpoint = None
         discovered = []

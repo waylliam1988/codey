@@ -1,5 +1,42 @@
 # Codey Test Report
 
+## Strict context fields + serial-by-default + single-pass bootstrap full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/local_config.py       (optional-int helper; strict reserve/keep; single-pass bootstrap)
+codey/runtime/write/file_mutation_queue.py (unknown -> serial)
+codey/providers/local_openai.py       (canonical native-tools hint)
+tests/test_local_bootstrap.py         (reserve/keep 400s, unknown serial, bootstrap single-pass)
+tests/test_local_openai_native.py     (hint-shape assertion)
+```
+
+Notes:
+
+- One rule for all three context numbers: missing/empty is not provided,
+  non-empty garbage is a 400. No silent preset fallback on explicit bad
+  input, including reserve-without-window.
+- Fail closed on the unknown: any tool outside the known set serializes,
+  so future tools cannot silently batch with writers. `other` remains
+  reserved, with no members today.
+- The opt-out hint names the UI path and the canonical JSON shape users
+  actually write; the legacy flat field no longer appears in guidance.
+- Cold-start bootstrap costs one remembered probe on the hit path and one
+  parallel candidate pass on the miss path; the old resolve+detect double
+  round is gone. Candidates are the unreachable known URLs offered as
+  try-buttons when not connected.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: bootstrap/native/research/connector/deep-ab/server/abab/noab/
+  architecture suites green (incl. 4 new tests).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4102 passed, 6 skipped, 1341 subtests passed in 412.10s`).
+- No release.
+
 ## True serial barriers + minimal receipts + strict bootstrap full suite (2026-09-24)
 
 Scope (production, no release):

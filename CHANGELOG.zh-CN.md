@@ -2,6 +2,30 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 严格 context 字段、默认 serial、canonical 提示、单轮探测（未发布）
+
+- P1：context 三字段同一严格规则。新增
+  `_parse_optional_positive_int_field()` 统一 `window`/`reserve`/`keep`：
+  缺失或空串视为未提供，非空但解析失败直接 400
+ （`reserve="abc"`、`keep="0"` 都不再静默回 preset，无 window 时坏
+  reserve 同样 400）。
+- P1：未知工具默认 serial。`scope_for_call()` 对已知集合之外一律返回
+  `("serial", name or "unknown")`，未来新工具不会悄悄和 `edit` 同组
+  （`unknown+edit` 切分）。`other` 只留给显式并行安全工具（目前无）。
+- P2：native-tools 提示改为 canonical 形状：
+  `NATIVE_TOOLS=0 or Local model > Native tools: Off
+  (local-openai.json {"native_tools_mode":"off"})`，不再写旧的
+  `{"native_tools": false}`。
+- P2：bootstrap 只探测一轮。`local_bootstrap_payload()` 先直探记住的
+  endpoint，miss 时才跑一次 `detect_local_endpoint_probes()`，同时拿
+  fallback endpoint 和 UI candidates（不再 `resolve` + `detect` 两轮）。
+- 测试：`reserve="abc"`/`keep="0"`/无 window 坏 reserve 的 400、
+  `unknown+edit` 切分与空名 serial、hint 形状断言（有新无旧）、记住命中
+  只直探一次、miss 只跑一次并行探测（resolve/detect 入口断言不被调用）。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4102 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - 真 barrier、最小 receipt、严格 bootstrap（未发布）
 
 - P0：serial 组成为真 barrier。`FileMutationQueue.plan()` 新增
