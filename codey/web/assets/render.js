@@ -438,8 +438,27 @@ function messageCopyText(m) {
   return m && typeof m.text === 'string' ? m.text : '';
 }
 
+// Shell result titles: approved-but-failed runs must never read as
+// success. Unknown statuses fail closed to 'Failed', never 'Executed'.
+const SHELL_STATUS_VERBS = {
+  stopped: 'Stopped',
+  timeout: 'Timed out',
+  spawn_error: 'Failed to start',
+  wait_error: 'Failed while waiting',
+  output_read_error: 'Failed reading output',
+  drain_timeout: 'Output did not finish',
+};
+
+function shellStatusVerb(shellStatus, approved) {
+  if (Object.prototype.hasOwnProperty.call(SHELL_STATUS_VERBS, shellStatus)) {
+    return SHELL_STATUS_VERBS[shellStatus];
+  }
+  return shellStatus === 'exit' ? (approved ? 'Executed' : 'Denied') : 'Failed';
+}
+
 window.CodeyRender = {
   escapeHtml,
+  shellStatusVerb,
   receiptSummary,
   receiptChangedCount,
   messageCopyText,

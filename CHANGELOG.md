@@ -32,6 +32,32 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Shell failure titles, attach cleanup, portable asserts (no release)
+
+- Web shell titles fail closed. `wait_error`, `output_read_error`, and
+  `drain_timeout` previously rendered as "Executed" for approved runs; the
+  verb table (`shellStatusVerb` in `assets/render.js`, keeping the inline
+  script ratchet intact) now names each failure explicitly, and unknown
+  approved statuses render "Failed", never "Executed". Covered by a real
+  headless-chromium render test plus a static UI test.
+- Windows Job-attach failures no longer leak pipes. `attach_process_tree()`
+  closes both pipes after kill/wait before re-raising (that path runs before
+  `wait_process()` owns the lifecycle). A Windows-directed test with a real
+  child and a mocked Job failure asserts the parent is reaped and both pipes
+  are closed.
+- Cleanup tests assert portably. Fake-proc tests now watch
+  `_terminate_process_tree()` dispatch (real `killpg`/Job effects stay with
+  the real-grandchild test); the Linux liveness helper treats zombies as
+  dead. `wait_process()` prep moved inside the `try` (only `readers`/`completed`
+  stay outside) and the result is constructed before `completed` is set.
+- Convergence: required `_shell_spawn_gate`/`stop_flag` (fallback private
+  lock and swallowed reads removed; doubles updated); shell `wait_error`
+  vs `spawn_error` split kept. Still no auto-retry, caps, or new framework.
+  Residual: out-of-group pipe holders exceed the bounded-close proof, and
+  POSIX group-kill still deserves a Linux run of the real-grandchild test.
+- Verification: `python -m ruff check .` clean; final full
+  `python -m pytest` (`4139 passed, 6 skipped, 1374 subtests passed`).
+
 ## Unreleased - wait_process owns all cleanup (no release)
 
 - `wait_process()` now owns the whole lifecycle in one `finally` guarded by

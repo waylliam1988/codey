@@ -27,6 +27,26 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - Shell 失败标题、附加清理、可移植断言（未发布）
+
+- 网页 shell 标题 fail-closed。已批准的 `wait_error`/`output_read_error`/
+  `drain_timeout` 之前显示 “Executed”；动词表（`assets/render.js` 的
+  `shellStatusVerb`，内联脚本配额不动）逐项命名失败，未知已批准状态显示
+  “Failed”。真 headless-chromium 渲染测试 + 静态 UI 测试覆盖。
+- Windows Job 附加失败不再漏管道。`attach_process_tree()` 在 kill/wait 后
+  关闭双路管道再抛错（该路径在 `wait_process()` 接手之前）。Windows 定向
+  测试用真子进程 + 模拟 Job 失败断言父进程已回收且双管道关闭。
+- 清理测试跨平台断言。假进程测试改为监视 `_terminate_process_tree()` 是否
+  被调（真 `killpg`/Job 效果留给真孙进程测试）；Linux 存活判断把 zombie
+  视为已死。`wait_process()` 准备工作移入 `try`（外只留
+  `readers`/`completed`），结果先构造再置完成。
+- 收敛：`_shell_spawn_gate`/`stop_flag` 必需化（私有锁回退与吞异常删除，
+  替身已补）；shell `wait_error`/`spawn_error` 划分保留。仍无自动重试、
+  可配上限与新框架。遗留：逃出进程组的管道持有者超出有界关闭证明；
+  POSIX 组清理仍建议在 Linux 跑一次真孙进程测试。
+- 验证：`python -m ruff check .` 通过；最终全量 `python -m pytest`
+  （`4139 passed, 6 skipped, 1374 subtests passed`）。
+
 ## Unreleased - wait_process 统一拥有清理（未发布）
 
 - `wait_process()` 用 `completed` 标志把全部生命周期收进同一个 `finally`：

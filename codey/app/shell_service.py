@@ -10,7 +10,6 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import subprocess
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -162,22 +161,6 @@ def claim_shell_ticket(
         )
 
 
-def _shell_gate(ctx: TaskState):
-    """Spawn gate shared with the Stop path.
-
-    Production ``ctx._shell_spawn_gate`` is also held while Stop bumps the
-    approval generation, so holding it across final-check+Popen closes the
-    window. It is deliberately *not* ``ctx.lock``: the final check calls
-    ``ctx.approval_generation()``, which takes ``ctx.lock`` itself, so gating
-    on ``ctx.lock`` would self-deadlock. Test doubles without a gate fall
-    back to a private lock (no cross-path atomicity, same code path).
-    """
-    gate = getattr(ctx, "_shell_spawn_gate", None)
-    if gate is not None:
-        return gate
-    return threading.Lock()
-
-
 def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     """Execute an already-claimed ticket. Final Stop check and Popen happen
     under the spawn gate; waiting happens outside the gate."""
@@ -194,23 +177,14 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
     job = None
     capture_truncated = False
     try:
-        gate = _shell_gate(ctx)
-        with gate:
+        # The gate is deliberately *not* ``ctx.lock``: the final check calls
+        # ``ctx.approval_generation()``, which takes ``ctx.lock`` itself, so
+        # gating on ``ctx.lock`` would self-deadlock.
+        with ctx._shell_spawn_gate:
             if not _approval_generation_current(ctx, ticket.generation):
                 return _stopped_shell_result()
-            try:
-                stop_flag = ctx.run_registry.stop_flag
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception:
-                stop_flag = None
-            try:
-                stop_set = bool(stop_flag.is_set()) if stop_flag is not None else False
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                raise
-            except Exception:
-                stop_set = False
-            if stop_set:
+            stop_flag = ctx.run_registry.stop_flag
+            if bool(stop_flag.is_set()):
                 return _stopped_shell_result()
             # Commit point: Popen while still holding the gate so a Stop that
             # needs the same gate to bump the generation cannot interleave.
@@ -220,9 +194,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
                     cwd=ticket.cwd,
                     shell=True,
                 )
-        stop_flag_after = getattr(
-            getattr(ctx, "run_registry", None), "stop_flag", None
-        )
+        stop_flag_after = ctx.run_registry.stop_flag
         with cancellation.scope(stop_flag_after):
             from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 

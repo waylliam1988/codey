@@ -719,10 +719,7 @@ function appendMessageNode(chat, m) {
     const out = document.createElement('div');
     out.className = 'shell-output';
     const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
-    const verb = m.shellStatus === 'stopped' ? 'Stopped'
-      : m.shellStatus === 'timeout' ? 'Timed out'
-      : m.shellStatus === 'spawn_error' ? 'Failed to start'
-      : (m.approved ? 'Executed' : 'Denied');
+    const verb = window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved);
     out.textContent = `${verb}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
     div.appendChild(out);
     chat.appendChild(div);

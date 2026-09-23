@@ -244,6 +244,58 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
         self.assertTrue(result["nearBottomFollowed"], "Scroll must follow to bottom when user is near bottom (<120px)")
         self.assertTrue(result["forcedFollowSucceeded"], "Forced scroll must always reach the bottom")
 
+    def test_shell_result_titles_never_show_failed_runs_as_executed(self) -> None:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                page.goto(self.base_url)
+                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+
+                result = page.evaluate("""() => {
+                    const chat = document.createElement('div');
+                    const cases = [
+                        { shellStatus: 'exit', approved: true },
+                        { shellStatus: 'exit', approved: false },
+                        { shellStatus: 'stopped', approved: false },
+                        { shellStatus: 'timeout', approved: true },
+                        { shellStatus: 'spawn_error', approved: true },
+                        { shellStatus: 'wait_error', approved: true },
+                        { shellStatus: 'output_read_error', approved: true },
+                        { shellStatus: 'drain_timeout', approved: true },
+                        { shellStatus: 'future_unknown_status', approved: true },
+                    ];
+                    const titles = {};
+                    for (const c of cases) {
+                        chat.innerHTML = '';
+                        window.appendMessageNode(chat, {
+                            type: 'shell_result',
+                            shellStatus: c.shellStatus,
+                            approved: c.approved,
+                            command: 'pytest -q',
+                            exitCode: c.shellStatus === 'exit' ? 0 : null,
+                            output: 'boom',
+                        });
+                        const out = chat.querySelector('.shell-output');
+                        if (!out) throw new Error('Expected .shell-output node');
+                        titles[c.shellStatus + '|' + c.approved] = out.textContent.split('\\n')[0];
+                    }
+                    return titles;
+                }""")
+            finally:
+                browser.close()
+
+        self.assertEqual(result["exit|true"], "Executed")
+        self.assertEqual(result["exit|false"], "Denied")
+        self.assertEqual(result["stopped|false"], "Stopped")
+        self.assertEqual(result["timeout|true"], "Timed out")
+        self.assertEqual(result["spawn_error|true"], "Failed to start")
+        for key in ("wait_error|true", "output_read_error|true", "drain_timeout|true"):
+            self.assertNotEqual(result[key], "Executed", key)
+            self.assertNotEqual(result[key], "Denied", key)
+        # Unknown approved states must fail closed, never read as success.
+        self.assertEqual(result["future_unknown_status|true"], "Failed")
+
 
 if __name__ == "__main__":
     unittest.main()

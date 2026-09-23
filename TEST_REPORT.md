@@ -36,6 +36,39 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Shell failure titles, attach cleanup, portable asserts full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/web/assets/render.js              (shellStatusVerb table; unknown approved fails closed)
+codey/web/index.html                    (shell branch calls the asset helper; inline budget intact)
+codey/runtime/core/cancellation.py      (attach failure closes pipes; prep inside try;
+                                         result built before completed)
+codey/app/shell_service.py              (required gate/stop_flag; fallbacks removed)
+tests/test_ui_inplace_render.py         (headless-chromium shell title render test)
+tests/test_ui.py                        (static verb-table test)
+tests/test_cancellation.py              (Windows attach-failure real-child pipe test)
+tests/test_bounded_capture_and_context.py (_terminate dispatch asserts; zombie-aware liveness)
+tests/test_hardening_batch2.py          (gate on the shell double)
+```
+
+Notes:
+
+- Fixes the "Executed" misreport for approved-but-failed shell runs, the
+  pre-lifecycle pipe leak on Job-attach failure, and the Linux-false-fail
+  kill-record assertions. Residual: out-of-group pipe holders and a Linux
+  run of the real-grandchild test remain pre-release work.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- UI suites: `test_ui + test_ui_architecture + test_ui_inplace_render`
+  (`86 passed`), including the inline-script ratchet.
+- Full suite: `python -m pytest`
+  (`4139 passed, 6 skipped, 1374 subtests passed in 351.51s (0:05:51)`).
+- This report entry was written after the final full pytest run.
+
 ## wait_process owns all cleanup full suite (2026-09-24)
 
 Scope (production, no release):

@@ -315,6 +315,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
             block.index("data.last_terminal_event"),
         )
 
+    def test_shell_result_titles_fail_closed_for_wait_failures(self) -> None:
+        # The verb table lives in assets/render.js (inline budget); index.html
+        # only calls it. Unknown approved states must not read as 'Executed'.
+        for status in ("wait_error", "output_read_error", "drain_timeout"):
+            self.assertIn(status, RENDER_JS)
+        self.assertIn("shellStatusVerb", RENDER_JS)
+        self.assertIn("window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved)", HTML)
+        self.assertIn(": 'Failed'", RENDER_JS)
+
     def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
         start = HTML.index("async function approveCommand")
         end = HTML.index("// ============================ composer", start)

@@ -137,6 +137,33 @@ class CancellationTests(unittest.TestCase):
                 self.assertFalse(_windows_process_is_active(int(child_raw)))
 
     @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
+    def test_attach_failure_kills_parent_and_closes_pipes(self) -> None:
+        created: list = []
+        real_popen = cancellation.subprocess.Popen
+
+        def _spy(*args, **kwargs):
+            proc = real_popen(*args, **kwargs)
+            created.append(proc)
+            return proc
+
+        with (
+            mock.patch.object(cancellation.subprocess, "Popen", side_effect=_spy),
+            mock.patch.object(
+                cancellation, "_WindowsJob", side_effect=OSError("job boom")
+            ),
+            self.assertRaises(OSError),
+        ):
+            cancellation.start_process(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                cwd=".",
+            )
+        self.assertEqual(len(created), 1)
+        proc = created[0]
+        self.assertIsNotNone(proc.poll())
+        self.assertTrue(proc.stdout.closed)
+        self.assertTrue(proc.stderr.closed)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
     def test_cancel_terminates_real_parent_and_child_processes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

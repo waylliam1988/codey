@@ -39,6 +39,15 @@ def _pid_alive(pid: int) -> bool:
             return code.value == 259
         finally:
             kernel32.CloseHandle(handle)
+    # A reaped-but-unadopted grandchild can linger as a zombie where no
+    # reaper adopts it; zombies hold no pipes, so they count as dead here.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+            state = handle.read().rsplit(")", 1)[-1].split()
+        if state and state[0] == "Z":
+            return False
+    except OSError:
+        pass
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -111,18 +120,33 @@ class BoundedByteCaptureTests(unittest.TestCase):
 
 
 class ReaderErrorTests(unittest.TestCase):
-    def _error_proc(self, stream: object) -> SimpleNamespace:
-        killed: list[bool] = []
+    def _watch_terminate(self):
+        """Record _terminate_process_tree calls while letting it run.
 
+        Fake procs prove dispatch (the tree was ordered dead); real
+        signal/Job effects stay with the real-grandchild test, which is
+        the only place OS cleanup can be observed portably.
+        """
+        calls: list[tuple[object, object]] = []
+        real = cancellation._terminate_process_tree
+
+        def _wrapper(proc: object, job: object = None):
+            calls.append((proc, job))
+            return real(proc, job)
+
+        return mock.patch.object(
+            cancellation, "_terminate_process_tree", side_effect=_wrapper
+        ), calls
+
+    def _error_proc(self, stream: object) -> SimpleNamespace:
         return SimpleNamespace(
             pid=99999999,
             returncode=0,
             stdout=stream,
             stderr=None,
             wait=lambda timeout=None: 0,
-            terminate=lambda: killed.append(True),
-            kill=lambda: killed.append(True),
-            _killed=killed,
+            terminate=lambda: None,
+            kill=lambda: None,
         )
 
     class _FailAfterPartial:
@@ -140,21 +164,25 @@ class ReaderErrorTests(unittest.TestCase):
     def test_stdout_read_error_after_partial_data_is_not_success(self) -> None:
         proc = self._error_proc(self._FailAfterPartial([b"partial-", b"data"]))
         job = SimpleNamespace(close=lambda: None)
-        with self.assertRaises(cancellation.ProcessOutputReadError):
+        terminate_patch, terminate_calls = self._watch_terminate()
+        with terminate_patch, self.assertRaises(cancellation.ProcessOutputReadError):
             cancellation.wait_process(
                 proc, job, ["cmd"], 30, capture_limit_bytes=65536
             )
-        self.assertTrue(proc._killed)
+        self.assertEqual(len(terminate_calls), 1)
+        self.assertIs(terminate_calls[0][0], proc)
 
     def test_stderr_read_error_is_not_success(self) -> None:
         proc = self._error_proc(None)
         proc.stderr = self._FailAfterPartial([b"oops"])
         job = SimpleNamespace(close=lambda: None)
-        with self.assertRaises(cancellation.ProcessOutputReadError):
+        terminate_patch, terminate_calls = self._watch_terminate()
+        with terminate_patch, self.assertRaises(cancellation.ProcessOutputReadError):
             cancellation.wait_process(
                 proc, job, ["cmd"], 30, capture_limit_bytes=65536
             )
-        self.assertTrue(proc._killed)
+        self.assertEqual(len(terminate_calls), 1)
+        self.assertIs(terminate_calls[0][0], proc)
 
     def test_run_command_maps_read_error_to_failure(self) -> None:
         from codey.toolchain import runtime as tool_runtime
@@ -586,7 +614,7 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
     """
 
     def _recording_proc(self, **overrides):
-        calls: dict[str, list] = {"kill": [], "wait": [], "close": []}
+        calls: dict[str, list] = {"wait": [], "close": []}
 
         class _Stream:
             def __init__(self, owner: dict[str, list]) -> None:
@@ -608,12 +636,24 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
             stdout=_Stream(calls),
             stderr=None,
             wait=_wait,
-            terminate=lambda: calls["kill"].append("terminate"),
-            kill=lambda: calls["kill"].append("kill"),
+            terminate=lambda: None,
+            kill=lambda: None,
         )
         for key, value in overrides.items():
             setattr(proc, key, value)
         return proc, calls
+
+    def _watch_terminate(self):
+        calls: list[tuple[object, object]] = []
+        real = cancellation._terminate_process_tree
+
+        def _wrapper(proc: object, job: object = None):
+            calls.append((proc, job))
+            return real(proc, job)
+
+        return mock.patch.object(
+            cancellation, "_terminate_process_tree", side_effect=_wrapper
+        ), calls
 
     def _recording_job(self):
         calls: list[str] = []
@@ -645,12 +685,14 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
 
         proc.wait = _wait_then_exit
         job, job_calls = self._recording_job()
-        with self.assertRaises(cancellation.ProcessOutputReadError) as ctx:
+        terminate_patch, terminate_calls = self._watch_terminate()
+        with terminate_patch, self.assertRaises(cancellation.ProcessOutputReadError) as ctx:
             cancellation.wait_process(
                 proc, job, ["cmd"], 30, capture_limit_bytes=65536
             )
         self.assertIn("post-exit-boom", str(ctx.exception))
-        self.assertTrue(calls["kill"], "tree was not terminated")
+        self.assertEqual(len(terminate_calls), 1)
+        self.assertIs(terminate_calls[0][0], proc)
         self.assertTrue(stream.closed, "pipe was not closed")
         self.assertEqual(job_calls, ["close"])
 
@@ -663,12 +705,14 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
 
         proc.wait = _boom
         job, job_calls = self._recording_job()
-        with self.assertRaises(OSError) as ctx:
+        terminate_patch, terminate_calls = self._watch_terminate()
+        with terminate_patch, self.assertRaises(OSError) as ctx:
             cancellation.wait_process(
                 proc, job, ["cmd"], 30, capture_limit_bytes=65536
             )
         self.assertIn("wait boom", str(ctx.exception))
-        self.assertTrue(calls["kill"], "tree was not terminated")
+        self.assertEqual(len(terminate_calls), 1)
+        self.assertIs(terminate_calls[0][0], proc)
         self.assertTrue(calls["close"], "pipe was not closed")
         self.assertEqual(job_calls, ["close"])
 
@@ -681,12 +725,15 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
 
         with mock.patch.object(
             cancellation.threading, "Thread", side_effect=_fail_on_start
-        ), self.assertRaises(RuntimeError) as ctx:
-            cancellation.wait_process(
-                proc, job, ["cmd"], 30, capture_limit_bytes=65536
-            )
+        ):
+            terminate_patch, terminate_calls = self._watch_terminate()
+            with terminate_patch, self.assertRaises(RuntimeError) as ctx:
+                cancellation.wait_process(
+                    proc, job, ["cmd"], 30, capture_limit_bytes=65536
+                )
         self.assertIn("thread start boom", str(ctx.exception))
-        self.assertTrue(calls["kill"], "spawned process was not terminated")
+        self.assertEqual(len(terminate_calls), 1)
+        self.assertIs(terminate_calls[0][0], proc)
         self.assertTrue(calls["close"], "pipe was not closed")
         self.assertEqual(job_calls, ["close"])
 

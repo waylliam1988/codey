@@ -297,18 +297,18 @@ def wait_process(
     run completed. Failure branches only raise; they never clean up
     themselves, so cleanup can neither be skipped nor mask the error.
     """
-    limit = max(1, int(capture_limit_bytes))
-    head = limit // 4
-    tail = limit - head
-    stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
-    stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
     readers: list[threading.Thread] = []
-    streams = (
-        (proc.stdout, stdout_state),
-        (proc.stderr, stderr_state),
-    )
     completed = False
     try:
+        limit = max(1, int(capture_limit_bytes))
+        head = limit // 4
+        tail = limit - head
+        stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
+        stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
+        streams = (
+            (proc.stdout, stdout_state),
+            (proc.stderr, stderr_state),
+        )
         for stream, state in streams:
             if stream is None:
                 continue
@@ -350,8 +350,7 @@ def wait_process(
                 )
         stdout_done = stdout_state.capture.finish()
         stderr_done = stderr_state.capture.finish()
-        completed = True
-        return CapturedProcess(
+        result = CapturedProcess(
             args=args,
             returncode=int(returncode),
             stdout=stdout_done.text,
@@ -361,6 +360,8 @@ def wait_process(
             stdout_truncated=stdout_done.truncated,
             stderr_truncated=stderr_done.truncated,
         )
+        completed = True
+        return result
     finally:
         if not completed:
             _terminate_process_tree(proc, job)
@@ -397,6 +398,7 @@ def attach_process_tree(proc: subprocess.Popen[bytes]):
             proc.kill()
         with suppress(Exception):
             proc.wait(timeout=2)
+        _close_pipes(proc)
         raise
 
 
