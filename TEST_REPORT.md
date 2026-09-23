@@ -36,6 +36,42 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## wait_process owns all cleanup full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/runtime/core/cancellation.py     (single completed-flag finally owns readers/tree/pipes/Job;
+                                        branches only raise; CapturedProcess fields required;
+                                        _StreamPump.done removed, error narrowed to Exception)
+codey/app/shell_service.py             (timeout trusts wait_process cleanup; wait_error vs spawn_error split)
+codey/storage/managed_outputs.py       (adds only the managed_output receipt; facts stay in the projection)
+tests/test_bounded_capture_and_context.py (WaitProcessCleanupOwnershipTests: post-exit read error,
+                                        wait() OSError, reader start failure)
+```
+
+Notes:
+
+- Closes the three exception-timing gaps found in review: post-exit reader
+  errors terminate the group, wait() failures clean everything without
+  masking, start failures clean the spawn. Residual: CI is Windows-only;
+  the POSIX group-kill path still deserves a Linux run of the
+  real-grandchild test before release.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite: 672 passed
+  (bounded_capture + cancellation + characterization + local_openai_native
+  + tool_runtime + managed_outputs + shell_approval_epoch +
+  hardening_batch2 + adapter_self_repair + architecture + server +
+  native_delivery + agent_native_loop + coldstart_native_local_receipts +
+  research_analysis_run + project_completion_flow_analysis_run +
+  protocols + shell_stop_allow_race, `437 subtests passed in 75.56s`).
+- Full suite: `python -m pytest`
+  (`4136 passed, 6 skipped, 1374 subtests passed in 372.33s (0:06:12)`).
+- This report entry was written after the final full pytest run.
+
 ## Bounded-capture correctness follow-up full suite (2026-09-24)
 
 Scope (production, no release):

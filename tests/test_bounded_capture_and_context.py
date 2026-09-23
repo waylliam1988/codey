@@ -577,5 +577,119 @@ class LocalPrepareRequestTests(unittest.TestCase):
         self.assertEqual(settlement.sent_state, SENT_STATE_NOT_SENT)
 
 
+class WaitProcessCleanupOwnershipTests(unittest.TestCase):
+    """The three exception timings one finally must own.
+
+    Each test pins its timing (post-exit read error, wait() OSError,
+    thread start failure) and asserts the tree was terminated, the pipes
+    were closed, and the original exception survived unmasked.
+    """
+
+    def _recording_proc(self, **overrides):
+        calls: dict[str, list] = {"kill": [], "wait": [], "close": []}
+
+        class _Stream:
+            def __init__(self, owner: dict[str, list]) -> None:
+                self._owner = owner
+
+            def read(self, _size: int) -> bytes:
+                return b""
+
+            def close(self) -> None:
+                self._owner["close"].append("stdout")
+
+        def _wait(timeout=None):
+            calls["wait"].append(timeout)
+            return 0
+
+        proc = SimpleNamespace(
+            pid=99999999,
+            returncode=0,
+            stdout=_Stream(calls),
+            stderr=None,
+            wait=_wait,
+            terminate=lambda: calls["kill"].append("terminate"),
+            kill=lambda: calls["kill"].append("kill"),
+        )
+        for key, value in overrides.items():
+            setattr(proc, key, value)
+        return proc, calls
+
+    def _recording_job(self):
+        calls: list[str] = []
+        return SimpleNamespace(close=lambda: calls.append("close")), calls
+
+    def test_post_exit_reader_error_still_terminates_tree(self) -> None:
+        exited = threading.Event()
+
+        class _LateFailStream:
+            def __init__(self) -> None:
+                self.closed: list[bool] = []
+
+            def read(self, _size: int) -> bytes:
+                # The error can only happen after the parent already exited.
+                if not exited.wait(timeout=30):
+                    raise AssertionError("parent wait() never returned")
+                raise OSError("post-exit-boom")
+
+            def close(self) -> None:
+                self.closed.append(True)
+
+        stream = _LateFailStream()
+        proc, calls = self._recording_proc(stdout=stream)
+
+        def _wait_then_exit(timeout=None):
+            calls["wait"].append(timeout)
+            exited.set()
+            return 0
+
+        proc.wait = _wait_then_exit
+        job, job_calls = self._recording_job()
+        with self.assertRaises(cancellation.ProcessOutputReadError) as ctx:
+            cancellation.wait_process(
+                proc, job, ["cmd"], 30, capture_limit_bytes=65536
+            )
+        self.assertIn("post-exit-boom", str(ctx.exception))
+        self.assertTrue(calls["kill"], "tree was not terminated")
+        self.assertTrue(stream.closed, "pipe was not closed")
+        self.assertEqual(job_calls, ["close"])
+
+    def test_wait_oserror_propagates_with_cleanup(self) -> None:
+        proc, calls = self._recording_proc()
+
+        def _boom(timeout=None):
+            calls["wait"].append(timeout)
+            raise OSError("wait boom")
+
+        proc.wait = _boom
+        job, job_calls = self._recording_job()
+        with self.assertRaises(OSError) as ctx:
+            cancellation.wait_process(
+                proc, job, ["cmd"], 30, capture_limit_bytes=65536
+            )
+        self.assertIn("wait boom", str(ctx.exception))
+        self.assertTrue(calls["kill"], "tree was not terminated")
+        self.assertTrue(calls["close"], "pipe was not closed")
+        self.assertEqual(job_calls, ["close"])
+
+    def test_reader_start_failure_cleans_spawn(self) -> None:
+        proc, calls = self._recording_proc()
+        job, job_calls = self._recording_job()
+
+        def _fail_on_start(*args, **kwargs):
+            raise RuntimeError("thread start boom")
+
+        with mock.patch.object(
+            cancellation.threading, "Thread", side_effect=_fail_on_start
+        ), self.assertRaises(RuntimeError) as ctx:
+            cancellation.wait_process(
+                proc, job, ["cmd"], 30, capture_limit_bytes=65536
+            )
+        self.assertIn("thread start boom", str(ctx.exception))
+        self.assertTrue(calls["kill"], "spawned process was not terminated")
+        self.assertTrue(calls["close"], "pipe was not closed")
+        self.assertEqual(job_calls, ["close"])
+
+
 if __name__ == "__main__":
     unittest.main()

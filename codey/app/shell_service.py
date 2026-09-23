@@ -257,21 +257,7 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             "capture_truncated": True,
         }
     except subprocess.TimeoutExpired:
-        # Defensive: production wait_process() already terminated the tree,
-        # but a mocked wait (tests) or future override may not have.
-        # Without this, a live child keeps the project cwd locked and
-        # Windows TemporaryDirectory cleanup fails with WinError 32.
-        try:
-            if proc is not None:
-                cancellation.terminate_process_tree(proc, job)
-        except Exception:
-            pass
-        try:
-            close = getattr(job, "close", None)
-            if callable(close):
-                close()
-        except Exception:
-            pass
+        # wait_process() already terminated the tree and closed the Job.
         return {
             "ok": False,
             "status": "timeout",
@@ -280,9 +266,11 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict:
             "output": "",
         }
     except Exception as exc:
+        # Start failures (never spawned) keep spawn_error; anything that
+        # fails after the spawn gate committed is a wait failure instead.
         return {
             "ok": False,
-            "status": "spawn_error",
+            "status": "spawn_error" if proc is None else "wait_error",
             "error": str(exc),
             "exit_code": None,
             "output": "",

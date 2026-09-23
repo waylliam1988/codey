@@ -213,12 +213,9 @@ def run_command_with_managed_output(
             changed=projected.changed,
             truncated=projected.truncated,
         )
-    # Two layers with distinct meanings: `managed_output` mirrors the
-    # ManagedOutputRef (and the on-disk JSON) and only describes the text
-    # fed to the store; `process_bytes`/`capture_truncated` describe the
-    # actual process output and capture-stage loss. Zero output is zero.
-    process_bytes = max(0, int(raw.stdout_bytes) + int(raw.stderr_bytes))
-    capture_truncated = bool(raw.capture_truncated)
+    # Process facts (process_bytes, capture_truncated) already live in the
+    # projection audit; this layer only adds the stored artifact receipt,
+    # which mirrors ManagedOutputRef and the on-disk JSON verbatim.
     managed_output = {
         "handle": ref.handle,
         "original_bytes": ref.original_bytes,
@@ -227,13 +224,7 @@ def run_command_with_managed_output(
         "original_sha256": ref.original_sha256,
         "stored_truncated": ref.stored_truncated,
     }
-    audit = {
-        **dict(projected.audit),
-        "managed_output": managed_output,
-        "process_bytes": process_bytes,
-    }
-    if capture_truncated:
-        audit["capture_truncated"] = True
+    audit = {**dict(projected.audit), "managed_output": managed_output}
     return ToolOutcome(
         projected.model_text,
         projected.ok,

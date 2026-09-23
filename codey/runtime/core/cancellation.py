@@ -146,8 +146,7 @@ class _StreamPump:
     """Per-stream reader state: capture plus a sticky read error."""
 
     capture: BoundedByteCapture
-    error: BaseException | None = None
-    done: threading.Event = dataclasses.field(default_factory=threading.Event)
+    error: Exception | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -158,10 +157,10 @@ class CapturedProcess:
     returncode: int
     stdout: str
     stderr: str
-    stdout_bytes: int = 0
-    stderr_bytes: int = 0
-    stdout_truncated: bool = False
-    stderr_truncated: bool = False
+    stdout_bytes: int
+    stderr_bytes: int
+    stdout_truncated: bool
+    stderr_truncated: bool
 
 
 def current_event() -> threading.Event | None:
@@ -263,8 +262,6 @@ def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:
             state.capture.feed(chunk)
     except Exception as exc:
         state.error = exc
-    finally:
-        state.done.set()
 
 
 def _join_readers(threads: list[threading.Thread], *, timeout: float) -> None:
@@ -293,75 +290,67 @@ def wait_process(
     *,
     capture_limit_bytes: int,
 ) -> CapturedProcess:
-    """Wait with bounded per-stream capture; never buffers output unbounded."""
+    """Wait with bounded per-stream capture; never buffers output unbounded.
+
+    This function owns the whole lifecycle: readers, the process tree, the
+    pipes, and the Job handle are all cleaned in one ``finally`` unless the
+    run completed. Failure branches only raise; they never clean up
+    themselves, so cleanup can neither be skipped nor mask the error.
+    """
     limit = max(1, int(capture_limit_bytes))
     head = limit // 4
     tail = limit - head
     stdout_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
     stderr_state = _StreamPump(BoundedByteCapture(head_limit=head, tail_limit=tail))
     readers: list[threading.Thread] = []
-    for stream, state in (
+    streams = (
         (proc.stdout, stdout_state),
         (proc.stderr, stderr_state),
-    ):
-        if stream is None:
-            state.done.set()
-            continue
-        thread = threading.Thread(
-            target=_pump_stream, args=(stream, state), daemon=True
-        )
-        thread.start()
-        readers.append(thread)
+    )
+    completed = False
     try:
+        for stream, state in streams:
+            if stream is None:
+                continue
+            thread = threading.Thread(
+                target=_pump_stream, args=(stream, state), daemon=True
+            )
+            thread.start()
+            readers.append(thread)
         deadline = time.monotonic() + max(0.0, float(timeout))
-        try:
-            while True:
-                for state in (stdout_state, stderr_state):
-                    if state.error is not None:
-                        raise ProcessOutputReadError(
-                            "failed reading command output "
-                            f"({state.error}); output is incomplete"
-                        )
-                check()
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise subprocess.TimeoutExpired(args, timeout)
-                try:
-                    returncode = proc.wait(timeout=min(POLL_INTERVAL, remaining))
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-        except (
-            TaskCancelled,
-            DeadlineExceeded,
-            subprocess.TimeoutExpired,
-            ProcessOutputReadError,
-        ):
-            _terminate_process_tree(proc, job)
-            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
-            _close_pipes(proc)
-            raise
+        while True:
+            for state in (stdout_state, stderr_state):
+                if state.error is not None:
+                    raise ProcessOutputReadError(
+                        "failed reading command output "
+                        f"({state.error}); output is incomplete"
+                    )
+            check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(args, timeout)
+            try:
+                returncode = proc.wait(timeout=min(POLL_INTERVAL, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
         drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
         for thread in readers:
             thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
         if any(thread.is_alive() for thread in readers):
-            _terminate_process_tree(proc, job)
-            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
-            _close_pipes(proc)
             raise PipeDrainTimeout(
                 "output pipe drain timed out: parent exited but a child "
                 "still holds stdout/stderr; output is incomplete"
             )
         for state in (stdout_state, stderr_state):
             if state.error is not None:
-                _close_pipes(proc)
                 raise ProcessOutputReadError(
                     "failed reading command output "
                     f"({state.error}); output is incomplete"
                 )
-        _close_pipes(proc)
         stdout_done = stdout_state.capture.finish()
         stderr_done = stderr_state.capture.finish()
+        completed = True
         return CapturedProcess(
             args=args,
             returncode=int(returncode),
@@ -373,6 +362,10 @@ def wait_process(
             stderr_truncated=stderr_done.truncated,
         )
     finally:
+        if not completed:
+            _terminate_process_tree(proc, job)
+            _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
+        _close_pipes(proc)
         close = getattr(job, "close", None)
         if callable(close):
             with suppress(Exception):

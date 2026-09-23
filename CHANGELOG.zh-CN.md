@@ -27,6 +27,25 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - wait_process 统一拥有清理（未发布）
+
+- `wait_process()` 用 `completed` 标志把全部生命周期收进同一个 `finally`：
+  reader 启动移入 `try`，只有完整构造结果才算完成。超时、读错、排空超时
+  分支只抛异常；共享 `finally` 负责杀树、有界 join 已启动 reader、关管道
+  和 Job，且不覆盖原始异常。补上三条漏网路径：父退出后 reader 才报错也会
+  杀组；`proc.wait()` 自身抛 `OSError` 照样终止并关闭一切；`thread.start()`
+  失败也能清理刚创建的进程。
+- 收敛：删除无读取者的 `_StreamPump.done`，error 收窄为 `Exception`；
+  `CapturedProcess` 字节/截断字段必填；进程事实只由
+  `project_run_command_result()` 生成，托管层只加 `managed_output`；
+  shell 超时分支不再重复清理（信任 `wait_process()` 契约），通用兜底在
+  spawn 提交后报 `wait_error`（`spawn_error` 只保留给启动前失败）。
+- 测试：三项确定性时序（post-exit 读错、`wait()` OSError、reader 启动失败），
+  各自断言终止 + 管道关闭 + 原异常保留。遗留说明：CI 只跑 Windows，POSIX
+  组清理还应在 Linux 跑一次真孙进程测试。
+- 验证：`python -m ruff check .` 通过；最终全量 `python -m pytest`
+  （`4136 passed, 6 skipped, 1374 subtests passed`）。
+
 ## Unreleased - 有界采集正确性跟进（未发布）
 
 - 读取失败就是失败。每路 reader 带粘性 `_StreamPump` 状态；

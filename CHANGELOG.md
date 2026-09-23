@@ -32,6 +32,31 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - wait_process owns all cleanup (no release)
+
+- `wait_process()` now owns the whole lifecycle in one `finally` guarded by
+  a `completed` flag: reader startup moved inside the `try`, and only a
+  fully built result sets completion. Timeout, read-error, and drain-timeout
+  branches only raise; the shared `finally` terminates the tree, boundedly
+  joins started readers, and closes pipes + Job without masking the original
+  error. This closes three gaps: post-exit reader errors now kill the group
+  (POSIX grandchildren cannot survive), an `OSError` from `proc.wait()`
+  itself still terminates and closes everything, and a `thread.start()`
+  failure cleans the just-spawned process.
+- Convergence: unread `_StreamPump.done` removed, error narrowed to
+  `Exception`; `CapturedProcess` byte/truncation fields are required;
+  `project_run_command_result()` solely owns process facts while the
+  managed layer only adds the `managed_output` receipt; the shell timeout
+  branch no longer re-cleans (it trusts the `wait_process()` contract) and
+  the generic shell fallback reports `wait_error` after a committed spawn
+  (`spawn_error` stays pre-spawn only).
+- Tests: three deterministic timings (post-exit read error, `wait()`
+  `OSError`, reader start failure) each asserting terminate + pipe close +
+  original exception. Residual note: CI runs Windows only, so the POSIX
+  group-kill path still deserves one Linux run of the real-grandchild test.
+- Verification: `python -m ruff check .` clean; final full
+  `python -m pytest` (`4136 passed, 6 skipped, 1374 subtests passed`).
+
 ## Unreleased - Bounded-capture correctness follow-up (no release)
 
 - Reader failures are explicit failures. Each pipe reader carries sticky
