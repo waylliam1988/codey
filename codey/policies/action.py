@@ -301,7 +301,9 @@ def permission_profile_guard(subject: ActionSubject) -> ActionPolicyDecision | N
         return _permission_denied(subject)
     if subject.kind == "research_url" and "open_url" not in profile.research_tools:
         return _permission_denied(subject)
-    if subject.kind == "managed_output" and "project_verify" not in profile.coding_permissions:
+    if subject.kind == "managed_output" and (
+        "project_verify" not in profile.coding_permissions and "open_url" not in profile.research_tools
+    ):
         return _permission_denied(subject)
     return None
 

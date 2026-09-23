@@ -25,6 +25,7 @@ from codey.research.controller import (
 )
 from codey.research.done_finalizer import finalize_done_answer
 from codey.research.object_model import ResearchRecord, build_research_record
+from codey.research.output_receipts import _Outcome, maybe_externalize_output
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.source_document import compact_pages
@@ -48,7 +49,7 @@ from codey.research.topic_continuity import (
     DEFAULT_TOPIC_BUDGET_CHARS,
 )
 from codey.runtime.core import cancellation
-from codey.runtime.core.models import ToolResult, normalized_managed_output
+from codey.runtime.core.models import ToolResult
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import (
     FailOpenPromptTrace,
@@ -156,6 +157,7 @@ class ResearchRunner:
         iteration_context: str = "",
         topic_continuity_context: str = "",
         topic_continuity_payload: Mapping[str, object] | None = None,
+        managed_outputs=None,
     ) -> None:
         self.provider = provider
         self.search = search
@@ -169,6 +171,10 @@ class ResearchRunner:
         self.run_id = run_id
         self.permission_profile = profile_for_name(permission_profile).name
         self.trace_recorder = trace_recorder
+        # Durable receipt store for oversized web/source outputs. Duck-typed
+        # (no storage import: research must not depend on the runtime side of
+        # the managed-output boundary); None means clip-only.
+        self.managed_outputs = managed_outputs
         self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
         self.iteration_context = (iteration_context or "").strip()
@@ -367,7 +373,7 @@ class ResearchRunner:
             for index, call in enumerate(plan.calls):
                 yield RunEvent.tool_started(turn, call, _ACTIVITY.get(call.name, "working"), index)
                 try:
-                    outcome = self._dispatch(call)
+                    outcome = self._dispatch(call, turn, index)
                 except cancellation.TaskCancelled:
                     stop_reason = "stopped"
                     break
@@ -537,11 +543,14 @@ class ResearchRunner:
             )
         yield self._done_event()
 
-    def _dispatch(self, call):
+    def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
         cancellation.check()
         args = call.args
         if call.name == "web_search":
-            return _Outcome(self.tools.web_search(first_text_arg(args, "query")))
+            output = self.tools.web_search(first_text_arg(args, "query"))
+            return self._maybe_externalize_research_output(
+                call, output, turn=turn, tool_index=tool_index,
+            )
         if call.name == "open_url":
             output = self.tools.open_url(
                 str(args.get("url") or ""),
@@ -549,13 +558,20 @@ class ResearchRunner:
                 limit=args.get("limit", 6000),
                 pages=str(args.get("pages") or ""),
             )
-            return _Outcome(output, presentation_result=_opened_source_presentation(output))
+            outcome = _Outcome(output, presentation_result=_opened_source_presentation(output))
+            return self._maybe_externalize_research_output(
+                call, outcome.model_text, turn=turn, tool_index=tool_index,
+                presentation_result=outcome.presentation.get("result", ""),
+            )
         if call.name == "source_search":
-            return _Outcome(self.tools.source_search(
+            output = self.tools.source_search(
                 str(args.get("url") or ""),
                 first_text_arg(args, "query"),
                 args.get("limit", 6),
-            ))
+            )
+            return self._maybe_externalize_research_output(
+                call, output, turn=turn, tool_index=tool_index,
+            )
         if call.name == "knowledge_search":
             return _Outcome(self.tools.knowledge_search(first_text_arg(args, "query")))
         if call.name == "knowledge_read":
@@ -571,6 +587,28 @@ class ResearchRunner:
             )
             return _Outcome(output, changed=output.startswith(("linked:", "updated link:")))
         return _Outcome.error(f"unknown tool: {call.name}")
+
+    def _maybe_externalize_research_output(
+        self,
+        call,
+        output: str,
+        *,
+        turn: int,
+        tool_index: int,
+        presentation_result: str = "",
+    ):
+        """Bound oversized web/source outputs (delegate keeps runner small)."""
+        return maybe_externalize_output(
+            store=getattr(self, "managed_outputs", None),
+            session_id=self.session_id,
+            run_id=self.run_id,
+            permission_profile=self.permission_profile,
+            call=call,
+            output=output,
+            turn=turn,
+            tool_index=tool_index,
+            presentation_result=presentation_result,
+        )
 
     def _use_native_provider(self) -> bool:
         from codey.research.native_bridge import use_native_provider as _use_native
@@ -1269,48 +1307,6 @@ def _source_meta(item: dict, quality_text: str = "") -> str:
 def _evidence_locator(item: dict) -> str:
     locator = str(item.get("locator") or "")
     return f" {locator}" if locator else ""
-
-
-class _Outcome:
-    def __init__(self, model_text: str, *, changed: bool = False, presentation_result: str = "") -> None:
-        self.model_text = model_text
-        self.status = _outcome_status(model_text)
-        self.ok = self.status != "error"
-        self.exit_code = None
-        self.changed = changed and self.status == "ok"
-        self.truncated = False
-        self.presentation = {"status": self.status, "result": (presentation_result or self.first_model_line(200))[:200]}
-        self.audit = {}
-        self.canonical = {}
-
-    @classmethod
-    def error(cls, message: str) -> _Outcome:
-        text = message if message.startswith("ERROR:") else f"ERROR: {message}"
-        return cls(text)
-
-    def first_model_line(self, limit: int) -> str:
-        return next(iter(self.model_text.splitlines()), "")[:limit]
-
-    def presentation_result(self, limit: int) -> str:
-        value = self.presentation.get("result")
-        text = str(value or "") or self.first_model_line(limit)
-        return text[:limit]
-
-    def presentation_status(self) -> str:
-        value = self.presentation.get("status")
-        return str(value or "") or ("ok" if self.ok else "error")
-
-    def managed_output(self) -> dict[str, object]:
-        value = self.audit.get("managed_output")
-        return normalized_managed_output(value)
-
-
-def _outcome_status(output: str) -> str:
-    if output.startswith("ERROR:"):
-        return "error"
-    if output.startswith(("NEEDS_OPEN:", "SKIPPED:")):
-        return "needs_action"
-    return "ok"
 
 
 def _opened_source_presentation(output: str) -> str:

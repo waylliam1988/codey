@@ -9,8 +9,7 @@ from typing import Any
 TRUNCATED_RESULT_NOTICE = (
     "[truncated result: omitted content may contain relevant "
     "errors or code. Do not assume omitted content is clean. "
-    "Use narrower grep/read_file offsets or rerun a narrower "
-    "command if needed.]"
+    "Use narrower offsets or rerun a narrower query/command if needed.]"
 )
 PROJECTION_WARNING_KEY = "_projection_warnings"
 PROJECTION_MAX_DEPTH = 6

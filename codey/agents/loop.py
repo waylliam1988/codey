@@ -47,7 +47,6 @@ from codey.agents.verification_driver import (
     verification_attempted_after_latest_edit,
     verification_is_fresh,
 )
-from codey.env_names import NATIVE_TOOLS_ENV
 from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.protocols.json_codec import PROTOCOL_NO_JSON
@@ -111,8 +110,6 @@ def _reply_display_text(reply: str | object) -> str:
 
 
 def _setup_loop(request: AgentRequest) -> AgentLoopSession:
-    import os
-
     from codey.providers.capabilities import capability_for
 
     provider = request.provider
@@ -128,9 +125,12 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         capability = None
     wants_native = False
     if capability is not None and getattr(capability, "supports_native_tools", False):
-        wants_native = bool(getattr(capability, "native_tools_default", False))
-        if os.environ.get(NATIVE_TOOLS_ENV, "").strip() == "1":
-            wants_native = True
+        try:
+            from codey.providers.local_openai import local_native_tools_enabled
+
+            wants_native = bool(local_native_tools_enabled())
+        except Exception:
+            wants_native = bool(getattr(capability, "native_tools_default", False))
     if wants_native and callable(getattr(provider, "send_turn", None)):
         from codey.protocols.native_openai import build_native_codec_for_profile
 

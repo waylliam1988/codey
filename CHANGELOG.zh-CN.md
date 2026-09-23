@@ -2,6 +2,56 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Native done 落地、本地默认开启、research receipt（未发布）
+
+- P0：coding `done` 成为真正的 native function。`render_openai_tools()`
+  暴露 `done`（`function.name="done"`），`_native_definitions()` 不再因
+  `runtime_name is None` 丢掉它，`native_tool_names()` 与渲染列表一致。
+  `NativeOpenAIToolCodec` 不再复用 JSON prompt/hash：`system_prompt()` 为
+  native 专用（"use function calls, call done"），
+  `model_tool_contract_hash()` 取 native tools hash，
+  `format_results()`/`repair_prompt()` 用 function-call 文案。native 解析
+  执行权限检查（越权含 `done` 报 `disallowed_tool`），
+  `protocol_repair_prompt()` 与 structured followup 在 native 路径不再说
+  JSON。native loop 测试断言一定提供 `done`。
+- P1：本地 native tools 冷启动默认开。`local`
+  `native_tools_default=True`；`_setup_loop()` 与 research
+  `use_native_provider()` 统一走 `local_native_tools_enabled()`
+ （`NATIVE_TOOLS=0` 或 `local-openai.json {"native_tools": false}` 关闭，
+  不填即开）。无自动回退：疑似不支持 `tools`/`tool_choice` 的 400 直接给
+  清楚错误并指到两处关闭方式。`save_local_config()` 保留
+  `native_tools`/context 字段，`local_config_payload()` 对外暴露。research
+  native 门控保持 provider 感知（非本地默认关；`Mock` 无显式
+  `NATIVE_TOOLS=1` 永不强制 native）。
+- P1：本地 context 预算可配。`connect()` 按
+  `LOCAL_OPENAI_CONTEXT_WINDOW/RESERVE/KEEP`、再 `local-openai.json`、再
+  `local` capability（32_768/8_192/12_000）解析
+  `context_window_tokens/context_reserve_tokens/context_keep_recent_tokens`；
+  校验 `window > reserve > 0` 且 `keep > 0`，非法回落默认值。compaction 走
+  同一 resolver，payload 展示最终预算。
+- P1：research `open_url`/`source_search`/`web_search` 接 durable receipt。
+  `ResearchRunner` 新增鸭类型 `managed_outputs`（不 import storage，
+  research/runtime 边界不断），`_dispatch(call, turn, tool_index)` 对超限
+  输出走 `maybe_externalize_output()`（24k 预算、head/tail、
+  `audit["managed_output"]`、`truncated=True`），由
+  `TaskRunDeps.managed_outputs` 经 `ResearchFlowDeps` 传入。新增
+  `research/output_receipts.py` 让 `runner.py` 留在尺寸红线内（1352 行）。
+  策略放行 research profile 写 `managed_output`。
+- P2：managed output 保持纯审计，文案通用化。truncated 提示与 head/tail
+  receipt 不再写 `grep/read_file`，统一为 "narrower offsets"。footer 保留
+  "handle is for local audit/export, not a tool"。
+- P2：file-mutation queue 允许不同文件 write 同组，`run`/`shell` 恒串行；
+  同文件 write/read 照旧串行。`tool_turn` 按 `tool_index` 排序回填结果，
+  native `tool_messages` 与原 call 顺序一致（现串行下 no-op，给未来并行
+  留证明）。
+- 测试：新增 `tests/test_coldstart_native_local_receipts.py`（13 个：
+  native done/prompt/hash/权限、本地开关、context 预算、research 有/无
+  store receipt、通用文案、queue 分组与排序）；更新 schema/env/native-loop
+  测试与手动 `ProbeResearchRunner._dispatch` 签名。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4079 passed, 6 skipped, 1339 subtests passed`）。
+
 ## Unreleased - 高信息 fresh-chat 修复、诚实重启日志（未发布）
 
 - P2：无 id 重启现在带完整上下文。fresh-chat 修复走 `project_intro()`，

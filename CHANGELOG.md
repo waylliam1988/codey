@@ -2,6 +2,62 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Native done, local defaults, research receipts (no release)
+
+- P0: coding `done` is now a real native function. `render_openai_tools()`
+  exposes `done` (`function.name="done"`), `_native_definitions()` no longer
+  drops it for `runtime_name is None`, and `native_tool_names()` matches the
+  rendered list. `NativeOpenAIToolCodec` no longer reuses the JSON prompt or
+  hash: `system_prompt()` is native-only ("use function calls, call done"),
+  `model_tool_contract_hash()` is the native tools hash, and
+  `format_results()`/`repair_prompt()` use function-call wording. Native
+  parsing enforces the permission profile (`disallowed_tool` for out-of-scope
+  calls, including `done`) and `protocol_repair_prompt()` plus the structured
+  followup no longer say JSON on the native path. The native loop test now
+  asserts `done` is offered.
+- P1: local native tools are on by default for cold start. `local`
+  `native_tools_default=True`; `_setup_loop()` and research
+  `use_native_provider()` go through `local_native_tools_enabled()`
+  (`NATIVE_TOOLS=0` or `local-openai.json {"native_tools": false}` opts out,
+  unset means on). No auto-fallback: a 400 that looks like unsupported
+  `tools`/`tool_choice` fails with a clear hint pointing at both opt-outs.
+  `save_local_config()` preserves `native_tools`/context fields and
+  `local_config_payload()` exposes them. Research native gating stays
+  provider-aware (non-local defaults off; `Mock` doubles never force native
+  without explicit `NATIVE_TOOLS=1`).
+- P1: local context budgets are explicit. `connect()` resolves
+  `context_window_tokens/context_reserve_tokens/context_keep_recent_tokens`
+  from `LOCAL_OPENAI_CONTEXT_WINDOW/RESERVE/KEEP`, then `local-openai.json`,
+  then the `local` capability (32_768/8_192/12_000); `window > reserve > 0`
+  and `keep > 0` are enforced with fail-open to defaults. Compaction uses the
+  same resolver and the payload surfaces the resolved budgets.
+- P1: research `open_url`/`source_search`/`web_search` get durable receipts.
+  `ResearchRunner` takes duck-typed `managed_outputs` (no storage import, so
+  the research/runtime boundary holds), `_dispatch(call, turn, tool_index)`
+  routes oversized outputs through `maybe_externalize_output()` (24k budget,
+  head/tail clip, `audit["managed_output"]`, `truncated=True`), wired from
+  `TaskRunDeps.managed_outputs` via `ResearchFlowDeps`. New
+  `research/output_receipts.py` keeps `runner.py` under its size ceiling
+  (1352 lines). Policy now allows `managed_output` for the research profile.
+- P2: managed output stays audit-only with generic wording. The truncated
+  notice and head/tail receipt no longer say `grep/read_file`; both read
+  "narrower offsets". Footer keeps "handle is for local audit/export, not a
+  tool".
+- P2: file-mutation queue batches different-file writes and serializes
+  `run`/`shell`; same-file write/read pairs still serialize. `tool_turn`
+  sorts results and delivery items back to `tool_index` order so native
+  `tool_messages` follow the original call order (no-op today, proof for a
+  future parallel executor).
+- Tests: new `tests/test_coldstart_native_local_receipts.py` (13 tests:
+  native done/prompt/hash/permissions, local opt-out, context budgets,
+  research receipts with/without store, generic wording, queue grouping and
+  ordering); updated schema/env/native-loop tests and the manual
+  `ProbeResearchRunner._dispatch` signature.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4079 passed, 6 skipped, 1339 subtests passed`).
+
 ## Unreleased - Rich fresh-chat repair, honest reuse log (no release)
 
 - P2: id-less restarts now carry full context. The fresh-chat repair goes

@@ -49,7 +49,7 @@ def _head_tail_clip(text: str) -> tuple[str, int]:
     tail = raw[-TOOL_OUTPUT_TAIL_BYTES:].decode("utf-8", errors="ignore") if len(raw) > TOOL_OUTPUT_HEAD_BYTES else ""
     receipt = (
         f"\n[... output externalized: {raw_bytes} bytes; showing head/tail. "
-        "Use narrower grep/read_file offsets for the rest.]\n"
+        "Use narrower offsets for the rest.]\n"
     )
     return (head + receipt + tail if tail else head + receipt), raw_bytes
 

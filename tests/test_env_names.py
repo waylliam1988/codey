@@ -47,6 +47,9 @@ class EnvNameValueTests(unittest.TestCase):
             "LOCAL_OPENAI_BASE_URL_ENV": "LOCAL_OPENAI_BASE_URL",
             "LOCAL_OPENAI_MODEL_ENV": "LOCAL_OPENAI_MODEL",
             "LOCAL_OPENAI_API_KEY_ENV": "LOCAL_OPENAI_API_KEY",
+            "LOCAL_OPENAI_CONTEXT_WINDOW_ENV": "LOCAL_OPENAI_CONTEXT_WINDOW",
+            "LOCAL_OPENAI_CONTEXT_RESERVE_ENV": "LOCAL_OPENAI_CONTEXT_RESERVE",
+            "LOCAL_OPENAI_CONTEXT_KEEP_ENV": "LOCAL_OPENAI_CONTEXT_KEEP",
             "PROVIDER_WORKER_CHILD_ENV": "PROVIDER_WORKER_CHILD",
             "PROVIDER_CDP_PORT_ENV": "PROVIDER_CDP_PORT",
             "RUN_BROWSER_E2E_ENV": "RUN_BROWSER_E2E",
@@ -70,12 +73,16 @@ class EnvNameValueTests(unittest.TestCase):
         import inspect
 
         from codey.agents import loop
+        from codey.providers import local_openai
         from codey.research import native_bridge
 
+        source = inspect.getsource(local_openai)
+        self.assertIn("NATIVE_TOOLS_ENV", source)
+        self.assertNotIn("CODEY_", source)
         for module in (loop, native_bridge):
             with self.subTest(module=module.__name__):
                 source = inspect.getsource(module)
-                self.assertIn("NATIVE_TOOLS_ENV", source)
+                self.assertIn("local_native_tools_enabled", source)
                 self.assertNotIn("CODEY_", source)
 
     def test_no_brand_prefixed_name_outside_allowlist(self) -> None:

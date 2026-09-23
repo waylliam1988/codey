@@ -46,6 +46,7 @@ class ResearchFlowDeps:
     search_factory: Callable[[], object]
     run_research_advisors: Callable | None
     ghost_continuity: Callable[..., object]
+    managed_outputs: Any = None
 
 
 def record_research_result_trace(trace: Any | None, result: Any) -> None:
@@ -295,6 +296,7 @@ def run_research_iteration(
         iteration_context=iteration_context,
         topic_continuity_context=topic_continuity_context,
         topic_continuity_payload=topic_continuity_payload,
+        managed_outputs=deps.managed_outputs,
     )
     for event in runner.run(task):
         on_event(event)

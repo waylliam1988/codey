@@ -15,8 +15,12 @@ def test_native_schema_names_required_and_closed() -> None:
     assert "parallel" not in by_name
     assert "read_files" not in by_name
     assert set(NATIVE_EXCLUDED_NAMES) == {"parallel", "read_files"}
-    for name in ("ls", "read", "search", "edit", "run", "shell"):
+    for name in ("ls", "read", "search", "edit", "run", "shell", "done"):
         assert name in by_name
+    done_params = by_name["done"]["parameters"]
+    assert done_params["type"] == "object"
+    assert "summary" in done_params["required"]
+    assert done_params["additionalProperties"] is False
     read_params = by_name["read"]["parameters"]
     assert read_params["type"] == "object"
     assert "path" in read_params["required"]
@@ -33,4 +37,8 @@ def test_native_schema_sorted_and_hash_stable() -> None:
     assert openai_tool_contract_hash() == openai_tool_contract_hash()
     assert openai_tool_contract_hash().startswith("sha256:")
     assert set(native_tool_names()) == {str(t["function"]["name"]) for t in first}
-    assert all(isinstance(tool_defs.RUNTIME_TOOL_DEFINITION_BY_NAME[name], object) for name in native_tool_names())
+    for name in native_tool_names():
+        if name == "done":
+            assert tool_defs.TOOL_DEFINITION_BY_NAME["done"] is not None
+        else:
+            assert isinstance(tool_defs.RUNTIME_TOOL_DEFINITION_BY_NAME[name], object)

@@ -141,6 +141,7 @@ def _research_deps(deps: Any) -> ResearchFlowDeps:
         search_factory=deps.search_factory or default_research_search_provider,
         run_research_advisors=deps.run_research_advisors,
         ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
+        managed_outputs=getattr(deps, "managed_outputs", None),
     )
 
 

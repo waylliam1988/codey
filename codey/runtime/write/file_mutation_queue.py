@@ -1,9 +1,11 @@
 """Same-file mutation serialization planning.
 
-Pure planning guard: groups one turn's ToolCalls so same-file edits (and
-same-file edit/read pairs) never run concurrently once parallel/native
-fan-out is enabled. The current loop still executes serially; this only
-proves the grouping invariant by unit test.
+Pure planning guard: groups one turn's ToolCalls so same-file writes (and
+same-file write/read pairs) never run concurrently once parallel/native
+fan-out is enabled. Different files may share a group; side-effecting
+``run``/``shell`` calls always serialize. The current loop still executes
+serially; grouping only proves the invariant by unit test and keeps result
+order stable (callers sort back to ``tool_index`` order after execution).
 
 Stays dependency-free on purpose: ``runtime`` must not import ``agents``
 (architecture boundary). Paths are normalized lexically, never resolved
@@ -41,30 +43,60 @@ def key_for_call(call: ToolCall, project: str = "") -> str:
     return f"{kind}:{canonical}"
 
 
+_SERIAL_OTHER_NAMES = frozenset({"run", "shell"})
+
+
 class FileMutationQueue:
     def plan(self, calls: Sequence[ToolCall], project: str = "") -> list[list[int]]:
         groups: list[list[int]] = []
-        write_keys: set[str] = set()
+        group_writes: list[set[str]] = []
+        group_reads: list[set[str]] = []
         for index, call in enumerate(calls):
             key = key_for_call(call, project)
             if key.startswith("write:"):
-                path = key[len("write:"):]
-                # Each write gets its own group so same-file edits serialize.
-                write_keys.add(path)
-                groups.append([index])
-            elif key.startswith("read:"):
-                path = key[len("read:"):]
-                if path in write_keys:
+                path = key[len("write:") :]
+                if groups and path not in group_writes[-1] and path not in group_reads[-1]:
+                    # Different-file writes may share a group; same-file
+                    # writes (or a write after a same-file read in the same
+                    # group) serialize by starting a new group.
+                    groups[-1].append(index)
+                    group_writes[-1].add(path)
+                else:
                     groups.append([index])
+                    group_writes.append({path})
+                    group_reads.append(set())
+            elif key.startswith("read:"):
+                path = key[len("read:") :]
+                if not groups:
+                    groups.append([index])
+                    group_writes.append(set())
+                    group_reads.append({path})
+                elif path in group_writes[-1]:
+                    # Same-file write/read pairs never run concurrently.
+                    groups.append([index])
+                    group_writes.append(set())
+                    group_reads.append({path})
+                else:
+                    # Different files (or repeat reads) may share the group;
+                    # a read of a file written in an earlier group is already
+                    # settled, so batching with unrelated writes is safe.
+                    groups[-1].append(index)
+                    group_reads[-1].add(path)
+            else:
+                name = str(call.name or "")
+                if name in _SERIAL_OTHER_NAMES:
+                    groups.append([index])
+                    group_writes.append(set())
+                    group_reads.append(set())
                 elif groups:
                     groups[-1].append(index)
+                    while len(group_writes) < len(groups):
+                        group_writes.append(set())
+                        group_reads.append(set())
                 else:
                     groups.append([index])
-            else:
-                if groups:
-                    groups[-1].append(index)
-                else:
-                    groups.append([index])
+                    group_writes.append(set())
+                    group_reads.append(set())
         return groups
 
 

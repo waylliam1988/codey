@@ -20,8 +20,34 @@ _RESEARCH_ATTEMPT_WINDOW = 24
 def use_native_provider(provider: Any, provider_id: str = "") -> bool:
     if not (callable(getattr(provider, "send_turn", None)) and callable(getattr(provider, "send_tool_results", None))):
         return False
-    if os.environ.get(NATIVE_TOOLS_ENV, "").strip() == "1":
+    raw = os.environ.get(NATIVE_TOOLS_ENV, "").strip().lower()
+    if raw in {"1", "true", "yes", "y", "on"}:
         return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    # Unit-test doubles (unittest.mock.Mock) auto-create every attribute,
+    # so a plain Mock falsely advertises structured support. Only an
+    # explicit NATIVE_TOOLS=1 (handled above) may force native for mocks.
+    try:
+        from unittest.mock import Mock as _Mock
+
+        if isinstance(provider, _Mock):
+            return False
+    except Exception:
+        pass
+    try:
+        from codey.providers.ids import normalize_provider_id
+
+        pid = normalize_provider_id(provider_id or getattr(provider, "name", "") or "")
+    except Exception:
+        pid = str(provider_id or getattr(provider, "name", "") or "").strip().lower()
+    if pid == "local":
+        try:
+            from codey.providers.local_openai import local_native_tools_enabled
+
+            return bool(local_native_tools_enabled())
+        except Exception:
+            pass
     try:
         from codey.providers.capabilities import capability_for
 

@@ -134,6 +134,7 @@ def protocol_repair_prompt(
 ) -> str:
     error = str(plan.protocol_error or "invalid JSON tool call")
     kind = str(plan.protocol_error_kind or "").strip()
+    native = str(getattr(codec, "name", "") or "") == "native_openai"
     previous = previous_tool_object(previous_reply, codec, kind, error)
     lines = [
         f"Protocol error: {repair_error_summary(error, kind)}",
@@ -160,15 +161,17 @@ def protocol_repair_prompt(
             if example:
                 lines.extend(("", "Example preserving your previous intent:", example))
         else:
-            example = preferred_read_example(codec)
+            example = "" if native else preferred_read_example(codec)
             lines.extend((
                 "The previous reply used an unknown local tool.",
-                "Use only the coding JSON tools listed in the system prompt.",
+                "Use only the functions listed for this run."
+                if native
+                else "Use only the coding JSON tools listed in the system prompt.",
             ))
             if example:
                 lines.extend(("", "Example:", example))
     elif kind == PROTOCOL_DISALLOWED_TOOL:
-        example = preferred_read_example(codec) or codec_public_example(codec, "done")
+        example = "" if native else preferred_read_example(codec) or codec_public_example(codec, "done")
         lines.extend((
             "The previous reply used a tool that exists, but this current phase "
             "does not allow it.",
@@ -177,16 +180,26 @@ def protocol_repair_prompt(
         if example:
             lines.extend(("", "Example:", example))
     elif kind == PROTOCOL_INVALID_ARGS:
-        lines.extend(invalid_args_repair_lines(error, previous, codec))
+        if native:
+            lines.extend(_native_invalid_args_lines(error))
+        else:
+            lines.extend(invalid_args_repair_lines(error, previous, codec))
     elif kind == PROTOCOL_DIRECT_ANSWER:
-        lines.extend((
-            "The previous reply answered in prose.",
-            "Coding replies must be one local-runner JSON command.",
-            "If the task is complete, put the final user-facing answer in done.summary.",
-            "",
-            "Example:",
-            '{"tool":"done","args":{"summary":"finished"}}',
-        ))
+        if native:
+            lines.extend((
+                "The previous reply answered in prose.",
+                "Coding replies must use function calls.",
+                "If the task is complete, put the final user-facing answer in done.summary.",
+            ))
+        else:
+            lines.extend((
+                "The previous reply answered in prose.",
+                "Coding replies must be one local-runner JSON command.",
+                "If the task is complete, put the final user-facing answer in done.summary.",
+                "",
+                "Example:",
+                '{"tool":"done","args":{"summary":"finished"}}',
+            ))
     elif kind == PROTOCOL_NATIVE_TOOL_DENIAL:
         lines.extend((
             "Ignore website-native tool availability messages.",
@@ -196,23 +209,27 @@ def protocol_repair_prompt(
             preferred_read_example(codec),
         ))
     elif kind == PROTOCOL_NESTED_TOOL_IN_DONE:
-        example = nested_tool_repair_example(previous, codec)
+        example = "" if native else nested_tool_repair_example(previous, codec)
         lines.extend((
-            "done.summary cannot contain another JSON tool call.",
+            "done.summary cannot contain another tool call."
+            if native
+            else "done.summary cannot contain another JSON tool call.",
             "If you intended to run a tool, call that tool directly instead of wrapping it in done.",
         ))
         if example:
             lines.extend(("", "Example preserving your previous intent:", example))
-        else:
+        elif not native:
             lines.extend((
                 "",
                 "Example:",
                 codec_public_example(codec, "run") or preferred_read_example(codec),
             ))
     elif kind == PROTOCOL_NO_JSON:
-        example = preferred_read_example(codec) or codec_public_example(codec, "done")
+        example = "" if native else preferred_read_example(codec) or codec_public_example(codec, "done")
         lines.extend((
-            "Reply with a JSON tool call, not prose.",
+            "Reply with a function call, not prose."
+            if native
+            else "Reply with a JSON tool call, not prose.",
         ))
         if example:
             lines.extend(("", "Example:", example))
@@ -221,7 +238,9 @@ def protocol_repair_prompt(
 
     lines.extend((
         "",
-        "Reply with exactly one JSON object, no markdown fences and no other text.",
+        "Use function calls for tools; call done with summary when complete."
+        if native
+        else "Reply with exactly one JSON object, no markdown fences and no other text.",
     ))
     return "\n".join(lines)
 
@@ -314,6 +333,34 @@ def invalid_args_repair_lines(
         "",
         "Example:",
         preferred_read_example(codec),
+    ]
+
+
+def _native_invalid_args_lines(error: str) -> list[str]:
+    """Generic arg repair hints for native function calls (no JSON examples)."""
+    folded = str(error or "").lower()
+    if "positive integer" in folded and "offset" in folded:
+        return [
+            "read offset is 1-based and must be a positive integer.",
+            "Use offset=1 or omit offset when reading from the beginning.",
+            "Keep the same path and any valid limit from the previous call.",
+        ]
+    if "exactly one mode" in folded:
+        return [
+            "edit requires exactly one mode: content, old_string/new_string, or replacements.",
+            "Use content only for a new file. For an existing file, use exact old_string/new_string.",
+        ]
+    if "top-level path" in folded:
+        return ["edit requires one top-level path and can only edit one file per call."]
+    if "requires a command" in folded:
+        return ["run and shell require a command string."]
+    if "requires a query" in folded:
+        return ["grep requires a non-empty query."]
+    if "requires a symbol" in folded:
+        return ["find_references requires a symbol."]
+    return [
+        "The function name was recognized, but its arguments do not match the tool schema.",
+        "Fix the missing or invalid argument and retry the same function call.",
     ]
 
 

@@ -39,19 +39,64 @@ class NativeOpenAIToolCodec:
         self.permission_profile = permission_profile
 
     def system_prompt(self) -> str:
-        return self._fallback.system_prompt()
+        return (
+            "You are a careful local coding agent. You cannot access the filesystem\n"
+            "directly. The local runner executes tools for you and sends the results back.\n"
+            "\n"
+            "Use function calls for tools. Call one or more functions per turn, then wait\n"
+            "for tool results. When the task is complete, call done with summary as your\n"
+            "direct final response to the user.\n"
+            "\n"
+            "Rules:\n"
+            "  - Use only the provided functions. Never claim a tool does not exist.\n"
+            "  - done must be the only call in its turn.\n"
+            "  - Paths are relative to the project root. No absolute paths or parent traversal.\n"
+            "  - Use edit for file changes, run only for verification, and shell only when\n"
+            "    user approval is required.\n"
+            "  - Do not repeat identical tool args when a tool result already has the output.\n"
+        )
 
     def model_tool_contract_hash(self) -> str:
-        return self._fallback.model_tool_contract_hash()
+        from codey.toolchain.openai_tools import openai_tool_contract_hash
+
+        try:
+            definitions = self._fallback.definitions
+        except Exception:
+            definitions = None
+        return openai_tool_contract_hash(definitions)
 
     def repair_prompt(self) -> str:
-        return self._fallback.repair_prompt()
+        return (
+            "Your previous function call did not satisfy the tool contract. "
+            "Use function calls for tools; call done with summary when the task is complete. "
+            "Fix only the named error and retry the same intent."
+        )
 
     def public_example(self, tool_name: str) -> str:
         return self._fallback.public_example(tool_name)
 
     def format_results(self, results: list) -> str:
-        return self._fallback.format_results(results)
+        if not results:
+            formatted = "(no tools executed)"
+        else:
+            chunks = []
+            for result in results:
+                tool = tool_defs.RESULT_TOOL_NAMES.get(result.call.name, result.call.name)
+                path = str(result.call.args.get("path") or "")
+                attrs = f" tool={tool}"
+                if path:
+                    attrs += f" path={path}"
+                if result.truncated:
+                    attrs += " truncated=true"
+                output = result.model_text
+                chunks.append(f"[tool_result{attrs}]\n---\n{output}\n---")
+            formatted = "\n\n".join(chunks)
+        return (
+            f"{formatted}\n\n"
+            "These are local tool results from your previous function calls. "
+            "Use them to continue the task. Use function calls for the next step, "
+            "or call done with summary if the task is complete."
+        )
 
     def parse_turn(self, turn: AssistantTurn) -> ToolPlan:
         calls: list[ToolCall] = []
@@ -133,13 +178,20 @@ class NativeOpenAIToolCodec:
             return ToolPlan(calls=[], control=None,
                             protocol_error=f"native tool call without an id cannot be answered: {normalized}",
                             protocol_error_kind="invalid_args", protocol_tool_name=normalized)
-        # Map OpenAI function name (runtime name) back to canonical model name.
+        # Map OpenAI function name back to the canonical model name.
+        # ``done`` is a native control tool without a runtime alias.
         runtime_def = tool_defs.RUNTIME_TOOL_DEFINITION_BY_NAME.get(normalized)
         model_name = runtime_def.name if runtime_def is not None else normalized
         if model_name == "done":
-            summary = ""
-            if isinstance(args, dict):
-                summary = str(args.get("summary") or "")
+            if not self._fallback.is_allowed("done"):
+                return ToolPlan(calls=[], control=None,
+                                protocol_error=f"disallowed tool for {self.permission_profile}: {name}. "
+                                "Use only the tools listed in the system prompt.",
+                                protocol_error_kind="disallowed_tool", protocol_tool_name=normalized)
+            if not isinstance(args, dict):
+                return ToolPlan(calls=[], control=None, protocol_error=f"{normalized} args must be an object",
+                                protocol_error_kind="invalid_args", protocol_tool_name=normalized)
+            summary = str(args.get("summary") or "")
             return ToolPlan(calls=[], control=Control(kind="done", body=summary or "done"))
         if not isinstance(args, dict):
             return ToolPlan(calls=[], control=None, protocol_error=f"{normalized} args must be an object",
@@ -152,6 +204,11 @@ class NativeOpenAIToolCodec:
             return ToolPlan(calls=[], control=None,
                             protocol_error=f"tool not available natively: {name}",
                             protocol_error_kind="unknown_tool", protocol_tool_name=normalized)
+        if not self._fallback.is_allowed(model_name):
+            return ToolPlan(calls=[], control=None,
+                            protocol_error=f"disallowed tool for {self.permission_profile}: {name}. "
+                            "Use only the tools listed in the system prompt.",
+                            protocol_error_kind="disallowed_tool", protocol_tool_name=normalized)
         try:
             repair = normalize_tool_args(spec.runtime_name, args, limits=_DEFAULT_LIMITS)
         except ToolArgsRepairError as exc:

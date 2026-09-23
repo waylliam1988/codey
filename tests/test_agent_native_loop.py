@@ -68,6 +68,7 @@ def test_native_loop_read_then_done(monkeypatch, tmp_path: Path) -> None:
     session: AgentLoopSession = _setup_loop(_request(provider, tmp_path))
     assert session.native_tools is not None
     assert all(t["function"]["name"] != "parallel" for t in session.native_tools)
+    assert "done" in {str(t["function"]["name"]) for t in session.native_tools}
     from codey.agents.prompt_context import initial_structured_reply
 
     result = _run_loop(session, initial_structured_reply(session), start_turn=1)

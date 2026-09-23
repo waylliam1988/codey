@@ -19,12 +19,28 @@ from codey.toolchain import definition as tool_defs
 NATIVE_EXCLUDED_NAMES = frozenset({"parallel", "read_files"})
 
 
+def _native_function_name(definition: tool_defs.ToolDefinition) -> str:
+    """Wire name for one native function.
+
+    ``done`` is a control tool with no runtime alias, so it keeps its model
+    name. Every other native tool uses its runtime name.
+    """
+    if definition.runtime_name is not None:
+        return str(definition.runtime_name)
+    return str(definition.name)
+
+
 def _native_definitions(
     definitions: Sequence[tool_defs.ToolDefinition] | None,
 ) -> tuple[tool_defs.ToolDefinition, ...]:
     if definitions is None:
         definitions = tool_defs.TOOL_DEFINITIONS
-    return tuple(d for d in definitions if d.name not in NATIVE_EXCLUDED_NAMES and d.runtime_name is not None)
+    return tuple(
+        d
+        for d in definitions
+        if d.name not in NATIVE_EXCLUDED_NAMES
+        and (d.runtime_name is not None or d.name == "done")
+    )
 
 
 def render_openai_tools(
@@ -36,7 +52,7 @@ def render_openai_tools(
             {
                 "type": "function",
                 "function": {
-                    "name": definition.runtime_name,
+                    "name": _native_function_name(definition),
                     "description": definition.description,
                     "parameters": tool_defs.openai_parameters_schema(definition),
                 },
@@ -56,9 +72,7 @@ def openai_tool_contract_hash(
 def native_tool_names(
     definitions: Sequence[tool_defs.ToolDefinition] | None = None,
 ) -> tuple[str, ...]:
-    return tuple(
-        str(d.runtime_name) for d in _native_definitions(definitions) if d.runtime_name is not None
-    )
+    return tuple(_native_function_name(d) for d in _native_definitions(definitions))
 
 
 def research_openai_tools() -> list[dict[str, object]]:

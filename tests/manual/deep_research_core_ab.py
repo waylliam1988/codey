@@ -555,14 +555,14 @@ class ProbeResearchRunner(ResearchRunner):
             self._record_model_failure("send", exc)
             raise
 
-    def _dispatch(self, call):
+    def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
         if call.name == "source_search":
             return _Outcome(self.tools.source_search(
                 str(call.args.get("url") or ""),
                 first_text_arg(call.args, "query"),
                 _as_int(call.args.get("limit"), 6),
             ))
-        return super()._dispatch(call)
+        return super()._dispatch(call, turn, tool_index)
 
 
 class TimedProvider:

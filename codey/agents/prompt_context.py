@@ -847,7 +847,7 @@ def initial_structured_reply(session: AgentLoopSession) -> object:
         return turn
     if session.conversation is not None:
         followup = (
-            "Continue with the established project and JSON tool protocol.\n\n"
+            "Continue with the established project and tool protocol.\n\n"
             f"User request:\n{session.user_task}"
         )
         return send_structured_prompt(

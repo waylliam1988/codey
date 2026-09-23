@@ -17,6 +17,12 @@ from codey.env_names import (
     LOCAL_OPENAI_BASE_URL_ENV as LOCAL_BASE_URL_ENV,
 )
 from codey.env_names import (
+    LOCAL_OPENAI_CONTEXT_KEEP_ENV,
+    LOCAL_OPENAI_CONTEXT_RESERVE_ENV,
+    LOCAL_OPENAI_CONTEXT_WINDOW_ENV,
+    NATIVE_TOOLS_ENV,
+)
+from codey.env_names import (
     LOCAL_OPENAI_MODEL_ENV as LOCAL_MODEL_ENV,
 )
 from codey.storage.local_store import (
@@ -90,18 +96,7 @@ class LocalOpenAIProvider:
         config = load_local_config()
         model = str(config.get("model") or endpoint.default_model or "")
         api_key = str(config.get("api_key") or "")
-        try:
-            from codey.providers.capabilities import capability_for
-
-            capability = capability_for("local")
-            context = {
-                "context_window_tokens": capability.context_window_tokens,
-                "context_reserve_tokens": capability.context_reserve_tokens,
-                "context_keep_recent_tokens": capability.context_keep_recent_tokens,
-            }
-        except Exception:
-            context = {}
-        return cls(endpoint.base_url, model, api_key=api_key, **context)
+        return cls(endpoint.base_url, model, api_key=api_key, **resolve_local_context_budgets())
 
     @property
     def location(self) -> str:
@@ -186,9 +181,8 @@ class LocalOpenAIProvider:
     def _maybe_compact_messages(self, tools: list[dict[str, object]] | None = None) -> None:
         try:
             from codey.agents import context_compaction as compaction
-            from codey.providers.capabilities import capability_for
 
-            capability = capability_for("local")
+            budgets = resolve_local_context_budgets()
         except Exception:
             return
         try:
@@ -196,15 +190,15 @@ class LocalOpenAIProvider:
                 self._messages,
                 tools=tools,
                 context_window_tokens=(
-                    self.context_window_tokens if self.context_window_tokens else capability.context_window_tokens
+                    self.context_window_tokens if self.context_window_tokens else budgets["context_window_tokens"]
                 ),
                 reserve_tokens=(
-                    self.context_reserve_tokens if self.context_reserve_tokens else capability.context_reserve_tokens
+                    self.context_reserve_tokens if self.context_reserve_tokens else budgets["context_reserve_tokens"]
                 ),
                 keep_recent_tokens=(
                     self.context_keep_recent_tokens
                     if self.context_keep_recent_tokens
-                    else capability.context_keep_recent_tokens
+                    else budgets["context_keep_recent_tokens"]
                 ),
             )
             _ = summary
@@ -262,7 +256,13 @@ class LocalOpenAIProvider:
                     raise errors.ContextOverflowError(f"local model context overflow: {detail[:400]}") from exc
                 if kind == errors.ProviderErrorKind.AUTH:
                     raise RuntimeError(f"local model HTTP {exc.code}: {detail[:400]}") from exc
-                raise RuntimeError(f"local model HTTP {exc.code}: {detail[:400]}") from exc
+                message = f"local model HTTP {exc.code}: {detail[:400]}"
+                if tools and _looks_like_unsupported_tools_error(detail):
+                    message += (
+                        " (local endpoint rejected native tools; disable them with "
+                        "NATIVE_TOOLS=0 or local-openai.json {\"native_tools\": false})"
+                    )
+                raise RuntimeError(message) from exc
             except (urllib.error.URLError, TimeoutError) as exc:
                 raise RuntimeError(f"could not reach local model at {self.base_url}: {exc}") from exc
         raise RuntimeError(str(last_error or f"local model at {endpoint} did not return a reply"))
@@ -426,18 +426,145 @@ def load_local_config() -> dict:
         return {}
 
 
+def _parse_bool_flag(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
+
+
+def local_native_tools_enabled() -> bool:
+    """Whether the local provider should use native function calls.
+
+    Explicit opt-out only, no auto-fallback: ``NATIVE_TOOLS=0`` or
+    ``local-openai.json`` ``{"native_tools": false}`` disables it.
+    Unset means the capability default (on for cold start).
+    """
+    env_flag = _parse_bool_flag(os.environ.get(NATIVE_TOOLS_ENV, "").strip())
+    if env_flag is not None:
+        return env_flag
+    try:
+        config_flag = _parse_bool_flag(load_local_config().get("native_tools"))
+    except Exception:
+        config_flag = None
+    if config_flag is not None:
+        return config_flag
+    try:
+        from codey.providers.capabilities import capability_for
+
+        return bool(capability_for("local").native_tools_default)
+    except Exception:
+        return True
+
+
+def _parse_positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, float) and value.is_integer() and value > 0:
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip().replace("_", "").replace(",", "")
+        if text.isdigit() and int(text) > 0:
+            return int(text)
+    return None
+
+
+def resolve_local_context_budgets() -> dict[str, int]:
+    """Resolve local context budgets from env, then config, then capability.
+
+    Env wins (``LOCAL_OPENAI_CONTEXT_WINDOW/RESERVE/KEEP``), then
+    ``local-openai.json`` ``context_*`` fields, then the ``local``
+    capability defaults. Invalid values fail open to the capability
+    defaults; ``window > reserve > 0`` and ``keep > 0`` are enforced.
+    """
+    try:
+        from codey.providers.capabilities import capability_for
+
+        capability = capability_for("local")
+        defaults = {
+            "context_window_tokens": int(capability.context_window_tokens),
+            "context_reserve_tokens": int(capability.context_reserve_tokens),
+            "context_keep_recent_tokens": int(capability.context_keep_recent_tokens),
+        }
+    except Exception:
+        defaults = {
+            "context_window_tokens": 32_768,
+            "context_reserve_tokens": 8_192,
+            "context_keep_recent_tokens": 12_000,
+        }
+    try:
+        config = load_local_config()
+    except Exception:
+        config = {}
+    resolved: dict[str, int] = {}
+    sources = (
+        ("context_window_tokens", LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "context_window_tokens"),
+        ("context_reserve_tokens", LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "context_reserve_tokens"),
+        ("context_keep_recent_tokens", LOCAL_OPENAI_CONTEXT_KEEP_ENV, "context_keep_recent_tokens"),
+    )
+    for key, env_name, config_key in sources:
+        env_value = _parse_positive_int(os.environ.get(env_name, "").strip())
+        if env_value is not None:
+            resolved[key] = env_value
+            continue
+        config_value = _parse_positive_int(config.get(config_key))
+        if config_value is not None:
+            resolved[key] = config_value
+            continue
+        resolved[key] = int(defaults[key])
+    window = int(resolved["context_window_tokens"])
+    reserve = int(resolved["context_reserve_tokens"])
+    keep = int(resolved["context_keep_recent_tokens"])
+    if not (window > reserve > 0 and keep > 0):
+        return {key: int(defaults[key]) for key in resolved}
+    if keep > window:
+        resolved["context_keep_recent_tokens"] = int(defaults["context_keep_recent_tokens"])
+    return resolved
+
+
 def save_local_config(
     base_url: str,
     model: str = "",
     api_key: str | None = None,
+    *,
+    native_tools: bool | None = None,
+    context_window_tokens: int | None = None,
+    context_reserve_tokens: int | None = None,
+    context_keep_recent_tokens: int | None = None,
 ) -> None:
     previous = load_local_config()
     stored_key = str(previous.get("api_key") or "").strip() if api_key is None else str(api_key or "").strip()
-    payload = {
+    payload: dict[str, object] = {
         "base_url": (base_url or "").strip().rstrip("/"),
         "model": (model or "").strip(),
         "api_key": stored_key,
     }
+    # Preserve explicit local tuning across base_url/model saves; an explicit
+    # kwarg overrides, otherwise the previous value survives.
+    if native_tools is None:
+        if "native_tools" in previous:
+            payload["native_tools"] = previous["native_tools"]
+    elif isinstance(native_tools, bool):
+        payload["native_tools"] = native_tools
+    for key, value in (
+        ("context_window_tokens", context_window_tokens),
+        ("context_reserve_tokens", context_reserve_tokens),
+        ("context_keep_recent_tokens", context_keep_recent_tokens),
+    ):
+        if value is None:
+            if key in previous:
+                payload[key] = previous[key]
+        else:
+            payload[key] = int(value)
     write_json_atomic(_config_path(), payload, mode=0o600)
 
 
@@ -450,6 +577,10 @@ def local_config_payload() -> dict:
     if endpoint is not None:
         model = endpoint.default_model
     model = str(config.get("model") or model or "")
+    try:
+        budgets = resolve_local_context_budgets()
+    except Exception:
+        budgets = {}
     return {
         "connected": endpoint is not None,
         "base_url": (endpoint.base_url if endpoint is not None else str(config.get("base_url") or "")),
@@ -457,7 +588,26 @@ def local_config_payload() -> dict:
         "models": list(endpoint.models if endpoint is not None else ()),
         "candidates": [item.base_url for item in candidates],
         "has_api_key": bool(config.get("api_key")),
+        "native_tools": local_native_tools_enabled(),
+        "context_window_tokens": budgets.get("context_window_tokens"),
+        "context_reserve_tokens": budgets.get("context_reserve_tokens"),
+        "context_keep_recent_tokens": budgets.get("context_keep_recent_tokens"),
     }
+
+
+def _looks_like_unsupported_tools_error(detail: object) -> bool:
+    text = str(detail or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "tools",
+            "tool_choice",
+            "function",
+            "unsupported",
+            "unknown parameter",
+            "unrecognized",
+        )
+    )
 
 
 def _config_path() -> Path:

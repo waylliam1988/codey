@@ -250,6 +250,13 @@ class JsonToolCodec:
     def model_tool_contract_hash(self) -> str:
         return self._model_tool_contract_hash
 
+    @property
+    def definitions(self) -> tuple:
+        return self._definitions
+
+    def is_allowed(self, tool_name: str) -> bool:
+        return self._is_allowed(tool_name)
+
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
         seen_calls: set[tuple[str, str]] = set()

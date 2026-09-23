@@ -245,8 +245,8 @@ def execute_turn_tools(
         turn_state.delivery_batch_digest = digest
 
     # 2. Execution Phase: ordered by the file-mutation queue so same-file
-    # edits (and same-file edit/read pairs) serialize. Still serial today;
-    # only read-only group members may run concurrently in the future.
+    # writes (and same-file write/read pairs) serialize. Still serial today;
+    # group members may run concurrently only once a parallel executor lands.
     try:
         from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
 
@@ -261,6 +261,17 @@ def execute_turn_tools(
         stopped = execute_planned_item(session, item, turn_state=turn_state, turn=turn)
         if stopped is not None:
             return stopped
+
+    # Read results back in original tool_index order even if a future
+    # parallel executor completes groups out of order; native tool_messages
+    # follow the same order. Serial today, so this is a no-op proof.
+    if len(turn_state.delivery_items) == len(turn_state.results) and turn_state.delivery_items:
+        paired = sorted(
+            zip(turn_state.delivery_items, turn_state.results, strict=True),
+            key=lambda pair: pair[0].tool_index,
+        )
+        turn_state.delivery_items[:] = [item for item, _ in paired]
+        turn_state.results[:] = [result for _, result in paired]
 
     return TurnToolExecutionResult(turn_state=turn_state)
 

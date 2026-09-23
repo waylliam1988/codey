@@ -1,5 +1,60 @@
 # Codey Test Report
 
+## Native done + local defaults + research receipts full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/toolchain/openai_tools.py       (done exposed as native function)
+codey/protocols/native_openai.py      (native prompt/hash/results/repair + permission checks)
+codey/protocols/json_codec.py         (definitions/is_allowed accessors)
+codey/agents/protocol.py              (native-aware repair prompts)
+codey/agents/loop.py + prompt_context.py (native gating, generic followup)
+codey/providers/capabilities.py       (local native_tools_default=True)
+codey/providers/local_openai.py       (native_tools opt-out, context budgets, tools-error hint)
+codey/env_names.py                    (LOCAL_OPENAI_CONTEXT_{WINDOW,RESERVE,KEEP})
+codey/research/runner.py + output_receipts.py (durable web/source receipts, runner 1352 lines)
+codey/research/native_bridge.py       (provider-aware gating, Mock-safe)
+codey/operations/research_flow.py + task_phases/dispatch.py (managed_outputs wiring)
+codey/policies/action.py              (research may write managed_output)
+codey/runtime/core/models.py + agents/tool_execution.py (generic truncation wording)
+codey/runtime/write/file_mutation_queue.py + agents/tool_turn.py (per-file groups, index-order results)
+tests/test_coldstart_native_local_receipts.py (new, 13 tests)
+tests/test_openai_tool_schema.py + test_env_names.py + test_agent_native_loop.py (updated)
+tests/manual/deep_research_core_ab.py (ProbeResearchRunner._dispatch signature)
+```
+
+Notes:
+
+- Native is no longer JSON/native mixed: the model is offered `done` as a
+  function, the system prompt/hash/results/repair all speak function calls,
+  and out-of-scope native calls (including `done` under a read-only profile)
+  fail as `disallowed_tool`.
+- Local cold start is on: `local_native_tools_enabled()` (`NATIVE_TOOLS=0`
+  or `local-openai.json {"native_tools": false}` to opt out). Unsupported-
+  tools 400s carry the opt-out hint; there is no silent auto-fallback.
+- Research receipts are duck-typed (no `codey.storage.managed_outputs`
+  import from research): oversized `open_url`/`source_search`/`web_search`
+  outputs clip to head/tail with `audit["managed_output"]` + `truncated=True`
+  when a store exists, clip-only otherwise. The first full-suite run caught
+  two real regressions this work introduced (manual `_dispatch` override
+  signature, `Mock` doubles falsely advertising `send_turn`), both fixed
+  without compat shims: the override was updated, and research gating ignores
+  `Mock` providers unless `NATIVE_TOOLS=1` is explicit.
+- Managed output stays audit-only; truncation wording is now tool-neutral
+  ("narrower offsets"). The queue batches different-file writes, serializes
+  `run`/`shell`, and sorts results back to `tool_index` order.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: native/schema/env/loop/delivery/protocol/research/provider/
+  architecture/queue suites green (incl. new 13-test cold-start file).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4079 passed, 6 skipped, 1339 subtests passed in 366.89s`).
+- No release.
+
 ## Rich fresh-chat repair full suite (2026-09-23)
 
 Scope (production, no release):
