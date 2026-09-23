@@ -2,6 +2,7 @@
 
 from codey.protocols.base import ProtocolCodec
 from codey.protocols.json_codec import JsonToolCodec
+from codey.protocols.native_openai import NativeOpenAIToolCodec
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 
-__all__ = ["Control", "JsonToolCodec", "ProtocolCodec", "ToolCall", "ToolPlan", "ToolResult"]
+__all__ = ["Control", "JsonToolCodec", "NativeOpenAIToolCodec", "ProtocolCodec", "ToolCall", "ToolPlan", "ToolResult"]

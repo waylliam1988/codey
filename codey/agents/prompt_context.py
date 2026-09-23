@@ -268,6 +268,15 @@ def _send_provider_with_effect(
         runtime_tool_contract_hash="",
     )
 
+    from codey.runtime.hooks import call_hooks as _call_hooks
+
+    _call_hooks(
+        getattr(session, "hooks", None),
+        "before_provider_send",
+        session=session,
+        prompt=prompt,
+        purpose=purpose,
+    )
     try:
         reply_text = session.provider.send(prompt)
     except Exception as exc:
@@ -302,6 +311,14 @@ def _send_provider_with_effect(
             ),
         )
 
+    _call_hooks(
+        getattr(session, "hooks", None),
+        "after_provider_send",
+        session=session,
+        prompt=prompt,
+        reply=reply_text,
+        purpose=purpose,
+    )
     return reply_text
 
 
@@ -319,6 +336,45 @@ def send_handoff_summary(
     )
 
 
+def _rollover_for_overflow(
+    session: AgentLoopSession,
+    prompt: str,
+    *,
+    restart_request: str | None = None,
+    include_ghost_directive: bool = True,
+) -> str:
+    factual_handoff = ""
+    if session.conversation is not None:
+        try:
+            factual_handoff = session.conversation.prepare_model_handoff(
+                lambda summary_prompt: send_handoff_summary(session, summary_prompt)
+            )
+        except Exception:
+            factual_handoff = ""
+    if open_fresh_chat(session):
+        discard_pending_context_rows(session)
+        session.trace.record_section(PromptEnvelopeSection(
+            name="conversation_handoff",
+            text=factual_handoff,
+            purpose="bounded conversation handoff for provider overflow",
+            freshness="provider_rollover",
+            source_refs=("conversation:handoff",),
+        ))
+        prompt = project_intro(
+            session,
+            restart_request or prompt,
+            factual_handoff,
+            include_ghost_directive=include_ghost_directive,
+        )
+        if session.conversation is not None:
+            session.conversation.begin_window(
+                session.active_provider_id,
+                "project",
+                session.project_text,
+            )
+    return prompt
+
+
 def send_prompt(
     session: AgentLoopSession,
     prompt: str,
@@ -327,6 +383,8 @@ def send_prompt(
     include_ghost_directive: bool = True,
     delivery_batch_id: str = "",
 ) -> str:
+    from codey.providers import error_classification as errors
+
     opened_fresh_chat = False
     if session.conversation is not None and session.conversation.needs_rollover(prompt):
         factual_handoff = session.conversation.prepare_model_handoff(
@@ -350,15 +408,31 @@ def send_prompt(
             opened_fresh_chat = True
     if not opened_fresh_chat:
         bind_pending_context_rows(session, prompt)
-    reply_text = _send_provider_with_effect(
-        session,
-        prompt,
-        purpose="coding prompt sent to provider",
-        source_ref="provider_send:coding",
-        capability_id="agent_runner",
-        name="coding_outbound_prompt",
-        delivery_batch_id=delivery_batch_id,
-    )
+    try:
+        reply_text = _send_provider_with_effect(
+            session,
+            prompt,
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+            name="coding_outbound_prompt",
+            delivery_batch_id=delivery_batch_id,
+        )
+    except errors.ContextOverflowError:
+        prompt = _rollover_for_overflow(
+            session, prompt, restart_request=restart_request,
+            include_ghost_directive=include_ghost_directive,
+        )
+        bind_pending_context_rows(session, prompt)
+        reply_text = _send_provider_with_effect(
+            session,
+            prompt,
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+            name="coding_outbound_prompt",
+            delivery_batch_id=delivery_batch_id,
+        )
     if session.conversation is not None:
         if opened_fresh_chat:
             session.conversation.begin_window(
@@ -368,6 +442,73 @@ def send_prompt(
             )
         session.conversation.record_exchange(prompt, reply_text, snapshot(session))
     return reply_text
+
+
+def provider_supports_structured(session: AgentLoopSession) -> bool:
+    provider = getattr(session, "provider", None)
+    return callable(getattr(provider, "send_turn", None)) and callable(
+        getattr(provider, "send_tool_results", None)
+    )
+
+
+def session_native_tools(session: AgentLoopSession) -> list[dict[str, object]] | None:
+    tools = getattr(session, "native_tools", None)
+    if tools is not None:
+        return list(tools)
+    return None
+
+
+def send_structured_prompt(
+    session: AgentLoopSession,
+    prompt: str,
+    *,
+    restart_request: str | None = None,
+) -> object:
+    from codey.providers import error_classification as errors
+
+    provider = session.provider
+    tools = session_native_tools(session)
+    bind_pending_context_rows(session, prompt)
+    try:
+        turn = provider.send_turn(prompt, tools, timeout=None)
+    except errors.ContextOverflowError:
+        prompt = _rollover_for_overflow(session, prompt, restart_request=restart_request)
+        bind_pending_context_rows(session, prompt)
+        turn = provider.send_turn(prompt, tools, timeout=None)
+    if session.conversation is not None:
+        session.conversation.record_exchange(prompt, _turn_display_text(turn), snapshot(session))
+    return turn
+
+
+def send_structured_results(
+    session: AgentLoopSession,
+    tool_messages: list[dict[str, object]],
+    *,
+    restart_request: str | None = None,
+) -> object:
+    from codey.providers import error_classification as errors
+
+    provider = session.provider
+    tools = session_native_tools(session)
+    try:
+        turn = provider.send_tool_results(tool_messages, tools, timeout=None)
+    except errors.ContextOverflowError:
+        prompt = _rollover_for_overflow(session, restart_request or "", restart_request=restart_request)
+        _ = prompt
+        turn = provider.send_tool_results(tool_messages, tools, timeout=None)
+    if session.conversation is not None:
+        session.conversation.record_exchange("[tool_results]", _turn_display_text(turn), snapshot(session))
+    return turn
+
+
+def _turn_display_text(turn: object) -> str:
+    text = str(getattr(turn, "text", "") or "")
+    calls = getattr(turn, "tool_calls", ()) or ()
+    if calls:
+        names = ", ".join(str(getattr(call, "name", "")) for call in calls)
+        summary = f"[tool_calls: {names}]"
+        return f"{text}\n{summary}" if text else summary
+    return text
 
 
 def current_coding_context(session: AgentLoopSession) -> str:
@@ -451,16 +592,47 @@ def initial_reply(session: AgentLoopSession) -> str:
     )
 
 
+def initial_structured_reply(session: AgentLoopSession) -> object:
+    if session.fresh_chat:
+        opened_fresh_chat = open_fresh_chat(session)
+        intro = project_intro(session, session.user_task, session.handoff)
+        turn = send_structured_prompt(session, intro, restart_request=session.user_task)
+        if session.conversation is not None and opened_fresh_chat:
+            session.conversation.begin_window(
+                session.active_provider_id,
+                "project",
+                session.project_text,
+            )
+        return turn
+    if session.conversation is not None:
+        followup = (
+            "Continue with the established project and JSON tool protocol.\n\n"
+            f"User request:\n{session.user_task}"
+        )
+        return send_structured_prompt(
+            session,
+            with_completion_repair_context(session, followup),
+            restart_request=session.user_task,
+        )
+    intro = project_intro(session, session.user_task)
+    return send_structured_prompt(session, intro, restart_request=session.user_task)
+
+
 __all__ = [
     "append_coding_context",
     "bind_pending_context_rows",
     "current_coding_context",
     "discard_pending_context_rows",
     "initial_reply",
+    "initial_structured_reply",
     "open_fresh_chat",
     "project_intro",
+    "provider_supports_structured",
     "record_repair_context_admission",
     "send_handoff_summary",
     "send_prompt",
+    "send_structured_prompt",
+    "send_structured_results",
+    "session_native_tools",
     "with_completion_repair_context",
 ]

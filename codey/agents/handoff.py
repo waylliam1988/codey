@@ -175,6 +175,8 @@ class ConversationContext:
     """Small in-memory state for one Codey conversation."""
 
     hard_limit: int = DEFAULT_HARD_CONTEXT_TOKENS
+    reserve_tokens: int = 16_384
+    keep_recent_tokens: int = 20_000
     used_tokens: int = 0
     provider_id: str = ""
     mode: str = ""

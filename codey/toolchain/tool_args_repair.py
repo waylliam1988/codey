@@ -446,7 +446,10 @@ def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 
 def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS}, context="grep")
+    # Mirrors codey.toolchain.constants.SEARCH_PAGE_MAX_RESULTS (100). The
+    # constant lives in constants.py so runtime.py can share it, but this
+    # module must stay import-free of sibling subpackages (purity boundary).
+    _reject_unknown_args(args, {*SEARCH_QUERY_KEYS, *PATH_ARG_KEYS, "offset", "limit"}, context="grep")
     query_val, query_alias = _require_text_arg(
         args,
         SEARCH_QUERY_KEYS,
@@ -465,8 +468,21 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     for k, v in path_counts.items():
         counts[k] = counts.get(k, 0) + v
 
+    call_args: dict[str, Any] = {"query": query_val, "path": norm_path}
+    if "offset" in args:
+        offset, coerced = _bounded_positive_int(args.get("offset"), "offset")
+        if coerced:
+            _record_repair(counts, "numeric_coerced")
+            rewrites += 1
+        call_args["offset"] = offset
+    if "limit" in args:
+        limit, coerced = _bounded_positive_int(args.get("limit"), "limit", 100)
+        if coerced:
+            _record_repair(counts, "numeric_coerced")
+            rewrites += 1
+        call_args["limit"] = limit
     return ToolArgsRepairResult(
-        args={"query": query_val, "path": norm_path},
+        args=call_args,
         alias_rewrite_count=rewrites,
         arg_repair_counts=counts,
     )

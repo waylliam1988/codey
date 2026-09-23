@@ -46,16 +46,18 @@ class ManagedOutputStore:
             raise ValueError("state_home required")
         self.root = Path(state_home) / "managed_outputs"
 
-    def write_run_output(
+    def write_tool_output(
         self,
         *,
         session_id: str,
         run_id: str,
         tool_id: str,
         permission_profile: str,
-        command: str,
-        cwd: str,
+        tool_name: str,
+        display_ref: str,
         text: str,
+        command: str = "",
+        cwd: str = ".",
     ) -> ManagedOutputRef | None:
         try:
             run_dir = self._run_dir(session_id, run_id)
@@ -87,7 +89,9 @@ class ManagedOutputStore:
                     "handle": handle,
                     "created_at": _now(),
                     "tool_id": _clip(tool_id, 80),
-                    "command": _clip(command, MAX_COMMAND_CHARS),
+                    "tool_name": _clip(tool_name, 80),
+                    "display_ref": _clip(display_ref, MAX_CWD_CHARS),
+                    "command": _clip(command or f"{tool_name} {display_ref}".strip(), MAX_COMMAND_CHARS),
                     "cwd": _clip(cwd or ".", MAX_CWD_CHARS),
                     "original_bytes": original_bytes,
                     "stored_bytes": stored_bytes,
@@ -108,6 +112,30 @@ class ManagedOutputStore:
             raise
         except (OSError, TypeError, ValueError):
             return None
+
+    def write_run_output(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        tool_id: str,
+        permission_profile: str,
+        command: str,
+        cwd: str,
+        text: str,
+    ) -> ManagedOutputRef | None:
+        """Legacy run-output entry point; delegates to the generic tool writer."""
+        return self.write_tool_output(
+            session_id=session_id,
+            run_id=run_id,
+            tool_id=tool_id,
+            permission_profile=permission_profile,
+            tool_name="run",
+            display_ref=command,
+            text=text,
+            command=command,
+            cwd=cwd,
+        )
 
     def path_for(self, session_id: str, run_id: str, handle: str) -> Path:
         return self._handle_path(session_id, run_id, handle, ".txt")

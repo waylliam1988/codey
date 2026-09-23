@@ -5,7 +5,10 @@ from __future__ import annotations
 from codey.agents.context import load_project_instructions
 from codey.agents.prompt_context import (
     initial_reply,
+    initial_structured_reply,
+    provider_supports_structured,
     send_prompt,
+    send_structured_prompt,
 )
 from codey.agents.protocol import protocol_repair_prompt
 from codey.agents.request import (
@@ -57,16 +60,68 @@ from codey.runtime.observe.prompt_envelope import (
 DEFAULT_CODEC = JsonToolCodec()
 
 
-def parse_reply(text: str, codec: ProtocolCodec = DEFAULT_CODEC) -> ToolPlan:
-    return codec.parse(text)
+class _NativeDeliveryStop(RuntimeError):
+    """Internal signal: native tool chain is unrecoverable; finish as protocol."""
+
+
+def parse_reply(reply: str | object, codec: ProtocolCodec = DEFAULT_CODEC) -> ToolPlan:
+    parse_turn = getattr(codec, "parse_turn", None)
+    if not isinstance(reply, str) and callable(parse_turn):
+        return parse_turn(reply)
+    if isinstance(reply, str):
+        return codec.parse(reply)
+    # Unknown structured shape without a native codec: treat as protocol error.
+    return ToolPlan(
+        calls=[],
+        control=None,
+        protocol_error="unsupported structured reply for text codec",
+        protocol_error_kind=PROTOCOL_NO_JSON,
+    )
+
+
+def _reply_display_text(reply: str | object) -> str:
+    if isinstance(reply, str):
+        return reply
+    text = str(getattr(reply, "text", "") or "")
+    calls = getattr(reply, "tool_calls", ()) or ()
+    if calls:
+        names = ", ".join(str(getattr(call, "name", "")) for call in calls)
+        summary = f"[tool_calls: {names}]"
+        return f"{text}\n{summary}" if text else summary
+    return text
 
 
 def _setup_loop(request: AgentRequest) -> AgentLoopSession:
+    import os
+
+    from codey.providers.capabilities import capability_for
+
     provider = request.provider
     project = request.project.resolve()
     project.mkdir(parents=True, exist_ok=True)
     profile = profile_for_name(request.permission_profile)
     codec = request.codec or JsonToolCodec(permission_profile=profile.name)
+    native_tools: list[dict[str, object]] | None = None
+    active_provider_hint = str(request.provider_id or getattr(provider, "name", "") or "")
+    try:
+        capability = capability_for(active_provider_hint)
+    except Exception:
+        capability = None
+    wants_native = False
+    if capability is not None and getattr(capability, "supports_native_tools", False):
+        wants_native = bool(getattr(capability, "native_tools_default", False))
+        if os.environ.get("CODEY_NATIVE_TOOLS", "").strip() == "1":
+            wants_native = True
+    if wants_native and callable(getattr(provider, "send_turn", None)):
+        from codey.protocols.native_openai import build_native_codec_for_profile
+
+        try:
+            codec, native_tools = build_native_codec_for_profile(
+                profile.name,
+                fallback_codec=codec if isinstance(codec, JsonToolCodec) else None,
+            )
+        except Exception:
+            native_tools = None
     system_prompt_text = codec.system_prompt()
     tool_fns = request.tool_fns or DEFAULT_TOOL_FNS
     max_turns = max(1, int(request.max_turns or DEFAULT_MAX_TURNS))
@@ -161,6 +216,7 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
         runtime_mutations=request.runtime_mutations,
         runtime_effects=request.runtime_effects,
         tool_result_delivery=request.tool_result_delivery,
+        native_tools=native_tools,
     )
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
@@ -171,10 +227,10 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
 def _report_reply(
     session: AgentLoopSession,
     turn: int,
-    reply_text: str,
+    reply: str | object,
     note: str = "",
 ) -> None:
-    emit(session, RunEvent.turn_started(turn, reply_text, note))
+    emit(session, RunEvent.turn_started(turn, _reply_display_text(reply), note))
 
 
 def _finish(
@@ -196,12 +252,30 @@ def _finish(
     )
 
 
+def _use_native(session: AgentLoopSession) -> bool:
+    return session.native_tools is not None and provider_supports_structured(session)
+
+
+def _send_followup(
+    session: AgentLoopSession,
+    prompt: str,
+    *,
+    restart_request: str | None = None,
+    include_ghost_directive: bool = True,
+) -> str | object:
+    if _use_native(session):
+        return send_structured_prompt(session, prompt, restart_request=restart_request or prompt)
+    return send_prompt(
+        session, prompt, restart_request=restart_request, include_ghost_directive=include_ghost_directive,
+    )
+
+
 def _handle_protocol_error(
     session: AgentLoopSession,
     plan: ToolPlan,
-    reply: str,
+    reply: str | object,
     turn: int,
-) -> str | RunResult:
+) -> str | object | RunResult:
     session.stagnation.count += 1
     session.trace.call(
         "record_protocol_error",
@@ -229,24 +303,34 @@ def _handle_protocol_error(
     repair = protocol_repair_prompt(
         session.codec,
         plan,
-        previous_reply=reply,
+        previous_reply=_reply_display_text(reply),
     )
-    corrected = send_prompt(
-        session,
-        repair,
-        restart_request=repair,
-        include_ghost_directive=False,
-    )
+    corrected = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
     _report_reply(session, turn + 1, corrected, "(after protocol correction)")
     return corrected
 
 
 def _run_loop(
     session: AgentLoopSession,
-    reply: str,
+    reply: str | object,
     *,
     start_turn: int = 1,
 ) -> RunResult:
+    from codey.agents.runaway_guard import should_block_or_remind
+    from codey.runtime.hooks import call_hooks
+
+    def _deliver(turn_state: TurnState, turn: int, reminder: str = "") -> str | object:
+        from codey.protocols.native_openai import NativeToolResultError
+        from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryError
+
+        try:
+            if reminder:
+                return deliver_turn_results(session, turn_state, turn, protocol_reminder=reminder)
+            return deliver_turn_results(session, turn_state, turn)
+        except (NativeToolResultError, ToolResultDeliveryError) as exc:
+            emit(session, RunEvent.status(f"[agent] native delivery failed: {exc}; stopping."))
+            raise _NativeDeliveryStop(str(exc)) from exc
+
     _report_reply(session, start_turn, reply)
     for turn in range(start_turn, session.max_turns + 1):
         if session.stop_flag is not None and session.stop_flag.is_set():
@@ -281,6 +365,21 @@ def _run_loop(
                 turn,
             )
         turn_state = turn_result.turn_state
+        try:
+            guard = should_block_or_remind(session.stagnation.attempts)
+        except Exception:
+            guard = None
+        guard_reason = ""
+        guard_stop = ""
+        if guard is not None and guard.block:
+            emit(session, RunEvent.status(f"[agent] runaway guard: {guard.reason}"))
+            if guard.action == "stop":
+                guard_stop = guard.reason
+            else:
+                guard_reason = guard.reason
+        call_hooks(getattr(session, "hooks", None), "on_turn_end", session=session, turn=turn)
+        if guard_stop:
+            return _finish(session, guard_stop, "no_progress", turn)
 
         if session.conversation is not None:
             session.conversation.update_snapshot(
@@ -327,12 +426,12 @@ def _run_loop(
                     )
 
                 protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
-                reply = deliver_turn_results(
-                    session,
-                    turn_state,
-                    turn,
-                    protocol_reminder=protocol_reminder,
-                )
+                if guard_reason:
+                    protocol_reminder = f"{protocol_reminder}\n\n{guard_reason}"
+                try:
+                    reply = _deliver(turn_state, turn, protocol_reminder)
+                except _NativeDeliveryStop as exc:
+                    return _finish(session, str(exc), "protocol", turn)
                 _report_reply(session, turn + 1, reply)
                 continue
 
@@ -371,12 +470,7 @@ def _run_loop(
                     protocol_error_kind=PROTOCOL_NO_JSON,
                 ),
             )
-            reply = send_prompt(
-                session,
-                repair,
-                restart_request=repair,
-                include_ghost_directive=False,
-            )
+            reply = _send_followup(session, repair, restart_request=repair, include_ghost_directive=False)
             _report_reply(session, turn + 1, reply, "(after nudge)")
             continue
 
@@ -414,7 +508,7 @@ def _run_loop(
                         turn,
                     )
                 reminder = requested_verification_reminder(session)
-                reply = send_prompt(session, reminder, restart_request=reminder)
+                reply = _send_followup(session, reminder, restart_request=reminder)
                 _report_reply(session, turn + 1, reply, "(verification reminder)")
                 continue
             else:
@@ -447,7 +541,7 @@ def _run_loop(
                             turn,
                         )
                     reminder = default_candidate_reminder(candidate)
-                    reply = send_prompt(session, reminder, restart_request=reminder)
+                    reply = _send_followup(session, reminder, restart_request=reminder)
                     _report_reply(
                         session,
                         turn + 1,
@@ -489,7 +583,10 @@ def _run_loop(
                 turn,
             )
 
-        reply = deliver_turn_results(session, turn_state, turn)
+        try:
+            reply = _deliver(turn_state, turn, f"\n\n{guard_reason}" if guard_reason else "")
+        except _NativeDeliveryStop as exc:
+            return _finish(session, str(exc), "protocol", turn)
         _report_reply(session, turn + 1, reply)
 
     return _finish(session, "(max turns reached)", "max_turns", session.max_turns)
@@ -498,6 +595,8 @@ def _run_loop(
 def run(request: AgentRequest) -> RunResult:
     session = _setup_loop(request)
     if not request.recovered_tool_outcomes:
+        if _use_native(session):
+            return _run_loop(session, initial_structured_reply(session), start_turn=1)
         return _run_loop(session, initial_reply(session), start_turn=1)
 
     turn_state = TurnState()

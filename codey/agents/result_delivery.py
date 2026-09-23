@@ -8,7 +8,12 @@ Does not import operations, ghost, or web providers.
 
 from __future__ import annotations
 
-from codey.agents.prompt_context import append_coding_context, send_prompt
+from codey.agents.prompt_context import (
+    append_coding_context,
+    provider_supports_structured,
+    send_prompt,
+    send_structured_results,
+)
 from codey.agents.state import AgentLoopSession
 from codey.agents.tool_execution import TurnState
 from codey.runtime.effects.tool_result_delivery import (
@@ -127,15 +132,29 @@ def build_next_tool_prompt(
     return append_coding_context(session, raw_prompt)
 
 
+def _use_native_delivery(session: AgentLoopSession) -> bool:
+    return session.native_tools is not None and provider_supports_structured(session)
+
+
 def deliver_turn_results(
     session: AgentLoopSession,
     turn_state: TurnState,
     turn: int,
     *,
     protocol_reminder: str = "",
-) -> str:
+) -> str | object:
     """Deliver a turn's tool results to the provider with durable delivery receipts."""
     batch_id = ensure_result_batch_intent(session, turn_state, turn)
+    if _use_native_delivery(session):
+        from codey.protocols.native_openai import NativeOpenAIToolCodec
+
+        tool_messages = NativeOpenAIToolCodec.tool_messages(turn_state.results)
+        if tool_messages:
+            return send_structured_results(
+                session,
+                tool_messages,
+                restart_request="Continue the unfinished task using the latest local tool results.",
+            )
     next_prompt = build_next_tool_prompt(
         session,
         turn_state,
@@ -158,9 +177,23 @@ def deliver_recovered_results(
     *,
     turn: int,
     recovered_batch_id: str = "",
-) -> str:
+) -> str | object:
     """Deliver recovered tool results on resume, marking delivery receipt on send."""
     batch_id = recovered_batch_id or ensure_result_batch_intent(session, turn_state, turn)
+    if _use_native_delivery(session):
+        from codey.protocols.native_openai import NativeOpenAIToolCodec, NativeToolResultError
+
+        try:
+            tool_messages = NativeOpenAIToolCodec.tool_messages(turn_state.results)
+        except NativeToolResultError:
+            # Recovered calls predate native call_ids; fall back to text delivery.
+            tool_messages = []
+        if tool_messages:
+            return send_structured_results(
+                session,
+                tool_messages,
+                restart_request="Continue the unfinished task using the latest local tool results.",
+            )
     next_prompt = build_next_tool_prompt(session, turn_state)
     return send_prompt(
         session,

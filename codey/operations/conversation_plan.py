@@ -40,6 +40,20 @@ def build_conversation_plan(
 ) -> ConversationPlan:
     mode = conversation_mode(task_kind, project)
     project_text = _project_text(project)
+    try:
+        from codey.providers.capabilities import capability_for
+
+        capability = capability_for(provider_id)
+        window = int(getattr(capability, "context_window_tokens", 0) or 0)
+        reserve = int(getattr(capability, "context_reserve_tokens", 0) or 0)
+        keep_recent = int(getattr(capability, "context_keep_recent_tokens", 0) or 0)
+        if window > reserve > 0:
+            conversation.hard_limit = window - reserve
+            conversation.reserve_tokens = reserve
+        if keep_recent > 0:
+            conversation.keep_recent_tokens = keep_recent
+    except Exception:
+        pass
     provider_session_changed = state.provider_session_changed(
         provider_id,
         session_id,

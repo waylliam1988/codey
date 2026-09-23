@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,10 +86,22 @@ def seen_info_key(tool_name: str, path: str, model_text: str) -> tuple[str, str,
     return (str(tool_name or ""), str(path or ""), digest)
 
 
+@dataclass(frozen=True)
+class ToolAttemptRecord:
+    tool: str
+    call_fp: str
+    result_fp: str
+    ok: bool
+    changed: bool
+    turn: int
+    edit_epoch: int = 0
+
+
 @dataclass
 class LoopStagnation:
     seen_info: SeenInfoLRU = field(default_factory=SeenInfoLRU)
     count: int = 0
+    attempts: deque = field(default_factory=lambda: deque(maxlen=24))
 
 
 @dataclass
@@ -143,6 +156,8 @@ class AgentLoopSession:
     runtime_effects: Any = None
     tool_result_delivery: Any = None
     provider_send_index: int = 0
+    native_tools: list[dict[str, object]] | None = None
+    hooks: Any = None
 
 
 def emit(session: AgentLoopSession, event: RunEvent) -> None:
@@ -175,6 +190,7 @@ __all__ = [
     "LoopVerification",
     "RunResult",
     "SeenInfoLRU",
+    "ToolAttemptRecord",
     "emit",
     "seen_info_key",
     "snapshot",

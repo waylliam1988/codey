@@ -141,6 +141,54 @@ class JsonToolCodec:
             "or outside knowledge."
         )
 
+    def parse_turn(self, turn: object) -> ToolPlan:
+        tool_calls = getattr(turn, "tool_calls", ()) or ()
+        if tool_calls:
+            known_tools = _known_tool_names(self.include_source_search)
+            for item in list(tool_calls)[:1]:
+                name = str(getattr(item, "name", "") or "").strip().lower()
+                args = getattr(item, "arguments", {})
+                call_id = str(getattr(item, "id", "") or "")
+                if not name or name not in known_tools:
+                    return ToolPlan(
+                        calls=[],
+                        control=None,
+                        protocol_error=f"unknown tool: {name or '?'}",
+                        protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+                        protocol_tool_name=name,
+                    )
+                if not isinstance(args, dict):
+                    return ToolPlan(
+                        calls=[],
+                        control=None,
+                        protocol_error=f"{name} args must be an object",
+                        protocol_error_kind=PROTOCOL_INVALID_ARGS,
+                    )
+                validated = validate_tool_args(name, dict(args))
+                if not validated.ok:
+                    return ToolPlan(
+                        calls=[],
+                        control=None,
+                        protocol_error=validated.error,
+                        protocol_error_kind=validated.error_kind or PROTOCOL_INVALID_ARGS,
+                    )
+                if name == "done":
+                    self.last_control_args = dict(validated.args)
+                    return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
+                call = ToolCall(name, dict(validated.args), call_id)
+                return ToolPlan(calls=[call], control=None)
+        return self.parse(str(getattr(turn, "text", "") or ""))
+
+    @staticmethod
+    def tool_messages(results: list[ToolResult]) -> list[dict[str, object]]:
+        messages: list[dict[str, object]] = []
+        for result in results:
+            call_id = str(getattr(result.call, "call_id", "") or "")
+            if not call_id:
+                continue
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result.model_text or "")})
+        return messages
+
 
 def _result_label(call: ToolCall) -> str:
     for key in ("query", "url", "id", "title", "src"):

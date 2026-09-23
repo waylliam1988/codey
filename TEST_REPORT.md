@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## Native track + NoAB rails full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/toolchain/{definition,openai_tools,registry,line_prefix,search_page}.py
+codey/protocols/native_openai.py  codey/providers/{base,error_classification,local_openai}.py
+codey/agents/{loop,prompt_context,result_delivery,state,tool_execution,tool_turn,context_compaction,runaway_guard}.py
+codey/research/{protocols,tool_contract,runner,native_bridge}.py
+codey/storage/managed_outputs.py  codey/runtime/{hooks,core/models,write/file_mutation_queue}.py
+codey/operations/{conversation_plan,project_completion_flow}.py
+tests/test_{openai_tool_schema,native_openai_codec,local_openai_native,agent_native_loop,
+  research_native_codec,noab_hardening,abab_cycle}.py
+```
+
+Boundary fixes found while building (all with test coverage, no test
+weakened):
+
+- `test_agent_loop_keeps_..._boundary`: `agents/loop.py` briefly imported
+  `toolchain.openai_tools/registry` for native setup. Moved the builder to
+  `protocols.native_openai.build_native_codec_for_profile` (loop imports
+  protocols, protocols owns toolchain) -- boundary holds.
+- `test_runtime_package_does_not_import_business_layers`:
+  `runtime/write/file_mutation_queue.py` imported `agents.protocol`.
+  Replaced with lexical path normalization inside `runtime/` -- boundary
+  holds, behavior identical for same-file grouping.
+- `test_long_files_do_not_grow`: new code pushed `research/runner.py`
+  (1412 > 1360) and `toolchain/runtime.py` (1245 > 1240). Extracted
+  `research/native_bridge.py`, `toolchain/line_prefix.py`, and
+  `toolchain/search_page.py`; both files back under ceiling
+  (runner 1360, runtime 1238) with behavior unchanged.
+- `test_pure_function_has_no_internal_subpackage_dependencies`:
+  `tool_args_repair.py` must stay import-free; the search page cap is an
+  inline literal (100) with a comment pointing at
+  `constants.SEARCH_PAGE_MAX_RESULTS`, plus a sync test pinning equality.
+
+Verification (local, Windows):
+
+- `ruff check codey/ tests/test_abab_cycle.py ...` (passed)
+- `python -m compileall -q codey` + `git diff --check` (clean)
+- Targeted: new native/ABAB/pagination suites plus JSON golden,
+  contract-drift, managed-outputs, handoff, research, provider suites
+  (all passed; JSON golden byte-identical, webpage provider unaffected)
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4036 passed, 6 skipped, 1323 subtests passed in 363.01s`)
+- Native stays off by default; research ABAB verified as reminder-only
+  (single A-B-A lookback does not trigger).
+- No release.
+
 ## CI WinError 32 on 3.13: ignored daemon wait raced tmpdir cleanup (2026-09-21)
 
 Symptom (GitHub Windows, Python 3.13 only; 3.11/3.12 green):

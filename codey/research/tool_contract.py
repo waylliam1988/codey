@@ -159,6 +159,53 @@ def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
     )
 
 
+def _json_type(pytype: type) -> str:
+    if pytype is str:
+        return "string"
+    if pytype is int:
+        return "integer"
+    if pytype is float:
+        return "number"
+    if pytype is list:
+        return "array"
+    return "string"
+
+
+def openai_parameters_schema(tool: str) -> dict[str, object]:
+    contract = TOOL_CONTRACTS.get(tool)
+    if contract is None:
+        return {"type": "object", "properties": {}, "additionalProperties": False}
+    properties: dict[str, object] = {}
+    for name, expected in contract.required.items():
+        properties[name] = {"type": _json_type(expected)}
+    for name, arg in contract.optional.items():
+        properties[name] = {"type": _json_type(arg.type)}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": sorted(contract.required.keys()),
+        "additionalProperties": False,
+    }
+
+
+def render_openai_tools(*, include_source_search: bool = True) -> list[dict[str, object]]:
+    tools: list[dict[str, object]] = []
+    for name in research_tool_names(include_source_search=include_source_search):
+        contract = TOOL_CONTRACTS[name]
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": contract.description or contract.example,
+                    "parameters": openai_parameters_schema(name),
+                },
+            }
+        )
+    tools.sort(key=lambda item: str(((item.get("function") or {}).get("name")) or ""))
+    return tools
+
+
 def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
     contract = TOOL_CONTRACTS.get(tool)
     if contract is None:

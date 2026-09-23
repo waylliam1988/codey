@@ -313,18 +313,29 @@ class ResearchRunner:
                 else message
             )
             try:
-                reply = self._send_provider(outbound)
+                if self._use_native_provider():
+                    from codey.research.native_bridge import turn_text as _turn_text
+                    pending = getattr(self, "_pending_native_turn", None)
+                    if pending is not None:
+                        self._pending_native_turn = None
+                        reply_turn = pending
+                    else:
+                        reply_turn = self._send_provider_structured(outbound)
+                    plan = self.codec.parse_turn(reply_turn)
+                    yield RunEvent.turn_started(turn, _turn_text(reply_turn), note=_plan_note(plan))
+                else:
+                    reply_text = self._send_provider(outbound)
+                    plan = (
+                        self.controller.parse_plan(self.codec, reply_text, control_state)
+                        if self.controller is not None and control_state is not None
+                        else self.codec.parse(reply_text)
+                    )
+                    yield RunEvent.turn_started(turn, reply_text, note=_plan_note(plan))
             except cancellation.TaskCancelled:
                 stop_reason = "stopped"
                 stop_announced = True
                 yield RunEvent.info("stop requested")
                 break
-            plan = (
-                self.controller.parse_plan(self.codec, reply, control_state)
-                if self.controller is not None and control_state is not None
-                else self.codec.parse(reply)
-            )
-            yield RunEvent.turn_started(turn, reply, note=_plan_note(plan))
             if plan.protocol_error and not plan.calls and plan.control is None:
                 protocol_errors += 1
                 self.prompt_trace.call(
@@ -462,7 +473,13 @@ class ResearchRunner:
                 message = self.codec.repair_prompt()
                 continue
             idle_turns = 0
-            message = self._format_results(_tool_results(results))
+            from codey.research import native_bridge as _bridge
+            if _bridge.maybe_prefetch_native_turn(self, plan, _tool_results(results)):
+                message = ""
+                continue
+            message = self._format_results(_tool_results(results)) + _bridge.record_and_check_cycle(
+                self, plan, results
+            )
         synthesis_id = ""
         if summary:
             synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
@@ -558,6 +575,21 @@ class ResearchRunner:
             )
             return _Outcome(output, changed=output.startswith(("linked:", "updated link:")))
         return _Outcome.error(f"unknown tool: {call.name}")
+
+    def _use_native_provider(self) -> bool:
+        from codey.research.native_bridge import use_native_provider as _use_native
+
+        return _use_native(getattr(self, "provider", None), str(getattr(self, "provider_id", "") or ""))
+
+    def _send_provider_structured(self, message: str) -> object:
+        from codey.research import native_bridge as _bridge
+
+        return _bridge.send_provider_structured(self, message)
+
+    def _send_native_tool_results(self, tool_messages: list[dict[str, object]]) -> object:
+        from codey.research import native_bridge as _bridge
+
+        return _bridge.send_native_tool_results(self, tool_messages)
 
     def _send_provider(self, message: str) -> str:
         try:

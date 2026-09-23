@@ -37,6 +37,94 @@ from codey.toolchain.runtime import ToolOutcome, safe_join
 SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
 INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
 
+TOOL_OUTPUT_BUDGET_BYTES = 24_000
+TOOL_OUTPUT_HEAD_BYTES = 12_000
+TOOL_OUTPUT_TAIL_BYTES = 8_000
+
+
+def _head_tail_clip(text: str) -> tuple[str, int]:
+    raw = text.encode("utf-8")
+    raw_bytes = len(raw)
+    head = raw[:TOOL_OUTPUT_HEAD_BYTES].decode("utf-8", errors="ignore")
+    tail = raw[-TOOL_OUTPUT_TAIL_BYTES:].decode("utf-8", errors="ignore") if len(raw) > TOOL_OUTPUT_HEAD_BYTES else ""
+    receipt = (
+        f"\n[... output externalized: {raw_bytes} bytes; showing head/tail. "
+        "Use narrower grep/read_file offsets for the rest.]\n"
+    )
+    return (head + receipt + tail if tail else head + receipt), raw_bytes
+
+
+def maybe_externalize_large_tool_output(
+    session: AgentLoopSession,
+    call: ToolCall,
+    outcome: ToolOutcome,
+    *,
+    turn: int,
+    tool_index: int,
+) -> ToolOutcome:
+    """Bound oversized model text; persist the full text when a store exists.
+
+    With ``session.request.managed_outputs`` wired (project runs), the full
+    output is stored durably and the model sees a head/tail receipt plus a
+    ``managed_output`` audit handle. Without a store (unit tests, ad-hoc
+    loops) it degrades to the same inline head/tail clip. Never changes
+    execution semantics.
+    """
+
+    text = str(outcome.model_text or "")
+    raw_bytes = len(text.encode("utf-8"))
+    if raw_bytes <= TOOL_OUTPUT_BUDGET_BYTES and not outcome.truncated:
+        return outcome
+    if outcome.managed_output():
+        return outcome
+    audit: dict[str, object] = dict(outcome.audit)
+    store = getattr(getattr(session, "request", None), "managed_outputs", None)
+    if store is not None and session.session_id and session.run_id:
+        try:
+            ref = store.write_tool_output(
+                session_id=session.session_id,
+                run_id=session.run_id,
+                tool_id=f"{turn}:{tool_index}",
+                permission_profile=session.profile.name,
+                tool_name=call.name,
+                display_ref=call_arg(call, "path", call_arg(call, "command", "")),
+                text=text,
+            )
+        except Exception:
+            ref = None
+        if ref is not None:
+            clipped, _ = _head_tail_clip(text)
+            audit["managed_output"] = {
+                "handle": ref.handle,
+                "original_bytes": ref.original_bytes,
+                "stored_bytes": ref.stored_bytes,
+                "sha256": ref.sha256,
+                "stored_truncated": ref.stored_truncated,
+            }
+            return ToolOutcome(
+                clipped,
+                outcome.ok,
+                canonical=dict(outcome.canonical),
+                presentation=dict(outcome.presentation),
+                audit={**audit, "externalized": True, "original_bytes": raw_bytes},
+                error_code=outcome.error_code,
+                exit_code=outcome.exit_code,
+                changed=outcome.changed,
+                truncated=True,
+            )
+    clipped, _ = _head_tail_clip(text)
+    return ToolOutcome(
+        clipped,
+        outcome.ok,
+        canonical=dict(outcome.canonical),
+        presentation=dict(outcome.presentation),
+        audit={**audit, "externalized": True, "original_bytes": raw_bytes},
+        error_code=outcome.error_code,
+        exit_code=outcome.exit_code,
+        changed=outcome.changed,
+        truncated=True,
+    )
+
 
 @dataclass(frozen=True)
 class ToolResultDeliveryItem:
@@ -331,6 +419,17 @@ def record_tool_outcome(
     replay_class: str = "unsafe",
     is_denied: bool = False,
 ) -> None:
+    from codey.runtime.hooks import call_hooks
+
+    call_hooks(
+        getattr(session, "hooks", None),
+        "before_tool_call",
+        session=session,
+        call=call,
+        turn=turn,
+        tool_index=tool_index,
+    )
+    outcome = maybe_externalize_large_tool_output(session, call, outcome, turn=turn, tool_index=tool_index)
     path = call_arg(call, "path", ".")
     model_text = outcome.model_text
     emit(session, RunEvent.tool_finished(turn, call, outcome, index=tool_index))
@@ -360,6 +459,30 @@ def record_tool_outcome(
         if sig not in session.stagnation.seen_info:
             session.stagnation.seen_info.add(sig)
             turn_state.made_progress = True
+    try:
+        from codey.agents.runaway_guard import attempt_record
+
+        session.stagnation.attempts.append(
+            attempt_record(
+                call,
+                tool_result_from_outcome(call, outcome),
+                turn=turn,
+                edit_epoch=session.verification.edit_epoch,
+            )
+        )
+    except Exception:
+        pass
+    from codey.runtime.hooks import call_hooks
+
+    call_hooks(
+        getattr(session, "hooks", None),
+        "after_tool_call",
+        session=session,
+        call=call,
+        outcome=outcome,
+        turn=turn,
+        tool_index=tool_index,
+    )
 
 
 def execute_edit_call(session: AgentLoopSession, call: ToolCall) -> ToolOutcome:
@@ -448,10 +571,16 @@ def execute_information_tool_call(
     if call.name == "ls":
         return tool_fns.list_directory(project, path)
     if call.name == "search":
+        search_options = {
+            name: call.args[name]
+            for name in ("offset", "limit")
+            if name in call.args
+        }
         return tool_fns.search_files(
             project,
             path,
             call_arg(call, "query"),
+            **search_options,
         )
     if call.name == "references":
         return tool_fns.find_references(

@@ -199,6 +199,7 @@ def json_safe_projection(
 class ToolCall:
     name: str
     args: dict[str, Any]
+    call_id: str = ""
 
 
 @dataclass(frozen=True)

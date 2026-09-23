@@ -30,6 +30,13 @@ class ProviderCapability:
     native_tool_interference_risk: Reliability
     needs_canary_by_default: bool
     failure_families: tuple[str, ...] = ()
+    tool_protocol: str = "json_text"
+    supports_native_tools: bool = False
+    max_tools_per_turn: int = 4
+    native_tools_default: bool = False
+    context_window_tokens: int = 200_000
+    context_reserve_tokens: int = 16_384
+    context_keep_recent_tokens: int = 20_000
 
 
 DEFAULT_PROVIDER_CAPABILITY = ProviderCapability(
@@ -111,6 +118,13 @@ PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
         native_tool_interference_risk=RELIABILITY_LOW,
         needs_canary_by_default=False,
         failure_families=("transient",),
+        tool_protocol="openai_native",
+        supports_native_tools=True,
+        max_tools_per_turn=4,
+        native_tools_default=False,
+        context_window_tokens=32_768,
+        context_reserve_tokens=8_192,
+        context_keep_recent_tokens=12_000,
     ),
 }
 

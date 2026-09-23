@@ -33,6 +33,7 @@ from codey.runtime.core.models import (
 )
 from codey.storage.atomic_io import write_text_atomic
 from codey.toolchain.constants import MAX_REPLACEMENTS
+from codey.toolchain.line_prefix import strip_line_number_prefixes as strip_line_number_prefixes
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
@@ -86,6 +87,25 @@ RUN_TIMEOUT_SECONDS = 90
 RUN_SUITE_TIMEOUT_SECONDS = 300
 RUN_OUTPUT_LIMIT = 24_000
 LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_string ...]\n"
+
+
+def retry_replacement_without_line_numbers(content: str, block: EditBlock) -> EditBlock | None:
+    # strip_line_number_prefixes is re-exported at module top for compatibility.
+    stripped_search, changed_search = strip_line_number_prefixes(block.search)
+    stripped_replace, changed_replace = strip_line_number_prefixes(block.replace)
+    if not changed_search and not changed_replace:
+        return None
+    candidate = EditBlock(search=stripped_search, replace=stripped_replace if changed_replace else block.replace)
+    if not candidate.search:
+        return None
+    # Stripped search must match exactly once, otherwise refuse (atomicity).
+    if content.count(candidate.search) != 1:
+        return None
+    # Never write line numbers into the file: the replacement must not start
+    # with a stripped prefix shape that we just removed.
+    return candidate
+
+
 EDIT_ANCHOR_RE = re.compile(
     r"(?P<quote>['\"])(?P<literal>[^'\"\r\n]{4,})(?P=quote)"
     r"|(?P<identifier>[A-Za-z_][A-Za-z0-9_]{3,})"
@@ -670,6 +690,11 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
             crlf_count = updated.count(block.search.replace("\n", "\r\n"))
         total = exact_count or crlf_count
         if total == 0:
+            retried = retry_replacement_without_line_numbers(updated, block)
+            if retried is not None:
+                updated, replaced = _replace_unique(updated, retried.search, retried.replace)
+                if replaced:
+                    continue
             return _search_not_found(
                 rel,
                 original_content=content,
@@ -907,12 +932,18 @@ def search_files(
     rel: str,
     query: str,
     *,
-    max_results: int = SEARCH_MAX_RESULTS,
+    offset: int = 1,
+    limit: int = SEARCH_MAX_RESULTS,
+    max_results: int | None = None,
 ) -> ToolOutcome:
+    from codey.toolchain.search_page import normalize_page_args
+
     cancellation.check()
     query = query.strip()
     if not query:
         return ToolOutcome.error("search query required")
+    page_offset, page_limit = normalize_page_args(offset, limit, max_results, SEARCH_MAX_RESULTS)
+    collect_cap = (page_offset - 1) + page_limit + 1
     start, error = _checked_tool_path(root, rel or ".", tool="grep")
     if error is not None or start is None:
         return error or ToolOutcome.error("path could not be resolved")
@@ -980,18 +1011,23 @@ def search_files(
             if len(clean) > 240:
                 clean = clean[:237] + "..."
             matches.append(f"{rel_path}:{line_no}: {clean}")
-            if len(matches) >= max_results:
+            if len(matches) >= collect_cap:
                 result_limited = True
                 break
         if result_limited:
             break
     if not matches:
         matches.append("(no literal matches; regex is not supported)")
-    if result_limited:
-        matches.append(
-            f"... truncated after {max_results} matches; narrow the query or pass a "
-            "subdirectory in path to see the rest"
-        )
+    from codey.toolchain.search_page import apply_page_footer
+
+    matches = apply_page_footer(
+        matches,
+        result_limited=result_limited,
+        query=query,
+        path=rel or ".",
+        offset=page_offset,
+        limit=page_limit,
+    )
     if oversized_files:
         matches.append(
             f"... skipped {oversized_files} file(s) larger than "

@@ -61,6 +61,9 @@ class LocalOpenAIProvider:
         timeout: float = DEFAULT_TIMEOUT,
         temperature: float = DEFAULT_TEMPERATURE,
         system_prompt: str = "",
+        context_window_tokens: int | None = None,
+        context_reserve_tokens: int | None = None,
+        context_keep_recent_tokens: int | None = None,
     ) -> None:
         self.base_url = (base_url or os.environ.get(LOCAL_BASE_URL_ENV) or default_local_base_url()).rstrip("/")
         self.model = model or os.environ.get(LOCAL_MODEL_ENV) or "local-model"
@@ -68,6 +71,9 @@ class LocalOpenAIProvider:
         self.timeout = timeout
         self.temperature = temperature
         self.system_prompt = system_prompt
+        self.context_window_tokens = context_window_tokens
+        self.context_reserve_tokens = context_reserve_tokens
+        self.context_keep_recent_tokens = context_keep_recent_tokens
         self._messages: list[dict] = []
 
     @classmethod
@@ -78,7 +84,18 @@ class LocalOpenAIProvider:
         config = load_local_config()
         model = str(config.get("model") or endpoint.default_model or "")
         api_key = str(config.get("api_key") or "")
-        return cls(endpoint.base_url, model, api_key=api_key)
+        try:
+            from codey.providers.capabilities import capability_for
+
+            capability = capability_for("local")
+            context = {
+                "context_window_tokens": capability.context_window_tokens,
+                "context_reserve_tokens": capability.context_reserve_tokens,
+                "context_keep_recent_tokens": capability.context_keep_recent_tokens,
+            }
+        except Exception:
+            context = {}
+        return cls(endpoint.base_url, model, api_key=api_key, **context)
 
     @property
     def location(self) -> str:
@@ -90,40 +107,131 @@ class LocalOpenAIProvider:
     def send(self, text: str, timeout: float | None = None) -> str:
         if not self._messages and self.system_prompt:
             self._messages.append({"role": "system", "content": self.system_prompt})
+        self._maybe_compact_messages()
         self._messages.append({"role": "user", "content": text})
         reply = self._complete(self._messages, timeout=timeout)
         self._messages.append({"role": "assistant", "content": reply})
         return reply
 
+    def send_turn(
+        self,
+        prompt: str,
+        tools: list[dict[str, object]] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        from codey.providers.base import AssistantTurn, ProviderToolCall
+
+        if not self._messages and self.system_prompt:
+            self._messages.append({"role": "system", "content": self.system_prompt})
+        self._maybe_compact_messages(tools=tools)
+        self._messages.append({"role": "user", "content": prompt})
+        message = self._complete_message(self._messages, tools=tools, timeout=timeout)
+        self._messages.append(_store_assistant_message(message))
+        return AssistantTurn(
+            text=str(message.get("content") or ""),
+            tool_calls=tuple(
+                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                for call in _parse_tool_calls(message)
+            ),
+            raw={"finish_reason": str(message.get("_finish_reason") or "")},
+        )
+
+    def send_tool_results(
+        self,
+        results: list[dict[str, object]],
+        tools: list[dict[str, object]] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        from codey.providers.base import AssistantTurn, ProviderToolCall
+
+        for item in results:
+            tool_call_id = str(item.get("tool_call_id") or "")
+            if not tool_call_id:
+                continue
+            self._messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": str(item.get("content") or ""),
+            })
+        self._maybe_compact_messages(tools=tools)
+        message = self._complete_message(self._messages, tools=tools, timeout=timeout)
+        self._messages.append(_store_assistant_message(message))
+        return AssistantTurn(
+            text=str(message.get("content") or ""),
+            tool_calls=tuple(
+                ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                for call in _parse_tool_calls(message)
+            ),
+            raw={"finish_reason": str(message.get("_finish_reason") or "")},
+        )
+
+    def _maybe_compact_messages(self, tools: list[dict[str, object]] | None = None) -> None:
+        try:
+            from codey.agents import context_compaction as compaction
+            from codey.providers.capabilities import capability_for
+
+            capability = capability_for("local")
+        except Exception:
+            return
+        try:
+            summary = compaction.compact_openai_messages_in_place(
+                self._messages,
+                tools=tools,
+                context_window_tokens=(
+                    self.context_window_tokens if self.context_window_tokens else capability.context_window_tokens
+                ),
+                reserve_tokens=(
+                    self.context_reserve_tokens if self.context_reserve_tokens else capability.context_reserve_tokens
+                ),
+                keep_recent_tokens=(
+                    self.context_keep_recent_tokens
+                    if self.context_keep_recent_tokens
+                    else capability.context_keep_recent_tokens
+                ),
+            )
+            _ = summary
+        except Exception:
+            return
+
+    def _summarize_compacted_prefix(self, prefix: list[dict]) -> str:
+        from codey.agents import context_compaction as compaction
+
+        return compaction.summarize_prefix_deterministically(prefix)
+
     def close(self) -> None:
         self._messages = []
 
-    def _complete(self, messages: list[dict], *, timeout: float | None = None) -> str:
+    def _post_chat(
+        self,
+        messages: list[dict],
+        tools: list[dict[str, object]] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> dict:
+        from codey.providers import error_classification as errors
+
         endpoint = f"{self.base_url}/chat/completions"
-        payload = json.dumps(
-            {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "stream": False,
-            }
-        ).encode("utf-8")
+        payload: dict[str, object] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        request = urllib.request.Request(
-            endpoint,
-            data=payload,
-            headers=headers,
-            method="POST",
-        )
+        request = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
         last_error: Exception | None = None
-        for attempt in range(_RESPONSE_RETRIES + 1):
+        for _attempt in range(_RESPONSE_RETRIES + 1):
             try:
                 with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
                     raw = response.read()
                 body = _load_response_json(raw, endpoint)
-                return _extract_reply(body)
+                return body
             except http.client.IncompleteRead as exc:
                 last_error = _RetryableResponseError(
                     f"local model at {endpoint} returned a truncated response "
@@ -132,13 +240,56 @@ class LocalOpenAIProvider:
             except _RetryableResponseError as exc:
                 last_error = exc
             except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", "replace")[:400]
-                raise RuntimeError(f"local model HTTP {exc.code}: {detail}") from exc
+                try:
+                    detail = exc.read().decode("utf-8", "replace")[:2000]
+                except Exception:
+                    detail = ""
+                kind = errors.classify_http_error(int(getattr(exc, "code", 0) or 0), detail)
+                if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
+                    raise errors.ContextOverflowError(f"local model context overflow: {detail[:400]}") from exc
+                if kind == errors.ProviderErrorKind.AUTH:
+                    raise RuntimeError(f"local model HTTP {exc.code}: {detail[:400]}") from exc
+                raise RuntimeError(f"local model HTTP {exc.code}: {detail[:400]}") from exc
             except (urllib.error.URLError, TimeoutError) as exc:
                 raise RuntimeError(f"could not reach local model at {self.base_url}: {exc}") from exc
-            if attempt < _RESPONSE_RETRIES:
-                continue
         raise RuntimeError(str(last_error or f"local model at {endpoint} did not return a reply"))
+
+    def _complete_message(
+        self,
+        messages: list[dict],
+        tools: list[dict[str, object]] | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> dict:
+        from codey.providers import error_classification as errors
+
+        body = self._post_chat(messages, tools, timeout=timeout)
+        try:
+            choice = body["choices"][0]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError("local model returned no choices") from exc
+        if not isinstance(choice, dict):
+            raise RuntimeError("local model returned a malformed choice")
+        kind = errors.classify_openai_choice(choice)
+        if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
+            raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
+        if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
+            raise errors.OutputLengthError()
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise RuntimeError("local model returned a choice without message content")
+        out: dict[str, object] = {
+            "content": message.get("content") or "",
+            "_finish_reason": str(choice.get("finish_reason") or ""),
+        }
+        raw_calls = message.get("tool_calls")
+        if isinstance(raw_calls, list):
+            out["tool_calls"] = raw_calls
+        return out
+
+    def _complete(self, messages: list[dict], *, timeout: float | None = None) -> str:
+        body = self._post_chat(messages, None, timeout=timeout)
+        return _extract_reply(body)
 
 
 def default_local_base_url() -> str:
@@ -300,6 +451,44 @@ def _config_path() -> Path:
     return DEFAULT_STATE_HOME / _CONFIG_FILE
 
 
+def _parse_tool_calls(message: dict) -> list[dict[str, object]]:
+    raw_calls = message.get("tool_calls")
+    if not isinstance(raw_calls, list):
+        return []
+    parsed: list[dict[str, object]] = []
+    for item in raw_calls:
+        if not isinstance(item, dict):
+            continue
+        call_id = str(item.get("id") or "")
+        function = item.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = str(function.get("name") or "")
+        raw_args = function.get("arguments")
+        if isinstance(raw_args, dict):
+            arguments = dict(raw_args)
+        elif isinstance(raw_args, str):
+            try:
+                decoded = json.loads(raw_args) if raw_args.strip() else {}
+            except json.JSONDecodeError:
+                decoded = {}
+            arguments = dict(decoded) if isinstance(decoded, dict) else {}
+        else:
+            arguments = {}
+        if not call_id or not name:
+            continue
+        parsed.append({"id": call_id, "name": name, "arguments": arguments})
+    return parsed
+
+
+def _store_assistant_message(message: dict) -> dict:
+    stored: dict[str, object] = {"role": "assistant", "content": str(message.get("content") or "")}
+    raw_calls = message.get("tool_calls")
+    if isinstance(raw_calls, list) and raw_calls:
+        stored["tool_calls"] = raw_calls
+    return stored
+
+
 def _extract_reply(body: dict) -> str:
     try:
         choice = body["choices"][0]
@@ -307,6 +496,13 @@ def _extract_reply(body: dict) -> str:
         raise RuntimeError("local model returned no choices") from exc
     if not isinstance(choice, dict):
         raise RuntimeError("local model returned a malformed choice")
+    from codey.providers import error_classification as errors
+
+    kind = errors.classify_openai_choice(choice)
+    if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
+        raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
+    if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
+        raise errors.OutputLengthError()
     message = choice.get("message")
     if isinstance(message, dict):
         return str(message.get("content") or "")

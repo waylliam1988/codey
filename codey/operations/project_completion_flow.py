@@ -627,6 +627,7 @@ def _run_one_writer_attempt(
         runtime_effects=ctx.deps.runtime.effects,
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
+        managed_outputs=ctx.deps.persistence.managed_outputs,
         recovered_tool_outcomes=recovered_outcomes,
         recovered_tool_result_batch_id=recovered_batch_id,
     ))

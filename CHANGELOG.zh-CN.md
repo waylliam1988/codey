@@ -2,6 +2,47 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Native tool-call 通道 + NoAB 安全护栏（未发布）
+
+- 一个 Agent、两种外部协议：`ToolCall/ToolPlan/ToolResult` 仍是唯一
+  canonical IR。网页 JSON（`JsonToolCodec`）和本地 native tool call
+  （新增 `protocols/native_openai.py`）都落到它上面。JSON 文本 prompt
+  字节不变。
+- `ToolDefinition` 新增 `parameters/required/category/side_effect`；
+  新增 `toolchain/openai_tools.py` 生成 OpenAI function schema（native
+  不暴露 `parallel`/`read_files` 包装工具）；research `ToolContract`
+  同样补 schema 导出。新增 `toolchain/registry.py` 快照防三处漂移。
+- `ToolCall.call_id` 透传 OpenAI `tool_call.id`；effect ledger 不动
+  （`effect_id` 仍由 `build_tool_call_intent` 生成）。
+- 新增 `StructuredChatProvider`（`send_turn`/`send_tool_results`）；
+  `LocalOpenAIProvider` 实现它并保证 `role: tool` 链完整（保留
+  assistant `tool_calls` 消息），`finish_reason=length` 直接抛错不再
+  解析半截 JSON，HTTP 错误分类处理。native 默认关闭
+  （`native_tools_default=False`，`CODEY_NATIVE_TOOLS=1` 开启）。
+- NoAB 硬化，全部只在失败/超限路径介入：安全上下文压缩（不切开
+  assistant tool call 与 tool 结果组）、overflow 走 rollover 不重试、
+  durable 输出 receipt（`ManagedOutputStore.write_tool_output` 经
+  `AgentRequest.managed_outputs` 接入）、grep `offset/limit` 分页
+  （首页截断文案不变）、edit 行号前缀剥离重试（唯一匹配才执行，
+  保持原子）、file-mutation-queue 顺序驱动执行（仍串行）、fail-open
+  lifecycle hooks。
+- ABAB 防震荡：`LoopStagnation.attempts`（`ToolAttemptRecord` 有界
+  deque）；`detect_exact_repeat`（AAA）加 `detect_periodic_cycle`
+  （ABAB/ABCABC，需完整两轮、call 与结果指纹逐位一致、无改动、
+  同一 edit epoch）。read/search/run 循环只提醒，edit 循环要求先
+  重读，shell 循环直接停为 `no_progress`。research 共用同一机制；
+  正常的“搜 A、读 B、再搜 A”少量回看不会触发。
+- 上下文预算来自 capability
+  （`context_window_tokens/context_reserve_tokens/context_keep_recent_tokens`，
+  本地 `32768/8192/12000`）；`LocalOpenAIProvider` 构造参数可配
+  （`connect()` 从 capability 填充）；`build_conversation_plan` 落到
+  `ConversationContext`。
+- native `tool_messages` 缺 `call_id` 直接 fail closed
+  （`NativeToolResultError`），不再静默丢结果；recovered 路径回退文本。
+- 验证：`ruff check .`、`compileall`、`git diff --check` 全过；全量
+  `python -m pytest tests/ --ignore=tests/manual`
+  （`4036 passed, 6 skipped, 1323 subtests passed`）。
+
 ## Unreleased - 修 CI WinError 32：断言 ghost-sleep daemon join（未发布）
 
 - GitHub Windows Python 3.13 在删临时目录时挂了一个测试：ghost

@@ -24,6 +24,10 @@ class ToolDefinition:
     output_facts: tuple[str, ...] = ()
     render_hint: str = ""
     repair_hint: str = ""
+    parameters: tuple[tuple[str, object], ...] = ()
+    required: tuple[str, ...] = ()
+    category: str = "coding"
+    side_effect: str = "none"
 
 
 TOOL_DEFINITIONS = (
@@ -38,6 +42,10 @@ TOOL_DEFINITIONS = (
         description="List files in a directory.",
         render_hint="list",
         repair_hint="list_dir",
+        parameters=(("path", {"type": "string"}),),
+        required=("path",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "read_file",
@@ -53,6 +61,14 @@ TOOL_DEFINITIONS = (
         description="Read one file. Large files are returned in complete-line pages.",
         render_hint="read",
         repair_hint="read_file",
+        parameters=(
+            ("path", {"type": "string"}),
+            ("offset", {"type": "integer", "minimum": 1}),
+            ("limit", {"type": "integer", "minimum": 1}),
+        ),
+        required=("path",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "read_files",
@@ -66,6 +82,10 @@ TOOL_DEFINITIONS = (
         ),
         render_hint="read_many",
         repair_hint="read_files",
+        parameters=(("paths", {"type": "array", "items": {"type": "string"}}),),
+        required=("paths",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "grep",
@@ -83,6 +103,15 @@ TOOL_DEFINITIONS = (
         ),
         render_hint="search",
         repair_hint="grep",
+        parameters=(
+            ("query", {"type": "string"}),
+            ("path", {"type": "string"}),
+            ("offset", {"type": "integer", "minimum": 1}),
+            ("limit", {"type": "integer", "minimum": 1}),
+        ),
+        required=("query",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "find_references",
@@ -99,6 +128,13 @@ TOOL_DEFINITIONS = (
         ),
         render_hint="references",
         repair_hint="find_references",
+        parameters=(
+            ("symbol", {"type": "string"}),
+            ("path", {"type": "string"}),
+        ),
+        required=("symbol",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "parallel",
@@ -114,6 +150,10 @@ TOOL_DEFINITIONS = (
         ),
         render_hint="parallel",
         repair_hint="parallel",
+        parameters=(("calls", {"type": "array", "items": {"type": "object"}}),),
+        required=("calls",),
+        category="coding",
+        side_effect="none",
     ),
     ToolDefinition(
         "edit",
@@ -132,6 +172,30 @@ TOOL_DEFINITIONS = (
         output_facts=("file_changed",),
         render_hint="edit",
         repair_hint="edit",
+        parameters=(
+            ("path", {"type": "string"}),
+            ("content", {"type": "string"}),
+            ("old_string", {"type": "string"}),
+            ("new_string", {"type": "string"}),
+            (
+                "replacements",
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": {"type": "string"},
+                            "new_string": {"type": "string"},
+                        },
+                        "required": ["old_string", "new_string"],
+                        "additionalProperties": False,
+                    },
+                },
+            ),
+        ),
+        required=("path",),
+        category="coding",
+        side_effect="write",
     ),
     ToolDefinition(
         "run",
@@ -144,6 +208,13 @@ TOOL_DEFINITIONS = (
         output_facts=("command_verified",),
         render_hint="run",
         repair_hint="run",
+        parameters=(
+            ("command", {"type": "string"}),
+            ("path", {"type": "string"}),
+        ),
+        required=("command",),
+        category="coding",
+        side_effect="verify",
     ),
     ToolDefinition(
         "shell",
@@ -155,6 +226,13 @@ TOOL_DEFINITIONS = (
         description="Ask the user to approve a necessary non-allowlisted command.",
         render_hint="shell",
         repair_hint="shell",
+        parameters=(
+            ("command", {"type": "string"}),
+            ("path", {"type": "string"}),
+        ),
+        required=("command",),
+        category="coding",
+        side_effect="approval",
     ),
     ToolDefinition(
         "done",
@@ -168,6 +246,10 @@ TOOL_DEFINITIONS = (
         ),
         render_hint="done",
         repair_hint="done",
+        parameters=(("summary", {"type": "string"}),),
+        required=("summary",),
+        category="coding",
+        side_effect="none",
     ),
 )
 
@@ -289,3 +371,15 @@ def _clip_activity(value: object, limit: int = 80) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."
+
+
+def openai_parameters_schema(definition: ToolDefinition) -> dict[str, object]:
+    properties: dict[str, object] = {}
+    for name, schema in definition.parameters:
+        properties[str(name)] = dict(schema) if isinstance(schema, dict) else {"type": "string"}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(definition.required),
+        "additionalProperties": False,
+    }

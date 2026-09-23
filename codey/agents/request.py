@@ -79,6 +79,7 @@ class AgentRequest:
     runtime_mutations: Any = None
     runtime_effects: Any = None
     tool_result_delivery: Any = None
+    managed_outputs: Any = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
 

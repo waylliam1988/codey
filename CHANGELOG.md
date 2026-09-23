@@ -2,6 +2,50 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Native tool-call track + NoAB safety rails (no release)
+
+- One agent, two wire protocols: `ToolCall/ToolPlan/ToolResult` stays the
+  single canonical IR. Webpage JSON (`JsonToolCodec`) and local native tool
+  calls (new `protocols/native_openai.py`) both lower to it. JSON-text
+  prompts are byte-identical.
+- `ToolDefinition` gains `parameters/required/category/side_effect`; new
+  `toolchain/openai_tools.py` renders OpenAI function schemas (native hides
+  the `parallel`/`read_files` wrappers); research `ToolContract` gains the
+  same export. New `toolchain/registry.py` snapshots stop the three surfaces
+  from drifting.
+- `ToolCall.call_id` carries the OpenAI `tool_call.id`; the effect ledger is
+  untouched (`effect_id` still comes from `build_tool_call_intent`).
+- New `StructuredChatProvider` (`send_turn`/`send_tool_results`);
+  `LocalOpenAIProvider` implements it with correct `role: tool` chaining
+  (the assistant `tool_calls` block is retained),
+  `finish_reason=length` raises instead of parsing half-JSON, and HTTP errors
+  are classified (`providers/error_classification.py`). Native is off by
+  default (`native_tools_default=False`, `CODEY_NATIVE_TOOLS=1` to enable).
+- NoAB hardening, all failure-path-only: safe context compaction (never
+  splits assistant `tool_calls` -> tool groups), overflow -> rollover instead
+  of retry, durable output receipts (`ManagedOutputStore.write_tool_output`
+  wired through `AgentRequest.managed_outputs`), grep `offset/limit`
+  pagination (first-page truncation text unchanged), edit line-prefix strip
+  retry (unique match only, still atomic), file-mutation-queue ordering drives
+  execution (still serial), fail-open lifecycle hooks.
+- ABAB anti-oscillation: `LoopStagnation.attempts` (bounded deque of
+  `ToolAttemptRecord`); `detect_exact_repeat` (AAA) plus
+  `detect_periodic_cycle` (ABAB/ABCABC, two full cycles, identical call and
+  result fingerprints, no changes, single edit epoch). Read/search/run cycles
+  remind, edit cycles must re-read first, shell cycles stop as `no_progress`.
+  Research shares it (`record_and_check_cycle`); a lone `search A, read B,
+  search A` lookback never triggers.
+- Context budgets from capability
+  (`context_window_tokens/context_reserve_tokens/context_keep_recent_tokens`;
+  local `32768/8192/12000`); `LocalOpenAIProvider` takes them as constructor
+  params (`connect()` fills from capability); `build_conversation_plan`
+  applies them to `ConversationContext`.
+- Native `tool_messages` fails closed (`NativeToolResultError`) instead of
+  silently dropping results; the recovered-results path falls back to text.
+- Verification: `ruff check .`, `compileall`, and `git diff --check` clean;
+  full suite `python -m pytest tests/ --ignore=tests/manual`
+  (`4036 passed, 6 skipped, 1323 subtests passed`).
+
 ## Unreleased - Fix CI WinError 32: assert ghost-sleep daemon join (no release)
 
 - GitHub Windows Python 3.13 failed one test at `TemporaryDirectory`

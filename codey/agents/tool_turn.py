@@ -244,124 +244,151 @@ def execute_turn_tools(
         turn_state.delivery_batch_id = batch_id
         turn_state.delivery_batch_digest = digest
 
-    # 2. Execution Phase
-    for item in planned:
-        if item.policy_denied:
-            outcome = policy_error_outcome(item.policy_decision)
-            if item.call.name == "run":
-                mark_policy_denied_run(session)
-            record_tool_outcome(
-                session,
-                turn_state,
-                turn=turn,
-                call=item.call,
-                outcome=outcome,
-                tool_index=item.tool_index,
-                ref=item.ref,
-                effect_id="",
-                replay_class=item.replay_class_str,
-                is_denied=True,
-            )
-            continue
+    # 2. Execution Phase: ordered by the file-mutation queue so same-file
+    # edits (and same-file edit/read pairs) serialize. Still serial today;
+    # only read-only group members may run concurrently in the future.
+    try:
+        from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
 
-        if item.intent_error is not None:
-            outcome = tool_error_outcome(item.intent_error)
-            record_tool_outcome(
-                session,
-                turn_state,
-                turn=turn,
-                call=item.call,
-                outcome=outcome,
-                tool_index=item.tool_index,
-                ref=item.ref,
-                effect_id="",
-                replay_class=item.replay_class_str,
-                is_denied=True,
-            )
-            continue
-
-        if item.requires_approval:
-            path = call_arg(item.call, "path", ".")
-            command = call_arg(item.call, "command").strip()
-            request_shell_approval(
-                session,
-                path=path,
-                command=command,
-                policy_decision=item.policy_decision,
-                deferred_calls=item.deferred_calls,
-            )
-            deferred_note = (
-                f"; {len(item.deferred_calls)} later tool call(s) deferred"
-                if item.deferred_calls
-                else ""
-            )
-            return TurnToolExecutionResult(
-                turn_state=turn_state,
-                stopped=True,
-                stop_summary=f"shell command requires approval{deferred_note}",
-                stop_reason="approval",
-            )
-
-        effect_id = item.effect_id
-        replay_decision = item.replay_decision
-        emit_tool_started_after_intent(
-            session,
-            item.call,
-            turn=turn,
-            tool_index=item.tool_index,
+        groups = group_tool_calls_for_execution(
+            [item.call for item in planned], str(session.project)
         )
-        try:
-            try:
-                outcome = execute_tool_call(
-                    session,
-                    item.call,
-                    turn=turn,
-                    tool_index=item.tool_index,
-                )
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
-                if effect_id:
-                    settle_tool_call_effect(
-                        session,
-                        effect_id,
-                        outcome=tool_error_outcome(exc),
-                        replay_decision=replay_decision,
-                    )
-                raise
-            except Exception as exc:
-                outcome = tool_error_outcome(exc)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            outcome = tool_error_outcome(exc)
+        ordered = [planned[i] for group in groups for i in group if 0 <= i < len(planned)]
+        execution_order = ordered if len(ordered) == len(planned) else list(planned)
+    except Exception:
+        execution_order = list(planned)
+    for item in execution_order:
+        stopped = execute_planned_item(session, item, turn_state=turn_state, turn=turn)
+        if stopped is not None:
+            return stopped
 
+    return TurnToolExecutionResult(turn_state=turn_state)
+
+
+def execute_planned_item(
+    session: AgentLoopSession,
+    item: PlannedToolCall,
+    *,
+    turn_state: TurnState,
+    turn: int,
+) -> TurnToolExecutionResult | None:
+    """Execute one planned call; return a stop result or None to continue."""
+    if item.policy_denied:
+        outcome = policy_error_outcome(item.policy_decision)
+        if item.call.name == "run":
+            mark_policy_denied_run(session)
+        record_tool_outcome(
+            session,
+            turn_state,
+            turn=turn,
+            call=item.call,
+            outcome=outcome,
+            tool_index=item.tool_index,
+            ref=item.ref,
+            effect_id="",
+            replay_class=item.replay_class_str,
+            is_denied=True,
+        )
+        return None
+
+    if item.intent_error is not None:
+        outcome = tool_error_outcome(item.intent_error)
+        record_tool_outcome(
+            session,
+            turn_state,
+            turn=turn,
+            call=item.call,
+            outcome=outcome,
+            tool_index=item.tool_index,
+            ref=item.ref,
+            effect_id="",
+            replay_class=item.replay_class_str,
+            is_denied=True,
+        )
+        return None
+
+    if item.requires_approval:
+        path = call_arg(item.call, "path", ".")
+        command = call_arg(item.call, "command").strip()
+        request_shell_approval(
+            session,
+            path=path,
+            command=command,
+            policy_decision=item.policy_decision,
+            deferred_calls=item.deferred_calls,
+        )
+        deferred_note = (
+            f"; {len(item.deferred_calls)} later tool call(s) deferred"
+            if item.deferred_calls
+            else ""
+        )
+        return TurnToolExecutionResult(
+            turn_state=turn_state,
+            stopped=True,
+            stop_summary=f"shell command requires approval{deferred_note}",
+            stop_reason="approval",
+        )
+
+    effect_id = item.effect_id
+    replay_decision = item.replay_decision
+    emit_tool_started_after_intent(
+        session,
+        item.call,
+        turn=turn,
+        tool_index=item.tool_index,
+    )
+    try:
         try:
-            record_tool_outcome(
+            outcome = execute_tool_call(
                 session,
-                turn_state,
+                item.call,
                 turn=turn,
-                call=item.call,
-                outcome=outcome,
                 tool_index=item.tool_index,
-                ref=item.ref,
-                effect_id=effect_id,
-                replay_class=item.replay_class_str,
-                is_denied=False,
             )
-        finally:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
             if effect_id:
                 settle_tool_call_effect(
                     session,
                     effect_id,
-                    outcome=outcome,
+                    outcome=tool_error_outcome(exc),
                     replay_decision=replay_decision,
                 )
+            raise
+        except Exception as exc:
+            outcome = tool_error_outcome(exc)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception as exc:
+        outcome = tool_error_outcome(exc)
 
-    return TurnToolExecutionResult(turn_state=turn_state)
+    try:
+        record_tool_outcome(
+            session,
+            turn_state,
+            turn=turn,
+            call=item.call,
+            outcome=outcome,
+            tool_index=item.tool_index,
+            ref=item.ref,
+            effect_id=effect_id,
+            replay_class=item.replay_class_str,
+            is_denied=False,
+        )
+    finally:
+        if effect_id:
+            settle_tool_call_effect(
+                session,
+                effect_id,
+                outcome=outcome,
+                replay_decision=replay_decision,
+            )
+    return None
 
 
 __all__ = [
     "PlannedToolCall",
     "TurnToolExecutionResult",
+    "execute_planned_item",
     "execute_turn_tools",
     "replay_class_value",
 ]

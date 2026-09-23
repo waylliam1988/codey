@@ -8,3 +8,4 @@ so definition.py never imports runtime.py for one integer.
 from __future__ import annotations
 
 MAX_REPLACEMENTS = 8
+SEARCH_PAGE_MAX_RESULTS = 100
