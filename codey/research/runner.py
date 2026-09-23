@@ -41,7 +41,7 @@ from codey.research.tool_contract import (
     TOOL_CONTRACTS,
     tool_example,
 )
-from codey.research.tools import ResearchTools, clone_research_tools
+from codey.research.tools import ResearchToolOutput, ResearchTools, clone_research_tools
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_SOURCE_KEY,
 )
@@ -552,16 +552,19 @@ class ResearchRunner:
                 call, output, turn=turn, tool_index=tool_index,
             )
         if call.name == "open_url":
-            output = self.tools.open_url(
+            opened = self.tools.open_url_with_receipt(
                 str(args.get("url") or ""),
                 offset=args.get("offset", 0),
                 limit=args.get("limit", 6000),
                 pages=str(args.get("pages") or ""),
             )
-            outcome = _Outcome(output, presentation_result=_opened_source_presentation(output))
+            if isinstance(opened, str):
+                # Fixture doubles override open_url() only; fall back to it.
+                opened = ResearchToolOutput(model_text=opened)
             return self._maybe_externalize_research_output(
-                call, outcome.model_text, turn=turn, tool_index=tool_index,
-                presentation_result=outcome.presentation.get("result", ""),
+                call, opened.receipt_text or opened.model_text, turn=turn, tool_index=tool_index,
+                model_text_override=opened.model_text,
+                presentation_result=_opened_source_presentation(opened.model_text),
             )
         if call.name == "source_search":
             output = self.tools.source_search(
@@ -596,6 +599,7 @@ class ResearchRunner:
         turn: int,
         tool_index: int,
         presentation_result: str = "",
+        model_text_override: str = "",
     ):
         """Bound oversized web/source outputs (delegate keeps runner small)."""
         return maybe_externalize_output(
@@ -608,6 +612,7 @@ class ResearchRunner:
             turn=turn,
             tool_index=tool_index,
             presentation_result=presentation_result,
+            model_text_override=model_text_override,
         )
 
     def _use_native_provider(self) -> bool:

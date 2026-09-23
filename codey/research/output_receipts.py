@@ -97,13 +97,20 @@ def maybe_externalize_output(
     turn: int,
     tool_index: int,
     presentation_result: str = "",
+    model_text_override: str = "",
 ) -> _Outcome:
-    """Bound one web/source output, persisting a durable receipt when possible."""
+    """Bound one web/source output, persisting a durable receipt when possible.
+
+    ``output`` is the full text reserved for the receipt; when
+    ``model_text_override`` is given the model sees only that window while
+    the store keeps the full text.
+    """
     text = str(output or "")
+    model_text = str(model_text_override or text)
     if text.startswith(("ERROR:", "NEEDS_OPEN:", "SKIPPED:")):
-        return _Outcome(text, presentation_result=presentation_result) if presentation_result else _Outcome(text)
+        return _Outcome(model_text, presentation_result=presentation_result) if presentation_result else _Outcome(model_text)
     if len(text.encode("utf-8")) <= RESEARCH_OUTPUT_BUDGET_BYTES:
-        return _Outcome(text, presentation_result=presentation_result) if presentation_result else _Outcome(text)
+        return _Outcome(model_text, presentation_result=presentation_result) if presentation_result else _Outcome(model_text)
     audit: dict[str, object] = {}
     if store is not None and session_id and run_id:
         try:

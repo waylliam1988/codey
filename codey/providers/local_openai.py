@@ -7,7 +7,6 @@ import json
 import os
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 from pathlib import Path
 
 from codey.env_names import (
@@ -17,13 +16,20 @@ from codey.env_names import (
     LOCAL_OPENAI_BASE_URL_ENV as LOCAL_BASE_URL_ENV,
 )
 from codey.env_names import (
-    LOCAL_OPENAI_CONTEXT_KEEP_ENV,
-    LOCAL_OPENAI_CONTEXT_RESERVE_ENV,
-    LOCAL_OPENAI_CONTEXT_WINDOW_ENV,
-    NATIVE_TOOLS_ENV,
-)
-from codey.env_names import (
     LOCAL_OPENAI_MODEL_ENV as LOCAL_MODEL_ENV,
+)
+from codey.providers.local_config import CONFIG_FILE as _CONFIG_FILE
+from codey.providers.local_config import (
+    LocalProviderConfig,
+    config_from_dict,
+    resolve_effective_local_config,
+    resolve_local_context_budget,
+    resolve_local_native_tools,
+)
+from codey.providers.local_discovery import (
+    DEFAULT_BASE_URL,
+    LOCAL_BASE_URL_CANDIDATES,
+    LocalEndpoint,
 )
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
@@ -33,27 +39,10 @@ from codey.storage.local_store import (
     write_json_atomic,
 )
 
-DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
-LOCAL_BASE_URL_CANDIDATES = (
-    "http://127.0.0.1:1234/v1",
-    "http://127.0.0.1:11434/v1",
-    "http://127.0.0.1:8080/v1",
-)
 DEFAULT_TIMEOUT = 180
 DEFAULT_TEMPERATURE = 0.3
 _RESPONSE_PREVIEW_LIMIT = 400
 _RESPONSE_RETRIES = 1
-_CONFIG_FILE = "local-openai.json"
-
-
-@dataclass(frozen=True)
-class LocalEndpoint:
-    base_url: str
-    models: tuple[str, ...] = ()
-
-    @property
-    def default_model(self) -> str:
-        return self.models[0] if self.models else ""
 
 
 class _RetryableResponseError(RuntimeError):
@@ -90,13 +79,22 @@ class LocalOpenAIProvider:
 
     @classmethod
     def connect(cls, **_kwargs) -> LocalOpenAIProvider:
-        endpoint = resolve_local_endpoint()
-        if endpoint is None:
+        try:
+            canonical = config_from_dict(load_local_config())
+            endpoint = resolve_local_endpoint()
+            if endpoint is None:
+                return cls()
+            effective = resolve_effective_local_config(canonical, endpoint=endpoint)
+        except Exception:
             return cls()
-        config = load_local_config()
-        model = str(config.get("model") or endpoint.default_model or "")
-        api_key = str(config.get("api_key") or "")
-        return cls(endpoint.base_url, model, api_key=api_key, **resolve_local_context_budgets())
+        return cls(
+            effective.base_url,
+            effective.model or "local-model",
+            api_key=effective.api_key,
+            context_window_tokens=effective.context.context_window_tokens,
+            context_reserve_tokens=effective.context.context_reserve_tokens,
+            context_keep_recent_tokens=effective.context.context_keep_recent_tokens,
+        )
 
     @property
     def location(self) -> str:
@@ -178,28 +176,38 @@ class LocalOpenAIProvider:
         message = self._complete_message(self._messages, tools=tools, timeout=timeout)
         return self._assistant_turn_or_fail_closed(message)
 
+    def _context_budget(self) -> tuple[int, int, int]:
+        """Instance budgets with capability fallback; never reads disk per send."""
+        try:
+            from codey.providers.capabilities import capability_for
+
+            capability = capability_for("local")
+            defaults = (
+                int(capability.context_window_tokens),
+                int(capability.context_reserve_tokens),
+                int(capability.context_keep_recent_tokens),
+            )
+        except Exception:
+            defaults = (32_768, 8_192, 12_000)
+        return (
+            self.context_window_tokens or defaults[0],
+            self.context_reserve_tokens or defaults[1],
+            self.context_keep_recent_tokens or defaults[2],
+        )
+
     def _maybe_compact_messages(self, tools: list[dict[str, object]] | None = None) -> None:
         try:
             from codey.agents import context_compaction as compaction
-
-            budgets = resolve_local_context_budgets()
         except Exception:
             return
+        window, reserve, keep = self._context_budget()
         try:
             summary = compaction.compact_openai_messages_in_place(
                 self._messages,
                 tools=tools,
-                context_window_tokens=(
-                    self.context_window_tokens if self.context_window_tokens else budgets["context_window_tokens"]
-                ),
-                reserve_tokens=(
-                    self.context_reserve_tokens if self.context_reserve_tokens else budgets["context_reserve_tokens"]
-                ),
-                keep_recent_tokens=(
-                    self.context_keep_recent_tokens
-                    if self.context_keep_recent_tokens
-                    else budgets["context_keep_recent_tokens"]
-                ),
+                context_window_tokens=window,
+                reserve_tokens=reserve,
+                keep_recent_tokens=keep,
             )
             _ = summary
         except Exception:
@@ -306,6 +314,7 @@ class LocalOpenAIProvider:
 
 
 def default_local_base_url() -> str:
+    """First reachable candidate (short-circuit); env/remembered first."""
     configured = os.environ.get(LOCAL_BASE_URL_ENV, "").strip()
     if configured:
         return configured
@@ -336,16 +345,10 @@ def probe_local_endpoint(
     api_key: str = "",
     timeout: float = 1.5,
 ) -> LocalEndpoint | None:
-    """Return an endpoint only for a valid OpenAI-compatible /models reply.
+    """Facade over discovery (keeps the historical Optional return)."""
+    from codey.providers import local_discovery as discovery
 
-    Anything else (unreachable/auth/invalid payload) is None: callers treat
-    "we got bytes but not /models" the same as "nothing there". Use
-    probe_local_endpoint_detail when the reason matters for an error message.
-    """
-    endpoint, reason = probe_local_endpoint_detail(
-        base_url, api_key=api_key, timeout=timeout
-    )
-    return endpoint if reason == "ok" else None
+    return discovery.probe_local_endpoint(base_url, api_key=api_key, timeout=timeout)
 
 
 def probe_local_endpoint_detail(
@@ -354,42 +357,14 @@ def probe_local_endpoint_detail(
     api_key: str = "",
     timeout: float = 1.5,
 ) -> tuple[LocalEndpoint | None, str]:
-    """Probe /models and report why it failed without raising.
+    """Facade over discovery (keeps the historical detail return)."""
+    from codey.providers import local_discovery as discovery
 
-    Returns (endpoint, reason) where reason is one of
-    ok/unreachable/auth/invalid_json. The thin probe_local_endpoint
-    wrapper above keeps the historical Optional return for callers.
-    """
-    url = (base_url or DEFAULT_BASE_URL).rstrip("/")
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    request = urllib.request.Request(f"{url}/models", headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
-            return None, "auth"
-        return None, "unreachable"
-    except Exception:
-        return None, "unreachable"
-    try:
-        body = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None, "invalid_json"
-    data = body.get("data") if isinstance(body, dict) else None
-    if not isinstance(data, list):
-        return None, "invalid_json"
-    models = tuple(
-        str(item.get("id"))
-        for item in data
-        if isinstance(item, dict) and item.get("id")
-    )
-    return LocalEndpoint(url, models), "ok"
+    return discovery.probe_local_endpoint_detail(base_url, api_key=api_key, timeout=timeout)
 
 
 def detect_local_endpoints(*, api_key: str = "") -> list[LocalEndpoint]:
+    """First-hit short-circuit scan (mock-friendly); full parallel scan lives in discovery."""
     found: list[LocalEndpoint] = []
     seen: set[str] = set()
     for candidate in LOCAL_BASE_URL_CANDIDATES:
@@ -404,6 +379,7 @@ def detect_local_endpoints(*, api_key: str = "") -> list[LocalEndpoint]:
 
 
 def resolve_local_endpoint() -> LocalEndpoint | None:
+    """Remembered endpoint first, else the first reachable candidate."""
     config = load_local_config()
     remembered = str(config.get("base_url") or "").strip()
     api_key = str(config.get("api_key") or "")
@@ -418,117 +394,59 @@ def resolve_local_endpoint() -> LocalEndpoint | None:
 
 
 def load_local_config() -> dict:
-    path = _config_path()
+    """Legacy dict view over the canonical config (callers migrate to local_config)."""
+    from codey.providers import local_config as canonical
+
     try:
-        return read_json_strict(path) or {}
+        raw = read_json_strict(_config_path()) or {}
     except StoreCorruption:
-        backup_corrupt_file(path)
+        backup_corrupt_file(_config_path())
+        raw = {}
+    except Exception:
         return {}
-
-
-def _parse_bool_flag(value: object) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "y", "on"}:
-            return True
-        if text in {"0", "false", "no", "n", "off"}:
-            return False
-    return None
+    try:
+        config = canonical.config_from_dict(raw)
+    except Exception:
+        return {}
+    view: dict[str, object] = {
+        "base_url": config.base_url,
+        "model": config.model,
+        "api_key": config.api_key,
+    }
+    if config.native_tools_mode == canonical.NATIVE_TOOLS_ON:
+        view["native_tools"] = True
+    elif config.native_tools_mode == canonical.NATIVE_TOOLS_OFF:
+        view["native_tools"] = False
+    if config.context is not None:
+        view["context_window_tokens"] = config.context.context_window_tokens
+        view["context_reserve_tokens"] = config.context.context_reserve_tokens
+        view["context_keep_recent_tokens"] = config.context.context_keep_recent_tokens
+    return view
 
 
 def local_native_tools_enabled() -> bool:
-    """Whether the local provider should use native function calls.
-
-    Explicit opt-out only, no auto-fallback: ``NATIVE_TOOLS=0`` or
-    ``local-openai.json`` ``{"native_tools": false}`` disables it.
-    Unset means the capability default (on for cold start).
-    """
-    env_flag = _parse_bool_flag(os.environ.get(NATIVE_TOOLS_ENV, "").strip())
-    if env_flag is not None:
-        return env_flag
+    """Facade over the canonical resolver (env > stored mode > default)."""
     try:
-        config_flag = _parse_bool_flag(load_local_config().get("native_tools"))
-    except Exception:
-        config_flag = None
-    if config_flag is not None:
-        return config_flag
-    try:
-        from codey.providers.capabilities import capability_for
-
-        return bool(capability_for("local").native_tools_default)
+        return resolve_local_native_tools(config_from_dict(load_local_config()))
     except Exception:
         return True
 
 
-def _parse_positive_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int) and value > 0:
-        return value
-    if isinstance(value, float) and value.is_integer() and value > 0:
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip().replace("_", "").replace(",", "")
-        if text.isdigit() and int(text) > 0:
-            return int(text)
-    return None
-
-
 def resolve_local_context_budgets() -> dict[str, int]:
-    """Resolve local context budgets from env, then config, then capability.
-
-    Env wins (``LOCAL_OPENAI_CONTEXT_WINDOW/RESERVE/KEEP``), then
-    ``local-openai.json`` ``context_*`` fields, then the ``local``
-    capability defaults. Invalid values fail open to the capability
-    defaults; ``window > reserve > 0`` and ``keep > 0`` are enforced.
-    """
+    """Legacy dict view over the canonical budget resolver."""
     try:
-        from codey.providers.capabilities import capability_for
-
-        capability = capability_for("local")
-        defaults = {
-            "context_window_tokens": int(capability.context_window_tokens),
-            "context_reserve_tokens": int(capability.context_reserve_tokens),
-            "context_keep_recent_tokens": int(capability.context_keep_recent_tokens),
-        }
+        budget = resolve_local_context_budget(config_from_dict(load_local_config()))
     except Exception:
-        defaults = {
+        return {
             "context_window_tokens": 32_768,
             "context_reserve_tokens": 8_192,
             "context_keep_recent_tokens": 12_000,
         }
-    try:
-        config = load_local_config()
-    except Exception:
-        config = {}
-    resolved: dict[str, int] = {}
-    sources = (
-        ("context_window_tokens", LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "context_window_tokens"),
-        ("context_reserve_tokens", LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "context_reserve_tokens"),
-        ("context_keep_recent_tokens", LOCAL_OPENAI_CONTEXT_KEEP_ENV, "context_keep_recent_tokens"),
-    )
-    for key, env_name, config_key in sources:
-        env_value = _parse_positive_int(os.environ.get(env_name, "").strip())
-        if env_value is not None:
-            resolved[key] = env_value
-            continue
-        config_value = _parse_positive_int(config.get(config_key))
-        if config_value is not None:
-            resolved[key] = config_value
-            continue
-        resolved[key] = int(defaults[key])
-    window = int(resolved["context_window_tokens"])
-    reserve = int(resolved["context_reserve_tokens"])
-    keep = int(resolved["context_keep_recent_tokens"])
-    if not (window > reserve > 0 and keep > 0):
-        return {key: int(defaults[key]) for key in resolved}
-    if keep > window:
-        resolved["context_keep_recent_tokens"] = int(defaults["context_keep_recent_tokens"])
-    return resolved
+    return {
+        "context_window_tokens": budget.context_window_tokens,
+        "context_reserve_tokens": budget.context_reserve_tokens,
+        "context_keep_recent_tokens": budget.context_keep_recent_tokens,
+    }
 
 
 def save_local_config(
@@ -537,62 +455,65 @@ def save_local_config(
     api_key: str | None = None,
     *,
     native_tools: bool | None = None,
+    native_tools_mode: str | None = None,
     context_window_tokens: int | None = None,
     context_reserve_tokens: int | None = None,
     context_keep_recent_tokens: int | None = None,
 ) -> None:
-    previous = load_local_config()
-    stored_key = str(previous.get("api_key") or "").strip() if api_key is None else str(api_key or "").strip()
-    payload: dict[str, object] = {
-        "base_url": (base_url or "").strip().rstrip("/"),
-        "model": (model or "").strip(),
-        "api_key": stored_key,
-    }
-    # Preserve explicit local tuning across base_url/model saves; an explicit
-    # kwarg overrides, otherwise the previous value survives.
-    if native_tools is None:
-        if "native_tools" in previous:
-            payload["native_tools"] = previous["native_tools"]
-    elif isinstance(native_tools, bool):
-        payload["native_tools"] = native_tools
-    for key, value in (
-        ("context_window_tokens", context_window_tokens),
-        ("context_reserve_tokens", context_reserve_tokens),
-        ("context_keep_recent_tokens", context_keep_recent_tokens),
-    ):
-        if value is None:
-            if key in previous:
-                payload[key] = previous[key]
-        else:
-            payload[key] = int(value)
-    write_json_atomic(_config_path(), payload, mode=0o600)
+    """Legacy writer; persists the canonical schema-2 shape at the facade path."""
+    from codey.providers import local_config as canonical
+
+    try:
+        previous = canonical.config_from_dict(load_local_config())
+    except Exception:
+        previous = LocalProviderConfig()
+    stored_key = previous.api_key if api_key is None else str(api_key or "").strip()
+    mode = previous.native_tools_mode
+    if native_tools_mode is not None:
+        parsed_mode = canonical.parse_native_tools_mode(native_tools_mode)
+        if parsed_mode is not None:
+            mode = parsed_mode
+    elif native_tools is not None:
+        mode = canonical.NATIVE_TOOLS_ON if native_tools else canonical.NATIVE_TOOLS_OFF
+    context = previous.context
+    if any(v is not None for v in (context_window_tokens, context_reserve_tokens, context_keep_recent_tokens)):
+        window = context_window_tokens if context_window_tokens is not None else (
+            context.context_window_tokens if context else 0
+        )
+        try:
+            window_int = int(window)
+        except (TypeError, ValueError):
+            window_int = 0
+        if window_int > 0:
+            preset = canonical.context_budget_for_window(window_int)
+            context = canonical.LocalContextBudget(
+                window_int,
+                int(context_reserve_tokens) if context_reserve_tokens is not None else preset.context_reserve_tokens,
+                int(context_keep_recent_tokens) if context_keep_recent_tokens is not None else preset.context_keep_recent_tokens,
+                source="config",
+            )
+            if canonical.validate_context_budget(context):
+                context = previous.context
+    # Single write through the facade path (tests patch this module's path).
+    write_json_atomic(_config_path(), canonical.config_to_payload(
+        canonical.LocalProviderConfig(
+            base_url=(base_url or "").strip(),
+            model=(model or "").strip(),
+            api_key=stored_key,
+            native_tools_mode=mode,
+            context=context,
+        )
+    ), mode=0o600)
 
 
 def local_config_payload() -> dict:
-    config = load_local_config()
-    endpoint = resolve_local_endpoint()
-    api_key = str(config.get("api_key") or "")
-    candidates = detect_local_endpoints(api_key=api_key) if endpoint is None else []
-    model = ""
-    if endpoint is not None:
-        model = endpoint.default_model
-    model = str(config.get("model") or model or "")
+    """Facade over the canonical bootstrap payload."""
+    from codey.providers import local_config as canonical
+
     try:
-        budgets = resolve_local_context_budgets()
+        return canonical.local_bootstrap_payload()
     except Exception:
-        budgets = {}
-    return {
-        "connected": endpoint is not None,
-        "base_url": (endpoint.base_url if endpoint is not None else str(config.get("base_url") or "")),
-        "model": model,
-        "models": list(endpoint.models if endpoint is not None else ()),
-        "candidates": [item.base_url for item in candidates],
-        "has_api_key": bool(config.get("api_key")),
-        "native_tools": local_native_tools_enabled(),
-        "context_window_tokens": budgets.get("context_window_tokens"),
-        "context_reserve_tokens": budgets.get("context_reserve_tokens"),
-        "context_keep_recent_tokens": budgets.get("context_keep_recent_tokens"),
-    }
+        return {"connected": False}
 
 
 def _looks_like_unsupported_tools_error(detail: object) -> bool:

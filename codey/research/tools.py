@@ -29,6 +29,15 @@ from codey.utils.text_budget import clip_middle
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
 
+@dataclass(frozen=True)
+class ResearchToolOutput:
+    """Model-visible text plus the full text reserved for durable receipts."""
+
+    model_text: str
+    receipt_text: str = ""
+    presentation_result: str = ""
+
+
 @dataclass
 class ResearchTools:
     search: object
@@ -115,11 +124,22 @@ class ResearchTools:
         return "\n".join(lines)
 
     def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
+        return self._open_document(url, offset=offset, limit=limit, pages=pages).model_text
+
+    def open_url_with_receipt(
+        self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
+    ) -> ResearchToolOutput:
+        """Open a page once: bounded window for the model, full text for receipts."""
+        return self._open_document(url, offset=offset, limit=limit, pages=pages)
+
+    def _open_document(
+        self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
+    ) -> ResearchToolOutput:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
         if outcome.status == "error":
-            return f"ERROR: {outcome.detail}"
+            return ResearchToolOutput(f"ERROR: {outcome.detail}")
         if outcome.status == "skipped":
-            return f"SKIPPED: {outcome.detail}"
+            return ResearchToolOutput(f"SKIPPED: {outcome.detail}")
         document = outcome.document
         assert document is not None
         self.sources_read.update(outcome.read_urls)
@@ -134,7 +154,8 @@ class ResearchTools:
         )
         if len(body) > OPEN_MAX_LIMIT:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
-        return body
+        full = render_opened_source(document, document.text)
+        return ResearchToolOutput(model_text=body, receipt_text=full)
 
     def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> str:
         outcome = self.gateway.search_inside(url, query, limit)

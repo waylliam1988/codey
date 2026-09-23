@@ -2062,11 +2062,9 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertTrue(payload["ok"])
             probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="old-secret")
-            save.assert_called_once_with(
-                "http://127.0.0.1:1234/v1",
-                "llama",
-                None,
-            )
+            save.assert_called_once()
+            args, kwargs = save.call_args
+            self.assertEqual(tuple(args[:3]), ("http://127.0.0.1:1234/v1", "llama", None))
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -2106,11 +2104,9 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertTrue(payload["ok"])
             probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="")
-            save.assert_called_once_with(
-                "http://127.0.0.1:1234/v1",
-                "llama",
-                "",
-            )
+            save.assert_called_once()
+            args, kwargs = save.call_args
+            self.assertEqual(tuple(args[:3]), ("http://127.0.0.1:1234/v1", "llama", ""))
         finally:
             httpd.shutdown()
 

@@ -363,6 +363,17 @@ class ProbeResearchTools(ResearchTools):
             body += f"\n\n[more text available: open with offset={offset + limit}]"
         return body
 
+    def open_url_with_receipt(
+        self,
+        url: str,
+        offset: int = 0,
+        limit: int = OPEN_DEFAULT_LIMIT,
+        pages: str = "",
+    ):
+        from codey.research.tools import ResearchToolOutput
+
+        return ResearchToolOutput(model_text=self.open_url(url, offset=offset, limit=limit, pages=pages))
+
 
 _FIXTURE_FRONT = """Probe fixture hard boundary:
 - Reply only with one JSON tool call. Do not write the research answer directly.

@@ -11,6 +11,7 @@ from codey.app import provider_services, shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
+from codey.providers.local_config import config_from_dict, parse_local_config_update
 from codey.providers.local_openai import (
     load_local_config,
     local_config_payload,
@@ -100,6 +101,7 @@ def providers_response(ctx: Any) -> tuple[int, dict]:
         probe_error = False
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
+        "recommended": provider_services.recommended_default_provider(statuses),
         "providers": provider_services.provider_payload(statuses),
         "probe_error": probe_error,
     }
@@ -118,20 +120,20 @@ def local_provider_response() -> tuple[int, dict]:
 
 
 def save_local_provider_response(body: dict) -> tuple[int, dict]:
-    base_url = str(body.get("base_url") or "").strip().rstrip("/")
-    model = str(body.get("model") or "").strip()
-    raw_api_key = body.get("api_key")
-    api_key = str(raw_api_key).strip() if raw_api_key is not None else ""
-    if not base_url:
-        return 400, {"ok": False, "error": "base_url required"}
-    previous = load_local_config()
-    previous_base_url = str(previous.get("base_url") or "").rstrip("/")
-    probe_key = api_key
+    if not isinstance(body, dict):
+        return 400, {"ok": False, "error": "request body must be an object"}
+    previous = config_from_dict(load_local_config())
+    parsed, error = parse_local_config_update(body, previous)
+    if error or parsed is None:
+        return 400, {"ok": False, "error": error or "invalid local provider update"}
+    base_url = parsed.base_url
+    previous_base_url = previous.base_url.rstrip("/")
+    probe_key = parsed.api_key
     same_target = bool(previous_base_url) and base_url == previous_base_url
     target_changed = bool(previous_base_url) and base_url != previous_base_url
     if not probe_key and same_target:
-        probe_key = str(previous.get("api_key") or "")
-    if not api_key and target_changed:
+        probe_key = previous.api_key
+    if not probe_key and target_changed:
         return 400, {
             "ok": False,
             "error": "api_key required when base_url changes",
@@ -149,8 +151,18 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
     try:
         save_local_config(
             endpoint.base_url,
-            model or endpoint.default_model,
-            None if same_target and not api_key else api_key,
+            parsed.model or endpoint.default_model,
+            None if same_target and not parsed.api_key else parsed.api_key,
+            native_tools_mode=parsed.native_tools_mode,
+            context_window_tokens=(
+                parsed.context.context_window_tokens if parsed.context is not None else None
+            ),
+            context_reserve_tokens=(
+                parsed.context.context_reserve_tokens if parsed.context is not None else None
+            ),
+            context_keep_recent_tokens=(
+                parsed.context.context_keep_recent_tokens if parsed.context is not None else None
+            ),
         )
     except (OSError, ValueError) as exc:
         return 500, {"ok": False, "error": str(exc)}

@@ -17,6 +17,7 @@ from codey.providers import controls as provider_controls
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.reviews.core import ReviewResult, parse_review_with_repair, render_review_prompt
 from codey.reviews.impact_map import safe_review_impact_map
+from codey.reviews.review_policy import WEB_IF_AVAILABLE, allow_self_review
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 
@@ -115,6 +116,7 @@ def run_review(
     review_impact_map: str | None = None,
     execution_evidence: str = "",
     trace_recorder: object | None = None,
+    review_policy: str = WEB_IF_AVAILABLE,
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
@@ -148,6 +150,9 @@ def run_review(
         except Exception as exc:
             last_error = exc
     cancellation.check()
+    if not allow_self_review(review_policy, writer_id=writer_id):
+        emit_review(ctx, session_id, "Review unavailable: no web reviewer is open.")
+        return None
     try:
         reviewer_id = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
         reviewer = providers.connect_fresh_provider_tab(reviewer_id)

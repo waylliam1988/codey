@@ -42,13 +42,17 @@ def run_task(
     from codey.app import consensus_service, review_service
     from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations.task_entry import TaskRunDeps, run_task_submission
+    from codey.reviews.review_policy import load_review_policy
 
     state = get_state()
+    review_policy = load_review_policy()
     deps = TaskRunDeps(
         state=state,
         agent_run=agent_run,
         collect_changes=collect_changes,
-        run_review=lambda **kwargs: review_service.run_review(state, **kwargs),
+        run_review=lambda **kwargs: review_service.run_review(
+            state, review_policy=review_policy, **kwargs
+        ),
         capture_provider_failure=capture_provider_failure,
         run_consensus=lambda **kwargs: consensus_service.run_consensus(state, **kwargs),
         run_project_audit=lambda **kwargs: consensus_service.run_project_audit(state, **kwargs),

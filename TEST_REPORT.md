@@ -1,5 +1,50 @@
 # Codey Test Report
 
+## Local Bootstrap + review policy + full-text receipts full suite (2026-09-23)
+
+Scope (production, no release):
+
+```text
+codey/providers/local_config.py       (new canonical config: mode/presets/parse/payload)
+codey/providers/local_discovery.py    (new candidates incl. KoboldCPP 5001, parallel probe)
+codey/providers/local_openai.py       (runtime only + thin facades, instance budgets)
+codey/app/api.py                      (canonical save, bootstrap payload, recommended)
+codey/app/provider_services.py        (recommended_default_provider)
+codey/web/index.html + provider_ui.js + ui_state.js (local panel, presets, recommended)
+codey/reviews/review_policy.py        (new; REVIEW_POLICY env, no CODEY_ prefix)
+codey/app/review_service.py + task_submit.py (require_web gate, policy wiring)
+codey/runtime/write/file_mutation_queue.py (scope_for_call; search/references read scope)
+codey/research/tools.py + runner.py + output_receipts.py (full-text open_url receipts)
+codey/env_names.py                    (REVIEW_POLICY_ENV)
+tests/test_local_bootstrap.py         (new, 12 tests)
+tests/test_server.py + test_env_names.py (updated save assertions, env lock)
+tests/manual/deep_research_core_ab.py + concept_context_ab.py (receipt overrides)
+```
+
+Notes:
+
+- Small-but-complete bootstrap: agent runtime reads only
+  `EffectiveLocalConfig`; api/ui/discovery never each own a config dialect.
+  The UI passes at most one context number; reserve/keep derive server-side.
+- No silent fallbacks: unsupported-tools 400s keep the opt-out hint;
+  `require_web` refuses self-review loudly; legacy config fields migrate on
+  read, saves always write schema 2.
+- Facades keep every existing caller/mock point working
+  (`local_openai.load/save/probe`, `app_api.save_local_config`); server save
+  assertions were updated to the keyword-argument call shape.
+- Runner stays under its size ceiling (1357 lines); research imports no new
+  forbidden modules.
+
+Verification (local, Windows):
+
+- `ruff check .` (passed), `compileall -q codey` + `git diff --check`
+  (clean).
+- Targeted: bootstrap/coldstart/providers/env/native/research/server/
+  architecture suites green (incl. 2 new test files).
+- Full suite: `python -m pytest tests/ --ignore=tests/manual`
+  (`4091 passed, 6 skipped, 1341 subtests passed in 373.75s`).
+- No release.
+
 ## Native done + local defaults + research receipts full suite (2026-09-23)
 
 Scope (production, no release):

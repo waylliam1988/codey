@@ -87,6 +87,24 @@ def reset_provider_availability_cache() -> None:
     _note_availability_statuses({}, 0.0)
 
 
+def recommended_default_provider(statuses: dict[str, bool] | None = None) -> str:
+    """Cold-start default: keep the configured default when it is up.
+
+    Otherwise prefer a reachable local model over nothing, then any open
+    provider. Frontends apply this only when the user has no explicit
+    selection (e.g. a brand-new session); it never overrides history.
+    """
+    available = {pid for pid, ok in (statuses or {}).items() if ok}
+    if DEFAULT_PROVIDER_ID in available:
+        return DEFAULT_PROVIDER_ID
+    if "local" in available:
+        return "local"
+    for provider_id in PROVIDER_LABELS:
+        if provider_id in available:
+            return provider_id
+    return DEFAULT_PROVIDER_ID
+
+
 def provider_availability(ctx: TaskState) -> dict[str, bool]:
     now = _time.monotonic()
     with _AVAIL_LOCK:
@@ -206,6 +224,7 @@ __all__ = [
     "provider_failover_order",
     "provider_status_update",
     "provider_tab_availability",
+    "recommended_default_provider",
     "reset_provider_availability_cache",
     "review_label",
     "reviewer_candidates",

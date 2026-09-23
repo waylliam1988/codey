@@ -1,0 +1,261 @@
+"""Local Model Bootstrap: canonical config, discovery, review policy."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+
+def test_context_budget_presets() -> None:
+    from codey.providers.local_config import context_budget_for_window
+
+    small = context_budget_for_window(32_768)
+    assert (small.context_window_tokens, small.context_reserve_tokens, small.context_keep_recent_tokens) == (
+        32_768, 8_192, 12_000,
+    )
+    mid = context_budget_for_window(131_072)
+    assert (mid.context_window_tokens, mid.context_reserve_tokens, mid.context_keep_recent_tokens) == (
+        131_072, 16_384, 16_384,
+    )
+    big = context_budget_for_window(262_144)
+    assert (big.context_window_tokens, big.context_reserve_tokens, big.context_keep_recent_tokens) == (
+        262_144, 32_768, 32_000,
+    )
+
+
+def test_context_budget_validation() -> None:
+    from codey.providers.local_config import LocalContextBudget, validate_context_budget
+
+    assert validate_context_budget(LocalContextBudget(8192, 8192, 1000)) != ""
+    assert validate_context_budget(LocalContextBudget(8192, 2048, 9000)) != ""
+    assert validate_context_budget(LocalContextBudget(32768, 8192, 12000)) == ""
+
+
+def test_parse_update_derives_preset_and_mode() -> None:
+    from codey.providers.local_config import LocalProviderConfig, parse_local_config_update
+
+    previous = LocalProviderConfig(base_url="http://127.0.0.1:1234/v1", model="m", api_key="k")
+    parsed, error = parse_local_config_update(
+        {"base_url": "http://127.0.0.1:11434/v1", "model": "qwen",
+         "context_window_tokens": "262144", "native_tools_mode": "off"},
+        previous,
+    )
+    assert error == ""
+    assert parsed is not None
+    assert parsed.native_tools_mode == "off"
+    assert parsed.context is not None
+    assert (parsed.context.context_window_tokens, parsed.context.context_reserve_tokens,
+            parsed.context.context_keep_recent_tokens) == (262144, 32768, 32000)
+    # api_key omitted means "not provided" (the API layer decides reuse).
+    assert parsed.api_key == ""
+
+    parsed2, error2 = parse_local_config_update({"base_url": "", "model": "m"}, previous)
+    assert parsed2 is None and error2 != ""
+
+
+def test_canonical_roundtrip_and_legacy_migration(tmp_path: Path) -> None:
+    from codey.providers import local_config as canonical
+
+    path = tmp_path / "local-openai.json"
+    with mock.patch.object(canonical, "_config_path", return_value=path):
+        canonical.save_local_config(canonical.LocalProviderConfig(
+            base_url="http://127.0.0.1:11434/v1", model="qwen", api_key="",
+            native_tools_mode="auto", context=canonical.context_budget_for_window(262144),
+        ))
+        loaded = canonical.load_local_config()
+        assert loaded.base_url == "http://127.0.0.1:11434/v1"
+        assert loaded.context is not None and loaded.context.context_window_tokens == 262144
+        import json
+
+        assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 2
+
+        # Legacy flat shape migrates on read.
+        path.write_text(
+            json.dumps({"base_url": "http://127.0.0.1:5001/v1", "model": "g",
+                        "native_tools": False, "context_window_tokens": 8192}),
+            encoding="utf-8",
+        )
+        migrated = canonical.load_local_config()
+        assert migrated.native_tools_mode == "off"
+        assert migrated.context is not None and migrated.context.context_window_tokens == 8192
+
+
+def test_effective_resolution(monkeypatch) -> None:
+    from codey.providers.local_config import (
+        LocalProviderConfig,
+        context_budget_for_window,
+        resolve_effective_local_config,
+        resolve_local_native_tools,
+    )
+
+    config = LocalProviderConfig(base_url="http://127.0.0.1:11434/v1", model="qwen")
+    monkeypatch.delenv("NATIVE_TOOLS", raising=False)
+    assert resolve_local_native_tools(config) is True
+    assert resolve_effective_local_config(
+        config, endpoint=SimpleNamespace(base_url="http://127.0.0.1:11434/v1", models=("qwen",)),
+    ).native_tools is True
+
+    off = LocalProviderConfig(base_url="http://x/v1", native_tools_mode="off")
+    assert resolve_local_native_tools(off) is False
+    monkeypatch.setenv("NATIVE_TOOLS", "0")
+    assert resolve_local_native_tools(config) is False
+    monkeypatch.delenv("NATIVE_TOOLS", raising=False)
+
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "131072")
+    effective = resolve_effective_local_config(
+        LocalProviderConfig(base_url="http://x/v1", context=context_budget_for_window(32768)),
+        endpoint=SimpleNamespace(base_url="http://x/v1", models=()),
+    )
+    assert effective.context.context_window_tokens == 131072
+    assert effective.context.source == "env"
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
+
+
+def test_discovery_candidates_include_koboldcpp() -> None:
+    from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, LOCAL_ENDPOINT_CANDIDATES
+
+    urls = [c.base_url for c in LOCAL_ENDPOINT_CANDIDATES]
+    assert urls == [
+        "http://127.0.0.1:1234/v1",
+        "http://127.0.0.1:11434/v1",
+        "http://127.0.0.1:5001/v1",
+        "http://127.0.0.1:8080/v1",
+    ]
+    assert tuple(urls) == LOCAL_BASE_URL_CANDIDATES
+    kinds = [c.kind for c in LOCAL_ENDPOINT_CANDIDATES]
+    assert "koboldcpp" in kinds
+
+
+def test_recommended_default_provider() -> None:
+    from codey.app.provider_services import recommended_default_provider
+
+    assert recommended_default_provider({"deepseek": True, "local": True}) == "deepseek"
+    assert recommended_default_provider({"deepseek": False, "local": True}) == "local"
+    assert recommended_default_provider({"deepseek": False, "local": False}) == "deepseek"
+    assert recommended_default_provider({}) == "deepseek"
+
+
+def test_review_policy_gating(monkeypatch) -> None:
+    from codey.reviews.review_policy import (
+        allow_self_review,
+        load_review_policy,
+    )
+
+    monkeypatch.delenv("REVIEW_POLICY", raising=False)
+    assert load_review_policy() == "web_if_available"
+    assert allow_self_review("web_if_available") is True
+    monkeypatch.setenv("REVIEW_POLICY", "require_web")
+    assert load_review_policy() == "require_web"
+    assert allow_self_review("require_web", writer_id="local") is False
+    monkeypatch.setenv("REVIEW_POLICY", "self_review_allowed")
+    assert allow_self_review("self_review_allowed") is True
+    monkeypatch.delenv("REVIEW_POLICY", raising=False)
+
+
+def test_run_review_require_web_refuses_self_review() -> None:
+    from codey.app import review_service
+
+    ctx = SimpleNamespace(
+        providers=SimpleNamespace(supervisor=SimpleNamespace(is_available=lambda _pid: False)),
+        emitted=[],
+    )
+    ctx.emit = lambda event: ctx.emitted.append(event)  # type: ignore[method-assign]
+    ctx.set_provider_session = lambda *args: None  # type: ignore[method-assign]
+    with mock.patch.object(
+        review_service.providers, "connect_fresh_provider_tab",
+        side_effect=AssertionError("must not self-review"),
+    ):
+        result = review_service.run_review(
+            ctx,  # type: ignore[arg-type]
+            session_id="s",
+            project=".",
+            task="t",
+            writer_summary="w",
+            changes={},
+            recent_log="",
+            writer_id="local",
+            review_policy="require_web",
+        )
+    assert result is None
+    assert any("no web reviewer" in str(event.get("text", "")) for event in ctx.emitted)
+
+
+def test_queue_scope_covers_search_and_references(tmp_path: Path) -> None:
+    from codey.runtime.core.models import ToolCall
+    from codey.runtime.write.file_mutation_queue import (
+        group_tool_calls_for_execution,
+        scope_for_call,
+    )
+
+    assert scope_for_call(ToolCall(name="search", args={"query": "q", "path": "a.py"}))[0] == "read"
+    assert scope_for_call(ToolCall(name="references", args={"symbol": "s"}))[0] == "read"
+    assert scope_for_call(ToolCall(name="run", args={"command": "pytest"}))[0] == "serial"
+    # Same-path search/edit serialize; different paths batch.
+    same = [
+        ToolCall(name="edit", args={"path": "a.py"}),
+        ToolCall(name="search", args={"query": "q", "path": "a.py"}),
+    ]
+    assert group_tool_calls_for_execution(same, str(tmp_path)) == [[0], [1]]
+    other = [
+        ToolCall(name="edit", args={"path": "a.py"}),
+        ToolCall(name="search", args={"query": "q", "path": "b.py"}),
+    ]
+    assert group_tool_calls_for_execution(other, str(tmp_path)) == [[0, 1]]
+
+
+def test_open_url_full_text_receipt(tmp_path: Path) -> None:
+    from codey.research.output_receipts import maybe_externalize_output
+    from codey.research.tools import ResearchToolOutput
+    from codey.storage.managed_outputs import ManagedOutputStore
+
+    store = ManagedOutputStore(tmp_path / "state")
+    full = ("word " * 20000).strip()  # ~100k chars
+    window = full[:6000]
+    out = ResearchToolOutput(model_text=window, receipt_text=full)
+    result = maybe_externalize_output(
+        store=store,
+        session_id="s",
+        run_id="r",
+        permission_profile="research",
+        call=SimpleNamespace(name="open_url", args={"url": "https://example.com"}),
+        output=out.receipt_text or out.model_text,
+        turn=1,
+        tool_index=0,
+        presentation_result="",
+        model_text_override=out.model_text,
+    )
+    assert result.truncated is True
+    managed = result.managed_output()
+    assert managed["original_bytes"] == len(full.encode("utf-8"))
+    # The model sees the window, the store keeps the full text.
+    assert len(result.model_text.encode("utf-8")) < len(full.encode("utf-8"))
+    assert store.path_for("s", "r", str(managed["handle"])).is_file()
+
+
+def test_api_save_accepts_bootstrap_fields() -> None:
+    from codey.app import api as app_api
+    from codey.providers.local_discovery import LocalEndpoint
+
+    with (
+        mock.patch.object(app_api, "load_local_config", return_value={"api_key": ""}),
+        mock.patch.object(
+            app_api, "probe_local_endpoint_detail",
+            return_value=(LocalEndpoint("http://127.0.0.1:11434/v1", ("qwen",)), "ok"),
+        ) as probe,
+        mock.patch.object(app_api, "save_local_config") as save,
+        mock.patch.object(app_api, "local_config_payload", return_value={"connected": True}),
+    ):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "qwen",
+            "native_tools_mode": "auto",
+            "context_window_tokens": 262144,
+        })
+    assert status == 200 and payload["ok"] is True
+    probe.assert_called_once_with("http://127.0.0.1:11434/v1", api_key="")
+    _args, kwargs = save.call_args
+    assert kwargs.get("native_tools_mode") == "auto"
+    assert kwargs.get("context_window_tokens") == 262144
+    assert kwargs.get("context_reserve_tokens") == 32768
+    assert kwargs.get("context_keep_recent_tokens") == 32000

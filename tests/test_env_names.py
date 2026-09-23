@@ -52,6 +52,7 @@ class EnvNameValueTests(unittest.TestCase):
             "LOCAL_OPENAI_CONTEXT_KEEP_ENV": "LOCAL_OPENAI_CONTEXT_KEEP",
             "PROVIDER_WORKER_CHILD_ENV": "PROVIDER_WORKER_CHILD",
             "PROVIDER_CDP_PORT_ENV": "PROVIDER_CDP_PORT",
+            "REVIEW_POLICY_ENV": "REVIEW_POLICY",
             "RUN_BROWSER_E2E_ENV": "RUN_BROWSER_E2E",
         }
         for attr, value in expected.items():
@@ -73,13 +74,13 @@ class EnvNameValueTests(unittest.TestCase):
         import inspect
 
         from codey.agents import loop
-        from codey.providers import local_openai
+        from codey.providers import local_config, local_openai
         from codey.research import native_bridge
 
-        source = inspect.getsource(local_openai)
+        source = inspect.getsource(local_config)
         self.assertIn("NATIVE_TOOLS_ENV", source)
         self.assertNotIn("CODEY_", source)
-        for module in (loop, native_bridge):
+        for module in (local_openai, loop, native_bridge):
             with self.subTest(module=module.__name__):
                 source = inspect.getsource(module)
                 self.assertIn("local_native_tools_enabled", source)

@@ -9,6 +9,7 @@ const LS_PROJECTS = 'codey:projects';
 const LS_UI_UPDATED = 'codey:ui-updated';
 const LS_UI_REVISION = 'codey:ui-revision';
 let DEFAULT_PROVIDER = 'deepseek';
+let RECOMMENDED_PROVIDER = '';
 let PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
 let PROVIDERS = Object.keys(PROVIDER_LABELS);
 
@@ -62,8 +63,15 @@ function safeLocalSet(key, value) {
 }
 function saveSessions(arr) { safeLocalSet(LS_SESSIONS, JSON.stringify(arr)); }
 function saveProjects(arr) { safeLocalSet(LS_PROJECTS, JSON.stringify(arr)); }
-function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) {
-  return hydrateSessionIndexes({ id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider, research: false });
+function setRecommended(id) {
+  // Backend cold-start hint for brand-new sessions only; stored sessions
+  // keep their own provider and never read this.
+  const key = String(id || '').trim();
+  if (key && PROVIDER_LABELS[key]) RECOMMENDED_PROVIDER = key;
+}
+function defaultSession(projectId = null, provider = null) {
+  const resolved = provider || RECOMMENDED_PROVIDER || DEFAULT_PROVIDER;
+  return hydrateSessionIndexes({ id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider: resolved, research: false });
 }
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
@@ -329,6 +337,7 @@ window.CodeyUiState = {
   PROVIDER_LABELS,
   PROVIDERS,
   setProviders,
+  setRecommended,
   uid,
   defaultSession,
   hydrateSessionIndexes,

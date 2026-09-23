@@ -2,6 +2,48 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Local Model Bootstrap, review policy, full-text receipts (no release)
+
+- P0: new Local Model Bootstrap layer. `providers/local_config.py` owns the
+  canonical config (`LocalProviderConfig`, `LocalContextBudget`,
+  `EffectiveLocalConfig`), preset math (`32k/128k/262k` from one window
+  number; reserve/keep derive server-side), `native_tools_mode`
+  (`auto/on/off`), `parse_local_config_update()`, and
+  `local_bootstrap_payload()` (connection, models, mode, context, presets).
+  `providers/local_discovery.py` owns candidates (LM Studio, Ollama,
+  KoboldCPP `5001/v1`, generic) with parallel probing and single-resolve.
+  `local_openai.py` keeps only the provider runtime plus thin facades, so
+  existing callers and mock points keep working; per-send disk reads are
+  gone (instance budgets with capability fallback). Config file migrates to
+  schema 2 with one-time legacy-field reads.
+- P1: the local panel is complete for non-experts. `GET /api/local_provider`
+  returns the bootstrap payload; save goes through the canonical parse
+  (credential-reuse rules unchanged); `/api/providers` adds `recommended`
+  (configured default wins, else local when reachable, else any open
+  provider) applied to brand-new sessions only. The UI shows connection
+  summary, discovered models, `32k/128k/262k` one-click presets, a single
+  window input, and a native-tools mode select; reserve/keep are never
+  computed in JS.
+- P1: review policy is first-class. `reviews/review_policy.py` with
+  `REVIEW_POLICY` env (`web_if_available` default, `require_web`,
+  `self_review_allowed`); `run_review()` refuses silent self-review under
+  `require_web` with an explicit "no web reviewer is open" event.
+- P2: mutation-queue scopes are explicit. `scope_for_call()` classifies
+  `write/read/serial/other`; `search`/`references` join the read scope for
+  future parallel safety (serial execution today, no behavior change).
+- P2: research `open_url` keeps full-text receipts. `ResearchToolOutput`
+  carries the bounded window for the model plus the full rendered text for
+  the store (`model_text_override`); `open_url()` keeps its exact string
+  contract, fixtures override cleanly.
+- Tests: new `tests/test_local_bootstrap.py` (12 tests: presets,
+  validation, parse, roundtrip/migration, effective resolution, KoboldCPP
+  candidates, recommended default, policy gating, queue scopes, full-text
+  receipts, API fields); updated server save assertions and the env lock.
+- Verification: `ruff check .`, `compileall -q codey`, and
+  `git diff --check` clean; full suite `python -m pytest tests/
+  --ignore=tests/manual`
+  (`4091 passed, 6 skipped, 1341 subtests passed`).
+
 ## Unreleased - Native done, local defaults, research receipts (no release)
 
 - P0: coding `done` is now a real native function. `render_openai_tools()`

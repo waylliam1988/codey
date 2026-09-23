@@ -76,6 +76,9 @@ function applyProviderConfig(data) {
   if (!changed) return false;
   if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
     window.CodeyUiState.setProviders(ids, labels, data.default);
+    if (data.recommended && typeof window.CodeyUiState.setRecommended === 'function') {
+      window.CodeyUiState.setRecommended(data.recommended);
+    }
   } else {
     PROVIDER_LABELS = labels;
     PROVIDERS = ids;
@@ -180,14 +183,26 @@ async function openLocalProviderConfig() {
     if (!r.ok) return;
     const data = await r.json();
     const local = data.local || {};
+    $('local-config-summary').textContent = local.connected && local.base_url
+      ? `Connected to ${local.base_url}`
+      : 'Open Ollama, KoboldCPP, or LM Studio, then connect.';
     if (local.base_url) $('local-base-url').value = local.base_url;
     if (local.model) $('local-model-name').value = local.model;
+    const models = Array.isArray(local.models) ? local.models : [];
+    $('local-model-options').innerHTML = models
+      .map(m => `<option value="${escapeHtml(m)}"></option>`).join('');
     const cands = Array.isArray(local.candidates) ? local.candidates : [];
     $('local-config-candidates').innerHTML = cands.length
       ? cands.map(url => `<button type="button" data-url="${escapeHtml(url)}">${escapeHtml(url)}</button>`).join('')
       : '';
     document.querySelectorAll('#local-config-candidates button').forEach((btn) => {
       btn.onclick = () => { $('local-base-url').value = btn.dataset.url || ''; };
+    });
+    const windowTokens = local.context && local.context.context_window_tokens;
+    if (windowTokens) $('local-context-window').value = String(windowTokens);
+    $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
+    document.querySelectorAll('#local-context-presets button').forEach((btn) => {
+      btn.onclick = () => { $('local-context-window').value = btn.dataset.contextWindow || ''; };
     });
   } catch {}
 }
@@ -201,13 +216,18 @@ async function saveLocalProviderConfig() {
   const base_url = $('local-base-url').value.trim();
   const model = $('local-model-name').value.trim();
   const api_key = $('local-api-key').value.trim();
+  const contextWindow = $('local-context-window').value.trim();
+  const nativeToolsMode = $('local-native-tools-mode').value;
   if (!base_url) return;
   $('local-config-error').textContent = '';
   $('local-config-save').disabled = true;
   $('local-config-save').textContent = 'Connecting';
   try {
-    const payload = { base_url, model };
+    // Reserve/keep derive server-side from the window preset; the page
+    // never computes budgets itself.
+    const payload = { base_url, model, native_tools_mode: nativeToolsMode };
     if (api_key) payload.api_key = api_key;
+    if (contextWindow) payload.context_window_tokens = contextWindow;
     const r = await fetch('/api/local_provider', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

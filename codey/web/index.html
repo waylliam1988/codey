@@ -83,11 +83,23 @@
 
 <div class="local-config-pop" id="local-config-pop" aria-hidden="true">
   <h4>Local model</h4>
-  <p>Connect an OpenAI-compatible local endpoint.</p>
+  <p id="local-config-summary">Open Ollama, KoboldCPP, or LM Studio, then connect.</p>
   <div class="local-config-candidates" id="local-config-candidates"></div>
-  <input id="local-base-url" placeholder="http://127.0.0.1:1234/v1" autocomplete="off" />
-  <input id="local-model-name" placeholder="model id" autocomplete="off" />
-  <input id="local-api-key" placeholder="API key (blank keeps saved key)" autocomplete="off" />
+  <input id="local-base-url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off" />
+  <input id="local-model-name" list="local-model-options" placeholder="model id" autocomplete="off" />
+  <datalist id="local-model-options"></datalist>
+  <input id="local-api-key" type="password" placeholder="API key (blank keeps saved key)" autocomplete="off" />
+  <div class="local-context-presets" id="local-context-presets">
+    <button type="button" data-context-window="32768">32k</button>
+    <button type="button" data-context-window="131072">128k</button>
+    <button type="button" data-context-window="262144">262k</button>
+  </div>
+  <input id="local-context-window" placeholder="context window tokens" autocomplete="off" inputmode="numeric" />
+  <select id="local-native-tools-mode">
+    <option value="auto">Native tools: Auto</option>
+    <option value="on">Native tools: On</option>
+    <option value="off">Native tools: Off</option>
+  </select>
   <div class="local-config-actions">
     <button class="text-btn" id="local-config-close">Close</button>
     <button class="text-btn primary" id="local-config-save">Connect</button>

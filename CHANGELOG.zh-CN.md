@@ -2,6 +2,37 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - Local Bootstrap、review policy、全文 receipt（未发布）
+
+- P0：新增 Local Model Bootstrap 层。`providers/local_config.py` 为唯一
+  配置源（`LocalProviderConfig`/`LocalContextBudget`/`EffectiveLocalConfig`），
+  预设只传一个 window 数（`32k/128k/262k`，reserve/keep 后端推导），
+  `native_tools_mode`（`auto/on/off`）、`parse_local_config_update()`、
+  `local_bootstrap_payload()`（连接、模型、mode、context、presets）。
+  `providers/local_discovery.py` 管候选（LM Studio、Ollama、KoboldCPP
+  `5001/v1`、generic）与并行探测。`local_openai.py` 只留 provider runtime
+  加薄门面，旧调用方与 mock 点零改动；每次 send 不再读盘（实例预算）。
+  配置文件迁到 schema 2，旧字段只读迁移一次。
+- P1：小白本地面板补齐。`GET /api/local_provider` 返回 bootstrap 状态；
+  保存走 canonical parse（换 target 必须显式 key 等安全规则不变）；
+  `/api/providers` 加 `recommended`（默认可用回默认，否则 local，再否则
+  任一可用），只用于新会话。UI 显示连接摘要、模型列表、一键 presets、
+  单 window 输入、native mode 选择；reserve/keep 永不在 JS 算。
+- P1：review policy 一等设置。`reviews/review_policy.py` + `REVIEW_POLICY`
+  env（默认 `web_if_available`，另有 `require_web`/`self_review_allowed`）；
+  `require_web` 下无网页 reviewer 直接明示不可用，不再悄悄自审。
+- P2：queue 作用域显式化。`scope_for_call()` 分 `write/read/serial/other`；
+  `search`/`references` 归入读作用域（现仍串行，无行为变化，为并行预留）。
+- P2：research `open_url` 全文 receipt。`ResearchToolOutput` 带窗口文本
+  （模型看）加全文（store 存，`model_text_override`）；`open_url()` 字符串
+  契约不变，fixture 干净 override。
+- 测试：新增 `tests/test_local_bootstrap.py`（12 个：presets、校验、parse、
+  回环/迁移、effective 解析、KoboldCPP 候选、recommended、policy 门控、
+  queue scope、全文 receipt、API 字段）；更新 server 保存断言与 env 锁。
+- 验证：`ruff check .`、`compileall -q codey`、`git diff --check` 全过；
+  全量 `python -m pytest tests/ --ignore=tests/manual`
+  （`4091 passed, 6 skipped, 1341 subtests passed`）。
+
 ## Unreleased - Native done 落地、本地默认开启、research receipt（未发布）
 
 - P0：coding `done` 成为真正的 native function。`render_openai_tools()`
