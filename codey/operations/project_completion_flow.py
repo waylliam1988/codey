@@ -721,6 +721,12 @@ def _run_writer_canary(ctx: _ProjectRun, pid: str, item: Any) -> bool:
 
 def _build_writer_failover(ctx: _ProjectRun) -> WriterFailoverRunner:
     assert ctx.tried_writers is not None
+    # Function-level: task_phases.dispatch imports this module, so a
+    # top-level import would cycle.
+    from codey.operations.task_phases.hooks import (
+        record_provider_success_event as _record_provider_success_event,
+    )
+
     return WriterFailoverRunner(
         provider=ctx.frame.provider,
         provider_id=ctx.frame.provider_id,
@@ -739,7 +745,7 @@ def _build_writer_failover(ctx: _ProjectRun) -> WriterFailoverRunner:
         capture_failure=partial(_capture_writer_failure, ctx),
         record_failure=ctx.hooks.record_provider_failure,
         record_success=(
-            ctx.hooks.supervisor.record_success
+            partial(_record_provider_success_event, ctx.hooks.supervisor)
             if ctx.hooks.supervisor is not None
             else _record_no_success
         ),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import secrets
 import threading
 import time
@@ -58,6 +59,23 @@ TRANSIENT_COOLDOWN = 90.0
 RATE_LIMIT_COOLDOWN = 300.0
 CANARY_TIMEOUT = 45.0
 
+logger = logging.getLogger(__name__)
+
+
+class HealthStoreError(RuntimeError):
+    """The provider-health file could not be read or durably written."""
+
+
+# read_json_strict reasons that mean the bytes on disk are unusable (back up
+# and reset). Any other reason is an OS-level read failure: transient, so
+# raise instead of renaming a file we could not even read.
+_CONTENT_CORRUPTION_REASONS = frozenset({
+    "too large",
+    "UnicodeDecodeError",
+    "JSONDecodeError",
+    "not a dict",
+})
+
 
 @dataclass(frozen=True)
 class ProviderHealth:
@@ -80,6 +98,12 @@ class ProviderSupervisor:
     file lock in one fixed order. Two instances sharing a directory
     therefore accumulate each other's events instead of overwriting them
     with precomputed snapshots.
+
+    Health is soft state: an update either lands durably or raises
+    HealthStoreError with memory rolled back to the durable state, so a
+    returned state is always recorded and later events rebuild the picture.
+    Reads surface genuine storage faults instead of answering from a file
+    known to be behind.
     """
 
     def __init__(
@@ -92,7 +116,13 @@ class ProviderSupervisor:
         self.clock = clock
         self._lock = threading.RLock()
         self._last_save_error = ""
-        self._health = self._load()
+        try:
+            self._health = self._load()
+        except HealthStoreError as exc:
+            # Boot must not die on an unreadable health file: record it for
+            # status and let the first read/update surface or heal it.
+            self._last_save_error = str(exc)[:200]
+            self._health = {}
 
     @property
     def last_save_error(self) -> str:
@@ -122,7 +152,11 @@ class ProviderSupervisor:
             self._health = self._load()
 
     def _write_locked(self) -> None:
-        """Persist memory truth. Caller holds _exclusive()."""
+        """Persist memory truth, or raise. Caller holds _exclusive().
+
+        A failure records _last_save_error and raises HealthStoreError:
+        callers roll memory back, so a returned state is always durable.
+        """
         if self.path is None:
             return
         try:
@@ -139,15 +173,20 @@ class ProviderSupervisor:
             )
         except (OSError, ValueError) as exc:
             self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]
-        else:
-            self._last_save_error = ""
+            raise HealthStoreError(f"provider health store unwritable: {self._last_save_error}") from exc
+        self._last_save_error = ""
 
     def _update(
         self,
         provider_id: str,
         mutate: Callable[[str, ProviderHealth, float], ProviderHealth],
     ) -> ProviderHealth:
-        """Apply one event to the latest disk state and write it back."""
+        """Apply one event to the latest disk state and write it back.
+
+        All-or-nothing: a write failure rolls memory back to the durable
+        state and raises, so the event is reported as recorded only when
+        it is on disk.
+        """
         key = normalize_provider_id(provider_id)
         with self._exclusive():
             self._refresh_locked()
@@ -157,8 +196,13 @@ class ProviderSupervisor:
             if expired is not None:
                 current = expired
             updated = mutate(key, current, now)
+            previous = dict(self._health)
             self._health[key] = updated
-            self._write_locked()
+            try:
+                self._write_locked()
+            except HealthStoreError:
+                self._health = previous
+                raise
             return updated
 
     def get(self, provider_id: str) -> ProviderHealth:
@@ -168,11 +212,21 @@ class ProviderSupervisor:
             self._refresh_locked()
             health = self._health.get(key, ProviderHealth())
             expired = _expire_open(health, self.clock())
-            if expired is not None:
-                self._health[key] = expired
+            if expired is None:
+                return health
+            had_key = key in self._health
+            previous = self._health.get(key)
+            self._health[key] = expired
+            try:
                 self._write_locked()
-                return expired
-            return health
+            except HealthStoreError:
+                if had_key:
+                    assert previous is not None
+                    self._health[key] = previous
+                else:
+                    self._health.pop(key, None)
+                raise
+            return expired
 
     def is_available(self, provider_id: str) -> bool:
         return self.get(provider_id).state not in {STATE_OPEN, STATE_AUTH_REQUIRED}
@@ -238,14 +292,18 @@ class ProviderSupervisor:
         with self._exclusive():
             self._refresh_locked()
             now = self.clock()
-            changed = False
+            overwritten: dict[str, ProviderHealth] = {}
             for provider_id, health in list(self._health.items()):
                 expired = _expire_open(health, now)
                 if expired is not None:
+                    overwritten.setdefault(provider_id, health)
                     self._health[provider_id] = expired
-                    changed = True
-            if changed:
-                self._write_locked()
+            if overwritten:
+                try:
+                    self._write_locked()
+                except HealthStoreError:
+                    self._health.update(overwritten)
+                    raise
             snapshot = dict(self._health)
         blocked = {normalize_provider_id(item) for item in excluded}
         ordered = [normalize_provider_id(preferred)]
@@ -256,8 +314,6 @@ class ProviderSupervisor:
                 continue
             seen.add(provider_id)
             health = snapshot.get(provider_id, ProviderHealth())
-            if health.state == STATE_OPEN and health.circuit_open_until <= now:
-                health = replace(health, state=STATE_DEGRADED, circuit_open_until=0.0)
             if health.state not in {STATE_OPEN, STATE_AUTH_REQUIRED}:
                 return provider_id
         return None
@@ -267,7 +323,13 @@ class ProviderSupervisor:
             return {}
         try:
             payload = read_json_strict(self.path, max_bytes=MAX_HEALTH_BYTES) or {}
-        except StoreCorruption:
+        except StoreCorruption as exc:
+            if exc.reason not in _CONTENT_CORRUPTION_REASONS:
+                # An OS-level read failure, not bad bytes: leave the file
+                # alone and report it instead of resetting to empty.
+                raise HealthStoreError(
+                    f"provider health store unreadable ({exc.reason}): {self.path}"
+                ) from exc
             backup_corrupt_file(self.path)
             return {}
         records = payload.get("providers")
@@ -407,18 +469,21 @@ def run_half_open_canary(
         # Explicit classification: a canary that exhausts its own budget is a
         # transient provider signal, not a generic exception. Never let it
         # masquerade as an unexpected failure kind.
-        supervisor.record_canary_failure(
-            provider_id,
-            ProviderFailure(
+        try:
+            supervisor.record_canary_failure(
                 provider_id,
-                "canary",
-                "",
-                "",
-                "canary budget exhausted",
-                "",
-                FAILURE_TRANSIENT,
-            ),
-        )
+                ProviderFailure(
+                    provider_id,
+                    "canary",
+                    "",
+                    "",
+                    "canary budget exhausted",
+                    "",
+                    FAILURE_TRANSIENT,
+                ),
+            )
+        except HealthStoreError:
+            logger.exception("canary health record failed for provider %s", provider_id)
         return False
     except Exception as exc:
         failure = getattr(exc, "failure", None)
@@ -432,21 +497,33 @@ def run_half_open_canary(
                 "",
                 FAILURE_TRANSIENT,
             )
-        supervisor.record_canary_failure(provider_id, failure)
+        try:
+            supervisor.record_canary_failure(provider_id, failure)
+        except HealthStoreError:
+            logger.exception("canary health record failed for provider %s", provider_id)
         return False
     if str(reply or "").strip() != marker:
-        supervisor.record_canary_failure(
-            provider_id,
-            ProviderFailure(
+        try:
+            supervisor.record_canary_failure(
                 provider_id,
-                "canary",
-                "",
-                "",
-                "canary response mismatch",
-                "",
-                FAILURE_RESPONSE_MISSING,
-            ),
-        )
+                ProviderFailure(
+                    provider_id,
+                    "canary",
+                    "",
+                    "",
+                    "canary response mismatch",
+                    "",
+                    FAILURE_RESPONSE_MISSING,
+                ),
+            )
+        except HealthStoreError:
+            logger.exception("canary health record failed for provider %s", provider_id)
         return False
-    supervisor.record_success(provider_id, canary=True)
+    try:
+        supervisor.record_success(provider_id, canary=True)
+    except HealthStoreError:
+        # The provider proved itself live but the proof is not durable:
+        # stay conservative and report the probe as unverified.
+        logger.exception("canary health record failed for provider %s", provider_id)
+        return False
     return True

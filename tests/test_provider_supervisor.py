@@ -348,6 +348,104 @@ class ProviderSupervisorTests(unittest.TestCase):
             self.assertEqual(early.get("qwen").state, STATE_DEGRADED)
             self.assertEqual(early.select("qwen", ("glm",)), "qwen")
 
+    def test_write_failure_is_explicit_and_rolls_back(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            with (
+                mock.patch.object(
+                    supervisor_module,
+                    "write_json_atomic",
+                    side_effect=OSError("disk full"),
+                ),
+                self.assertRaises(supervisor_module.HealthStoreError),
+            ):
+                supervisor.record_failure("qwen", failure("rate_limited"))
+            # Never reported as recorded: memory matches the durable state,
+            # so "still available" does not contradict a claimed breaker.
+            self.assertNotIn("qwen", supervisor._health)
+            self.assertNotEqual(supervisor.last_save_error, "")
+            self.assertEqual(supervisor.get("qwen").state, "unknown")
+            self.assertTrue(supervisor.is_available("qwen"))
+            self.assertFalse((Path(td) / "provider-health.json").exists())
+
+    def test_transient_read_failure_raises_without_resetting(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+        from codey.storage.local_store import StoreCorruption
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            supervisor.record_success("qwen")
+            manifest = Path(td) / "provider-health.json"
+            self.assertTrue(manifest.is_file())
+
+            def unreadable(path: Path, *, max_bytes: int) -> dict:
+                raise StoreCorruption(path, "PermissionError")
+
+            with (
+                mock.patch.object(
+                    supervisor_module, "read_json_strict", side_effect=unreadable,
+                ),
+                self.assertRaises(supervisor_module.HealthStoreError),
+            ):
+                supervisor.get("qwen")
+            # A read fault is not corruption: the file is untouched, no
+            # backup is taken, and the next readable access heals.
+            self.assertTrue(manifest.is_file())
+            self.assertFalse(manifest.with_name(manifest.name + ".corrupt").exists())
+            self.assertEqual(supervisor.get("qwen").state, STATE_HEALTHY)
+
+    def test_unreadable_store_at_startup_starts_empty_but_visible(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+        from codey.storage.local_store import StoreCorruption
+
+        with tempfile.TemporaryDirectory() as td:
+            manifest = Path(td) / "provider-health.json"
+            manifest.write_text('{"schema_version": 1, "providers": {}}', encoding="utf-8")
+
+            def unreadable(path: Path, *, max_bytes: int) -> dict:
+                raise StoreCorruption(path, "PermissionError")
+
+            with mock.patch.object(
+                supervisor_module, "read_json_strict", side_effect=unreadable,
+            ):
+                supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            self.assertNotEqual(supervisor.last_save_error, "")
+            self.assertTrue(supervisor.is_available("qwen"))
+
+
+class HealthFailureFanoutTests(unittest.TestCase):
+    def test_failure_event_survives_health_store_outage(self) -> None:
+        from codey.operations.task_phases.hooks import record_provider_failure_event
+        from codey.providers.supervisor import HealthStoreError
+
+        ledger: list = []
+        supervisor = mock.Mock()
+        supervisor.record_failure.side_effect = HealthStoreError("disk full")
+        self_repair = mock.Mock()
+        # Must not raise: the failure is ledgered, repair is skipped without
+        # durable health, and failover cleanup proceeds after this returns.
+        record_provider_failure_event(
+            lambda pid, failure: ledger.append((pid, failure)),
+            mock.Mock(),
+            supervisor,
+            self_repair,
+            "qwen",
+            failure("transient"),
+        )
+        self.assertEqual(len(ledger), 1)
+        self_repair.maybe_enqueue.assert_not_called()
+
+    def test_success_event_survives_health_store_outage(self) -> None:
+        from codey.operations.task_phases.hooks import record_provider_success_event
+        from codey.providers.supervisor import HealthStoreError
+
+        supervisor = mock.Mock()
+        supervisor.record_success.side_effect = HealthStoreError("disk full")
+        record_provider_success_event(supervisor, "qwen")
+        record_provider_success_event(None, "qwen")
+
 
 if __name__ == "__main__":
     unittest.main()

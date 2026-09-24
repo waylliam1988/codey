@@ -67,14 +67,22 @@ class RevivalLockingTests(unittest.TestCase):
 
 class SupervisorSaveTests(unittest.TestCase):
     def test_save_failure_is_surfaced_not_swallowed(self) -> None:
+        from codey.providers.supervisor import HealthStoreError
+
         with tempfile.TemporaryDirectory() as td:
             supervisor = ProviderSupervisor(td)
-            with mock.patch(
-                "codey.providers.supervisor.write_json_atomic",
-                side_effect=OSError("disk full"),
+            # Explicit failure, not a silent best-effort: the event is
+            # reported as unrecorded and memory rolls back to disk.
+            with (
+                mock.patch(
+                    "codey.providers.supervisor.write_json_atomic",
+                    side_effect=OSError("disk full"),
+                ),
+                self.assertRaises(HealthStoreError),
             ):
                 supervisor.record_success("qwen")
             self.assertIn("disk full", supervisor.last_save_error)
+            self.assertNotIn("qwen", supervisor._health)
 
     def test_save_success_clears_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -96,8 +104,8 @@ class SupervisorSaveTests(unittest.TestCase):
 
             with mock.patch.object(ProviderSupervisor, "is_available", _spy):
                 supervisor.select("qwen", ["qwen"])
-            # select() decides from a snapshot; per-item probes (if any) run
-            # outside the lock. No deadlock even under contention.
+            # select() refreshes under the locks, then decides from its own
+            # snapshot after releasing them. No deadlock even under contention.
             self.assertNotIn(True, seen_locked)
 
     def test_canary_deadline_is_transient_not_generic(self) -> None:

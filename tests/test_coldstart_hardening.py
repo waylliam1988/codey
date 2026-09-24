@@ -24,7 +24,12 @@ from codey.app.context import AppContext
 from codey.app.event_bus import EventBus, EventSubscriber, SsePayload
 from codey.app.headless_runner import HeadlessAppContext
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
-from codey.providers.worker import WorkerChatProvider
+from codey.providers.worker import (
+    WORKER_LINE_MAX_CHARS,
+    WORKER_STDERR_CHUNK_CHARS,
+    WORKER_STDERR_TAIL_CHUNKS,
+    WorkerChatProvider,
+)
 from codey.research.controller import ResearchController
 from codey.runtime.core.operation_state import (
     RuntimeOperationStore,
@@ -196,6 +201,36 @@ class EventBusOverflowTests(unittest.TestCase):
         self.assertEqual(bus.replay_events_after(2)[0][0], marker_id)
 
 
+class _ScriptedStdout:
+    """readline-only fake stdout that records every requested size."""
+
+    def __init__(self, script: list[str]) -> None:
+        self._script = list(script)
+        self.sizes: list[int] = []
+
+    def readline(self, size: int = -1) -> str:
+        self.sizes.append(size)
+        if not self._script:
+            return ""
+        return self._script.pop(0)
+
+
+class _ChunkedStderr:
+    """read-only fake stderr that serves one huge blob in fixed chunks."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self.sizes: list[int] = []
+
+    def read(self, size: int = -1) -> str:
+        self.sizes.append(size)
+        if size is None or size < 0:
+            out, self._text = self._text, ""
+            return out
+        out, self._text = self._text[:size], self._text[size:]
+        return out
+
+
 class WorkerSelfHealTests(unittest.TestCase):
     def _provider(self) -> WorkerChatProvider:
         provider = WorkerChatProvider.__new__(WorkerChatProvider)
@@ -210,13 +245,13 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._responses = queue.Queue(maxsize=512)
         provider._response_lock = threading.Lock()
         provider._dropped_responses = 0
-        provider._lock = threading.RLock()
-        provider._conn_lock = provider._lock
+        provider._conn_lock = threading.RLock()
         provider._request_lock = threading.Lock()
+        provider._pending_request_id = None
         provider._reader = None
         provider._cdp_port = 0
         provider._target_id = ""
-        provider._stderr_tail = deque(maxlen=24)
+        provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
         return provider
 
     def test_ensure_running_restarts_dead_worker_and_drops_stale_ids(self) -> None:
@@ -225,10 +260,13 @@ class WorkerSelfHealTests(unittest.TestCase):
         fake_proc = mock.Mock()
         fake_proc.poll.return_value = None
         fake_proc.stdin = mock.Mock()
-        with mock.patch.object(
-            WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fake_proc),
-        ) as _ignored:
-            running = provider._ensure_running_locked()
+        with (
+            mock.patch.object(
+                WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fake_proc),
+            ),
+            provider._conn_lock,
+        ):
+            running = provider._ensure_running_conn_locked()
         self.assertIs(running, fake_proc)
         self.assertTrue(provider._responses.empty())
 
@@ -244,13 +282,68 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._responses = queue.Queue(maxsize=2)
         provider._dropped_responses = 0
         proc = mock.Mock()
-        proc.stdout = iter(['{"id":"a"}\n', '{"id":"b"}\n', '{"id":"c"}\n'])
+        proc.stdout = _ScriptedStdout([
+            '{"id":"a"}\n', '{"id":"b"}\n', '{"id":"c"}\n', "",
+        ])
         provider._proc = proc
         provider._read_loop()
         self.assertEqual(provider._responses.qsize(), 2)
         self.assertEqual(provider._dropped_responses, 1)
         ids = sorted(item["id"] for item in list(provider._responses.queue))
         self.assertEqual(ids, ["b", "c"])
+        self.assertTrue(proc.stdout.sizes)
+        self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
+
+    def test_overlong_line_fails_pending_request_and_resyncs(self) -> None:
+        provider = self._provider()
+        provider._pending_request_id = "req-1"
+        huge = "y" * (WORKER_LINE_MAX_CHARS + 100)
+        proc = mock.Mock()
+        proc.stdout = _ScriptedStdout([
+            huge[:WORKER_LINE_MAX_CHARS + 1],
+            huge[WORKER_LINE_MAX_CHARS + 1:] + "\n",
+            '{"id":"req-1","ok":true,"result":"after"}\n',
+            "",
+        ])
+        provider._proc = proc
+        provider._read_loop()
+        # No single read ever buffered the whole 1M line.
+        self.assertTrue(proc.stdout.sizes)
+        self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
+        offered = []
+        while not provider._responses.empty():
+            offered.append(provider._responses.get_nowait())
+        self.assertEqual(len(offered), 2)
+        failure, resync = offered
+        self.assertEqual(failure["id"], "req-1")
+        self.assertIsNot(failure.get("ok"), True)
+        self.assertIn("exceeded", str(failure.get("error")))
+        self.assertEqual(resync.get("result"), "after")
+
+    def test_overlong_line_without_pending_request_is_dropped_silently(self) -> None:
+        provider = self._provider()
+        provider._pending_request_id = None
+        huge = "z" * (WORKER_LINE_MAX_CHARS + 10)
+        proc = mock.Mock()
+        proc.stdout = _ScriptedStdout([huge + "\n", ""])
+        provider._proc = proc
+        provider._read_loop()
+        self.assertTrue(provider._responses.empty())
+
+    def test_stderr_tail_is_bounded_by_chunks_not_lines(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.stderr = _ChunkedStderr("e" * 1_000_000)
+        provider._proc = proc
+        provider._stderr_loop()
+        self.assertTrue(proc.stderr.sizes)
+        self.assertLessEqual(max(proc.stderr.sizes), WORKER_STDERR_CHUNK_CHARS)
+        total = sum(len(chunk) for chunk in provider._stderr_tail)
+        self.assertLessEqual(
+            total, WORKER_STDERR_TAIL_CHUNKS * WORKER_STDERR_CHUNK_CHARS,
+        )
+        suffix = provider._worker_error_suffix()
+        self.assertLessEqual(len(suffix), 420)
 
     def test_concurrent_offers_keep_newest_wins_accounting(self) -> None:
         provider = self._provider()

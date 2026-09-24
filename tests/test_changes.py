@@ -809,6 +809,62 @@ class ChangeTrackerTests(unittest.TestCase):
             ],
         )
 
+    def test_revparse_nonzero_without_not_repo_stderr_is_git_failure(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+            (root / "app.py").write_text("new\n", encoding="utf-8")
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                assert args == ["rev-parse", "--show-toplevel"]
+                return SimpleNamespace(
+                    args=args, returncode=128, stdout="", stderr="fatal: unable to read tree (corrupt)",
+                    stdout_truncated=False, stderr_truncated=False,
+                )
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                failed = changes.collect_changes(root, tracker)
+                ambiguous = changes.collect_git_changes(root)
+
+        self.assertFalse(ambiguous["ok"])
+        self.assertEqual(ambiguous["reason"], changes.GIT_REASON_FAILED)
+        self.assertIn("128", ambiguous["error"])
+        self.assertIn("unable to read tree", ambiguous["error"])
+        # A tracker must not turn an ambiguous rev-parse failure into an
+        # empty snapshot.
+        self.assertFalse(failed["ok"])
+        self.assertEqual(failed["reason"], changes.GIT_REASON_FAILED)
+        self.assertTrue(tracker.has_snapshots)
+
+    def test_revparse_not_repo_stderr_still_falls_back_to_tracker(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+            (root / "app.py").write_text("new\n", encoding="utf-8")
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                assert args == ["rev-parse", "--show-toplevel"]
+                return SimpleNamespace(
+                    args=args, returncode=128, stdout="",
+                    stderr="fatal: not a git repository (or any of the parent directories): .git",
+                    stdout_truncated=False, stderr_truncated=False,
+                )
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_changes(root, tracker)
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["mode"], "snapshot")
+        self.assertEqual(data["changed_count"], 1)
+
     def test_collect_changes_reports_git_timeout_despite_tracker(self) -> None:
         from types import SimpleNamespace
 

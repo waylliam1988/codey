@@ -51,6 +51,24 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - 健康持久化显式化、Worker 真有界、rev-parse 内码（未发布）
+
+- 健康持久化显式失败。写盘失败抛 `HealthStoreError` 不再吞掉，内存回滚到
+  已落盘状态，返回的状态一定已记录；读到真正的存储故障直接上报。`_load()`
+  只在内容确实损坏时备份重置，系统级读取失败抛错且不动文件。失败/成功扇
+  出记录存储错误并保证 failover 清理照常；canary 把无法验证的探测当失败。
+- Worker 管道按次读取有界。stderr 只保留少量定长块尾部，stdout 按行上限
+  组帧；超限行用有界读取排空，等待的请求直接得到“输出超限”明确错误而不
+  是等到超时，后续请求帧同步不受影响。`_lock` 别名、legacy ensure 入口及
+  getattr 回退已删除。
+- `rev-parse` 收严。只有 stderr 确认“非仓库”才回落快照，其他非零退出携带
+  有界 stderr 作为 `git_failed`。回落只认内部 `not_repo`/`git_missing`/
+  `git_failed`，不再解析面向人的错误字符串。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向套件
+  （`265 passed, 2 skipped, 6 subtests passed`）、收集
+  （`4201 tests collected`）、最终全量 `python -m pytest`
+  （`4195 passed, 6 skipped in 461.13s`）均通过。
+
 ## Unreleased - Git/健康/历史诚实化、保存单次探测、快照无竞态（未发布）
 
 - Git 失败显式呈现。每个 `status`/`numstat`/`diff` 调用都检查退出码与截断，

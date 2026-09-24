@@ -35,6 +35,7 @@ from codey.operations.task_phases import (
     open_run_trace,
     project_completion_deps,
     record_provider_failure_event,
+    record_provider_success_event,
     record_route_trace,
     review_flow_deps,
     settle_cancelled_run,
@@ -573,5 +574,6 @@ __all__ = [
     "execute_task_run",
     "prepare_submission",
     "record_provider_failure_event",
+    "record_provider_success_event",
     "release_unstarted_submission",
 ]

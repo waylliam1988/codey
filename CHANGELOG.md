@@ -32,6 +32,28 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Explicit health persistence, bounded worker IO, rev-parse reasons (no release)
+
+- Health persistence is explicit. Writes raise `HealthStoreError` instead of
+  being swallowed, and updates roll memory back so a returned state is always
+  durable; reads surface genuine storage faults. `_load()` backs up and
+  resets only on true content corruption, while OS-level read failures raise
+  with the file untouched. Failure/success fan-out logs storage faults and
+  preserves failover cleanup; canary treats an unverifiable probe as failed.
+- Worker pipes are bounded per read. stderr keeps a small tail of fixed-size
+  chunks and stdout frames with a per-line cap; an over-limit line is drained
+  in bounded reads and its waiter gets an explicit "output exceeded" error
+  instead of hanging until timeout, with framing resynced for later requests.
+  The `_lock` alias, legacy ensure entry, and getattr fallbacks are gone.
+- `rev-parse` is strict. Only stderr-confirmed "not a git repository" falls
+  back to snapshots; other non-zero exits carry a bounded stderr excerpt as
+  `git_failed`. Fallback keys off the internal
+  `not_repo`/`git_missing`/`git_failed` reason, never human error text.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`265 passed, 2 skipped, 6 subtests passed`),
+  collection (`4201 tests collected`), and final full `python -m pytest`
+  (`4195 passed, 6 skipped in 461.13s`).
+
 ## Unreleased - Honest git/supervisor/history, single-probe save, race-free snapshots (no release)
 
 - Git failures are explicit. Every `status`/`numstat`/`diff` invocation checks

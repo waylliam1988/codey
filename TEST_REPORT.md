@@ -80,6 +80,46 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Explicit health persistence, bounded worker IO, rev-parse reasons full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/supervisor.py         (HealthStoreError on write/read faults; rollback so returned state is durable; corruption vs transient reads; canary stays conservative)
+codey/operations/task_phases/hooks.py (failure/success fan-out logs storage faults; repair skipped without durable health; failover cleanup preserved)
+codey/operations/project_completion_flow.py (writer success via tolerant event; function-level hooks import breaks the dispatch cycle)
+codey/operations/task_phases/__init__.py + task_run.py (re-export record_provider_success_event)
+codey/providers/worker.py             (chunked stderr tail; readline-capped stdout; over-limit drain + explicit waiter error; _lock alias and legacy ensure removed)
+codey/workspace/changes.py            (internal not_repo/git_missing/git_failed reasons; only stderr-confirmed non-repo falls back; bounded stderr excerpt)
+tests/test_provider_supervisor.py     (write-failure rollback; transient vs corruption reads; startup tolerance; fan-out survival)
+tests/test_p1_hardening.py            (save-failure contract is raise + surfaced + rolled back)
+tests/test_coldstart_hardening.py     (bounded read sizes; over-limit fail + resync; chunked stderr bound; conn-lock ensure)
+tests/test_adapter_self_repair.py     (stdio fakes with read/readline; chunk-tail bound)
+tests/test_changes.py                 (ambiguous rev-parse is git_failed with tracker; confirmed non-repo still falls back)
+```
+
+Notes:
+
+- A health update either lands durably or raises with memory rolled back;
+  returned states are never unrecorded, and genuine storage faults surface
+  instead of answering from a file known to be behind.
+- Failure recording never breaks failover cleanup: the ledger keeps the
+  failure, the error is logged, and provider close/switch proceeds.
+- Worker pipes are bounded per read, not per line count: a 1M-char line
+  fails its waiter explicitly with framing resynced, and stderr keeps a
+  small tail of fixed-size chunks.
+- Snapshot fallback keys off the internal reason, never human error text;
+  only stderr-confirmed non-repo or missing git may answer with snapshots.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `265 passed, 2 skipped, 6 subtests passed in 21.59s`.
+- Full suite: `python -m pytest`
+  (`collected 4201 items; 4195 passed, 6 skipped in 461.13s (0:07:41)`).
+- This report entry was written after the final full pytest run.
+
 ## Honest collection/health/history full suite (2026-09-24)
 
 Scope (production, no release):

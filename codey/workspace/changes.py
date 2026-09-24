@@ -54,6 +54,14 @@ GIT_TIMEOUT = 10
 MAX_GIT_DIFF_CHARS = 240_000
 MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_UNTRACKED_DIFF_BYTES = 120_000
+# Internal collection reasons: only a confirmed non-repo or a missing git
+# binary may fall back to a snapshot view. Command failures (timeouts,
+# read errors, non-zero exits, truncation) carry git_failed and propagate.
+GIT_REASON_NOT_REPO = "not_repo"
+GIT_REASON_MISSING = "git_missing"
+GIT_REASON_FAILED = "git_failed"
+_GIT_FALLBACK_REASONS = frozenset({GIT_REASON_NOT_REPO, GIT_REASON_MISSING})
+_GIT_STDERR_EXCERPT_CHARS = 500
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
     ".pytest_cache",
@@ -724,7 +732,43 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
 
 
 def _git_failed_payload() -> dict:
-    return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+    return {
+        "ok": False,
+        "error": "git command failed; output incomplete",
+        "files": [],
+        "diff": "",
+        "reason": GIT_REASON_FAILED,
+    }
+
+
+def _git_missing_payload(exc: BaseException) -> dict:
+    return {
+        "ok": False,
+        "error": f"git unavailable: {exc}",
+        "files": [],
+        "diff": "",
+        "reason": GIT_REASON_MISSING,
+    }
+
+
+def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dict:
+    excerpt = _bounded_stderr_excerpt(stderr)
+    detail = f": {excerpt}" if excerpt else ""
+    return {
+        "ok": False,
+        "error": f"git {' '.join(args)} failed with exit {returncode}{detail}",
+        "files": [],
+        "diff": "",
+        "reason": GIT_REASON_FAILED,
+    }
+
+
+def _bounded_stderr_excerpt(stderr: str) -> str:
+    """Last bounded slice of git stderr for diagnosis (never unbounded)."""
+    text = str(stderr or "").strip()
+    if len(text) > _GIT_STDERR_EXCERPT_CHARS:
+        text = text[-_GIT_STDERR_EXCERPT_CHARS:].strip()
+    return " ".join(text.split())
 
 
 def collect_git_changes(project: str | Path | None) -> dict:
@@ -739,7 +783,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
     try:
         top = _run_git(root, ["rev-parse", "--show-toplevel"])
     except FileNotFoundError as exc:
-        return {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
+        return _git_missing_payload(exc)
     except (
         OSError,
         subprocess.SubprocessError,
@@ -748,9 +792,25 @@ def collect_git_changes(project: str | Path | None) -> dict:
     ):
         return _git_failed_payload()
     if top.returncode != 0:
-        return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
+        # Only "not a git repository" on stderr confirms a non-repo; any
+        # other non-zero exit is a real git failure with bounded stderr.
+        if "not a git repository" in str(top.stderr or "").lower():
+            return {
+                "ok": False,
+                "error": "not a git repository",
+                "files": [],
+                "diff": "",
+                "reason": GIT_REASON_NOT_REPO,
+            }
+        return _git_exit_payload(["rev-parse", "--show-toplevel"], top.returncode, str(top.stderr or ""))
     if top.stdout_truncated:
-        return {"ok": False, "error": "git rev-parse output truncated; re-run in a smaller scope", "files": [], "diff": ""}
+        return {
+            "ok": False,
+            "error": "git rev-parse output truncated; re-run in a smaller scope",
+            "files": [],
+            "diff": "",
+            "reason": GIT_REASON_FAILED,
+        }
     git_root = Path(top.stdout.strip()).resolve()
 
     def _run_one(args: list[str]) -> tuple[object | None, dict | None]:
@@ -762,7 +822,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
         try:
             proc = _run_git(git_root, args)
         except FileNotFoundError as exc:
-            return None, {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
+            return None, _git_missing_payload(exc)
         except (
             OSError,
             subprocess.SubprocessError,
@@ -771,12 +831,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
         ):
             return None, _git_failed_payload()
         if proc.returncode != 0:
-            return None, {
-                "ok": False,
-                "error": f"git {' '.join(args)} failed with exit {proc.returncode}",
-                "files": [],
-                "diff": "",
-            }
+            return None, _git_exit_payload(args, proc.returncode, str(proc.stderr or ""))
         return proc, None
 
     status_proc, error = _run_one(["status", "--short"])
@@ -784,7 +839,13 @@ def collect_git_changes(project: str | Path | None) -> dict:
         return error
     assert status_proc is not None
     if status_proc.stdout_truncated:
-        return {"ok": False, "error": "git status output truncated; re-run in a smaller scope", "files": [], "diff": ""}
+        return {
+            "ok": False,
+            "error": "git status output truncated; re-run in a smaller scope",
+            "files": [],
+            "diff": "",
+            "reason": GIT_REASON_FAILED,
+        }
 
     files = [
         file
@@ -811,7 +872,13 @@ def collect_git_changes(project: str | Path | None) -> dict:
         return error
     assert unstaged_num is not None and staged_num is not None
     if unstaged_num.stdout_truncated or staged_num.stdout_truncated:
-        return {"ok": False, "error": "git numstat output truncated; re-run in a smaller scope", "files": [], "diff": ""}
+        return {
+            "ok": False,
+            "error": "git numstat output truncated; re-run in a smaller scope",
+            "files": [],
+            "diff": "",
+            "reason": GIT_REASON_FAILED,
+        }
 
     unstaged_diff, error = _run_one(["diff", "--no-ext-diff", "--"])
     if error is not None:
@@ -889,23 +956,17 @@ def collect_changes(
     git_data = collect_git_changes(project)
     if git_data.get("ok"):
         return git_data
-    error = str(git_data.get("error", ""))
-    # Only a confirmed non-repo or a missing git binary may fall back to a
-    # snapshot view. Timeouts, read errors, non-zero exits, and truncation
-    # are real collection failures: answering them with an empty snapshot
-    # would report "no changes" for an error.
-    if error == "not a git repository" or error.startswith("git unavailable"):
+    # Snapshot fallback keys off the internal reason, never the human
+    # error text: only a confirmed non-repo or a missing git binary may
+    # answer with a snapshot view. Failures propagate as failures.
+    reason = str(git_data.get("reason", ""))
+    if reason in _GIT_FALLBACK_REASONS:
+        missing = reason == GIT_REASON_MISSING
         if tracker is not None:
             data = tracker.collect()
-            data["vcs"] = {
-                "git_available": not error.startswith("git unavailable"),
-                "is_repo": False,
-            }
+            data["vcs"] = {"git_available": not missing, "is_repo": False}
             return data
-        return _empty_snapshot_changes(
-            project,
-            "git unavailable" if error.startswith("git unavailable") else None,
-        )
+        return _empty_snapshot_changes(project, "git unavailable" if missing else None)
     return git_data
 
 

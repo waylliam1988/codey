@@ -1516,8 +1516,8 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.root = Path("override")
         override.generation = 7
         process = mock.Mock()
-        process.stdout = iter(())
-        process.stderr = iter(())
+        process.stdout = io.StringIO("")
+        process.stderr = io.StringIO("")
         process.stdin = mock.Mock()
         job = mock.Mock()
 
@@ -1538,16 +1538,24 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertNotEqual(popen.call_args.kwargs.get("stderr"), subprocess.DEVNULL)
 
     def test_provider_worker_stderr_tail_is_kept_bounded_and_attached(self) -> None:
+        from codey.providers.worker import (
+            WORKER_STDERR_CHUNK_CHARS,
+            WORKER_STDERR_TAIL_CHUNKS,
+        )
+
         provider = WorkerChatProvider.__new__(WorkerChatProvider)
-        provider._stderr_tail = deque(maxlen=24)
+        provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
         provider.provider_id = "qwen"
         provider.name = "qwen worker"
-        for index in range(40):
-            provider._stderr_tail.append(f"line {index}")
+        for _ in range(WORKER_STDERR_TAIL_CHUNKS + 2):
+            provider._stderr_tail.append("e" * WORKER_STDERR_CHUNK_CHARS)
 
+        total = sum(len(chunk) for chunk in provider._stderr_tail)
+        self.assertLessEqual(
+            total, WORKER_STDERR_TAIL_CHUNKS * WORKER_STDERR_CHUNK_CHARS,
+        )
         suffix = provider._worker_error_suffix()
-        self.assertIn("line 39", suffix)
-        self.assertNotIn("line 0 ", suffix)
+        self.assertIn("e", suffix)
         self.assertLessEqual(len(suffix), 420)
 
     def test_provider_worker_terminates_process_tree(self) -> None:
@@ -1555,7 +1563,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.root = Path("override")
         override.generation = 3
         process = mock.Mock()
-        process.stdout = iter(())
+        process.stdout = io.StringIO("")
         process.stdin = mock.Mock()
         job = mock.Mock()
 
@@ -1576,7 +1584,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.root = Path("override")
         override.generation = 3
         process = mock.Mock()
-        process.stdout = iter(())
+        process.stdout = io.StringIO("")
         process.stdin = mock.Mock()
         job = mock.Mock()
 
@@ -1602,7 +1610,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.root = Path("override")
         override.generation = 3
         process = mock.Mock()
-        process.stdout = iter(())
+        process.stdout = io.StringIO("")
         process.stdin = mock.Mock()
         process.poll.return_value = None
         job = mock.Mock()

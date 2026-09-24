@@ -30,6 +30,12 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 
 WORKER_TIMEOUT_GRACE = 5.0
 RESPONSE_QUEUE_MAXSIZE = 512
+# True read bounds (both loops read bounded units, never whole lines):
+# one child line beyond WORKER_LINE_MAX_CHARS is misbehavior, and stderr
+# keeps only a few fixed-size chunks.
+WORKER_LINE_MAX_CHARS = 256 * 1024
+WORKER_STDERR_CHUNK_CHARS = 16 * 1024
+WORKER_STDERR_TAIL_CHUNKS = 4
 
 
 @dataclass
@@ -54,10 +60,14 @@ class WorkerChatProvider:
         # observes proc death via its local handle.
         self._conn_lock = threading.RLock()
         self._request_lock = threading.Lock()
-        self._lock = self._conn_lock
         self._reader: threading.Thread | None = None
         self._cdp_port: int = 0
         self._target_id: str = ""
+        # Id of the request whose reply the reader is currently framing (if
+        # any): an over-limit line fails exactly this waiter instead of
+        # hanging it until timeout. Plain attribute read/write is benign
+        # here; only the single-flight request sets it.
+        self._pending_request_id: str | None = None
         with self._conn_lock:
             self._start_conn_locked()
 
@@ -100,12 +110,8 @@ class WorkerChatProvider:
         # a long send: terminate under the conn lock only, without taking the
         # request gate. An in-flight _request observes proc death via its
         # local handle and fails fast instead of hanging the close.
-        conn = getattr(self, "_conn_lock", None) or getattr(self, "_lock", None)
-        if conn is not None:
-            with conn:
-                self._terminate_conn_locked()
-        else:
-            self._terminate()
+        with self._conn_lock:
+            self._terminate_conn_locked()
 
     def _start_conn_locked(self) -> None:
         env = dict(os.environ)
@@ -132,7 +138,7 @@ class WorkerChatProvider:
             "--profile",
             str(worker_profile),
         ]
-        self._stderr_tail: deque[str] = deque(maxlen=24)
+        self._stderr_tail: deque[str] = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
         group_args: dict = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
             if os.name == "nt"
@@ -169,22 +175,23 @@ class WorkerChatProvider:
 
     def _start(self) -> None:
         """Public restart entry (tests patch this)."""
-        conn = getattr(self, "_conn_lock", None) or getattr(self, "_lock", None)
-        if conn is not None:
-            with conn:
-                self._start_conn_locked()
-        else:
+        with self._conn_lock:
             self._start_conn_locked()
 
     def _stderr_loop(self) -> None:
-        # Startup diagnostics only: any drain failure must never surface.
+        # Startup diagnostics only: fixed-size chunk reads keep one huge
+        # line from ever entering memory whole; any drain failure must
+        # never surface.
         try:
             proc = self._proc
             stderr = proc.stderr if proc is not None else None
             if stderr is None:
                 return
-            for line in stderr:
-                self._stderr_tail.append(line.rstrip())
+            while True:
+                chunk = stderr.read(WORKER_STDERR_CHUNK_CHARS)
+                if not chunk:
+                    return
+                self._stderr_tail.append(chunk)
         except Exception:
             return
 
@@ -194,9 +201,16 @@ class WorkerChatProvider:
 
     def _read_loop(self) -> None:
         proc = self._proc
-        if proc is None or proc.stdout is None:
+        stdout = proc.stdout if proc is not None else None
+        if stdout is None:
             return
-        for line in proc.stdout:
+        while True:
+            line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
+            if not line:
+                return
+            if len(line) > WORKER_LINE_MAX_CHARS:
+                self._drain_overlong_line(stdout)
+                continue
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError:
@@ -206,6 +220,27 @@ class WorkerChatProvider:
                     self._record_worker_page(payload)
                     continue
                 self._offer_response(payload)
+
+    def _drain_overlong_line(self, stdout) -> None:
+        """Discard one over-limit line and fail its waiter explicitly.
+
+        The partial frame is never parsed: the pending request gets a
+        bounded "output exceeded" error instead of hanging until its
+        timeout, and framing resyncs on the next newline for later
+        requests. Without a pending request there is nobody to fail, so
+        the line is just dropped.
+        """
+        while True:
+            chunk = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
+            if not chunk or chunk.endswith("\n"):
+                break
+        pending = self._pending_request_id
+        if pending is not None:
+            self._offer_response({
+                "id": pending,
+                "ok": False,
+                "error": f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars",
+            })
 
     def _response_gate(self) -> threading.Lock:
         gate = getattr(self, "_response_lock", None)
@@ -268,14 +303,6 @@ class WorkerChatProvider:
             raise RuntimeError("provider worker is not running")
         return proc
 
-    def _ensure_running_locked(self) -> subprocess.Popen[str]:
-        """Legacy entry (tests call this directly without holding the lock)."""
-        conn = getattr(self, "_conn_lock", None) or getattr(self, "_lock", None)
-        if conn is not None:
-            with conn:
-                return self._ensure_running_conn_locked()
-        return self._ensure_running_conn_locked()
-
     def _request(
         self,
         method: str,
@@ -288,12 +315,8 @@ class WorkerChatProvider:
         # Single-flight stdin via the request gate; lifecycle via the conn
         # lock held only for ensure+write. The wait loop runs lock-free so
         # close() (conn lock only) never queues behind a long send.
-        gate = getattr(self, "_request_lock", None) or getattr(self, "_lock", None)
-        conn = getattr(self, "_conn_lock", None) or getattr(self, "_lock", None)
-        if gate is not None and gate is not conn:
-            with gate:
-                return self._request_locked(method, params, timeout, restart=restart, grace=grace)
-        return self._request_locked(method, params, timeout, restart=restart, grace=grace)
+        with self._request_lock:
+            return self._request_locked(method, params, timeout, restart=restart, grace=grace)
 
     def _request_locked(
         self,
@@ -304,11 +327,7 @@ class WorkerChatProvider:
         restart: bool = True,
         grace: bool = True,
     ):
-        conn = (
-            getattr(self, "_conn_lock", None)
-            or getattr(self, "_lock", None)
-            or threading.RLock()
-        )
+        conn = self._conn_lock
         with conn:
             if restart:
                 proc = self._ensure_running_conn_locked()
@@ -325,6 +344,22 @@ class WorkerChatProvider:
                 self._terminate_conn_locked()
                 self._drain_responses()
                 raise RuntimeError("provider worker stdin is unavailable") from exc
+        self._pending_request_id = request_id
+        try:
+            return self._wait_for_response(proc, method, request_id, timeout, grace=grace)
+        finally:
+            if self._pending_request_id == request_id:
+                self._pending_request_id = None
+
+    def _wait_for_response(
+        self,
+        proc: subprocess.Popen[str],
+        method: str,
+        request_id: str,
+        timeout: float | None,
+        *,
+        grace: bool,
+    ):
         deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + (
             WORKER_TIMEOUT_GRACE if grace else 0.0
         )
@@ -394,14 +429,7 @@ class WorkerChatProvider:
                     job.close()
 
     def _terminate(self) -> None:
-        # Test doubles built via __new__ may lack both locks; a throwaway
-        # gate is sufficient there (single-threaded construction).
-        conn = (
-            getattr(self, "_conn_lock", None)
-            or getattr(self, "_lock", None)
-            or threading.RLock()
-        )
-        with conn:
+        with self._conn_lock:
             self._terminate_conn_locked()
 
     def _close_worker_page(self) -> None:
