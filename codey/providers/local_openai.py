@@ -133,25 +133,35 @@ class LocalOpenAIProvider:
         try:
             with self._state_lock:
                 generation = self._generation
-                messages = self._prepare_request(
+                candidate = self._prepare_request(
                     [{"role": "user", "content": text}], tools=None,
                 )
-            reply = self._complete(messages, timeout=timeout)
+            reply = self._complete(candidate, timeout=timeout)
             with self._state_lock:
+                # Commit only on a usable reply: an HTTP failure leaves the
+                # history untouched so the next send does not resend a stale
+                # user message. A stale generation skips history entirely.
                 if generation == self._generation:
+                    self._messages = candidate
                     self._messages.append({"role": "assistant", "content": reply})
             return reply
         finally:
             self._send_lock.release()
 
-    def _assistant_turn_or_fail_closed(self, message: dict, *, generation: int | None = None) -> object:
-        """Build the AssistantTurn, failing closed on unanswerable tool_calls.
+    def _assistant_turn_or_fail_closed(
+        self,
+        candidate: list[dict],
+        message: dict,
+        *,
+        generation: int | None = None,
+    ) -> object:
+        """Commit one candidate history plus its assistant turn, or fail closed.
 
-        Storing a raw block with missing ids would poison the local history:
-        a later plain prompt would break the provider chain. Instead reset to
-        a fresh chat and surface text the JSON fallback can route to repair.
-        A stale generation (after close/new_chat/abandon) never mutates
-        history.
+        The candidate was built before the HTTP call but never committed:
+        only a usable reply installs it, atomically with the assistant
+        message, under the state lock (callers hold it). Unanswerable
+        tool_calls still reset to a fresh chat; a stale generation (after
+        close/new_chat/abandon) never mutates history.
         """
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
@@ -178,6 +188,7 @@ class LocalOpenAIProvider:
                 tool_calls=(),
                 raw={"finish_reason": str(message.get("_finish_reason") or ""), "malformed_dropped": dropped},
             )
+        self._messages = candidate
         self._messages.append(_store_assistant_message(message))
         return AssistantTurn(
             text=str(message.get("content") or ""),
@@ -198,12 +209,12 @@ class LocalOpenAIProvider:
         try:
             with self._state_lock:
                 generation = self._generation
-                messages = self._prepare_request(
+                candidate = self._prepare_request(
                     [{"role": "user", "content": prompt}], tools=tools,
                 )
-            message = self._complete_message(messages, tools=tools, timeout=timeout)
+            message = self._complete_message(candidate, tools=tools, timeout=timeout)
             with self._state_lock:
-                return self._assistant_turn_or_fail_closed(message, generation=generation)
+                return self._assistant_turn_or_fail_closed(candidate, message, generation=generation)
         finally:
             self._send_lock.release()
 
@@ -227,10 +238,10 @@ class LocalOpenAIProvider:
         try:
             with self._state_lock:
                 generation = self._generation
-                messages = self._prepare_request(pending, tools=tools)
-            message = self._complete_message(messages, tools=tools, timeout=timeout)
+                candidate = self._prepare_request(pending, tools=tools)
+            message = self._complete_message(candidate, tools=tools, timeout=timeout)
             with self._state_lock:
-                return self._assistant_turn_or_fail_closed(message, generation=generation)
+                return self._assistant_turn_or_fail_closed(candidate, message, generation=generation)
         finally:
             self._send_lock.release()
 
@@ -260,9 +271,11 @@ class LocalOpenAIProvider:
         Copies history, appends the full pending batch at once (never
         splitting assistant tool_calls from their tool results), compacts
         the candidate in place, then verifies
-        ``messages + tools + reserve <= window``. Only a passing candidate
-        is committed to ``self._messages``. Overflow and compaction
-        failures raise explicitly; nothing is sent.
+        ``messages + tools + reserve <= window``. The candidate is returned
+        uncommitted: callers install it under the state lock only after a
+        usable reply, so HTTP failures and stale generations leave
+        ``self._messages`` untouched. Overflow and compaction failures
+        raise explicitly; nothing is sent. Callers hold the state lock.
         """
         from codey.providers import error_classification as errors
 
@@ -298,8 +311,7 @@ class LocalOpenAIProvider:
                 f"tokens exceeds window {int(window)} "
                 f"(reserve {int(reserve)} for reply)"
             )
-        self._messages = candidate
-        return self._messages
+        return candidate
 
     def _post_chat(
         self,

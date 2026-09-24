@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 import threading
 import time
@@ -71,7 +72,15 @@ class ProviderHealth:
 
 
 class ProviderSupervisor:
-    """Persist bounded health facts without running background work."""
+    """Persist bounded health facts without running background work.
+
+    Every state change is one atomic read-modify-write: the latest disk
+    state is loaded, a single success/failure/expiry event is applied, and
+    the result is written back while holding the in-process lock and the
+    file lock in one fixed order. Two instances sharing a directory
+    therefore accumulate each other's events instead of overwriting them
+    with precomputed snapshots.
+    """
 
     def __init__(
         self,
@@ -91,20 +100,78 @@ class ProviderSupervisor:
         with self._lock:
             return self._last_save_error
 
+    @contextlib.contextmanager
+    def _exclusive(self):
+        """Hold the in-process lock and the file lock in one fixed order.
+
+        All reads that must see fresh cross-instance state (get/select)
+        and all read-modify-write updates go through here.
+        """
+        from codey.storage.file_lock import with_file_lock
+
+        with self._lock:
+            if self.path is None:
+                yield
+            else:
+                with with_file_lock(self.path):
+                    yield
+
+    def _refresh_locked(self) -> None:
+        """Reload disk truth. Caller holds _exclusive()."""
+        if self.path is not None:
+            self._health = self._load()
+
+    def _write_locked(self) -> None:
+        """Persist memory truth. Caller holds _exclusive()."""
+        if self.path is None:
+            return
+        try:
+            bounded = dict(sorted(self._health.items())[:MAX_PROVIDERS])
+            self._health = bounded
+            providers = {
+                provider_id: asdict(health)
+                for provider_id, health in bounded.items()
+            }
+            write_json_atomic(
+                self.path,
+                {"schema_version": 1, "providers": providers},
+                max_bytes=MAX_HEALTH_BYTES,
+            )
+        except (OSError, ValueError) as exc:
+            self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]
+        else:
+            self._last_save_error = ""
+
+    def _update(
+        self,
+        provider_id: str,
+        mutate: Callable[[str, ProviderHealth, float], ProviderHealth],
+    ) -> ProviderHealth:
+        """Apply one event to the latest disk state and write it back."""
+        key = normalize_provider_id(provider_id)
+        with self._exclusive():
+            self._refresh_locked()
+            now = self.clock()
+            current = self._health.get(key, ProviderHealth())
+            expired = _expire_open(current, now)
+            if expired is not None:
+                current = expired
+            updated = mutate(key, current, now)
+            self._health[key] = updated
+            self._write_locked()
+            return updated
+
     def get(self, provider_id: str) -> ProviderHealth:
         key = normalize_provider_id(provider_id)
-        with self._lock:
+        with self._exclusive():
+            # Cross-instance freshness: never answer from a stale cache.
+            self._refresh_locked()
             health = self._health.get(key, ProviderHealth())
-            if health.state == STATE_OPEN and health.circuit_open_until <= self.clock():
-                health = replace(
-                    health,
-                    state=STATE_DEGRADED,
-                    circuit_open_until=0.0,
-                )
-                self._health[key] = health
-                # Persist under the same lock so a concurrent update cannot
-                # be overwritten by this older snapshot.
-                self._save_snapshot(dict(self._health))
+            expired = _expire_open(health, self.clock())
+            if expired is not None:
+                self._health[key] = expired
+                self._write_locked()
+                return expired
             return health
 
     def is_available(self, provider_id: str) -> bool:
@@ -116,15 +183,13 @@ class ProviderSupervisor:
 
     def prepare_user_selected(self, provider_id: str) -> ProviderHealth:
         """Allow an explicit user retry to verify that login/challenge was cleared."""
-        with self._lock:
-            key = normalize_provider_id(provider_id)
-            current = self.get(key)
+
+        def _allow(_key: str, current: ProviderHealth, _now: float) -> ProviderHealth:
             if current.state != STATE_AUTH_REQUIRED:
                 return current
-            return self._store(
-                key,
-                replace(current, state=STATE_DEGRADED, circuit_open_until=0.0),
-            )
+            return replace(current, state=STATE_DEGRADED, circuit_open_until=0.0)
+
+        return self._update(provider_id, _allow)
 
     def allows_revival(self, provider_id: str) -> bool:
         health = self.get(provider_id)
@@ -134,79 +199,31 @@ class ProviderSupervisor:
         )
 
     def record_success(self, provider_id: str, *, canary: bool = False) -> ProviderHealth:
-        with self._lock:
-            key = normalize_provider_id(provider_id)
-            current = self.get(key)
-            state = STATE_DEGRADED if canary else STATE_HEALTHY
-            updated = replace(
-                current,
-                state=state,
-                consecutive_failures=0,
-                last_failure_kind="",
-                last_success_at=self.clock(),
-                circuit_open_until=0.0,
-                success_count=current.success_count + 1,
-            )
-            return self._store(key, updated)
+        return self._update(
+            provider_id,
+            lambda _key, current, now: _apply_success(current, canary=canary, now=now),
+        )
 
     def record_failure(self, provider_id: str, failure: ProviderFailure) -> ProviderHealth:
-        with self._lock:
-            key = normalize_provider_id(provider_id)
-            current = self.get(key)
-            now = self.clock()
-            same_family = _failure_family(current.last_failure_kind) == _failure_family(
-                failure.kind
-            )
-            count = current.consecutive_failures + 1 if same_family else 1
-            state = STATE_DEGRADED
-            open_until = 0.0
-            if failure.kind in AUTH_FAILURES:
-                state = STATE_AUTH_REQUIRED
-            elif failure.kind == FAILURE_RATE_LIMITED:
-                state = STATE_OPEN
-                open_until = now + RATE_LIMIT_COOLDOWN
-            elif failure.kind in STRUCTURAL_FAILURES and count >= STRUCTURAL_THRESHOLD:
-                state = STATE_OPEN
-                open_until = now + STRUCTURAL_COOLDOWN
-            elif failure.kind == FAILURE_TRANSIENT and count >= TRANSIENT_THRESHOLD:
-                state = STATE_OPEN
-                open_until = now + TRANSIENT_COOLDOWN
-            elif failure.kind == FAILURE_SUBMISSION_UNCERTAIN:
-                state = STATE_DEGRADED
-            updated = replace(
-                current,
-                state=state,
-                consecutive_failures=count,
-                last_failure_kind=failure.kind,
-                last_failure_at=now,
-                circuit_open_until=open_until,
-                failure_count=current.failure_count + 1,
-            )
-            return self._store(key, updated)
+        return self._update(
+            provider_id,
+            lambda _key, current, now: _apply_failure(current, failure, now=now),
+        )
 
     def record_canary_failure(
         self,
         provider_id: str,
         failure: ProviderFailure,
     ) -> ProviderHealth:
-        """A failed half-open probe immediately reopens its circuit."""
-        with self._lock:
-            updated = self.record_failure(provider_id, failure)
-            if updated.state in {STATE_OPEN, STATE_AUTH_REQUIRED}:
-                return updated
-            cooldown = (
-                STRUCTURAL_COOLDOWN
-                if failure.kind in STRUCTURAL_FAILURES
-                else TRANSIENT_COOLDOWN
-            )
-            return self._store(
-                normalize_provider_id(provider_id),
-                replace(
-                    updated,
-                    state=STATE_OPEN,
-                    circuit_open_until=self.clock() + cooldown,
-                ),
-            )
+        """A failed half-open probe immediately reopens its circuit.
+
+        One atomic event: the failure and the forced reopen share a single
+        base state and a single counter increment.
+        """
+        return self._update(
+            provider_id,
+            lambda _key, current, now: _apply_canary_failure(current, failure, now=now),
+        )
 
     def select(
         self,
@@ -215,12 +232,21 @@ class ProviderSupervisor:
         *,
         excluded: Iterable[str] = (),
     ) -> str | None:
-        # Decide from one snapshot without holding the lock across per-item
-        # availability probes: the OPEN->DEGRADED lazy transition lands on
-        # the next get() instead of inside this read path.
-        with self._lock:
-            snapshot = dict(self._health)
+        # Decide from one fresh snapshot: refresh under both locks (with
+        # expiry persisted) so routing never uses a stale in-memory cache,
+        # then compute without holding the locks.
+        with self._exclusive():
+            self._refresh_locked()
             now = self.clock()
+            changed = False
+            for provider_id, health in list(self._health.items()):
+                expired = _expire_open(health, now)
+                if expired is not None:
+                    self._health[provider_id] = expired
+                    changed = True
+            if changed:
+                self._write_locked()
+            snapshot = dict(self._health)
         blocked = {normalize_provider_id(item) for item in excluded}
         ordered = [normalize_provider_id(preferred)]
         ordered.extend(normalize_provider_id(item) for item in provider_ids)
@@ -235,12 +261,6 @@ class ProviderSupervisor:
             if health.state not in {STATE_OPEN, STATE_AUTH_REQUIRED}:
                 return provider_id
         return None
-
-    def _store(self, provider_id: str, health: ProviderHealth) -> ProviderHealth:
-        with self._lock:
-            self._health[provider_id] = health
-            self._save_snapshot(dict(self._health))
-            return health
 
     def _load(self) -> dict[str, ProviderHealth]:
         if self.path is None:
@@ -276,51 +296,86 @@ class ProviderSupervisor:
                 continue
         return health
 
-    def _save_snapshot(self, snapshot: dict[str, ProviderHealth]) -> None:
-        """Persist under the caller's in-process lock and the file lock.
+def _expire_open(health: ProviderHealth, now: float) -> ProviderHealth | None:
+    """An expired OPEN cools to DEGRADED; None when no transition applies."""
+    if health.state == STATE_OPEN and health.circuit_open_until <= now:
+        return replace(health, state=STATE_DEGRADED, circuit_open_until=0.0)
+    return None
 
-        Merges with the latest disk state so two processes sharing a state
-        directory keep each other's providers instead of overwriting them.
-        Same-id conflicts resolve to the latest writer's state with
-        monotonic counters preserved.
-        """
-        if self.path is None:
-            return
-        from codey.storage.file_lock import with_file_lock
 
-        try:
-            with with_file_lock(self.path):
-                on_disk = self._load()
-                merged: dict[str, ProviderHealth] = dict(on_disk)
-                for provider_id, health in snapshot.items():
-                    base = merged.get(provider_id)
-                    if base is None:
-                        merged[provider_id] = health
-                    else:
-                        merged[provider_id] = replace(
-                            health,
-                            success_count=max(health.success_count, base.success_count),
-                            failure_count=max(health.failure_count, base.failure_count),
-                            last_success_at=max(health.last_success_at, base.last_success_at),
-                            last_failure_at=max(health.last_failure_at, base.last_failure_at),
-                        )
-                merged = dict(list(sorted(merged.items()))[:MAX_PROVIDERS])
-                self._health = merged
-                providers = {
-                    provider_id: asdict(health)
-                    for provider_id, health in merged.items()
-                }
-                write_json_atomic(
-                    self.path,
-                    {"schema_version": 1, "providers": providers},
-                    max_bytes=MAX_HEALTH_BYTES,
-                )
-        except (OSError, ValueError) as exc:
-            with self._lock:
-                self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]
-            return
-        with self._lock:
-            self._last_save_error = ""
+def _apply_success(
+    current: ProviderHealth,
+    *,
+    canary: bool,
+    now: float,
+) -> ProviderHealth:
+    state = STATE_DEGRADED if canary else STATE_HEALTHY
+    return replace(
+        current,
+        state=state,
+        consecutive_failures=0,
+        last_failure_kind="",
+        last_success_at=now,
+        circuit_open_until=0.0,
+        success_count=current.success_count + 1,
+    )
+
+
+def _apply_failure(
+    current: ProviderHealth,
+    failure: ProviderFailure,
+    *,
+    now: float,
+) -> ProviderHealth:
+    same_family = _failure_family(current.last_failure_kind) == _failure_family(
+        failure.kind
+    )
+    count = current.consecutive_failures + 1 if same_family else 1
+    state = STATE_DEGRADED
+    open_until = 0.0
+    if failure.kind in AUTH_FAILURES:
+        state = STATE_AUTH_REQUIRED
+    elif failure.kind == FAILURE_RATE_LIMITED:
+        state = STATE_OPEN
+        open_until = now + RATE_LIMIT_COOLDOWN
+    elif failure.kind in STRUCTURAL_FAILURES and count >= STRUCTURAL_THRESHOLD:
+        state = STATE_OPEN
+        open_until = now + STRUCTURAL_COOLDOWN
+    elif failure.kind == FAILURE_TRANSIENT and count >= TRANSIENT_THRESHOLD:
+        state = STATE_OPEN
+        open_until = now + TRANSIENT_COOLDOWN
+    elif failure.kind == FAILURE_SUBMISSION_UNCERTAIN:
+        state = STATE_DEGRADED
+    return replace(
+        current,
+        state=state,
+        consecutive_failures=count,
+        last_failure_kind=failure.kind,
+        last_failure_at=now,
+        circuit_open_until=open_until,
+        failure_count=current.failure_count + 1,
+    )
+
+
+def _apply_canary_failure(
+    current: ProviderHealth,
+    failure: ProviderFailure,
+    *,
+    now: float,
+) -> ProviderHealth:
+    updated = _apply_failure(current, failure, now=now)
+    if updated.state in {STATE_OPEN, STATE_AUTH_REQUIRED}:
+        return updated
+    cooldown = (
+        STRUCTURAL_COOLDOWN
+        if failure.kind in STRUCTURAL_FAILURES
+        else TRANSIENT_COOLDOWN
+    )
+    return replace(
+        updated,
+        state=STATE_OPEN,
+        circuit_open_until=now + cooldown,
+    )
 
 
 def _failure_family(kind: str) -> str:

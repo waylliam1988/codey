@@ -206,6 +206,89 @@ def test_close_discards_late_reply(monkeypatch) -> None:
     assert provider._messages == []
 
 
+def test_send_failure_leaves_history_unchanged(monkeypatch) -> None:
+    import urllib.error
+
+    import pytest
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {"choices": [{"finish_reason": "stop", "message": {"content": "first"}}]}
+    _install_fake(monkeypatch, body)
+    assert provider.send("first") == "first"
+    before = [dict(message) for message in provider._messages]
+
+    def failing_urlopen(request, timeout=None):
+        raise urllib.error.URLError("network down")
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", failing_urlopen)
+    with pytest.raises(RuntimeError, match="could not reach"):
+        provider.send("second")
+    # The unanswered user message must not linger for the next send.
+    assert provider._messages == before
+
+    _install_fake(monkeypatch, {"choices": [{"finish_reason": "stop", "message": {"content": "third"}}]})
+    assert provider.send("third") == "third"
+    assert [m.get("content") for m in provider._messages if m.get("role") == "user"] == ["first", "third"]
+
+
+def test_tool_results_retry_posts_single_result(monkeypatch) -> None:
+    import urllib.error
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    provider._messages.append({"role": "assistant", "content": "", "tool_calls": [{"id": "call_1"}]})
+    before = [dict(message) for message in provider._messages]
+
+    def failing_urlopen(request, timeout=None):
+        raise urllib.error.URLError("network down")
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", failing_urlopen)
+    try:
+        provider.send_tool_results([{"tool_call_id": "call_1", "content": "out"}])
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("expected network failure")
+    assert provider._messages == before
+
+    body = {"choices": [{"finish_reason": "stop", "message": {"content": "done"}}]}
+    seen = _install_fake(monkeypatch, body)
+    turn = provider.send_tool_results([{"tool_call_id": "call_1", "content": "out"}])
+    assert turn.text == "done"
+    tool_msgs = [m for m in seen[0]["messages"] if m.get("role") == "tool"]
+    assert [m.get("tool_call_id") for m in tool_msgs] == ["call_1"]
+    assert len([m for m in provider._messages if m.get("role") == "tool"]) == 1
+
+
+def test_stale_turn_skips_history_after_abandon(monkeypatch) -> None:
+    import threading
+
+    entered_network = threading.Event()
+    release_network = threading.Event()
+
+    def fake_complete_message(messages, tools=None, *, timeout=None) -> dict:
+        del messages, tools, timeout
+        entered_network.set()
+        assert release_network.wait(timeout=10.0)
+        return {"content": "late", "_finish_reason": "stop"}
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    monkeypatch.setattr(provider, "_complete_message", fake_complete_message)
+    result: list = []
+
+    def do_send() -> None:
+        result.append(provider.send_turn("old"))
+
+    thread = threading.Thread(target=do_send)
+    thread.start()
+    assert entered_network.wait(timeout=10.0)
+    provider.abandon_inflight()
+    release_network.set()
+    thread.join(timeout=10.0)
+    assert len(result) == 1
+    assert result[0].raw.get("stale_generation") is True
+    assert provider._messages == []
+
+
 def test_http_error_body_is_bounded(monkeypatch) -> None:
     import io
     import urllib.error

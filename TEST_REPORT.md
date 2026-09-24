@@ -80,6 +80,43 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Honest collection/health/history full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/workspace/changes.py            (exit/truncation checked per git command; snapshot fallback only for non-repo/missing git; race-free snapshot view)
+codey/providers/supervisor.py         (atomic read-modify-write under one fixed lock order; snapshot max-merge removed)
+codey/providers/local_openai.py       (uncommitted request candidate; commit on usable reply only)
+codey/providers/local_config.py       (pure assemble_bootstrap_payload over resolved inputs)
+codey/app/api.py                      (save assembles status from its single probe)
+tests/test_changes.py                 (non-zero exits for status/numstat/diff; timeout with tracker; collect/prune interleave)
+tests/test_provider_supervisor.py     (same-id accumulate/reset/expiry across instances; select freshness)
+tests/test_local_openai_native.py     (failure leaves history; single retry result; stale turn skips)
+tests/test_local_bootstrap.py         (save path probes /models exactly once end to end)
+```
+
+Notes:
+
+- A failed git command is an explicit error, never "no changes"; only a
+  confirmed non-repo or a missing git binary falls back to snapshots.
+- Same-id health events from two instances accumulate so shared thresholds
+  trip; routing reads fresh disk state, including expiry.
+- Failed local sends leave history untouched: tool-result retries post one
+  result and late replies still skip a newer generation.
+- The save path hits `/models` exactly once; status assembly is pure.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `210 passed, 2 skipped, 6 subtests passed in 18.03s`.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4191 tests collected in 2.71s`).
+- Full suite: `python -m pytest`
+  (`4185 passed, 6 skipped in 368.76s (0:06:08)`).
+- This report entry was written after the final full pytest run.
+
 ## Grouped local target, strict save, atomic health, closed error streams full suite (2026-09-24)
 
 Scope (production, no release):

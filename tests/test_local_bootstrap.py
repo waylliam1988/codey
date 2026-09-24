@@ -1042,6 +1042,51 @@ def test_bootstrap_echoes_env_base_when_unconnected(monkeypatch) -> None:
     assert payload["base_url"] == "http://127.0.0.1:8080/v1"
 
 
+def test_api_save_probes_exactly_once(monkeypatch, tmp_path: Path) -> None:
+    import json as _json
+
+    from codey.app import api as app_api
+    from codey.providers import local_config as canonical
+    from codey.providers import local_discovery as discovery
+
+    for var in (
+        "LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY",
+        "LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    calls: list[str] = []
+
+    class FakeModelsResponse:
+        def __enter__(self) -> FakeModelsResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            del size
+            return _json.dumps({"data": [{"id": "qwen"}]}).encode("utf-8")
+
+    def fake_urlopen(request, timeout=None) -> FakeModelsResponse:
+        calls.append(str(request.full_url))
+        return FakeModelsResponse()
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", fake_urlopen)
+    config_path = tmp_path / "local-openai.json"
+    with mock.patch.object(canonical, "_config_path", return_value=config_path):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "qwen",
+        })
+
+    assert status == 200 and payload["ok"] is True
+    assert payload["local"]["connected"] is True
+    assert payload["local"]["model"] == "qwen"
+    # The whole save path, probe plus status assembly, hits /models once.
+    assert calls == ["http://127.0.0.1:11434/v1/models"]
+    assert config_path.is_file()
+
+
 def test_bootstrap_falls_back_to_env_key_and_base(monkeypatch) -> None:
     from codey.providers import local_config as canonical
     from codey.providers.local_discovery import LocalEndpoint

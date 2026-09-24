@@ -12,6 +12,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codey.env_names import (
     LOCAL_OPENAI_API_KEY_ENV,
@@ -29,6 +30,9 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+
+if TYPE_CHECKING:
+    from codey.providers.local_discovery import LocalEndpoint
 
 CONFIG_FILE = "local-openai.json"
 SCHEMA_VERSION = 2
@@ -432,6 +436,74 @@ def resolve_effective_local_config(
     )
 
 
+def assemble_bootstrap_payload(
+    config: LocalProviderConfig,
+    selection: LocalTargetSelection,
+    endpoint: LocalEndpoint | None,
+    discovered: list[str],
+) -> dict:
+    """Assemble the UI status payload from already-resolved inputs.
+
+    Pure over its arguments: no probing, no disk reads. Save paths reuse
+    it with their just-probed endpoint instead of probing a second time,
+    so the saved verdict can never flap between two requests.
+    """
+    try:
+        effective = resolve_effective_local_config(config, selection, endpoint)
+        context_error = ""
+        context_payload: dict[str, object] | None = asdict(effective.context)
+        context_window = effective.context.context_window_tokens
+        context_reserve = effective.context.context_reserve_tokens
+        context_keep = effective.context.context_keep_recent_tokens
+        native_tools = effective.native_tools
+        display_base = effective.base_url or selection.base_url
+        display_model = effective.model
+    except ValueError as exc:
+        # Invalid env override is display-only here: report the error with
+        # no budget (never a default that looks runnable). Runtime paths
+        # raise through resolve_effective_local_config instead.
+        context_error = str(exc)
+        endpoint_base = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
+        endpoint_models = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
+        if selection.model and (endpoint is None or selection.model in endpoint_models or selection.source != ""):
+            display_model = selection.model
+        else:
+            display_model = endpoint_models[0] if endpoint_models else selection.model
+        display_base = endpoint_base or selection.base_url
+        native_tools = resolve_local_native_tools(config)
+        context_payload = None
+        context_window = None
+        context_reserve = None
+        context_keep = None
+    models: list[str] = []
+    if endpoint is not None:
+        models = list(endpoint.models)
+    target_error = ""
+    if endpoint is not None and not display_model:
+        target_error = "local endpoint returned no usable model"
+    connected = endpoint is not None and not context_error and not target_error
+    return {
+        "connected": connected,
+        "base_url": display_base,
+        "model": display_model,
+        "models": models,
+        "candidates": discovered,
+        "has_api_key": bool(selection.api_key),
+        "native_tools_mode": config.native_tools_mode,
+        "native_tools": native_tools,
+        "context": context_payload,
+        "context_window_tokens": context_window,
+        "context_reserve_tokens": context_reserve,
+        "context_keep_recent_tokens": context_keep,
+        "context_error": context_error,
+        "error": target_error,
+        "presets": [
+            {"id": preset_id, "label": label, "window": window}
+            for preset_id, label, window in CONTEXT_PRESETS
+        ],
+    }
+
+
 def local_bootstrap_payload() -> dict:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
@@ -486,60 +558,7 @@ def local_bootstrap_payload() -> dict:
     except Exception:
         endpoint = None
         discovered = []
-    try:
-        effective = resolve_effective_local_config(config, selection, endpoint)
-        context_error = ""
-        context_payload: dict[str, object] | None = asdict(effective.context)
-        context_window = effective.context.context_window_tokens
-        context_reserve = effective.context.context_reserve_tokens
-        context_keep = effective.context.context_keep_recent_tokens
-        native_tools = effective.native_tools
-        display_base = effective.base_url or remembered
-        display_model = effective.model
-    except ValueError as exc:
-        # Invalid env override is display-only here: report the error with
-        # no budget (never a default that looks runnable). Runtime paths
-        # raise through resolve_effective_local_config instead.
-        context_error = str(exc)
-        endpoint_base = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
-        endpoint_models = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
-        if selection.model and (endpoint is None or selection.model in endpoint_models or selection.source != ""):
-            display_model = selection.model
-        else:
-            display_model = endpoint_models[0] if endpoint_models else selection.model
-        display_base = endpoint_base or selection.base_url or remembered
-        native_tools = resolve_local_native_tools(config)
-        context_payload = None
-        context_window = None
-        context_reserve = None
-        context_keep = None
-    models: list[str] = []
-    if endpoint is not None:
-        models = list(endpoint.models)
-    target_error = ""
-    if endpoint is not None and not display_model:
-        target_error = "local endpoint returned no usable model"
-    connected = endpoint is not None and not context_error and not target_error
-    return {
-        "connected": connected,
-        "base_url": display_base,
-        "model": display_model,
-        "models": models,
-        "candidates": discovered,
-        "has_api_key": bool(selection.api_key),
-        "native_tools_mode": config.native_tools_mode,
-        "native_tools": native_tools,
-        "context": context_payload,
-        "context_window_tokens": context_window,
-        "context_reserve_tokens": context_reserve,
-        "context_keep_recent_tokens": context_keep,
-        "context_error": context_error,
-        "error": target_error,
-        "presets": [
-            {"id": preset_id, "label": label, "window": window}
-            for preset_id, label, window in CONTEXT_PRESETS
-        ],
-    }
+    return assemble_bootstrap_payload(config, selection, endpoint, discovered)
 
 
 __all__ = [
@@ -554,6 +573,7 @@ __all__ = [
     "LocalContextBudget",
     "LocalProviderConfig",
     "LocalTargetSelection",
+    "assemble_bootstrap_payload",
     "config_from_dict",
     "config_to_payload",
     "context_budget_for_window",

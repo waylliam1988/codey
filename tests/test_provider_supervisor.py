@@ -254,30 +254,29 @@ class ProviderSupervisorTests(unittest.TestCase):
             supervisor.record_failure("qwen", failure("response_missing"))
             self.assertEqual(supervisor.get("qwen").state, STATE_OPEN)
 
-            original_save = supervisor_module.ProviderSupervisor._save_snapshot
-            entered_save = threading.Event()
+            original_write = supervisor_module.ProviderSupervisor._write_locked
+            entered_write = threading.Event()
             writer_started = threading.Event()
             entered_once = {"done": False}
 
-            def slow_save(inner_self, snapshot) -> None:
+            def slow_write(inner_self) -> None:
                 if not entered_once["done"]:
                     entered_once["done"] = True
-                    entered_save.set()
+                    entered_write.set()
                     # Both latches: wait until the writer attempts its update,
-                    # then hold briefly so it lands between the transition
-                    # snapshot and its write. Under the lock this blocks the
-                    # writer; without it the writer wins and would be
-                    # overwritten by the stale snapshot.
+                    # then hold briefly so it lands after the transition
+                    # write. Both sides serialize on the same locks, so the
+                    # success always applies to the fresh DEGRADED state.
                     assert writer_started.wait(timeout=10.0)
                     _time.sleep(0.2)
-                original_save(inner_self, snapshot)
+                original_write(inner_self)
 
             def do_success() -> None:
                 writer_started.set()
                 supervisor.record_success("qwen")
 
             with mock.patch.object(
-                supervisor_module.ProviderSupervisor, "_save_snapshot", slow_save,
+                supervisor_module.ProviderSupervisor, "_write_locked", slow_write,
             ):
                 def do_transition() -> None:
                     supervisor.clock = lambda: 1000.0
@@ -285,7 +284,7 @@ class ProviderSupervisorTests(unittest.TestCase):
 
                 transition = threading.Thread(target=do_transition)
                 transition.start()
-                self.assertTrue(entered_save.wait(timeout=10.0))
+                self.assertTrue(entered_write.wait(timeout=10.0))
                 writer = threading.Thread(target=do_success)
                 writer.start()
                 writer.join(timeout=10.0)
@@ -306,6 +305,48 @@ class ProviderSupervisorTests(unittest.TestCase):
             reloaded = ProviderSupervisor(td, clock=lambda: 100.0)
             self.assertEqual(reloaded.get("qwen").state, STATE_HEALTHY)
             self.assertEqual(reloaded.get("glm").state, STATE_HEALTHY)
+
+    def test_same_id_failures_accumulate_across_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            first = ProviderSupervisor(td, clock=lambda: 100.0)
+            second = ProviderSupervisor(td, clock=lambda: 100.0)
+            first.record_failure("qwen", failure("control_missing"))
+            second.record_failure("qwen", failure("response_missing"))
+            reloaded = ProviderSupervisor(td, clock=lambda: 100.0)
+            health = reloaded.get("qwen")
+            self.assertEqual(health.consecutive_failures, 2)
+            self.assertEqual(health.failure_count, 2)
+            self.assertEqual(health.state, STATE_OPEN)
+
+    def test_same_id_success_resets_across_instances(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            first = ProviderSupervisor(td, clock=lambda: 100.0)
+            second = ProviderSupervisor(td, clock=lambda: 100.0)
+            first.record_failure("qwen", failure("control_missing"))
+            second.record_failure("qwen", failure("response_missing"))
+            self.assertEqual(second.get("qwen").state, STATE_OPEN)
+            first.record_success("qwen")
+            reloaded = ProviderSupervisor(td, clock=lambda: 100.0)
+            health = reloaded.get("qwen")
+            self.assertEqual(health.state, STATE_HEALTHY)
+            self.assertEqual(health.consecutive_failures, 0)
+            self.assertEqual(health.failure_count, 2)
+            self.assertEqual(health.success_count, 1)
+
+    def test_stale_instance_select_sees_fresh_circuit_and_expiry(self) -> None:
+        now = [100.0]
+        with tempfile.TemporaryDirectory() as td:
+            early = ProviderSupervisor(td, clock=lambda: now[0])
+            late = ProviderSupervisor(td, clock=lambda: now[0])
+            late.record_failure("qwen", failure("rate_limited"))
+            # Created before the failure: must still route around the OPEN
+            # circuit using fresh disk state, not its stale empty cache.
+            self.assertEqual(early.select("qwen", ("glm",)), "glm")
+            self.assertFalse(early.is_available("qwen"))
+            now[0] = 500.0
+            # Expired circuits cool down for every instance without a nudge.
+            self.assertEqual(early.get("qwen").state, STATE_DEGRADED)
+            self.assertEqual(early.select("qwen", ("glm",)), "qwen")
 
 
 if __name__ == "__main__":

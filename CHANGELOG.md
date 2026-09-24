@@ -32,6 +32,34 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Honest git/supervisor/history, single-probe save, race-free snapshots (no release)
+
+- Git failures are explicit. Every `status`/`numstat`/`diff` invocation checks
+  exit code and truncation and stops on the first error; a non-zero `status`
+  no longer reads as "no changes". `collect_changes()` falls back to a
+  snapshot only for a confirmed non-repo or a missing git binary; timeouts,
+  read errors, non-zero exits, and truncation propagate as failures.
+- Supervisor updates are atomic. Success/failure/canary/expiry apply one event
+  to the latest disk state under the in-process lock and the file lock in one
+  fixed order; same-id failures from two instances now accumulate so shared
+  thresholds trip, and `get()`/`select()` always read fresh state. The
+  max-merge of precomputed snapshots (`_save_snapshot`) is gone.
+- Failed local sends leave no trace. `_prepare_request()` returns an
+  uncommitted candidate; `send()`/`send_turn()`/`send_tool_results()` install
+  candidate plus assistant reply under the state lock only after a usable
+  reply, so tool-result retries post a single result and late replies still
+  skip a newer generation.
+- Saving probes once. `assemble_bootstrap_payload()` is pure over the
+  already-verified config/selection/endpoint; the save path assembles status
+  from its single probe instead of re-probing through the bootstrap.
+- Snapshots read from one view. `snapshots()` copies `{path: baseline}` under
+  the lock and never re-indexes `_before` afterwards, so a concurrent
+  `prune_clean()` cannot raise `KeyError`.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`210 passed, 2 skipped, 6 subtests passed`),
+  collection (`4191 tests collected`), and final full `python -m pytest`
+  (`4185 passed, 6 skipped in 368.76s`).
+
 ## Unreleased - Same-target probe/run, stoppable native sends, honest availability, bounded collection (no release)
 
 - Probe and run share one target. Saves resolve the pending form through

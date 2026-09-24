@@ -15,6 +15,7 @@ from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import (
     LocalProviderConfig,
+    assemble_bootstrap_payload,
     load_local_config,
     local_bootstrap_payload,
     parse_local_config_update,
@@ -22,7 +23,7 @@ from codey.providers.local_config import (
     save_local_config,
     select_local_target,
 )
-from codey.providers.local_discovery import probe_local_endpoint_detail
+from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
 from codey.runs.details import load_run_details
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
@@ -171,16 +172,25 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
         }.get(reason, "could not reach an OpenAI-compatible /models endpoint")
         return 400, {"ok": False, "error": detail, "reason": reason}
     try:
-        save_local_config(LocalProviderConfig(
+        saved = LocalProviderConfig(
             base_url=endpoint.base_url,
             model=parsed.model or endpoint.default_model,
             api_key=previous.api_key if same_target and not parsed.api_key else parsed.api_key,
             native_tools_mode=parsed.native_tools_mode,
             context=parsed.context,
-        ))
+        )
+        save_local_config(saved)
     except (OSError, ValueError) as exc:
         return 500, {"ok": False, "error": str(exc)}
-    return 200, {"ok": True, "local": local_bootstrap_payload()}
+    # No second probe: assemble the status from the endpoint just verified
+    # above, with the saved model first like the remembered-target display.
+    saved_selection = select_local_target(saved)
+    wanted = (saved_selection.model or endpoint.default_model or "").strip()
+    ordered = LocalEndpoint(
+        endpoint.base_url,
+        ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
+    )
+    return 200, {"ok": True, "local": assemble_bootstrap_payload(saved, saved_selection, ordered, [])}
 
 
 def research_unconfigured_response() -> tuple[int, dict]:

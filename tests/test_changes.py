@@ -701,6 +701,184 @@ class ChangeTrackerTests(unittest.TestCase):
             baseline_file = store._baseline_path(root, "temp.txt")
             self.assertFalse(baseline_file.exists())
 
+    def test_status_nonzero_exit_is_explicit_error_not_empty_changes(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "", returncode: int = 0) -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=returncode, stdout=stdout, stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            calls: list[list[str]] = []
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                calls.append(args)
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return _proc(args, str(root))
+                if args == ["status", "--short"]:
+                    return _proc(args, "", returncode=128)
+                raise AssertionError(f"unexpected git command after failure: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_git_changes(root)
+
+        self.assertFalse(data["ok"])
+        self.assertIn("128", data["error"])
+        self.assertIn("status", data["error"])
+        self.assertEqual(
+            calls,
+            [["rev-parse", "--show-toplevel"], ["status", "--short"]],
+        )
+
+    def test_numstat_nonzero_exit_stops_before_diff(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "", returncode: int = 0) -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=returncode, stdout=stdout, stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            calls: list[list[str]] = []
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                calls.append(args)
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return _proc(args, str(root))
+                if args == ["status", "--short"]:
+                    return _proc(args, " M a.py\n")
+                if args == ["diff", "--numstat"]:
+                    return _proc(args, "", returncode=1)
+                raise AssertionError(f"unexpected git command after failure: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_git_changes(root)
+
+        self.assertFalse(data["ok"])
+        self.assertIn("numstat", data["error"])
+        self.assertEqual(
+            calls,
+            [["rev-parse", "--show-toplevel"], ["status", "--short"], ["diff", "--numstat"]],
+        )
+
+    def test_diff_nonzero_exit_is_explicit_error(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "", returncode: int = 0) -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=returncode, stdout=stdout, stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            calls: list[list[str]] = []
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                calls.append(args)
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return _proc(args, str(root))
+                if args == ["status", "--short"]:
+                    return _proc(args, " M a.py\n")
+                if args == ["diff", "--numstat"]:
+                    return _proc(args, "1\t0\ta.py\n")
+                if args == ["diff", "--cached", "--numstat"]:
+                    return _proc(args, "")
+                if args == ["diff", "--no-ext-diff", "--"]:
+                    return _proc(args, "", returncode=1)
+                raise AssertionError(f"unexpected git command after failure: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_git_changes(root)
+
+        self.assertFalse(data["ok"])
+        self.assertIn("diff", data["error"])
+        self.assertEqual(
+            calls,
+            [
+                ["rev-parse", "--show-toplevel"],
+                ["status", "--short"],
+                ["diff", "--numstat"],
+                ["diff", "--cached", "--numstat"],
+                ["diff", "--no-ext-diff", "--"],
+            ],
+        )
+
+    def test_collect_changes_reports_git_timeout_despite_tracker(self) -> None:
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+            (root / "app.py").write_text("new\n", encoding="utf-8")
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return SimpleNamespace(
+                        args=args, returncode=0, stdout=str(root), stderr="",
+                        stdout_truncated=False, stderr_truncated=False,
+                    )
+                raise subprocess.TimeoutExpired(["git", *args], changes.GIT_TIMEOUT)
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_changes(root, tracker)
+
+        self.assertFalse(data["ok"])
+        self.assertIn("git command failed", data["error"])
+        # The failure must not consume the tracker's recovery baseline.
+        self.assertTrue(tracker.has_snapshots)
+
+    def test_snapshots_collect_prune_interleave_has_no_keyerror(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.txt").write_text("old\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("a.txt")
+            (root / "a.txt").write_text("new\n", encoding="utf-8")
+
+            reading = threading.Event()
+            proceed = threading.Event()
+            real_read = changes._read_text_or_none
+            gated = {"done": False}
+
+            def slow_read(path: Path, *, max_bytes: int) -> str | None:
+                if not gated["done"]:
+                    gated["done"] = True
+                    reading.set()
+                    assert proceed.wait(10.0)
+                return real_read(path, max_bytes=max_bytes)
+
+            result: dict[str, object] = {}
+
+            def collect() -> None:
+                try:
+                    result["snapshots"] = tracker.snapshots()
+                except BaseException as exc:  # pragma: no cover - must not happen
+                    result["error"] = exc
+
+            with mock.patch.object(changes, "_read_text_or_none", side_effect=slow_read):
+                worker = threading.Thread(target=collect)
+                worker.start()
+                self.assertTrue(reading.wait(10.0))
+                # Revert so prune_clean drops the baseline while the collect
+                # is still reading: the old lookup then raised KeyError.
+                (root / "a.txt").write_text("old\n", encoding="utf-8")
+                self.assertEqual(tracker.prune_clean(), ["a.txt"])
+                proceed.set()
+                worker.join(10.0)
+                self.assertFalse(worker.is_alive())
+
+            self.assertNotIn("error", result)
+            # Start view said old, end state is old: no change to report.
+            self.assertEqual(result["snapshots"], [])
+
     def test_single_dirty_entry_does_not_wipe_whole_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)

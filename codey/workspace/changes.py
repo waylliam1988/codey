@@ -474,20 +474,23 @@ class ChangeTracker:
                 store.set_after_hash(self.root, rel_posix, digest)
 
     def snapshots(self, paths: list[str] | None = None) -> list[Snapshot]:
+        # One locked copy of {path: baseline}: the whole collect sees a single
+        # start view, and a concurrent prune_clean can no longer remove a key
+        # between listing and lookup (KeyError). File reads stay outside the
+        # lock; only this small dict is copied under it.
         with self._lock:
-            selected = set(paths or self._before.keys())
-            tracked = sorted(self._before)
+            view = dict(self._before)
+            selected = set(paths) if paths else set(view)
         items: list[Snapshot] = []
-        for rel in tracked:
+        for rel in sorted(view):
             if rel not in selected:
                 continue
+            before = view[rel]
             path = _safe_join(self.root, rel)
             try:
                 after = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
-            with self._lock:
-                before = self._before[rel]
             if before == after:
                 continue
             items.append(Snapshot(rel, before, after))
@@ -720,6 +723,10 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
     return f"{header}\n{body}" if body else header, len(lines)
 
 
+def _git_failed_payload() -> dict:
+    return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+
+
 def collect_git_changes(project: str | Path | None) -> dict:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
@@ -731,18 +738,51 @@ def collect_git_changes(project: str | Path | None) -> dict:
 
     try:
         top = _run_git(root, ["rev-parse", "--show-toplevel"])
-    except (OSError, subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout) as exc:
+    except FileNotFoundError as exc:
         return {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
-    if top.returncode != 0 or top.stdout_truncated:
-        if top.returncode != 0:
-            return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
-        return {"ok": False, "error": "git status output truncated; re-run in a smaller scope", "files": [], "diff": ""}
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        _cancellation.ProcessOutputReadError,
+        _cancellation.PipeDrainTimeout,
+    ):
+        return _git_failed_payload()
+    if top.returncode != 0:
+        return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
+    if top.stdout_truncated:
+        return {"ok": False, "error": "git rev-parse output truncated; re-run in a smaller scope", "files": [], "diff": ""}
     git_root = Path(top.stdout.strip()).resolve()
 
-    try:
-        status_proc = _run_git(git_root, ["status", "--short"])
-    except (subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout):
-        return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+    def _run_one(args: list[str]) -> tuple[object | None, dict | None]:
+        """Run one git command: (proc, None), or (None, error to return).
+
+        A non-zero exit is an explicit failure, never an empty change set,
+        and the caller stops issuing further commands on the first error.
+        """
+        try:
+            proc = _run_git(git_root, args)
+        except FileNotFoundError as exc:
+            return None, {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
+        except (
+            OSError,
+            subprocess.SubprocessError,
+            _cancellation.ProcessOutputReadError,
+            _cancellation.PipeDrainTimeout,
+        ):
+            return None, _git_failed_payload()
+        if proc.returncode != 0:
+            return None, {
+                "ok": False,
+                "error": f"git {' '.join(args)} failed with exit {proc.returncode}",
+                "files": [],
+                "diff": "",
+            }
+        return proc, None
+
+    status_proc, error = _run_one(["status", "--short"])
+    if error is not None:
+        return error
+    assert status_proc is not None
     if status_proc.stdout_truncated:
         return {"ok": False, "error": "git status output truncated; re-run in a smaller scope", "files": [], "diff": ""}
 
@@ -763,15 +803,23 @@ def collect_git_changes(project: str | Path | None) -> dict:
             "truncated": False,
         }
 
-    try:
-        unstaged_num = _run_git(git_root, ["diff", "--numstat"])
-        staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
-        unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
-        staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
-    except (subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout):
-        return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+    unstaged_num, error = _run_one(["diff", "--numstat"])
+    if error is not None:
+        return error
+    staged_num, error = _run_one(["diff", "--cached", "--numstat"])
+    if error is not None:
+        return error
+    assert unstaged_num is not None and staged_num is not None
     if unstaged_num.stdout_truncated or staged_num.stdout_truncated:
         return {"ok": False, "error": "git numstat output truncated; re-run in a smaller scope", "files": [], "diff": ""}
+
+    unstaged_diff, error = _run_one(["diff", "--no-ext-diff", "--"])
+    if error is not None:
+        return error
+    staged_diff, error = _run_one(["diff", "--cached", "--no-ext-diff", "--"])
+    if error is not None:
+        return error
+    assert unstaged_diff is not None and staged_diff is not None
 
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, unstaged_num.stdout)
@@ -841,15 +889,19 @@ def collect_changes(
     git_data = collect_git_changes(project)
     if git_data.get("ok"):
         return git_data
-    if tracker is not None:
-        data = tracker.collect()
-        data["vcs"] = {
-            "git_available": not str(git_data.get("error", "")).startswith("git unavailable"),
-            "is_repo": False,
-        }
-        return data
     error = str(git_data.get("error", ""))
+    # Only a confirmed non-repo or a missing git binary may fall back to a
+    # snapshot view. Timeouts, read errors, non-zero exits, and truncation
+    # are real collection failures: answering them with an empty snapshot
+    # would report "no changes" for an error.
     if error == "not a git repository" or error.startswith("git unavailable"):
+        if tracker is not None:
+            data = tracker.collect()
+            data["vcs"] = {
+                "git_available": not error.startswith("git unavailable"),
+                "is_repo": False,
+            }
+            return data
         return _empty_snapshot_changes(
             project,
             "git unavailable" if error.startswith("git unavailable") else None,

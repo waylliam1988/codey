@@ -51,6 +51,29 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - Git/健康/历史诚实化、保存单次探测、快照无竞态（未发布）
+
+- Git 失败显式呈现。每个 `status`/`numstat`/`diff` 调用都检查退出码与截断，
+  首错即停；非零 `status` 不再被读成“没有改动”。`collect_changes()` 只在确
+  认非仓库或 git 程序缺失时回落快照；超时、读取错误、非零退出、截断一律向
+  上报告失败。
+- Supervisor 更新原子化。成功/失败/canary/过期都在“进程锁 + 文件锁”固定
+  顺序下，对磁盘最新状态应用单个事件再写回；两实例同 ID 失败正常累加，共
+  享阈值能真正触发；`get()`/`select()` 永远读最新状态。预计算快照的 max
+  合并（`_save_snapshot`）已删除。
+- 本地发送失败不污染历史。`_prepare_request()` 只返回未提交候选；
+  `send()`/`send_turn()`/`send_tool_results()` 收到可用回复后，才在状态锁
+  内一次性提交“候选 + assistant 回复”；工具结果重试只发一份，迟到回复仍
+  跳过新代数。
+- 保存只探测一次。`assemble_bootstrap_payload()` 是对已验证配置/选择/端点
+  的纯组装；保存路径用单次探测结果直接组装，不再经 bootstrap 二次探测。
+- 快照一次视图读取。`snapshots()` 加锁复制 `{路径: baseline}`，之后不再回
+  查 `_before`，并发 `prune_clean()` 不会再抛 `KeyError`。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向套件
+  （`210 passed, 2 skipped, 6 subtests passed`）、收集
+  （`4191 tests collected`）、最终全量 `python -m pytest`
+  （`4185 passed, 6 skipped in 368.76s`）均通过。
+
 ## Unreleased - 分组本地目标、严格保存、原子健康、关闭错误流（未发布）
 
 - 本地目标分组不变。`select_local_target()` 一次定死地址 + 模型 + 密钥
