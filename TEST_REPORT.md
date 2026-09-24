@@ -80,6 +80,49 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Worker session ownership, snapshot health, Ghost close contract full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (session/pending ownership; no shared queue; wrong-id/malformed condemn; Stop checked per loop; write/timeout/Stop/exit retire own session; bounded joins; thread-start revoke; _start layer removed)
+codey/providers/supervisor.py         (snapshot-publish in _update/get/select; _write_snapshot replaces _write_locked/_refresh_locked; no rollback branches; no replay queue)
+codey/app/context.py                  (close() -> bool; live Ghost retains with closed=False; cleanup failures retained for retry)
+codey/app/headless_runner.py          (bounded second-chance close after wait_for_ghost_sleep(30))
+codey/automation/web_clipboard.py     (monotonic clock)
+codey/providers/worker_child.py       (adapter stdout redirected to stderr; stdout stays strict JSONL)
+tests/manual/ghost_work_queue_production_ab.py (assert wait_for_ghost_sleep(30); close before TemporaryDirectory exit)
+tests/test_coldstart_hardening.py     (session-scoped verdicts/pages/replies; Stop-per-loop; thread-start cleanup; stale-object isolation; real-proc terminate)
+tests/test_adapter_self_repair.py     (session page/terminate/timeout; child stdout-vs-stderr separation)
+tests/test_provider_supervisor.py     (_write_snapshot latch)
+tests/test_web_clipboard.py           (patch monotonic only)
+```
+
+Notes:
+
+- Ownership is by object, not by check-then-use: a retired reader/waiter
+  only touches its own detached session and can never fail, misroute, or
+  evict its replacement. Single-flight needs one registered pending slot,
+  not a 512 newest-wins queue.
+- Health has no rollback code because memory is published only after the
+  write succeeds; failures keep durable truth with the event lost (soft
+  state, no replay).
+- Shutdown never releases files under a live daemon: `closed=True` means
+  resources are actually gone.
+
+Verification (local, Windows):
+
+- `python -m ruff check codey tests` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `160 passed, 6 subtests passed` (worker/supervisor/clipboard/adapter),
+  `36 passed` (ghost/p1), `82 passed` (capture/cancellation) — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4219 tests collected`).
+- Full suite: `python -m pytest`
+  (`4213 passed, 6 skipped, 1374 subtests passed in 844.28s (0:14:04)`),
+  zero flakes.
+- This report entry was written after the final full pytest run.
+
 ## Worker generation ownership, lock-fault health boundary, no-op writes full suite (2026-09-24)
 
 Scope (production, no release):

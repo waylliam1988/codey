@@ -51,6 +51,32 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - Worker 会话所有权、快照健康、Ghost 关闭契约（未发布）
+
+- Worker 代际收成显式所有权对象。`_WorkerSession` 拥有 proc/job/stderr
+  tail/pending/终局结论/页面/线程，`_PendingRequest` 是每次请求唯一登记
+  槽。reader 只写自己的 session，不再有“检查代际再使用”的竞态，也不再
+  需要 512 共享队列装旧帧：错 ID、畸形帧、意外回复直接判定该 session 为
+  协议失败，不再无限跳过。每次短等待前后都查 Stop；写失败、超时、Stop、
+  退出只退休本次 session，线程有界 join。线程启动失败撤销未发布的
+  session 并清理 proc/Job/管道。`_start()` 转发层与全局回复队列已删除。
+- 健康状态改为快照发布、删除回滚分支。`_update`/`get`/`select` 读取最新
+  盘态，纯函数算出下一快照；无变化不写盘，有变化先验容量再原子写盘，写
+  成功才发布到内存。失败时内存停在耐久真相，事件按软状态语义丢失；不设
+  重放队列。
+- Ghost 关闭讲诚信。`AppContext.close()` 返回是否完全关闭：后台 Ghost
+  仍活着时保留资源、`closed=False`，由调用方重试或报告未完成，不再一边
+  释放文件一边报成功。headless 在有界等待后重试一次；Ghost work-queue
+  手动 harness 先断言等待结果，离开临时目录前一定关闭。
+- 更严的协议边。`worker_child` 把 adapter 的普通 stdout 输出导向 stderr，
+  父进程 stdout 保持严格 JSONL；剪贴板轮询改用单调时钟（无系统时钟跳变，
+  测试也不再全局 patch `time.time`）。
+- 验证：`python -m ruff check codey tests` 通过，`git diff --check` 干净；
+  定向套件（worker/supervisor/剪贴板/adapter `160 passed, 6 subtests
+  passed`；ghost/p1 `36 passed`；capture/cancellation `82 passed`）、收集
+  （`4219 tests collected`）、最终全量 `python -m pytest`
+  （`4213 passed, 6 skipped, 1374 subtests passed in 844.28s`，零偶发）。
+
 ## Unreleased - Worker 代际归属、锁错误边界、无变化零写盘（未发布）
 
 - Reader 状态只属于一代。线程启动时明确捕获自己的 proc（与 stderr

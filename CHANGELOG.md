@@ -32,6 +32,38 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Worker session ownership, snapshot health, Ghost close contract (no release)
+
+- Worker generations are explicit ownership objects. `_WorkerSession` owns
+  proc/job/stderr tail/pending/terminal verdict/page/threads; `_PendingRequest`
+  is the single registered slot per request. Readers only touch their own
+  session, so there is no check-then-use race and no shared 512-queue for
+  stale frames: wrong ids, malformed frames, and unexpected replies condemn
+  the session instead of being skipped forever. Stop is checked before and
+  after every short wait, and write/timeout/Stop/exit retire only their own
+  session with bounded thread joins. Thread-start failure revokes the
+  unpublished session and cleans proc/Job/pipes. The `_start()` patch layer
+  and the global response queue are gone.
+- Health is snapshot-publish with no rollback branches. `_update`/`get`/
+  `select` load disk truth, compute the next snapshot purely, skip the write
+  when unchanged, otherwise validate capacity, write atomically, and publish
+  to memory only on success. Failures leave memory on durable truth with the
+  event lost by design; no replay queue.
+- Ghost shutdown is honest. `AppContext.close()` returns whether shutdown
+  completed: a live daemon retains resources with `closed=False` for an
+  explicit retry instead of releasing files under it. Headless retries once
+  after a bounded wait; the Ghost work-queue manual harness asserts the wait
+  and closes before leaving its temp dir.
+- Strict protocol edges. `worker_child` redirects adapter stdout to stderr
+  so parent stdout stays strict JSONL; clipboard polling uses the monotonic
+  clock (no wall-clock jumps, no global `time.time` patch leak in tests).
+- Verification: `python -m ruff check codey tests` clean,
+  `git diff --check` clean, targeted suites green (`160 passed, 6 subtests
+  passed` worker/supervisor/clipboard/adapter; `36 passed` ghost/p1;
+  `82 passed` capture/cancellation), collection (`4219 tests collected`),
+  and final full `python -m pytest`
+  (`4213 passed, 6 skipped, 1374 subtests passed in 844.28s`, no flakes).
+
 ## Unreleased - Worker generation ownership, lock-fault boundary, no-op writes (no release)
 
 - Reader state belongs to one generation. Threads capture their proc (and

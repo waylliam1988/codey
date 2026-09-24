@@ -92,18 +92,20 @@ class ProviderHealth:
 class ProviderSupervisor:
     """Persist bounded health facts without running background work.
 
-    Every state change is one atomic read-modify-write: the latest disk
-    state is loaded, a single success/failure/expiry event is applied, and
-    the result is written back while holding the in-process lock and the
-    file lock in one fixed order. Two instances sharing a directory
-    therefore accumulate each other's events instead of overwriting them
-    with precomputed snapshots.
+    Every state change is one atomic snapshot-publish: the latest disk
+    state is loaded, a single success/failure/expiry event is applied as a
+    pure function to a local snapshot, and only a changed snapshot is
+    validated and written while holding the in-process lock and the file
+    lock in one fixed order. Memory is published only after the write
+    succeeds, so there is no rollback branch. Two instances sharing a
+    directory therefore accumulate each other's events instead of
+    overwriting them with precomputed snapshots.
 
     Health is soft state: an update either lands durably or raises
-    HealthStoreError with memory rolled back to the durable state, so a
+    HealthStoreError with memory on durable truth and the event lost, so a
     returned state is always recorded and later events rebuild the picture.
     Reads surface genuine storage faults instead of answering from a file
-    known to be behind.
+    known to be behind. No replay queue exists by design.
     """
 
     def __init__(
@@ -159,31 +161,28 @@ class ProviderSupervisor:
             with stack:
                 yield
 
-    def _refresh_locked(self) -> None:
-        """Reload disk truth. Caller holds _exclusive()."""
-        if self.path is not None:
-            self._health = self._load()
+    def _write_snapshot(self, snapshot: dict[str, ProviderHealth]) -> None:
+        """Persist one computed snapshot, or raise. Caller holds _exclusive().
 
-    def _write_locked(self) -> None:
-        """Persist memory truth, or raise. Caller holds _exclusive().
-
-        A failure records _last_save_error and raises HealthStoreError:
-        callers roll memory back, so a returned state is always durable.
-        Hitting the provider cap is equally explicit: the new record is
-        refused with the disk untouched, never silently truncated away.
+        Pure publish: the snapshot is validated and written before it ever
+        reaches ``self._health``, so no rollback branch exists. A failure
+        records _last_save_error and raises HealthStoreError; the event is
+        then lost by design (soft state rebuilds from later events).
+        Hitting the provider cap refuses the new record with the disk
+        untouched, never silently truncated away.
         """
         if self.path is None:
             return
-        if len(self._health) > MAX_PROVIDERS:
+        if len(snapshot) > MAX_PROVIDERS:
             self._last_save_error = (
                 f"provider health store full "
-                f"({len(self._health)} > {MAX_PROVIDERS})"
+                f"({len(snapshot)} > {MAX_PROVIDERS})"
             )
             raise HealthStoreError(self._last_save_error)
         try:
             providers = {
                 provider_id: asdict(health)
-                for provider_id, health in sorted(self._health.items())
+                for provider_id, health in sorted(snapshot.items())
             }
             write_json_atomic(
                 self.path,
@@ -200,56 +199,56 @@ class ProviderSupervisor:
         provider_id: str,
         mutate: Callable[[str, ProviderHealth, float], ProviderHealth],
     ) -> ProviderHealth:
-        """Apply one event to the latest disk state and write it back.
+        """Apply one event to the latest disk state and publish it.
 
-        All-or-nothing: a write failure rolls memory back to the durable
-        state and raises, so the event is reported as recorded only when
-        it is on disk. An event that changes nothing (compared against the
-        pre-expiry disk state, so genuinely needed expiry persists still
-        write) skips the write entirely.
+        Snapshot-publish: read the latest disk state, compute the next
+        snapshot with a pure function, skip the write when nothing changed
+        (compared against the pre-expiry disk state, so genuinely needed
+        expiry still writes), otherwise validate, write, and only then
+        publish to memory. A write failure leaves memory on durable truth
+        and raises, so the event is lost by design (soft state).
         """
         key = normalize_provider_id(provider_id)
         with self._exclusive():
-            self._refresh_locked()
+            disk = self._load() if self.path is not None else dict(self._health)
             now = self.clock()
-            original = self._health.get(key, ProviderHealth())
+            original = disk.get(key, ProviderHealth())
             current = original
             expired = _expire_open(current, now)
             if expired is not None:
                 current = expired
             updated = mutate(key, current, now)
             if updated == original:
+                self._health = disk
                 return original
-            previous = dict(self._health)
-            self._health[key] = updated
+            nxt = dict(disk)
+            nxt[key] = updated
             try:
-                self._write_locked()
+                self._write_snapshot(nxt)
             except HealthStoreError:
-                self._health = previous
+                self._health = disk
                 raise
+            self._health = nxt
             return updated
 
     def get(self, provider_id: str) -> ProviderHealth:
         key = normalize_provider_id(provider_id)
         with self._exclusive():
             # Cross-instance freshness: never answer from a stale cache.
-            self._refresh_locked()
-            health = self._health.get(key, ProviderHealth())
+            disk = self._load() if self.path is not None else dict(self._health)
+            health = disk.get(key, ProviderHealth())
             expired = _expire_open(health, self.clock())
             if expired is None:
+                self._health = disk
                 return health
-            had_key = key in self._health
-            previous = self._health.get(key)
-            self._health[key] = expired
+            nxt = dict(disk)
+            nxt[key] = expired
             try:
-                self._write_locked()
+                self._write_snapshot(nxt)
             except HealthStoreError:
-                if had_key:
-                    assert previous is not None
-                    self._health[key] = previous
-                else:
-                    self._health.pop(key, None)
+                self._health = disk
                 raise
+            self._health = nxt
             return expired
 
     def is_available(self, provider_id: str) -> bool:
@@ -310,25 +309,30 @@ class ProviderSupervisor:
         *,
         excluded: Iterable[str] = (),
     ) -> str | None:
-        # Decide from one fresh snapshot: refresh under both locks (with
+        # Decide from one fresh snapshot: load under both locks (with
         # expiry persisted) so routing never uses a stale in-memory cache,
         # then compute without holding the locks.
         with self._exclusive():
-            self._refresh_locked()
+            disk = self._load() if self.path is not None else dict(self._health)
             now = self.clock()
-            overwritten: dict[str, ProviderHealth] = {}
-            for provider_id, health in list(self._health.items()):
+            nxt = dict(disk)
+            changed = False
+            for provider_id, health in list(disk.items()):
                 expired = _expire_open(health, now)
                 if expired is not None:
-                    overwritten.setdefault(provider_id, health)
-                    self._health[provider_id] = expired
-            if overwritten:
+                    nxt[provider_id] = expired
+                    changed = True
+            if changed:
                 try:
-                    self._write_locked()
+                    self._write_snapshot(nxt)
                 except HealthStoreError:
-                    self._health.update(overwritten)
+                    self._health = disk
                     raise
-            snapshot = dict(self._health)
+                self._health = nxt
+                snapshot = dict(nxt)
+            else:
+                self._health = disk
+                snapshot = dict(disk)
         blocked = {normalize_provider_id(item) for item in excluded}
         ordered = [normalize_provider_id(preferred)]
         ordered.extend(normalize_provider_id(item) for item in provider_ids)

@@ -9,7 +9,6 @@ import tempfile
 import threading
 import time
 import unittest
-from collections import deque
 from pathlib import Path
 from unittest import mock
 
@@ -1541,20 +1540,22 @@ class SelfRepairWorkerTests(unittest.TestCase):
         from codey.providers.worker import (
             WORKER_STDERR_CHUNK_CHARS,
             WORKER_STDERR_TAIL_CHUNKS,
+            _WorkerSession,
         )
 
+        proc = mock.Mock()
+        session = _WorkerSession(proc=proc, job=None)
         provider = WorkerChatProvider.__new__(WorkerChatProvider)
-        provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
         provider.provider_id = "qwen"
         provider.name = "qwen worker"
         for _ in range(WORKER_STDERR_TAIL_CHUNKS + 2):
-            provider._stderr_tail.append("e" * WORKER_STDERR_CHUNK_CHARS)
+            session.stderr_tail.append("e" * WORKER_STDERR_CHUNK_CHARS)
 
-        total = sum(len(chunk) for chunk in provider._stderr_tail)
+        total = sum(len(chunk) for chunk in session.stderr_tail)
         self.assertLessEqual(
             total, WORKER_STDERR_TAIL_CHUNKS * WORKER_STDERR_CHUNK_CHARS,
         )
-        suffix = provider._worker_error_suffix()
+        suffix = provider._worker_error_suffix(session)
         self.assertIn("e", suffix)
         self.assertLessEqual(len(suffix), 420)
 
@@ -1595,8 +1596,10 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.urlopen") as urlopen,
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
-            provider._cdp_port = 9444
-            provider._target_id = "target/with space"
+            assert provider._session is not None
+            with provider._session.lock:
+                provider._session.cdp_port = 9444
+                provider._session.target_id = "target/with space"
             provider._terminate()
 
         urlopen.assert_called_once()
@@ -1621,17 +1624,70 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
             mock.patch("codey.providers.worker.urlopen") as urlopen,
             mock.patch("codey.providers.worker.WORKER_TIMEOUT_GRACE", 0.0),
-            mock.patch("codey.providers.worker.time.monotonic", side_effect=[100.0, 100.1]),
+            mock.patch(
+                "codey.providers.worker.time.monotonic",
+                side_effect=[100.0, 100.1, 100.2, 100.3, 100.4, 100.5],
+            ),
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
-            provider._cdp_port = 9444
-            provider._target_id = "target-1"
+            assert provider._session is not None
+            with provider._session.lock:
+                provider._session.cdp_port = 9444
+                provider._session.target_id = "target-1"
             with self.assertRaises(ProviderActionError):
                 provider._request("send", {}, 0.0)
 
         urlopen.assert_called_once()
         self.assertIn("http://127.0.0.1:9444/json/close/target-1", urlopen.call_args.args[0])
         terminate.assert_called_once_with(process, job)
+
+    def test_provider_worker_child_redirects_adapter_output_to_stderr(self) -> None:
+        import sys as _sys
+
+        provider_type = mock.Mock()
+        provider = mock.Mock()
+        provider.session.cdp_port = 9444
+        provider.session.page = mock.Mock()
+        provider_type.connect.return_value = provider
+
+        def noisy_connect(**_kwargs):
+            print("adapter hello to stdout")
+            return provider
+
+        def noisy_send(_text: str, timeout: object = None):
+            print("adapter send noise")
+            return "ok"
+
+        provider_type.connect.side_effect = noisy_connect
+        provider.send.side_effect = noisy_send
+        provider.new_chat.return_value = None
+        provider.close.return_value = None
+        with (
+            mock.patch.dict(provider_worker_child.PROVIDER_TYPES, {"qwen": provider_type}),
+            mock.patch.object(provider_worker_child, "_target_id", return_value="t-1"),
+        ):
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            old_out, old_err = _sys.stdout, _sys.stderr
+            _sys.stdout, _sys.stderr = stdout, stderr
+            try:
+                stdin = io.StringIO('{"id":"r1","method":"send","params":{"text":"hi"}}\n')
+                with mock.patch.object(_sys, "stdin", stdin):
+                    code = provider_worker_child.main([
+                        "--provider", "qwen", "--port", "9555",
+                        "--profile", "state/provider-workers/qwen",
+                    ])
+            finally:
+                _sys.stdout, _sys.stderr = old_out, old_err
+
+        self.assertEqual(code, 0)
+        # Protocol stays strict JSONL on stdout; adapter noise lands on stderr.
+        stdout_lines = [line for line in stdout.getvalue().splitlines() if line.strip()]
+        self.assertTrue(stdout_lines)
+        for line in stdout_lines:
+            parsed = json.loads(line)
+            self.assertIsInstance(parsed, dict)
+        self.assertIn("adapter", stderr.getvalue())
 
     def test_provider_worker_failure_from_response_preserves_sanitized_facts(self) -> None:
         failure = _failure_from_response(

@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import json
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from codey.automation.browser import DEFAULT_PROFILE
@@ -35,18 +36,21 @@ def main(argv: list[str] | None = None) -> int:
     if provider_type is None:
         return 2
     try:
-        provider = provider_type.connect(
-            port=args.port,
-            profile=profile,
-            open_if_missing=True,
-            bring_to_front=False,
-            isolated=False,
-            fresh_tab=True,
-        )
+        with _adapter_logs_to_stderr():
+            provider = provider_type.connect(
+                port=args.port,
+                profile=profile,
+                open_if_missing=True,
+                bring_to_front=False,
+                isolated=False,
+                fresh_tab=True,
+            )
     except Exception as exc:
         _event("startup_error", error=f"{type(exc).__name__}: {exc}")
         raise
-    _event("page", port=getattr(provider.session, "cdp_port", 0), target_id=_target_id(provider))
+    with _adapter_logs_to_stderr():
+        target_id = _target_id(provider)
+    _event("page", port=getattr(provider.session, "cdp_port", 0), target_id=target_id)
     try:
         for line in sys.stdin:
             try:
@@ -61,19 +65,19 @@ def main(argv: list[str] | None = None) -> int:
             params = params if isinstance(params, dict) else {}
             try:
                 if method == "new_chat":
-                    provider.new_chat(timeout=params.get("timeout"))
+                    with _adapter_logs_to_stderr():
+                        provider.new_chat(timeout=params.get("timeout"))
                     _reply(request_id, True, None)
                 elif method == "send":
-                    _reply(
-                        request_id,
-                        True,
-                        provider.send(
+                    with _adapter_logs_to_stderr():
+                        result = provider.send(
                             str(params.get("text") or ""),
                             timeout=params.get("timeout"),
-                        ),
-                    )
+                        )
+                    _reply(request_id, True, result)
                 elif method == "close":
-                    provider.close()
+                    with _adapter_logs_to_stderr():
+                        provider.close()
                     _reply(request_id, True, None)
                     return 0
                 elif method == "health":
@@ -85,9 +89,25 @@ def main(argv: list[str] | None = None) -> int:
                 payload = failure.to_dict() if hasattr(failure, "to_dict") else None
                 _reply(request_id, False, error=str(exc), failure=payload)
     finally:
-        with contextlib.suppress(Exception):
+        with _adapter_logs_to_stderr(), contextlib.suppress(Exception):
             provider.close()
     return 0
+
+
+@contextlib.contextmanager
+def _adapter_logs_to_stderr() -> Iterator[None]:
+    """Keep stdout a strict JSONL protocol: adapter prints go to stderr.
+
+    The parent reader condemns any non-JSON frame, so ordinary adapter
+    logging must never reach stdout. Python-level prints are redirected;
+    the protocol frames below always emit outside this guard.
+    """
+    old = sys.stdout
+    sys.stdout = sys.stderr  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        sys.stdout = old
 
 
 def _target_id(provider) -> str:

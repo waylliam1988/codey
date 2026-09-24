@@ -36,7 +36,10 @@ class WebClipboardTests(unittest.TestCase):
 
         with (
             mock.patch("codey.automation.web_clipboard.uuid.uuid4") as uuid4,
-            mock.patch("codey.automation.web_clipboard.time.time", side_effect=[0.0, 0.0, 3.0]),
+            mock.patch(
+                "codey.automation.web_clipboard.monotonic",
+                side_effect=[0.0, 0.0, 3.0],
+            ),
         ):
             uuid4.return_value.hex = "test"
             result = copy_action_text(page, action, origin="https://example.test/")

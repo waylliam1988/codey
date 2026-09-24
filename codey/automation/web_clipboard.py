@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import contextlib
-import time
 import uuid
+from time import monotonic
 
 from playwright.sync_api import Locator, Page
 
@@ -38,8 +38,8 @@ def copy_action_text(
     try:
         cancellation.check()
         action.click()
-        deadline = time.time() + max(0.0, timeout)
-        while time.time() < deadline:
+        deadline = monotonic() + max(0.0, timeout)
+        while monotonic() < deadline:
             copied = page.evaluate("navigator.clipboard.readText()") or ""
             if copied != sentinel:
                 break

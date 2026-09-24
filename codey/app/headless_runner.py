@@ -270,7 +270,13 @@ def run_headless(
             ledger_path=ledger_path,
         )
     finally:
-        state.close()
+        # Ghost owns its stores while alive: a False close retains
+        # resources instead of releasing files under the daemon. Give it
+        # one bounded second chance before process exit.
+        if not state.close():
+            with contextlib.suppress(Exception):
+                state.wait_for_ghost_sleep(timeout=30)
+            state.close()
 
 
 def headless_event_payload(event: dict) -> dict[str, object] | None:

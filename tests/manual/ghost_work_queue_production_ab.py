@@ -249,7 +249,8 @@ def _run_case(
                         intent="auto",
                     )
                 )
-            state.wait_for_ghost_sleep(timeout=2)
+            if not state.wait_for_ghost_sleep(timeout=30):
+                raise TimeoutError("ghost sleep did not finish")
             error = ""
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
@@ -259,6 +260,13 @@ def _run_case(
                     provider.close()
             except Exception:
                 pass
+            try:
+                if not state.close():
+                    state.wait_for_ghost_sleep(timeout=30)
+                    state.close()
+            except Exception as exc:
+                if not error:
+                    error = f"{type(exc).__name__}: {exc}"
         done = dict(state.run_registry.last_terminal_event() or {})
         start = _last_start_event(events)
         observed = _observed_mode(start, done, agent_calls, research_calls, review_calls)

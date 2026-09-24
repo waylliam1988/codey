@@ -9,15 +9,14 @@ POST body-read timeout.
 
 from __future__ import annotations
 
+import contextlib
 import io
-import json
 import queue
 import socket
 import tempfile
 import threading
 import time
 import unittest
-from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -32,6 +31,8 @@ from codey.providers.worker import (
     WORKER_STDERR_CHUNK_CHARS,
     WORKER_STDERR_TAIL_CHUNKS,
     WorkerChatProvider,
+    _PendingRequest,
+    _WorkerSession,
 )
 from codey.research.controller import ResearchController
 from codey.runtime.core.operation_state import (
@@ -242,57 +243,68 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider.state_home = Path(".")
         provider.name = "qwen worker"
         provider.last_failure = None
-        provider._proc = None
-        provider._job = None
-        provider._responses = queue.Queue(maxsize=512)
-        provider._response_lock = threading.Lock()
-        provider._dropped_responses = 0
-        provider._conn_lock = threading.RLock()
+        provider._life_lock = threading.RLock()
         provider._request_lock = threading.Lock()
-        provider._reader_error = ""
-        provider._reader = None
-        provider._cdp_port = 0
-        provider._target_id = ""
-        provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
+        provider._session = None
         return provider
 
-    def test_ensure_running_restarts_dead_worker_and_drops_stale_ids(self) -> None:
+    def _session_for(
+        self,
+        provider: WorkerChatProvider,
+        proc: object | None = None,
+        *,
+        job: object | None = None,
+    ) -> _WorkerSession:
+        if proc is None:
+            proc = mock.Mock()
+            proc.poll.return_value = None
+            proc.stdin = mock.Mock()
+        session = _WorkerSession(proc=proc, job=job)  # type: ignore[arg-type]
+        provider._session = session
+        return session
+
+    def test_ensure_running_restarts_dead_worker(self) -> None:
         provider = self._provider()
-        provider._responses.put({"id": "stale-from-last-life"})
-        fake_proc = mock.Mock()
-        fake_proc.poll.return_value = None
-        fake_proc.stdin = mock.Mock()
+        dead = mock.Mock()
+        dead.poll.return_value = 1
+        dead.stdin = mock.Mock()
+        self._session_for(provider, dead)
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+
+        def fake_start(inner_self) -> None:
+            inner_self._session = _WorkerSession(proc=fresh, job=None)
+
         with (
-            mock.patch.object(
-                WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fake_proc),
-            ),
-            provider._conn_lock,
+            mock.patch.object(WorkerChatProvider, "_start_session_locked", fake_start),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ) as terminate,
+            provider._life_lock,
         ):
-            running = provider._ensure_running_conn_locked()
-        self.assertIs(running, fake_proc)
-        self.assertTrue(provider._responses.empty())
+            running = provider._ensure_live_session_locked()
+        self.assertIs(running, fresh)
+        terminate.assert_called_once_with(dead, None)
+        self.assertIs(provider._session.proc, fresh)
 
-    def test_drain_responses_empties_the_queue(self) -> None:
+    def test_single_flight_registers_pending_before_write(self) -> None:
         provider = self._provider()
-        provider._responses.put({"id": "a"})
-        provider._responses.put({"id": "b"})
-        provider._drain_responses()
-        self.assertTrue(provider._responses.empty())
-
-    def test_response_queue_is_bounded_and_drops_oldest(self) -> None:
-        provider = self._provider()
-        provider._responses = queue.Queue(maxsize=2)
-        provider._dropped_responses = 0
         proc = mock.Mock()
-        proc.stdout = _RecordedStringIO('{"id":"a"}\n{"id":"b"}\n{"id":"c"}\n')
-        provider._proc = proc
-        provider._read_loop(proc)
-        self.assertEqual(provider._responses.qsize(), 2)
-        self.assertEqual(provider._dropped_responses, 1)
-        ids = sorted(item["id"] for item in list(provider._responses.queue))
-        self.assertEqual(ids, ["b", "c"])
-        self.assertTrue(proc.stdout.sizes)
-        self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        seen: list[bool] = []
+
+        def fake_write(data: str) -> None:
+            with session.lock:
+                seen.append(session.pending is not None)
+            raise OSError("stop after proving registration")
+
+        proc.stdin.write.side_effect = fake_write
+        with self.assertRaises(RuntimeError):
+            provider._request_locked("send", {"text": "hi"}, 5.0)
+        self.assertEqual(seen, [True])
 
     def test_line_exactly_at_cap_plus_newline_parses(self) -> None:
         # A line of exactly MAX chars plus its newline fits in one
@@ -304,58 +316,98 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertEqual(len(line), WORKER_LINE_MAX_CHARS + 1)
         proc = mock.Mock()
         proc.stdout = _RecordedStringIO(line)
-        provider._proc = proc
-        provider._read_loop(proc)
-        self.assertEqual(provider._reader_error, "")
-        self.assertEqual(provider._responses.qsize(), 1)
-        self.assertEqual(provider._responses.get_nowait()["id"], "a")
+        # Exited after the single frame: trailing EOF is a normal exit,
+        # not a live-framing failure.
+        proc.poll.return_value = 1
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="a")
+        with session.lock:
+            session.pending = pending
+        provider._read_loop(session)
+        self.assertEqual(session.terminal_error, "")
+        self.assertIsNotNone(pending.response)
+        assert pending.response is not None
+        self.assertEqual(pending.response["id"], "a")
+        self.assertTrue(proc.stdout.sizes)
+        self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
 
-    def test_overlong_line_condemns_proc_and_spares_next_frame(self) -> None:
+    def test_overlong_line_condemns_session_and_spares_next_frame(self) -> None:
         provider = self._provider()
         huge = "y" * (WORKER_LINE_MAX_CHARS + 100)
         reply = '{"id":"late","ok":true,"result":"kept"}\n'
         proc = mock.Mock()
         proc.stdout = _RecordedStringIO(huge + "\n" + reply)
-        provider._proc = proc
-        provider._read_loop(proc)
+        proc.poll.return_value = None
+        session = self._session_for(provider, proc)
+        provider._read_loop(session)
         # No single read ever buffered the whole line, and the reader
         # stopped at the condemned frame instead of draining the reply.
         self.assertTrue(proc.stdout.sizes)
         self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
-        self.assertIn("exceeded", provider._reader_error)
-        self.assertTrue(provider._responses.empty())
+        self.assertIn("exceeded", session.terminal_error)
+        self.assertIsNone(session.pending)
         self.assertIn('"late"', proc.stdout.read())
 
-    def test_condemned_proc_fails_waiter_and_is_not_reused(self) -> None:
+    def test_malformed_frame_condemns_session(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.stdout = _RecordedStringIO("not-json\n")
+        proc.poll.return_value = None
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1")
+        with session.lock:
+            session.pending = pending
+        provider._read_loop(session)
+        self.assertIn("malformed", session.terminal_error)
+        self.assertTrue(pending.done.is_set())
+
+    def test_wrong_id_is_protocol_error_not_silent_skip(self) -> None:
         from codey.providers.diagnostics import ProviderActionError
 
         provider = self._provider()
         proc = mock.Mock()
         proc.poll.return_value = None
-        provider._proc = proc
-        provider._reader_error = "provider worker output exceeded 1 chars"
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1")
+        with session.lock:
+            session.pending = pending
+        # A flood of foreign ids must not be consumed forever: the first
+        # mismatch condemns the session and the waiter fails promptly.
+        provider._deliver_response(session, {"id": "foreign", "ok": True})
+        self.assertIn("unknown request", session.terminal_error)
+        with (
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ),
+            self.assertRaises(ProviderActionError) as raised,
+        ):
+            provider._wait_for_response(session, pending, "send", 5.0, grace=True)
+        self.assertIn("unknown request", raised.exception.failure.message)
+        self.assertIsNone(provider._session)
+
+    def test_condemned_session_fails_waiter_and_is_not_reused(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        session = self._session_for(provider, proc)
+        with session.lock:
+            session.terminal_error = "provider worker output exceeded 1 chars"
+        pending = _PendingRequest(request_id="req-1")
+        with session.lock:
+            session.pending = pending
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
             ) as terminate,
             self.assertRaises(ProviderActionError) as raised,
         ):
-            provider._wait_for_response(proc, "send", "req-1", 5.0, grace=True)
+            provider._wait_for_response(session, pending, "send", 5.0, grace=True)
         self.assertIn("exceeded", raised.exception.failure.message)
         terminate.assert_called_once_with(proc, None)
-        self.assertIsNone(provider._proc)
-        # The condemned process is never reused: the next request restarts.
-        fresh = mock.Mock()
-        fresh.poll.return_value = None
-        fresh.stdin = mock.Mock()
-        with (
-            mock.patch.object(
-                WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fresh),
-            ),
-            provider._conn_lock,
-        ):
-            running = provider._ensure_running_conn_locked()
-        self.assertIs(running, fresh)
+        self.assertIsNone(provider._session)
 
     def test_overlong_before_any_request_restarts_transparently(self) -> None:
         provider = self._provider()
@@ -363,10 +415,10 @@ class WorkerSelfHealTests(unittest.TestCase):
         condemned.poll.return_value = None
         condemned.stdin = mock.Mock()
         condemned.stdout = _RecordedStringIO("y" * (WORKER_LINE_MAX_CHARS + 10))
-        provider._proc = condemned
+        session = self._session_for(provider, condemned)
         # The reader sees the over-limit frame before any request exists.
-        provider._read_loop(condemned)
-        self.assertNotEqual(provider._reader_error, "")
+        provider._read_loop(session)
+        self.assertNotEqual(session.terminal_error, "")
 
         fresh = mock.Mock()
         fresh.poll.return_value = None
@@ -381,20 +433,28 @@ class WorkerSelfHealTests(unittest.TestCase):
         fresh.stdin.write.side_effect = fake_write
         out: dict[str, object] = {}
 
+        def fake_start(inner_self) -> None:
+            inner_self._session = _WorkerSession(proc=fresh, job=None)
+
         def do_request() -> None:
             out["result"] = provider._request_locked("send", {"text": "hi"}, 5.0)
 
         with mock.patch.object(
-            WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fresh),
+            WorkerChatProvider, "_start_session_locked", fake_start,
         ), mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
             self.assertTrue(written.wait(timeout=10.0))
-            provider._offer_response({
-                "id": json.loads(wires[0])["id"], "ok": True, "result": "ok",
-            })
+            with provider._session.lock:
+                pending = provider._session.pending
+                assert pending is not None
+                request_id = pending.request_id
+            provider._deliver_response(
+                provider._session,
+                {"id": request_id, "ok": True, "result": "ok"},
+            )
             worker.join(timeout=10.0)
 
         self.assertFalse(worker.is_alive())
@@ -402,12 +462,83 @@ class WorkerSelfHealTests(unittest.TestCase):
         terminate.assert_called_once_with(condemned, None)
         self.assertEqual(len(wires), 1)
 
+    def test_stop_is_checked_each_loop_and_retires_session(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError  # noqa: F401
+        from codey.runtime.core import cancellation as cancel
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1")
+        with session.lock:
+            session.pending = pending
+        calls = {"count": 0}
+        real_check = cancel.check
+
+        def counting_check() -> None:
+            calls["count"] += 1
+            if calls["count"] >= 2:
+                raise cancel.TaskCancelled("task stopped")
+            real_check()
+
+        with (
+            mock.patch.object(cancel, "check", side_effect=counting_check),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ),
+            self.assertRaises(cancel.TaskCancelled),
+        ):
+            provider._wait_for_response(session, pending, "send", 30.0, grace=True)
+        # Checked before waiting and again after the short wake: Stop can
+        # never be starved by an unrelated reply flood.
+        self.assertGreaterEqual(calls["count"], 2)
+        self.assertIsNone(provider._session)
+        with session.lock:
+            self.assertIsNone(session.pending)
+
+    def test_thread_start_failure_cleans_process(self) -> None:
+        import subprocess as _subprocess
+
+        provider = self._provider()
+        real_proc = mock.Mock()
+        real_proc.stdin = mock.Mock()
+        real_proc.stdout = mock.Mock()
+        real_proc.stderr = mock.Mock()
+        real_proc.poll.return_value = None
+        job = mock.Mock()
+        with (
+            mock.patch(
+                "codey.providers.worker.subprocess.Popen", return_value=real_proc,
+            ),
+            mock.patch(
+                "codey.providers.worker.cancellation.attach_process_tree",
+                return_value=job,
+            ) as attach,
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ) as terminate,
+            mock.patch.object(
+                threading.Thread, "start", side_effect=RuntimeError("no threads"),
+            ),
+            provider._life_lock,
+            self.assertRaises(RuntimeError),
+        ):
+            provider._start_session_locked()
+        attach.assert_called_once_with(real_proc)
+        terminate.assert_called_once_with(real_proc, job)
+        job.close.assert_called_once()
+        for stream in (real_proc.stdin, real_proc.stdout, real_proc.stderr):
+            stream.close.assert_called()
+        self.assertIsNone(provider._session)
+        self.assertIsInstance(_subprocess.Popen, type)
+
     def test_blocked_stdin_write_does_not_block_close(self) -> None:
         provider = self._provider()
         proc = mock.Mock()
         proc.poll.return_value = None
         proc.stdin = mock.Mock()
-        provider._proc = proc
+        self._session_for(provider, proc)
         release = threading.Event()
         entered = threading.Event()
 
@@ -447,12 +578,12 @@ class WorkerSelfHealTests(unittest.TestCase):
         # terminate anything again.
         terminate.assert_called_once_with(proc, None)
 
-    def test_write_failure_after_replacement_spares_new_proc(self) -> None:
+    def test_write_failure_after_replacement_spares_new_session(self) -> None:
         provider = self._provider()
         old = mock.Mock()
         old.poll.return_value = None
         old.stdin = mock.Mock()
-        provider._proc = old
+        self._session_for(provider, old)
         release = threading.Event()
         entered = threading.Event()
 
@@ -476,11 +607,15 @@ class WorkerSelfHealTests(unittest.TestCase):
             worker = threading.Thread(target=do_request)
             worker.start()
             self.assertTrue(entered.wait(timeout=10.0))
-            # A concurrent restart wins the race: the late write failure
+            # A concurrent close wins the race: the late write failure
             # must not reap the replacement.
             fresh = mock.Mock()
-            with provider._conn_lock:
-                provider._proc = fresh
+            fresh.poll.return_value = None
+            fresh.stdin = mock.Mock()
+            with provider._life_lock:
+                old_session = provider._session
+                assert old_session is not None
+                provider._session = _WorkerSession(proc=fresh, job=None)
             release.set()
             worker.join(timeout=10.0)
 
@@ -488,21 +623,22 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIsInstance(errors[0], RuntimeError)
         terminate.assert_not_called()
-        self.assertIs(provider._proc, fresh)
+        assert provider._session is not None
+        self.assertIs(provider._session.proc, fresh)
 
     def test_stderr_tail_is_bounded_by_chunks_not_lines(self) -> None:
         provider = self._provider()
         proc = mock.Mock()
         proc.stderr = _RecordedStringIO("e" * 1_000_000)
-        provider._proc = proc
-        provider._stderr_loop(proc, provider._stderr_tail)
+        session = self._session_for(provider, proc)
+        provider._stderr_loop(session)
         self.assertTrue(proc.stderr.sizes)
         self.assertLessEqual(max(proc.stderr.sizes), WORKER_STDERR_CHUNK_CHARS)
-        total = sum(len(chunk) for chunk in provider._stderr_tail)
+        total = sum(len(chunk) for chunk in session.stderr_tail)
         self.assertLessEqual(
             total, WORKER_STDERR_TAIL_CHUNKS * WORKER_STDERR_CHUNK_CHARS,
         )
-        suffix = provider._worker_error_suffix()
+        suffix = provider._worker_error_suffix(session)
         self.assertLessEqual(len(suffix), 420)
 
     def test_stderr_small_line_arrives_while_child_alive(self) -> None:
@@ -510,9 +646,9 @@ class WorkerSelfHealTests(unittest.TestCase):
         release = threading.Event()
         proc = mock.Mock()
         proc.stderr = _GatedStderr(["hello\n"], release)
-        provider._proc = proc
+        session = self._session_for(provider, proc)
         worker = threading.Thread(
-            target=provider._stderr_loop, args=(proc, provider._stderr_tail),
+            target=provider._stderr_loop, args=(session,),
             daemon=True,
         )
         worker.start()
@@ -521,12 +657,12 @@ class WorkerSelfHealTests(unittest.TestCase):
             # land without waiting for a full chunk or EOF.
             deadline = time.monotonic() + 10.0
             while (
-                "hello" not in " | ".join(provider._stderr_tail)
+                "hello" not in " | ".join(session.stderr_tail)
                 and time.monotonic() < deadline
             ):
                 time.sleep(0.01)
             self.assertTrue(worker.is_alive())
-            self.assertIn("hello", " | ".join(provider._stderr_tail))
+            self.assertIn("hello", " | ".join(session.stderr_tail))
             self.assertTrue(proc.stderr.sizes)
             self.assertLessEqual(max(proc.stderr.sizes), WORKER_STDERR_CHUNK_CHARS)
         finally:
@@ -544,138 +680,130 @@ class WorkerSelfHealTests(unittest.TestCase):
                 raise OSError("stream broken")
 
         proc.stdout = _BrokenStdout()
-        provider._proc = proc
-        provider._read_loop(proc)
-        self.assertIn("unreadable", provider._reader_error)
+        session = self._session_for(provider, proc)
+        provider._read_loop(session)
+        self.assertIn("unreadable", session.terminal_error)
 
     def test_stdout_eof_condemns_live_proc_but_not_exited_one(self) -> None:
         provider = self._provider()
         live = mock.Mock()
         live.poll.return_value = None
         live.stdout = _RecordedStringIO("")
-        provider._proc = live
-        provider._read_loop(live)
-        self.assertIn("closed unexpectedly", provider._reader_error)
+        live_session = self._session_for(provider, live)
+        provider._read_loop(live_session)
+        self.assertIn("closed unexpectedly", live_session.terminal_error)
 
         exited = mock.Mock()
         exited.poll.return_value = 1
         exited.stdout = _RecordedStringIO("")
-        provider._proc = exited
-        provider._reader_error = ""
-        provider._read_loop(exited)
-        self.assertEqual(provider._reader_error, "")
+        exited_session = self._session_for(provider, exited)
+        provider._read_loop(exited_session)
+        self.assertEqual(exited_session.terminal_error, "")
 
     def test_stale_reader_cannot_pollute_new_generation(self) -> None:
         provider = self._provider()
-        old = mock.Mock()
-        old.poll.return_value = None
-        provider._proc = old
-        old_tail = provider._stderr_tail
-        fresh = mock.Mock()
-        with provider._conn_lock:
-            provider._proc = fresh
-            provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
-            provider._reader_error = ""
-        # Late verdicts, page events, offers, and diagnostics from the
-        # detached reader change nothing of the new generation.
-        provider._condemn_reader(old, "late over-limit")
-        provider._record_worker_page(old, {"port": 1111, "target_id": "old-target"})
-        provider._offer_response_for(old, {"id": "old", "ok": True, "result": 1})
+        old_proc = mock.Mock()
+        old_proc.poll.return_value = None
+        old_session = self._session_for(provider, old_proc)
+        old_tail = old_session.stderr_tail
+        fresh_proc = mock.Mock()
+        fresh_proc.poll.return_value = None
+        fresh_session = _WorkerSession(proc=fresh_proc, job=None)
+        with provider._life_lock:
+            provider._session = fresh_session
+        # Late verdicts, page events, and replies on the detached object
+        # change nothing of the new generation: ownership is by object,
+        # not by a check-then-use against the provider.
+        provider._fail_session(old_session, "late over-limit")
+        provider._deliver_page(old_session, {"port": 1111, "target_id": "old-target"})
+        old_pending = _PendingRequest(request_id="old")
+        with old_session.lock:
+            old_session.pending = old_pending
+        provider._deliver_response(old_session, {"id": "old", "ok": True, "result": 1})
         old_tail.append("old-diagnostic")
-        self.assertEqual(provider._reader_error, "")
-        self.assertEqual(provider._cdp_port, 0)
-        self.assertEqual(provider._target_id, "")
-        self.assertTrue(provider._responses.empty())
-        self.assertEqual(list(provider._stderr_tail), [])
+        self.assertEqual(fresh_session.terminal_error, "")
+        self.assertEqual(fresh_session.cdp_port, 0)
+        self.assertEqual(fresh_session.target_id, "")
+        self.assertIsNone(fresh_session.pending)
+        self.assertEqual(list(fresh_session.stderr_tail), [])
+        # The old session did record on itself only.
+        self.assertIn("late", old_session.terminal_error)
 
-    def test_waiter_on_replaced_proc_ends_promptly(self) -> None:
+    def test_page_event_is_per_session(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.stdout = _RecordedStringIO(
+            '{"event":"page","port":9222,"target_id":"t-1"}\n'
+        )
+        proc.poll.return_value = 1
+        session = self._session_for(provider, proc)
+        provider._read_loop(session)
+        self.assertEqual(session.cdp_port, 9222)
+        self.assertEqual(session.target_id, "t-1")
+
+    def test_waiter_on_replaced_session_ends_promptly(self) -> None:
         from codey.providers.diagnostics import ProviderActionError
 
         provider = self._provider()
         old = mock.Mock()
         old.poll.return_value = None
-        provider._proc = old
+        old.stdin = mock.Mock()
+        session = self._session_for(provider, old)
+        pending = _PendingRequest(request_id="req-1")
+        with session.lock:
+            session.pending = pending
         errors: list[BaseException] = []
 
         def do_wait() -> None:
             try:
-                provider._wait_for_response(old, "send", "req-1", 30.0, grace=True)
+                provider._wait_for_response(session, pending, "send", 30.0, grace=True)
             except BaseException as exc:
                 errors.append(exc)
 
-        real_get = provider._responses.get
-        parked = threading.Event()
-
-        def gated_get(*args: object, **kwargs: object) -> object:
-            parked.set()
-            return real_get(*args, **kwargs)
-
-        provider._responses.get = gated_get  # type: ignore[method-assign]
-        try:
-            waiter = threading.Thread(target=do_wait)
-            waiter.start()
-            # Proven parked inside the queue wait before the swap lands.
-            self.assertTrue(parked.wait(timeout=10.0))
-            with provider._conn_lock:
-                provider._proc = mock.Mock()
-            waiter.join(timeout=10.0)
-        finally:
-            provider._responses.get = real_get  # type: ignore[method-assign]
+        waiter = threading.Thread(target=do_wait)
+        waiter.start()
+        # Let the waiter park in its short wait, then close: close wakes
+        # the pending slot, so the waiter ends promptly with exited.
+        deadline = time.monotonic() + 10.0
+        while not waiter.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+        ):
+            provider.close()
+        waiter.join(timeout=10.0)
         self.assertFalse(waiter.is_alive())
         self.assertEqual(len(errors), 1)
         self.assertIsInstance(errors[0], ProviderActionError)
         self.assertIn("exited", errors[0].failure.message)
 
-    def test_concurrent_offers_keep_newest_wins_accounting(self) -> None:
-        provider = self._provider()
-        provider._responses = queue.Queue(maxsize=8)
-        provider._dropped_responses = 0
-
-        def _offer_many(base: int) -> None:
-            for index in range(50):
-                provider._offer_response({"id": f"{base}-{index}"})
-
-        threads = [
-            threading.Thread(target=_offer_many, args=(base,), daemon=True)
-            for base in range(4)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-            self.assertFalse(thread.is_alive())
-        # Every offer is either kept or counted as dropped: 4*50 total.
-        self.assertEqual(
-            provider._responses.qsize() + provider._dropped_responses, 200
-        )
-
     def test_close_never_restarts_a_dead_worker(self) -> None:
         provider = self._provider()
         with mock.patch.object(
-            WorkerChatProvider, "_start",
+            WorkerChatProvider, "_start_session_locked",
             side_effect=AssertionError("close() must not restart"),
         ):
-            provider.close()  # _proc is None
-        self.assertIsNone(provider._proc)
+            provider.close()  # _session is None
+        self.assertIsNone(provider._session)
 
     def test_close_never_restarts_an_exited_worker(self) -> None:
         provider = self._provider()
         exited = mock.Mock()
         exited.poll.return_value = 1
         exited.stdin = mock.Mock()
-        provider._proc = exited
+        self._session_for(provider, exited)
         with (
             mock.patch.object(
-                WorkerChatProvider, "_start",
+                WorkerChatProvider, "_start_session_locked",
                 side_effect=AssertionError("close() must not restart"),
             ),
             mock.patch("codey.providers.worker.cancellation.terminate_process_tree"),
         ):
             provider.close()
-        self.assertIsNone(provider._proc)
+        self.assertIsNone(provider._session)
 
     def test_close_skips_timeout_grace(self) -> None:
-        # close() terminates under the conn lock only: no request is sent,
+        # close() detaches under the life lock only: no request is sent,
         # so neither grace nor restart applies, and close never blocks on a
         # long send holding the request gate.
         provider = self._provider()
@@ -685,23 +813,54 @@ class WorkerSelfHealTests(unittest.TestCase):
                 side_effect=AssertionError("close() must not send requests"),
             ),
             mock.patch.object(
-                WorkerChatProvider, "_start",
+                WorkerChatProvider, "_start_session_locked",
                 side_effect=AssertionError("close() must not restart"),
             ),
-            mock.patch.object(provider, "_terminate_conn_locked") as terminate,
+            mock.patch.object(provider, "_terminate_session") as terminate,
         ):
+            proc = mock.Mock()
+            self._session_for(provider, proc)
             provider.close()
-        terminate.assert_called_once_with()
+        terminate.assert_called_once()
 
     def test_close_does_not_wait_for_inflight_request_gate(self) -> None:
         provider = self._provider()
+        proc = mock.Mock()
+        self._session_for(provider, proc)
         provider._request_lock.acquire()
         try:
-            with mock.patch.object(provider, "_terminate_conn_locked") as terminate:
+            with mock.patch.object(provider, "_terminate_session") as terminate:
                 provider.close()
-            terminate.assert_called_once_with()
+            terminate.assert_called_once()
         finally:
             provider._request_lock.release()
+
+    def test_real_process_terminate_kills_tree(self) -> None:
+        import subprocess as _subprocess
+        import sys as _sys
+
+        provider = self._provider()
+        proc = _subprocess.Popen(
+            [_sys.executable, "-c", "import time; time.sleep(30)"],
+            stdin=_subprocess.PIPE,
+            stdout=_subprocess.PIPE,
+            stderr=_subprocess.PIPE,
+        )
+        try:
+            session = _WorkerSession(proc=proc, job=None)  # type: ignore[arg-type]
+            provider._session = session
+            provider.close()
+            self.assertIsNone(provider._session)
+            self.assertIsNotNone(proc.poll())
+        finally:
+            with contextlib.suppress(Exception):
+                proc.kill()
+            with contextlib.suppress(Exception):
+                proc.wait(timeout=2)
+            for stream in (proc.stdin, proc.stdout, proc.stderr):
+                with contextlib.suppress(Exception):
+                    if stream is not None:
+                        stream.close()
 
 
 class ProviderProbeErrorTests(unittest.TestCase):
@@ -884,32 +1043,46 @@ class AppContextLifecycleTests(unittest.TestCase):
         store_mock = mock.Mock()
         with AppContext() as ctx:
             ctx._knowledge_store = store_mock
-            daemon_wait = mock.patch.object(ctx.ghost_sleep_daemon, "wait").start()
-            ephemeral = ctx._ephemeral_runtime_home
-            self.assertIsNotNone(ephemeral)
+            with mock.patch.object(
+                ctx.ghost_sleep_daemon, "wait", return_value=True,
+            ) as daemon_wait:
+                ephemeral = ctx._ephemeral_runtime_home
+                self.assertIsNotNone(ephemeral)
+                self.assertTrue(ctx.close())
         daemon_wait.assert_called_once()
         store_mock.close.assert_called_once()
 
-    def test_app_context_close_is_idempotent_and_respects_finished(self) -> None:
+    def test_app_context_close_retains_resources_when_ghost_alive(self) -> None:
         store_mock = mock.Mock()
         ctx = AppContext()
         try:
             ctx._knowledge_store = store_mock
-            # Durable resources close even when the ghost daemon is still
-            # running: close() waits briefly, then proceeds instead of
-            # returning early and leaking stores.
-            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
+            # A live Ghost owns its stores: close() retains everything and
+            # reports incomplete instead of releasing files under the
+            # daemon (the Windows .lock handle failure).
+            with (
+                mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False),
+                mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock,
+            ):
                 assert ctx._ephemeral_runtime_home is not None
-                with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                    ctx.close()
-                    cleanup_mock.assert_called_once()
-                    store_mock.close.assert_called_once()
-                    self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                    self.assertTrue(ctx.closed)
-                    # Second close call must be idempotent.
-                    ctx.close()
-                    store_mock.close.assert_called_once()
-                    self.assertTrue(ctx.closed)
+                self.assertFalse(ctx.close())
+                cleanup_mock.assert_not_called()
+                store_mock.close.assert_not_called()
+                self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                self.assertFalse(ctx.closed)
+                self.assertTrue(ctx._close_requested)
+            # Retry after the daemon finishes closes exactly once.
+            with (
+                mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True),
+                mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock,
+            ):
+                self.assertTrue(ctx.close())
+                cleanup_mock.assert_called_once()
+                store_mock.close.assert_called_once()
+                self.assertTrue(ctx.closed)
+                # Fully closed: further calls are idempotent.
+                self.assertTrue(ctx.close())
+                store_mock.close.assert_called_once()
         finally:
             ctx._resources_closed = True
 
@@ -923,7 +1096,7 @@ class AppContextLifecycleTests(unittest.TestCase):
             with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
                 assert ctx._ephemeral_runtime_home is not None
                 with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                    ctx.close()
+                    self.assertTrue(ctx.close())
                     store_mock.close.assert_called_once()
                     evidence_mock.close.assert_called_once()
                     cleanup_mock.assert_called_once()
@@ -933,7 +1106,7 @@ class AppContextLifecycleTests(unittest.TestCase):
         finally:
             ctx._resources_closed = True
 
-    def test_app_context_close_retries_cleanup_when_thread_subsequently_finishes(self) -> None:
+    def test_app_context_close_retries_after_ghost_finishes(self) -> None:
         store_mock = mock.Mock()
         evidence_mock = mock.Mock()
         ctx = AppContext()
@@ -942,21 +1115,22 @@ class AppContextLifecycleTests(unittest.TestCase):
             ctx.evidence_ledgers = evidence_mock
             assert ctx._ephemeral_runtime_home is not None
             with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                # 1. First close: daemon still running (returns False), but
-                # durable cleanup still proceeds exactly once.
+                # 1. First close: daemon still running, nothing released.
                 with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
-                    ctx.close()
+                    self.assertFalse(ctx.close())
+                    cleanup_mock.assert_not_called()
+                    store_mock.close.assert_not_called()
+                    evidence_mock.close.assert_not_called()
+                    self.assertTrue(ctx._close_requested)
+                    self.assertFalse(ctx._resources_closed)
+                    self.assertFalse(ctx.closed)
+
+                # 2. Second close after the daemon finishes releases once.
+                with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
+                    self.assertTrue(ctx.close())
                     cleanup_mock.assert_called_once()
                     store_mock.close.assert_called_once()
                     evidence_mock.close.assert_called_once()
-                    self.assertTrue(ctx._close_requested)
-                    self.assertTrue(ctx._resources_closed)
-                    self.assertTrue(ctx.closed)
-
-                # 2. Second close: idempotent, no repeated cleanup.
-                ctx.close()
-                cleanup_mock.assert_called_once()
-                store_mock.close.assert_called_once()
         finally:
             ctx._resources_closed = True
 

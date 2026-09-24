@@ -750,9 +750,18 @@ class AppContext:
         """Return True when resources have been completely released."""
         return self._resources_closed
 
-    def close(self) -> None:
+    def close(self) -> bool:
+        """Release durable resources. Returns True only when fully closed.
+
+        A live background Ghost owns its stores: when the short join
+        expires, resources are retained and ``closed`` stays False so the
+        caller retries or reports incomplete shutdown instead of releasing
+        files out from under the daemon (the Windows ``.lock`` handle
+        failure). Resource-cleanup failures behave the same: failed pieces
+        are retained for a later retry.
+        """
         if self._resources_closed:
-            return
+            return True
         if not self._close_requested:
             self._close_requested = True
             # Same gate as every other production Stop: a bare set() here
@@ -761,8 +770,12 @@ class AppContext:
             # still alive) before durable resources release below.
             self.request_stop()
 
-        with contextlib.suppress(Exception):
-            self.ghost_sleep_daemon.wait(timeout=2.0)
+        try:
+            ghost_done = self.ghost_sleep_daemon.wait(timeout=2.0)
+        except Exception:
+            ghost_done = False
+        if not ghost_done:
+            return False
 
         resources_closed = True
         with self.lock:
@@ -794,11 +807,16 @@ class AppContext:
                 self._ephemeral_runtime_home = None
         if resources_closed:
             self._resources_closed = True
+            return True
+        return False
 
     def __enter__(self) -> AppContext:
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        # Best effort: when Ghost is still alive close() retains resources
+        # and returns False instead of claiming closed. No retry here; the
+        # owner observes .closed and retries explicitly.
         self.close()
 
 

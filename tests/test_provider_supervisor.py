@@ -254,12 +254,12 @@ class ProviderSupervisorTests(unittest.TestCase):
             supervisor.record_failure("qwen", failure("response_missing"))
             self.assertEqual(supervisor.get("qwen").state, STATE_OPEN)
 
-            original_write = supervisor_module.ProviderSupervisor._write_locked
+            original_write = supervisor_module.ProviderSupervisor._write_snapshot
             entered_write = threading.Event()
             writer_started = threading.Event()
             entered_once = {"done": False}
 
-            def slow_write(inner_self) -> None:
+            def slow_write(inner_self, snapshot) -> None:
                 if not entered_once["done"]:
                     entered_once["done"] = True
                     entered_write.set()
@@ -269,14 +269,14 @@ class ProviderSupervisorTests(unittest.TestCase):
                     # success always applies to the fresh DEGRADED state.
                     assert writer_started.wait(timeout=10.0)
                     _time.sleep(0.2)
-                original_write(inner_self)
+                original_write(inner_self, snapshot)
 
             def do_success() -> None:
                 writer_started.set()
                 supervisor.record_success("qwen")
 
             with mock.patch.object(
-                supervisor_module.ProviderSupervisor, "_write_locked", slow_write,
+                supervisor_module.ProviderSupervisor, "_write_snapshot", slow_write,
             ):
                 def do_transition() -> None:
                     supervisor.clock = lambda: 1000.0
