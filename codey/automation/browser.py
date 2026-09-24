@@ -43,6 +43,8 @@ DEFAULT_PROFILE = EDGE_PROFILE
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
 CDP_STATE_FILE = DEFAULT_STATE_HOME / "cdp-port.json"
 ISOLATED_CDP_LAUNCH_ATTEMPTS = 3
+# Memory bound only (not a total time guarantee) for CDP JSON reads.
+CDP_JSON_MAX_BYTES = 2 * 1024 * 1024
 PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",
@@ -220,7 +222,10 @@ def _read_cdp_json(port: int, path: str, timeout: float = 1.0):
         return None
     try:
         with urlopen(f"http://127.0.0.1:{port}{path}", timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8", errors="replace"))
+            raw = response.read(CDP_JSON_MAX_BYTES + 1)
+        if len(raw) > CDP_JSON_MAX_BYTES:
+            return None
+        return json.loads(raw.decode("utf-8", errors="replace"))
     except Exception:
         return None
 

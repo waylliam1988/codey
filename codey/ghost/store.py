@@ -16,6 +16,7 @@ from codey.ghost.schema import (
     GhostSignalParseResult,
     clip_signal_text,
 )
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 MAX_GHOST_EVENTS = 5_000
@@ -98,34 +99,40 @@ class GhostSignalStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
-        rows = self._read_rows()
-        removed = 0
-        rewritten: list[dict[str, object]] = []
-        for row in rows:
-            signals = row.get("signals")
-            if not isinstance(signals, list):
-                rewritten.append(row)
-                continue
-            kept_signals = []
-            for signal in signals:
-                if _signal_scope_match(
-                    signal,
-                    normalized_scope,
-                    row_project=_common.normalize_project(row.get("project")),
-                    row_session=clip_signal_text(row.get("session_id"), 120),
-                    project=normalized_project,
-                    session_id=normalized_session,
-                ):
-                    removed += 1
-                else:
-                    kept_signals.append(signal)
-            clean_row = dict(row)
-            clean_row["signals"] = kept_signals
-            if kept_signals:
-                rewritten.append(clean_row)
-        if removed:
-            self.log.write_atomic(rewritten)
-        return removed
+        # Read, filter, and rewrite under one signals.jsonl file lock so a
+        # concurrent append_extraction() cannot slip between the snapshot
+        # read and the rewrite and be silently dropped.
+        with with_file_lock(self.path):
+            read = self.log.read_locked()
+            self.last_warnings = read.warnings
+            rows = list(read.rows)
+            removed = 0
+            rewritten: list[dict[str, object]] = []
+            for row in rows:
+                signals = row.get("signals")
+                if not isinstance(signals, list):
+                    rewritten.append(row)
+                    continue
+                kept_signals = []
+                for signal in signals:
+                    if _signal_scope_match(
+                        signal,
+                        normalized_scope,
+                        row_project=_common.normalize_project(row.get("project")),
+                        row_session=clip_signal_text(row.get("session_id"), 120),
+                        project=normalized_project,
+                        session_id=normalized_session,
+                    ):
+                        removed += 1
+                    else:
+                        kept_signals.append(signal)
+                clean_row = dict(row)
+                clean_row["signals"] = kept_signals
+                if kept_signals:
+                    rewritten.append(clean_row)
+            if removed:
+                self.log.write_atomic_locked(rewritten)
+            return removed
 
     def _read_rows(self) -> list[dict[str, object]]:
         read = self.log.read()

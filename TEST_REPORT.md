@@ -36,6 +36,56 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Denied titles, Ghost atomic delete, offline local contract, bounded HTTP full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/web/assets/render.js              (shellStatusVerb: table, then !approved Denied, then exit Executed)
+codey/web/assets/provider_ui.js         (bootstrap context_error rendering)
+codey/ghost/store.py                    (delete_scope under one signals.jsonl lock via read_locked/write_atomic_locked)
+codey/providers/local_openai.py         (connect raises offline; 16 MiB chat bound + 2001 error bound; capability-only budget)
+codey/providers/local_config.py         (env budget ValueError; bootstrap context_error; capability-only defaults)
+codey/providers/local_discovery.py      (1 MiB /models bound)
+codey/automation/browser.py             (2 MiB CDP JSON bound)
+tests/test_ui_inplace_render.py         (real ""/missing + approved=false denial; exact failure titles)
+tests/test_ui.py                        (Denied/Executed/Failed shape assertions)
+tests/test_ghost_inbox.py               (delete-A vs append-B threaded interleaving)
+tests/test_local_bootstrap.py           (offline raise without second probe; online preserve; budget error + bootstrap error; probe bounds)
+tests/test_local_openai_native.py       (chat bound + over-limit + error-body bound)
+tests/test_browser.py                   (CDP bound + over-limit)
+tests/test_coldstart_native_local_receipts.py (invalid env raises)
+tests/test_providers.py + test_native_delivery.py (bounded-read fakes)
+```
+
+Notes:
+
+- Real denials (`approved=false`, no status) render "Denied"; only
+  approved `exit` renders "Executed".
+- Ghost delete holds one file lock across read/filter/rewrite; concurrent
+  appends are serialized, never lost.
+- Offline local connect raises for preflight instead of returning a
+  config-losing fallback with a second discovery pass; invalid env
+  budgets are explicit errors surfaced as `context_error`.
+- Chat/models/CDP/error bodies are memory-bounded; limits are not
+  total-time guarantees.
+
+Verification (local, Windows):
+
+- `python -m ruff check codey tests` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `test_local_openai_native + test_local_bootstrap + test_providers + test_browser`
+  (`117 passed, 5 subtests passed`);
+  `test_ghost_inbox + test_coldstart_native_local_receipts + test_ui + test_hardening_batch2 + test_native_delivery`
+  (`172 passed, 81 subtests passed`);
+  `test_ui_inplace_render` (`5 passed`, real headless-chromium);
+  `test_bounded_capture_and_context + test_architecture`
+  (`116 passed, 355 subtests passed`);
+  `test_local_bootstrap + test_ui` (`99 passed`).
+- Full suite: `python -m pytest`
+  (`4151 passed, 6 skipped, 1374 subtests passed in 365.97s (0:06:05)`).
+- This report entry was written after the final full pytest run.
+
 ## Shell failure titles, attach cleanup, portable asserts full suite (2026-09-24)
 
 Scope (production, no release):

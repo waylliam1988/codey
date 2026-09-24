@@ -421,7 +421,8 @@ class ProviderRegistryTests(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
 
-            def read(self) -> bytes:
+            def read(self, size: int | None = None) -> bytes:
+                del size
                 return b'{"data":[{"id":"llama"}]}'
 
         def urlopen(request: urllib.request.Request, timeout: float):

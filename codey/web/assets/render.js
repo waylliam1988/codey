@@ -438,8 +438,9 @@ function messageCopyText(m) {
   return m && typeof m.text === 'string' ? m.text : '';
 }
 
-// Shell result titles: approved-but-failed runs must never read as
-// success. Unknown statuses fail closed to 'Failed', never 'Executed'.
+// Shell result titles: explicit statuses win, then user denial, then exit.
+// Real denial events carry approved=false with no status ("" / undefined),
+// so only approved exit reads as success; other approved states fail closed.
 const SHELL_STATUS_VERBS = {
   stopped: 'Stopped',
   timeout: 'Timed out',
@@ -453,7 +454,10 @@ function shellStatusVerb(shellStatus, approved) {
   if (Object.prototype.hasOwnProperty.call(SHELL_STATUS_VERBS, shellStatus)) {
     return SHELL_STATUS_VERBS[shellStatus];
   }
-  return shellStatus === 'exit' ? (approved ? 'Executed' : 'Denied') : 'Failed';
+  if (!approved) {
+    return 'Denied';
+  }
+  return shellStatus === 'exit' ? 'Executed' : 'Failed';
 }
 
 window.CodeyRender = {

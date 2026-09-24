@@ -120,6 +120,146 @@ def test_effective_resolution(monkeypatch) -> None:
     monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
 
 
+def test_invalid_env_context_budget_is_explicit_error(monkeypatch) -> None:
+    import pytest
+
+    from codey.providers import local_config as canonical
+
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_RESERVE", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_KEEP", raising=False)
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "1")
+    with pytest.raises(ValueError, match="invalid local context budget"):
+        canonical.resolve_local_context_budget(canonical.LocalProviderConfig())
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "not-a-number")
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        canonical.resolve_local_context_budget(canonical.LocalProviderConfig())
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
+
+
+def test_bootstrap_surfaces_invalid_env_budget(monkeypatch) -> None:
+    from codey.providers import local_config as canonical
+
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_RESERVE", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_KEEP", raising=False)
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "1")
+    config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
+        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", return_value=[]),
+    ):
+        payload = canonical.local_bootstrap_payload()
+    assert payload["context_error"] != ""
+    assert payload["context_window_tokens"] == 32_768
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
+        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", return_value=[]),
+    ):
+        clean = canonical.local_bootstrap_payload()
+    assert clean["context_error"] == ""
+
+
+def test_connect_offline_raises_without_second_probe(monkeypatch) -> None:
+    import pytest
+
+    from codey.providers import local_config as canonical
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    saved = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:9/v1", model="chosen", api_key="secret",
+    )
+    resolve_calls: list[dict] = []
+
+    def fake_resolve(*, base_url: str = "", model: str = "", api_key: str = "") -> None:
+        resolve_calls.append({"base_url": base_url, "model": model, "api_key": api_key})
+        return None
+
+    def fail_default() -> str:
+        raise AssertionError("offline connect must not run default endpoint discovery")
+
+    monkeypatch.setattr(canonical, "load_local_config", lambda: saved)
+    monkeypatch.setattr(
+        "codey.providers.local_discovery.resolve_local_endpoint", fake_resolve,
+    )
+    monkeypatch.setattr(
+        "codey.providers.local_discovery.default_local_base_url", fail_default,
+    )
+    with pytest.raises(RuntimeError, match="could not reach local model at http://127.0.0.1:9/v1"):
+        LocalOpenAIProvider.connect()
+    # Single resolution pass with the saved credentials, no silent fallback.
+    assert resolve_calls == [{
+        "base_url": "http://127.0.0.1:9/v1", "model": "chosen", "api_key": "secret",
+    }]
+
+
+def test_connect_online_preserves_saved_model_and_key(monkeypatch) -> None:
+    from types import SimpleNamespace as _NS
+
+    from codey.providers import local_config as canonical
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    saved = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:11434/v1", model="chosen", api_key="secret",
+    )
+    live = _NS(base_url="http://127.0.0.1:11434/v1", models=("chosen", "other"))
+    monkeypatch.setattr(canonical, "load_local_config", lambda: saved)
+    monkeypatch.setattr(
+        "codey.providers.local_discovery.resolve_local_endpoint",
+        lambda *, base_url="", model="", api_key="": live,
+    )
+    provider = LocalOpenAIProvider.connect()
+    assert provider.base_url == "http://127.0.0.1:11434/v1"
+    assert provider.model == "chosen"
+    assert provider.api_key == "secret"
+
+
+def test_models_probe_uses_bounded_read(monkeypatch) -> None:
+    import json as _json
+
+    from codey.providers import local_discovery as discovery
+
+    seen: list[object] = []
+
+    class FakeModelsResponse:
+        def __enter__(self) -> FakeModelsResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            seen.append(size)
+            return _json.dumps({"data": [{"id": "m1"}]}).encode("utf-8")
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: FakeModelsResponse())
+    endpoint, reason = discovery.probe_local_endpoint_detail("http://127.0.0.1:9/v1")
+    assert reason == "ok" and endpoint is not None and endpoint.default_model == "m1"
+    assert seen == [discovery.MODELS_RESPONSE_MAX_BYTES + 1]
+
+
+def test_models_probe_over_limit_is_invalid_json(monkeypatch) -> None:
+    from codey.providers import local_discovery as discovery
+
+    monkeypatch.setattr(discovery, "MODELS_RESPONSE_MAX_BYTES", 8)
+
+    class BigModelsResponse:
+        def __enter__(self) -> BigModelsResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            assert size == 9
+            return b"x" * 9
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: BigModelsResponse())
+    endpoint, reason = discovery.probe_local_endpoint_detail("http://127.0.0.1:9/v1")
+    assert endpoint is None and reason == "invalid_json"
+
+
 def test_discovery_candidates_include_koboldcpp() -> None:
     from codey.providers.local_discovery import LOCAL_BASE_URL_CANDIDATES, LOCAL_ENDPOINT_CANDIDATES
 

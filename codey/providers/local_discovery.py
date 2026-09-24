@@ -18,6 +18,8 @@ DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 PROBE_TIMEOUT = 1.5
 DETECT_TIMEOUT = 0.6
 DETECT_WORKERS = 4
+# Memory bound only (not a total time guarantee) for /models probes.
+MODELS_RESPONSE_MAX_BYTES = 1 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -72,13 +74,15 @@ def probe_local_endpoint_detail(
     request = urllib.request.Request(f"{url}/models", headers=headers, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read()
+            raw = response.read(MODELS_RESPONSE_MAX_BYTES + 1)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             return None, "auth"
         return None, "unreachable"
     except Exception:
         return None, "unreachable"
+    if len(raw) > MODELS_RESPONSE_MAX_BYTES:
+        return None, "invalid_json"
     try:
         body = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -191,6 +195,7 @@ __all__ = [
     "DETECT_WORKERS",
     "LOCAL_BASE_URL_CANDIDATES",
     "LOCAL_ENDPOINT_CANDIDATES",
+    "MODELS_RESPONSE_MAX_BYTES",
     "PROBE_TIMEOUT",
     "LocalEndpoint",
     "LocalEndpointCandidate",

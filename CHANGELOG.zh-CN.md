@@ -27,6 +27,28 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - 拒绝标题、Ghost 原子删除、本地离线契约、有界 HTTP（未发布）
+
+- 网页拒绝标题修复。真实拒绝事件是 `approved=false` 且无 `status`；
+  `shellStatusVerb` 先查显式表，再判 `!approved` 为 “Denied”，只有已批准
+  `exit` 为 “Executed”，其余已批准状态为 “Failed”。浏览器用例改用真实
+  `shellStatus=""`/缺字段 + `approved=false`，并断言三个失败态的准确标题。
+- Ghost 删除原子化。`delete_scope()` 全程持有同一 `signals.jsonl` 文件锁，
+  用 `read_locked()` + 筛选 + `write_atomic_locked()` 一次完成，并发
+  `append_extraction()` 不再被旧快照覆盖。双线程交错测试覆盖（慢过滤门；
+  删 A 时追加 B，B 必留）。
+- 本地离线显式化。`connect()` 不再无参回退、不再宽泛吞错：端点不可达直接抛
+  `could not reach local model at <base>` 给预检处理，且只有一轮探测（不再
+  触发默认地址二次发现）。无效 `LOCAL_OPENAI_CONTEXT_*` 抛 `ValueError`，
+  不再静默回默认；bootstrap 以 `context_error` 呈现（同时给默认值），配置
+  弹窗负责显示。默认值唯一来源是 capability（删掉两处硬编码回退）。
+- 本地 HTTP 有界。chat 回复（16 MiB）、`/models`（1 MiB）、CDP JSON（2 MiB）
+  均 `read(limit+1)`，超限明确拒绝；错误体直接 `read(2001)` 再解码。上限只
+  保内存，不承诺总耗时。假响应记录 `read(size)` 参数覆盖。
+- 验证：`python -m ruff check codey tests` 通过，`git diff --check` 干净；
+  最终全量 `python -m pytest`
+  （`4151 passed, 6 skipped, 1374 subtests passed in 365.97s`）。
+
 ## Unreleased - Shell 失败标题、附加清理、可移植断言（未发布）
 
 - 网页 shell 标题 fail-closed。已批准的 `wait_error`/`output_read_error`/

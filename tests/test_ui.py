@@ -323,6 +323,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("shellStatusVerb", RENDER_JS)
         self.assertIn("window.CodeyRender.shellStatusVerb(m.shellStatus, m.approved)", HTML)
         self.assertIn(": 'Failed'", RENDER_JS)
+        # Real denial has no status: missing/empty status plus approved=false
+        # must read as Denied, while only approved exit reads as Executed.
+        self.assertIn("if (!approved)", RENDER_JS)
+        self.assertIn("return 'Denied'", RENDER_JS)
+        self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Failed'", RENDER_JS)
 
     def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
         start = HTML.index("async function approveCommand")

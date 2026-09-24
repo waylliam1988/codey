@@ -1000,5 +1000,52 @@ class PlaywrightStartupTests(unittest.TestCase):
         self.assertTrue(browser._is_playwright_startup_race(exc))
 
 
+class CdpJsonBoundTests(unittest.TestCase):
+    def test_read_cdp_json_uses_bounded_read(self) -> None:
+        import json as _json
+
+        seen: list[object] = []
+
+        class FakeCdpResponse:
+            def __enter__(self) -> FakeCdpResponse:
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+            def read(self, size: int | None = None) -> bytes:
+                seen.append(size)
+                return _json.dumps({"Browser": "x", "webSocketDebuggerUrl": "ws://x"}).encode("utf-8")
+
+        with (
+            mock.patch.object(browser, "_port_open", return_value=True),
+            mock.patch.object(browser, "urlopen", return_value=FakeCdpResponse()),
+        ):
+            data = browser._read_cdp_json(9222, "/json/version")
+
+        self.assertIsInstance(data, dict)
+        self.assertEqual(seen, [browser.CDP_JSON_MAX_BYTES + 1])
+
+    def test_read_cdp_json_over_limit_returns_none(self) -> None:
+        with (
+            mock.patch.object(browser, "_port_open", return_value=True),
+            mock.patch.object(browser, "urlopen", return_value=_BigCdpResponse()),
+            mock.patch.object(browser, "CDP_JSON_MAX_BYTES", 8),
+        ):
+            self.assertIsNone(browser._read_cdp_json(9222, "/json/list"))
+
+
+class _BigCdpResponse:
+    def __enter__(self) -> _BigCdpResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def read(self, size: int | None = None) -> bytes:
+        assert size == 9
+        return b"x" * 9
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -132,11 +132,21 @@ def test_local_context_budgets_from_env_and_config(monkeypatch) -> None:
         resolved.context_keep_recent_tokens,
     ) == (8192, 2048, 3000)
 
-    # Invalid (reserve >= window) fails open to defaults.
+    # Invalid (reserve >= window) is an explicit config error, not a silent default.
+    import pytest
+
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "2048")
     monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "4096")
-    fallback = local_config.resolve_local_context_budget(local_config.load_local_config())
-    assert fallback.context_window_tokens == 32_768
+    with pytest.raises(ValueError, match="invalid local context budget"):
+        local_config.resolve_local_context_budget(local_config.load_local_config())
+    # Unparsable env is also explicit, e.g. the WINDOW=1 trap still fails
+    # when it cannot cover the default reserve.
+    monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "1")
+    with pytest.raises(ValueError, match="invalid local context budget"):
+        local_config.resolve_local_context_budget(local_config.load_local_config())
+    monkeypatch.setenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "abc")
+    with pytest.raises(ValueError, match="must be a positive integer"):
+        local_config.resolve_local_context_budget(local_config.load_local_config())
 
     # Config source works when env is unset.
     monkeypatch.delenv(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, raising=False)

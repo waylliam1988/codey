@@ -43,10 +43,6 @@ CONTEXT_PRESETS: tuple[tuple[str, str, int], ...] = (
     ("262k", "262k", 262_144),
 )
 
-_DEFAULT_WINDOW = 32_768
-_DEFAULT_RESERVE = 8_192
-_DEFAULT_KEEP = 12_000
-
 
 @dataclass(frozen=True)
 class LocalContextBudget:
@@ -146,18 +142,16 @@ def _config_path() -> Path:
 
 
 def _default_budget() -> LocalContextBudget:
-    try:
-        from codey.providers.capabilities import capability_for
+    """Capability is the single source of default budgets (never hardcodes)."""
+    from codey.providers.capabilities import capability_for
 
-        capability = capability_for("local")
-        return LocalContextBudget(
-            int(capability.context_window_tokens),
-            int(capability.context_reserve_tokens),
-            int(capability.context_keep_recent_tokens),
-            source="default",
-        )
-    except Exception:
-        return LocalContextBudget(_DEFAULT_WINDOW, _DEFAULT_RESERVE, _DEFAULT_KEEP, source="default")
+    capability = capability_for("local")
+    return LocalContextBudget(
+        int(capability.context_window_tokens),
+        int(capability.context_reserve_tokens),
+        int(capability.context_keep_recent_tokens),
+        source="default",
+    )
 
 
 def parse_native_tools_mode(value: object) -> str | None:
@@ -308,12 +302,26 @@ def resolve_local_native_tools(config: LocalProviderConfig) -> bool:
 def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBudget:
     """Env fields win per-field; then stored context; then defaults.
 
-    Invalid combinations fail open to the capability defaults.
+    An explicitly set but unparsable or inconsistent env override is a
+    configuration error (ValueError), never a silent fallback to defaults.
+    Unset env falls back to the stored budget or capability defaults.
     """
     defaults = _default_budget()
-    window = _parse_positive_int(os.environ.get(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "").strip())
-    reserve = _parse_positive_int(os.environ.get(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "").strip())
-    keep = _parse_positive_int(os.environ.get(LOCAL_OPENAI_CONTEXT_KEEP_ENV, "").strip())
+    raw_window = os.environ.get(LOCAL_OPENAI_CONTEXT_WINDOW_ENV, "")
+    raw_reserve = os.environ.get(LOCAL_OPENAI_CONTEXT_RESERVE_ENV, "")
+    raw_keep = os.environ.get(LOCAL_OPENAI_CONTEXT_KEEP_ENV, "")
+    window_set = bool(str(raw_window).strip())
+    reserve_set = bool(str(raw_reserve).strip())
+    keep_set = bool(str(raw_keep).strip())
+    window = _parse_positive_int(str(raw_window).strip()) if window_set else None
+    reserve = _parse_positive_int(str(raw_reserve).strip()) if reserve_set else None
+    keep = _parse_positive_int(str(raw_keep).strip()) if keep_set else None
+    if window_set and window is None:
+        raise ValueError(f"{LOCAL_OPENAI_CONTEXT_WINDOW_ENV} must be a positive integer")
+    if reserve_set and reserve is None:
+        raise ValueError(f"{LOCAL_OPENAI_CONTEXT_RESERVE_ENV} must be a positive integer")
+    if keep_set and keep is None:
+        raise ValueError(f"{LOCAL_OPENAI_CONTEXT_KEEP_ENV} must be a positive integer")
     stored = config.context
     candidate = LocalContextBudget(
         window if window is not None else (stored.context_window_tokens if stored else defaults.context_window_tokens),
@@ -321,9 +329,12 @@ def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBud
         keep if keep is not None else (stored.context_keep_recent_tokens if stored else defaults.context_keep_recent_tokens),
         source="config" if stored else defaults.source,
     )
-    if validate_context_budget(candidate):
+    error = validate_context_budget(candidate)
+    if error:
+        if window_set or reserve_set or keep_set:
+            raise ValueError(f"invalid local context budget from environment: {error}")
         return defaults
-    if any(v is not None for v in (window, reserve, keep)):
+    if window_set or reserve_set or keep_set:
         return LocalContextBudget(
             candidate.context_window_tokens,
             candidate.context_reserve_tokens,
@@ -407,7 +418,22 @@ def local_bootstrap_payload() -> dict:
     except Exception:
         endpoint = None
         discovered = []
-    effective = resolve_effective_local_config(config, endpoint=endpoint)
+    try:
+        effective = resolve_effective_local_config(config, endpoint=endpoint)
+        context_error = ""
+    except ValueError as exc:
+        # Invalid env override: show capability defaults plus the error
+        # instead of failing the whole bootstrap request.
+        context_error = str(exc)
+        base_url = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
+        models_from_endpoint = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
+        effective = EffectiveLocalConfig(
+            base_url=base_url or config.base_url,
+            model=config.model or (models_from_endpoint[0] if models_from_endpoint else ""),
+            api_key=config.api_key,
+            native_tools=resolve_local_native_tools(config),
+            context=_default_budget(),
+        )
     models: list[str] = []
     if endpoint is not None:
         models = list(endpoint.models)
@@ -426,6 +452,7 @@ def local_bootstrap_payload() -> dict:
         "context_window_tokens": effective.context.context_window_tokens,
         "context_reserve_tokens": effective.context.context_reserve_tokens,
         "context_keep_recent_tokens": effective.context.context_keep_recent_tokens,
+        "context_error": context_error,
         "presets": [
             {"id": preset_id, "label": label, "window": window}
             for preset_id, label, window in CONTEXT_PRESETS

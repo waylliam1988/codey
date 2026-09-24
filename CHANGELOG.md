@@ -32,6 +32,37 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Denied titles, Ghost atomic delete, offline local contract, bounded HTTP (no release)
+
+- Web denial titles fixed. Real user denials carry `approved=false` with no
+  `status`; `shellStatusVerb` now checks the explicit table first, then
+  denial (`!approved` reads "Denied"), and only approved `exit` reads
+  "Executed" (other approved states read "Failed"). The browser test uses
+  the real `shellStatus=""`/`missing + approved=false` shape and asserts
+  exact failure titles.
+- Ghost signal delete is atomic. `delete_scope()` now holds the single
+  `signals.jsonl` file lock across `read_locked()` + filter +
+  `write_atomic_locked()`, so a concurrent `append_extraction()` cannot be
+  dropped. Covered by a two-thread interleaving test (slow filter gate;
+  deleting A while appending B keeps B).
+- Local offline is explicit. `LocalOpenAIProvider.connect()` no longer
+  returns a parameterless fallback or swallows errors: unreachable
+  endpoints raise `could not reach local model at <base>` for preflight
+  failover, with a single resolution pass (no second default discovery).
+  Invalid `LOCAL_OPENAI_CONTEXT_*` overrides raise `ValueError` instead of
+  silently returning defaults; the bootstrap payload surfaces them as
+  `context_error` (defaults shown) and the config popover renders it.
+  Capability is the single source of defaults (`_default_budget()` and
+  `_context_budget()` hardcodes removed).
+- Local HTTP reads are bounded. Chat completions (`16 MiB`), `/models`
+  probes (`1 MiB`), and CDP JSON (`2 MiB`) call `read(limit + 1)` and
+  reject over-limit bodies; HTTP error bodies read `2001` bytes before
+  decoding. Bounds are memory limits only, not total-time guarantees.
+  Covered by fake responses recording the `read(size)` argument.
+- Verification: `python -m ruff check codey tests` clean,
+  `git diff --check` clean; final full
+  `python -m pytest` (`4151 passed, 6 skipped, 1374 subtests passed in 365.97s`).
+
 ## Unreleased - Shell failure titles, attach cleanup, portable asserts (no release)
 
 - Web shell titles fail closed. `wait_error`, `output_read_error`, and

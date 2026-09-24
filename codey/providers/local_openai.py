@@ -24,6 +24,10 @@ DEFAULT_TIMEOUT = 180
 DEFAULT_TEMPERATURE = 0.3
 _RESPONSE_PREVIEW_LIMIT = 400
 _RESPONSE_RETRIES = 1
+# Memory bound only (not a total time guarantee): a runaway local service
+# must not grow the UI process without limit.
+_CHAT_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
+_ERROR_BODY_MAX_BYTES = 2000
 
 
 class _RetryableResponseError(RuntimeError):
@@ -60,18 +64,25 @@ class LocalOpenAIProvider:
 
     @classmethod
     def connect(cls, **_kwargs) -> LocalOpenAIProvider:
-        try:
-            config = _local_config.load_local_config()
-            endpoint = _local_discovery.resolve_local_endpoint(
-                base_url=config.base_url,
-                model=config.model,
-                api_key=config.api_key,
+        """Connect to the remembered or discovered local endpoint.
+
+        Offline is a hard error: the caller (provider preflight) reports
+        the failure and fails over. No offline fallback instance is
+        returned, so saved model/key are never silently replaced.
+        """
+        config = _local_config.load_local_config()
+        endpoint = _local_discovery.resolve_local_endpoint(
+            base_url=config.base_url,
+            model=config.model,
+            api_key=config.api_key,
+        )
+        if endpoint is None:
+            configured = (config.base_url or "").strip() or _local_discovery.DEFAULT_BASE_URL
+            raise RuntimeError(
+                f"could not reach local model at {configured}: "
+                "no OpenAI-compatible /models endpoint"
             )
-            if endpoint is None:
-                return cls()
-            effective = _local_config.resolve_effective_local_config(config, endpoint=endpoint)
-        except Exception:
-            return cls()
+        effective = _local_config.resolve_effective_local_config(config, endpoint=endpoint)
         return cls(
             effective.base_url,
             effective.model or "local-model",
@@ -161,18 +172,15 @@ class LocalOpenAIProvider:
         return self._assistant_turn_or_fail_closed(message)
 
     def _context_budget(self) -> tuple[int, int, int]:
-        """Instance budgets with capability fallback; never reads disk per send."""
-        try:
-            from codey.providers.capabilities import capability_for
+        """Instance budgets; capability is the single source of defaults."""
+        from codey.providers.capabilities import capability_for
 
-            capability = capability_for("local")
-            defaults = (
-                int(capability.context_window_tokens),
-                int(capability.context_reserve_tokens),
-                int(capability.context_keep_recent_tokens),
-            )
-        except Exception:
-            defaults = (32_768, 8_192, 12_000)
+        capability = capability_for("local")
+        defaults = (
+            int(capability.context_window_tokens),
+            int(capability.context_reserve_tokens),
+            int(capability.context_keep_recent_tokens),
+        )
         return (
             self.context_window_tokens or defaults[0],
             self.context_reserve_tokens or defaults[1],
@@ -261,7 +269,12 @@ class LocalOpenAIProvider:
         for _attempt in range(_RESPONSE_RETRIES + 1):
             try:
                 with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
-                    raw = response.read()
+                    raw = response.read(_CHAT_RESPONSE_MAX_BYTES + 1)
+                if len(raw) > _CHAT_RESPONSE_MAX_BYTES:
+                    raise RuntimeError(
+                        f"local model at {endpoint} response exceeded "
+                        f"{_CHAT_RESPONSE_MAX_BYTES} bytes"
+                    )
                 body = _load_response_json(raw, endpoint)
                 return body
             except http.client.IncompleteRead as exc:
@@ -273,7 +286,7 @@ class LocalOpenAIProvider:
                 last_error = exc
             except urllib.error.HTTPError as exc:
                 try:
-                    detail = exc.read().decode("utf-8", "replace")[:2000]
+                    detail = exc.read(_ERROR_BODY_MAX_BYTES + 1).decode("utf-8", "replace")[:_ERROR_BODY_MAX_BYTES]
                 except Exception:
                     detail = ""
                 kind = errors.classify_http_error(int(getattr(exc, "code", 0) or 0), detail)

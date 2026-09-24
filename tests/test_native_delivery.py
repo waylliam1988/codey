@@ -389,7 +389,8 @@ def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
         def __init__(self, payload: bytes) -> None:
             self._payload = payload
 
-        def read(self) -> bytes:
+        def read(self, size: int | None = None) -> bytes:
+            del size
             return self._payload
 
         def __enter__(self) -> _FakeResponse:

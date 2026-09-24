@@ -255,30 +255,35 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 result = page.evaluate("""() => {
                     const chat = document.createElement('div');
                     const cases = [
-                        { shellStatus: 'exit', approved: true },
-                        { shellStatus: 'exit', approved: false },
-                        { shellStatus: 'stopped', approved: false },
-                        { shellStatus: 'timeout', approved: true },
-                        { shellStatus: 'spawn_error', approved: true },
-                        { shellStatus: 'wait_error', approved: true },
-                        { shellStatus: 'output_read_error', approved: true },
-                        { shellStatus: 'drain_timeout', approved: true },
-                        { shellStatus: 'future_unknown_status', approved: true },
+                        { key: 'exit|true', shellStatus: 'exit', approved: true },
+                        // Real denial events carry approved=false with no status.
+                        { key: 'empty|denied', shellStatus: '', approved: false },
+                        { key: 'missing|denied', approved: false },
+                        { key: 'exit|denied', shellStatus: 'exit', approved: false },
+                        { key: 'stopped|false', shellStatus: 'stopped', approved: false },
+                        { key: 'timeout|true', shellStatus: 'timeout', approved: true },
+                        { key: 'spawn_error|true', shellStatus: 'spawn_error', approved: true },
+                        { key: 'wait_error|true', shellStatus: 'wait_error', approved: true },
+                        { key: 'output_read_error|true', shellStatus: 'output_read_error', approved: true },
+                        { key: 'drain_timeout|true', shellStatus: 'drain_timeout', approved: true },
+                        { key: 'future_unknown_status|true', shellStatus: 'future_unknown_status', approved: true },
+                        { key: 'empty|approved', shellStatus: '', approved: true },
                     ];
                     const titles = {};
                     for (const c of cases) {
                         chat.innerHTML = '';
-                        window.appendMessageNode(chat, {
+                        const event = {
                             type: 'shell_result',
-                            shellStatus: c.shellStatus,
                             approved: c.approved,
                             command: 'pytest -q',
                             exitCode: c.shellStatus === 'exit' ? 0 : null,
                             output: 'boom',
-                        });
+                        };
+                        if ('shellStatus' in c) event.shellStatus = c.shellStatus;
+                        window.appendMessageNode(chat, event);
                         const out = chat.querySelector('.shell-output');
                         if (!out) throw new Error('Expected .shell-output node');
-                        titles[c.shellStatus + '|' + c.approved] = out.textContent.split('\\n')[0];
+                        titles[c.key] = out.textContent.split('\\n')[0];
                     }
                     return titles;
                 }""")
@@ -286,15 +291,18 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 browser.close()
 
         self.assertEqual(result["exit|true"], "Executed")
-        self.assertEqual(result["exit|false"], "Denied")
+        self.assertEqual(result["empty|denied"], "Denied")
+        self.assertEqual(result["missing|denied"], "Denied")
+        self.assertEqual(result["exit|denied"], "Denied")
         self.assertEqual(result["stopped|false"], "Stopped")
         self.assertEqual(result["timeout|true"], "Timed out")
         self.assertEqual(result["spawn_error|true"], "Failed to start")
-        for key in ("wait_error|true", "output_read_error|true", "drain_timeout|true"):
-            self.assertNotEqual(result[key], "Executed", key)
-            self.assertNotEqual(result[key], "Denied", key)
+        self.assertEqual(result["wait_error|true"], "Failed while waiting")
+        self.assertEqual(result["output_read_error|true"], "Failed reading output")
+        self.assertEqual(result["drain_timeout|true"], "Output did not finish")
         # Unknown approved states must fail closed, never read as success.
         self.assertEqual(result["future_unknown_status|true"], "Failed")
+        self.assertEqual(result["empty|approved"], "Failed")
 
 
 if __name__ == "__main__":

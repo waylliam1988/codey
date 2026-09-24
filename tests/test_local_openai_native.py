@@ -9,8 +9,12 @@ from codey.providers.local_openai import LocalOpenAIProvider
 class _FakeResponse:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
+        self.read_sizes: list[object] = []
 
-    def read(self) -> bytes:
+    def read(self, size: int | None = None) -> bytes:
+        self.read_sizes.append(size)
+        if size is not None and size >= 0:
+            return self._payload[: size + 1] if len(self._payload) > size else self._payload
         return self._payload
 
     def __enter__(self) -> _FakeResponse:
@@ -101,3 +105,69 @@ def test_unsupported_tools_hint_points_at_canonical_shape(monkeypatch) -> None:
     assert "NATIVE_TOOLS=0" in message
     assert '"native_tools_mode":"off"' in message
     assert '{"native_tools": false}' not in message
+
+
+def test_chat_response_uses_bounded_read(monkeypatch) -> None:
+    from codey.providers.local_openai import _CHAT_RESPONSE_MAX_BYTES
+
+    responses: list[_FakeResponse] = []
+
+    def fake_urlopen(request, timeout=None):
+        body = {"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]}
+        fake = _FakeResponse(json.dumps(body).encode("utf-8"))
+        responses.append(fake)
+        return fake
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    assert provider.send("hi") == "ok"
+    assert responses and responses[0].read_sizes
+    assert responses[0].read_sizes[0] == _CHAT_RESPONSE_MAX_BYTES + 1
+
+
+def test_chat_response_over_limit_is_rejected(monkeypatch) -> None:
+    import pytest
+
+    from codey.providers import local_openai as provider_module
+
+    monkeypatch.setattr(provider_module, "_CHAT_RESPONSE_MAX_BYTES", 16)
+
+    def fake_urlopen(request, timeout=None):
+        return _FakeResponse(b"x" * 32)
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    with pytest.raises(RuntimeError, match="exceeded 16 bytes"):
+        provider.send("hi")
+
+
+def test_http_error_body_is_bounded(monkeypatch) -> None:
+    import io
+    import urllib.error
+
+    import pytest
+
+    seen_sizes: list[object] = []
+
+    class BoundedErrorIO(io.BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            seen_sizes.append(size)
+            if size is not None and size >= 0:
+                data = super().read(size)
+                # Simulate an unbounded body: always claim one more byte.
+                if len(data) == size:
+                    return data
+                return data
+            return super().read()
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+
+    def fake_urlopen(request, timeout=None):
+        raise urllib.error.HTTPError(
+            request.full_url, 500, "Server Error", {}, BoundedErrorIO(b"e" * 5000),
+        )
+
+    monkeypatch.setattr(local_module.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError):
+        provider._post_chat([{"role": "user", "content": "hi"}])
+    assert seen_sizes and seen_sizes[0] == 2001
