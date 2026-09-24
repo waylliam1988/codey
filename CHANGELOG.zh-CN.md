@@ -51,6 +51,33 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - Worker 全程截止时间、严格回复、显式关闭（未发布）
+
+- 一次请求只有一个全程截止时间。`_request()` 入口建好后，贯穿门等待、
+  会话启动、stdin 写入与回复等待。每代 session 有自己的 writer 线程加
+  单个写入槽，管道写满时 Stop 与截止时间也能打断调用线程；写失败、
+  Stop、超时只退休本代（杀进程解除阻塞写入），有界 join。先序列化
+  wire，成功后才登记 `_PendingRequest`，序列化异常不占槽。
+- 回复是单次裁决加形状校验。先到的有效回复或失败原因完成
+  `_PendingRequest`，后来的重复帧只判定 session 协议失败，不能改写结果。
+  `ok` 必须是布尔值；`send` 成功必须带字符串 `result`（裸
+  `{"ok": true}` 不再静默变成 `""`），`new_chat` 成功结果为 `None`。
+- 等待者先排空再判失败。顺序是 Stop、已完成 verdict、截止时间；已退出
+  子进程给有界排空期，管道里已有的回复仍然有效，超期无声才报退出。一個
+  `finally` 清理 pending 槽。
+- 更小的协议与 surface。子进程启动失败走 stderr 加非零退出（删掉
+  `startup_error` stdout 事件）；父进程遇到意外事件即判协议失败。
+  `restart`/`grace` 开关删除，`_ensure_live_session_locked()` 返回
+  session，`AppContext` 删除 context manager（关闭不完整是 `close()`
+  返回值，不是异常），headless 两次关闭失败则结果明确记为
+  `close_incomplete`，且不盖掉任务本身的异常。
+- 验证：`python -m ruff check codey tests` 通过，`git diff --check` 干净；
+  定向套件（worker/adapter/headless/剪贴板/supervisor `181 passed, 6
+  subtests passed`；ghost/capture/cancellation/cli `90 passed`）、收集
+  （`4230 tests collected`）、最终全量 `python -m pytest`
+  （`4223 passed, 6 skipped, 1374 subtests passed in 1002.25s`；一次无关
+  满载偶发于 `test_cancellation.py`，隔离 9/9 通过）。
+
 ## Unreleased - Worker 会话所有权、快照健康、Ghost 关闭契约（未发布）
 
 - Worker 代际收成显式所有权对象。`_WorkerSession` 拥有 proc/job/stderr

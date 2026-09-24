@@ -810,13 +810,3 @@ class AppContext:
             return True
         return False
 
-    def __enter__(self) -> AppContext:
-        return self
-
-    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
-        # Best effort: when Ghost is still alive close() retains resources
-        # and returns False instead of claiming closed. No retry here; the
-        # owner observes .closed and retries explicitly.
-        self.close()
-
-

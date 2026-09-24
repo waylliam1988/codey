@@ -201,13 +201,76 @@ def run_headless(
                 "session_id": session_id,
                 "stop_reason": reason,
             })
-            return HeadlessResult(
+            task_result = HeadlessResult(
                 exit_code=1,
                 run_id=str(request.run_id or "").strip(),
                 session_id=session_id,
                 stop_reason=reason,
                 ledger_path="",
             )
+            task_error = None
+        else:
+            task_result, task_error = _run_headless_task(
+                state,
+                request=request,
+                session_id=session_id,
+                project=project,
+                pre_reserved_run_id=pre_reserved_run_id,
+                emit_jsonl=emit_jsonl,
+                agent_run=agent_run,
+                collect_changes=collect_changes,
+                capture_provider_failure=capture_provider_failure,
+                connect_fresh_provider=connect_fresh_provider,
+            )
+    except BaseException as exc:
+        task_result = None
+        task_error = exc
+    # Ghost owns its stores while alive: a False close retains resources
+    # instead of releasing files under the daemon. One bounded second
+    # chance; a still-incomplete close fails the result explicitly without
+    # masking the task's own exception.
+    closed = state.close()
+    if not closed:
+        with contextlib.suppress(Exception):
+            state.wait_for_ghost_sleep(timeout=30)
+        closed = state.close()
+    if task_error is not None:
+        if not closed:
+            note = "headless close incomplete: ghost still alive or resources retained"
+            add_note = getattr(task_error, "add_note", None)
+            if callable(add_note):
+                with contextlib.suppress(Exception):
+                    add_note(note)
+        raise task_error
+    assert task_result is not None
+    if not closed:
+        if task_result.exit_code == 0:
+            return HeadlessResult(
+                exit_code=1,
+                run_id=task_result.run_id,
+                session_id=task_result.session_id,
+                stop_reason="close_incomplete",
+                ledger_path=task_result.ledger_path,
+            )
+        return task_result
+    return task_result
+
+
+def _run_headless_task(
+    state: HeadlessAppContext,
+    *,
+    request: HeadlessRequest,
+    session_id: str,
+    project: Path,
+    pre_reserved_run_id: str,
+    emit_jsonl: Callable[[dict[str, object]], None],
+    agent_run: Callable | None,
+    collect_changes: Callable | None,
+    capture_provider_failure: Callable | None,
+    connect_fresh_provider: Callable[..., Any],
+) -> tuple[HeadlessResult | None, BaseException | None]:
+    """Run the submission; the caller owns shutdown so close never masks this."""
+    try:
         deps = TaskRunDeps(
             state=state,
             agent_run=agent_run or default_agent_run,
@@ -268,15 +331,9 @@ def run_headless(
             session_id=session_id,
             stop_reason=stop_reason,
             ledger_path=ledger_path,
-        )
-    finally:
-        # Ghost owns its stores while alive: a False close retains
-        # resources instead of releasing files under the daemon. Give it
-        # one bounded second chance before process exit.
-        if not state.close():
-            with contextlib.suppress(Exception):
-                state.wait_for_ghost_sleep(timeout=30)
-            state.close()
+        ), None
+    except BaseException as exc:
+        return None, exc
 
 
 def headless_event_payload(event: dict) -> dict[str, object] | None:

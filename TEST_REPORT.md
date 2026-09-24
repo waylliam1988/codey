@@ -80,6 +80,46 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Worker full-deadline requests, strict replies, explicit shutdown full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (one deadline across gate/start/write/wait; per-session writer thread + single write slot; single-verdict pending with ok/result shape checks; exit drain grace; finally-cleared slot; restart/grace switches removed; ensure returns session)
+codey/providers/worker_child.py       (startup failure to stderr + exit 2; stdout stays page-plus-replies)
+codey/app/context.py                  (context manager removed; close() -> bool is the contract)
+codey/app/headless_runner.py          (task/close separation via _run_headless_task; double-close failure -> close_incomplete; task exception preserved with note)
+tests/test_coldstart_hardening.py     (full-pipe Stop-only; reply-wins-over-exit; buffered drain; bare-ok malformed; duplicate keeps first; MAX through waiter; no context manager)
+tests/test_adapter_self_repair.py     (blocking-stdout timeout with tab-before-kill; startup stderr text + parent tail)
+tests/test_headless_runner.py         (double-close fails success; close failure keeps task exception)
+```
+
+Notes:
+
+- Stop and the deadline interrupt the calling thread even with a full
+  pipe: only the session writer ever blocks in write(), and retiring kills
+  the child to unblock it.
+- A completed operation is never rewritten into an exit failure: the
+  waiter checks the verdict before the exit, with a bounded drain for
+  buffered replies.
+- Shutdown incompleteness is data (close_incomplete / preserved task
+  error), never a silent green exit or a masking cleanup exception.
+
+Verification (local, Windows):
+
+- `python -m ruff check codey tests` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `181 passed, 6 subtests passed` (worker/adapter/headless/clipboard/supervisor),
+  `90 passed` (ghost/capture/cancellation/cli) — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4230 tests collected`).
+- Full suite: `python -m pytest`
+  (`4223 passed, 6 skipped, 1374 subtests passed in 1002.25s (0:16:42)`),
+  plus one unrelated load-flake in `test_cancellation.py` (real-process
+  30 s timing bound exceeded at 30.53 s under full-suite load; the file
+  passes 9/9 in isolation in 2.40 s, in a code path untouched by this change).
+- This report entry was written after the final full pytest run.
+
 ## Worker session ownership, snapshot health, Ghost close contract full suite (2026-09-24)
 
 Scope (production, no release):

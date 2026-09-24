@@ -46,8 +46,15 @@ def main(argv: list[str] | None = None) -> int:
                 fresh_tab=True,
             )
     except Exception as exc:
-        _event("startup_error", error=f"{type(exc).__name__}: {exc}")
-        raise
+        # Stdout stays a strict page-plus-replies protocol: startup
+        # failures go to stderr with a non-zero exit, and the parent
+        # attaches the bounded stderr tail to its exit failure.
+        print(
+            f"provider worker startup failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
     with _adapter_logs_to_stderr():
         target_id = _target_id(provider)
     _event("page", port=getattr(provider.session, "cdp_port", 0), target_id=target_id)

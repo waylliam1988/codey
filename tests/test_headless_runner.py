@@ -370,6 +370,55 @@ class HeadlessRunnerTests(unittest.TestCase):
                 self.assertIn("boom in submission", str(cm.exception))
                 mock_close.assert_called_once()
 
+    def test_headless_double_close_failure_fails_successful_run(self) -> None:
+        from codey.agents.runner import RunResult as _RunResult
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(HeadlessAppContext, "close", return_value=False) as mock_close,
+        ):
+            result = run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="done task",
+                    provider_id="qwen",
+                    max_turns=1,
+                    session_id="session-close-fail",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=lambda _row: None,
+                agent_run=lambda *_args, **_kwargs: _RunResult("ok", "done", 1),
+                collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+        # Both close attempts ran, and the Green run is explicitly failed.
+        self.assertEqual(mock_close.call_count, 2)
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.stop_reason, "close_incomplete")
+
+    def test_headless_close_failure_keeps_task_exception(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch(
+                "codey.app.headless_runner.run_task_submission",
+                side_effect=RuntimeError("task blew up"),
+            ),
+            mock.patch.object(HeadlessAppContext, "close", return_value=False),
+            self.assertRaises(RuntimeError) as cm,
+        ):
+            run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="failing task",
+                    provider_id="qwen",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=lambda _row: None,
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+        # Cleanup failure is attached, never a replacement for the cause.
+        self.assertIn("task blew up", str(cm.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

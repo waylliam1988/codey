@@ -32,6 +32,39 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Worker full-deadline requests, strict replies, explicit shutdown (no release)
+
+- Requests carry one deadline end to end. `_request()` builds it up front
+  and it governs gate wait, session start, stdin write, and reply wait.
+  Each session owns a writer thread plus a single write slot, so Stop and
+  the deadline interrupt the caller even when the pipe is full; write
+  failures, Stop, and timeouts retire only their own session (killing the
+  child unblocks the writer) with bounded joins. Wire is serialized before
+  the pending slot is registered.
+- Replies are single-verdict with shape checks. The first verdict (valid
+  reply or failure cause) completes `_PendingRequest`; later frames condemn
+  the session without rewriting it. `ok` must be boolean, successful
+  `send` must carry a string `result` (a bare `{"ok": true}` no longer
+  degrades to `""`), and `new_chat` success carries `None`.
+- Waiters drain, then fail. The waiter reads Stop, then the completed
+  verdict, then the deadline; an exited child gets a bounded drain grace so
+  a buffered reply still counts, and EOF silence past the grace is the exit
+  failure. One `finally` clears the pending slot.
+- Smaller protocol and surface. The child reports startup failure on
+  stderr with a non-zero exit (no `startup_error` stdout event); unexpected
+  parent-side events are protocol failures. The `restart`/`grace` switches
+  are gone, `_ensure_live_session_locked()` returns the session,
+  `AppContext` lost its context manager (shutdown incompleteness is a
+  `close()` bool, not an exception), and a doubly-failed headless close
+  fails the result as `close_incomplete` without masking the task error.
+- Verification: `python -m ruff check codey tests` clean,
+  `git diff --check` clean, targeted suites green (`181 passed, 6 subtests
+  passed` worker/adapter/headless/clipboard/supervisor; `90 passed`
+  ghost/capture/cancellation/cli), collection (`4230 tests collected`),
+  and final full `python -m pytest`
+  (`4223 passed, 6 skipped, 1374 subtests passed in 1002.25s`; one
+  unrelated load-flake in `test_cancellation.py`, green 9/9 in isolation).
+
 ## Unreleased - Worker session ownership, snapshot health, Ghost close contract (no release)
 
 - Worker generations are explicit ownership objects. `_WorkerSession` owns

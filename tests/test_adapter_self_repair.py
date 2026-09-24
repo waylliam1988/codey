@@ -1612,8 +1612,23 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override = mock.Mock()
         override.root = Path("override")
         override.generation = 3
+
+        class _BlockingStdout:
+            """One blocked read: no reply arrives, then close() releases it."""
+
+            def __init__(self) -> None:
+                self._release = threading.Event()
+
+            def readline(self, size: int = -1) -> str:
+                assert self._release.wait(timeout=10.0)
+                return ""
+
+            def close(self) -> None:
+                self._release.set()
+
         process = mock.Mock()
-        process.stdout = io.StringIO("")
+        process.stdout = _BlockingStdout()
+        process.stderr = io.StringIO("")
         process.stdin = mock.Mock()
         process.poll.return_value = None
         job = mock.Mock()
@@ -1624,22 +1639,56 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
             mock.patch("codey.providers.worker.urlopen") as urlopen,
             mock.patch("codey.providers.worker.WORKER_TIMEOUT_GRACE", 0.0),
-            mock.patch(
-                "codey.providers.worker.time.monotonic",
-                side_effect=[100.0, 100.1, 100.2, 100.3, 100.4, 100.5],
-            ),
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             assert provider._session is not None
             with provider._session.lock:
                 provider._session.cdp_port = 9444
                 provider._session.target_id = "target-1"
-            with self.assertRaises(ProviderActionError):
-                provider._request("send", {}, 0.0)
+            with self.assertRaises(ProviderActionError) as raised:
+                provider._request("send", {}, 0.05)
 
+        self.assertIn("timed out", raised.exception.failure.message)
         urlopen.assert_called_once()
         self.assertIn("http://127.0.0.1:9444/json/close/target-1", urlopen.call_args.args[0])
         terminate.assert_called_once_with(process, job)
+
+    def test_provider_worker_startup_failure_is_stderr_text(self) -> None:
+        import sys as _sys
+
+        provider_type = mock.Mock()
+        provider_type.connect.side_effect = RuntimeError("login expired")
+        with mock.patch.dict(provider_worker_child.PROVIDER_TYPES, {"qwen": provider_type}):
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            old_out, old_err = _sys.stdout, _sys.stderr
+            _sys.stdout, _sys.stderr = stdout, stderr
+            try:
+                code = provider_worker_child.main([
+                    "--provider", "qwen", "--port", "9555",
+                    "--profile", "state/provider-workers/qwen",
+                ])
+            finally:
+                _sys.stdout, _sys.stderr = old_out, old_err
+
+        # No stdout event to misroute: stderr carries the cause, exit is non-zero.
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "")
+        self.assertIn("startup failed", stderr.getvalue())
+        self.assertIn("login expired", stderr.getvalue())
+
+    def test_provider_worker_startup_tail_reaches_parent_failure(self) -> None:
+        from codey.providers.worker import _WorkerSession
+
+        provider = WorkerChatProvider.__new__(WorkerChatProvider)
+        provider.provider_id = "qwen"
+        provider.name = "qwen worker"
+        proc = mock.Mock()
+        proc.poll.return_value = 1
+        session = _WorkerSession(proc=proc, job=None)
+        session.stderr_tail.append("provider worker startup failed: RuntimeError: login expired\n")
+        suffix = provider._worker_error_suffix(session)
+        self.assertIn("login expired", suffix)
 
     def test_provider_worker_child_redirects_adapter_output_to_stderr(self) -> None:
         import sys as _sys
