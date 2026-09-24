@@ -101,7 +101,10 @@ def select_local_target(
     cfg_model = loaded.model.strip()
     cfg_key = loaded.api_key.strip() if isinstance(loaded.api_key, str) else ""
     if env_base:
-        if cfg_base and env_base.lower() == cfg_base.lower():
+        # Conservative address compare: URL paths may be case-sensitive, so
+        # only an exact match (ignoring one trailing slash) counts as the
+        # same target for key fallback.
+        if cfg_base and env_base.rstrip("/") == cfg_base.rstrip("/"):
             return LocalTargetSelection(
                 base_url=env_base,
                 model=env_model or cfg_model,
@@ -400,35 +403,21 @@ def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBud
     return candidate
 
 
-_MISSING: object = object()
-
-
 def resolve_effective_local_config(
-    config: LocalProviderConfig | None = None,
-    endpoint: object = _MISSING,
+    config: LocalProviderConfig,
+    selection: LocalTargetSelection,
+    endpoint: object,
 ) -> EffectiveLocalConfig:
-    """Single runtime view: agent code reads this, never raw files or env.
+    """Pure view over an already-selected target and endpoint.
 
-    The target (address/model/key) comes from select_local_target() once,
-    so probing and sending always share one key. An explicit model is kept
-    for an explicit base; for auto-discovery a saved preference applies
-    only when present on the discovered endpoint.
+    No env reads, no discovery: callers select once, probe once, then
+    compute. An explicit model is kept for an explicit base; for
+    auto-discovery a preference applies only when present on the endpoint.
     """
-    loaded = config if config is not None else load_local_config()
-    selection = select_local_target(loaded)
-    resolved = endpoint
-    if resolved is _MISSING:
-        from codey.providers import local_discovery as discovery
-
-        resolved = discovery.resolve_local_endpoint(
-            base_url=selection.base_url,
-            model=selection.model,
-            api_key=selection.api_key,
-        )
-    base_url = str(getattr(resolved, "base_url", "") or "") if resolved is not None else ""
-    models = tuple(getattr(resolved, "models", ()) or ()) if resolved is not None else ()
+    base_url = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
+    models = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
     if selection.model:
-        if resolved is None or selection.model in models or selection.source != "":
+        if endpoint is None or selection.model in models or selection.source != "":
             model = selection.model
         else:
             model = models[0] if models else selection.model
@@ -438,8 +427,8 @@ def resolve_effective_local_config(
         base_url=base_url or selection.base_url,
         model=model,
         api_key=selection.api_key,
-        native_tools=resolve_local_native_tools(loaded),
-        context=resolve_local_context_budget(loaded),
+        native_tools=resolve_local_native_tools(config),
+        context=resolve_local_context_budget(config),
     )
 
 
@@ -465,21 +454,30 @@ def local_bootstrap_payload() -> dict:
                 # Explicit target offline: list the other well-known
                 # candidates as try-buttons without probing them with this
                 # target's key, and never claim another service as connected.
+                # Paths may be case-sensitive: compare addresses exactly.
                 discovered = [
                     candidate.base_url
                     for candidate in discovery.LOCAL_ENDPOINT_CANDIDATES
-                    if candidate.base_url.rstrip("/").lower() != remembered.rstrip("/").lower()
+                    if candidate.base_url.rstrip("/") != remembered.rstrip("/")
                 ]
         else:
-            # No selected target: one parallel pass with the selected key.
-            probes = discovery.detect_local_endpoint_probes(api_key=selection.api_key)
-            endpoint = next((probe.endpoint for probe in probes if probe.endpoint is not None), None)
-            if endpoint is not None and selection.model and selection.model in endpoint.models:
-                wanted = selection.model.strip()
-                endpoint = discovery.LocalEndpoint(
-                    endpoint.base_url,
-                    (wanted,) + tuple(m for m in endpoint.models if m != wanted),
-                )
+            # No selected target: one parallel pass without broadcasting a
+            # key; a requested model selects its provider or stays offline.
+            probes = discovery.detect_local_endpoint_probes(api_key="")
+            reachable = [probe.endpoint for probe in probes if probe.endpoint is not None]
+            endpoint = None
+            if reachable:
+                if selection.model:
+                    for candidate_endpoint in reachable:
+                        if selection.model in candidate_endpoint.models:
+                            wanted = selection.model.strip()
+                            endpoint = discovery.LocalEndpoint(
+                                candidate_endpoint.base_url,
+                                (wanted,) + tuple(m for m in candidate_endpoint.models if m != wanted),
+                            )
+                            break
+                else:
+                    endpoint = reachable[0]
             discovered = (
                 []
                 if endpoint is not None
@@ -489,7 +487,7 @@ def local_bootstrap_payload() -> dict:
         endpoint = None
         discovered = []
     try:
-        effective = resolve_effective_local_config(config, endpoint=endpoint)
+        effective = resolve_effective_local_config(config, selection, endpoint)
         context_error = ""
         context_payload: dict[str, object] | None = asdict(effective.context)
         context_window = effective.context.context_window_tokens
@@ -518,8 +516,12 @@ def local_bootstrap_payload() -> dict:
     models: list[str] = []
     if endpoint is not None:
         models = list(endpoint.models)
+    target_error = ""
+    if endpoint is not None and not display_model:
+        target_error = "local endpoint returned no usable model"
+    connected = endpoint is not None and not context_error and not target_error
     return {
-        "connected": endpoint is not None,
+        "connected": connected,
         "base_url": display_base,
         "model": display_model,
         "models": models,
@@ -532,6 +534,7 @@ def local_bootstrap_payload() -> dict:
         "context_reserve_tokens": context_reserve,
         "context_keep_recent_tokens": context_keep,
         "context_error": context_error,
+        "error": target_error,
         "presets": [
             {"id": preset_id, "label": label, "window": window}
             for preset_id, label, window in CONTEXT_PRESETS

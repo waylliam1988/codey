@@ -32,6 +32,39 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Same-target probe/run, stoppable native sends, honest availability, bounded collection (no release)
+
+- Probe and run share one target. Saves resolve the pending form through
+  `select_local_target()` and probe once with that key; an env-controlled
+  address refuses to validate a different form address, new addresses never
+  inherit old keys (empty probes as empty), and old probes never decide a
+  new run. Discovery without an address never broadcasts a key, and a
+  requested model selects its provider or stays offline with an explicit
+  error. `resolve_effective_local_config()` is pure over the selected
+  target + endpoint (env is read once, never re-read mid-connect), and
+  address sameness is exact, never case-folded paths.
+- Native research sends stop. A unified `_call_provider_cancellable(fn)`
+  covers `send`/`send_turn`/`send_tool_results` with the same Stop poll and
+  abandons Local in-flight history on cancel. Local enforces single
+  in-flight (fail-fast, no `user A/B` interleave) with a generation that
+  `new_chat`/`close`/`abandon_inflight` bump so late replies skip history.
+- Availability equals connectability. `local_endpoint_available()` validates
+  the effective target (usable model + valid budget) after the same probe;
+  bootstrap reports `connected=False` with `context_error`/`error` instead
+  of recommending an unusable endpoint.
+- Collection is bounded per command. Git uses one bounded runner: `diff`
+  drains bounded and marks capture vs display truncation distinctly, while
+  `status`/`numstat` fail explicitly on truncation instead of partial
+  stats. Adapter validation fails on truncated output (never pass on
+  exit 0 alone), and EOL detection scans a bounded prefix.
+- Sharing and hygiene: Supervisor merges under the file lock so two
+  processes keep each other's providers (`_save()` removed); the save
+  popover failure is browser-executed (stays open with the error), and the
+  health latch uses both-side events.
+- Verification: `python -m ruff check codey tests` clean,
+  `git diff --check` clean; final full
+  `python -m pytest` (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`).
+
 ## Unreleased - Grouped local target, strict save, atomic health, closed error streams (no release)
 
 - Local target stays grouped. `select_local_target()` decides address +

@@ -23,6 +23,7 @@ from codey.repairs.policy import (
     validate_candidate,
 )
 from codey.repairs.sandbox import RepairSandbox, create_repair_sandbox
+from codey.runtime.core import cancellation as _cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 RepairModel = Callable[[str], str]
@@ -259,18 +260,17 @@ def _run_static_checks(
     results: list[str] = []
     for name, command in commands:
         try:
-            proc = subprocess.run(
+            proc = _cancellation.run_process(
                 command,
                 cwd=str(root),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 timeout=120,
-                check=False,
+                capture_limit_bytes=512 * 1024,
             )
-        except (OSError, subprocess.SubprocessError) as exc:
+        except (OSError, subprocess.SubprocessError, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout) as exc:
             results.append(f"failed:{name}:{exc}")
+            continue
+        if proc.stdout_truncated or proc.stderr_truncated:
+            results.append(f"failed:{name}:output truncated")
             continue
         if proc.returncode == 0:
             results.append(f"passed:{name}")

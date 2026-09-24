@@ -97,6 +97,39 @@ class AtomicWriteTests(unittest.TestCase):
             b"a\nb\n",
         )
 
+    def test_eol_detection_reads_bounded_prefix(self) -> None:
+        from codey.storage import atomic_io as atomic_module
+
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td, "big.py")
+            target.write_bytes(b"a\n" * 100 + b"\r\n" + b"b\n" * 100)
+            reads: list[int] = []
+            real_fdopen = atomic_module.os.fdopen
+
+            class BoundedReader:
+                def __init__(self, handle):
+                    self._handle = handle
+
+                def read(self, size: int = -1) -> bytes:
+                    reads.append(size)
+                    return self._handle.read(size)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return self._handle.__exit__(*exc)
+
+            def fake_fdopen(fd, *args, **kwargs):
+                handle = real_fdopen(fd, *args, **kwargs)
+                return BoundedReader(handle)
+
+            with mock.patch.object(atomic_module.os, "fdopen", side_effect=fake_fdopen):
+                encoded = encode_with_original_eol(target, "x\ny\n")
+            self.assertEqual(encoded, b"x\r\ny\r\n")
+            self.assertTrue(reads)
+            self.assertLessEqual(max(s for s in reads if s >= 0), 64 * 1024)
+
     def test_original_file_survives_write_failure(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             original = Path(td, "keep.py")

@@ -3310,6 +3310,67 @@ class ResearchBoundaryTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_research_native_send_observes_stop_while_blocked(self) -> None:
+        from codey.providers.base import AssistantTurn
+
+        stop = threading.Event()
+        send_started = threading.Event()
+        send_finished = threading.Event()
+        release_send = threading.Event()
+        runner_returned = threading.Event()
+        errors: list[BaseException] = []
+
+        class SlowNativeProvider(FakeProvider):
+            def send_turn(self, prompt, tools=None, timeout=None):
+                del prompt, tools, timeout
+                send_started.set()
+                try:
+                    release_send.wait(timeout=5.0)
+                    return AssistantTurn(text="late", tool_calls=(), raw={})
+                finally:
+                    send_finished.set()
+
+            def send_tool_results(self, results, tools=None, timeout=None):
+                del results, tools, timeout
+                return AssistantTurn(text="late", tool_calls=(), raw={})
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            with mock.patch.dict("os.environ", {"NATIVE_TOOLS": "1"}):
+                runner = ResearchRunner(
+                    SlowNativeProvider(),
+                    FakeSearch(),
+                    store,
+                    should_stop=stop.is_set,
+                    max_turns=2,
+                )
+
+                def run_research() -> None:
+                    try:
+                        list(runner.run("Research with native blocked"))
+                    except BaseException as exc:  # pragma: no cover - surfaced below
+                        errors.append(exc)
+                    finally:
+                        runner_returned.set()
+
+                thread = threading.Thread(target=run_research, name="test-research-native-stop")
+                thread.start()
+                self.assertTrue(send_started.wait(1.0))
+                stop.set()
+                self.assertTrue(runner_returned.wait(2.0))
+            self.assertFalse(send_finished.is_set())
+            release_send.set()
+            self.assertTrue(send_finished.wait(2.0))
+            thread.join(timeout=2.0)
+            try:
+                self.assertFalse(errors)
+                self.assertFalse(thread.is_alive())
+                self.assertIsNotNone(runner.result)
+                assert runner.result is not None
+                self.assertEqual(runner.result.stop_reason, "stopped")
+            finally:
+                store.close()
+
     def test_web_style_provider_send_stays_on_runner_thread(self) -> None:
         class ThreadRecordingProvider(FakeProvider):
             def __init__(self) -> None:

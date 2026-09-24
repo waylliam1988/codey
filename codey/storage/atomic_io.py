@@ -197,7 +197,12 @@ def _existing_mode(target: Path) -> int | None:
     return stat.S_IMODE(info.st_mode)
 
 
+_EOL_SCAN_BYTES = 256 * 1024
+_EOL_SCAN_CHUNK = 64 * 1024
+
+
 def _read_existing_bytes_no_follow(target: Path) -> bytes:
+    """Read a bounded prefix to detect CRLF; never buffers whole files."""
     try:
         if target.is_symlink():
             return b""
@@ -211,7 +216,20 @@ def _read_existing_bytes_no_follow(target: Path) -> bytes:
         return b""
     try:
         with os.fdopen(fd, "rb") as handle:
-            return handle.read()
+            chunks: list[bytes] = []
+            remaining = _EOL_SCAN_BYTES
+            carry = b""
+            while remaining > 0:
+                data = handle.read(min(_EOL_SCAN_CHUNK, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                window = carry + data
+                if b"\r\n" in window:
+                    return b"\r\n"
+                chunks.append(data)
+                carry = data[-1:] if data.endswith(b"\r") else b""
+            return b"".join(chunks)
     except OSError:
         return b""
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import threading
 import urllib.error
 import urllib.request
 
@@ -27,6 +28,8 @@ class _RetryableResponseError(RuntimeError):
 
 class LocalOpenAIProvider:
     name = "Local"
+    # Single in-flight (fail-fast) + generation: sequential worker-thread
+    # sends are safe and Stop-abandoned late replies skip history.
     thread_safe_send = True
 
     def __init__(
@@ -57,6 +60,9 @@ class LocalOpenAIProvider:
         self.context_reserve_tokens = context_reserve_tokens
         self.context_keep_recent_tokens = context_keep_recent_tokens
         self._messages: list[dict] = []
+        self._state_lock = threading.RLock()
+        self._send_lock = threading.Lock()
+        self._generation = 0
 
     @classmethod
     def connect(cls) -> LocalOpenAIProvider:
@@ -74,12 +80,17 @@ class LocalOpenAIProvider:
             api_key=selection.api_key,
         )
         if endpoint is None:
-            configured = selection.base_url or "auto-discovery (no configured address)"
+            if selection.base_url:
+                configured = selection.base_url
+            elif selection.model:
+                configured = f"auto-discovery (no configured address; model {selection.model!r} not found)"
+            else:
+                configured = "auto-discovery (no configured address)"
             raise RuntimeError(
                 f"could not reach local model at {configured}: "
                 "no OpenAI-compatible /models endpoint"
             )
-        effective = _local_config.resolve_effective_local_config(config, endpoint=endpoint)
+        effective = _local_config.resolve_effective_local_config(config, selection, endpoint)
         if not effective.model:
             raise RuntimeError(
                 f"local model at {effective.base_url} returned no usable model"
@@ -98,26 +109,63 @@ class LocalOpenAIProvider:
         return f"{self.base_url} ({self.model})"
 
     def new_chat(self, timeout: float | None = None) -> None:
-        self._messages = []
+        with self._state_lock:
+            self._generation += 1
+            self._messages = []
+
+    def close(self) -> None:
+        with self._state_lock:
+            self._generation += 1
+            self._messages = []
+
+    def abandon_inflight(self) -> None:
+        """Invalidate a still-running send so its late reply skips history."""
+        with self._state_lock:
+            self._generation += 1
+            self._messages = []
+
+    def _acquire_send(self) -> None:
+        if not self._send_lock.acquire(blocking=False):
+            raise RuntimeError("local provider busy: concurrent sends are not supported")
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        messages = self._prepare_request(
-            [{"role": "user", "content": text}], tools=None,
-        )
-        reply = self._complete(messages, timeout=timeout)
-        self._messages.append({"role": "assistant", "content": reply})
-        return reply
+        self._acquire_send()
+        try:
+            with self._state_lock:
+                generation = self._generation
+                messages = self._prepare_request(
+                    [{"role": "user", "content": text}], tools=None,
+                )
+            reply = self._complete(messages, timeout=timeout)
+            with self._state_lock:
+                if generation == self._generation:
+                    self._messages.append({"role": "assistant", "content": reply})
+            return reply
+        finally:
+            self._send_lock.release()
 
-    def _assistant_turn_or_fail_closed(self, message: dict) -> object:
+    def _assistant_turn_or_fail_closed(self, message: dict, *, generation: int | None = None) -> object:
         """Build the AssistantTurn, failing closed on unanswerable tool_calls.
 
         Storing a raw block with missing ids would poison the local history:
         a later plain prompt would break the provider chain. Instead reset to
         a fresh chat and surface text the JSON fallback can route to repair.
+        A stale generation (after close/new_chat/abandon) never mutates
+        history.
         """
         from codey.providers.base import AssistantTurn, ProviderToolCall
 
         parsed, dropped = _parse_tool_calls(message)
+        if generation is not None and generation != self._generation:
+            text = str(message.get("content") or "")
+            return AssistantTurn(
+                text=text,
+                tool_calls=tuple(
+                    ProviderToolCall(id=str(call["id"]), name=str(call["name"]), arguments=dict(call["arguments"]))
+                    for call in parsed
+                ) if not dropped else (),
+                raw={"finish_reason": str(message.get("_finish_reason") or ""), "stale_generation": True},
+            )
         if dropped:
             self._messages = (
                 [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
@@ -146,11 +194,18 @@ class LocalOpenAIProvider:
         tools: list[dict[str, object]] | None = None,
         timeout: float | None = None,
     ) -> object:
-        messages = self._prepare_request(
-            [{"role": "user", "content": prompt}], tools=tools,
-        )
-        message = self._complete_message(messages, tools=tools, timeout=timeout)
-        return self._assistant_turn_or_fail_closed(message)
+        self._acquire_send()
+        try:
+            with self._state_lock:
+                generation = self._generation
+                messages = self._prepare_request(
+                    [{"role": "user", "content": prompt}], tools=tools,
+                )
+            message = self._complete_message(messages, tools=tools, timeout=timeout)
+            with self._state_lock:
+                return self._assistant_turn_or_fail_closed(message, generation=generation)
+        finally:
+            self._send_lock.release()
 
     def send_tool_results(
         self,
@@ -168,9 +223,16 @@ class LocalOpenAIProvider:
                 "tool_call_id": tool_call_id,
                 "content": str(item.get("content") or ""),
             })
-        messages = self._prepare_request(pending, tools=tools)
-        message = self._complete_message(messages, tools=tools, timeout=timeout)
-        return self._assistant_turn_or_fail_closed(message)
+        self._acquire_send()
+        try:
+            with self._state_lock:
+                generation = self._generation
+                messages = self._prepare_request(pending, tools=tools)
+            message = self._complete_message(messages, tools=tools, timeout=timeout)
+            with self._state_lock:
+                return self._assistant_turn_or_fail_closed(message, generation=generation)
+        finally:
+            self._send_lock.release()
 
     def _context_budget(self) -> tuple[int, int, int]:
         """Instance budgets; capability is the single source of defaults."""
@@ -238,9 +300,6 @@ class LocalOpenAIProvider:
             )
         self._messages = candidate
         return self._messages
-
-    def close(self) -> None:
-        self._messages = []
 
     def _post_chat(
         self,

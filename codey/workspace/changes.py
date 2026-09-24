@@ -52,6 +52,7 @@ SNAPSHOT_DIR_NAME = "recovery"
 BASELINE_DIR_NAME = "baselines"
 GIT_TIMEOUT = 10
 MAX_GIT_DIFF_CHARS = 240_000
+MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_UNTRACKED_DIFF_BYTES = 120_000
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
@@ -628,25 +629,35 @@ class ChangeTracker:
         return RestoreResult(not conflicts, restored, conflicts, None if not conflicts else "restore conflict")
 
 
-def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+def _run_git(project: Path, args: list[str]):
+    """Run git with bounded capture; never buffers output unbounded."""
+    from codey.runtime.core import cancellation
+
+    return cancellation.run_process(
         ["git", "-c", "core.quotePath=false", "-C", str(project), *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        cwd=str(project),
         timeout=GIT_TIMEOUT,
-        check=False,
+        capture_limit_bytes=MAX_GIT_OUTPUT_BYTES,
     )
 
 
 def is_git_repository(project: str | Path) -> bool:
+    from codey.runtime.core import cancellation as _cancellation
+
     try:
         proc = _run_git(
             Path(project).expanduser().resolve(),
             ["rev-parse", "--is-inside-work-tree"],
         )
-    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+    except (
+        FileNotFoundError,
+        OSError,
+        subprocess.SubprocessError,
+        _cancellation.ProcessOutputReadError,
+        _cancellation.PipeDrainTimeout,
+    ):
+        return False
+    if proc.stdout_truncated:
         return False
     return proc.returncode == 0 and proc.stdout.strip() == "true"
 
@@ -716,18 +727,24 @@ def collect_git_changes(project: str | Path | None) -> dict:
     if not root.exists():
         return {"ok": False, "error": "project not found", "files": [], "diff": ""}
 
+    from codey.runtime.core import cancellation as _cancellation
+
     try:
         top = _run_git(root, ["rev-parse", "--show-toplevel"])
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except (OSError, subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout) as exc:
         return {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
-    if top.returncode != 0:
-        return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
+    if top.returncode != 0 or top.stdout_truncated:
+        if top.returncode != 0:
+            return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
+        return {"ok": False, "error": "git status output truncated; re-run in a smaller scope", "files": [], "diff": ""}
     git_root = Path(top.stdout.strip()).resolve()
 
     try:
         status_proc = _run_git(git_root, ["status", "--short"])
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
+    except (subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout):
+        return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+    if status_proc.stdout_truncated:
+        return {"ok": False, "error": "git status output truncated; re-run in a smaller scope", "files": [], "diff": ""}
 
     files = [
         file
@@ -751,13 +768,16 @@ def collect_git_changes(project: str | Path | None) -> dict:
         staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
         unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
         staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
+    except (subprocess.TimeoutExpired, _cancellation.ProcessOutputReadError, _cancellation.PipeDrainTimeout):
+        return {"ok": False, "error": "git command failed; output incomplete", "files": [], "diff": ""}
+    if unstaged_num.stdout_truncated or staged_num.stdout_truncated:
+        return {"ok": False, "error": "git numstat output truncated; re-run in a smaller scope", "files": [], "diff": ""}
 
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, unstaged_num.stdout)
     _merge_numstat(stats, staged_num.stdout)
 
+    capture_truncated = bool(unstaged_diff.stdout_truncated or staged_diff.stdout_truncated)
     diff_parts: list[str] = []
     if staged_diff.stdout:
         diff_parts.append(staged_diff.stdout.rstrip())
@@ -778,8 +798,10 @@ def collect_git_changes(project: str | Path | None) -> dict:
                 diff_parts.append(diff_text)
 
     diff = "\n\n".join(part for part in diff_parts if part)
-    truncated = len(diff) > MAX_GIT_DIFF_CHARS
-    if truncated:
+    truncated = capture_truncated or len(diff) > MAX_GIT_DIFF_CHARS
+    if capture_truncated:
+        diff = diff[:MAX_GIT_DIFF_CHARS].rstrip() + "\n\n... diff capture truncated ..."
+    elif truncated:
         diff = diff[:MAX_GIT_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
     return {
         "ok": True,

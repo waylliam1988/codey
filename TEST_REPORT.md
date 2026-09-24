@@ -36,6 +36,50 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Same-target probe/run, stoppable native sends, honest availability, bounded collection full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/app/api.py                      (save selects pending target once; env-controlled refuse; no old-key inherit)
+codey/providers/local_config.py       (pure effective over selection+endpoint; no-key discovery; model-selected endpoint; error states)
+codey/providers/local_discovery.py    (explicit-only; no key broadcast; model filter)
+codey/providers/local_openai.py       (single in-flight fail-fast; generation; abandon_inflight)
+codey/research/runner.py              (_call_provider_cancellable for send/turn/results; Stop abandon)
+codey/research/native_bridge.py       (native sends via unified cancellable; TaskCancelled not recorded)
+codey/workspace/changes.py            (bounded git runner; status/numstat fail on truncate; diff capture marker)
+codey/repairs/adapter_repair.py       (bounded validation; truncation fails)
+codey/storage/atomic_io.py            (bounded EOL prefix scan)
+codey/providers/supervisor.py         (file-locked merge across instances; _save removed)
+tests/test_local_bootstrap.py         (env refuse; no inherit; selector groups; no broadcast; model select; availability parity)
+tests/test_server.py                  (new-address never replays old key)
+tests/test_research.py                (native Stop timely; web stays on runner thread)
+tests/test_local_openai_native.py     (no interleave; close discards late)
+tests/test_changes.py + test_atomic_io.py + test_adapter_self_repair.py (bounded collection)
+tests/test_provider_supervisor.py     (both-side latch; two-instance merge)
+tests/test_ui_inplace_render.py       (save failure keeps popover open, executed)
+```
+
+Notes:
+
+- Probe key and run key are the same selected key; env-controlled saves
+  fail loudly instead of validating the wrong target.
+- Stop during any research provider send returns promptly; late Local
+  replies never corrupt history, and concurrent sends fail fast.
+- Unusable endpoints (no model, bad budget) are unavailable everywhere,
+  with reasons surfaced.
+- No display path relies on unbounded collection.
+
+Verification (local, Windows):
+
+- `python -m ruff check codey tests` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite covered local bootstrap/
+  providers/research/changes/atomic/adapter/supervisor/UI suites
+  (all green, including the restored runner-thread and file-length gates).
+- Full suite: `python -m pytest`
+  (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
+- This report entry was written after the final full pytest run.
+
 ## Grouped local target, strict save, atomic health, closed error streams full suite (2026-09-24)
 
 Scope (production, no release):

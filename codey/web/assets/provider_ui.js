@@ -207,6 +207,7 @@ async function openLocalProviderConfig() {
     if (windowTokens) $('local-context-window').value = String(windowTokens);
     $('local-native-tools-mode').value = local.native_tools_mode || 'auto';
     if (local.context_error) $('local-config-error').textContent = String(local.context_error);
+    else if (local.error) $('local-config-error').textContent = String(local.error);
     document.querySelectorAll('#local-context-presets button').forEach((btn) => {
       btn.onclick = () => { $('local-context-window').value = btn.dataset.contextWindow || ''; };
     });

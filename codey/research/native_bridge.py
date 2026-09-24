@@ -100,16 +100,26 @@ def send_provider_structured(runner: object, message: str) -> object:
     )
     try:
         tools = native_research_tools(bool(getattr(runner.codec, "include_source_search", True)))
-        return runner.provider.send_turn(message, tools, timeout=None)
+        return runner._call_provider_cancellable(
+            lambda: runner.provider.send_turn(message, tools, timeout=None),
+        )
+    except cancellation.TaskCancelled:
+        raise
     except Exception as exc:
         runner._record_model_failure("send", exc)
         raise
 
 
 def send_native_tool_results(runner: object, tool_messages: list[dict[str, object]]) -> object:
+    from codey.runtime.core import cancellation as _cancellation
+
     try:
         tools = native_research_tools(bool(getattr(runner.codec, "include_source_search", True)))
-        return runner.provider.send_tool_results(tool_messages, tools, timeout=None)
+        return runner._call_provider_cancellable(
+            lambda: runner.provider.send_tool_results(tool_messages, tools, timeout=None),
+        )
+    except _cancellation.TaskCancelled:
+        raise
     except Exception as exc:
         runner._record_model_failure("send", exc)
         raise

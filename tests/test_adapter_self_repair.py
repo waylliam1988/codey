@@ -614,11 +614,16 @@ class RepairPolicyTests(unittest.TestCase):
 
 class StaticCheckEscalationTests(unittest.TestCase):
     def _capture_commands(self):
+        from types import SimpleNamespace
+
         seen: list[tuple[str, ...]] = []
 
         def fake_run(command, **_kwargs):
             seen.append(tuple(str(part) for part in command))
-            return mock.Mock(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(
+                returncode=0, stdout="", stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
 
         return seen, fake_run
 
@@ -628,7 +633,7 @@ class StaticCheckEscalationTests(unittest.TestCase):
             _source_tree(root)
             seen, fake_run = self._capture_commands()
 
-            with mock.patch("codey.repairs.adapter_repair.subprocess.run", side_effect=fake_run):
+            with mock.patch("codey.repairs.adapter_repair._cancellation.run_process", side_effect=fake_run):
                 results = _run_static_checks("qwen", root)
 
             self.assertTrue(all(item.startswith("passed:") for item in results))
@@ -649,7 +654,7 @@ class StaticCheckEscalationTests(unittest.TestCase):
             _source_tree(root)
             seen, fake_run = self._capture_commands()
 
-            with mock.patch("codey.repairs.adapter_repair.subprocess.run", side_effect=fake_run):
+            with mock.patch("codey.repairs.adapter_repair._cancellation.run_process", side_effect=fake_run):
                 _base = _run_static_checks("qwen", root)
                 escalated = _run_static_checks(
                     "qwen",
@@ -666,6 +671,28 @@ class StaticCheckEscalationTests(unittest.TestCase):
             self.assertTrue(any("load_profiles" in cmd for cmd in tail))
             self.assertIn("passed:web_adapter_import", escalated)
             self.assertIn("passed:profiles_schema_load", escalated)
+
+    def test_truncated_output_is_validation_failure(self) -> None:
+        from types import SimpleNamespace
+
+        def fake_truncated(command, **_kwargs):
+            del command, _kwargs
+            return SimpleNamespace(
+                returncode=0, stdout="ok", stderr="",
+                stdout_truncated=True, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            with mock.patch(
+                "codey.repairs.adapter_repair._cancellation.run_process", side_effect=fake_truncated,
+            ):
+                results = _run_static_checks("qwen", root)
+
+        self.assertTrue(results)
+        self.assertTrue(all(item.startswith("failed:") for item in results))
+        self.assertIn("output truncated", results[0])
 
 
 class RepairSandboxTests(unittest.TestCase):

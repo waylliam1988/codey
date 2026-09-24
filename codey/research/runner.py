@@ -667,7 +667,7 @@ class ResearchRunner:
                 runtime_tool_contract_hash=runtime_hash,
             )
             if getattr(self.provider, "thread_safe_send", False):
-                reply = self._send_provider_cancellable(message)
+                reply = str(self._call_provider_cancellable(lambda: self.provider.send(message)) or "")
             else:
                 reply = self.provider.send(message)
             cancellation.check()
@@ -678,27 +678,31 @@ class ResearchRunner:
             self._record_model_failure("send", exc)
             raise
 
-    def _send_provider_cancellable(self, message: str) -> str:
+    def _call_provider_cancellable(self, fn: Callable[[], object]) -> object:
+        """Run any provider send in a worker and poll Stop identically."""
         results: queue.Queue[object] = queue.Queue(maxsize=1)
 
         def work() -> None:
             try:
-                results.put(self.provider.send(message))
+                results.put(fn())
             except Exception as exc:
                 results.put(exc)
 
-        thread = threading.Thread(target=work, name="codey-research-provider-send", daemon=True)
-        thread.start()
+        threading.Thread(target=work, name="codey-research-provider-send", daemon=True).start()
         while True:
             try:
                 result = results.get(timeout=PROVIDER_SEND_POLL_INTERVAL)
                 break
             except queue.Empty:
                 if self._stop_requested():
+                    abandon = getattr(self.provider, "abandon_inflight", None)
+                    if callable(abandon):
+                        with contextlib.suppress(Exception):
+                            abandon()
                     raise cancellation.TaskCancelled("task stopped") from None
         if isinstance(result, Exception):
             raise result
-        return str(result or "")
+        return result
 
     def _stop_requested(self) -> bool:
         if self.should_stop():

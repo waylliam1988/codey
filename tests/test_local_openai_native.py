@@ -141,6 +141,71 @@ def test_chat_response_over_limit_is_rejected(monkeypatch) -> None:
         provider.send("hi")
 
 
+def test_concurrent_sends_do_not_interleave_history(monkeypatch) -> None:
+    import threading
+
+    entered_network = threading.Event()
+    release_network = threading.Event()
+
+    def fake_complete(messages, *, timeout=None) -> str:
+        del messages, timeout
+        entered_network.set()
+        assert release_network.wait(timeout=10.0)
+        return "reply-A"
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    monkeypatch.setattr(provider, "_complete", fake_complete)
+    errors: list[BaseException] = []
+
+    def send_b() -> None:
+        try:
+            provider.send("B")
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread_a = threading.Thread(target=lambda: provider.send("A"))
+    thread_a.start()
+    assert entered_network.wait(timeout=10.0)
+    thread_b = threading.Thread(target=send_b)
+    thread_b.start()
+    thread_b.join(timeout=10.0)
+    release_network.set()
+    thread_a.join(timeout=10.0)
+    assert any("busy" in str(exc) for exc in errors)
+    roles = [m.get("role") for m in provider._messages]
+    assert roles == ["user", "assistant"]
+    assert provider._messages[0]["content"] == "A"
+
+
+def test_close_discards_late_reply(monkeypatch) -> None:
+    import threading
+
+    entered_network = threading.Event()
+    release_network = threading.Event()
+
+    def fake_complete(messages, *, timeout=None) -> str:
+        del messages, timeout
+        entered_network.set()
+        assert release_network.wait(timeout=10.0)
+        return "late-reply"
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    monkeypatch.setattr(provider, "_complete", fake_complete)
+    result: list[str] = []
+
+    def do_send() -> None:
+        result.append(provider.send("old"))
+
+    thread = threading.Thread(target=do_send)
+    thread.start()
+    assert entered_network.wait(timeout=10.0)
+    provider.close()
+    release_network.set()
+    thread.join(timeout=10.0)
+    assert result == ["late-reply"]
+    assert provider._messages == []
+
+
 def test_http_error_body_is_bounded(monkeypatch) -> None:
     import io
     import urllib.error

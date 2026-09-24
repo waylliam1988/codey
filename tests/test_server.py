@@ -1988,7 +1988,7 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
-    def test_changing_base_url_requires_explicit_api_key(self) -> None:
+    def test_changing_base_url_never_replays_old_key(self) -> None:
         httpd, host, port = self._start_server()
         try:
             with (
@@ -2000,8 +2000,16 @@ class LocalProviderApiTests(unittest.TestCase):
                         api_key="old-secret",
                     ),
                 ),
-                mock.patch.object(app_api, "probe_local_endpoint_detail") as probe,
+                mock.patch.object(
+                    app_api,
+                    "probe_local_endpoint_detail",
+                    return_value=(
+                        LocalEndpoint("http://attacker.example/v1", ("steal",)),
+                        "ok",
+                    ),
+                ) as probe,
                 mock.patch.object(app_api, "save_local_config") as save,
+                mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
             ):
                 conn = http.client.HTTPConnection(host, port, timeout=5)
                 conn.request(
@@ -2019,11 +2027,12 @@ class LocalProviderApiTests(unittest.TestCase):
                 payload = json.loads(response.read().decode("utf-8"))
                 conn.close()
 
-                self.assertEqual(response.status, 400)
-                self.assertIn("api_key required", str(payload.get("error")))
+                self.assertEqual(response.status, 200)
+                self.assertTrue(payload["ok"])
                 # The stored credential must never be replayed elsewhere.
-                probe.assert_not_called()
-                save.assert_not_called()
+                probe.assert_called_once_with("http://attacker.example/v1", api_key="")
+                (saved_config,), _kwargs = save.call_args
+                self.assertEqual(saved_config.api_key, "")
         finally:
             httpd.shutdown()
 

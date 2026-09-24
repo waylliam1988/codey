@@ -61,22 +61,35 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(line_count, 2)
 
     def test_git_commands_disable_quoted_paths_for_cjk_status(self) -> None:
-        with mock.patch("subprocess.run") as run:
-            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+        from types import SimpleNamespace
+
+        with mock.patch("codey.runtime.core.cancellation.run_process") as run:
+            run.return_value = SimpleNamespace(
+                args=[], returncode=0, stdout="", stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
             changes._run_git(Path("C:/project"), ["status", "--short"])
 
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
 
     def test_collect_git_changes_skips_diff_commands_when_status_is_clean(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "") -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=0, stdout=stdout, stderr="",
+                stdout_truncated=False, stderr_truncated=False,
+            )
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            def run_git(_cwd: Path, args: list[str]) -> subprocess.CompletedProcess:
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
                 if args == ["rev-parse", "--show-toplevel"]:
-                    return subprocess.CompletedProcess(args, 0, str(root), "")
+                    return _proc(args, str(root))
                 if args == ["status", "--short"]:
-                    return subprocess.CompletedProcess(args, 0, "", "")
+                    return _proc(args, "")
                 raise AssertionError(f"unexpected git command: {args}")
 
             with mock.patch.object(changes, "_run_git", side_effect=run_git) as run:
@@ -89,6 +102,65 @@ class ChangeTrackerTests(unittest.TestCase):
             [call.args[1] for call in run.call_args_list],
             [["rev-parse", "--show-toplevel"], ["status", "--short"]],
         )
+
+    def test_truncated_status_is_explicit_error_not_partial(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "", truncated: bool = False) -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=0, stdout=stdout, stderr="",
+                stdout_truncated=truncated, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return _proc(args, str(root))
+                if args == ["status", "--short"]:
+                    return _proc(args, " M a.py\n", truncated=True)
+                raise AssertionError(f"unexpected git command: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_git_changes(root)
+
+        self.assertFalse(data["ok"])
+        self.assertIn("truncated", data["error"])
+
+    def test_capture_truncated_diff_is_marked_distinctly(self) -> None:
+        from types import SimpleNamespace
+
+        def _proc(args: list[str], stdout: str = "", truncated: bool = False) -> SimpleNamespace:
+            return SimpleNamespace(
+                args=args, returncode=0, stdout=stdout, stderr="",
+                stdout_truncated=truncated, stderr_truncated=False,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            def run_git(_cwd: Path, args: list[str]) -> SimpleNamespace:
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return _proc(args, str(root))
+                if args == ["status", "--short"]:
+                    return _proc(args, " M a.py\n")
+                if args == ["diff", "--numstat"]:
+                    return _proc(args, "1\t0\ta.py\n")
+                if args == ["diff", "--cached", "--numstat"]:
+                    return _proc(args, "")
+                if args == ["diff", "--no-ext-diff", "--"]:
+                    return _proc(args, "diff --git a/a.py b/a.py\n+x\n", truncated=True)
+                if args == ["diff", "--cached", "--no-ext-diff", "--"]:
+                    return _proc(args, "")
+                raise AssertionError(f"unexpected git command: {args}")
+
+            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+                data = changes.collect_git_changes(root)
+
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["truncated"])
+        self.assertIn("capture truncated", data["diff"])
 
     def test_collects_new_file_snapshot_diff(self) -> None:
         with tempfile.TemporaryDirectory() as td:

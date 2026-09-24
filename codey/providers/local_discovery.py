@@ -138,25 +138,39 @@ def detect_local_endpoints(*, api_key: str = "", timeout: float = DETECT_TIMEOUT
 
 
 def local_endpoint_available() -> bool:
-    """Share the single target decision with connect(): one address, one key."""
+    """Share the single target decision with connect(): one address, one key.
+
+    Reachable /models alone is not enough: the effective target must also
+    yield a usable model and a valid budget, exactly as connect() requires.
+    """
+    from codey.providers.local_config import load_local_config as _load_config
+    from codey.providers.local_config import resolve_effective_local_config as _effective
     from codey.providers.local_config import select_local_target as _select_target
 
-    selection = _select_target()
-    return (
-        resolve_local_endpoint(
-            base_url=selection.base_url,
-            model=selection.model,
-            api_key=selection.api_key,
-        )
-        is not None
+    config = _load_config()
+    selection = _select_target(config)
+    endpoint = resolve_local_endpoint(
+        base_url=selection.base_url,
+        model=selection.model,
+        api_key=selection.api_key,
     )
+    if endpoint is None:
+        return False
+    try:
+        effective = _effective(config, selection, endpoint)
+    except ValueError:
+        return False
+    return bool(effective.model)
 
 
 def resolve_local_endpoint(*, base_url: str = "", model: str = "", api_key: str = "") -> LocalEndpoint | None:
     """Probe one explicit address, or auto-discover only when none is set.
 
     An explicit address never falls back to another service: failure
-    returns None so saved credentials are not carried elsewhere.
+    returns None so saved credentials are not carried elsewhere. Without
+    an address, discovery never broadcasts a key, and a requested model
+    selects the endpoint that provides it (no silent switch to another
+    model).
     """
     remembered = (base_url or "").strip()
     if remembered:
@@ -166,8 +180,14 @@ def resolve_local_endpoint(*, base_url: str = "", model: str = "", api_key: str 
         wanted = (model or endpoint.default_model or "").strip()
         models = ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted)
         return LocalEndpoint(endpoint.base_url, models)
-    detected = detect_local_endpoints(api_key=api_key)
-    return detected[0] if detected else None
+    wanted = (model or "").strip()
+    for endpoint in detect_local_endpoints(api_key=""):
+        if not wanted:
+            return endpoint
+        if wanted in endpoint.models:
+            models = (wanted,) + tuple(m for m in endpoint.models if m != wanted)
+            return LocalEndpoint(endpoint.base_url, models)
+    return None
 
 
 __all__ = [

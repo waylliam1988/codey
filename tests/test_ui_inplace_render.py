@@ -304,6 +304,40 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
         self.assertEqual(result["future_unknown_status|true"], "Failed")
         self.assertEqual(result["empty|approved"], "Failed")
 
+    def test_local_save_failure_keeps_popover_open(self) -> None:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(viewport={"width": 1024, "height": 768})
+                page.goto(self.base_url)
+                page.wait_for_function("typeof window.CodeyProviderUI !== 'undefined'")
+                result = page.evaluate("""async () => {
+                    window.CodeyProviderUI.openLocalConfig();
+                    document.getElementById('local-base-url').value = 'http://127.0.0.1:9/v1';
+                    document.getElementById('local-model-name').value = 'm';
+                    const realFetch = window.fetch.bind(window);
+                    window.fetch = (url, opts) => {
+                        if (typeof url === 'string' && url.includes('/api/local_provider') && opts && opts.method === 'POST') {
+                            return Promise.resolve(new Response(JSON.stringify({ ok: false, error: 'bad budget' }), {
+                                status: 400, headers: { 'Content-Type': 'application/json' },
+                            }));
+                        }
+                        return realFetch(url, opts);
+                    };
+                    document.getElementById('local-config-save').click();
+                    await new Promise((r) => setTimeout(r, 300));
+                    const pop = document.getElementById('local-config-pop');
+                    return {
+                        open: pop.classList.contains('open'),
+                        error: document.getElementById('local-config-error').textContent,
+                    };
+                }""")
+            finally:
+                browser.close()
+
+        self.assertTrue(result["open"])
+        self.assertIn("bad budget", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -95,13 +95,17 @@ def test_effective_resolution(monkeypatch) -> None:
         context_budget_for_window,
         resolve_effective_local_config,
         resolve_local_native_tools,
+        select_local_target,
     )
 
+    for var in ("LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
     config = LocalProviderConfig(base_url="http://127.0.0.1:11434/v1", model="qwen")
     monkeypatch.delenv("NATIVE_TOOLS", raising=False)
     assert resolve_local_native_tools(config) is True
     assert resolve_effective_local_config(
-        config, endpoint=SimpleNamespace(base_url="http://127.0.0.1:11434/v1", models=("qwen",)),
+        config, select_local_target(config),
+        endpoint=SimpleNamespace(base_url="http://127.0.0.1:11434/v1", models=("qwen",)),
     ).native_tools is True
 
     off = LocalProviderConfig(base_url="http://x/v1", native_tools_mode="off")
@@ -111,8 +115,9 @@ def test_effective_resolution(monkeypatch) -> None:
     monkeypatch.delenv("NATIVE_TOOLS", raising=False)
 
     monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "131072")
+    budgeted = LocalProviderConfig(base_url="http://x/v1", context=context_budget_for_window(32768))
     effective = resolve_effective_local_config(
-        LocalProviderConfig(base_url="http://x/v1", context=context_budget_for_window(32768)),
+        budgeted, select_local_target(budgeted),
         endpoint=SimpleNamespace(base_url="http://x/v1", models=()),
     )
     assert effective.context.context_window_tokens == 131072
@@ -152,6 +157,7 @@ def test_bootstrap_surfaces_invalid_env_budget(monkeypatch) -> None:
     assert payload["context_error"] != ""
     assert payload["context"] is None
     assert payload["context_window_tokens"] is None
+    assert payload["connected"] is False
     monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
     with (
         mock.patch.object(canonical, "load_local_config", return_value=config),
@@ -160,6 +166,59 @@ def test_bootstrap_surfaces_invalid_env_budget(monkeypatch) -> None:
     ):
         clean = canonical.local_bootstrap_payload()
     assert clean["context_error"] == ""
+
+
+def test_empty_models_and_bad_budget_are_not_available(monkeypatch) -> None:
+    import json as _json
+
+    from codey.providers import local_config as canonical
+    from codey.providers import local_discovery as discovery
+
+    for var in (
+        "LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY",
+        "LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    config = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:11434/v1", model="", api_key="",
+    )
+    monkeypatch.setattr(canonical, "load_local_config", lambda: config)
+
+    class EmptyModelsResponse:
+        def __enter__(self) -> EmptyModelsResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            del size
+            return _json.dumps({"data": []}).encode("utf-8")
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: EmptyModelsResponse())
+    assert discovery.local_endpoint_available() is False
+    payload = canonical.local_bootstrap_payload()
+    assert payload["connected"] is False
+    assert payload["error"] != ""
+
+    class OneModelResponse:
+        def __enter__(self) -> OneModelResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            del size
+            return _json.dumps({"data": [{"id": "m1"}]}).encode("utf-8")
+
+    monkeypatch.setattr(discovery.urllib.request, "urlopen", lambda *a, **k: OneModelResponse())
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "1")
+    assert discovery.local_endpoint_available() is False
+    bad = canonical.local_bootstrap_payload()
+    assert bad["connected"] is False
+    assert bad["context_error"] != ""
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
 
 
 def test_connect_offline_raises_without_second_probe(monkeypatch) -> None:
@@ -581,10 +640,15 @@ def test_open_url_full_text_receipt(tmp_path: Path) -> None:
     assert store.path_for("s", "r", str(managed["handle"])).is_file()
 
 
-def test_api_save_accepts_bootstrap_fields() -> None:
+def test_api_save_accepts_bootstrap_fields(monkeypatch) -> None:
     from codey.app import api as app_api
     from codey.providers.local_discovery import LocalEndpoint
 
+    for var in (
+        "LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY",
+        "LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP",
+    ):
+        monkeypatch.delenv(var, raising=False)
     with (
         mock.patch.object(app_api, "load_local_config", return_value=app_api.LocalProviderConfig(api_key="")),
         mock.patch.object(
@@ -616,6 +680,9 @@ def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
 
     monkeypatch.setenv("LOCAL_OPENAI_API_KEY", "env-key")
     monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    for var in ("LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP"):
+        monkeypatch.delenv(var, raising=False)
     live = LocalEndpoint("http://127.0.0.1:8080/v1", ("qwen",))
     with (
         mock.patch.object(app_api, "load_local_config", return_value=app_api.LocalProviderConfig(api_key="")),
@@ -634,6 +701,69 @@ def test_api_save_uses_env_key_for_probe_only(monkeypatch) -> None:
     probe.assert_called_once_with("http://127.0.0.1:8080/v1", api_key="env-key")
     (saved_config,), _kwargs = save.call_args
     assert saved_config.api_key == ""
+
+
+def test_api_save_new_address_never_inherits_old_key(monkeypatch) -> None:
+    from codey.app import api as app_api
+    from codey.providers.local_discovery import LocalEndpoint
+
+    for var in (
+        "LOCAL_OPENAI_BASE_URL", "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY",
+        "LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    previous = app_api.LocalProviderConfig(
+        base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="old-key",
+    )
+    live = LocalEndpoint("http://127.0.0.1:2222/v1", ("beta",))
+    with (
+        mock.patch.object(app_api, "load_local_config", return_value=previous),
+        mock.patch.object(
+            app_api, "probe_local_endpoint_detail", return_value=(live, "ok"),
+        ) as probe,
+        mock.patch.object(app_api, "save_local_config") as save,
+        mock.patch.object(app_api, "local_bootstrap_payload", return_value={"connected": True}),
+    ):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:2222/v1",
+            "model": "beta",
+        })
+    assert status == 200 and payload["ok"] is True
+    probe.assert_called_once_with("http://127.0.0.1:2222/v1", api_key="")
+    (saved_config,), _kwargs = save.call_args
+    assert saved_config.base_url == "http://127.0.0.1:2222/v1"
+    assert saved_config.api_key == ""
+
+
+def test_api_save_refuses_env_controlled_address(monkeypatch) -> None:
+    from codey.app import api as app_api
+
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:2222/v1")
+    for var in (
+        "LOCAL_OPENAI_MODEL", "LOCAL_OPENAI_API_KEY",
+        "LOCAL_OPENAI_CONTEXT_WINDOW", "LOCAL_OPENAI_CONTEXT_RESERVE", "LOCAL_OPENAI_CONTEXT_KEEP",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    with (
+        mock.patch.object(
+            app_api, "load_local_config",
+            return_value=app_api.LocalProviderConfig(base_url="http://127.0.0.1:1111/v1"),
+        ),
+        mock.patch.object(
+            app_api, "probe_local_endpoint_detail",
+            side_effect=AssertionError("env-controlled save must not probe"),
+        ),
+        mock.patch.object(
+            app_api, "save_local_config",
+            side_effect=AssertionError("env-controlled save must not persist"),
+        ),
+    ):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:1111/v1",
+            "model": "alpha",
+        })
+    assert status == 400
+    assert "controls the runtime address" in payload["error"]
 
 
 def test_parse_update_rejects_non_numeric_window() -> None:

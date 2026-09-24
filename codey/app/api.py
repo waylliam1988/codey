@@ -10,7 +10,7 @@ from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app import provider_services, shell_service
 from codey.automation.browser_worker import BrowserWorkerBusy
-from codey.env_names import LOCAL_OPENAI_API_KEY_ENV, LOCAL_OPENAI_BASE_URL_ENV
+from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
 from codey.ghost.control_surface import GhostControlSurface
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import (
@@ -20,6 +20,7 @@ from codey.providers.local_config import (
     parse_local_config_update,
     resolve_local_context_budget,
     save_local_config,
+    select_local_target,
 )
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.runs.details import load_run_details
@@ -134,28 +135,34 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
         resolve_local_context_budget(parsed)
     except ValueError as exc:
         return 400, {"ok": False, "error": str(exc)}
-    base_url = parsed.base_url
-    previous_base_url = previous.base_url.rstrip("/")
-    probe_key = parsed.api_key
-    same_target = bool(previous_base_url) and base_url == previous_base_url
-    target_changed = bool(previous_base_url) and base_url != previous_base_url
-    if not probe_key and same_target:
-        probe_key = previous.api_key
-    if not probe_key:
-        env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
-        env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
-        if env_key and base_url == env_base:
-            # Probe-only: the env secret authorizes this probe but is never
-            # persisted (save below still passes parsed.api_key).
-            probe_key = env_key
-    if not probe_key and target_changed:
+    # Runtime is env-controlled when an env base is set: refuse to validate
+    # a different form address as if it were the running target.
+    env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+    if env_base and env_base.rstrip("/") != parsed.base_url.rstrip("/"):
         return 400, {
             "ok": False,
-            "error": "api_key required when base_url changes",
+            "error": (
+                f"LOCAL_OPENAI_BASE_URL is set to {env_base} and controls the runtime address; "
+                f"clear it to save {parsed.base_url}"
+            ),
         }
+    previous_base_url = previous.base_url.rstrip("/")
+    same_target = bool(previous_base_url) and parsed.base_url.rstrip("/") == previous_base_url.rstrip("/")
+    # Same target with no key keeps the previous key for probing; a new
+    # address never inherits the old key (empty probes as empty).
+    probe_api_key = parsed.api_key if parsed.api_key or not same_target else previous.api_key
+    probe_selection = select_local_target(LocalProviderConfig(
+        base_url=parsed.base_url,
+        model=parsed.model,
+        api_key=probe_api_key,
+        native_tools_mode=parsed.native_tools_mode,
+        context=parsed.context,
+    ))
     # One probe only: branching on a single detail result keeps the verdict
     # consistent even if the endpoint flaps between two requests.
-    endpoint, reason = probe_local_endpoint_detail(base_url, api_key=probe_key)
+    endpoint, reason = probe_local_endpoint_detail(
+        probe_selection.base_url, api_key=probe_selection.api_key,
+    )
     if endpoint is None or reason != "ok":
         detail = {
             "unreachable": "could not reach an OpenAI-compatible /models endpoint",

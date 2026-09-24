@@ -256,18 +256,25 @@ class ProviderSupervisorTests(unittest.TestCase):
 
             original_save = supervisor_module.ProviderSupervisor._save_snapshot
             entered_save = threading.Event()
+            writer_started = threading.Event()
             entered_once = {"done": False}
 
-            def slow_save(self, snapshot) -> None:
+            def slow_save(inner_self, snapshot) -> None:
                 if not entered_once["done"]:
                     entered_once["done"] = True
                     entered_save.set()
-                    # Hold the persist path open so the success below lands
-                    # between the transition snapshot and its write. Under
-                    # the lock this blocks the writer; without it the writer
-                    # wins and would be overwritten by the stale snapshot.
-                    _time.sleep(0.5)
-                original_save(self, snapshot)
+                    # Both latches: wait until the writer attempts its update,
+                    # then hold briefly so it lands between the transition
+                    # snapshot and its write. Under the lock this blocks the
+                    # writer; without it the writer wins and would be
+                    # overwritten by the stale snapshot.
+                    assert writer_started.wait(timeout=10.0)
+                    _time.sleep(0.2)
+                original_save(inner_self, snapshot)
+
+            def do_success() -> None:
+                writer_started.set()
+                supervisor.record_success("qwen")
 
             with mock.patch.object(
                 supervisor_module.ProviderSupervisor, "_save_snapshot", slow_save,
@@ -279,13 +286,26 @@ class ProviderSupervisorTests(unittest.TestCase):
                 transition = threading.Thread(target=do_transition)
                 transition.start()
                 self.assertTrue(entered_save.wait(timeout=10.0))
-                supervisor.record_success("qwen")
+                writer = threading.Thread(target=do_success)
+                writer.start()
+                writer.join(timeout=10.0)
                 transition.join(timeout=10.0)
+                self.assertFalse(writer.is_alive())
 
             self.assertFalse(transition.is_alive())
             self.assertEqual(supervisor.get("qwen").state, STATE_HEALTHY)
             reloaded = ProviderSupervisor(td, clock=lambda: 1000.0)
             self.assertEqual(reloaded.get("qwen").state, STATE_HEALTHY)
+
+    def test_two_instances_sharing_state_dir_keep_each_other(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            first = ProviderSupervisor(td, clock=lambda: 100.0)
+            second = ProviderSupervisor(td, clock=lambda: 100.0)
+            first.record_success("qwen")
+            second.record_success("glm")
+            reloaded = ProviderSupervisor(td, clock=lambda: 100.0)
+            self.assertEqual(reloaded.get("qwen").state, STATE_HEALTHY)
+            self.assertEqual(reloaded.get("glm").state, STATE_HEALTHY)
 
 
 if __name__ == "__main__":

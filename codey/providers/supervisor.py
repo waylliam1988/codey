@@ -276,24 +276,45 @@ class ProviderSupervisor:
                 continue
         return health
 
-    def _save(self) -> None:
-        with self._lock:
-            self._save_snapshot(dict(self._health))
-
     def _save_snapshot(self, snapshot: dict[str, ProviderHealth]) -> None:
-        """Persist under the caller's lock; failures are recorded, never swallowed."""
+        """Persist under the caller's in-process lock and the file lock.
+
+        Merges with the latest disk state so two processes sharing a state
+        directory keep each other's providers instead of overwriting them.
+        Same-id conflicts resolve to the latest writer's state with
+        monotonic counters preserved.
+        """
         if self.path is None:
             return
-        providers = {
-            provider_id: asdict(health)
-            for provider_id, health in list(sorted(snapshot.items()))[:MAX_PROVIDERS]
-        }
+        from codey.storage.file_lock import with_file_lock
+
         try:
-            write_json_atomic(
-                self.path,
-                {"schema_version": 1, "providers": providers},
-                max_bytes=MAX_HEALTH_BYTES,
-            )
+            with with_file_lock(self.path):
+                on_disk = self._load()
+                merged: dict[str, ProviderHealth] = dict(on_disk)
+                for provider_id, health in snapshot.items():
+                    base = merged.get(provider_id)
+                    if base is None:
+                        merged[provider_id] = health
+                    else:
+                        merged[provider_id] = replace(
+                            health,
+                            success_count=max(health.success_count, base.success_count),
+                            failure_count=max(health.failure_count, base.failure_count),
+                            last_success_at=max(health.last_success_at, base.last_success_at),
+                            last_failure_at=max(health.last_failure_at, base.last_failure_at),
+                        )
+                merged = dict(list(sorted(merged.items()))[:MAX_PROVIDERS])
+                self._health = merged
+                providers = {
+                    provider_id: asdict(health)
+                    for provider_id, health in merged.items()
+                }
+                write_json_atomic(
+                    self.path,
+                    {"schema_version": 1, "providers": providers},
+                    max_bytes=MAX_HEALTH_BYTES,
+                )
         except (OSError, ValueError) as exc:
             with self._lock:
                 self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]

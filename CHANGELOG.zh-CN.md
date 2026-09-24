@@ -27,6 +27,30 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - 同目标探测运行、可中断原生发送、诚实可用性、有界采集（未发布）
+
+- 探测与运行同目标。保存把待存表单经 `select_local_target()` 选一次、
+  用该密钥单探一次；环境地址覆盖表单地址直接 400 说明环境接管，新地址
+  绝不继承旧密钥（空按空探），旧探测不决定新运行。无地址发现绝不广播密
+  钥；指定模型只选提供它的端点，找不到明确报错。有效配置变为已选目标 +
+  端点的纯计算（环境只读一次，连接中途不再重读），地址相同性用精确比较，
+  路径不再大小写折叠。
+- 原生发送可停。统一 `_call_provider_cancellable(fn)` 让 `send`/`send_turn`/
+  `send_tool_results` 同一 Stop 轮询，取消时废弃本地在途历史。本地单次在
+  途（失败快、无交错），`new_chat`/`close`/`abandon_inflight` 递增代数，迟到
+  回复跳过历史。
+- 可用性等于可连接性。可用性在同一次探测后走纯有效配置校验（模型非空 +
+  预算有效）；bootstrap 以 `connected=False` 加 `context_error`/`error`
+  呈现原因，不再推荐不可用端点。
+- 按命令有界采集。Git 走统一有界 runner：`diff` 有界排空并区分采集截断与
+  显示截断；`status`/`numstat` 截断直接明确失败，不拿半份当完整。适配器截
+  断即验证失败；换行检测只扫有界前缀。
+- 共享与卫生：Supervisor 文件锁下合并，双进程互保（删 `_save()`）；保存
+  弹窗失败用浏览器真执行断言（保持打开并显示错误），健康门闩改为双边事件。
+- 验证：`python -m ruff check codey tests` 通过，`git diff --check` 干净；
+  最终全量 `python -m pytest`
+  （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
+
 ## Unreleased - 分组本地目标、严格保存、原子健康、关闭错误流（未发布）
 
 - 本地目标分组不变。`select_local_target()` 一次定死地址 + 模型 + 密钥
