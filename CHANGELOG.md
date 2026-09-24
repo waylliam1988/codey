@@ -32,6 +32,25 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Worker protocol failure, lock-free stdin, timely stderr (no release)
+
+- Over-limit frames are one worker's protocol failure. The reader records
+  the verdict against that proc and exits without draining: the next frame
+  is never swallowed, an early verdict cannot miss its waiter, and a stale
+  reader cannot punish a replacement. Waiters fail explicitly instead of
+  timing out, condemned procs are never reused, and the next request
+  restarts cleanly. `_pending_request_id` and the drain helper are gone.
+- Blocked stdin writes no longer pin Stop. The conn lock covers proc
+  selection only; writes run under the single-flight request gate, so
+  `close()` returns promptly, and a late write failure reaps a process only
+  when it is still the request's own (`self._proc is proc`).
+- Quieter stderr, same bound. `readline()` chunks keep long lines bounded
+  while short newline-terminated diagnostics land without waiting for a
+  full chunk or EOF.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green, collection (`4206 tests collected`), and final
+  full `python -m pytest` (`4200 passed, 6 skipped in 484.15s`).
+
 ## Unreleased - Explicit health persistence, bounded worker IO, rev-parse reasons (no release)
 
 - Health persistence is explicit. Writes raise `HealthStoreError` instead of

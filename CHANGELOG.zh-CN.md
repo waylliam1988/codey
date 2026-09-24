@@ -51,6 +51,21 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - Worker 协议失败、stdin 无锁写入、stderr 及时性（未发布）
+
+- 超限帧是单个 worker 的协议失败。reader 把结论记在该 proc 名下后退出，
+  不再排空：下一帧不会被吞，早到的结论不会错过等待者，旧 reader 也罚不到
+  新进程。等待者直接得到明确错误而非等到超时，被判定的进程永不复用，下
+  一请求干净重启。`_pending_request_id` 与排空函数已删除。
+- 阻塞的 stdin 写入不再卡住 Stop。连接锁只负责选定进程，写入在单次请求
+  门下进行，`close()` 立即返回；迟到的写入失败只在“仍是自己进程”
+  （`self._proc is proc`）时才清理。
+- stderr 同界更及时。`readline()` 分块让长行仍有界，短行诊断不等凑满块
+  或 EOF 即可见。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向套件
+  全绿、收集（`4206 tests collected`）、最终全量 `python -m pytest`
+  （`4200 passed, 6 skipped in 484.15s`）均通过。
+
 ## Unreleased - 健康持久化显式化、Worker 真有界、rev-parse 内码（未发布）
 
 - 健康持久化显式失败。写盘失败抛 `HealthStoreError` 不再吞掉，内存回滚到

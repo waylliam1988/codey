@@ -80,6 +80,38 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Worker protocol failure, lock-free stdin, timely stderr full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (over-limit frame condemns its proc; per-proc reader errors; waiter fails explicitly; ensure never reuses condemned procs; stdin write outside conn lock with is-proc guard; readline stderr)
+tests/test_coldstart_hardening.py     (StringIO true readline boundaries; MAX+newline parses; condemned proc spares next frame; waiter failure + no reuse; pre-request over-limit restarts; blocked-flush close; replacement sparing; stderr bound + timeliness)
+tests/test_adapter_self_repair.py     (stdio fakes with read/readline)
+```
+
+Notes:
+
+- An over-limit frame is one worker's protocol failure: its reader records
+  the verdict against that proc and exits without draining, so the next
+  frame is never swallowed, an early verdict cannot miss its waiter, and a
+  stale reader cannot punish a replacement process.
+- A blocked stdin write no longer pins Stop: conn lock covers proc
+  selection only, writes run under the single-flight request gate, close()
+  returns promptly, and a late write failure reaps only its own proc.
+- Short stderr diagnostics land without waiting for a full chunk or EOF;
+  long lines still arrive in bounded pieces.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `168 passed, 6 subtests passed in 22.43s` plus
+  `121 passed, 6 subtests passed in 20.18s` (worker-focused rerun).
+- Full suite: `python -m pytest`
+  (`collected 4206 items; 4200 passed, 6 skipped in 484.15s (0:08:04)`).
+- This report entry was written after the final full pytest run.
+
 ## Explicit health persistence, bounded worker IO, rev-parse reasons full suite (2026-09-24)
 
 Scope (production, no release):

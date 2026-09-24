@@ -30,9 +30,8 @@ from codey.storage.local_store import DEFAULT_STATE_HOME
 
 WORKER_TIMEOUT_GRACE = 5.0
 RESPONSE_QUEUE_MAXSIZE = 512
-# True read bounds (both loops read bounded units, never whole lines):
-# one child line beyond WORKER_LINE_MAX_CHARS is misbehavior, and stderr
-# keeps only a few fixed-size chunks.
+# True read bounds: stdout frames with a per-line cap and stderr tails in
+# fixed-size chunks, so one huge child line never enters memory whole.
 WORKER_LINE_MAX_CHARS = 256 * 1024
 WORKER_STDERR_CHUNK_CHARS = 16 * 1024
 WORKER_STDERR_TAIL_CHUNKS = 4
@@ -63,11 +62,12 @@ class WorkerChatProvider:
         self._reader: threading.Thread | None = None
         self._cdp_port: int = 0
         self._target_id: str = ""
-        # Id of the request whose reply the reader is currently framing (if
-        # any): an over-limit line fails exactly this waiter instead of
-        # hanging it until timeout. Plain attribute read/write is benign
-        # here; only the single-flight request sets it.
-        self._pending_request_id: str | None = None
+        # Reader protocol errors keyed by proc identity: an over-limit frame
+        # condemns that worker (its reader is gone), never a request id, so
+        # a stale reader cannot punish a replacement process. Entries are
+        # removed when their proc is detached; every access holds a strong
+        # proc reference, so ids cannot be recycled underneath a lookup.
+        self._reader_errors: dict[int, str] = {}
         with self._conn_lock:
             self._start_conn_locked()
 
@@ -179,16 +179,17 @@ class WorkerChatProvider:
             self._start_conn_locked()
 
     def _stderr_loop(self) -> None:
-        # Startup diagnostics only: fixed-size chunk reads keep one huge
-        # line from ever entering memory whole; any drain failure must
-        # never surface.
+        # Startup diagnostics only: readline with a chunk cap keeps one huge
+        # line from ever entering memory whole, while a short
+        # newline-terminated diagnostic lands promptly instead of waiting
+        # for a full chunk or EOF. Any drain failure must never surface.
         try:
             proc = self._proc
             stderr = proc.stderr if proc is not None else None
             if stderr is None:
                 return
             while True:
-                chunk = stderr.read(WORKER_STDERR_CHUNK_CHARS)
+                chunk = stderr.readline(WORKER_STDERR_CHUNK_CHARS)
                 if not chunk:
                     return
                 self._stderr_tail.append(chunk)
@@ -208,9 +209,17 @@ class WorkerChatProvider:
             line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
             if not line:
                 return
-            if len(line) > WORKER_LINE_MAX_CHARS:
-                self._drain_overlong_line(stdout)
-                continue
+            if not line.endswith("\n") and len(line) > WORKER_LINE_MAX_CHARS:
+                # Protocol failure of this worker, not a framable reply: a
+                # chunk of MAX+1 chars without a newline means the line is
+                # longer than the cap (a line of exactly MAX chars plus its
+                # newline still fits and parses below). Record it against
+                # this proc and stop: no draining, so the next frame is
+                # never consumed as if it were the tail of this one.
+                self._reader_errors[id(proc)] = (
+                    f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars"
+                )
+                return
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError:
@@ -220,27 +229,6 @@ class WorkerChatProvider:
                     self._record_worker_page(payload)
                     continue
                 self._offer_response(payload)
-
-    def _drain_overlong_line(self, stdout) -> None:
-        """Discard one over-limit line and fail its waiter explicitly.
-
-        The partial frame is never parsed: the pending request gets a
-        bounded "output exceeded" error instead of hanging until its
-        timeout, and framing resyncs on the next newline for later
-        requests. Without a pending request there is nobody to fail, so
-        the line is just dropped.
-        """
-        while True:
-            chunk = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
-            if not chunk or chunk.endswith("\n"):
-                break
-        pending = self._pending_request_id
-        if pending is not None:
-            self._offer_response({
-                "id": pending,
-                "ok": False,
-                "error": f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars",
-            })
 
     def _response_gate(self) -> threading.Lock:
         gate = getattr(self, "_response_lock", None)
@@ -290,9 +278,19 @@ class WorkerChatProvider:
                     return
 
     def _ensure_running_conn_locked(self) -> subprocess.Popen[str]:
-        """Restart a dead worker. Caller must hold the conn lock."""
+        """Restart a dead worker. Caller must hold the conn lock.
+
+        A live process whose reader already condemned it (over-limit frame)
+        is equally unusable: its replies can never arrive, so restart
+        instead of reusing it.
+        """
         proc = self._proc
-        if proc is not None and proc.poll() is None and proc.stdin is not None:
+        if (
+            proc is not None
+            and proc.poll() is None
+            and proc.stdin is not None
+            and id(proc) not in self._reader_errors
+        ):
             return proc
         self._drain_responses()
         self._terminate_conn_locked()
@@ -312,9 +310,10 @@ class WorkerChatProvider:
         restart: bool = True,
         grace: bool = True,
     ):
-        # Single-flight stdin via the request gate; lifecycle via the conn
-        # lock held only for ensure+write. The wait loop runs lock-free so
-        # close() (conn lock only) never queues behind a long send.
+        # Single-flight stdin via the request gate; the conn lock covers
+        # proc selection only. Both the write below and the wait loop run
+        # lock-free, so close()/Stop never queues behind a blocked stdin or
+        # a long send: termination observes the request's local proc handle.
         with self._request_lock:
             return self._request_locked(method, params, timeout, restart=restart, grace=grace)
 
@@ -327,8 +326,7 @@ class WorkerChatProvider:
         restart: bool = True,
         grace: bool = True,
     ):
-        conn = self._conn_lock
-        with conn:
+        with self._conn_lock:
             if restart:
                 proc = self._ensure_running_conn_locked()
             else:
@@ -336,20 +334,22 @@ class WorkerChatProvider:
                 if proc is None or proc.poll() is not None or proc.stdin is None:
                     raise RuntimeError("provider worker is not running")
             request_id = uuid.uuid4().hex
-            payload = {"id": request_id, "method": method, "params": params}
-            try:
-                proc.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-                proc.stdin.flush()
-            except (OSError, ValueError, AttributeError) as exc:
-                self._terminate_conn_locked()
-                self._drain_responses()
-                raise RuntimeError("provider worker stdin is unavailable") from exc
-        self._pending_request_id = request_id
+            wire = json.dumps(
+                {"id": request_id, "method": method, "params": params},
+                separators=(",", ":"),
+            ) + "\n"
         try:
-            return self._wait_for_response(proc, method, request_id, timeout, grace=grace)
-        finally:
-            if self._pending_request_id == request_id:
-                self._pending_request_id = None
+            proc.stdin.write(wire)
+            proc.stdin.flush()
+        except (OSError, ValueError, AttributeError) as exc:
+            with self._conn_lock:
+                # Only reap the process this request actually used: a
+                # concurrent close/restart may already have replaced it.
+                if self._proc is proc:
+                    self._terminate_conn_locked()
+                    self._drain_responses()
+            raise RuntimeError("provider worker stdin is unavailable") from exc
+        return self._wait_for_response(proc, method, request_id, timeout, grace=grace)
 
     def _wait_for_response(
         self,
@@ -364,6 +364,26 @@ class WorkerChatProvider:
             WORKER_TIMEOUT_GRACE if grace else 0.0
         )
         while True:
+            reader_error = self._reader_errors.get(id(proc))
+            if reader_error is not None:
+                # This worker's framing already failed: terminate it if it
+                # is still current and report the protocol error instead of
+                # waiting out the timeout for replies that cannot arrive.
+                with self._conn_lock:
+                    if self._proc is proc:
+                        self._terminate_conn_locked()
+                self._drain_responses()
+                failure = ProviderFailure(
+                    self.provider_id,
+                    method,
+                    "",
+                    "",
+                    reader_error,
+                    "",
+                    FAILURE_RESPONSE_MISSING,
+                )
+                self.last_failure = failure
+                raise ProviderActionError(failure)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self._terminate()
@@ -421,6 +441,9 @@ class WorkerChatProvider:
         if proc is None:
             return
         try:
+            # Detaching drops its reader verdict with it: a recycled object
+            # id must never inherit another process's protocol failure.
+            self._reader_errors.pop(id(proc), None)
             self._close_worker_page()
             cancellation.terminate_process_tree(proc, job)
         finally:

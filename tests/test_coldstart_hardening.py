@@ -9,10 +9,13 @@ POST body-read timeout.
 
 from __future__ import annotations
 
+import io
+import json
 import queue
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from collections import deque
 from pathlib import Path
@@ -201,34 +204,33 @@ class EventBusOverflowTests(unittest.TestCase):
         self.assertEqual(bus.replay_events_after(2)[0][0], marker_id)
 
 
-class _ScriptedStdout:
-    """readline-only fake stdout that records every requested size."""
+class _RecordedStringIO(io.StringIO):
+    """StringIO honoring readline(size), recording every requested size."""
 
-    def __init__(self, script: list[str]) -> None:
-        self._script = list(script)
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
         self.sizes: list[int] = []
 
     def readline(self, size: int = -1) -> str:
         self.sizes.append(size)
-        if not self._script:
-            return ""
-        return self._script.pop(0)
+        return super().readline(size)
 
 
-class _ChunkedStderr:
-    """read-only fake stderr that serves one huge blob in fixed chunks."""
+class _GatedStderr:
+    """readline-only fake serving scripted chunks, then blocking on a gate."""
 
-    def __init__(self, text: str) -> None:
-        self._text = text
+    def __init__(self, chunks: list[str], release: threading.Event) -> None:
+        self._chunks = list(chunks)
+        self._release = release
         self.sizes: list[int] = []
 
-    def read(self, size: int = -1) -> str:
+    def readline(self, size: int = -1) -> str:
         self.sizes.append(size)
-        if size is None or size < 0:
-            out, self._text = self._text, ""
-            return out
-        out, self._text = self._text[:size], self._text[size:]
-        return out
+        if self._chunks:
+            chunk = self._chunks.pop(0)
+            return chunk[:size] if size is not None and size >= 0 else chunk
+        assert self._release.wait(timeout=10.0)
+        return ""
 
 
 class WorkerSelfHealTests(unittest.TestCase):
@@ -247,7 +249,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._dropped_responses = 0
         provider._conn_lock = threading.RLock()
         provider._request_lock = threading.Lock()
-        provider._pending_request_id = None
+        provider._reader_errors = {}
         provider._reader = None
         provider._cdp_port = 0
         provider._target_id = ""
@@ -282,9 +284,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._responses = queue.Queue(maxsize=2)
         provider._dropped_responses = 0
         proc = mock.Mock()
-        proc.stdout = _ScriptedStdout([
-            '{"id":"a"}\n', '{"id":"b"}\n', '{"id":"c"}\n', "",
-        ])
+        proc.stdout = _RecordedStringIO('{"id":"a"}\n{"id":"b"}\n{"id":"c"}\n')
         provider._proc = proc
         provider._read_loop()
         self.assertEqual(provider._responses.qsize(), 2)
@@ -294,46 +294,203 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertTrue(proc.stdout.sizes)
         self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
 
-    def test_overlong_line_fails_pending_request_and_resyncs(self) -> None:
+    def test_line_exactly_at_cap_plus_newline_parses(self) -> None:
+        # A line of exactly MAX chars plus its newline fits in one
+        # readline(MAX+1): it is a valid frame, not an over-limit one.
         provider = self._provider()
-        provider._pending_request_id = "req-1"
-        huge = "y" * (WORKER_LINE_MAX_CHARS + 100)
+        prefix = '{"id":"a","ok":true,"result":"'
+        suffix = '"}\n'
+        line = prefix + "p" * (WORKER_LINE_MAX_CHARS - len(prefix) - len(suffix) + 1) + suffix
+        self.assertEqual(len(line), WORKER_LINE_MAX_CHARS + 1)
         proc = mock.Mock()
-        proc.stdout = _ScriptedStdout([
-            huge[:WORKER_LINE_MAX_CHARS + 1],
-            huge[WORKER_LINE_MAX_CHARS + 1:] + "\n",
-            '{"id":"req-1","ok":true,"result":"after"}\n',
-            "",
-        ])
+        proc.stdout = _RecordedStringIO(line)
         provider._proc = proc
         provider._read_loop()
-        # No single read ever buffered the whole 1M line.
+        self.assertEqual(provider._reader_errors, {})
+        self.assertEqual(provider._responses.qsize(), 1)
+        self.assertEqual(provider._responses.get_nowait()["id"], "a")
+
+    def test_overlong_line_condemns_proc_and_spares_next_frame(self) -> None:
+        provider = self._provider()
+        huge = "y" * (WORKER_LINE_MAX_CHARS + 100)
+        reply = '{"id":"late","ok":true,"result":"kept"}\n'
+        proc = mock.Mock()
+        proc.stdout = _RecordedStringIO(huge + "\n" + reply)
+        provider._proc = proc
+        provider._read_loop()
+        # No single read ever buffered the whole line, and the reader
+        # stopped at the condemned frame instead of draining the reply.
         self.assertTrue(proc.stdout.sizes)
         self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
-        offered = []
-        while not provider._responses.empty():
-            offered.append(provider._responses.get_nowait())
-        self.assertEqual(len(offered), 2)
-        failure, resync = offered
-        self.assertEqual(failure["id"], "req-1")
-        self.assertIsNot(failure.get("ok"), True)
-        self.assertIn("exceeded", str(failure.get("error")))
-        self.assertEqual(resync.get("result"), "after")
-
-    def test_overlong_line_without_pending_request_is_dropped_silently(self) -> None:
-        provider = self._provider()
-        provider._pending_request_id = None
-        huge = "z" * (WORKER_LINE_MAX_CHARS + 10)
-        proc = mock.Mock()
-        proc.stdout = _ScriptedStdout([huge + "\n", ""])
-        provider._proc = proc
-        provider._read_loop()
+        self.assertIn(id(proc), provider._reader_errors)
+        self.assertIn("exceeded", provider._reader_errors[id(proc)])
         self.assertTrue(provider._responses.empty())
+        self.assertIn('"late"', proc.stdout.read())
+
+    def test_condemned_proc_fails_waiter_and_is_not_reused(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        provider._proc = proc
+        provider._reader_errors[id(proc)] = "provider worker output exceeded 1 chars"
+        with (
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ) as terminate,
+            self.assertRaises(ProviderActionError) as raised,
+        ):
+            provider._wait_for_response(proc, "send", "req-1", 5.0, grace=True)
+        self.assertIn("exceeded", raised.exception.failure.message)
+        terminate.assert_called_once_with(proc, None)
+        self.assertIsNone(provider._proc)
+        # The condemned process is never reused: the next request restarts.
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+        with (
+            mock.patch.object(
+                WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fresh),
+            ),
+            provider._conn_lock,
+        ):
+            running = provider._ensure_running_conn_locked()
+        self.assertIs(running, fresh)
+
+    def test_overlong_before_any_request_restarts_transparently(self) -> None:
+        provider = self._provider()
+        condemned = mock.Mock()
+        condemned.poll.return_value = None
+        condemned.stdin = mock.Mock()
+        condemned.stdout = _RecordedStringIO("y" * (WORKER_LINE_MAX_CHARS + 10))
+        provider._proc = condemned
+        # The reader sees the over-limit frame before any request exists.
+        provider._read_loop()
+        self.assertIn(id(condemned), provider._reader_errors)
+
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+        written = threading.Event()
+        wires: list[str] = []
+
+        def fake_write(data: str) -> None:
+            wires.append(data)
+            written.set()
+
+        fresh.stdin.write.side_effect = fake_write
+        out: dict[str, object] = {}
+
+        def do_request() -> None:
+            out["result"] = provider._request_locked("send", {"text": "hi"}, 5.0)
+
+        with mock.patch.object(
+            WorkerChatProvider, "_start", lambda self: setattr(self, "_proc", fresh),
+        ), mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+        ) as terminate:
+            worker = threading.Thread(target=do_request)
+            worker.start()
+            self.assertTrue(written.wait(timeout=10.0))
+            provider._offer_response({
+                "id": json.loads(wires[0])["id"], "ok": True, "result": "ok",
+            })
+            worker.join(timeout=10.0)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(out["result"], "ok")
+        terminate.assert_called_once_with(condemned, None)
+        self.assertEqual(len(wires), 1)
+
+    def test_blocked_stdin_write_does_not_block_close(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        provider._proc = proc
+        release = threading.Event()
+
+        def gated_flush() -> None:
+            assert release.wait(timeout=10.0)
+            raise OSError("broken pipe")
+
+        proc.stdin.flush.side_effect = gated_flush
+        errors: list[BaseException] = []
+
+        def do_request() -> None:
+            try:
+                provider._request_locked("send", {"text": "hi"}, 5.0)
+            except BaseException as exc:
+                errors.append(exc)
+
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+        ) as terminate:
+            worker = threading.Thread(target=do_request)
+            worker.start()
+            # Give the request time to block inside flush().
+            time.sleep(0.3)
+            closer = threading.Thread(target=provider.close)
+            closer.start()
+            closer.join(timeout=10.0)
+            self.assertFalse(closer.is_alive())
+            release.set()
+            worker.join(timeout=10.0)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], RuntimeError)
+        self.assertIn("stdin", str(errors[0]))
+        # close() already reaped the process; the write failure must not
+        # terminate anything again.
+        terminate.assert_called_once_with(proc, None)
+
+    def test_write_failure_after_replacement_spares_new_proc(self) -> None:
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        old.stdin = mock.Mock()
+        provider._proc = old
+        release = threading.Event()
+
+        def gated_flush() -> None:
+            assert release.wait(timeout=10.0)
+            raise OSError("broken pipe")
+
+        old.stdin.flush.side_effect = gated_flush
+        errors: list[BaseException] = []
+
+        def do_request() -> None:
+            try:
+                provider._request_locked("send", {"text": "hi"}, 5.0)
+            except BaseException as exc:
+                errors.append(exc)
+
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+        ) as terminate:
+            worker = threading.Thread(target=do_request)
+            worker.start()
+            time.sleep(0.3)
+            # A concurrent restart wins the race: the late write failure
+            # must not reap the replacement.
+            fresh = mock.Mock()
+            with provider._conn_lock:
+                provider._proc = fresh
+            release.set()
+            worker.join(timeout=10.0)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], RuntimeError)
+        terminate.assert_not_called()
+        self.assertIs(provider._proc, fresh)
 
     def test_stderr_tail_is_bounded_by_chunks_not_lines(self) -> None:
         provider = self._provider()
         proc = mock.Mock()
-        proc.stderr = _ChunkedStderr("e" * 1_000_000)
+        proc.stderr = _RecordedStringIO("e" * 1_000_000)
         provider._proc = proc
         provider._stderr_loop()
         self.assertTrue(proc.stderr.sizes)
@@ -344,6 +501,27 @@ class WorkerSelfHealTests(unittest.TestCase):
         )
         suffix = provider._worker_error_suffix()
         self.assertLessEqual(len(suffix), 420)
+
+    def test_stderr_small_line_arrives_while_child_alive(self) -> None:
+        provider = self._provider()
+        release = threading.Event()
+        proc = mock.Mock()
+        proc.stderr = _GatedStderr(["hello\n"], release)
+        provider._proc = proc
+        worker = threading.Thread(target=provider._stderr_loop, daemon=True)
+        worker.start()
+        try:
+            time.sleep(0.3)
+            # The short diagnostic landed without waiting for a full chunk
+            # or EOF, while the child is still "running".
+            self.assertTrue(worker.is_alive())
+            self.assertIn("hello", " | ".join(provider._stderr_tail))
+            self.assertTrue(proc.stderr.sizes)
+            self.assertLessEqual(max(proc.stderr.sizes), WORKER_STDERR_CHUNK_CHARS)
+        finally:
+            release.set()
+            worker.join(timeout=10.0)
+        self.assertFalse(worker.is_alive())
 
     def test_concurrent_offers_keep_newest_wins_accounting(self) -> None:
         provider = self._provider()
