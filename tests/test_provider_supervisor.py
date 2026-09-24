@@ -414,6 +414,100 @@ class ProviderSupervisorTests(unittest.TestCase):
             self.assertNotEqual(supervisor.last_save_error, "")
             self.assertTrue(supervisor.is_available("qwen"))
 
+    def test_lock_timeout_through_failure_event_is_logged_not_raised(self) -> None:
+        from codey.operations.task_phases.hooks import record_provider_failure_event
+        from codey.storage.file_lock import LockTimeout
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            ledger: list = []
+            self_repair = mock.Mock()
+            with mock.patch(
+                "codey.storage.file_lock.with_file_lock",
+                side_effect=LockTimeout("busy"),
+            ):
+                # A lock that cannot be acquired is a storage fault like any
+                # other: the hook must not propagate it into the run.
+                record_provider_failure_event(
+                    lambda pid, failure: ledger.append((pid, failure)),
+                    mock.Mock(),
+                    supervisor,
+                    self_repair,
+                    "qwen",
+                    failure("transient"),
+                )
+            self.assertEqual(len(ledger), 1)
+            self.assertNotEqual(supervisor.last_save_error, "")
+            self_repair.maybe_enqueue.assert_not_called()
+
+    def test_no_change_update_writes_nothing(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            supervisor.record_success("qwen")
+            with mock.patch.object(
+                supervisor_module, "write_json_atomic",
+            ) as write:
+                # Unknown and healthy selections change nothing: zero writes.
+                self.assertEqual(
+                    supervisor.prepare_user_selected("ghost").state, "unknown",
+                )
+                self.assertEqual(
+                    supervisor.prepare_user_selected("qwen").state, "healthy",
+                )
+                write.assert_not_called()
+
+    def test_state_changing_updates_write_once(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+        from codey.providers.supervisor import STATE_AUTH_REQUIRED, STATE_DEGRADED
+
+        now = [100.0]
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: now[0])
+            supervisor.record_failure(
+                "qwen", failure("authentication_required"),
+            )
+            self.assertEqual(supervisor.get("qwen").state, STATE_AUTH_REQUIRED)
+            with mock.patch.object(
+                supervisor_module, "write_json_atomic",
+            ) as write:
+                # auth_required -> degraded persists exactly once.
+                self.assertEqual(
+                    supervisor.prepare_user_selected("qwen").state, STATE_DEGRADED,
+                )
+                self.assertEqual(write.call_count, 1)
+
+            supervisor.record_failure("qwen", failure("rate_limited"))
+            now[0] = 500.0
+            with mock.patch.object(
+                supervisor_module, "write_json_atomic",
+            ) as write:
+                # A no-op mutate on an expired OPEN still persists the
+                # expiry transition itself exactly once.
+                self.assertEqual(write.call_count, 0)
+                self.assertEqual(
+                    supervisor.prepare_user_selected("qwen").state, STATE_DEGRADED,
+                )
+                self.assertEqual(write.call_count, 1)
+
+    def test_store_full_refuses_new_record_and_keeps_disk(self) -> None:
+        from codey.providers import supervisor as supervisor_module
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            for index in range(supervisor_module.MAX_PROVIDERS):
+                supervisor.record_success(f"p{index:02d}")
+            manifest = Path(td) / "provider-health.json"
+            before = manifest.read_text(encoding="utf-8")
+            with self.assertRaises(supervisor_module.HealthStoreError):
+                supervisor.record_success("zz")
+            # Explicit refusal, disk untouched: returned-healthy would be a lie.
+            self.assertEqual(manifest.read_text(encoding="utf-8"), before)
+            self.assertEqual(supervisor.get("zz").state, "unknown")
+            reloaded = ProviderSupervisor(td, clock=lambda: 100.0)
+            self.assertEqual(len(reloaded._health), supervisor_module.MAX_PROVIDERS)
+
 
 class HealthFailureFanoutTests(unittest.TestCase):
     def test_failure_event_survives_health_store_outage(self) -> None:

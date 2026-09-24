@@ -249,7 +249,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._dropped_responses = 0
         provider._conn_lock = threading.RLock()
         provider._request_lock = threading.Lock()
-        provider._reader_errors = {}
+        provider._reader_error = ""
         provider._reader = None
         provider._cdp_port = 0
         provider._target_id = ""
@@ -286,7 +286,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.stdout = _RecordedStringIO('{"id":"a"}\n{"id":"b"}\n{"id":"c"}\n')
         provider._proc = proc
-        provider._read_loop()
+        provider._read_loop(proc)
         self.assertEqual(provider._responses.qsize(), 2)
         self.assertEqual(provider._dropped_responses, 1)
         ids = sorted(item["id"] for item in list(provider._responses.queue))
@@ -305,8 +305,8 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.stdout = _RecordedStringIO(line)
         provider._proc = proc
-        provider._read_loop()
-        self.assertEqual(provider._reader_errors, {})
+        provider._read_loop(proc)
+        self.assertEqual(provider._reader_error, "")
         self.assertEqual(provider._responses.qsize(), 1)
         self.assertEqual(provider._responses.get_nowait()["id"], "a")
 
@@ -317,13 +317,12 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.stdout = _RecordedStringIO(huge + "\n" + reply)
         provider._proc = proc
-        provider._read_loop()
+        provider._read_loop(proc)
         # No single read ever buffered the whole line, and the reader
         # stopped at the condemned frame instead of draining the reply.
         self.assertTrue(proc.stdout.sizes)
         self.assertLessEqual(max(proc.stdout.sizes), WORKER_LINE_MAX_CHARS + 1)
-        self.assertIn(id(proc), provider._reader_errors)
-        self.assertIn("exceeded", provider._reader_errors[id(proc)])
+        self.assertIn("exceeded", provider._reader_error)
         self.assertTrue(provider._responses.empty())
         self.assertIn('"late"', proc.stdout.read())
 
@@ -334,7 +333,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.poll.return_value = None
         provider._proc = proc
-        provider._reader_errors[id(proc)] = "provider worker output exceeded 1 chars"
+        provider._reader_error = "provider worker output exceeded 1 chars"
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
@@ -366,8 +365,8 @@ class WorkerSelfHealTests(unittest.TestCase):
         condemned.stdout = _RecordedStringIO("y" * (WORKER_LINE_MAX_CHARS + 10))
         provider._proc = condemned
         # The reader sees the over-limit frame before any request exists.
-        provider._read_loop()
-        self.assertIn(id(condemned), provider._reader_errors)
+        provider._read_loop(condemned)
+        self.assertNotEqual(provider._reader_error, "")
 
         fresh = mock.Mock()
         fresh.poll.return_value = None
@@ -410,8 +409,10 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc.stdin = mock.Mock()
         provider._proc = proc
         release = threading.Event()
+        entered = threading.Event()
 
         def gated_flush() -> None:
+            entered.set()
             assert release.wait(timeout=10.0)
             raise OSError("broken pipe")
 
@@ -429,8 +430,8 @@ class WorkerSelfHealTests(unittest.TestCase):
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
-            # Give the request time to block inside flush().
-            time.sleep(0.3)
+            # Proven inside flush(), not merely "probably there".
+            self.assertTrue(entered.wait(timeout=10.0))
             closer = threading.Thread(target=provider.close)
             closer.start()
             closer.join(timeout=10.0)
@@ -453,8 +454,10 @@ class WorkerSelfHealTests(unittest.TestCase):
         old.stdin = mock.Mock()
         provider._proc = old
         release = threading.Event()
+        entered = threading.Event()
 
         def gated_flush() -> None:
+            entered.set()
             assert release.wait(timeout=10.0)
             raise OSError("broken pipe")
 
@@ -472,7 +475,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
-            time.sleep(0.3)
+            self.assertTrue(entered.wait(timeout=10.0))
             # A concurrent restart wins the race: the late write failure
             # must not reap the replacement.
             fresh = mock.Mock()
@@ -492,7 +495,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.stderr = _RecordedStringIO("e" * 1_000_000)
         provider._proc = proc
-        provider._stderr_loop()
+        provider._stderr_loop(proc, provider._stderr_tail)
         self.assertTrue(proc.stderr.sizes)
         self.assertLessEqual(max(proc.stderr.sizes), WORKER_STDERR_CHUNK_CHARS)
         total = sum(len(chunk) for chunk in provider._stderr_tail)
@@ -508,12 +511,20 @@ class WorkerSelfHealTests(unittest.TestCase):
         proc = mock.Mock()
         proc.stderr = _GatedStderr(["hello\n"], release)
         provider._proc = proc
-        worker = threading.Thread(target=provider._stderr_loop, daemon=True)
+        worker = threading.Thread(
+            target=provider._stderr_loop, args=(proc, provider._stderr_tail),
+            daemon=True,
+        )
         worker.start()
         try:
-            time.sleep(0.3)
-            # The short diagnostic landed without waiting for a full chunk
-            # or EOF, while the child is still "running".
+            # Condition-based, not sleep-based: the short diagnostic must
+            # land without waiting for a full chunk or EOF.
+            deadline = time.monotonic() + 10.0
+            while (
+                "hello" not in " | ".join(provider._stderr_tail)
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
             self.assertTrue(worker.is_alive())
             self.assertIn("hello", " | ".join(provider._stderr_tail))
             self.assertTrue(proc.stderr.sizes)
@@ -522,6 +533,98 @@ class WorkerSelfHealTests(unittest.TestCase):
             release.set()
             worker.join(timeout=10.0)
         self.assertFalse(worker.is_alive())
+
+    def test_stdout_read_error_condemns_current_generation(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+
+        class _BrokenStdout:
+            def readline(self, size: int = -1) -> str:
+                raise OSError("stream broken")
+
+        proc.stdout = _BrokenStdout()
+        provider._proc = proc
+        provider._read_loop(proc)
+        self.assertIn("unreadable", provider._reader_error)
+
+    def test_stdout_eof_condemns_live_proc_but_not_exited_one(self) -> None:
+        provider = self._provider()
+        live = mock.Mock()
+        live.poll.return_value = None
+        live.stdout = _RecordedStringIO("")
+        provider._proc = live
+        provider._read_loop(live)
+        self.assertIn("closed unexpectedly", provider._reader_error)
+
+        exited = mock.Mock()
+        exited.poll.return_value = 1
+        exited.stdout = _RecordedStringIO("")
+        provider._proc = exited
+        provider._reader_error = ""
+        provider._read_loop(exited)
+        self.assertEqual(provider._reader_error, "")
+
+    def test_stale_reader_cannot_pollute_new_generation(self) -> None:
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        provider._proc = old
+        old_tail = provider._stderr_tail
+        fresh = mock.Mock()
+        with provider._conn_lock:
+            provider._proc = fresh
+            provider._stderr_tail = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
+            provider._reader_error = ""
+        # Late verdicts, page events, offers, and diagnostics from the
+        # detached reader change nothing of the new generation.
+        provider._condemn_reader(old, "late over-limit")
+        provider._record_worker_page(old, {"port": 1111, "target_id": "old-target"})
+        provider._offer_response_for(old, {"id": "old", "ok": True, "result": 1})
+        old_tail.append("old-diagnostic")
+        self.assertEqual(provider._reader_error, "")
+        self.assertEqual(provider._cdp_port, 0)
+        self.assertEqual(provider._target_id, "")
+        self.assertTrue(provider._responses.empty())
+        self.assertEqual(list(provider._stderr_tail), [])
+
+    def test_waiter_on_replaced_proc_ends_promptly(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        provider._proc = old
+        errors: list[BaseException] = []
+
+        def do_wait() -> None:
+            try:
+                provider._wait_for_response(old, "send", "req-1", 30.0, grace=True)
+            except BaseException as exc:
+                errors.append(exc)
+
+        real_get = provider._responses.get
+        parked = threading.Event()
+
+        def gated_get(*args: object, **kwargs: object) -> object:
+            parked.set()
+            return real_get(*args, **kwargs)
+
+        provider._responses.get = gated_get  # type: ignore[method-assign]
+        try:
+            waiter = threading.Thread(target=do_wait)
+            waiter.start()
+            # Proven parked inside the queue wait before the swap lands.
+            self.assertTrue(parked.wait(timeout=10.0))
+            with provider._conn_lock:
+                provider._proc = mock.Mock()
+            waiter.join(timeout=10.0)
+        finally:
+            provider._responses.get = real_get  # type: ignore[method-assign]
+        self.assertFalse(waiter.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], ProviderActionError)
+        self.assertIn("exited", errors[0].failure.message)
 
     def test_concurrent_offers_keep_newest_wins_accounting(self) -> None:
         provider = self._provider()

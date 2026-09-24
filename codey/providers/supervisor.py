@@ -135,16 +135,29 @@ class ProviderSupervisor:
         """Hold the in-process lock and the file lock in one fixed order.
 
         All reads that must see fresh cross-instance state (get/select)
-        and all read-modify-write updates go through here.
+        and all read-modify-write updates go through here. A lock that
+        cannot be acquired is a storage fault like any other write
+        failure, so the soft-health hooks keep working.
         """
         from codey.storage.file_lock import with_file_lock
 
         with self._lock:
             if self.path is None:
                 yield
-            else:
-                with with_file_lock(self.path):
-                    yield
+                return
+            stack = contextlib.ExitStack()
+            try:
+                stack.enter_context(with_file_lock(self.path))
+            except OSError as exc:
+                # LockTimeout is an OSError: only the acquisition itself is
+                # covered, never the guarded body below.
+                stack.close()
+                self._last_save_error = f"{type(exc).__name__}: {exc}"[:200]
+                raise HealthStoreError(
+                    f"provider health store lock unavailable: {self._last_save_error}"
+                ) from exc
+            with stack:
+                yield
 
     def _refresh_locked(self) -> None:
         """Reload disk truth. Caller holds _exclusive()."""
@@ -156,15 +169,21 @@ class ProviderSupervisor:
 
         A failure records _last_save_error and raises HealthStoreError:
         callers roll memory back, so a returned state is always durable.
+        Hitting the provider cap is equally explicit: the new record is
+        refused with the disk untouched, never silently truncated away.
         """
         if self.path is None:
             return
+        if len(self._health) > MAX_PROVIDERS:
+            self._last_save_error = (
+                f"provider health store full "
+                f"({len(self._health)} > {MAX_PROVIDERS})"
+            )
+            raise HealthStoreError(self._last_save_error)
         try:
-            bounded = dict(sorted(self._health.items())[:MAX_PROVIDERS])
-            self._health = bounded
             providers = {
                 provider_id: asdict(health)
-                for provider_id, health in bounded.items()
+                for provider_id, health in sorted(self._health.items())
             }
             write_json_atomic(
                 self.path,
@@ -185,17 +204,22 @@ class ProviderSupervisor:
 
         All-or-nothing: a write failure rolls memory back to the durable
         state and raises, so the event is reported as recorded only when
-        it is on disk.
+        it is on disk. An event that changes nothing (compared against the
+        pre-expiry disk state, so genuinely needed expiry persists still
+        write) skips the write entirely.
         """
         key = normalize_provider_id(provider_id)
         with self._exclusive():
             self._refresh_locked()
             now = self.clock()
-            current = self._health.get(key, ProviderHealth())
+            original = self._health.get(key, ProviderHealth())
+            current = original
             expired = _expire_open(current, now)
             if expired is not None:
                 current = expired
             updated = mutate(key, current, now)
+            if updated == original:
+                return original
             previous = dict(self._health)
             self._health[key] = updated
             try:
@@ -336,7 +360,9 @@ class ProviderSupervisor:
         if not isinstance(records, dict):
             return {}
         health: dict[str, ProviderHealth] = {}
-        for raw_id, raw in list(records.items())[:MAX_PROVIDERS]:
+        # No silent cap here: the file itself is size-bounded, and the
+        # write path refuses over-cap records explicitly instead.
+        for raw_id, raw in records.items():
             provider_id = normalize_provider_id(raw_id)
             if not provider_id or not isinstance(raw, dict):
                 continue

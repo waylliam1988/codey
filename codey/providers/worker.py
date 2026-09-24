@@ -62,12 +62,10 @@ class WorkerChatProvider:
         self._reader: threading.Thread | None = None
         self._cdp_port: int = 0
         self._target_id: str = ""
-        # Reader protocol errors keyed by proc identity: an over-limit frame
-        # condemns that worker (its reader is gone), never a request id, so
-        # a stale reader cannot punish a replacement process. Entries are
-        # removed when their proc is detached; every access holds a strong
-        # proc reference, so ids cannot be recycled underneath a lookup.
-        self._reader_errors: dict[int, str] = {}
+        # Reader verdict for the current generation only. Requests are
+        # single-flight, so one slot suffices: a stale reader can neither
+        # fail nor misroute a replacement process (see _condemn_reader).
+        self._reader_error: str = ""
         with self._conn_lock:
             self._start_conn_locked()
 
@@ -138,7 +136,6 @@ class WorkerChatProvider:
             "--profile",
             str(worker_profile),
         ]
-        self._stderr_tail: deque[str] = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
         group_args: dict = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
             if os.name == "nt"
@@ -168,9 +165,19 @@ class WorkerChatProvider:
                 with contextlib.suppress(Exception):
                     cancellation.terminate_process_tree(proc, None)
             raise
-        self._stderr_reader = threading.Thread(target=self._stderr_loop, daemon=True)
+        # Reader threads capture their own generation explicitly: after a
+        # restart they must never guess ownership from self._proc, and the
+        # stderr tail is per-generation so old diagnostics cannot leak into
+        # a replacement's record.
+        proc = self._proc
+        tail: deque[str] = deque(maxlen=WORKER_STDERR_TAIL_CHUNKS)
+        self._stderr_tail = tail
+        self._reader_error = ""
+        self._stderr_reader = threading.Thread(
+            target=self._stderr_loop, args=(proc, tail), daemon=True,
+        )
         self._stderr_reader.start()
-        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader = threading.Thread(target=self._read_loop, args=(proc,), daemon=True)
         self._reader.start()
 
     def _start(self) -> None:
@@ -178,13 +185,13 @@ class WorkerChatProvider:
         with self._conn_lock:
             self._start_conn_locked()
 
-    def _stderr_loop(self) -> None:
-        # Startup diagnostics only: readline with a chunk cap keeps one huge
-        # line from ever entering memory whole, while a short
-        # newline-terminated diagnostic lands promptly instead of waiting
-        # for a full chunk or EOF. Any drain failure must never surface.
+    def _stderr_loop(self, proc, tail: deque[str]) -> None:
+        # Startup diagnostics only, writing this generation's tail:
+        # readline with a chunk cap keeps one huge line from ever entering
+        # memory whole, while a short newline-terminated diagnostic lands
+        # promptly instead of waiting for a full chunk or EOF. Any drain
+        # failure must never surface.
         try:
-            proc = self._proc
             stderr = proc.stderr if proc is not None else None
             if stderr is None:
                 return
@@ -192,7 +199,7 @@ class WorkerChatProvider:
                 chunk = stderr.readline(WORKER_STDERR_CHUNK_CHARS)
                 if not chunk:
                     return
-                self._stderr_tail.append(chunk)
+                tail.append(chunk)
         except Exception:
             return
 
@@ -200,24 +207,37 @@ class WorkerChatProvider:
         tail = " | ".join(self._stderr_tail).strip()
         return f": {tail[-400:]}" if tail else ""
 
-    def _read_loop(self) -> None:
-        proc = self._proc
+    def _read_loop(self, proc) -> None:
         stdout = proc.stdout if proc is not None else None
         if stdout is None:
+            self._condemn_reader(proc, "provider worker stdout is unavailable")
             return
         while True:
-            line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
+            try:
+                line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
+            except (OSError, ValueError) as exc:
+                self._condemn_reader(
+                    proc, f"provider worker stdout unreadable: {exc}",
+                )
+                return
             if not line:
+                # EOF on a live process means its framing died with no
+                # verdict; a normally exited child is handled by the
+                # proc-exit path in the waiter instead.
+                if proc.poll() is None:
+                    self._condemn_reader(
+                        proc, "provider worker stdout closed unexpectedly",
+                    )
                 return
             if not line.endswith("\n") and len(line) > WORKER_LINE_MAX_CHARS:
                 # Protocol failure of this worker, not a framable reply: a
                 # chunk of MAX+1 chars without a newline means the line is
                 # longer than the cap (a line of exactly MAX chars plus its
-                # newline still fits and parses below). Record it against
-                # this proc and stop: no draining, so the next frame is
-                # never consumed as if it were the tail of this one.
-                self._reader_errors[id(proc)] = (
-                    f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars"
+                # newline still fits and parses below). No draining, so the
+                # next frame is never consumed as this one's tail.
+                self._condemn_reader(
+                    proc,
+                    f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars",
                 )
                 return
             try:
@@ -226,26 +246,32 @@ class WorkerChatProvider:
                 continue
             if isinstance(payload, dict):
                 if payload.get("event") == "page":
-                    self._record_worker_page(payload)
+                    self._record_worker_page(proc, payload)
                     continue
-                self._offer_response(payload)
+                self._offer_response_for(proc, payload)
 
-    def _response_gate(self) -> threading.Lock:
-        gate = getattr(self, "_response_lock", None)
-        if gate is None:
-            gate = threading.Lock()
-            self._response_lock = gate
-        return gate
+    def _condemn_reader(self, proc, reason: str) -> None:
+        """Record one generation's reader verdict, ignoring stale readers.
+
+        Only the current generation may hold an error: a late verdict from
+        a detached reader is dropped, so it can neither fail a waiter nor
+        misroute a replacement process. The first verdict wins.
+        """
+        with self._conn_lock:
+            if self._proc is not proc:
+                return
+            if not self._reader_error:
+                self._reader_error = reason
 
     def _offer_response(self, payload: dict) -> None:
         """Bounded offer into _responses: newest wins, oldest drop is counted.
 
         A restart can leave the old reader briefly alive next to the new one,
-        so the full/get/put sequence holds the response gate: without it two
+        so the full/get/put sequence holds the response lock: without it two
         readers could both evict (double drop count) or both put (one newest
         lost). Request ids still filter stale responses either way.
         """
-        with self._response_gate():
+        with self._response_lock:
             if not self._responses.full():
                 try:
                     self._responses.put_nowait(payload)
@@ -256,21 +282,32 @@ class WorkerChatProvider:
                 self._responses.get_nowait()
             except queue.Empty:
                 return
-            self._dropped_responses = getattr(self, "_dropped_responses", 0) + 1
+            self._dropped_responses += 1
             try:
                 self._responses.put_nowait(payload)
             except queue.Full:
                 return
 
-    def _record_worker_page(self, payload: dict) -> None:
-        try:
-            self._cdp_port = max(0, int(payload.get("port") or 0))
-        except (TypeError, ValueError):
-            self._cdp_port = 0
-        self._target_id = str(payload.get("target_id") or "")
+    def _offer_response_for(self, proc, payload: dict) -> None:
+        """Offer a frame only when its reader is still the current generation."""
+        with self._conn_lock:
+            if self._proc is not proc:
+                return
+        self._offer_response(payload)
+
+    def _record_worker_page(self, proc, payload: dict) -> None:
+        """Apply a page event only from the current generation's reader."""
+        with self._conn_lock:
+            if self._proc is not proc:
+                return
+            try:
+                self._cdp_port = max(0, int(payload.get("port") or 0))
+            except (TypeError, ValueError):
+                self._cdp_port = 0
+            self._target_id = str(payload.get("target_id") or "")
 
     def _drain_responses(self) -> None:
-        with self._response_gate():
+        with self._response_lock:
             while True:
                 try:
                     self._responses.get_nowait()
@@ -280,16 +317,16 @@ class WorkerChatProvider:
     def _ensure_running_conn_locked(self) -> subprocess.Popen[str]:
         """Restart a dead worker. Caller must hold the conn lock.
 
-        A live process whose reader already condemned it (over-limit frame)
-        is equally unusable: its replies can never arrive, so restart
-        instead of reusing it.
+        A live process whose reader already condemned it is equally
+        unusable: its replies can never arrive, so restart instead of
+        reusing it.
         """
         proc = self._proc
         if (
             proc is not None
             and proc.poll() is None
             and proc.stdin is not None
-            and id(proc) not in self._reader_errors
+            and not self._reader_error
         ):
             return proc
         self._drain_responses()
@@ -364,8 +401,26 @@ class WorkerChatProvider:
             WORKER_TIMEOUT_GRACE if grace else 0.0
         )
         while True:
-            reader_error = self._reader_errors.get(id(proc))
-            if reader_error is not None:
+            with self._conn_lock:
+                replaced = self._proc is not proc
+                reader_error = "" if replaced else self._reader_error
+            if replaced:
+                # Our generation is gone (closed or restarted): end the wait
+                # now instead of polling a dead handle until timeout. Never
+                # terminate here: the current process belongs to someone else.
+                self._drain_responses()
+                failure = ProviderFailure(
+                    self.provider_id,
+                    method,
+                    "",
+                    "",
+                    "provider worker exited" + self._worker_error_suffix(),
+                    "",
+                    FAILURE_RESPONSE_MISSING,
+                )
+                self.last_failure = failure
+                raise ProviderActionError(failure)
+            if reader_error:
                 # This worker's framing already failed: terminate it if it
                 # is still current and report the protocol error instead of
                 # waiting out the timeout for replies that cannot arrive.
@@ -441,9 +496,9 @@ class WorkerChatProvider:
         if proc is None:
             return
         try:
-            # Detaching drops its reader verdict with it: a recycled object
-            # id must never inherit another process's protocol failure.
-            self._reader_errors.pop(id(proc), None)
+            # Detaching clears the generation's verdict with it: nothing of
+            # the old reader survives into the replacement's record.
+            self._reader_error = ""
             self._close_worker_page()
             cancellation.terminate_process_tree(proc, job)
         finally:

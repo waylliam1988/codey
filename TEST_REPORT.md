@@ -80,6 +80,47 @@ Verification (local, Windows):
   (`4173 passed, 6 skipped, 1374 subtests passed in 361.81s (0:06:01)`).
 - This report entry was written after the final full pytest run.
 
+## Worker generation ownership, lock-fault health boundary, no-op writes full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/supervisor.py         (lock-acquisition faults convert to HealthStoreError via ExitStack-scoped acquisition; no-change updates skip writes against pre-expiry state; capacity overrun refuses explicitly with disk untouched; load reads all valid entries)
+codey/providers/worker.py             (threads capture their proc/tail generation; single current-generation reader slot; condemn covers over-limit/read-error/live-EOF; page/offer gated by identity; waiter ends promptly on replacement; _response_gate removed)
+tests/test_provider_supervisor.py     (lock timeout through failure hook; zero-write no-ops; single-write transitions; capacity refusal keeps disk)
+tests/test_coldstart_hardening.py     (generation-gated verdicts/pages/offers/tails; OSError/EOF condemn rules; replaced-waiter promptness; event-latched flush/stderr interleavings)
+```
+
+Notes:
+
+- Soft health stays soft: no replay queue. A lock that cannot be acquired
+  behaves like any other storage fault (logged, failover continues), and a
+  failed event is an accepted, visible loss that later events rebuild from.
+- Reader verdicts, page events, offers, and stderr tails all belong to one
+  generation: stale readers change nothing of a replacement, and waiters
+  never poll a dead handle to timeout.
+- Unchanged updates cost no lock-hold write; over-capacity records are
+  refused loudly instead of silently truncated.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `502 passed, 23 subtests passed in 66.87s`.
+- Full suite: `python -m pytest`
+  (`collected 4214 items; 4207 passed, 6 skipped in 454.38s (0:07:34)`,
+  plus one unrelated load-flake in `test_ghost_work_queue_ab.py`, a Windows
+  temp-cleanup file lock; the file passes 3/3 in isolation).
+- A second full run for confirmation:
+  (`collected 4214 items; 4207 passed, 6 skipped, 1374 subtests passed
+  in 461.42s (0:07:41)`), plus one unrelated load-flake in
+  `test_web_clipboard.py` (mocked-time exhaustion under load; the file
+  passes 3/3 in isolation with `test_ghost_work_queue_ab.py`).
+- Both flakes are in code paths untouched by this change (ghost teardown,
+  clipboard polling) and reproduce neither the fixed bugs nor each other;
+  recorded here instead of re-rolled for a clean line.
+- This report entry was written after the final full pytest run.
+
 ## Worker protocol failure, lock-free stdin, timely stderr full suite (2026-09-24)
 
 Scope (production, no release):

@@ -51,6 +51,23 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - Worker 代际归属、锁错误边界、无变化零写盘（未发布）
+
+- Reader 状态只属于一代。线程启动时明确捕获自己的 proc（与 stderr
+  tail）； detached 旧 reader 的结论、页面事件、回复与诊断一律丢弃。超
+  限、读取异常、活进程 EOF 共用一条 condemn 路径；等待者显式失败，被替
+  换后及时结束而不再轮询死句柄。单次请求只需要一个“当前代”错误槽，不再
+  按 ID 存字典。
+- 锁失败不出软健康契约。取锁失败经 ExitStack 限定范围转为
+  `HealthStoreError`，钩子记日志后继续 failover，不打断任务。
+- 无意义写盘清零。`_update()` 以过期前盘态为基准，无变化直接返回（真正
+  需要的过期转换仍写）；超容量记录明确拒绝且不动盘，读取也不再静默只取
+  前 16 项。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向套件
+  （`502 passed, 23 subtests passed`）、收集（`4214 tests collected`）、
+  最终全量 `python -m pytest`（`4207 passed, 6 skipped in 461.42s`；一次
+  无关满载偶发于 `test_web_clipboard.py`，隔离 3/3 通过）均如实记录。
+
 ## Unreleased - Worker 协议失败、stdin 无锁写入、stderr 及时性（未发布）
 
 - 超限帧是单个 worker 的协议失败。reader 把结论记在该 proc 名下后退出，

@@ -32,6 +32,27 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Worker generation ownership, lock-fault boundary, no-op writes (no release)
+
+- Reader state belongs to one generation. Threads capture their proc (and
+  stderr tail) at start; verdicts, page events, offers, and diagnostics
+  from a detached reader are dropped. Over-limit, read-error, and live-EOF
+  share one condemn path; waiters fail explicitly and end promptly when
+  replaced instead of polling a dead handle. Single-flight needs only one
+  current-generation error slot, not an id-keyed map.
+- Lock faults stay inside the soft-health contract. Acquisition failures
+  convert to `HealthStoreError` scoped to the acquisition itself, so hooks
+  log and continue failover instead of breaking the run.
+- No meaningless writes. `_update()` returns early when the event changes
+  nothing against the pre-expiry disk state (needed expiry persists still
+  write); over-capacity records are refused with the disk untouched, and
+  loads no longer silently take the first 16 entries.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`502 passed, 23 subtests passed`), collection
+  (`4214 tests collected`), and final full `python -m pytest`
+  (`4207 passed, 6 skipped in 461.42s`; one unrelated load-flake in
+  `test_web_clipboard.py`, green 3/3 in isolation).
+
 ## Unreleased - Worker protocol failure, lock-free stdin, timely stderr (no release)
 
 - Over-limit frames are one worker's protocol failure. The reader records
