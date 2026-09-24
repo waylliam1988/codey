@@ -2,21 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
-import os
 import urllib.error
 import urllib.request
 
-from codey.env_names import (
-    LOCAL_OPENAI_API_KEY_ENV as LOCAL_API_KEY_ENV,
-)
-from codey.env_names import (
-    LOCAL_OPENAI_BASE_URL_ENV as LOCAL_BASE_URL_ENV,
-)
-from codey.env_names import (
-    LOCAL_OPENAI_MODEL_ENV as LOCAL_MODEL_ENV,
-)
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 
@@ -40,8 +31,8 @@ class LocalOpenAIProvider:
 
     def __init__(
         self,
-        base_url: str = "",
-        model: str = "",
+        base_url: str,
+        model: str,
         *,
         api_key: str = "",
         timeout: float = DEFAULT_TIMEOUT,
@@ -51,9 +42,14 @@ class LocalOpenAIProvider:
         context_reserve_tokens: int | None = None,
         context_keep_recent_tokens: int | None = None,
     ) -> None:
-        self.base_url = (base_url or os.environ.get(LOCAL_BASE_URL_ENV) or _local_discovery.default_local_base_url()).rstrip("/")
-        self.model = model or os.environ.get(LOCAL_MODEL_ENV) or "local-model"
-        self.api_key = api_key or os.environ.get(LOCAL_API_KEY_ENV, "")
+        """Runtime only: the target is already resolved (no env/discovery)."""
+        if not base_url.strip():
+            raise ValueError("base_url is required")
+        if not model.strip():
+            raise ValueError("model is required")
+        self.base_url = base_url.strip().rstrip("/")
+        self.model = model.strip()
+        self.api_key = api_key
         self.timeout = timeout
         self.temperature = temperature
         self.system_prompt = system_prompt
@@ -63,29 +59,34 @@ class LocalOpenAIProvider:
         self._messages: list[dict] = []
 
     @classmethod
-    def connect(cls, **_kwargs) -> LocalOpenAIProvider:
-        """Connect to the remembered or discovered local endpoint.
+    def connect(cls) -> LocalOpenAIProvider:
+        """Connect to the single selected target (address + model + key).
 
-        Offline is a hard error: the caller (provider preflight) reports
-        the failure and fails over. No offline fallback instance is
-        returned, so saved model/key are never silently replaced.
+        Offline is a hard error for preflight failover. An explicit
+        address never falls back to another service, and probing uses the
+        same key the provider sends with.
         """
         config = _local_config.load_local_config()
+        selection = _local_config.select_local_target(config)
         endpoint = _local_discovery.resolve_local_endpoint(
-            base_url=config.base_url,
-            model=config.model,
-            api_key=config.api_key,
+            base_url=selection.base_url,
+            model=selection.model,
+            api_key=selection.api_key,
         )
         if endpoint is None:
-            configured = (config.base_url or "").strip() or _local_discovery.DEFAULT_BASE_URL
+            configured = selection.base_url or "auto-discovery (no configured address)"
             raise RuntimeError(
                 f"could not reach local model at {configured}: "
                 "no OpenAI-compatible /models endpoint"
             )
         effective = _local_config.resolve_effective_local_config(config, endpoint=endpoint)
+        if not effective.model:
+            raise RuntimeError(
+                f"local model at {effective.base_url} returned no usable model"
+            )
         return cls(
             effective.base_url,
-            effective.model or "local-model",
+            effective.model,
             api_key=effective.api_key,
             context_window_tokens=effective.context.context_window_tokens,
             context_reserve_tokens=effective.context.context_reserve_tokens,
@@ -286,9 +287,13 @@ class LocalOpenAIProvider:
                 last_error = exc
             except urllib.error.HTTPError as exc:
                 try:
-                    detail = exc.read(_ERROR_BODY_MAX_BYTES + 1).decode("utf-8", "replace")[:_ERROR_BODY_MAX_BYTES]
-                except Exception:
-                    detail = ""
+                    try:
+                        detail = exc.read(_ERROR_BODY_MAX_BYTES + 1).decode("utf-8", "replace")[:_ERROR_BODY_MAX_BYTES]
+                    except Exception:
+                        detail = ""
+                finally:
+                    with contextlib.suppress(Exception):
+                        exc.close()
                 kind = errors.classify_http_error(int(getattr(exc, "code", 0) or 0), detail)
                 if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
                     raise errors.ContextOverflowError(f"local model context overflow: {detail[:400]}") from exc

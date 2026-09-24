@@ -62,13 +62,13 @@ class EnvNameValueTests(unittest.TestCase):
 
     def test_module_constants_match_single_source(self) -> None:
         from codey.automation import browser
-        from codey.providers import catalog, local_openai
+        from codey.providers import catalog, local_config
 
         self.assertIs(browser.BROWSER_PATH_ENV, env_names.BROWSER_PATH_ENV)
         self.assertIs(catalog.WORKER_CHILD_ENV, env_names.PROVIDER_WORKER_CHILD_ENV)
-        self.assertIs(local_openai.LOCAL_BASE_URL_ENV, env_names.LOCAL_OPENAI_BASE_URL_ENV)
-        self.assertIs(local_openai.LOCAL_MODEL_ENV, env_names.LOCAL_OPENAI_MODEL_ENV)
-        self.assertIs(local_openai.LOCAL_API_KEY_ENV, env_names.LOCAL_OPENAI_API_KEY_ENV)
+        self.assertIs(local_config.LOCAL_OPENAI_BASE_URL_ENV, env_names.LOCAL_OPENAI_BASE_URL_ENV)
+        self.assertIs(local_config.LOCAL_OPENAI_MODEL_ENV, env_names.LOCAL_OPENAI_MODEL_ENV)
+        self.assertIs(local_config.LOCAL_OPENAI_API_KEY_ENV, env_names.LOCAL_OPENAI_API_KEY_ENV)
 
     def test_native_gate_reads_canonical_name(self) -> None:
         import inspect

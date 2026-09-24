@@ -102,11 +102,10 @@ class ProviderSupervisor:
                     circuit_open_until=0.0,
                 )
                 self._health[key] = health
-                snapshot = dict(self._health)
-            else:
-                return health
-        self._save_snapshot(snapshot)
-        return health
+                # Persist under the same lock so a concurrent update cannot
+                # be overwritten by this older snapshot.
+                self._save_snapshot(dict(self._health))
+            return health
 
     def is_available(self, provider_id: str) -> bool:
         return self.get(provider_id).state not in {STATE_OPEN, STATE_AUTH_REQUIRED}
@@ -240,9 +239,8 @@ class ProviderSupervisor:
     def _store(self, provider_id: str, health: ProviderHealth) -> ProviderHealth:
         with self._lock:
             self._health[provider_id] = health
-            snapshot = dict(self._health)
-        self._save_snapshot(snapshot)
-        return health
+            self._save_snapshot(dict(self._health))
+            return health
 
     def _load(self) -> dict[str, ProviderHealth]:
         if self.path is None:
@@ -280,11 +278,10 @@ class ProviderSupervisor:
 
     def _save(self) -> None:
         with self._lock:
-            snapshot = dict(self._health)
-        self._save_snapshot(snapshot)
+            self._save_snapshot(dict(self._health))
 
     def _save_snapshot(self, snapshot: dict[str, ProviderHealth]) -> None:
-        """Persist outside the lock. Failures are recorded, never swallowed."""
+        """Persist under the caller's lock; failures are recorded, never swallowed."""
         if self.path is None:
             return
         providers = {

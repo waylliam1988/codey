@@ -176,6 +176,8 @@ def connect_repair_helper(provider_id: str, *, state_home: str | Path):
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported repair helper provider: {provider_id}")
+    if normalized == "local":
+        return provider_type.connect()
     return provider_type.connect(
         port=DEFAULT_PORT + 200 + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
         profile=Path(state_home) / "self-repair" / normalized,

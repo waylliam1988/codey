@@ -19,6 +19,7 @@ from codey.env_names import (
     LOCAL_OPENAI_CONTEXT_KEEP_ENV,
     LOCAL_OPENAI_CONTEXT_RESERVE_ENV,
     LOCAL_OPENAI_CONTEXT_WINDOW_ENV,
+    LOCAL_OPENAI_MODEL_ENV,
     NATIVE_TOOLS_ENV,
 )
 from codey.storage.local_store import (
@@ -68,6 +69,64 @@ class EffectiveLocalConfig:
     api_key: str
     native_tools: bool
     context: LocalContextBudget
+
+
+@dataclass(frozen=True)
+class LocalTargetSelection:
+    """One grouped target: address, model, and key stay together."""
+
+    base_url: str
+    model: str
+    api_key: str
+    source: str = ""
+
+
+def select_local_target(
+    config: LocalProviderConfig | None = None,
+) -> LocalTargetSelection:
+    """Decide the single local target once (address + model + key).
+
+    Priority keeps each group together so a saved key is never carried to
+    another service: an env base wins entirely on its own; only when the
+    env and saved bases are the same target do env model/key fall back to
+    the saved values. With no env base, the saved base wins with env
+    model/key as same-target overrides. With no base, env model/key win
+    if set, else the saved ones (discovery preference only).
+    """
+    loaded = config if config is not None else load_local_config()
+    env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
+    env_model = os.environ.get(LOCAL_OPENAI_MODEL_ENV, "").strip()
+    env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
+    cfg_base = loaded.base_url.strip().rstrip("/")
+    cfg_model = loaded.model.strip()
+    cfg_key = loaded.api_key.strip() if isinstance(loaded.api_key, str) else ""
+    if env_base:
+        if cfg_base and env_base.lower() == cfg_base.lower():
+            return LocalTargetSelection(
+                base_url=env_base,
+                model=env_model or cfg_model,
+                api_key=env_key or cfg_key,
+                source="env",
+            )
+        return LocalTargetSelection(
+            base_url=env_base,
+            model=env_model,
+            api_key=env_key,
+            source="env",
+        )
+    if cfg_base:
+        return LocalTargetSelection(
+            base_url=cfg_base,
+            model=env_model or cfg_model,
+            api_key=env_key or cfg_key,
+            source="config",
+        )
+    return LocalTargetSelection(
+        base_url="",
+        model=env_model or cfg_model,
+        api_key=env_key or cfg_key,
+        source="",
+    )
 
 
 def context_budget_for_window(window_tokens: int) -> LocalContextBudget:
@@ -291,12 +350,9 @@ def resolve_local_native_tools(config: LocalProviderConfig) -> bool:
         return True
     if config.native_tools_mode == NATIVE_TOOLS_OFF:
         return False
-    try:
-        from codey.providers.capabilities import capability_for
+    from codey.providers.capabilities import capability_for
 
-        return bool(capability_for("local").native_tools_default)
-    except Exception:
-        return True
+    return bool(capability_for("local").native_tools_default)
 
 
 def resolve_local_context_budget(config: LocalProviderConfig) -> LocalContextBudget:
@@ -353,29 +409,35 @@ def resolve_effective_local_config(
 ) -> EffectiveLocalConfig:
     """Single runtime view: agent code reads this, never raw files or env.
 
-    The endpoint comes from the caller; only when omitted is discovery
-    consulted directly.
+    The target (address/model/key) comes from select_local_target() once,
+    so probing and sending always share one key. An explicit model is kept
+    for an explicit base; for auto-discovery a saved preference applies
+    only when present on the discovered endpoint.
     """
     loaded = config if config is not None else load_local_config()
+    selection = select_local_target(loaded)
     resolved = endpoint
     if resolved is _MISSING:
-        try:
-            from codey.providers import local_discovery as discovery
+        from codey.providers import local_discovery as discovery
 
-            resolved = discovery.resolve_local_endpoint(
-                base_url=loaded.base_url,
-                model=loaded.model,
-                api_key=loaded.api_key,
-            )
-        except Exception:
-            resolved = None
+        resolved = discovery.resolve_local_endpoint(
+            base_url=selection.base_url,
+            model=selection.model,
+            api_key=selection.api_key,
+        )
     base_url = str(getattr(resolved, "base_url", "") or "") if resolved is not None else ""
     models = tuple(getattr(resolved, "models", ()) or ()) if resolved is not None else ()
-    model = loaded.model or (models[0] if models else "")
+    if selection.model:
+        if resolved is None or selection.model in models or selection.source != "":
+            model = selection.model
+        else:
+            model = models[0] if models else selection.model
+    else:
+        model = models[0] if models else ""
     return EffectiveLocalConfig(
-        base_url=base_url or loaded.base_url,
+        base_url=base_url or selection.base_url,
         model=model,
-        api_key=loaded.api_key,
+        api_key=selection.api_key,
         native_tools=resolve_local_native_tools(loaded),
         context=resolve_local_context_budget(loaded),
     )
@@ -384,32 +446,40 @@ def resolve_effective_local_config(
 def local_bootstrap_payload() -> dict:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
-    env_base = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip().rstrip("/")
-    remembered = config.base_url.strip() or env_base
+    selection = select_local_target(config)
+    remembered = selection.base_url
     try:
         from codey.providers import local_discovery as discovery
 
-        env_key = os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()
-        probe_key = config.api_key or env_key
-        endpoint = (
-            discovery.probe_local_endpoint(remembered, api_key=probe_key)
-            if remembered
-            else None
-        )
-        if endpoint is not None:
-            # Same model preference as resolve_local_endpoint().
-            wanted = (config.model or endpoint.default_model or "").strip()
-            endpoint = discovery.LocalEndpoint(
-                endpoint.base_url,
-                ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
-            )
-        if endpoint is not None:
-            discovered: list[str] = []
+        if remembered:
+            endpoint = discovery.probe_local_endpoint(remembered, api_key=selection.api_key)
+            if endpoint is not None:
+                wanted = (selection.model or endpoint.default_model or "").strip()
+                endpoint = discovery.LocalEndpoint(
+                    endpoint.base_url,
+                    ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
+                )
+            if endpoint is not None:
+                discovered: list[str] = []
+            else:
+                # Explicit target offline: list the other well-known
+                # candidates as try-buttons without probing them with this
+                # target's key, and never claim another service as connected.
+                discovered = [
+                    candidate.base_url
+                    for candidate in discovery.LOCAL_ENDPOINT_CANDIDATES
+                    if candidate.base_url.rstrip("/").lower() != remembered.rstrip("/").lower()
+                ]
         else:
-            # Single parallel pass: first reachable endpoint plus, only when
-            # still unconnected, the unreachable candidates as try-buttons.
-            probes = discovery.detect_local_endpoint_probes(api_key=probe_key)
+            # No selected target: one parallel pass with the selected key.
+            probes = discovery.detect_local_endpoint_probes(api_key=selection.api_key)
             endpoint = next((probe.endpoint for probe in probes if probe.endpoint is not None), None)
+            if endpoint is not None and selection.model and selection.model in endpoint.models:
+                wanted = selection.model.strip()
+                endpoint = discovery.LocalEndpoint(
+                    endpoint.base_url,
+                    (wanted,) + tuple(m for m in endpoint.models if m != wanted),
+                )
             discovered = (
                 []
                 if endpoint is not None
@@ -421,37 +491,46 @@ def local_bootstrap_payload() -> dict:
     try:
         effective = resolve_effective_local_config(config, endpoint=endpoint)
         context_error = ""
+        context_payload: dict[str, object] | None = asdict(effective.context)
+        context_window = effective.context.context_window_tokens
+        context_reserve = effective.context.context_reserve_tokens
+        context_keep = effective.context.context_keep_recent_tokens
+        native_tools = effective.native_tools
+        display_base = effective.base_url or remembered
+        display_model = effective.model
     except ValueError as exc:
-        # Invalid env override: show capability defaults plus the error
-        # instead of failing the whole bootstrap request.
+        # Invalid env override is display-only here: report the error with
+        # no budget (never a default that looks runnable). Runtime paths
+        # raise through resolve_effective_local_config instead.
         context_error = str(exc)
-        base_url = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
-        models_from_endpoint = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
-        effective = EffectiveLocalConfig(
-            base_url=base_url or config.base_url,
-            model=config.model or (models_from_endpoint[0] if models_from_endpoint else ""),
-            api_key=config.api_key,
-            native_tools=resolve_local_native_tools(config),
-            context=_default_budget(),
-        )
+        endpoint_base = str(getattr(endpoint, "base_url", "") or "") if endpoint is not None else ""
+        endpoint_models = tuple(getattr(endpoint, "models", ()) or ()) if endpoint is not None else ()
+        if selection.model and (endpoint is None or selection.model in endpoint_models or selection.source != ""):
+            display_model = selection.model
+        else:
+            display_model = endpoint_models[0] if endpoint_models else selection.model
+        display_base = endpoint_base or selection.base_url or remembered
+        native_tools = resolve_local_native_tools(config)
+        context_payload = None
+        context_window = None
+        context_reserve = None
+        context_keep = None
     models: list[str] = []
     if endpoint is not None:
         models = list(endpoint.models)
-        if config.model and config.model not in models:
-            models = [config.model, *[m for m in models if m != config.model]]
     return {
         "connected": endpoint is not None,
-        "base_url": effective.base_url or remembered,
-        "model": effective.model,
+        "base_url": display_base,
+        "model": display_model,
         "models": models,
         "candidates": discovered,
-        "has_api_key": bool(config.api_key or os.environ.get(LOCAL_OPENAI_API_KEY_ENV, "").strip()),
+        "has_api_key": bool(selection.api_key),
         "native_tools_mode": config.native_tools_mode,
-        "native_tools": effective.native_tools,
-        "context": asdict(effective.context),
-        "context_window_tokens": effective.context.context_window_tokens,
-        "context_reserve_tokens": effective.context.context_reserve_tokens,
-        "context_keep_recent_tokens": effective.context.context_keep_recent_tokens,
+        "native_tools": native_tools,
+        "context": context_payload,
+        "context_window_tokens": context_window,
+        "context_reserve_tokens": context_reserve,
+        "context_keep_recent_tokens": context_keep,
         "context_error": context_error,
         "presets": [
             {"id": preset_id, "label": label, "window": window}
@@ -471,6 +550,7 @@ __all__ = [
     "EffectiveLocalConfig",
     "LocalContextBudget",
     "LocalProviderConfig",
+    "LocalTargetSelection",
     "config_from_dict",
     "config_to_payload",
     "context_budget_for_window",
@@ -482,5 +562,6 @@ __all__ = [
     "resolve_local_context_budget",
     "resolve_local_native_tools",
     "save_local_config",
+    "select_local_target",
     "validate_context_budget",
 ]

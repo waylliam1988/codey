@@ -366,28 +366,16 @@ class ProviderRegistryTests(unittest.TestCase):
             self.assertIs(registry.connect_provider("glm", port=9222), glm)
             self.assertIs(registry.connect_provider("local", port=9222), local)
 
-    def test_local_provider_uses_first_available_default_endpoint(self) -> None:
-        with (
-            mock.patch.dict(
-                "os.environ",
-                {
-                    local_openai.LOCAL_BASE_URL_ENV: "",
-                    local_openai.LOCAL_MODEL_ENV: "",
-                    local_openai.LOCAL_API_KEY_ENV: "",
-                },
-                clear=False,
-            ),
-            mock.patch.object(
-                local_discovery,
-                "default_local_base_url",
-                return_value="http://127.0.0.1:11434/v1",
-            ) as default_base,
-        ):
-            provider = local_openai.LocalOpenAIProvider()
-
+    def test_local_provider_requires_resolved_target(self) -> None:
+        provider = local_openai.LocalOpenAIProvider(
+            base_url="http://127.0.0.1:11434/v1", model="qwen",
+        )
         self.assertEqual(provider.base_url, "http://127.0.0.1:11434/v1")
-        self.assertEqual(provider.model, "local-model")
-        default_base.assert_called_once_with()
+        self.assertEqual(provider.model, "qwen")
+        with self.assertRaises(ValueError):
+            local_openai.LocalOpenAIProvider(base_url="", model="qwen")
+        with self.assertRaises(ValueError):
+            local_openai.LocalOpenAIProvider(base_url="http://127.0.0.1:11434/v1", model="")
 
     def test_local_connect_prefers_remembered_config(self) -> None:
         endpoint = local_discovery.LocalEndpoint("http://127.0.0.1:5001/v1", ("chosen", "gemma"))
@@ -397,6 +385,15 @@ class ProviderRegistryTests(unittest.TestCase):
             api_key="secret",
         )
         with (
+            mock.patch.dict(
+                "os.environ",
+                {
+                    "LOCAL_OPENAI_BASE_URL": "",
+                    "LOCAL_OPENAI_MODEL": "",
+                    "LOCAL_OPENAI_API_KEY": "",
+                },
+                clear=False,
+            ),
             mock.patch.object(
                 local_config,
                 "load_local_config",

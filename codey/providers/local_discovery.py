@@ -137,55 +137,36 @@ def detect_local_endpoints(*, api_key: str = "", timeout: float = DETECT_TIMEOUT
     ]
 
 
-def default_local_base_url() -> str:
-    import os
+def local_endpoint_available() -> bool:
+    """Share the single target decision with connect(): one address, one key."""
+    from codey.providers.local_config import select_local_target as _select_target
 
-    from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
-    from codey.providers.local_config import load_local_config as _load_config
-
-    configured = os.environ.get(LOCAL_OPENAI_BASE_URL_ENV, "").strip()
-    if configured:
-        return configured
-    remembered = _load_config().base_url
-    if remembered:
-        return remembered
-    for probe in detect_local_endpoint_probes():
-        if probe.endpoint is not None:
-            return probe.endpoint.base_url
-    return DEFAULT_BASE_URL
-
-
-def local_endpoint_available(base_url: str = "") -> bool:
-    import os
-
-    from codey.env_names import LOCAL_OPENAI_API_KEY_ENV as _KEY_ENV
-    from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV as _URL_ENV
-    from codey.providers.local_config import load_local_config as _load_config
-
-    config = _load_config()
-    remembered_key = config.api_key
-    if base_url:
-        return probe_local_endpoint(base_url, api_key=remembered_key) is not None
-    configured = os.environ.get(_URL_ENV, "").strip()
-    if configured:
-        return probe_local_endpoint(configured, api_key=os.environ.get(_KEY_ENV, "")) is not None
-    return resolve_local_endpoint(base_url=config.base_url, model=config.model, api_key=config.api_key) is not None
+    selection = _select_target()
+    return (
+        resolve_local_endpoint(
+            base_url=selection.base_url,
+            model=selection.model,
+            api_key=selection.api_key,
+        )
+        is not None
+    )
 
 
 def resolve_local_endpoint(*, base_url: str = "", model: str = "", api_key: str = "") -> LocalEndpoint | None:
-    """Resolve the remembered endpoint first, else the first reachable candidate."""
-    import os
+    """Probe one explicit address, or auto-discover only when none is set.
 
-    from codey.env_names import LOCAL_OPENAI_API_KEY_ENV as _API_KEY_ENV
-
+    An explicit address never falls back to another service: failure
+    returns None so saved credentials are not carried elsewhere.
+    """
     remembered = (base_url or "").strip()
     if remembered:
         endpoint = probe_local_endpoint(remembered, api_key=api_key)
-        if endpoint is not None:
-            wanted = (model or endpoint.default_model or "").strip()
-            models = ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted)
-            return LocalEndpoint(endpoint.base_url, models)
-    detected = detect_local_endpoints(api_key=api_key or os.environ.get(_API_KEY_ENV, ""))
+        if endpoint is None:
+            return None
+        wanted = (model or endpoint.default_model or "").strip()
+        models = ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted)
+        return LocalEndpoint(endpoint.base_url, models)
+    detected = detect_local_endpoints(api_key=api_key)
     return detected[0] if detected else None
 
 
@@ -200,7 +181,6 @@ __all__ = [
     "LocalEndpoint",
     "LocalEndpointCandidate",
     "LocalEndpointProbe",
-    "default_local_base_url",
     "detect_local_endpoint_probes",
     "detect_local_endpoints",
     "local_endpoint_available",

@@ -150,7 +150,8 @@ def test_bootstrap_surfaces_invalid_env_budget(monkeypatch) -> None:
     ):
         payload = canonical.local_bootstrap_payload()
     assert payload["context_error"] != ""
-    assert payload["context_window_tokens"] == 32_768
+    assert payload["context"] is None
+    assert payload["context_window_tokens"] is None
     monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
     with (
         mock.patch.object(canonical, "load_local_config", return_value=config),
@@ -176,15 +177,12 @@ def test_connect_offline_raises_without_second_probe(monkeypatch) -> None:
         resolve_calls.append({"base_url": base_url, "model": model, "api_key": api_key})
         return None
 
-    def fail_default() -> str:
-        raise AssertionError("offline connect must not run default endpoint discovery")
-
     monkeypatch.setattr(canonical, "load_local_config", lambda: saved)
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(
         "codey.providers.local_discovery.resolve_local_endpoint", fake_resolve,
-    )
-    monkeypatch.setattr(
-        "codey.providers.local_discovery.default_local_base_url", fail_default,
     )
     with pytest.raises(RuntimeError, match="could not reach local model at http://127.0.0.1:9/v1"):
         LocalOpenAIProvider.connect()
@@ -205,6 +203,9 @@ def test_connect_online_preserves_saved_model_and_key(monkeypatch) -> None:
     )
     live = _NS(base_url="http://127.0.0.1:11434/v1", models=("chosen", "other"))
     monkeypatch.setattr(canonical, "load_local_config", lambda: saved)
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(
         "codey.providers.local_discovery.resolve_local_endpoint",
         lambda *, base_url="", model="", api_key="": live,
@@ -213,6 +214,161 @@ def test_connect_online_preserves_saved_model_and_key(monkeypatch) -> None:
     assert provider.base_url == "http://127.0.0.1:11434/v1"
     assert provider.model == "chosen"
     assert provider.api_key == "secret"
+
+
+def test_explicit_address_never_falls_back_to_another_service(monkeypatch) -> None:
+    import pytest
+
+    from codey.providers import local_config as canonical
+    from codey.providers import local_discovery as discovery
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    saved = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="key1",
+    )
+    monkeypatch.setattr(canonical, "load_local_config", lambda: saved)
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        discovery, "probe_local_endpoint", lambda base_url, *, api_key="": None,
+    )
+    monkeypatch.setattr(
+        discovery, "detect_local_endpoints",
+        lambda *, api_key="", timeout=0.6: (_ for _ in ()).throw(
+            AssertionError("explicit miss must not auto-discover"),
+        ),
+    )
+    assert discovery.resolve_local_endpoint(
+        base_url=saved.base_url, model=saved.model, api_key=saved.api_key,
+    ) is None
+    with pytest.raises(RuntimeError, match="http://127.0.0.1:1111/v1"):
+        LocalOpenAIProvider.connect()
+
+
+def test_env_only_target_uses_env_group(monkeypatch) -> None:
+    from types import SimpleNamespace as _NS
+
+    from codey.providers import local_config as canonical
+    from codey.providers import local_discovery as discovery
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    config = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="key1",
+    )
+    monkeypatch.setattr(canonical, "load_local_config", lambda: config)
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:2222/v1")
+    monkeypatch.setenv("LOCAL_OPENAI_MODEL", "beta")
+    monkeypatch.setenv("LOCAL_OPENAI_API_KEY", "key2")
+    selection = canonical.select_local_target(config)
+    assert (selection.base_url, selection.model, selection.api_key, selection.source) == (
+        "http://127.0.0.1:2222/v1", "beta", "key2", "env",
+    )
+    seen: dict[str, str] = {}
+
+    def fake_probe(base_url: str, *, api_key: str = "") -> object:
+        seen["base_url"] = base_url
+        seen["api_key"] = api_key
+        return _NS(base_url=base_url, models=("beta", "other"), default_model="beta")
+
+    monkeypatch.setattr(discovery, "probe_local_endpoint", fake_probe)
+    endpoint = discovery.resolve_local_endpoint(
+        base_url=selection.base_url, model=selection.model, api_key=selection.api_key,
+    )
+    assert endpoint is not None and endpoint.base_url == "http://127.0.0.1:2222/v1"
+    assert seen == {"base_url": "http://127.0.0.1:2222/v1", "api_key": "key2"}
+    provider = LocalOpenAIProvider.connect()
+    assert (provider.base_url, provider.model, provider.api_key) == (
+        "http://127.0.0.1:2222/v1", "beta", "key2",
+    )
+
+
+def test_select_local_target_keeps_groups_together(monkeypatch) -> None:
+    from codey.providers import local_config as canonical
+
+    config = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:1111/v1", model="alpha", api_key="key1",
+    )
+    # Different env target: env group wins entirely, no saved key leak.
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:2222/v1")
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    only_env = canonical.select_local_target(config)
+    assert (only_env.base_url, only_env.model, only_env.api_key) == (
+        "http://127.0.0.1:2222/v1", "", "",
+    )
+    # Same target: env model/key override, saved values fill the gaps.
+    monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:1111/v1")
+    monkeypatch.setenv("LOCAL_OPENAI_MODEL", "beta")
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    same = canonical.select_local_target(config)
+    assert (same.base_url, same.model, same.api_key, same.source) == (
+        "http://127.0.0.1:1111/v1", "beta", "key1", "env",
+    )
+    # No env base: saved base with env model/key as same-target overrides.
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("LOCAL_OPENAI_MODEL", "beta")
+    monkeypatch.setenv("LOCAL_OPENAI_API_KEY", "key2")
+    overridden = canonical.select_local_target(config)
+    assert (overridden.base_url, overridden.model, overridden.api_key) == (
+        "http://127.0.0.1:1111/v1", "beta", "key2",
+    )
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+
+
+def test_probe_and_send_share_target_and_key(monkeypatch) -> None:
+    import json as _json
+    from types import SimpleNamespace as _NS
+
+    from codey.providers import local_config as canonical
+    from codey.providers import local_discovery as discovery
+    from codey.providers import local_openai as provider_module
+    from codey.providers.local_openai import LocalOpenAIProvider
+
+    config = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:11434/v1", model="chosen", api_key="secret",
+    )
+    monkeypatch.setattr(canonical, "load_local_config", lambda: config)
+    monkeypatch.delenv("LOCAL_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    probe_seen: dict[str, str] = {}
+
+    def fake_probe(base_url: str, *, api_key: str = "") -> object:
+        probe_seen["base_url"] = base_url
+        probe_seen["api_key"] = api_key
+        return _NS(base_url=base_url, models=("chosen",), default_model="chosen")
+
+    monkeypatch.setattr(discovery, "probe_local_endpoint", fake_probe)
+
+    sent: dict[str, str] = {}
+
+    class FakeChatResponse:
+        def __enter__(self) -> FakeChatResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def read(self, size: int | None = None) -> bytes:
+            del size
+            return _json.dumps(
+                {"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]},
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout=None) -> FakeChatResponse:
+        sent["url"] = str(request.full_url)
+        sent["auth"] = str(request.get_header("Authorization") or "")
+        return FakeChatResponse()
+
+    monkeypatch.setattr(provider_module.urllib.request, "urlopen", fake_urlopen)
+    provider = LocalOpenAIProvider.connect()
+    assert provider.send("hi") == "ok"
+    assert probe_seen == {"base_url": "http://127.0.0.1:11434/v1", "api_key": "secret"}
+    assert sent["url"].startswith("http://127.0.0.1:11434/v1/chat/completions")
+    assert sent["auth"] == "Bearer secret"
 
 
 def test_models_probe_uses_bounded_read(monkeypatch) -> None:
@@ -556,6 +712,32 @@ def test_parse_update_rejects_non_numeric_reserve_and_keep() -> None:
     assert "context_window_tokens required" in good_error
 
 
+def test_save_rejects_invalid_env_budget_without_persisting(monkeypatch) -> None:
+    from codey.app import api as app_api
+
+    monkeypatch.setenv("LOCAL_OPENAI_CONTEXT_WINDOW", "1")
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_RESERVE", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_KEEP", raising=False)
+    with (
+        mock.patch.object(
+            app_api, "probe_local_endpoint_detail",
+            side_effect=AssertionError("invalid budget must fail before probing"),
+        ),
+        mock.patch.object(
+            app_api, "save_local_config",
+            side_effect=AssertionError("invalid budget must not persist"),
+        ),
+    ):
+        status, payload = app_api.save_local_provider_response({
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "qwen",
+        })
+    assert status == 400
+    assert payload["ok"] is False
+    assert "environment" in payload["error"]
+    monkeypatch.delenv("LOCAL_OPENAI_CONTEXT_WINDOW", raising=False)
+
+
 def test_provider_ui_applies_recommended_before_and_after_catalog() -> None:
     from pathlib import Path as _Path
 
@@ -606,36 +788,25 @@ def test_bootstrap_probes_once_and_prefers_remembered() -> None:
     assert calls == [f"probe:{remembered.base_url}"]
 
 
-def test_bootstrap_single_parallel_pass_when_remembered_misses() -> None:
+def test_bootstrap_explicit_miss_never_claims_another_service() -> None:
     from codey.providers import local_config as canonical
-    from codey.providers.local_discovery import LocalEndpoint, LocalEndpointCandidate, LocalEndpointProbe
 
-    candidates = (
-        LocalEndpointCandidate("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1"),
-        LocalEndpointCandidate("ollama", "Ollama", "http://127.0.0.1:11434/v1"),
+    config = canonical.LocalProviderConfig(
+        base_url="http://127.0.0.1:9/v1", model="alpha", api_key="secret",
     )
-    live = LocalEndpoint("http://127.0.0.1:11434/v1", ("qwen",))
-    probe_calls: list[str] = []
-    pass_calls: list[str] = []
+    probe_seen: list[dict] = []
 
-    def fake_probe(base_url: str, *, api_key: str = "") -> LocalEndpoint | None:
-        del api_key
-        probe_calls.append(base_url)
+    def fake_probe(base_url: str, *, api_key: str = "") -> None:
+        probe_seen.append({"base_url": base_url, "api_key": api_key})
         return None
 
-    def fake_pass(*, api_key: str = "", timeout: float = 0.6, max_workers: int = 4) -> list[LocalEndpointProbe]:
-        del api_key, timeout, max_workers
-        pass_calls.append("pass")
-        return [
-            LocalEndpointProbe(candidate=candidates[0], endpoint=None, reason="unreachable"),
-            LocalEndpointProbe(candidate=candidates[1], endpoint=live, reason="ok"),
-        ]
-
-    config = canonical.LocalProviderConfig(base_url="http://127.0.0.1:9/v1", model="", api_key="")
     with (
         mock.patch.object(canonical, "load_local_config", return_value=config),
         mock.patch("codey.providers.local_discovery.probe_local_endpoint", side_effect=fake_probe),
-        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", side_effect=fake_pass),
+        mock.patch(
+            "codey.providers.local_discovery.detect_local_endpoint_probes",
+            side_effect=AssertionError("explicit miss must not probe others with its key"),
+        ),
         mock.patch(
             "codey.providers.local_discovery.resolve_local_endpoint",
             side_effect=AssertionError("bootstrap must not call resolve"),
@@ -646,7 +817,49 @@ def test_bootstrap_single_parallel_pass_when_remembered_misses() -> None:
         ),
     ):
         payload = canonical.local_bootstrap_payload()
-    assert pass_calls == ["pass"]
+    assert probe_seen == [{"base_url": "http://127.0.0.1:9/v1", "api_key": "secret"}]
+    assert payload["connected"] is False
+    assert payload["base_url"] == "http://127.0.0.1:9/v1"
+    assert payload["model"] == "alpha"
+    # Other well-known candidates stay as try-buttons, never as connected.
+    assert "http://127.0.0.1:9/v1" not in payload["candidates"]
+    assert len(payload["candidates"]) == 4
+
+
+def test_bootstrap_single_parallel_pass_when_no_target_selected() -> None:
+    from codey.providers import local_config as canonical
+    from codey.providers.local_discovery import LocalEndpoint, LocalEndpointCandidate, LocalEndpointProbe
+
+    candidates = (
+        LocalEndpointCandidate("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1"),
+        LocalEndpointCandidate("ollama", "Ollama", "http://127.0.0.1:11434/v1"),
+    )
+    live = LocalEndpoint("http://127.0.0.1:11434/v1", ("qwen",))
+    pass_calls: list[str] = []
+
+    def fake_pass(*, api_key: str = "", timeout: float = 0.6, max_workers: int = 4) -> list[LocalEndpointProbe]:
+        del timeout, max_workers
+        pass_calls.append(api_key)
+        return [
+            LocalEndpointProbe(candidate=candidates[0], endpoint=None, reason="unreachable"),
+            LocalEndpointProbe(candidate=candidates[1], endpoint=live, reason="ok"),
+        ]
+
+    config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
+    with (
+        mock.patch.object(canonical, "load_local_config", return_value=config),
+        mock.patch(
+            "codey.providers.local_discovery.resolve_local_endpoint",
+            side_effect=AssertionError("bootstrap must not call resolve"),
+        ),
+        mock.patch(
+            "codey.providers.local_discovery.detect_local_endpoints",
+            side_effect=AssertionError("bootstrap must not call detect twice"),
+        ),
+        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", side_effect=fake_pass),
+    ):
+        payload = canonical.local_bootstrap_payload()
+    assert pass_calls == [""]
     assert payload["connected"] is True
     assert payload["base_url"] == live.base_url
     # Connected: no dead try-buttons next to the live endpoint.
@@ -669,10 +882,9 @@ def test_bootstrap_offers_try_buttons_only_when_unconnected() -> None:
             LocalEndpointProbe(candidate=candidates[1], endpoint=None, reason="unreachable"),
         ]
 
-    config = canonical.LocalProviderConfig(base_url="http://127.0.0.1:9/v1", model="", api_key="")
+    config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
     with (
         mock.patch.object(canonical, "load_local_config", return_value=config),
-        mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
         mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", side_effect=fake_pass),
     ):
         payload = canonical.local_bootstrap_payload()
@@ -685,11 +897,15 @@ def test_bootstrap_echoes_env_base_when_unconnected(monkeypatch) -> None:
 
     monkeypatch.setenv("LOCAL_OPENAI_BASE_URL", "http://127.0.0.1:8080/v1")
     monkeypatch.delenv("LOCAL_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LOCAL_OPENAI_MODEL", raising=False)
     config = canonical.LocalProviderConfig(base_url="", model="", api_key="")
     with (
         mock.patch.object(canonical, "load_local_config", return_value=config),
         mock.patch("codey.providers.local_discovery.probe_local_endpoint", return_value=None),
-        mock.patch("codey.providers.local_discovery.detect_local_endpoint_probes", return_value=[]),
+        mock.patch(
+            "codey.providers.local_discovery.detect_local_endpoint_probes",
+            side_effect=AssertionError("explicit env miss must not probe others"),
+        ),
     ):
         payload = canonical.local_bootstrap_payload()
     assert payload["connected"] is False

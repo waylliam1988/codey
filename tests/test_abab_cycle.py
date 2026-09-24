@@ -104,6 +104,111 @@ def test_legacy_tuple_history_still_works() -> None:
     assert should_block_or_remind([(call, failed)] * 3).block
 
 
+def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
+    from unittest import mock
+
+    from codey.agents.loop import _setup_loop
+    from codey.agents.request import AgentRequest
+    from codey.agents.tool_execution import TurnState, record_tool_outcome
+    from codey.agents.tools import AgentToolFns
+    from codey.toolchain.runtime import ToolOutcome
+
+    events: list[object] = []
+
+    class DoneProvider:
+        name = "local"
+
+        def new_chat(self, timeout=None) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    def read_file(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
+        return ToolOutcome("hello", True)
+
+    request = AgentRequest(
+        provider=DoneProvider(),  # type: ignore[arg-type]
+        project=tmp_path,
+        task="read app",
+        on_event=events.append,
+        tool_fns=AgentToolFns(read_file=read_file),  # type: ignore[arg-type]
+        provider_id="local",
+        max_turns=1,
+    )
+    session = _setup_loop(request)
+    turn_state = TurnState()
+    with mock.patch(
+        "codey.agents.runaway_guard.attempt_record", side_effect=RuntimeError("boom"),
+    ):
+        record_tool_outcome(
+            session, turn_state, turn=1,
+            call=ToolCall(name="read", args={"path": "app.py"}, call_id="c1"),
+            outcome=ToolOutcome("hello", True), tool_index=0, ref="1:0",
+        )
+    assert any("runaway record failed" in str(getattr(e, "text", e)) for e in events)
+
+
+def test_runaway_guard_failure_is_visible(tmp_path: Path) -> None:
+    from unittest import mock
+
+    from codey.agents.loop import _run_loop, _setup_loop
+    from codey.agents.request import AgentRequest
+    from codey.agents.tools import AgentToolFns
+    from codey.providers.base import AssistantTurn
+    from codey.toolchain.runtime import ToolOutcome
+
+    events: list[object] = []
+
+    class DoneProvider:
+        name = "local"
+
+        def new_chat(self, timeout=None) -> None:
+            return None
+
+        def send_turn(self, prompt: str, tools=None, timeout=None) -> AssistantTurn:
+            from codey.providers.base import ProviderToolCall
+
+            return AssistantTurn(
+                text="",
+                tool_calls=(ProviderToolCall(id="d1", name="done", arguments={"summary": "ok"}),),
+                raw={},
+            )
+
+        def send_tool_results(self, results, tools=None, timeout=None) -> AssistantTurn:
+            from codey.providers.base import ProviderToolCall
+
+            return AssistantTurn(
+                text="",
+                tool_calls=(ProviderToolCall(id="d1", name="done", arguments={"summary": "ok"}),),
+                raw={},
+            )
+
+        def close(self) -> None:
+            return None
+
+    def read_file(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
+        return ToolOutcome("hello", True)
+
+    request = AgentRequest(
+        provider=DoneProvider(),  # type: ignore[arg-type]
+        project=tmp_path,
+        task="finish now",
+        on_event=events.append,
+        tool_fns=AgentToolFns(read_file=read_file),  # type: ignore[arg-type]
+        provider_id="local",
+        max_turns=2,
+    )
+    session = _setup_loop(request)
+    from codey.agents.prompt_context import initial_structured_reply
+
+    with mock.patch(
+        "codey.agents.runaway_guard.should_block_or_remind", side_effect=RuntimeError("boom"),
+    ):
+        _run_loop(session, initial_structured_reply(session), start_turn=1)
+    assert any("runaway guard failed" in str(getattr(e, "text", e)) for e in events)
+
+
 def test_research_cycle_records_and_flags() -> None:
     from codey.research.native_bridge import record_and_check_cycle
 

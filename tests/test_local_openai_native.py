@@ -14,7 +14,7 @@ class _FakeResponse:
     def read(self, size: int | None = None) -> bytes:
         self.read_sizes.append(size)
         if size is not None and size >= 0:
-            return self._payload[: size + 1] if len(self._payload) > size else self._payload
+            return self._payload[:size]
         return self._payload
 
     def __enter__(self) -> _FakeResponse:
@@ -148,6 +148,7 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
     import pytest
 
     seen_sizes: list[object] = []
+    closed: list[bool] = []
 
     class BoundedErrorIO(io.BytesIO):
         def read(self, size: int | None = -1) -> bytes:
@@ -160,10 +161,15 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
                 return data
             return super().read()
 
+    class TrackedError(urllib.error.HTTPError):
+        def close(self) -> None:
+            closed.append(True)
+            super().close()
+
     provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
 
     def fake_urlopen(request, timeout=None):
-        raise urllib.error.HTTPError(
+        raise TrackedError(
             request.full_url, 500, "Server Error", {}, BoundedErrorIO(b"e" * 5000),
         )
 
@@ -171,3 +177,4 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
     with pytest.raises(RuntimeError):
         provider._post_chat([{"role": "user", "content": "hi"}])
     assert seen_sizes and seen_sizes[0] == 2001
+    assert closed == [True]

@@ -32,6 +32,37 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Grouped local target, strict save, atomic health, closed error streams (no release)
+
+- Local target stays grouped. `select_local_target()` decides address +
+  model + key once (env group wins; same-target env overrides fall back to
+  saved; differing env target ignores saved to avoid key leaks).
+  `resolve_local_endpoint()` with an explicit address probes only it
+  (failure returns `None`, never another service); auto-discovery runs only
+  with no selected address. `connect()`, `local_endpoint_available()`, and
+  `local_bootstrap_payload()` share the decision, and probing uses the same
+  key the provider sends. `LocalOpenAIProvider.__init__()` takes a resolved
+  `base_url` + `model` (no env/discovery); `connect()` takes no args.
+- Invalid budgets cannot save. `save_local_provider_response()` validates
+  `resolve_local_context_budget(parsed)` before probing/persisting and
+  returns `400` without saving; the popover already stays open on failure.
+  The bootstrap error state is display-only (`context=null` +
+  `context_error`), never defaults that look runnable.
+- Provider health persists atomically. `get()` and `_store()` save under the
+  same `self._lock`, so an older snapshot cannot overwrite a newer one.
+  Covered by a two-thread transition-vs-success latch asserting reloaded disk
+  state.
+- Error streams close. `_post_chat()` closes the `HTTPError` body in
+  `finally` after the bounded `read(2001)`; classification unchanged and the
+  test asserts the close.
+- Low-friction convergence: `resolve_local_native_tools()` capability-only
+  (broad fallback removed); bounded-read fakes return at most `size` bytes;
+  runaway record/guard failures emit `[agent] runaway ... failed` status
+  instead of silent `pass`/`None`.
+- Verification: `python -m ruff check codey tests` clean,
+  `git diff --check` clean; final full
+  `python -m pytest` (`4161 passed, 6 skipped, 1374 subtests passed in 351.71s`).
+
 ## Unreleased - Denied titles, Ghost atomic delete, offline local contract, bounded HTTP (no release)
 
 - Web denial titles fixed. Real user denials carry `approved=false` with no

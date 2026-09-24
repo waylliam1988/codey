@@ -329,6 +329,18 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("return 'Denied'", RENDER_JS)
         self.assertIn("return shellStatus === 'exit' ? 'Executed' : 'Failed'", RENDER_JS)
 
+    def test_local_save_failure_keeps_popover_open(self) -> None:
+        start = PROVIDER_UI_JS.index("async function saveLocalProviderConfig()")
+        block = PROVIDER_UI_JS[start:start + 2000]
+        self.assertIn("if (!r.ok || !data.ok) {", block)
+        failure_at = block.index("if (!r.ok || !data.ok) {")
+        close_at = block.index("closeLocalProviderConfig();")
+        return_at = block.index("return;", failure_at)
+        # Failure sets the error and returns before closing the popover.
+        self.assertLess(failure_at, return_at)
+        self.assertLess(return_at, close_at)
+        self.assertIn("local.context_error", PROVIDER_UI_JS)
+
     def test_shell_approval_applies_http_result_without_waiting_for_sse(self) -> None:
         start = HTML.index("async function approveCommand")
         end = HTML.index("// ============================ composer", start)

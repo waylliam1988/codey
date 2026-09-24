@@ -445,7 +445,8 @@ def _run_loop(
         turn_state = turn_result.turn_state
         try:
             guard = should_block_or_remind(session.stagnation.attempts)
-        except Exception:
+        except Exception as exc:
+            emit(session, RunEvent.status(f"[agent] runaway guard failed: {exc}"))
             guard = None
         guard_reason = ""
         guard_stop = ""

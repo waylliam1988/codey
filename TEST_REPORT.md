@@ -36,6 +36,51 @@ Verification (local, Windows):
 - Full suite: `python -m pytest`
   (`4092 passed, 24 skipped in 341.36s (0:05:41)`).
 
+## Grouped local target, strict save, atomic health, closed error streams full suite (2026-09-24)
+
+Scope (production, no release):
+
+```text
+codey/providers/local_config.py       (select_local_target grouped; explicit-only effective; save-validated budget; context=null error state)
+codey/providers/local_discovery.py    (explicit-only resolve; selector-shared availability; default_base_url removed)
+codey/providers/local_openai.py       (required base+model init; arg-free connect; same-key probe/send; HTTPError close)
+codey/app/api.py                      (save validates budget before probe/persist -> 400)
+codey/providers/supervisor.py         (get/_store persist under one lock)
+codey/agents/tool_execution.py + loop.py (runaway failures emit status)
+codey/repairs/self_repair_worker.py   (local helper connects without browser args)
+tests/test_local_bootstrap.py         (no-fallback; env group; probe/send parity; selector groups; save 400 no-persist; bounds)
+tests/test_providers.py + test_env_names.py (required init; config-owned env names)
+tests/test_provider_supervisor.py     (transition-vs-success latch keeps disk fresh)
+tests/test_local_openai_native.py     (bounded reads; error close; size-capped fake)
+tests/test_abab_cycle.py              (runaway failures visible)
+tests/test_ui.py                      (save failure keeps popover; context_error rendering)
+```
+
+Notes:
+
+- An explicit local address never becomes another service with the old
+  model/key; env and saved groups stay together with same-target fallback
+  only.
+- Invalid env budgets fail save with 400 and surface as `context=null` +
+  `context_error`; health snapshots persist in lock order; error bodies
+  close.
+
+Verification (local, Windows):
+
+- `python -m ruff check codey tests` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `test_local_bootstrap + test_local_openai_native + test_providers + test_env_names`
+  (`74 passed, 20 subtests passed`);
+  `test_provider_supervisor + test_abab_cycle + test_ui + test_browser + test_native_delivery + test_hardening_batch2`
+  (`203 passed`);
+  `test_ghost_inbox + test_coldstart_native_local_receipts + test_bounded_capture_and_context + test_architecture`
+  (`171 passed, 436 subtests passed`);
+  `test_server + test_adapter_self_repair + test_agent_native_loop + test_ui_inplace_render`
+  (`295 passed, 6 subtests passed`).
+- Full suite: `python -m pytest`
+  (`4161 passed, 6 skipped, 1374 subtests passed in 351.71s (0:05:51)`).
+- This report entry was written after the final full pytest run.
+
 ## Denied titles, Ghost atomic delete, offline local contract, bounded HTTP full suite (2026-09-24)
 
 Scope (production, no release):

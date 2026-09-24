@@ -18,6 +18,7 @@ from codey.providers.local_config import (
     load_local_config,
     local_bootstrap_payload,
     parse_local_config_update,
+    resolve_local_context_budget,
     save_local_config,
 )
 from codey.providers.local_discovery import probe_local_endpoint_detail
@@ -129,6 +130,10 @@ def save_local_provider_response(body: dict) -> tuple[int, dict]:
     parsed, error = parse_local_config_update(body, previous)
     if error or parsed is None:
         return 400, {"ok": False, "error": error or "invalid local provider update"}
+    try:
+        resolve_local_context_budget(parsed)
+    except ValueError as exc:
+        return 400, {"ok": False, "error": str(exc)}
     base_url = parsed.base_url
     previous_base_url = previous.base_url.rstrip("/")
     probe_key = parsed.api_key

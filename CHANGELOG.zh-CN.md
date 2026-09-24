@@ -27,6 +27,27 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - 分组本地目标、严格保存、原子健康、关闭错误流（未发布）
+
+- 本地目标分组不变。`select_local_target()` 一次定死地址 + 模型 + 密钥
+ （env 组整体优先；同目标时 env 未填项回落到已保存；不同目标直接忽略
+  已保存防密钥串服）。显式地址只探该地址，失败返回 `None`，绝不换服；
+  无选定地址才自动发现。`connect()`、可用性判断、bootstrap 共用该决策，
+  探测与发送同密钥。`__init__()` 只收已解析必填地址和模型，不再读环境或
+  二次发现；`connect()` 去掉无用参数。
+- 无效预算存不上。保存前先 `resolve_local_context_budget(parsed)`，失败
+  直接 400 且不落盘；前端失败分支本来就不关弹窗。bootstrap 错误态只做
+  展示（`context=null` + `context_error`），不再给看似可用的默认值。
+- 健康状态原子落盘。`get()` 与 `_store()` 在同一 `self._lock` 内变更并持久
+  化，旧快照盖不掉新状态。双线程门闩测试断言重载磁盘为最新。
+- 错误流关闭。`_post_chat()` 有界 `read(2001)` 后 `finally` 关闭 `HTTPError`
+  响应，分类不变，测试断言已关闭。
+- 低摩擦收敛：native_tools 只剩 capability 回退；有界读替身最多返回 `size`
+  字节；runaway 记录/判定失败改为 `[agent] runaway ... failed` 状态可见。
+- 验证：`python -m ruff check codey tests` 通过，`git diff --check` 干净；
+  最终全量 `python -m pytest`
+  （`4161 passed, 6 skipped, 1374 subtests passed in 351.71s`）。
+
 ## Unreleased - 拒绝标题、Ghost 原子删除、本地离线契约、有界 HTTP（未发布）
 
 - 网页拒绝标题修复。真实拒绝事件是 `approved=false` 且无 `status`；

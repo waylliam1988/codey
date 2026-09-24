@@ -243,6 +243,50 @@ class ProviderSupervisorTests(unittest.TestCase):
 
         self.assertEqual(supervisor.get("qwen").success_count, 400)
 
+    def test_concurrent_transition_and_success_keep_disk_fresh(self) -> None:
+        import time as _time
+
+        from codey.providers import supervisor as supervisor_module
+
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            supervisor.record_failure("qwen", failure("response_missing"))
+            supervisor.record_failure("qwen", failure("response_missing"))
+            self.assertEqual(supervisor.get("qwen").state, STATE_OPEN)
+
+            original_save = supervisor_module.ProviderSupervisor._save_snapshot
+            entered_save = threading.Event()
+            entered_once = {"done": False}
+
+            def slow_save(self, snapshot) -> None:
+                if not entered_once["done"]:
+                    entered_once["done"] = True
+                    entered_save.set()
+                    # Hold the persist path open so the success below lands
+                    # between the transition snapshot and its write. Under
+                    # the lock this blocks the writer; without it the writer
+                    # wins and would be overwritten by the stale snapshot.
+                    _time.sleep(0.5)
+                original_save(self, snapshot)
+
+            with mock.patch.object(
+                supervisor_module.ProviderSupervisor, "_save_snapshot", slow_save,
+            ):
+                def do_transition() -> None:
+                    supervisor.clock = lambda: 1000.0
+                    supervisor.get("qwen")
+
+                transition = threading.Thread(target=do_transition)
+                transition.start()
+                self.assertTrue(entered_save.wait(timeout=10.0))
+                supervisor.record_success("qwen")
+                transition.join(timeout=10.0)
+
+            self.assertFalse(transition.is_alive())
+            self.assertEqual(supervisor.get("qwen").state, STATE_HEALTHY)
+            reloaded = ProviderSupervisor(td, clock=lambda: 1000.0)
+            self.assertEqual(reloaded.get("qwen").state, STATE_HEALTHY)
+
 
 if __name__ == "__main__":
     unittest.main()

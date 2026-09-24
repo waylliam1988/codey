@@ -466,8 +466,8 @@ def record_tool_outcome(
                 edit_epoch=session.verification.edit_epoch,
             )
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        emit(session, RunEvent.status(f"[agent] runaway record failed: {exc}"))
     from codey.runtime.hooks import call_hooks
 
     call_hooks(
