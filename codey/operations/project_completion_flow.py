@@ -624,7 +624,6 @@ def _run_one_writer_attempt(
         trace_recorder=ctx.frame.trace,
         session_id=ctx.request.session_id,
         run_id=ctx.frame.run_id,
-        runtime_effects=ctx.deps.runtime.effects,
         tool_result_delivery=ctx.deps.runtime.tool_result_delivery,
         runtime_mutations=ctx.deps.runtime.mutations,
         managed_outputs=ctx.deps.persistence.managed_outputs,

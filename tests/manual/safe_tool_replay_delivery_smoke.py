@@ -182,7 +182,6 @@ def run_self_test() -> int:
             session_id=session_id,
             run_id=run_id,
             permission_profile="coding_writer",
-            runtime_effects=effects,
             runtime_mutations=mutations,
             tool_result_delivery=delivery,
             recovered_tool_outcomes=recovery.recovered_tool_outcomes,
@@ -224,7 +223,6 @@ def run_same_run_self_test() -> int:
 
         state_dir = root / "state"
         log = RuntimeSessionLog(state_dir)
-        effects = RuntimeEffectStore(log)
         delivery = ToolResultDeliveryStore(log)
         mutations = RuntimeMutationLine(log)
 
@@ -258,7 +256,6 @@ def run_same_run_self_test() -> int:
             session_id=session_id,
             run_id=run_id,
             permission_profile="coding_writer",
-            runtime_effects=effects,
             runtime_mutations=mutations,
             tool_result_delivery=delivery,
         )

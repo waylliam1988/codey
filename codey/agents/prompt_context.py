@@ -41,15 +41,15 @@ def open_fresh_chat(session: AgentLoopSession, *, allow_reuse: bool = True) -> b
     emit(
         session,
         RunEvent.status(
-            f"[agent] opening a fresh {session.provider.name} conversation"
+            f"[agent] opening a fresh {session.request.provider.name} conversation"
         ),
     )
     try:
-        session.provider.new_chat()
+        session.request.provider.new_chat()
     except cancellation.TaskCancelled:
         raise
     except Exception as exc:
-        if session.strict_fresh_chat:
+        if session.request.strict_fresh_chat:
             raise
         if allow_reuse:
             emit(
@@ -80,8 +80,8 @@ def with_completion_repair_context(
     still replace this prompt wholesale.
     """
     sources = render_completion_repair_sources(
-        session.profile,
-        session.completion_repair_context,
+        session.config.profile,
+        session.request.completion_repair_context,
     )
     text = "\n\n".join(source.text for source in sources)
     if not text:
@@ -105,8 +105,8 @@ def with_completion_repair_context(
             capability_id="completion_repair_context",
         ),
     )).render()
-    session.pending_repair_sections.extend(rendered.sections)
-    session.pending_context_rows.extend(sources)
+    session.prompt.repair_sections.extend(rendered.sections)
+    session.prompt.context_rows.extend(sources)
     return rendered.text
 
 
@@ -116,13 +116,13 @@ def record_repair_context_admission(
     admitted_keys: set[str],
 ) -> None:
     """Bind the admission row to an actual outbound provider-send epoch."""
-    if not session.completion_repair_context_payload:
+    if not session.request.completion_repair_context_payload:
         return
     if COMPLETION_REPAIR_CONTEXT_SOURCE_KEY not in admitted_keys:
         return
     session.trace.call(
         "record_completion_repair_context",
-        session.completion_repair_context_payload,
+        session.request.completion_repair_context_payload,
         epoch_id=epoch,
     )
 
@@ -149,20 +149,20 @@ def project_intro(
     )
 
     rendered = build_agent_context(
-        project=session.project,
+        project=session.config.project,
         request_text=current,
-        system_prompt_text=session.system_prompt_text,
-        profile=session.profile,
-        list_directory=session.tool_fns.list_directory,
-        project_instructions=session.project_instructions,
-        project_facts=session.project_facts,
-        research_context=session.research_context,
-        project_map=session.project_map,
-        project_config_warnings=session.project_config_warnings,
-        work_checkpoint=session.work_checkpoint,
-        ghost_directive=session.ghost_directive,
-        ghost_continuity=session.ghost_continuity,
-        completion_repair_context=session.completion_repair_context,
+        system_prompt_text=session.config.system_prompt_text,
+        profile=session.config.profile,
+        list_directory=session.config.tool_fns.list_directory,
+        project_instructions=session.config.project_instructions,
+        project_facts=session.request.project_facts,
+        research_context=session.request.research_context,
+        project_map=session.request.project_map,
+        project_config_warnings=session.request.project_config_warnings,
+        work_checkpoint=session.request.work_checkpoint,
+        ghost_directive=session.request.ghost_directive,
+        ghost_continuity=session.request.ghost_continuity,
+        completion_repair_context=session.request.completion_repair_context,
         include_ghost_directive=include_ghost_directive,
     )
     epoch = context_epoch_id(rendered.text)
@@ -185,25 +185,25 @@ def bind_pending_context_rows(
     session: AgentLoopSession,
     prompt_text: str,
 ) -> None:
-    if not session.pending_context_rows:
+    if not session.prompt.context_rows:
         return
-    admitted_keys = {source.key for source in session.pending_context_rows}
+    admitted_keys = {source.key for source in session.prompt.context_rows}
     epoch = context_epoch_id(prompt_text)
-    for section in session.pending_repair_sections:
+    for section in session.prompt.repair_sections:
         session.trace.record_section(replace(section, epoch_id=epoch))
     session.trace.call(
         "record_context_sources",
-        session.pending_context_rows,
+        session.prompt.context_rows,
         epoch_id=epoch,
     )
-    session.pending_context_rows.clear()
-    session.pending_repair_sections.clear()
+    session.prompt.context_rows.clear()
+    session.prompt.repair_sections.clear()
     record_repair_context_admission(session, epoch, admitted_keys)
 
 
 def discard_pending_context_rows(session: AgentLoopSession) -> None:
-    session.pending_context_rows.clear()
-    session.pending_repair_sections.clear()
+    session.prompt.context_rows.clear()
+    session.prompt.repair_sections.clear()
 
 
 def _begin_provider_send(
@@ -224,10 +224,10 @@ def _begin_provider_send(
     sends alike: ``desc_text`` is the exact outbound surface (prompt text or
     serialized tool messages).
     """
-    mutations = session.runtime_mutations
+    mutations = session.request.runtime_mutations
     effect_id = ""
-    if mutations is not None and session.session_id and session.run_id:
-        session.provider_send_index += 1
+    if mutations is not None and session.request.session_id and session.request.run_id:
+        session.prompt.provider_send_index += 1
         from codey.runtime.core.operation_state import DRIVER_REPAIR, DRIVER_WRITER
         from codey.runtime.effects.effect_records import (
             EFFECT_CATEGORY_PROVIDER_SEND,
@@ -238,23 +238,23 @@ def _begin_provider_send(
         from codey.runtime.effects.replay_policy import provider_replay_policy
 
         replay_decision = provider_replay_policy(purpose)
-        effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.run_id)
-        driver = DRIVER_REPAIR if session.completion_repair_context else DRIVER_WRITER
+        effect_id = new_effect_id(EFFECT_CATEGORY_PROVIDER_SEND, session.request.run_id)
+        driver = DRIVER_REPAIR if session.request.completion_repair_context else DRIVER_WRITER
         intent = RuntimeEffectIntent(
             effect_id=effect_id,
             effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-            session_id=session.session_id,
-            run_id=session.run_id,
+            session_id=session.request.session_id,
+            run_id=session.request.run_id,
             phase=driver,
-            provider_id=session.active_provider_id,
-            turn=session.provider_send_index,
+            provider_id=session.config.active_provider_id,
+            turn=session.prompt.provider_send_index,
             display_ref=source_ref[:120],
             args_digest=compute_args_digest(desc_text),
             replay_class=replay_decision.replay_class,
         )
         committed = mutations.begin_provider_effect(
-            session.session_id,
-            session.run_id,
+            session.request.session_id,
+            session.request.run_id,
             intent,
             driver=driver,
             delivery_batch_id=delivery_batch_id,
@@ -265,11 +265,11 @@ def _begin_provider_send(
     # Prompt surface is bound to the exact outbound bytes and the effect that
     # carries them, so the trace row proves what was sent together.
     try:
-        model_hash = session.codec.model_tool_contract_hash() if getattr(session, "codec", None) else ""
+        model_hash = session.config.codec.model_tool_contract_hash()
     except Exception:
         model_hash = ""
     record_provider_send_prompt(
-        session.trace_recorder,
+        session.request.trace_recorder,
         name=name,
         text=desc_text,
         purpose=purpose,
@@ -282,15 +282,6 @@ def _begin_provider_send(
         runtime_tool_contract_hash="",
     )
 
-    from codey.runtime.hooks import call_hooks as _call_hooks
-
-    _call_hooks(
-        getattr(session, "hooks", None),
-        "before_provider_send",
-        session=session,
-        prompt=desc_text,
-        purpose=purpose,
-    )
     return mutations, effect_id
 
 
@@ -345,13 +336,13 @@ def _fail_provider_send(
     )
     try:
         mutations.settle_provider_effect(
-            session.session_id,
-            session.run_id,
+            session.request.session_id,
+            session.request.run_id,
             RuntimeEffectSettlement(
                 effect_id=effect_id,
                 effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                session_id=session.session_id,
-                run_id=session.run_id,
+                session_id=session.request.session_id,
+                run_id=session.request.run_id,
                 status=SETTLEMENT_STATUS_ERROR,
                 error_code=type(exc).__name__[:80],
                 sent_state=sent_state,
@@ -366,10 +357,6 @@ def _settle_provider_send(
     session: AgentLoopSession,
     mutations: Any,
     effect_id: str,
-    *,
-    prompt_desc: str,
-    reply_desc: str,
-    purpose: str,
 ) -> None:
     if mutations is not None and effect_id:
         from codey.runtime.effects.effect_records import (
@@ -380,28 +367,18 @@ def _settle_provider_send(
         )
 
         mutations.settle_provider_effect(
-            session.session_id,
-            session.run_id,
+            session.request.session_id,
+            session.request.run_id,
             RuntimeEffectSettlement(
                 effect_id=effect_id,
                 effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
-                session_id=session.session_id,
-                run_id=session.run_id,
+                session_id=session.request.session_id,
+                run_id=session.request.run_id,
                 status=SETTLEMENT_STATUS_OK,
                 sent_state=SENT_STATE_SETTLED,
             ),
         )
 
-    from codey.runtime.hooks import call_hooks as _call_hooks
-
-    _call_hooks(
-        getattr(session, "hooks", None),
-        "after_provider_send",
-        session=session,
-        prompt=prompt_desc,
-        reply=reply_desc,
-        purpose=purpose,
-    )
 
 
 def _send_provider_with_effect(
@@ -426,7 +403,7 @@ def _send_provider_with_effect(
         supersede_effect_id=supersede_effect_id,
     )
     try:
-        reply_text = session.provider.send(prompt)
+        reply_text = session.request.provider.send(prompt)
     except Exception as exc:
         settled_not_sent = _fail_provider_send(session, mutations, effect_id, exc)
         from codey.providers import error_classification as errors
@@ -438,9 +415,6 @@ def _send_provider_with_effect(
         session,
         mutations,
         effect_id,
-        prompt_desc=prompt,
-        reply_desc=reply_text,
-        purpose=purpose,
     )
     return reply_text
 
@@ -495,12 +469,9 @@ def _structured_send(
         session,
         mutations,
         effect_id,
-        prompt_desc=desc_text,
-        reply_desc=_turn_display_text(turn),
-        purpose=purpose,
     )
-    if session.conversation is not None and record_as is not None:
-        session.conversation.record_exchange(record_as, _turn_display_text(turn), snapshot(session))
+    if session.request.conversation is not None and record_as is not None:
+        session.request.conversation.record_exchange(record_as, _turn_display_text(turn), snapshot(session))
     return turn
 
 
@@ -526,9 +497,9 @@ def _rollover_for_overflow(
     include_ghost_directive: bool = True,
 ) -> str:
     factual_handoff = ""
-    if session.conversation is not None:
+    if session.request.conversation is not None:
         try:
-            factual_handoff = session.conversation.prepare_model_handoff(
+            factual_handoff = session.request.conversation.prepare_model_handoff(
                 lambda summary_prompt: send_handoff_summary(session, summary_prompt)
             )
         except Exception:
@@ -548,11 +519,11 @@ def _rollover_for_overflow(
             factual_handoff,
             include_ghost_directive=include_ghost_directive,
         )
-        if session.conversation is not None:
-            session.conversation.begin_window(
-                session.active_provider_id,
+        if session.request.conversation is not None:
+            session.request.conversation.begin_window(
+                session.config.active_provider_id,
                 "project",
-                session.project_text,
+                str(session.config.project),
             )
     return prompt
 
@@ -568,8 +539,8 @@ def send_prompt(
     from codey.providers import error_classification as errors
 
     opened_fresh_chat = False
-    if session.conversation is not None and session.conversation.needs_rollover(prompt):
-        factual_handoff = session.conversation.prepare_model_handoff(
+    if session.request.conversation is not None and session.request.conversation.needs_rollover(prompt):
+        factual_handoff = session.request.conversation.prepare_model_handoff(
             lambda summary_prompt: send_handoff_summary(session, summary_prompt)
         )
         if open_fresh_chat(session):
@@ -621,26 +592,26 @@ def send_prompt(
             delivery_batch_id=delivery_batch_id,
             supersede_effect_id=failed_effect_id,
         )
-    if session.conversation is not None:
+    if session.request.conversation is not None:
         if opened_fresh_chat:
-            session.conversation.begin_window(
-                session.active_provider_id,
+            session.request.conversation.begin_window(
+                session.config.active_provider_id,
                 "project",
-                session.project_text,
+                str(session.config.project),
             )
-        session.conversation.record_exchange(prompt, reply_text, snapshot(session))
+        session.request.conversation.record_exchange(prompt, reply_text, snapshot(session))
     return reply_text
 
 
 def provider_supports_structured(session: AgentLoopSession) -> bool:
-    provider = getattr(session, "provider", None)
+    provider = session.request.provider
     return callable(getattr(provider, "send_turn", None)) and callable(
         getattr(provider, "send_tool_results", None)
     )
 
 
 def session_native_tools(session: AgentLoopSession) -> list[dict[str, object]] | None:
-    tools = getattr(session, "native_tools", None)
+    tools = session.config.native_tools
     if tools is not None:
         return list(tools)
     return None
@@ -655,7 +626,7 @@ def send_structured_prompt(
 ) -> object:
     from codey.providers import error_classification as errors
 
-    provider = session.provider
+    provider = session.request.provider
     tools = session_native_tools(session)
     bind_pending_context_rows(session, prompt)
     try:
@@ -707,7 +678,7 @@ def send_structured_results(
     """
     from codey.providers import error_classification as errors
 
-    provider = session.provider
+    provider = session.request.provider
     tools = session_native_tools(session)
     try:
         return _structured_send(
@@ -755,7 +726,7 @@ def _turn_display_text(turn: object) -> str:
 
 
 def current_coding_context(session: AgentLoopSession) -> str:
-    if not session.coding_context_enabled:
+    if not session.request.coding_context_enabled:
         return ""
     candidate = selected_verification_candidate(session)
     return render_coding_context(
@@ -765,13 +736,13 @@ def current_coding_context(session: AgentLoopSession) -> str:
             changed_files=tuple(sorted(session.verification.paths)),
             selected_verification=candidate,
             verification_fresh=verification_is_fresh(session, candidate),
-            verification_forbidden=session.verification_forbidden,
+            verification_forbidden=session.config.verification_forbidden,
         )
     )
 
 
 def append_coding_context(session: AgentLoopSession, prompt: str) -> str:
-    if not allows_context_source(session.profile, "coding_current_context"):
+    if not allows_context_source(session.config.profile, "coding_current_context"):
         return prompt
     rendered_context = render_context_sources_with_metadata(
         (
@@ -789,14 +760,14 @@ def append_coding_context(session: AgentLoopSession, prompt: str) -> str:
     context = rendered_context.text
     if not context:
         return prompt
-    session.pending_context_rows.extend(rendered_context.sources)
+    session.prompt.context_rows.extend(rendered_context.sources)
     return f"{prompt}\n\n{context}"
 
 
 def initial_reply(session: AgentLoopSession) -> str:
-    if session.fresh_chat:
+    if session.request.fresh_chat:
         opened_fresh_chat = open_fresh_chat(session)
-        intro = project_intro(session, session.user_task, session.handoff)
+        intro = project_intro(session, session.request.task, session.request.handoff)
         reply = _send_provider_with_effect(
             session,
             intro,
@@ -805,26 +776,26 @@ def initial_reply(session: AgentLoopSession) -> str:
             capability_id="agent_runner",
             name="coding_outbound_prompt",
         )
-        if session.conversation is not None:
+        if session.request.conversation is not None:
             if opened_fresh_chat:
-                session.conversation.begin_window(
-                    session.active_provider_id,
+                session.request.conversation.begin_window(
+                    session.config.active_provider_id,
                     "project",
-                    session.project_text,
+                    str(session.config.project),
                 )
-            session.conversation.record_exchange(intro, reply, snapshot(session))
+            session.request.conversation.record_exchange(intro, reply, snapshot(session))
         return reply
-    if session.conversation is not None:
+    if session.request.conversation is not None:
         followup = (
             "Continue with the established project and JSON tool protocol.\n\n"
-            f"User request:\n{session.user_task}"
+            f"User request:\n{session.request.task}"
         )
         return send_prompt(
             session,
             with_completion_repair_context(session, followup),
-            restart_request=session.user_task,
+            restart_request=session.request.task,
         )
-    intro = project_intro(session, session.user_task)
+    intro = project_intro(session, session.request.task)
     return _send_provider_with_effect(
         session,
         intro,
@@ -836,29 +807,29 @@ def initial_reply(session: AgentLoopSession) -> str:
 
 
 def initial_structured_reply(session: AgentLoopSession) -> object:
-    if session.fresh_chat:
+    if session.request.fresh_chat:
         opened_fresh_chat = open_fresh_chat(session)
-        intro = project_intro(session, session.user_task, session.handoff)
-        turn = send_structured_prompt(session, intro, restart_request=session.user_task)
-        if session.conversation is not None and opened_fresh_chat:
-            session.conversation.begin_window(
-                session.active_provider_id,
+        intro = project_intro(session, session.request.task, session.request.handoff)
+        turn = send_structured_prompt(session, intro, restart_request=session.request.task)
+        if session.request.conversation is not None and opened_fresh_chat:
+            session.request.conversation.begin_window(
+                session.config.active_provider_id,
                 "project",
-                session.project_text,
+                str(session.config.project),
             )
         return turn
-    if session.conversation is not None:
+    if session.request.conversation is not None:
         followup = (
             "Continue with the established project and tool protocol.\n\n"
-            f"User request:\n{session.user_task}"
+            f"User request:\n{session.request.task}"
         )
         return send_structured_prompt(
             session,
             with_completion_repair_context(session, followup),
-            restart_request=session.user_task,
+            restart_request=session.request.task,
         )
-    intro = project_intro(session, session.user_task)
-    return send_structured_prompt(session, intro, restart_request=session.user_task)
+    intro = project_intro(session, session.request.task)
+    return send_structured_prompt(session, intro, restart_request=session.request.task)
 
 
 __all__ = [

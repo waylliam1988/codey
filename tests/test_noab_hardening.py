@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from codey.agents import context_compaction as compaction
-from codey.agents.runaway_guard import should_block_or_remind
+from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.providers import error_classification as errors
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.hooks import RuntimeHooks, call_hooks
 from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
 from codey.toolchain.runtime import (
     EditBlock,
@@ -113,10 +112,8 @@ def test_externalize_persists_durable_receipt(tmp_path: Path) -> None:
 
     store = ManagedOutputStore(tmp_path / "state")
     session = SimpleNamespace(
-        request=SimpleNamespace(managed_outputs=store),
-        session_id="session-1",
-        run_id="run-1",
-        profile=SimpleNamespace(name="coding_writer"),
+        request=SimpleNamespace(managed_outputs=store, session_id="session-1", run_id="run-1"),
+        config=SimpleNamespace(profile=SimpleNamespace(name="coding_writer")),
     )
     outcome = maybe_externalize_large_tool_output(
         session, ToolCall(name="search", args={"query": "q"}), ToolOutcome("z" * 30_000, True),
@@ -170,25 +167,11 @@ def test_mutation_queue_serializes_same_file(tmp_path: Path) -> None:
 def test_runaway_blocks_exact_repeat() -> None:
     call = ToolCall(name="read", args={"path": "a"})
     failed = ToolResult(call=call, model_text="ERROR: boom")
-    history = [(call, failed)] * 3
+    history = [attempt_record(call, failed, turn=turn) for turn in range(3)]
     decision = should_block_or_remind(history)
     assert decision.block
-    ok_history = [(call, ToolResult(call=call, model_text="fine"))]
+    ok_history = [attempt_record(call, ToolResult(call=call, model_text="fine"), turn=0)]
     assert not should_block_or_remind(ok_history).block
-
-
-def test_hooks_fail_open() -> None:
-    seen: list[str] = []
-
-    def bad(**payload: object) -> None:
-        raise RuntimeError("hook boom")
-
-    def good(**payload: object) -> None:
-        seen.append("good")
-
-    hooks = RuntimeHooks(before_tool_call=(bad, good))
-    call_hooks(hooks, "before_tool_call")
-    assert seen == ["good"]
 
 
 def test_registry_snapshot_stable() -> None:

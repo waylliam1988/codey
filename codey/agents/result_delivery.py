@@ -33,13 +33,13 @@ def ensure_result_batch_intent(
     """Find existing matching batch intent or record durable batch intent (fail-closed)."""
     if not turn_state.delivery_items:
         return ""
-    delivery_store = session.tool_result_delivery
-    mutations = session.runtime_mutations
+    delivery_store = session.request.tool_result_delivery
+    mutations = session.request.runtime_mutations
     if (
         delivery_store is None
         and mutations is None
-        and not session.session_id
-        and not session.run_id
+        and not session.request.session_id
+        and not session.request.run_id
     ):
         # Ephemeral in-memory runs (unit tests, ad-hoc FakeProvider loops):
         # no ids and no sinks, so there is nothing durable to preserve.
@@ -48,7 +48,7 @@ def ensure_result_batch_intent(
         raise ToolResultDeliveryError(
             f"turn {turn} has delivery items but no durable delivery store"
         )
-    if not session.session_id or not session.run_id:
+    if not session.request.session_id or not session.request.run_id:
         raise ToolResultDeliveryError(
             f"turn {turn} has delivery items but missing session_id/run_id"
         )
@@ -81,7 +81,7 @@ def ensure_result_batch_intent(
         )
 
     # Slow / failover path: inspect durable store if not present in turn_state
-    batches = delivery_store.load_batches(session.session_id, session.run_id)
+    batches = delivery_store.load_batches(session.request.session_id, session.request.run_id)
     for b in reversed(batches):
         if b.intent.turn == turn and not b.is_delivered and not b.send_attempts:
             if b.intent.batch_digest == expected_digest:
@@ -100,18 +100,18 @@ def ensure_result_batch_intent(
         raise ToolResultDeliveryError(
             f"turn {turn} has delivery items but no runtime mutations sink"
         )
-    batch_id = new_batch_id(session.run_id, turn)
+    batch_id = new_batch_id(session.request.run_id, turn)
     intent = DeliveryBatchIntent(
         batch_id=batch_id,
-        session_id=session.session_id,
-        run_id=session.run_id,
+        session_id=session.request.session_id,
+        run_id=session.request.run_id,
         turn=turn,
         items=items,
         batch_digest=expected_digest,
     )
     mutations.begin_tool_batch(
-        session.session_id,
-        session.run_id,
+        session.request.session_id,
+        session.request.run_id,
         intents=(),
         delivery_intent=intent,
     )
@@ -127,13 +127,13 @@ def build_next_tool_prompt(
     protocol_reminder: str = "",
 ) -> str:
     """Build byte-exact next tool results prompt with coding context."""
-    formatted = session.codec.format_results(turn_state.results)
+    formatted = session.config.codec.format_results(turn_state.results)
     raw_prompt = f"{formatted}{protocol_reminder}" if protocol_reminder else formatted
     return append_coding_context(session, raw_prompt)
 
 
 def _use_native_delivery(session: AgentLoopSession) -> bool:
-    return session.native_tools is not None and provider_supports_structured(session)
+    return session.config.native_tools is not None and provider_supports_structured(session)
 
 
 def deliver_turn_results(

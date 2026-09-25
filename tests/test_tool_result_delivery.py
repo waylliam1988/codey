@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from codey.agents.loop import _setup_loop
 from codey.agents.prompt_context import append_coding_context
 from codey.agents.request import AgentRequest
 from codey.agents.result_delivery import (
@@ -13,15 +15,12 @@ from codey.agents.result_delivery import (
     deliver_turn_results,
     ensure_result_batch_intent,
 )
-from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification
 from codey.agents.tool_execution import (
     ToolResultDeliveryItem,
     TurnState,
 )
 from codey.agents.tool_turn import execute_turn_tools
-from codey.agents.tools import DEFAULT_TOOL_FNS
 from codey.operations.recovery import recover_effects_for_resume
-from codey.policies.permissions import profile_for_name
 from codey.protocols import JsonToolCodec
 from codey.runs.details import load_run_details
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -1469,57 +1468,15 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=self.project_dir,
             task="read and search",
             codec=codec,
-            runtime_mutations=self.line,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
-        session = AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="read and search",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
+            provider_id="mock",
+            on_event=lambda _event: None,
             fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
         )
+        session = _setup_loop(req)
 
         res = execute_turn_tools(session, calls, turn=1)
         self.assertFalse(res.stopped)
@@ -1559,62 +1516,20 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=self.project_dir,
             task="read target",
             codec=codec,
-            runtime_mutations=self.line,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
-        session = AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="read target",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
+            provider_id="mock",
+            on_event=lambda _event: None,
             fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
         )
+        session = _setup_loop(req)
         res = execute_turn_tools(session, calls, turn=1)
 
         # Inject failure at the single mutation line before provider send.
         with patch.object(
-            session.runtime_mutations,
+            session.request.runtime_mutations,
             "begin_provider_effect",
             side_effect=ToolResultDeliveryError("disk full"),
         ), self.assertRaises(ToolResultDeliveryError):
@@ -1631,52 +1546,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
     def test_ensure_result_batch_intent_rejects_empty_ref(self) -> None:
         provider = MockDeliveryProvider()
         codec = JsonToolCodec()
-        session = AgentLoopSession(
-            request=AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec),
-            provider=provider,
-            project=self.project_dir,
-            user_task="test",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
-            fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
+        session = _setup_loop(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
         turn_state = TurnState(
             results=[ToolResult(call=ToolCall(name="read", args={"path": "target.py"}), model_text="ok")],
             delivery_items=[
@@ -1694,50 +1564,17 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
     def test_ensure_result_batch_intent_fails_closed_without_durable_sink(self) -> None:
         provider = MockDeliveryProvider()
         codec = JsonToolCodec()
-        base_kwargs: dict = {
-            "request": AgentRequest(provider=provider, project=self.project_dir, task="t", codec=codec),
-            "provider": provider,
-            "project": self.project_dir,
-            "user_task": "t",
-            "codec": codec,
-            "max_turns": 5,
-            "stagnant_turns": 3,
-            "on_event": lambda e: None,
-            "on_shell_request": None,
-            "stop_flag": None,
-            "fresh_chat": False,
-            "strict_fresh_chat": False,
-            "change_tracker": None,
-            "conversation": None,
-            "active_provider_id": "mock",
-            "handoff": "",
-            "project_facts": "",
-            "research_context": "",
-            "project_map": "",
-            "project_config_warnings": "",
-            "work_checkpoint": "",
-            "verification_candidates": (),
-            "verification_candidate_loader": None,
-            "coding_context_enabled": True,
-            "ghost_directive": "",
-            "ghost_continuity": "",
-            "completion_repair_context": "",
-            "completion_repair_context_payload": None,
-            "profile": profile_for_name("coding_writer"),
-            "tool_fns": DEFAULT_TOOL_FNS,
-            "trace_recorder": None,
-            "trace": Mock(),
-            "system_prompt_text": "",
-            "project_text": str(self.project_dir),
-            "verification_required": False,
-            "verification_forbidden": True,
-            "progress": LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            "verification": LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            "stagnation": LoopStagnation(),
-            "project_instructions": [],
-            "session_id": self.session_id,
-            "run_id": self.run_id,
-        }
+        base_request = AgentRequest(
+            provider=provider,
+            project=self.project_dir,
+            task="t",
+            codec=codec,
+            provider_id="mock",
+            on_event=lambda _event: None,
+            fresh_chat=False,
+            session_id=self.session_id,
+            run_id=self.run_id,
+        )
 
         def _turn_state() -> TurnState:
             return TurnState(
@@ -1748,24 +1585,21 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             )
 
         # Empty delivery is still a no-op (no provider send needed).
-        empty_session = AgentLoopSession(
-            **base_kwargs, runtime_mutations=None, runtime_effects=self.effects, tool_result_delivery=None
-        )
+        empty_session = _setup_loop(base_request)
         self.assertEqual(
             ensure_result_batch_intent(empty_session, TurnState(results=[], delivery_items=[]), 1), ""
         )
         # Any real delivery without a sink must fail closed, never send.
         for kwargs in (
-            {"runtime_mutations": None, "runtime_effects": self.effects, "tool_result_delivery": self.delivery},
-            {"runtime_mutations": self.line, "runtime_effects": self.effects, "tool_result_delivery": None},
+            {"runtime_mutations": None, "tool_result_delivery": self.delivery},
+            {"runtime_mutations": self.line, "tool_result_delivery": None},
             {
                 "runtime_mutations": self.line,
-                "runtime_effects": self.effects,
                 "tool_result_delivery": self.delivery,
                 "session_id": "",
             },
         ):
-            session = AgentLoopSession(**(base_kwargs | kwargs))
+            session = _setup_loop(replace(base_request, **kwargs))
             with self.assertRaises(ToolResultDeliveryError):
                 ensure_result_batch_intent(session, _turn_state(), 1)
             with self.assertRaises(ToolResultDeliveryError):
@@ -1800,52 +1634,7 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
         # Now try delivering turn 1 with unexpected different tool "search"
         provider = MockDeliveryProvider()
         codec = JsonToolCodec()
-        session = AgentLoopSession(
-            request=AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec),
-            provider=provider,
-            project=self.project_dir,
-            user_task="test",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
-            fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
+        session = _setup_loop(AgentRequest(provider=provider, project=self.project_dir, task="test", codec=codec, on_event=lambda _event: None, session_id=self.session_id, run_id=self.run_id, tool_result_delivery=self.delivery))
         turn_state = TurnState(
             results=[ToolResult(call=ToolCall(name="search", args={"query": "q"}), model_text="ok")],
             delivery_items=[
@@ -1874,58 +1663,16 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             project=self.project_dir,
             task="read and shell",
             codec=codec,
-            runtime_mutations=self.line,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
-        session = AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="read and shell",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
+            provider_id="mock",
+            permission_profile="planning_readonly",
+            on_event=lambda _event: None,
             fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            # shell is forbidden without approval channel -> policy denied
-            profile=profile_for_name("planning_readonly"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
         )
+        session = _setup_loop(req)
 
         res = execute_turn_tools(session, calls, turn=1)
         self.assertFalse(res.stopped)
@@ -2493,7 +2240,6 @@ class SafeReplayRecoveryDeliveryTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
             recovered_tool_outcomes=recovery.recovered_tool_outcomes,
             recovered_tool_result_batch_id=recovery.recovered_tool_result_batch_id,
@@ -2548,48 +2294,7 @@ class AgentPromptParityTests(unittest.TestCase):
             task="read sample file",
             codec=codec,
         )
-        session = AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="read sample file",
-            codec=codec,
-            max_turns=5,
-            stagnant_turns=3,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
-            fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=True,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile_for_name("coding_writer"),
-            tool_fns=DEFAULT_TOOL_FNS,
-            trace_recorder=None,
-            trace=Mock(),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=True,
-            progress=LoopProgress(changed_files=set(), read_file_paths=set(), known_file_paths=set()),
-            verification=LoopVerification(paths=set(), edit_epoch=0, successful_checks=[], attempts=[]),
-            stagnation=LoopStagnation(),
-            project_instructions=[],
-        )
+        session = _setup_loop(req)
 
         # 1. Computed via deliver_turn_results prompt builder
         actual_prompt = build_next_tool_prompt(session, turn_state, protocol_reminder="\n\nNote: reminder")

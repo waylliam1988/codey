@@ -32,13 +32,34 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Agent session ownership and generation cleanup (no release)
+
+- `AgentLoopSession` now holds seven cohesive pieces of state instead of
+  copying roughly fifty request and configuration fields. A typed, resolved
+  configuration owns the fixed loop settings; request, prompt, trace,
+  progress, verification, and stagnation each keep their own mutable state.
+  Unused agent hooks and test-only tuple compatibility were removed.
+- Worker retirement keeps an incomplete generation visible. A new worker
+  cannot take its profile until the old direct child has exited and its
+  reader/writer threads have stopped. Rechecking incomplete cleanup does not
+  block a short request deadline; Stop or expiry immediately after startup
+  retires that generation before writing a request.
+- Browser close completes queued jobs without running their abandonment
+  callbacks on the closing thread. A running job still performs its cleanup
+  on the browser worker thread, preserving Playwright thread ownership.
+- Regression tests cover incomplete cleanup, child liveness, short deadlines,
+  Stop during startup, and browser callback thread ownership. Before the
+  full run, Ruff, compileall, diff checks, collection, and impacted suites
+  passed. Final `python -m pytest -q -o faulthandler_timeout=120`:
+  `4229 passed, 24 skipped, 1374 subtests passed in 356.83s`.
+
 ## Unreleased - Single-result generations, reported cleanup, profile exclusion (no release)
 
 - One verdict per accepted unit. Provider pending completes exactly once
   (success, protocol, timeout, or exit); close/retire wakes map to exit, and
   the slot is freed in `finally`. Browser queued sync calls fail with an
-  explicit close error, queued async jobs run abandon cleanup exactly once,
-  and running jobs get a cancel signal with late results discarded.
+  explicit close error, and running jobs get a cancel signal with late results
+  discarded. Abandonment cleanup for running jobs stays on the browser thread.
 - Failed generations stay dead. Sticky `terminal_error` survives slot
   clearing, so a late stdin failure retires before the next request; the
   delivered success is never rewritten. First-failure-then-fresh is now
@@ -76,8 +97,8 @@
   asserting same-session reuse and new-process failover.
 - Browser close has a terminal state. One lifecycle lock covers enqueue,
   queue-to-running, and close; close drains queued sync calls with an explicit
-  close error, runs async abandon cleanups once, signals the running job,
-  and returns whether the thread actually stopped. New tests cover running
+  close error, signals the running job, keeps its abandonment cleanup on the
+  browser thread, and returns whether the thread actually stopped. New tests cover running
   plus queued with close and submit racing close.
 - Headless close keeps its association. `run_id_for_event` is established
   before the task and updated on success, so exception events never carry an

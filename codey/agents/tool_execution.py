@@ -78,14 +78,14 @@ def maybe_externalize_large_tool_output(
     if outcome.managed_output():
         return outcome
     audit: dict[str, object] = dict(outcome.audit)
-    store = getattr(getattr(session, "request", None), "managed_outputs", None)
-    if store is not None and session.session_id and session.run_id:
+    store = session.request.managed_outputs
+    if store is not None and session.request.session_id and session.request.run_id:
         try:
             ref = store.write_tool_output(
-                session_id=session.session_id,
-                run_id=session.run_id,
+                session_id=session.request.session_id,
+                run_id=session.request.run_id,
                 tool_id=f"{turn}:{tool_index}",
-                permission_profile=session.profile.name,
+                permission_profile=session.config.profile.name,
                 tool_name=call.name,
                 display_ref=call_arg(call, "path", call_arg(call, "command", "")),
                 text=text,
@@ -236,10 +236,10 @@ def evaluate_tool_call_policy(
 ) -> tuple[ActionPolicyDecision | None, Any]:
     policy_decision, replay_decision = evaluate_tool_call_policy_for(
         call,
-        project=session.project,
-        permission_profile=session.profile.name,
+        project=session.config.project,
+        permission_profile=session.config.profile.name,
         phase="writer",
-        approval_available=bool(session.on_shell_request),
+        approval_available=bool(session.request.on_shell_request),
     )
     if policy_decision is not None:
         session.trace.call("record_policy_decision", policy_decision)
@@ -254,7 +254,7 @@ def build_tool_call_intent(
     tool_index: int,
     replay_decision: Any,
 ) -> Any | None:
-    if session.runtime_mutations is None or not session.session_id or not session.run_id:
+    if session.request.runtime_mutations is None or not session.request.session_id or not session.request.run_id:
         return None
     from codey.runtime.effects.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
@@ -265,7 +265,7 @@ def build_tool_call_intent(
     from codey.runtime.effects.replay_policy import ReplayClass, is_replayable_safe_tool
     from codey.runtime.effects.safe_tool_replay import replay_args_for_tool_call
 
-    effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.run_id)
+    effect_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, session.request.run_id)
     display_ref = call_arg(call, "path", ".") if call.name != "run" else call_arg(call, "command", "")
     replay_class = getattr(replay_decision, "replay_class", "unsafe")
     replay_args = (
@@ -276,8 +276,8 @@ def build_tool_call_intent(
     intent = RuntimeEffectIntent(
         effect_id=effect_id,
         effect_category=EFFECT_CATEGORY_TOOL_CALL,
-        session_id=session.session_id,
-        run_id=session.run_id,
+        session_id=session.request.session_id,
+        run_id=session.request.run_id,
         phase="writer",
         turn=turn,
         tool_index=tool_index,
@@ -298,8 +298,8 @@ def settle_tool_call_effect(
     outcome: ToolOutcome,
     replay_decision: Any,
 ) -> None:
-    mutations = session.runtime_mutations
-    if mutations is None or not effect_id or not session.session_id or not session.run_id:
+    mutations = session.request.runtime_mutations
+    if mutations is None or not effect_id or not session.request.session_id or not session.request.run_id:
         return
     from codey.runtime.effects.effect_records import (
         EFFECT_CATEGORY_TOOL_CALL,
@@ -313,13 +313,13 @@ def settle_tool_call_effect(
     settlement = RuntimeEffectSettlement(
         effect_id=effect_id,
         effect_category=EFFECT_CATEGORY_TOOL_CALL,
-        session_id=session.session_id,
-        run_id=session.run_id,
+        session_id=session.request.session_id,
+        run_id=session.request.run_id,
         status=status,
         error_code=error_code[:80],
         replay_class=replay_class,
     )
-    mutations.settle_tool_effect(session.session_id, session.run_id, settlement)
+    mutations.settle_tool_effect(session.request.session_id, session.request.run_id, settlement)
 
 
 def emit_tool_started_after_intent(
@@ -373,8 +373,8 @@ def request_shell_approval(
     policy_decision: ActionPolicyDecision | None,
     deferred_calls: tuple[DeferredToolCall, ...] = (),
 ) -> None:
-    if policy_asks_user(policy_decision) and session.on_shell_request:
-        session.on_shell_request(ShellApprovalRequest(
+    if policy_asks_user(policy_decision) and session.request.on_shell_request:
+        session.request.on_shell_request(ShellApprovalRequest(
             cwd=path,
             command=command,
             deferred_calls=deferred_calls,
@@ -442,7 +442,7 @@ def record_tool_outcome(
         )
     )
     if call.name == "read" and outcome.ok:
-        canonical = canonical_project_path(session.project, path)
+        canonical = canonical_project_path(session.config.project, path)
         session.progress.read_file_paths.add(canonical)
         session.progress.known_file_paths.add(canonical)
     if call.name == "edit" and outcome.ok and outcome.changed:
@@ -468,58 +468,47 @@ def record_tool_outcome(
         )
     except Exception as exc:
         emit(session, RunEvent.status(f"[agent] runaway record failed: {exc}"))
-    from codey.runtime.hooks import call_hooks
-
-    call_hooks(
-        getattr(session, "hooks", None),
-        "after_tool_call",
-        session=session,
-        call=call,
-        outcome=outcome,
-        turn=turn,
-        tool_index=tool_index,
-    )
 
 
 def execute_edit_call(session: AgentLoopSession, call: ToolCall) -> ToolOutcome:
     path = call_arg(call, "path", ".")
     if edit_has_content(call):
-        canonical = canonical_project_path(session.project, path)
-        if safe_join(session.project, canonical).is_file():
+        canonical = canonical_project_path(session.config.project, path)
+        if safe_join(session.config.project, canonical).is_file():
             outcome = ToolOutcome.error(
                 "content is only allowed when creating a new file; "
                 f"use replacements for existing file: {canonical}"
             )
         else:
-            if session.change_tracker is not None:
-                session.change_tracker.capture_before(path)
-            outcome = session.tool_fns.write_file(
-                session.project,
+            if session.request.change_tracker is not None:
+                session.request.change_tracker.capture_before(path)
+            outcome = session.config.tool_fns.write_file(
+                session.config.project,
                 path,
                 call_arg(call, "content"),
             )
     else:
         guard = read_before_edit_outcome(
-            session.project,
+            session.config.project,
             path,
             session.progress.known_file_paths,
         )
         if guard is not None:
             outcome = guard
         else:
-            if session.change_tracker is not None:
-                session.change_tracker.capture_before(path)
-            outcome = session.tool_fns.edit_file(
-                session.project,
+            if session.request.change_tracker is not None:
+                session.request.change_tracker.capture_before(path)
+            outcome = session.config.tool_fns.edit_file(
+                session.config.project,
                 path,
                 edit_blocks_from_call(call),
             )
     if outcome.ok and outcome.changed:
-        if session.change_tracker is not None:
-            session.change_tracker.capture_after(path)
+        if session.request.change_tracker is not None:
+            session.request.change_tracker.capture_after(path)
         record_edit_change(
             session,
-            canonical_project_path(session.project, path),
+            canonical_project_path(session.config.project, path),
         )
     return outcome
 
@@ -533,11 +522,11 @@ def execute_run_call(
 ) -> ToolOutcome:
     path = call_arg(call, "path", ".")
     command = call_arg(call, "command")
-    outcome = session.tool_fns.execute_run_command(
-        session.project,
+    outcome = session.config.tool_fns.execute_run_command(
+        session.config.project,
         path,
         command,
-        permission_profile=session.profile.name,
+        permission_profile=session.config.profile.name,
         phase="writer",
         tool_id=f"{turn}:{tool_index}",
     )
@@ -597,7 +586,7 @@ def execute_tool_call(
     if call.name == "edit":
         return execute_edit_call(session, call)
     if call.name in ("read", "ls", "search", "references"):
-        return execute_information_tool_call(session.project, session.tool_fns, call)
+        return execute_information_tool_call(session.config.project, session.config.tool_fns, call)
     if call.name == "run":
         return execute_run_call(session, call, turn=turn, tool_index=tool_index)
     path = call_arg(call, "path", ".")

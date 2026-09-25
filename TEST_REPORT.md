@@ -1,5 +1,34 @@
 # Codey Test Report
 
+## Agent session ownership and generation cleanup full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/agents/{state,loop,request,prompt_context,result_delivery,tool_execution,tool_turn,verification_driver}.py
+    (seven-part session state; resolved configuration; concrete request fields)
+codey/agents/runaway_guard.py       (test-only tuple compatibility removed)
+codey/runtime/hooks.py               (unused agent hook implementation removed)
+codey/providers/worker.py            (retain incomplete generation; child-exit and thread-stop gate; deadline/Stop after startup)
+codey/automation/browser_worker.py   (queued close does not invoke Playwright cleanup on closing thread)
+tests                             (production session construction; lifecycle, deadline, and callback ownership regressions)
+```
+
+Verification (local, Windows):
+
+- Before the final full suite: `python -m ruff check .`, `git diff --check`,
+  and `python -m compileall -q codey tests` passed; collection found
+  `4253 tests`. Impacted suites included `429 passed, 3 skipped, 17 subtests`,
+  worker/browser `164 passed, 3 skipped, 6 subtests`, plus `39 passed` in
+  architecture and native receipt checks.
+- The first complete run found one stale test fixture that supplied a flat
+  session shape rather than the production `session.request` shape:
+  `1 failed, 4228 passed, 24 skipped, 1374 subtests in 355.19s`. The fixture
+  was corrected and its focused test passed before the final run.
+- Final full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4229 passed, 24 skipped, 1374 subtests passed in 356.83s (0:05:56)`.
+- This entry was written after the final full pytest run. No release was made.
+
 ## Release 0.5.9 full suite (2026-09-23)
 
 Scope (release):

@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from threading import Event
+from typing import TYPE_CHECKING, Protocol
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest
@@ -16,6 +17,12 @@ from codey.providers import ChatProvider
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome
+
+if TYPE_CHECKING:
+    from codey.runs.trace import RunTraceRecorder
+    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
@@ -48,7 +55,7 @@ class AgentRequest:
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS
     on_event: Callable[[RunEvent], None] = print_run_event
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
-    stop_flag: Any = None
+    stop_flag: Event | None = None
     fresh_chat: bool = True
     strict_fresh_chat: bool = False
     change_tracker: ChangeTracker | None = None
@@ -73,13 +80,12 @@ class AgentRequest:
     completion_repair_context_payload: dict[str, object] | None = None
     permission_profile: str = "coding_writer"
     tool_fns: AgentToolFns | None = None
-    trace_recorder: Any = None
+    trace_recorder: RunTraceRecorder | None = None
     session_id: str = ""
     run_id: str = ""
-    runtime_mutations: Any = None
-    runtime_effects: Any = None
-    tool_result_delivery: Any = None
-    managed_outputs: Any = None
+    runtime_mutations: RuntimeMutationLine | None = None
+    tool_result_delivery: ToolResultDeliveryStore | None = None
+    managed_outputs: ManagedOutputStore | None = None
     recovered_tool_outcomes: tuple[RecoveredToolOutcome, ...] = ()
     recovered_tool_result_batch_id: str = ""
 

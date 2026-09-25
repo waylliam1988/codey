@@ -97,7 +97,7 @@ def test_native_delivery_records_effect_and_batch(monkeypatch, tmp_path: Path) -
         provider, tmp_path, session_id="s", run_id="r",
         runtime_mutations=mutations, tool_result_delivery=FakeDeliveryStore(),
     ))
-    assert session.native_tools is not None
+    assert session.config.native_tools is not None
     turn_state = TurnState()
     record_tool_outcome(
         session, turn_state, turn=1,
@@ -306,8 +306,8 @@ def test_native_success_leaves_no_pending_context_rows(monkeypatch, tmp_path: Pa
     ):
         reply = deliver_turn_results(session, _recorded_turn_state(session), 1)
     assert isinstance(reply, AssistantTurn)
-    assert session.pending_context_rows == []
-    assert session.pending_repair_sections == []
+    assert session.prompt.context_rows == []
+    assert session.prompt.repair_sections == []
 
 
 def test_native_too_many_calls_answered_in_full(monkeypatch, tmp_path: Path) -> None:
@@ -652,10 +652,8 @@ def test_store_failure_is_audited(tmp_path: Path) -> None:
 
     for store, kind in ((RefusingStore(), "store_refused"), (ExplodingStore(), "OSError")):
         session = SimpleNamespace(
-            request=SimpleNamespace(managed_outputs=store),
-            session_id="s",
-            run_id="r",
-            profile=SimpleNamespace(name="coding_writer"),
+            request=SimpleNamespace(managed_outputs=store, session_id="s", run_id="r"),
+            config=SimpleNamespace(profile=SimpleNamespace(name="coding_writer")),
         )
         outcome = maybe_externalize_large_tool_output(
             session, ToolCall(name="search", args={"query": "q"}), ToolOutcome("z" * 30_000, True),

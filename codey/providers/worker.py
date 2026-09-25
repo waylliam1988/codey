@@ -136,23 +136,14 @@ class WorkerChatProvider:
         return str(result or "")
 
     def close(self) -> bool:
-        # Shutdown never resurrects and never queues behind a long send:
-        # detach under the life lock, wake the waiter and the writer, then
-        # tear down the detached generation while still holding the lock so
-        # the next start cannot reuse the profile early. Returns True when
-        # the detached generation's threads actually stopped.
+        # A generation that has not finished cleanup remains owned here.
+        # Otherwise another request could reuse its browser profile after a
+        # failed close, and a second close would incorrectly report success.
         with self._life_lock:
             session = self._session
             if session is None:
                 return True
-            self._session = None
-            with session.lock:
-                session.closed = True
-                pending = session.pending
-                if pending is not None:
-                    pending.done.set()
-                session.write_event.set()
-            return self._terminate_session(session)
+            return self._retire_session_locked(session)
 
     def _start_session_locked(self) -> None:
         """Create, publish, and serve one generation. Holds _life_lock."""
@@ -431,8 +422,8 @@ class WorkerChatProvider:
             and session.proc.stdin is not None
         ):
             return session
-        if session is not None:
-            self._retire_session_locked(session)
+        if session is not None and not self._retire_session_locked(session):
+            raise RuntimeError("provider worker cleanup incomplete")
         self._start_session_locked()
         session = self._session
         if session is None or session.proc.stdin is None:
@@ -544,6 +535,16 @@ class WorkerChatProvider:
                 raise
             try:
                 session = self._ensure_live_session_locked()
+                try:
+                    cancellation.check()
+                    if deadline - time.monotonic() <= 0:
+                        raise self._timeout_error(method)
+                except (cancellation.TaskCancelled, cancellation.DeadlineExceeded, ProviderActionError):
+                    # A start that finishes after Stop/deadline must not
+                    # publish an unused live worker for the next request.
+                    with contextlib.suppress(Exception):
+                        self._retire_session_locked(session)
+                    raise
                 if session.pending is not None:
                     raise RuntimeError("provider worker single-flight invariant violated")
                 if session.write_wire is None:
@@ -806,19 +807,38 @@ class WorkerChatProvider:
         return ProviderActionError(failure)
 
     def _retire_session_locked(self, session: _WorkerSession) -> bool:
-        """Detach and tear down the current generation. Holds _life_lock."""
+        """Retire this generation; publish an empty slot only after cleanup."""
         if self._session is not session:
             return False
-        self._session = None
         with session.lock:
+            already_closed = session.closed
             session.closed = True
             pending = session.pending
             if pending is not None:
                 pending.done.set()
-            # Wake a writer parked with no job so it observes closed.
             session.write_event.set()
-        self._terminate_session(session)
-        return True
+        # Termination is performed once. Later calls inspect the same
+        # generation without waiting under the life lock or signalling a
+        # possibly recycled process ID. The first teardown did bounded joins.
+        threads_stopped = (
+            all(not thread.is_alive() for thread in self._session_threads(session))
+            if already_closed
+            else self._terminate_session(session)
+        )
+        # A stopped reader alone does not prove the worker released its
+        # browser profile. The direct child must have exited as well.
+        complete = threads_stopped and session.proc.poll() is not None
+        if complete:
+            self._session = None
+        return complete
+
+    @staticmethod
+    def _session_threads(session: _WorkerSession) -> list[threading.Thread]:
+        return [
+            thread
+            for thread in (session.reader, session.stderr_reader, session.writer)
+            if thread is not None
+        ]
 
     def _terminate_session(self, session: _WorkerSession) -> bool:
         """Tear down a detached generation: page, tree, job, pipes, threads.
@@ -851,11 +871,7 @@ class WorkerChatProvider:
                 with contextlib.suppress(Exception):
                     job.close()  # type: ignore[union-attr]
             self._close_pipes(proc)
-            joined = self._join_threads([
-                thread
-                for thread in (session.reader, session.stderr_reader, session.writer)
-                if thread is not None
-            ])
+            joined = self._join_threads(self._session_threads(session))
         return joined
 
     @staticmethod

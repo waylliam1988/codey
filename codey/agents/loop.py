@@ -11,11 +11,7 @@ from codey.agents.prompt_context import (
     send_structured_prompt,
 )
 from codey.agents.protocol import protocol_repair_prompt
-from codey.agents.request import (
-    DEFAULT_MAX_TURNS,
-    DEFAULT_STAGNANT_TURNS,
-    AgentRequest,
-)
+from codey.agents.request import AgentRequest
 from codey.agents.result_delivery import (
     deliver_recovered_results,
     deliver_turn_results,
@@ -25,6 +21,7 @@ from codey.agents.state import (
     LoopProgress,
     LoopStagnation,
     LoopVerification,
+    ResolvedLoopConfig,
     RunResult,
     emit,
     snapshot,
@@ -143,8 +140,8 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
             native_tools = None
     system_prompt_text = codec.system_prompt()
     tool_fns = request.tool_fns or DEFAULT_TOOL_FNS
-    max_turns = max(1, int(request.max_turns or DEFAULT_MAX_TURNS))
-    stagnant_turns = max(1, int(request.stagnant_turns or DEFAULT_STAGNANT_TURNS))
+    max_turns = max(1, int(request.max_turns))
+    stagnant_turns = max(1, int(request.stagnant_turns))
     changed_files = set(
         request.conversation.snapshot.changed_files
         if request.conversation
@@ -159,7 +156,6 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
     verification = initial_verification_state(request)
     trace = FailOpenPromptTrace(request.trace_recorder)
     active_provider_id = request.provider_id or getattr(provider, "name", "")
-    project_text = str(project)
 
     trace.call("record_permission_profile", profile.name, phase="writer")
     trace.call(
@@ -189,53 +185,27 @@ def _setup_loop(request: AgentRequest) -> AgentLoopSession:
     ))
 
     project_instructions = load_project_instructions(project)
+    verification.candidates = request.verification_candidates
     session = AgentLoopSession(
         request=request,
-        provider=provider,
-        project=project,
-        user_task=request.task,
-        codec=codec,
-        max_turns=max_turns,
-        stagnant_turns=stagnant_turns,
-        on_event=request.on_event,
-        on_shell_request=request.on_shell_request,
-        stop_flag=request.stop_flag,
-        fresh_chat=request.fresh_chat,
-        strict_fresh_chat=request.strict_fresh_chat,
-        change_tracker=request.change_tracker,
-        conversation=request.conversation,
-        active_provider_id=active_provider_id,
-        handoff=request.handoff,
-        project_facts=request.project_facts,
-        research_context=request.research_context,
-        project_map=request.project_map,
-        project_config_warnings=request.project_config_warnings,
-        work_checkpoint=request.work_checkpoint,
-        verification_candidates=request.verification_candidates,
-        verification_candidate_loader=request.verification_candidate_loader,
-        coding_context_enabled=request.coding_context_enabled,
-        ghost_directive=request.ghost_directive,
-        ghost_continuity=request.ghost_continuity,
-        completion_repair_context=request.completion_repair_context,
-        completion_repair_context_payload=request.completion_repair_context_payload,
-        profile=profile,
-        tool_fns=tool_fns,
-        trace_recorder=request.trace_recorder,
+        config=ResolvedLoopConfig(
+            project=project,
+            codec=codec,
+            profile=profile,
+            tool_fns=tool_fns,
+            active_provider_id=active_provider_id,
+            max_turns=max_turns,
+            stagnant_turns=stagnant_turns,
+            system_prompt_text=system_prompt_text,
+            project_instructions=tuple(project_instructions),
+            native_tools=tuple(native_tools) if native_tools is not None else None,
+            verification_required=requires_verification(request.task),
+            verification_forbidden=forbids_verification(request.task),
+        ),
         trace=trace,
-        system_prompt_text=system_prompt_text,
-        project_text=project_text,
-        verification_required=requires_verification(request.task),
-        verification_forbidden=forbids_verification(request.task),
         progress=progress,
         verification=verification,
         stagnation=LoopStagnation(),
-        project_instructions=project_instructions,
-        session_id=request.session_id,
-        run_id=request.run_id,
-        runtime_mutations=request.runtime_mutations,
-        runtime_effects=request.runtime_effects,
-        tool_result_delivery=request.tool_result_delivery,
-        native_tools=native_tools,
     )
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
@@ -258,9 +228,9 @@ def _finish(
     stop_reason: str,
     turns: int,
 ) -> RunResult:
-    if session.conversation is not None:
+    if session.request.conversation is not None:
         blocker = "" if stop_reason == "done" else summary
-        session.conversation.update_snapshot(snapshot(session, summary, blocker))
+        session.request.conversation.update_snapshot(snapshot(session, summary, blocker))
     return RunResult(
         summary,
         stop_reason,
@@ -272,7 +242,7 @@ def _finish(
 
 
 def _use_native(session: AgentLoopSession) -> bool:
-    return session.native_tools is not None and provider_supports_structured(session)
+    return session.config.native_tools is not None and provider_supports_structured(session)
 
 
 def _send_followup(
@@ -309,8 +279,8 @@ def _handle_protocol_error(
             f"[agent] rejected invalid tool request: {plan.protocol_error}"
         ),
     )
-    if session.stagnation.count >= session.stagnant_turns:
-        msg = f"stopped after {session.stagnant_turns} invalid tool requests"
+    if session.stagnation.count >= session.config.stagnant_turns:
+        msg = f"stopped after {session.config.stagnant_turns} invalid tool requests"
         emit(session, RunEvent.status(f"[agent] {msg}."))
         return _finish(session, msg, "protocol", turn)
     session.trace.call(
@@ -320,7 +290,7 @@ def _handle_protocol_error(
         turn=turn,
     )
     repair = protocol_repair_prompt(
-        session.codec,
+        session.config.codec,
         plan,
         previous_reply=_reply_display_text(reply),
     )
@@ -363,16 +333,16 @@ def _handle_protocol_error(
             if open_fresh_chat(session, allow_reuse=False):
                 failed = _bounded_native_call_summary(getattr(reply, "tool_calls", ()))
                 request_text = (
-                    f"{repair}\n\nOriginal task:\n{session.user_task}\n\n"
+                    f"{repair}\n\nOriginal task:\n{session.request.task}\n\n"
                     f"Failed native calls (missing ids, nothing executed):\n{failed}"
                 )
-                intro = project_intro(session, request_text, session.handoff,
+                intro = project_intro(session, request_text, session.request.handoff,
                                       include_ghost_directive=False)
-                if session.conversation is not None:
-                    session.conversation.begin_window(
-                        session.active_provider_id,
+                if session.request.conversation is not None:
+                    session.request.conversation.begin_window(
+                        session.config.active_provider_id,
                         "project",
-                        session.project_text,
+                        str(session.config.project),
                     )
                 corrected = send_structured_prompt(session, intro, restart_request=request_text)
                 _report_reply(session, turn + 1, corrected, "(after protocol correction)")
@@ -395,7 +365,6 @@ def _run_loop(
     start_turn: int = 1,
 ) -> RunResult:
     from codey.agents.runaway_guard import should_block_or_remind
-    from codey.runtime.hooks import call_hooks
 
     def _deliver(turn_state: TurnState, turn: int, reminder: str = "") -> str | object:
         from codey.protocols.native_openai import NativeToolResultError
@@ -410,12 +379,12 @@ def _run_loop(
             raise _NativeDeliveryStop(str(exc)) from exc
 
     _report_reply(session, start_turn, reply)
-    for turn in range(start_turn, session.max_turns + 1):
-        if session.stop_flag is not None and session.stop_flag.is_set():
+    for turn in range(start_turn, session.config.max_turns + 1):
+        if session.request.stop_flag is not None and session.request.stop_flag.is_set():
 
             emit(session, RunEvent.status("[agent] stopped by user."))
             return _finish(session, "stopped", "stopped", turn)
-        plan = parse_reply(reply, session.codec)
+        plan = parse_reply(reply, session.config.codec)
         if plan.protocol_error:
             repaired = _handle_protocol_error(session, plan, reply, turn)
             if isinstance(repaired, RunResult):
@@ -456,12 +425,11 @@ def _run_loop(
                 guard_stop = guard.reason
             else:
                 guard_reason = guard.reason
-        call_hooks(getattr(session, "hooks", None), "on_turn_end", session=session, turn=turn)
         if guard_stop:
             return _finish(session, guard_stop, "no_progress", turn)
 
-        if session.conversation is not None:
-            session.conversation.update_snapshot(
+        if session.request.conversation is not None:
+            session.request.conversation.update_snapshot(
                 snapshot(session, control.body if control else "")
             )
 
@@ -477,29 +445,29 @@ def _run_loop(
                     session.stagnation.count = 0
                 else:
                     session.stagnation.count += 1
-                    if session.stagnation.count >= session.stagnant_turns:
+                    if session.stagnation.count >= session.config.stagnant_turns:
                         msg = (
-                            f"stopped after {session.stagnant_turns} turns "
+                            f"stopped after {session.config.stagnant_turns} turns "
                             "without file writes or new tool information"
                         )
                         emit(
                             session,
                             RunEvent.status(
-                                f"[agent] no progress for {session.stagnant_turns} turns, stopping."
+                                f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
                             ),
                         )
                         return _finish(session, msg, "no_progress", turn)
 
-                if turn >= session.max_turns:
+                if turn >= session.config.max_turns:
                     emit(
                         session,
                         RunEvent.status(
-                            f"[agent] hit max_turns={session.max_turns}, stopping."
+                            f"[agent] hit max_turns={session.config.max_turns}, stopping."
                         ),
                     )
                     return _finish(
                         session,
-                        f"hit max_turns={session.max_turns}",
+                        f"hit max_turns={session.config.max_turns}",
                         "max_turns",
                         turn,
                     )
@@ -521,9 +489,9 @@ def _run_loop(
                 phase="writer",
                 turn=turn,
             )
-            if session.stagnation.count >= session.stagnant_turns:
+            if session.stagnation.count >= session.config.stagnant_turns:
                 msg = (
-                    f"stopped after {session.stagnant_turns} turns "
+                    f"stopped after {session.config.stagnant_turns} turns "
                     "without valid tool progress"
                 )
                 emit(session, RunEvent.status(f"[agent] {msg}."))
@@ -541,7 +509,7 @@ def _run_loop(
                 turn=turn,
             )
             repair = protocol_repair_prompt(
-                session.codec,
+                session.config.codec,
                 ToolPlan(
                     calls=[],
                     control=None,
@@ -563,7 +531,7 @@ def _run_loop(
                     ),
                 )
             elif (
-                session.verification_required
+                session.config.verification_required
                 and session.progress.wrote_files
                 and not verification_attempted_after_latest_edit(session)
             ):
@@ -573,11 +541,11 @@ def _run_loop(
                         "[agent] verification was requested; asking model to run a local check before done."
                     ),
                 )
-                if turn >= session.max_turns:
+                if turn >= session.config.max_turns:
                     emit(
                         session,
                         RunEvent.status(
-                            f"[agent] hit max_turns={session.max_turns}, stopping."
+                            f"[agent] hit max_turns={session.config.max_turns}, stopping."
                         ),
                     )
                     return _finish(
@@ -596,8 +564,8 @@ def _run_loop(
                 if candidate is not None:
                     session.verification.checks_passed = trusted_green
                 if (
-                    not session.verification_required
-                    and not session.verification_forbidden
+                    not session.config.verification_required
+                    and not session.config.verification_forbidden
                     and candidate is not None
                     and not trusted_green
                     and session.verification.default_reminded_epoch
@@ -612,7 +580,7 @@ def _run_loop(
                             "[agent] code changed; asking model to handle the trusted check."
                         ),
                     )
-                    if turn >= session.max_turns:
+                    if turn >= session.config.max_turns:
                         return _finish(
                             session,
                             "verification did not pass",
@@ -635,29 +603,29 @@ def _run_loop(
             session.stagnation.count = 0
         else:
             session.stagnation.count += 1
-            if session.stagnation.count >= session.stagnant_turns:
+            if session.stagnation.count >= session.config.stagnant_turns:
                 msg = (
                     control.body
-                    or f"stopped after {session.stagnant_turns} turns without file writes or new tool information"
+                    or f"stopped after {session.config.stagnant_turns} turns without file writes or new tool information"
                 )
                 emit(
                     session,
                     RunEvent.status(
-                        f"[agent] no progress for {session.stagnant_turns} turns, stopping."
+                        f"[agent] no progress for {session.config.stagnant_turns} turns, stopping."
                     ),
                 )
                 return _finish(session, msg, "no_progress", turn)
 
-        if turn >= session.max_turns:
+        if turn >= session.config.max_turns:
             emit(
                 session,
                 RunEvent.status(
-                    f"[agent] hit max_turns={session.max_turns}, stopping."
+                    f"[agent] hit max_turns={session.config.max_turns}, stopping."
                 ),
             )
             return _finish(
                 session,
-                control.body or f"hit max_turns={session.max_turns}",
+                control.body or f"hit max_turns={session.config.max_turns}",
                 "max_turns",
                 turn,
             )
@@ -668,7 +636,7 @@ def _run_loop(
             return _finish(session, str(exc), "protocol", turn)
         _report_reply(session, turn + 1, reply)
 
-    return _finish(session, "(max turns reached)", "max_turns", session.max_turns)
+    return _finish(session, "(max turns reached)", "max_turns", session.config.max_turns)
 
 
 def run(request: AgentRequest) -> RunResult:
@@ -695,16 +663,16 @@ def run(request: AgentRequest) -> RunResult:
         )
 
     start_turn = max((rec.turn for rec in recovered_outcomes), default=1) + 1
-    if start_turn > session.max_turns:
+    if start_turn > session.config.max_turns:
         emit(
             session,
-            RunEvent.status(f"[agent] hit max_turns={session.max_turns}, stopping."),
+            RunEvent.status(f"[agent] hit max_turns={session.config.max_turns}, stopping."),
         )
         return _finish(
             session,
-            f"hit max_turns={session.max_turns}",
+            f"hit max_turns={session.config.max_turns}",
             "max_turns",
-            session.max_turns,
+            session.config.max_turns,
         )
     reply = deliver_recovered_results(
         session,

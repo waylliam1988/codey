@@ -27,6 +27,21 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - Agent 会话归属与 Worker 代际清理（未发布）
+
+- `AgentLoopSession` 从约五十个复制字段收敛为七块明确状态：已解析且带类型的
+  固定配置，以及请求、提示、轨迹、进度、验证和停滞状态。删除无生产用途的
+  Agent hooks 和只为旧测试形状保留的 tuple 兼容。
+- Worker 清理未完成时保留旧代；只有直接子进程退出且读写线程都停下后，才允许
+  新代占用同一 profile。再次检查未完成清理不阻塞短 deadline；启动后立即
+  Stop 或超时，也会在写入请求前退休该代。
+- Browser 关闭给未开始的排队任务明确终局，不在调用关闭的线程执行其放弃
+  回调；运行中任务仍由浏览器线程清理，遵守 Playwright 的线程归属。
+- 新增未完成清理、子进程存活、短时限、启动时 Stop 和回调线程归属回归。
+  全量前 Ruff、compileall、diff 检查、收集和相关测试通过；最终
+  `python -m pytest -q -o faulthandler_timeout=120`：
+  `4229 passed, 24 skipped, 1374 subtests passed in 356.83s`。
+
 ## Unreleased - 同目标探测运行、可中断原生发送、诚实可用性、有界采集（未发布）
 
 - 探测与运行同目标。保存把待存表单经 `select_local_target()` 选一次、
@@ -53,9 +68,9 @@
 
 ## Unreleased - 单结果代际、清理报告、profile 互斥（未发布）
 
-- 每个接受单位恰好一个结果。Provider  pending 只完成一次，关闭唤醒归为
-  exit；Browser 排队同步给明确关闭错误，排队异步跑一次放弃清理，运行中发
-  取消信号并丢弃迟到结果。
+- 每个接受单位恰好一个结果。Provider pending 只完成一次，关闭唤醒归为
+  exit；Browser 排队同步给明确关闭错误，运行中发取消信号并丢弃迟到结果；
+  运行中任务的放弃清理由浏览器线程执行。
 - 坏代不再复用。粘性 `terminal_error` 不随清槽消失，首败即退由真实 writer
   测试覆盖；已交付成功永不追改。
 - 等待必解且清理可报。Stop/超时/关闭打断一切等待；provider `close()` 与
@@ -80,7 +95,7 @@
 - 真实连续覆盖。早到槽等待与迟到失败改走真实 writer 与真实 await/wait，
   门闩 flush 加回复投递，断言同代复用与新进程接管。
 - 关闭有终局。一把生命周期锁覆盖入队、转运行与关闭；关闭给未开始同步 job
-  明确关闭错误并 `done`，异步跑一次放弃清理，运行中发取消信号；
+  明确关闭错误并 `done`，运行中发取消信号且由浏览器线程清理；
   `close(timeout)` 返回是否真停。新增运行中加排队加关闭、submit 竞关闭测试。
 - 事件有关联。`run_id_for_event` 任务前建立、成功后更新，异常事件不再空
   ID；`state.close()` 抛异常不再覆盖原任务错误，附注并仍发事件；3.11+ 直接

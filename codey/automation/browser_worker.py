@@ -106,11 +106,11 @@ class BrowserWorker:
     def close(self, timeout: float = 5.0) -> bool:
         """Stop receiving work and finish every accepted job explicitly.
 
-        Queued sync calls fail with a close error, queued fire-and-forget
-        jobs run their abandon cleanup once, and the running job gets a
-        cancel signal. Returns True when the loop thread actually stopped.
+        Queued calls fail with a close error. A queued job never acquired
+        browser-thread resources, so its abandon callback is not run from
+        the closing thread. A running job receives a cancel signal and owns
+        its cleanup on the worker thread. Returns True when the loop stops.
         """
-        cleanups: list[Callable[[], None]] = []
         with self._lifecycle_lock:
             self._closed.set()
             while True:
@@ -118,20 +118,16 @@ class BrowserWorker:
                     job = self._queue.get_nowait()
                 except queue.Empty:
                     break
-                cleanup = None
                 with job.lock:
                     job.cancel_event.set()
                     job.abandoned = True
                     job.state = _JobState.CANCELLED
                     job.slot.clear()
                     job.slot.append(self._close_error)
-                    cleanup = job.on_abandoned
                     job.on_abandoned = None
                     job.done.set()
                 with self._state_lock:
                     self._cancelled_jobs += 1
-                if cleanup is not None:
-                    cleanups.append(cleanup)
             current = None
             with self._state_lock:
                 current = self._current_job
@@ -143,9 +139,6 @@ class BrowserWorker:
                         current.state = _JobState.CANCELLED
                     elif current.state == _JobState.RUNNING:
                         current.state = _JobState.ABANDONED
-        for cleanup in cleanups:
-            with contextlib.suppress(Exception):
-                cleanup()
         with contextlib.suppress(Exception):
             self._thread.join(timeout=max(0.0, float(timeout)))
         return not self._thread.is_alive()

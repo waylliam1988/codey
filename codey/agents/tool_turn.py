@@ -219,21 +219,21 @@ def execute_turn_tools(
         )
 
     # Record turn-level batch intent plus all tool effect intents as one mutation.
-    if batch_items and session.runtime_mutations is not None and session.session_id and session.run_id:
-        batch_id = new_batch_id(session.run_id, turn)
+    if batch_items and session.request.runtime_mutations is not None and session.request.session_id and session.request.run_id:
+        batch_id = new_batch_id(session.request.run_id, turn)
         items_tuple = tuple(batch_items)
         digest = compute_batch_digest(items_tuple)
         intent = DeliveryBatchIntent(
             batch_id=batch_id,
-            session_id=session.session_id,
-            run_id=session.run_id,
+            session_id=session.request.session_id,
+            run_id=session.request.run_id,
             turn=turn,
             items=items_tuple,
             batch_digest=digest,
         )
-        session.runtime_mutations.begin_tool_batch(
-            session.session_id,
-            session.run_id,
+        session.request.runtime_mutations.begin_tool_batch(
+            session.request.session_id,
+            session.request.run_id,
             intents=tuple(
                 item.effect_intent
                 for item in planned
@@ -251,7 +251,7 @@ def execute_turn_tools(
         from codey.runtime.write.file_mutation_queue import group_tool_calls_for_execution
 
         groups = group_tool_calls_for_execution(
-            [item.call for item in planned], str(session.project)
+            [item.call for item in planned], str(session.config.project)
         )
         ordered = [planned[i] for group in groups for i in group if 0 <= i < len(planned)]
         execution_order = ordered if len(ordered) == len(planned) else list(planned)
@@ -342,16 +342,6 @@ def execute_planned_item(
 
     effect_id = item.effect_id
     replay_decision = item.replay_decision
-    from codey.runtime.hooks import call_hooks
-
-    call_hooks(
-        getattr(session, "hooks", None),
-        "before_tool_call",
-        session=session,
-        call=item.call,
-        turn=turn,
-        tool_index=item.tool_index,
-    )
     emit_tool_started_after_intent(
         session,
         item.call,

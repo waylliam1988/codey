@@ -38,7 +38,7 @@ def forbids_verification(task: str) -> bool:
 
 
 def requested_verification_reminder(session: AgentLoopSession) -> str:
-    return verification_reminder(session.user_task)
+    return verification_reminder(session.request.task)
 
 
 def default_candidate_reminder(candidate: VerificationCandidate) -> str:
@@ -49,16 +49,16 @@ def ensure_verification_candidates(
     session: AgentLoopSession,
 ) -> tuple[VerificationCandidate, ...]:
     if (
-        session.verification_candidate_loader is not None
+        session.request.verification_candidate_loader is not None
         and session.verification.paths
         and session.verification.candidates_epoch != session.verification.edit_epoch
     ):
         try:
-            session.verification_candidates = session.verification_candidate_loader()
+            session.verification.candidates = session.request.verification_candidate_loader()
         except (OSError, TypeError, ValueError):
-            session.verification_candidates = ()
+            session.verification.candidates = ()
         session.verification.candidates_epoch = session.verification.edit_epoch
-    return session.verification_candidates
+    return session.verification.candidates
 
 
 def selected_verification_candidate(
@@ -83,7 +83,7 @@ def verification_is_fresh(
             command,
             cwd,
             tuple(session.verification.paths),
-            root=session.project,
+            root=session.config.project,
         )
         for command, cwd, epoch in session.verification.successful_checks
     )

@@ -5,14 +5,16 @@ from __future__ import annotations
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
+from codey.agents.loop import _setup_loop
 from codey.agents.prompt_context import _send_provider_with_effect
 from codey.agents.request import AgentRequest
-from codey.agents.state import AgentLoopSession, LoopProgress, LoopStagnation, LoopVerification, RunResult
+from codey.agents.state import AgentLoopSession, RunResult
 from codey.agents.tool_execution import (
     TurnState,
     build_tool_call_intent,
@@ -30,8 +32,6 @@ from codey.operations.recovery import ResumeRecoveryResult, recover_effects_for_
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_run import start_run_operation as _start_run_operation
-from codey.policies.permissions import profile_for_name
-from codey.protocols import JsonToolCodec
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import (
@@ -133,47 +133,19 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _create_session(self, provider: MockProvider) -> AgentLoopSession:
-        req = AgentRequest(
+        return _setup_loop(AgentRequest(
             provider=provider,
             project=self.project_dir,
             task="do something",
+            provider_id="mock_provider",
+            max_turns=10,
+            fresh_chat=False,
+            coding_context_enabled=False,
+            on_event=lambda _event: None,
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
-        )
-        profile = profile_for_name("coding_writer")
-        return AgentLoopSession(
-            request=req,
-            provider=provider,
-            project=self.project_dir,
-            user_task="do something",
-            codec=JsonToolCodec(permission_profile=profile.name),
-            max_turns=10,
-            stagnant_turns=4,
-            on_event=lambda e: None,
-            on_shell_request=None,
-            stop_flag=None,
-            fresh_chat=False,
-            strict_fresh_chat=False,
-            change_tracker=None,
-            conversation=None,
-            active_provider_id="mock_provider",
-            handoff="",
-            project_facts="",
-            research_context="",
-            project_map="",
-            project_config_warnings="",
-            work_checkpoint="",
-            verification_candidates=(),
-            verification_candidate_loader=None,
-            coding_context_enabled=False,
-            ghost_directive="",
-            ghost_continuity="",
-            completion_repair_context="",
-            completion_repair_context_payload=None,
-            profile=profile,
             tool_fns=AgentToolFns(
                 read_file=lambda *a, **kw: ToolOutcome("file text", True),
                 edit_file=lambda *a, **kw: ToolOutcome("edited", True, changed=True),
@@ -183,22 +155,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 find_references=lambda *a, **kw: ToolOutcome("refs", True),
                 run_command=lambda *a, **kw: ToolOutcome("command output", True),
             ),
-            trace_recorder=None,
-            trace=FailOpenPromptTrace(None),
-            system_prompt_text="",
-            project_text=str(self.project_dir),
-            verification_required=False,
-            verification_forbidden=False,
-            progress=LoopProgress(set(), set(), set()),
-            verification=LoopVerification(set(), 0, [], []),
-            stagnation=LoopStagnation(set()),
-            project_instructions=[],
-            session_id=self.session_id,
-            run_id=self.run_id,
-            runtime_mutations=self.line,
-            runtime_effects=self.effects,
-            tool_result_delivery=self.delivery,
-        )
+        ))
 
     def _commit_tool_batch(
         self,
@@ -315,7 +272,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         provider = MockProvider()
         session = self._create_session(provider)
         events: list[str] = []
-        session.on_event = lambda e: events.append(e.kind)
+        session.request = replace(session.request, on_event=lambda event: events.append(event.kind))
 
         call = ToolCall(name="read", args={"path": "foo.py"})
         policy_decision, replay_decision = evaluate_tool_call_policy(
@@ -428,18 +385,18 @@ class AgentEffectSandwichTests(unittest.TestCase):
         session = self._create_session(provider)
         custom_tools = AgentToolFns(
             read_file=lambda *a, **kw: executed_tools.append("read") or ToolOutcome("ok", True),
-            edit_file=session.tool_fns.edit_file,
-            write_file=session.tool_fns.write_file,
-            list_directory=session.tool_fns.list_directory,
-            search_files=session.tool_fns.search_files,
-            find_references=session.tool_fns.find_references,
-            run_command=session.tool_fns.run_command,
+            edit_file=session.config.tool_fns.edit_file,
+            write_file=session.config.tool_fns.write_file,
+            list_directory=session.config.tool_fns.list_directory,
+            search_files=session.config.tool_fns.search_files,
+            find_references=session.config.tool_fns.find_references,
+            run_command=session.config.tool_fns.run_command,
         )
-        object.__setattr__(session, "tool_fns", custom_tools)
+        session.config = replace(session.config, tool_fns=custom_tools)
 
         reply_json = '{"tool": "read", "args": {"path": "foo.py"}}'
         with patch.object(
-            session.runtime_mutations,
+            session.request.runtime_mutations,
             "begin_tool_batch",
             side_effect=RuntimeError("intent write failed"),
         ), self.assertRaises(RuntimeError):
@@ -1394,7 +1351,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )
@@ -1428,7 +1384,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             session_id=self.session_id,
             run_id=self.run_id,
             runtime_mutations=self.line,
-            runtime_effects=self.effects,
             tool_result_delivery=self.delivery,
             recovered_tool_outcomes=(recovered_outcome,),
         )

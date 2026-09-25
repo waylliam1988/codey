@@ -275,9 +275,10 @@ def test_mutation_queue_batches_different_files_and_serializes_side_effects(tmp_
 
 
 def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
-    from codey.agents.state import AgentLoopSession, LoopStagnation
+    from codey.agents.loop import _setup_loop
+    from codey.agents.request import AgentRequest
     from codey.agents.tool_turn import execute_turn_tools
-    from codey.policies.permissions import profile_for_name
+    from codey.protocols import JsonToolCodec
     from codey.providers.base import AssistantTurn
     from codey.runtime.core.models import ToolCall
     from codey.toolchain.runtime import ToolOutcome
@@ -305,58 +306,19 @@ def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
     def list_directory(root: Path, rel: str, **kwargs: object) -> ToolOutcome:
         return ToolOutcome("listed", True)
 
-    session = AgentLoopSession(
-        request=SimpleNamespace(managed_outputs=None, session_id="", run_id=""),
+    session = _setup_loop(AgentRequest(
         provider=_Provider(),
         project=tmp_path,
-        user_task="t",
-        codec=SimpleNamespace(
-            name="json",
-            system_prompt=lambda: "",
-            model_tool_contract_hash=lambda: "",
-        ),
+        task="t",
+        provider_id="mock",
+        codec=JsonToolCodec(),
         max_turns=5,
         stagnant_turns=3,
-        on_event=lambda e: None,
-        on_shell_request=None,
-        stop_flag=None,
+        on_event=lambda _event: None,
         fresh_chat=False,
-        strict_fresh_chat=False,
-        change_tracker=None,
-        conversation=None,
-        active_provider_id="local",
-        handoff="",
-        project_facts=None,
-        research_context="",
-        project_map="",
-        project_config_warnings=(),
-        work_checkpoint=None,
-        verification_candidates=(),
-        verification_candidate_loader=None,
         coding_context_enabled=False,
-        ghost_directive="",
-        ghost_continuity="",
-        completion_repair_context=None,
-        completion_repair_context_payload=None,
-        profile=profile_for_name("coding_writer"),
         tool_fns=AgentToolFns(read_file=read_file, list_directory=list_directory),  # type: ignore[arg-type]
-        trace_recorder=None,
-        trace=SimpleNamespace(call=lambda *a, **k: None),
-        system_prompt_text="",
-        project_text=str(tmp_path),
-        verification_required=False,
-        verification_forbidden=True,
-        progress=SimpleNamespace(changed_files=set(), read_file_paths=set(), known_file_paths=set(), wrote_files=False, verification=SimpleNamespace(paths=set())),
-        verification=SimpleNamespace(required=False, forbidden=True, checks_passed=False, checks_ran=(), default_reminded_epoch=0, edit_epoch=0),
-        stagnation=LoopStagnation(),
-        project_instructions=(),
-        session_id="",
-        run_id="",
-        runtime_mutations=None,
-        runtime_effects=None,
-        tool_result_delivery=None,
-        native_tools=None,
-    )
+    ))
     calls = [
         ToolCall(name="read", args={"path": "b.py"}, call_id="c0"),
         ToolCall(name="read", args={"path": "a.py"}, call_id="c1"),

@@ -235,6 +235,12 @@ class _GatedStderr:
 
 
 class WorkerSelfHealTests(unittest.TestCase):
+    @staticmethod
+    def _mark_process_exited(proc: object, _job: object) -> None:
+        # A mocked tree terminator must also model the child's exit. Merely
+        # recording the call leaves poll() reporting a live process forever.
+        proc.poll.return_value = 0
+
     def _provider(self) -> WorkerChatProvider:
         provider = WorkerChatProvider.__new__(WorkerChatProvider)
         provider.provider_id = "qwen"
@@ -307,6 +313,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             mock.patch.object(WorkerChatProvider, "_start_session_locked", fake_start),
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ) as terminate,
             provider._life_lock,
         ):
@@ -406,6 +413,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
             self.assertRaises(ProviderActionError) as raised,
         ):
@@ -428,6 +436,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ) as terminate,
             self.assertRaises(ProviderActionError) as raised,
         ):
@@ -474,6 +483,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             WorkerChatProvider, "_start_session_locked", fake_start,
         ), mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
@@ -517,6 +527,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             mock.patch.object(cancel, "check", side_effect=counting_check),
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
             self.assertRaises(cancel.TaskCancelled),
         ):
@@ -546,6 +557,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             ) as attach,
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ) as terminate,
             mock.patch.object(
                 threading.Thread, "start", side_effect=RuntimeError("no threads"),
@@ -588,6 +600,7 @@ class WorkerSelfHealTests(unittest.TestCase):
 
         with mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
@@ -636,6 +649,7 @@ class WorkerSelfHealTests(unittest.TestCase):
 
         with mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
@@ -695,6 +709,7 @@ class WorkerSelfHealTests(unittest.TestCase):
 
         with mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ) as terminate:
             worker = threading.Thread(target=do_request)
             worker.start()
@@ -710,6 +725,12 @@ class WorkerSelfHealTests(unittest.TestCase):
         # Stop retired only its own generation by killing the child,
         # which is what unblocks the writer.
         terminate.assert_called_once_with(proc, None)
+        self.assertIsNotNone(provider._session)
+        assert provider._session is not None
+        self.assertTrue(provider._session.closed)
+        assert provider._session.writer is not None
+        provider._session.writer.join(timeout=10.0)
+        self.assertTrue(provider.close())
         self.assertIsNone(provider._session)
 
     def test_stderr_tail_is_bounded_by_chunks_not_lines(self) -> None:
@@ -855,6 +876,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             time.sleep(0.01)
         with mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ):
             provider.close()
         waiter.join(timeout=10.0)
@@ -883,7 +905,7 @@ class WorkerSelfHealTests(unittest.TestCase):
                 WorkerChatProvider, "_start_session_locked",
                 side_effect=AssertionError("close() must not restart"),
             ),
-            mock.patch("codey.providers.worker.cancellation.terminate_process_tree"),
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree", side_effect=self._mark_process_exited),
         ):
             provider.close()
         self.assertIsNone(provider._session)
@@ -1167,6 +1189,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             ),
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ) as terminate,
         ):
             second_worker = threading.Thread(target=second_request, daemon=True)
@@ -1213,7 +1236,13 @@ class WorkerSelfHealTests(unittest.TestCase):
             session.write_wire = "stuck-wire"
             session.write_error = ""
             session.write_done.clear()
-        with self.assertRaises(ProviderActionError) as raised:
+        with (
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
+            ),
+            self.assertRaises(ProviderActionError) as raised,
+        ):
             provider._request_locked("send", {"text": "stuck"}, time.monotonic() + 0.3)
         self.assertIn("timed out", raised.exception.failure.message)
         self.assertTrue(session.closed)
@@ -1238,6 +1267,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             ),
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
         ):
             third_worker = threading.Thread(target=third_request, daemon=True)
@@ -1303,6 +1333,9 @@ class WorkerSelfHealTests(unittest.TestCase):
         with session.lock:
             self.assertNotEqual(session.terminal_error, "")
             self.assertIsNone(session.pending)
+        # The test process is a Mock; after writer-triggered teardown, model
+        # the child exit that a real Popen would report.
+        old.poll.return_value = 0
         fresh = mock.Mock()
         fresh.poll.return_value = None
         fresh.stdin = mock.Mock()
@@ -1323,6 +1356,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             ),
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
         ):
             second_worker = threading.Thread(target=second_request, daemon=True)
@@ -1377,6 +1411,7 @@ class WorkerSelfHealTests(unittest.TestCase):
             time.sleep(0.01)
         with mock.patch(
             "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
         ):
             self.assertTrue(provider.close())
         waiter.join(timeout=10.0)
@@ -1414,14 +1449,109 @@ class WorkerSelfHealTests(unittest.TestCase):
         try:
             with mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ):
                 self.assertFalse(provider.close())
-            self.assertIsNone(provider._session)
+            self.assertIs(provider._session, session)
             self.assertTrue(reader.is_alive())
+            with mock.patch.object(provider, "_start_session_locked") as start:
+                with provider._life_lock, self.assertRaisesRegex(RuntimeError, "cleanup incomplete"):
+                    provider._ensure_live_session_locked()
+                start.assert_not_called()
+            self.assertFalse(provider.close())
         finally:
             release_reader.set()
             reader.join(timeout=10.0)
         self.assertFalse(reader.is_alive())
+        self.assertTrue(provider.close())
+        self.assertIsNone(provider._session)
+
+    def test_close_keeps_profile_owned_until_child_exits(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        with mock.patch("codey.providers.worker.cancellation.terminate_process_tree"):
+            self.assertFalse(provider.close())
+        self.assertIs(provider._session, session)
+        with mock.patch.object(provider, "_start_session_locked") as start:
+            with provider._life_lock, self.assertRaisesRegex(RuntimeError, "cleanup incomplete"):
+                provider._ensure_live_session_locked()
+            start.assert_not_called()
+        proc.poll.return_value = 0
+        self.assertTrue(provider.close())
+        self.assertIsNone(provider._session)
+
+    def test_closed_generation_check_does_not_join_past_request_deadline(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        with mock.patch("codey.providers.worker.cancellation.terminate_process_tree"):
+            self.assertFalse(provider.close())
+        with (
+            mock.patch.object(provider, "_join_threads", side_effect=AssertionError("must not wait")),
+            mock.patch.object(provider, "_start_session_locked") as start,
+            self.assertRaisesRegex(RuntimeError, "cleanup incomplete"),
+        ):
+            provider._request_locked("send", {"text": "next"}, time.monotonic() + 0.1)
+        start.assert_not_called()
+        self.assertIs(provider._session, session)
+        proc.poll.return_value = 0
+        self.assertTrue(provider.close())
+
+    def test_session_start_cannot_send_after_deadline(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+
+        def slow_ensure() -> _WorkerSession:
+            time.sleep(0.03)
+            return session
+
+        with (
+            mock.patch.object(provider, "_ensure_live_session_locked", side_effect=slow_ensure),
+            self.assertRaises(ProviderActionError) as raised,
+        ):
+            provider._request_locked("send", {"text": "late"}, time.monotonic() + 0.01)
+        self.assertIn("timed out", raised.exception.failure.message)
+        self.assertIsNone(session.pending)
+        proc.stdin.write.assert_not_called()
+        proc.poll.return_value = 0
+        self.assertTrue(provider.close())
+
+    def test_stop_during_session_start_retires_unused_worker(self) -> None:
+        from codey.runtime.core import cancellation as cancel
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        stop = threading.Event()
+
+        def stop_during_ensure() -> _WorkerSession:
+            stop.set()
+            return session
+
+        with (
+            cancel.scope(stop),
+            mock.patch.object(provider, "_ensure_live_session_locked", side_effect=stop_during_ensure),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
+            ),
+            self.assertRaises(cancel.TaskCancelled),
+        ):
+            provider._request_locked("send", {"text": "never"}, time.monotonic() + 1.0)
+        proc.stdin.write.assert_not_called()
+        self.assertIsNone(provider._session)
 
     def test_stop_during_request_gate_is_prompt(self) -> None:
         from codey.runtime.core import cancellation as cancel
@@ -1467,6 +1597,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
             self.assertRaises(ProviderActionError) as raised,
         ):
@@ -1490,6 +1621,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         with (
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
             ),
             self.assertRaises(ProviderActionError) as raised,
         ):

@@ -98,12 +98,6 @@ def test_shell_cycle_stops() -> None:
     assert decision.action == "stop"
 
 
-def test_legacy_tuple_history_still_works() -> None:
-    call = ToolCall(name="read", args={"path": "a"})
-    failed = ToolResult(call=call, model_text="ERROR: boom")
-    assert should_block_or_remind([(call, failed)] * 3).block
-
-
 def test_runaway_record_failure_is_visible(tmp_path: Path) -> None:
     from unittest import mock
 

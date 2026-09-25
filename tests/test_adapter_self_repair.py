@@ -1707,6 +1707,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         def gated_terminate(proc: object, job: object) -> None:
             entered.set()
             assert release.wait(timeout=10.0)
+            process.poll.return_value = 0
 
         with (
             mock.patch("codey.providers.worker.subprocess.Popen", return_value=process) as popen,

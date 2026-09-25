@@ -108,7 +108,7 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertIn("closed-error", outcomes)
         self.assertFalse(worker._thread.is_alive())
 
-    def test_close_runs_queued_async_cleanup_exactly_once(self) -> None:
+    def test_close_does_not_run_browser_cleanup_for_unstarted_job(self) -> None:
         worker = browser_worker.BrowserWorker(name="test-close-async", max_queue_size=8)
         running_started = threading.Event()
         running_release = threading.Event()
@@ -131,17 +131,34 @@ class BrowserWorkerTests(unittest.TestCase):
 
         closer = threading.Thread(target=_do_close, daemon=True)
         closer.start()
-        deadline = time.monotonic() + 10.0
-        while not cleaned and time.monotonic() < deadline:
-            time.sleep(0.01)
-        self.assertEqual(cleaned, [True])
         running_release.set()
         closer.join(timeout=10.0)
         self.assertFalse(closer.is_alive())
         self.assertEqual(close_out, [True])
         self.assertFalse(worker._thread.is_alive())
         self.assertEqual(executed, [])
+        self.assertEqual(cleaned, [])
         self.assertGreaterEqual(worker.health_snapshot().cancelled_jobs, 1)
+
+    def test_running_job_abandon_cleanup_stays_on_browser_thread(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-close-running-cleanup")
+        started = threading.Event()
+        release = threading.Event()
+        cleaned_on: list[int] = []
+
+        def running() -> None:
+            started.set()
+            release.wait(timeout=10.0)
+
+        worker.submit(running, on_abandoned=lambda: cleaned_on.append(threading.get_ident()))
+        self.assertTrue(started.wait(timeout=10.0))
+        try:
+            self.assertFalse(worker.close(timeout=0.01))
+        finally:
+            release.set()
+        self.assertTrue(worker.close(timeout=5.0))
+        self.assertEqual(cleaned_on, [worker._thread_id])
+        self.assertNotEqual(cleaned_on, [threading.get_ident()])
 
     def test_close_timeout_reports_incomplete_with_hung_job(self) -> None:
         worker = browser_worker.BrowserWorker(name="test-close-hung", max_queue_size=8)

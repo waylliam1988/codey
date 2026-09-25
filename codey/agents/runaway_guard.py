@@ -17,7 +17,6 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from codey.agents.state import ToolAttemptRecord
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -69,19 +68,6 @@ class RunawayDecision:
     block: bool
     reason: str = ""
     action: str = "remind"
-
-
-def _as_records(
-    history: Sequence[ToolAttemptRecord | tuple[Any, Any]],
-) -> list[ToolAttemptRecord]:
-    records: list[ToolAttemptRecord] = []
-    for item in history:
-        if isinstance(item, ToolAttemptRecord):
-            records.append(item)
-            continue
-        call, result = item
-        records.append(attempt_record(call, result, turn=0))
-    return records
 
 
 def detect_exact_repeat(
@@ -173,15 +159,14 @@ def detect_abab_cycle(
 
 
 def should_block_or_remind(
-    history: Sequence[ToolAttemptRecord | tuple[Any, Any]],
+    history: Sequence[ToolAttemptRecord],
     *,
     threshold: int = DEFAULT_REPEAT_THRESHOLD,
 ) -> RunawayDecision:
-    records = _as_records(history)
-    exact = detect_exact_repeat(records, threshold=threshold)
+    exact = detect_exact_repeat(history, threshold=threshold)
     if exact.block:
         return exact
-    return detect_periodic_cycle(records)
+    return detect_periodic_cycle(history)
 
 
 __all__ = [

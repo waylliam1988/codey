@@ -596,7 +596,7 @@ class LocalPrepareRequestTests(unittest.TestCase):
         # A prep failure is not a context overflow: no rollover retry.
         self.assertNotIsInstance(exc, errors.ContextOverflowError)
         mutations = mock.Mock()
-        session = SimpleNamespace(session_id="s", run_id="r")
+        session = SimpleNamespace(request=SimpleNamespace(session_id="s", run_id="r"))
         settled = prompt_context._fail_provider_send(
             session, mutations, "eff-1", exc
         )
