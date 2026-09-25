@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Cold-start boundary hardening full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/runtime/core/cancellation.py    (terminate-then-join-then-close-stopped; live reader abandons pipe)
+codey/providers/worker.py             (join-before-close; explicit close retries live child; rechecks fast-fail)
+codey/workspace/changes.py            (first-wins baselines; manifest-first remove; no-follow untracked diffs)
+codey/providers/local_openai.py       (content_filter FATAL; non-list tool_calls protocol error)
+codey/app/{task_submit,headless_runner}.py  (bounded ghost waits, timeout=30)
+tests                                 (13 new: pipe, baseline, symlink, worker retry, local errors)
+.github/workflows/ci.yml              (pinned pip==26.1.2; Ubuntu file-boundary job)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .`, `python -m compileall -q
+  codey tests`, and `git diff --check` passed; `4267 tests` collected.
+- Targeted suites: `test_bounded_capture_and_context`
+  (`WaitProcessCleanupOwnershipTests` 5 passed), `test_changes` (48 passed),
+  `test_local_openai_native` (14 passed), `WorkerSelfHealTests` (48 passed),
+  `test_workspace_paths` + bounded (36 passed, 2 skipped), architecture
+  long-file guard (`test_long_files_do_not_grow` passed at 1000 lines).
+- The first full run found `workspace/changes.py` at 1025 lines tripping
+  `test_long_files_do_not_grow`; it was tightened to 1000 lines (imports
+  untouched for Ruff, docstrings compressed) and the affected suites rerun.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4261 passed, 6 skipped, 1374 subtests passed in 377.31s (0:06:17)`.
+- Node `--check` was unavailable locally (`node` not installed); JS files
+  were unchanged, CI covers syntax on Windows + Ubuntu.
+- This entry was written after the full suite. No release was made.
+
 ## Worker state minimization audit full suite (2026-09-25)
 
 Scope (production, no release):

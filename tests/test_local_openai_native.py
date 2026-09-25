@@ -326,3 +326,47 @@ def test_http_error_body_is_bounded(monkeypatch) -> None:
         provider._post_chat([{"role": "user", "content": "hi"}])
     assert seen_sizes and seen_sizes[0] == 2001
     assert closed == [True]
+
+
+def test_content_filter_is_explicit_error_and_leaves_history(monkeypatch) -> None:
+    import pytest
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {
+        "choices": [{
+            "finish_reason": "content_filter",
+            "message": {"content": ""},
+        }]
+    }
+    _install_fake(monkeypatch, body)
+    with pytest.raises(RuntimeError, match="content filtered"):
+        provider.send("hello")
+    assert provider._messages == []
+    turn_body = {
+        "choices": [{
+            "finish_reason": "content_filter",
+            "message": {"content": ""},
+        }]
+    }
+    _install_fake(monkeypatch, turn_body)
+    with pytest.raises(RuntimeError, match="content filtered"):
+        provider.send_turn("hello")
+    assert provider._messages == []
+
+
+def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
+    import pytest
+
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "message": {"content": "", "tool_calls": {"id": "call_1"}},
+        }]
+    }
+    _install_fake(monkeypatch, body)
+    with pytest.raises(RuntimeError, match="malformed tool_calls"):
+        provider.send_turn("do work")
+    assert provider._messages == []
+    with pytest.raises(RuntimeError, match="malformed tool_calls"):
+        local_module._parse_tool_calls({"content": "", "tool_calls": "nope"})

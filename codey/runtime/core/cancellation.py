@@ -273,7 +273,39 @@ def _join_readers(threads: list[threading.Thread], *, timeout: float) -> None:
 
 
 def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
+    """Close owned pipes when no reader thread exists (spawn failure path)."""
     for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+        try:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
+
+
+def _close_owned_pipes(
+    proc: subprocess.Popen[bytes],
+    owned: list[tuple[object, threading.Thread]],
+) -> None:
+    """Close only pipes whose reader already stopped; never block on live reads.
+
+    A live reader owns its pipe: another process may still hold the write
+    end, so ``BufferedReader.close()`` would wait on the reader's lock.
+    Skipping it bounds the caller; the daemon reader is abandoned and the
+    original timeout/drain error still reports the incomplete cleanup.
+    """
+    by_stream: dict[int, threading.Thread] = {}
+    for stream, thread in owned:
+        try:
+            by_stream[id(stream)] = thread
+        except Exception:
+            continue
+    for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+        if stream is None:
+            continue
+        thread = by_stream.get(id(stream))
+        if thread is not None and thread.is_alive():
+            continue
         try:
             close = getattr(stream, "close", None)
             if callable(close):
@@ -296,8 +328,14 @@ def wait_process(
     pipes, and the Job handle are all cleaned in one ``finally`` unless the
     run completed. Failure branches only raise; they never clean up
     themselves, so cleanup can neither be skipped nor mask the error.
+
+    Cleanup order is terminate-then-join-then-close-stopped: the owned
+    process tree dies first, readers get a bounded join, and only stopped
+    readers' pipes are closed. A live reader keeps its pipe (abandoned
+    daemon) so ``close()`` can never pin the caller past the join budget.
     """
     readers: list[threading.Thread] = []
+    owned: list[tuple[object, threading.Thread]] = []
     completed = False
     try:
         limit = max(1, int(capture_limit_bytes))
@@ -317,6 +355,7 @@ def wait_process(
             )
             thread.start()
             readers.append(thread)
+            owned.append((stream, thread))
         deadline = time.monotonic() + max(0.0, float(timeout))
         while True:
             for state in (stdout_state, stderr_state):
@@ -366,7 +405,7 @@ def wait_process(
         if not completed:
             _terminate_process_tree(proc, job)
             _join_readers(readers, timeout=READER_JOIN_TIMEOUT_SECONDS)
-        _close_pipes(proc)
+        _close_owned_pipes(proc, owned)
         close = getattr(job, "close", None)
         if callable(close):
             with suppress(Exception):

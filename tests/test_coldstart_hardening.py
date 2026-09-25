@@ -1513,6 +1513,97 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertTrue(provider.close())
         self.assertIsNone(provider._session)
 
+    def test_second_close_retries_live_child_and_releases(self) -> None:
+        # First teardown leaves the direct child alive: a second close
+        # must retry the bounded terminate instead of pinning the old
+        # generation forever. An exited child is never signalled again.
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        proc.stdout = mock.Mock()
+        proc.stderr = mock.Mock()
+        session = self._session_for(provider, proc)
+        calls: list[str] = []
+
+        def _first_noop(_proc: object, _job: object) -> None:
+            calls.append("first")
+
+        def _second_exit(_proc: object, _job: object) -> None:
+            calls.append("second")
+            proc.poll.return_value = 0
+
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+            side_effect=_first_noop,
+        ):
+            self.assertFalse(provider.close())
+        self.assertIs(provider._session, session)
+        self.assertEqual(calls, ["first"])
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+            side_effect=_second_exit,
+        ):
+            self.assertTrue(provider.close())
+        self.assertIsNone(provider._session)
+        self.assertEqual(calls, ["first", "second"])
+
+    def test_second_close_does_not_resignal_exited_child(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        with mock.patch("codey.providers.worker.cancellation.terminate_process_tree"):
+            self.assertFalse(provider.close())
+        self.assertIs(provider._session, session)
+        proc.poll.return_value = 0
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+            side_effect=AssertionError("exited child must not be resignalled"),
+        ):
+            self.assertTrue(provider.close())
+        self.assertIsNone(provider._session)
+
+    def test_terminate_skips_live_reader_pipe(self) -> None:
+        # Closing a live reader's pipe would block on its IO lock; the
+        # retire path must join first and leave the pipe abandoned.
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = 0
+        proc.stdin = mock.Mock()
+        closed: list[str] = []
+        proc.stdout = SimpleNamespace(close=lambda: closed.append("stdout"))
+        proc.stderr = None
+        session = self._session_for(provider, proc)
+        release = threading.Event()
+
+        def _stuck_reader() -> None:
+            assert release.wait(timeout=30.0)
+
+        stuck = threading.Thread(target=_stuck_reader, daemon=True)
+        session.reader = stuck
+        stuck.start()
+        deadline = time.monotonic() + 10.0
+        while not stuck.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        try:
+            with mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree"
+            ):
+                started = time.monotonic()
+                self.assertFalse(provider.close())
+                elapsed = time.monotonic() - started
+            self.assertLess(elapsed, 10.0)
+            self.assertNotIn("stdout", closed)
+            self.assertTrue(stuck.is_alive())
+        finally:
+            release.set()
+            stuck.join(timeout=10.0)
+        self.assertFalse(stuck.is_alive())
+        self.assertTrue(provider.close())
+        self.assertIsNone(provider._session)
+
     def test_closed_generation_check_does_not_join_past_request_deadline(self) -> None:
         provider = self._provider()
         proc = mock.Mock()

@@ -691,8 +691,11 @@ class ChangeTrackerTests(unittest.TestCase):
             file_path = root / "temp.txt"
             file_path.write_text("initial", encoding="utf-8")
 
-            # Patch _update_manifest_locked to raise error during manifest write
-            with mock.patch.object(store, "_update_manifest_locked", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            # Patch the manifest commit to raise during baseline creation.
+            with mock.patch(
+                "codey.workspace.changes.write_json_atomic",
+                side_effect=OSError("disk full"),
+            ), self.assertRaises(OSError):
                 tracker.capture_before("temp.txt")
 
             # Verify memory state rolled back
@@ -990,6 +993,96 @@ class ChangeTrackerTests(unittest.TestCase):
 
             self.assertNotIn("big.py", before)
             self.assertIn("good.py", before)
+
+    def test_put_baseline_first_wins_and_ignores_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            self.assertTrue(store.put_baseline(root, "app.py", "first\n"))
+            body = store._baseline_path(root, "app.py")
+            self.assertEqual(body.read_text(encoding="utf-8"), "first\n")
+
+            # A second write for the same path must not overwrite the
+            # first-write baseline, even when it would otherwise fail.
+            with mock.patch(
+                "codey.workspace.changes.write_json_atomic",
+                side_effect=AssertionError("manifest must not be rewritten"),
+            ):
+                self.assertFalse(store.put_baseline(root, "app.py", "second\n"))
+
+            before, _ = store.load(root)
+            self.assertEqual(before.get("app.py"), "first\n")
+            self.assertEqual(body.read_text(encoding="utf-8"), "first\n")
+
+    def test_put_create_failure_leaves_no_orphan(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            with mock.patch(
+                "codey.workspace.changes.write_json_atomic",
+                side_effect=OSError("manifest disk full"),
+            ), self.assertRaises(OSError):
+                store.put_baseline(root, "app.py", "first\n")
+            before, _ = store.load(root)
+            self.assertEqual(before, {})
+            self.assertFalse(store._baseline_path(root, "app.py").exists())
+
+    def test_remove_failure_preserves_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            store.put_baseline(root, "app.py", "first\n")
+            store.put_baseline(root, "other.py", "other\n")
+            body = store._baseline_path(root, "app.py")
+
+            with mock.patch(
+                "codey.workspace.changes.write_json_atomic",
+                side_effect=OSError("manifest disk full"),
+            ), self.assertRaises(OSError):
+                store.remove(root, "app.py")
+
+            before, _ = store.load(root)
+            self.assertEqual(before.get("app.py"), "first\n")
+            self.assertTrue(body.exists())
+
+    def test_capture_before_rollback_keeps_prior_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            store.put_baseline(root, "app.py", "first\n")
+            # A fresh tracker loads the prior baseline; a preserve must not
+            # touch the manifest at all.
+            tracker = ChangeTracker(root, store)
+            self.assertEqual(tracker._before.get("app.py"), "first\n")
+            with mock.patch(
+                "codey.workspace.changes.write_json_atomic",
+                side_effect=AssertionError("preserve must not rewrite manifest"),
+            ):
+                # Already tracked: early return, no store write, no error.
+                tracker.capture_before("app.py")
+            before, _ = store.load(root)
+            self.assertEqual(before.get("app.py"), "first\n")
+
+    def test_untracked_symlink_never_expands_target(self) -> None:
+        import os as _os
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outside = Path(td) / "outside.txt"
+            outside.write_text("SECRET-OUTSIDE-CONTENT\n", encoding="utf-8")
+            link = root / "link.txt"
+            try:
+                _os.symlink(str(outside), str(link))
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"symlinks unavailable: {exc}")
+            result = changes._untracked_file_diff(root, "link.txt")
+            self.assertIsNone(result)
+
+    def test_untracked_escaped_path_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            result = changes._untracked_file_diff(root, "../escape.txt")
+            self.assertIsNone(result)
 
 
 if __name__ == "__main__":

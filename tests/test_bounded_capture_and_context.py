@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -736,6 +737,88 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         self.assertIs(terminate_calls[0][0], proc)
         self.assertTrue(calls["close"], "pipe was not closed")
         self.assertEqual(job_calls, ["close"])
+
+    def test_external_holder_does_not_pin_close(self) -> None:
+        # Write end outlives the owned tree: terminate cannot reap it, so
+        # readers stay blocked. The caller must still return on time with
+        # PipeDrainTimeout, and live readers' pipes must stay open instead
+        # of blocking close() on the reader lock.
+        read_fd, write_fd = os.pipe()
+        read_file = os.fdopen(read_fd, "rb")
+        write_file = os.fdopen(write_fd, "wb")
+        proc = SimpleNamespace(
+            pid=99999998,
+            returncode=0,
+            stdout=read_file,
+            stderr=None,
+            wait=lambda timeout=None: 0,
+            terminate=lambda: None,
+            kill=lambda: None,
+        )
+        job = SimpleNamespace(close=lambda: None)
+        started = time.monotonic()
+        try:
+            with (
+                mock.patch.object(
+                    cancellation, "_terminate_process_tree", return_value=None
+                ),
+                mock.patch.object(
+                    cancellation, "DRAIN_TIMEOUT_SECONDS", 0.5
+                ),
+                mock.patch.object(
+                    cancellation, "READER_JOIN_TIMEOUT_SECONDS", 0.5
+                ),
+                self.assertRaises(cancellation.PipeDrainTimeout),
+            ):
+                cancellation.wait_process(
+                    proc, job, ["cmd"], 30, capture_limit_bytes=65536
+                )
+        finally:
+            elapsed = time.monotonic() - started
+            # Drain (0.5s) + join (0.5s) bound the caller; a blocking
+            # close() would pin it past this budget.
+            self.assertLess(elapsed, 10.0)
+            # Live reader owns its pipe: it was abandoned, not closed.
+            self.assertFalse(read_file.closed)
+            with contextlib.suppress(Exception):
+                write_file.close()
+            with contextlib.suppress(Exception):
+                read_file.close()
+        self.assertLess(elapsed, 10.0)
+
+    def test_close_owned_pipes_skips_live_reader(self) -> None:
+        read_fd, write_fd = os.pipe()
+        read_file = os.fdopen(read_fd, "rb")
+        write_file = os.fdopen(write_fd, "wb")
+        release = threading.Event()
+        observed: list[str] = []
+
+        def _blocking_read() -> None:
+            with contextlib.suppress(Exception):
+                read_file.read(8192)
+            observed.append("done")
+
+        reader = threading.Thread(target=_blocking_read, daemon=True)
+        reader.start()
+        deadline = time.monotonic() + 10.0
+        while not reader.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        proc = SimpleNamespace(stdout=read_file, stderr=None)
+        try:
+            started = time.monotonic()
+            cancellation._close_owned_pipes(proc, [(read_file, reader)])
+            elapsed = time.monotonic() - started
+            self.assertLess(elapsed, 5.0)
+            self.assertTrue(reader.is_alive())
+            self.assertFalse(read_file.closed)
+        finally:
+            with contextlib.suppress(Exception):
+                write_file.close()
+            release.set()
+            with contextlib.suppress(Exception):
+                read_file.close()
+            reader.join(timeout=10.0)
+        self.assertEqual(observed, ["done"])
 
 
 if __name__ == "__main__":

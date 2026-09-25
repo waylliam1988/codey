@@ -352,7 +352,7 @@ def _run_headless_task(
             )
         finally:
             if state.sync_ghost_maintenance:
-                state.wait_for_ghost_sleep()
+                state.wait_for_ghost_sleep(timeout=30)
         terminal = dict(state.run_registry.last_terminal_event() or {})
         run_id = str(terminal.get("run_id") or request.run_id or "")
         stop_reason = str(terminal.get("stop_reason") or "error")

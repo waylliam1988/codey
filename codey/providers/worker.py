@@ -139,11 +139,13 @@ class WorkerChatProvider:
         # A generation that has not finished cleanup remains owned here.
         # Otherwise another request could reuse its browser profile after a
         # failed close, and a second close would incorrectly report success.
+        # Explicit close retries a live direct child; rechecks elsewhere
+        # stay fast-fail so short request deadlines never wait.
         with self._life_lock:
             session = self._session
             if session is None:
                 return True
-            return self._retire_session_locked(session)
+            return self._retire_session_locked(session, retry_live_child=True)
 
     def _start_session_locked(self) -> None:
         """Create, publish, and serve one generation. Holds _life_lock."""
@@ -198,7 +200,7 @@ class WorkerChatProvider:
                 proc.kill()
             with contextlib.suppress(Exception):
                 proc.wait(timeout=2)
-            self._close_pipes(proc)
+            self._close_all_pipes(proc)
             raise
         session = _WorkerSession(proc=proc, job=job)
         stderr_reader = threading.Thread(
@@ -227,7 +229,7 @@ class WorkerChatProvider:
                 with contextlib.suppress(Exception):
                     job.close()  # type: ignore[union-attr]
             self._join_threads(started)
-            self._close_pipes(proc)
+            self._close_stopped_session_pipes(session)
             raise
         # Published only after all three threads run: construction either
         # hands over a fully owned generation or cleans everything itself.
@@ -803,7 +805,9 @@ class WorkerChatProvider:
         self.last_failure = failure
         return ProviderActionError(failure)
 
-    def _retire_session_locked(self, session: _WorkerSession) -> bool:
+    def _retire_session_locked(
+        self, session: _WorkerSession, *, retry_live_child: bool = False
+    ) -> bool:
         """Retire this generation; publish an empty slot only after cleanup."""
         if self._session is not session:
             return False
@@ -814,14 +818,18 @@ class WorkerChatProvider:
             if pending is not None:
                 pending.done.set()
             session.write_event.set()
-        # Termination is performed once. Later calls inspect the same
-        # generation without waiting under the life lock or signalling a
-        # possibly recycled process ID. The first teardown did bounded joins.
-        threads_stopped = (
-            all(not thread.is_alive() for thread in self._session_threads(session))
-            if already_closed
-            else self._terminate_session(session)
-        )
+        if not already_closed:
+            threads_stopped = self._terminate_session(session)
+        elif retry_live_child and session.proc.poll() is None:
+            # Explicit close retries a live direct child with the same
+            # bounded terminate-and-reap. Rechecks keep the fast-fail so a
+            # short request deadline never waits; an exited child is never
+            # signalled again (its PID may already be recycled).
+            threads_stopped = self._terminate_session(session)
+        else:
+            threads_stopped = all(
+                not thread.is_alive() for thread in self._session_threads(session)
+            )
         # A stopped reader alone does not prove the worker released its
         # browser profile. The direct child must have exited as well.
         complete = threads_stopped and session.proc.poll() is not None
@@ -838,12 +846,13 @@ class WorkerChatProvider:
         ]
 
     def _terminate_session(self, session: _WorkerSession) -> bool:
-        """Tear down a closed generation: page, tree, job, pipes, threads.
+        """Tear down a closed generation: page, tree, job, threads, pipes.
 
         Page close runs before tree termination while the caller still holds
         `_life_lock`, so a replacement generation cannot reuse the browser
-        profile early. Returns True when the generation's threads stopped
-        within the bounded join budget.
+        profile early. Terminate first, join bounded, then close only stopped
+        threads' pipes: closing a live reader's pipe would wait on its lock.
+        Returns True when the generation's threads stopped within budget.
         """
         with session.lock:
             port = session.cdp_port
@@ -867,17 +876,46 @@ class WorkerChatProvider:
             if job is not None:
                 with contextlib.suppress(Exception):
                     job.close()  # type: ignore[union-attr]
-            self._close_pipes(proc)
             joined = self._join_threads(self._session_threads(session))
+            self._close_stopped_session_pipes(session)
         return joined
 
     @staticmethod
-    def _close_pipes(proc: subprocess.Popen[str]) -> None:
+    def _close_all_pipes(proc: subprocess.Popen[str]) -> None:
+        """Close pipes when no session thread owns them (spawn failure path)."""
         for stream in (
             getattr(proc, "stdin", None),
             getattr(proc, "stdout", None),
             getattr(proc, "stderr", None),
         ):
+            try:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _close_stopped_session_pipes(session: _WorkerSession) -> None:
+        """Close only pipes whose owner thread already stopped.
+
+        A live reader/writer owns its pipe; closing it would block on the
+        thread's IO lock when another process still holds the write end.
+        Skipped pipes stay abandoned (daemon threads) and the retire result
+        still reports incomplete cleanup via ``False``.
+        """
+        proc = session.proc
+        pairs = (
+            (getattr(proc, "stdin", None), session.writer),
+            (getattr(proc, "stdout", None), session.reader),
+            (getattr(proc, "stderr", None), session.stderr_reader),
+        )
+        current = threading.current_thread()
+        for stream, thread in pairs:
+            if stream is None:
+                continue
+            if thread is not None and thread is not current and thread.is_alive():
+                continue
             try:
                 close = getattr(stream, "close", None)
                 if callable(close):

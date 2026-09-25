@@ -403,6 +403,11 @@ class LocalOpenAIProvider:
             raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
         if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
             raise errors.OutputLengthError()
+        if kind == errors.ProviderErrorKind.FATAL:
+            raise RuntimeError(
+                "local model content filtered "
+                f"(finish_reason={choice.get('finish_reason')})"
+            )
         message = choice.get("message")
         if not isinstance(message, dict):
             raise RuntimeError("local model returned a choice without message content")
@@ -410,6 +415,8 @@ class LocalOpenAIProvider:
             "content": message.get("content") or "",
             "_finish_reason": str(choice.get("finish_reason") or ""),
         }
+        if "tool_calls" in message and not isinstance(message.get("tool_calls"), list):
+            raise RuntimeError("local model returned malformed tool_calls")
         raw_calls = message.get("tool_calls")
         if isinstance(raw_calls, list):
             out["tool_calls"] = raw_calls
@@ -442,10 +449,16 @@ def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
     must treat any drop as a malformed turn (fail closed) rather than storing
     the raw block. Bad argument payloads are NOT dropped here: they keep
     their id and flow into validation, which answers them with an error.
+    A present-but-non-list ``tool_calls`` is a protocol error, never an
+    empty turn: it would silently downgrade a tool turn to plain text.
     """
-    raw_calls = message.get("tool_calls")
-    if not isinstance(raw_calls, list):
+    if "tool_calls" not in message:
         return [], 0
+    raw_calls = message.get("tool_calls")
+    if raw_calls is None:
+        return [], 0
+    if not isinstance(raw_calls, list):
+        raise RuntimeError("local model returned malformed tool_calls")
     parsed: list[dict[str, object]] = []
     dropped = 0
     for item in raw_calls:
@@ -498,6 +511,11 @@ def _extract_reply(body: dict) -> str:
         raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
     if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
         raise errors.OutputLengthError()
+    if kind == errors.ProviderErrorKind.FATAL:
+        raise RuntimeError(
+            "local model content filtered "
+            f"(finish_reason={choice.get('finish_reason')})"
+        )
     message = choice.get("message")
     if isinstance(message, dict):
         return str(message.get("content") or "")

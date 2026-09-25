@@ -2,6 +2,38 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Cold-start boundary hardening (no release)
+
+- Bounded close: `cancellation.wait_process()` terminates the owned tree,
+  joins readers bounded, then closes only stopped readers' pipes; worker
+  `_terminate_session()` joins before closing stopped session pipes. A live
+  reader keeps its pipe (abandoned daemon) so `close()` never pins the
+  caller past the join budget. A real-pipe regression proves an external
+  write-end holder still yields `PipeDrainTimeout` on time.
+- First-wins baselines: `SnapshotStore.put_baseline()` preserves an existing
+  entry (returns created flag) instead of overwriting before the manifest
+  commit; `remove()` commits the manifest before deleting the body;
+  `ChangeTracker.capture_before()` rolls back memory only. Replace/remove
+  failure regressions prove the prior baseline stays loadable.
+- No-follow untracked diffs: `_untracked_file_diff()` rejects symlinks and
+  escapes via `safe_join`, then reads via the no-follow boundary. Links keep
+  their path entry with no content. POSIX symlink and escape regressions
+  added; CI adds an Ubuntu file-boundary job and pins `pip==26.1.2`.
+- Worker retry on explicit close: a second `close()` retries a live direct
+  child with bounded terminate/reap; rechecks stay fast-fail (no join, no
+  resignal of an exited PID) so short deadlines never wait. Recovery,
+  no-resignal, and live-pipe regressions added.
+- Local provider fails closed: `content_filter` raises in both choice paths
+  and a present-but-non-list `tool_calls` raises a protocol error; history
+  stays uncommitted with no empty-string fallback. `send()`/`send_turn()`
+  regressions added.
+- Ghost maintenance waits are bounded (`timeout=30`) in `task_submit` and
+  headless paths.
+- Verification: `python -m ruff check .`, `python -m compileall -q codey
+  tests`, `git diff --check`, collection (`4267 tests`), targeted suites,
+  and final `python -m pytest -q -o faulthandler_timeout=120` (`4261
+  passed, 6 skipped, 1374 subtests passed in 377.31s`). No release was made.
+
 ## 0.5.9 - Local Model Runtime Hygiene
 
 - Local model is now the main local path, not a side adapter. Configuration,

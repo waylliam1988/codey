@@ -32,7 +32,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install "pip==26.1.2"
           python -m pip install -r requirements-ci.txt
           python -m pip install -e . --no-deps
           python -m playwright install chromium
@@ -49,3 +49,38 @@ jobs:
           Get-ChildItem codey/web/assets -Filter *.js | ForEach-Object {
             node --check $_.FullName
           }
+
+  test-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install "pip==26.1.2"
+          python -m pip install -r requirements-ci.txt
+          python -m pip install -e . --no-deps
+          python -m playwright install chromium --with-deps
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: POSIX file-boundary regressions
+        run: python -m pytest -q -o faulthandler_timeout=120 tests/test_changes.py tests/test_workspace_paths.py tests/test_bounded_capture_and_context.py tests/test_coldstart_hardening.py
+
+      - name: JavaScript syntax
+        run: |
+          for f in codey/web/assets/*.js; do node --check "$f"; done

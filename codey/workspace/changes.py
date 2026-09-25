@@ -206,13 +206,25 @@ class SnapshotStore:
         root: str | Path,
         rel: str,
         content: str | None,
-    ) -> None:
-        """Record (or replace) one file's recovery baseline."""
+    ) -> bool:
+        """First-write baseline; existing entry wins (True=created)."""
 
         resolved_root = Path(root).expanduser().resolve()
         body_path = self._baseline_path(resolved_root, rel)
+        manifest_path = self.path_for(resolved_root)
 
         with with_file_lock(self._lock_target(resolved_root)):
+            try:
+                payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            except StoreCorruption:
+                _backup_corrupt_manifest(manifest_path)
+                payload = None
+            files = payload.get("files") if isinstance(payload, dict) else None
+            if not isinstance(files, dict):
+                files = {}
+            existing = files.get(rel)
+            if isinstance(existing, dict) and "baseline" in existing:
+                return False
             written_body = False
             try:
                 if content is None:
@@ -220,14 +232,15 @@ class SnapshotStore:
                 else:
                     _write_bytes_atomic(body_path, content.encode("utf-8"))
                     written_body = True
-                self._update_manifest_locked(
-                    resolved_root,
-                    rel,
-                    lambda entry: {
-                        **entry,
-                        "baseline": None if content is None else body_path.name,
-                    },
+                files[rel] = {
+                    "baseline": None if content is None else body_path.name,
+                }
+                write_json_atomic(
+                    manifest_path,
+                    {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
+                    max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
                 )
+                return True
             except Exception:
                 if written_body:
                     _remove_file(body_path)
@@ -243,7 +256,7 @@ class SnapshotStore:
             )
 
     def remove(self, root: str | Path, rel: str) -> None:
-        """Drop one file from the snapshot; deletes the store when empty."""
+        """Drop one entry; manifest first, body last (failures preserve)."""
 
         resolved_root = Path(root).expanduser().resolve()
         snapshot_dir = self.dir_for(resolved_root)
@@ -256,9 +269,6 @@ class SnapshotStore:
         manifest_path = self.path_for(resolved_root)
 
         with with_file_lock(self._lock_target(resolved_root)):
-            _remove_file(body_path)
-            _remove_dir_if_empty(body_path.parent)
-
             try:
                 payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
             except StoreCorruption:
@@ -266,6 +276,8 @@ class SnapshotStore:
                 return
             files = payload.get("files") if isinstance(payload, dict) else None
             if not isinstance(files, dict) or rel not in files:
+                _remove_file(body_path)
+                _remove_dir_if_empty(body_path.parent)
                 return
             del files[rel]
             if files:
@@ -277,6 +289,8 @@ class SnapshotStore:
             else:
                 delete_file(manifest_path)
                 _remove_dir_if_empty(self.dir_for(resolved_root))
+            _remove_file(body_path)
+            _remove_dir_if_empty(body_path.parent)
 
     def delete(self, root: str | Path) -> None:
         resolved_root = Path(root).expanduser().resolve()
@@ -379,15 +393,7 @@ def _status_for(before: str | None, after: str | None) -> str:
 
 
 class ChangeTracker:
-    """Record first-write baselines and render diffs against current files.
-
-    All baseline state (``_before`` / ``_after_hashes``) is guarded by one
-    reentrant lock: UI polling collects while a run captures, so a collect
-    must never observe a half-updated baseline set -- and must never mutate
-    it either. ``collect()`` is read-only by default; call
-    :meth:`prune_clean` explicitly (after a run reaches a terminal state)
-    to drop baselines whose file is back to its original content.
-    """
+    """First-write baselines; locked collect, explicit prune_clean."""
 
     def __init__(
         self,
@@ -449,14 +455,12 @@ class ChangeTracker:
         except Exception:
             with self._lock:
                 # Roll back only our own write; prune/restore may already have
-                # removed it, and a concurrent re-capture must survive.
+                # removed it, and a concurrent re-capture must survive. The
+                # store cleans its own newly written body; never delete a
+                # pre-existing baseline here.
                 if rel_posix in self._before and self._before[rel_posix] == before:
                     del self._before[rel_posix]
                     self._total_bytes -= added
-                store = self.store
-            if store is not None:
-                with contextlib.suppress(Exception):
-                    store.remove(self.root, rel_posix)
             raise
 
     def capture_after(self, rel: str) -> None:
@@ -710,10 +714,17 @@ def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
 
 
 def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
-    path = (root / rel).resolve()
+    """Untracked file without following symlinks (links yield no content)."""
     try:
-        if not path.is_file() or path.stat().st_size > MAX_UNTRACKED_DIFF_BYTES:
+        link_path = root / rel
+        if link_path.is_symlink():
             return None
+        path = _safe_join(root, rel)
+        if path.is_symlink():
+            return None
+    except (OSError, ValueError):
+        return None
+    try:
         text = _read_text_bounded(path, max_bytes=MAX_UNTRACKED_DIFF_BYTES)
     except (OSError, UnicodeDecodeError, ValueError):
         return None
