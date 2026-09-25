@@ -452,6 +452,8 @@ def terminate_process_tree(
 def _process_group_exists(pgid: int) -> bool:
     """Check a process group without touching its (possibly reaped) leader."""
     try:
+        if not isinstance(pgid, int):
+            return False
         os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
@@ -482,11 +484,23 @@ def _terminate_process_tree(
     else:
         # Processes from start_process() run in a new session, so the known
         # group id is proc.pid: no getpgid() on a possibly reaped parent.
-        pgid = proc.pid
+        pgid = getattr(proc, "pid", None)
+        if not isinstance(pgid, int):
+            with suppress(Exception):
+                proc.terminate()
+            with suppress(Exception):
+                proc.wait(timeout=1)
+            with suppress(Exception):
+                if proc.poll() is None:
+                    proc.kill()
+            with suppress(Exception):
+                proc.wait(timeout=1)
+            return
         try:
             os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
-            pass
+            with suppress(Exception):
+                proc.terminate()
         except OSError:
             with suppress(Exception):
                 proc.terminate()
@@ -499,3 +513,9 @@ def _terminate_process_tree(
                 os.killpg(pgid, signal.SIGKILL)
             with suppress(Exception):
                 proc.wait(timeout=1)
+        # A non-leader direct child has no group to signal: reap it alone.
+        with suppress(Exception):
+            if proc.poll() is None:
+                proc.kill()
+        with suppress(Exception):
+            proc.wait(timeout=1)
