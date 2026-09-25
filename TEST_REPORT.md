@@ -1,5 +1,33 @@
 # Codey Test Report
 
+## Worker state minimization audit full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py            (nonrecursive lifecycle lock; process read from owning session)
+tests/test_coldstart_hardening.py     (production lock type in fixture; owned-process early-exit regression)
+```
+
+Audit conclusion: the request-local process reference duplicated
+`session.proc`, and no lifecycle caller needed recursive locking. The
+single pending request, request ID, writer slot, `closed`, `terminal_error`,
+and `stdout_done` each retain distinct protocol or concurrency roles. The
+worker has no explicit generation ID or separate detached/retired field.
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .`, `python -m compileall -q
+  codey tests`, and `git diff --check` passed; `4254 tests` collected.
+- Worker and adapter regressions: `152 passed, 3 skipped, 6 subtests passed
+  in 22.88s`. The focused Worker suite also passed `45` tests.
+- The first full suite passed in 355.94s. Its new fast-exit test was then
+  changed from a wall-clock threshold to a deterministic no-wait assertion;
+  the affected suites and full suite were rerun after that test change.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4230 passed, 24 skipped, 1374 subtests passed in 371.77s (0:06:11)`.
+- This entry was written after the full suite. No release was made.
+
 ## Agent session ownership and generation cleanup full suite (2026-09-25)
 
 Scope (production, no release):

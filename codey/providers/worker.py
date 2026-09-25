@@ -90,12 +90,12 @@ class WorkerChatProvider:
     def __post_init__(self) -> None:
         self.name = f"{self.provider_id} worker"
         self.last_failure: ProviderFailure | None = None
-        # _life_lock serializes session detach/terminate/start so a new
+        # _life_lock serializes session retirement/termination/start so a new
         # generation never reuses the browser profile while the old one is
         # still being torn down. _request_lock keeps requests single-flight.
-        # Waiting holds neither lock's critical path: close() detaches under
-        # _life_lock and the waiter observes its local session handle.
-        self._life_lock = threading.RLock()
+        # Waiting holds neither lock's critical path: close() marks the
+        # current session closed, and the waiter observes that session.
+        self._life_lock = threading.Lock()
         self._request_lock = threading.Lock()
         self._session: _WorkerSession | None = None
         with self._life_lock:
@@ -431,7 +431,7 @@ class WorkerChatProvider:
         return session
 
     def _acquire_with_deadline(
-        self, lock: threading.Lock | threading.RLock, deadline: float, method: str
+        self, lock: threading.Lock, deadline: float, method: str
     ) -> None:
         """Acquire a gate without ever pinning Stop past one short tick.
 
@@ -518,7 +518,6 @@ class WorkerChatProvider:
             separators=(",", ":"),
         ) + "\n"
         pending: _PendingRequest | None = None
-        proc: subprocess.Popen[str] | None = None
         session: _WorkerSession | None = None
         stuck_session: _WorkerSession | None = None
         while True:
@@ -551,7 +550,6 @@ class WorkerChatProvider:
                     if session.proc.poll() is not None or session.proc.stdin is None:
                         raise RuntimeError("provider worker is not running")
                     pending = _PendingRequest(request_id=request_id, method=method)
-                    proc = session.proc
                     with session.lock:
                         session.pending = pending
                         session.write_wire = wire
@@ -579,15 +577,14 @@ class WorkerChatProvider:
             except ProviderActionError:
                 self._retire_stuck_slot_bounded(stuck_session)
                 raise
-        assert pending is not None and proc is not None and session is not None
-        self._await_write(session, pending, proc, deadline)
+        assert pending is not None and session is not None
+        self._await_write(session, pending, deadline)
         return self._wait_for_response(session, pending, deadline)
 
     def _await_write(
         self,
         session: _WorkerSession,
         pending: _PendingRequest,
-        proc: subprocess.Popen[str],
         deadline: float,
     ) -> None:
         """Wait for the session writer without ever blocking in write().
@@ -610,7 +607,7 @@ class WorkerChatProvider:
                 ):
                     return
                 if closed:
-                    # Retire and close always mark the detached generation:
+                    # Retire and close always mark the owned generation closed:
                     # no life-lock pointer check is needed on this hot path.
                     raise self._exited_error(session, pending.method)
                 if write_done_flag:
@@ -618,7 +615,7 @@ class WorkerChatProvider:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise self._timeout_error(pending.method)
-                if proc.poll() is not None and session.stdout_done.is_set():
+                if session.proc.poll() is not None and session.stdout_done.is_set():
                     # Reader drained with no verdict: the write can never
                     # produce a reply, so fail fast instead of waiting for
                     # the writer tick.
@@ -841,7 +838,7 @@ class WorkerChatProvider:
         ]
 
     def _terminate_session(self, session: _WorkerSession) -> bool:
-        """Tear down a detached generation: page, tree, job, pipes, threads.
+        """Tear down a closed generation: page, tree, job, pipes, threads.
 
         Page close runs before tree termination while the caller still holds
         `_life_lock`, so a replacement generation cannot reuse the browser

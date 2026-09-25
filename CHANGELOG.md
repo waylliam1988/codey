@@ -32,6 +32,24 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Worker state minimization audit (no release)
+
+- The lifecycle lock is now a plain `Lock`: its production call graph never
+  recursively acquires it. The worker test fixture uses the same lock, so
+  concurrency regressions exercise the actual ownership rule.
+- `_await_write()` now reads the process from its owning session. The extra
+  process argument and request-local copy expressed the same generation twice.
+  A regression verifies prompt failure when that session's child and reader
+  have exited before a write completes.
+- The audit retained the single pending request, request ID, writer slot,
+  close signal, sticky terminal error, and reader completion signal because
+  each protects a distinct cross-thread or protocol boundary. No explicit
+  generation ID or separate detached/retired flag exists to remove.
+- Before the full run, Ruff, compileall, diff checks, collection (`4254
+  tests`), and worker/adapter regressions (`152 passed, 3 skipped, 6
+  subtests`) passed. Final `python -m pytest -q -o faulthandler_timeout=120`:
+  `4230 passed, 24 skipped, 1374 subtests passed in 371.77s`.
+
 ## Unreleased - Agent session ownership and generation cleanup (no release)
 
 - `AgentLoopSession` now holds seven cohesive pieces of state instead of

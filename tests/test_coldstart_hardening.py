@@ -249,7 +249,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider.state_home = Path(".")
         provider.name = "qwen worker"
         provider.last_failure = None
-        provider._life_lock = threading.RLock()
+        provider._life_lock = threading.Lock()
         provider._request_lock = threading.Lock()
         provider._session = None
         return provider
@@ -1006,6 +1006,36 @@ class WorkerSelfHealTests(unittest.TestCase):
         assert provider._session is not None
         self.assertIs(provider._session.proc, fresh)
 
+    def test_write_wait_fails_fast_when_owned_process_and_reader_exit(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = 1
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        session.stdout_done.set()
+        pending = _PendingRequest(request_id="req-1", method="send")
+        with session.lock:
+            session.pending = pending
+
+        with (
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=self._mark_process_exited,
+            ) as terminate,
+            mock.patch.object(
+                session.write_done, "wait",
+                side_effect=AssertionError("exited worker must not wait for stdin"),
+            ) as wait,
+            self.assertRaises(ProviderActionError) as raised,
+        ):
+            provider._await_write(session, pending, self._deadline(30.0))
+        self.assertIn("exited", raised.exception.failure.message)
+        wait.assert_not_called()
+        proc.poll.assert_called()
+        terminate.assert_called_once_with(proc, None)
+
     def test_reply_before_write_done_still_wins(self) -> None:
         # The reply proves delivery even when the writer has not yet set
         # write_done; a late write error must not negate it.
@@ -1021,13 +1051,13 @@ class WorkerSelfHealTests(unittest.TestCase):
         provider._deliver_response(
             session, {"id": "req-1", "ok": True, "result": "early"},
         )
-        provider._await_write(session, pending, proc, self._deadline())
+        provider._await_write(session, pending, self._deadline())
         result = provider._wait_for_response(session, pending, self._deadline())
         self.assertEqual(result, "early")
         with session.lock:
             session.write_error = "provider worker stdin is unavailable: late"
             session.write_done.set()
-        provider._await_write(session, pending, proc, self._deadline())
+        provider._await_write(session, pending, self._deadline())
 
     def _wait_for_pending(
         self, session: _WorkerSession, timeout: float = 10.0

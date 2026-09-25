@@ -27,6 +27,20 @@
   （`4116 tests collected`）和最终全量 `python -m pytest`
   （`4092 passed, 24 skipped in 341.36s`）均通过。
 
+## Unreleased - Worker 状态减法审计（未发布）
+
+- 生命周期锁改为普通 `Lock`：生产调用链没有递归获取路径；测试替身同步改为
+  相同锁型，让并发回归验证实际约束。
+- `_await_write()` 从所属 session 读取进程，删除重复表达同一代际的进程参数
+  和请求局部副本。新增子进程与 reader 已退出、写入未完成时快速显错的回归。
+- 审计后保留单 pending、请求 ID、writer 槽、关闭信号、粘性终局错误和 reader
+  完成信号：它们分别保护不同的跨线程或协议边界；当前没有额外的代际 ID、
+  detached 或 retired 字段可删。
+- 全量前 Ruff、compileall、diff 检查、收集（`4254 tests`）和 Worker/适配器
+  回归（`152 passed, 3 skipped, 6 subtests`）通过。最终
+  `python -m pytest -q -o faulthandler_timeout=120`：
+  `4230 passed, 24 skipped, 1374 subtests passed in 371.77s`。
+
 ## Unreleased - Agent 会话归属与 Worker 代际清理（未发布）
 
 - `AgentLoopSession` 从约五十个复制字段收敛为七块明确状态：已解析且带类型的
