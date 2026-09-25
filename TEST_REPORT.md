@@ -212,6 +212,45 @@ Verification (local, Windows):
   zero flakes.
 - This report entry was written after the final full pytest run.
 
+## Sticky write failures, bounded slot cleanup, terminal browser close, associated headless events full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (sticky terminal_error on stdin failure; slot wait without finally reacquire, bounded stuck retire; real consecutive coverage)
+codey/automation/browser_worker.py    (lifecycle lock for enqueue/running/close; queued close errors, async abandon cleanups, running cancel; close returns bool; call observes close)
+codey/app/headless_runner.py          (run_id_for_event before task; close raise never masks task error; direct add_note)
+tests/test_coldstart_hardening.py     (real early-reply reuse, real late-failure new proc, never-release timeout retire + third)
+tests/test_browser_worker.py          (running+queued+close terminal, submit vs close atomic)
+tests/test_headless_runner.py         (explicit run id on exception; close-raises keeps task error)
+```
+
+Notes:
+
+- Root-cause split stands: blocking write/close risk existed in 0.5.8 and
+  0.5.9; the post-release CI cliff came from spinning Mock stderr threads.
+  The 0.57s vs 5.7s isolated rerun and the 361s full suite match the load
+  disappearing, but single cross-commit timings alone never prove the whole
+  delta.
+- No evidence for a Python 3.11-only bug or for model quality gains; keep
+  unreleased and accept on real consecutive-request and close-interleave
+  tests, which now exist instead of mocked await/wait proofs.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `239 passed, 6 subtests passed` (worker/headless/adapter/browser/
+  hardening/deepseek/research),
+  `25 passed, 15 subtests passed` (ui-harness/stress-generations/env/
+  readonly/cancellation) — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4244 tests collected`).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`
+  (`4238 passed, 6 skipped, 1374 subtests passed in 363.02s (0:06:03)`),
+  zero flakes.
+- This report entry was written after the final full pytest run.
+
 ## Worker session ownership, snapshot health, Ghost close contract full suite (2026-09-24)
 
 Scope (production, no release):

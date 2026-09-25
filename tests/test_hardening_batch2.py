@@ -188,7 +188,7 @@ class KnowledgeWalTests(unittest.TestCase):
 class BrowserWorkerBackpressureTests(unittest.TestCase):
     def _track_worker(self, worker) -> object:
         def _close_and_assert() -> None:
-            worker.close()
+            self.assertTrue(worker.close())
             self.assertFalse(worker._thread.is_alive())
         self.addCleanup(_close_and_assert)
         return worker
@@ -561,7 +561,7 @@ class BrowserFetchAbandonTests(unittest.TestCase):
         worker = BrowserWorker(name="test-fetch-abandon")
 
         def _close_and_assert() -> None:
-            worker.close()
+            self.assertTrue(worker.close())
             self.assertFalse(worker._thread.is_alive())
         self.addCleanup(_close_and_assert)
         fake_page = mock.Mock()

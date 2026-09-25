@@ -1007,59 +1007,140 @@ class WorkerSelfHealTests(unittest.TestCase):
             session.write_done.set()
         provider._await_write(session, pending, proc, self._deadline())
 
-    def test_consecutive_request_waits_for_early_reply_slot(self) -> None:
-        # Early-reply interleave: previous pending cleared but its writer
-        # still holds write_wire. The next request waits for the slot
-        # within its deadline instead of hitting the invariant.
+    def _wait_for_pending(
+        self, session: _WorkerSession, timeout: float = 10.0
+    ) -> _PendingRequest:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with session.lock:
+                pending = session.pending
+                if pending is not None:
+                    return pending
+            time.sleep(0.01)
+        raise AssertionError("pending was never registered")
+
+    def test_consecutive_requests_share_session_after_early_reply(self) -> None:
+        # Real writer interleave: first reply wins before write_done, the
+        # writer then succeeds, and the second real request reuses the same
+        # session instead of hitting the invariant.
         provider = self._provider()
         proc = mock.Mock()
         proc.poll.return_value = None
         proc.stdin = mock.Mock()
         session = self._session_for(provider, proc)
-        with session.lock:
-            session.pending = None
-            session.write_wire = "old-wire"
-            session.write_error = ""
-            session.write_done.clear()
+        entered = threading.Event()
+        release = threading.Event()
 
-        def free_slot() -> None:
-            time.sleep(0.2)
-            with session.lock:
-                session.write_wire = None
-                session.write_error = ""
-                session.write_done.set()
+        def gated_flush() -> None:
+            entered.set()
+            assert release.wait(timeout=10.0)
 
-        freer = threading.Thread(target=free_slot, daemon=True)
-        freer.start()
-        try:
-            with (
-                mock.patch.object(provider, "_await_write", return_value=None),
-                mock.patch.object(
-                    provider, "_wait_for_response", return_value="second-ok"
-                ),
-            ):
-                result = provider._request_locked(
-                    "send", {"text": "hi2"}, self._deadline(5.0)
+        proc.stdin.flush.side_effect = gated_flush
+        first_out: dict[str, object] = {}
+        first_errors: list[BaseException] = []
+
+        def first_request() -> None:
+            try:
+                first_out["result"] = provider._request(
+                    "send", {"text": "first"}, 5.0
                 )
-        finally:
-            freer.join(timeout=5.0)
-        self.assertEqual(result, "second-ok")
-        self.assertFalse(freer.is_alive())
-        with session.lock:
-            self.assertIsNotNone(session.write_wire)
-            self.assertIsNotNone(session.pending)
+            except BaseException as exc:
+                first_errors.append(exc)
 
-    def test_late_write_failure_retires_before_next_request(self) -> None:
+        worker = threading.Thread(target=first_request, daemon=True)
+        worker.start()
+        self.assertTrue(entered.wait(timeout=10.0))
+        first_pending = self._wait_for_pending(session)
+        provider._deliver_response(
+            session,
+            {"id": first_pending.request_id, "ok": True, "result": "first-ok"},
+        )
+        worker.join(timeout=10.0)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(first_errors, [])
+        self.assertEqual(first_out.get("result"), "first-ok")
+        # Previous pending cleared but its writer still holds the slot.
+        with session.lock:
+            self.assertIsNone(session.pending)
+            self.assertIsNotNone(session.write_wire)
+        release.set()
+
+        second_out: dict[str, object] = {}
+        second_errors: list[BaseException] = []
+
+        def second_request() -> None:
+            try:
+                second_out["result"] = provider._request(
+                    "send", {"text": "second"}, 5.0
+                )
+            except BaseException as exc:
+                second_errors.append(exc)
+
+        second_worker = threading.Thread(target=second_request, daemon=True)
+        second_worker.start()
+        second_pending = self._wait_for_pending(session)
+        provider._deliver_response(
+            session,
+            {"id": second_pending.request_id, "ok": True, "result": "second-ok"},
+        )
+        second_worker.join(timeout=10.0)
+        self.assertFalse(second_worker.is_alive())
+        self.assertEqual(second_errors, [])
+        self.assertEqual(second_out.get("result"), "second-ok")
+        self.assertIs(provider._session, session)
+
+    def test_late_write_failure_uses_new_session_for_next_request(self) -> None:
+        # Real writer clears the slot with a failure after the first reply
+        # already succeeded. The sticky terminal must retire the old
+        # generation so the next real request starts clean.
         provider = self._provider()
         old = mock.Mock()
         old.poll.return_value = None
         old.stdin = mock.Mock()
         session = self._session_for(provider, old)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def failing_flush() -> None:
+            entered.set()
+            assert release.wait(timeout=10.0)
+            raise OSError("broken pipe")
+
+        old.stdin.flush.side_effect = failing_flush
+        first_out: dict[str, object] = {}
+        first_errors: list[BaseException] = []
+
+        def first_request() -> None:
+            try:
+                first_out["result"] = provider._request(
+                    "send", {"text": "first"}, 5.0
+                )
+            except BaseException as exc:
+                first_errors.append(exc)
+
+        worker = threading.Thread(target=first_request, daemon=True)
+        worker.start()
+        self.assertTrue(entered.wait(timeout=10.0))
+        first_pending = self._wait_for_pending(session)
+        provider._deliver_response(
+            session,
+            {"id": first_pending.request_id, "ok": True, "result": "first-ok"},
+        )
+        worker.join(timeout=10.0)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(first_errors, [])
+        self.assertEqual(first_out.get("result"), "first-ok")
+        release.set()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            with session.lock:
+                if session.write_wire is None and session.write_done.is_set():
+                    break
+            time.sleep(0.01)
         with session.lock:
-            session.pending = None
-            session.write_wire = "old-wire"
-            session.write_error = "provider worker stdin is unavailable: broken"
-            session.write_done.set()
+            self.assertIsNone(session.write_wire)
+            self.assertNotEqual(session.write_error, "")
+            self.assertNotEqual(session.terminal_error, "")
         fresh = mock.Mock()
         fresh.poll.return_value = None
         fresh.stdin = mock.Mock()
@@ -1069,6 +1150,17 @@ class WorkerSelfHealTests(unittest.TestCase):
             inner_self._session = fresh_session
             self._spawn_writer(inner_self, fresh_session)
 
+        second_out: dict[str, object] = {}
+        second_errors: list[BaseException] = []
+
+        def second_request() -> None:
+            try:
+                second_out["result"] = provider._request(
+                    "send", {"text": "second"}, 5.0
+                )
+            except BaseException as exc:
+                second_errors.append(exc)
+
         with (
             mock.patch.object(
                 WorkerChatProvider, "_start_session_locked", fake_start
@@ -1076,16 +1168,101 @@ class WorkerSelfHealTests(unittest.TestCase):
             mock.patch(
                 "codey.providers.worker.cancellation.terminate_process_tree",
             ) as terminate,
-            mock.patch.object(provider, "_await_write", return_value=None),
+        ):
+            second_worker = threading.Thread(target=second_request, daemon=True)
+            second_worker.start()
+            fresh_session = None
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                current = provider._session
+                if current is not None and current is not session:
+                    fresh_session = current
+                    try:
+                        self._wait_for_pending(fresh_session, timeout=1.0)
+                        break
+                    except AssertionError:
+                        pass
+                time.sleep(0.01)
+            assert fresh_session is not None
+            second_pending = self._wait_for_pending(fresh_session)
+            provider._deliver_response(
+                fresh_session,
+                {"id": second_pending.request_id, "ok": True, "result": "second-ok"},
+            )
+            second_worker.join(timeout=10.0)
+        self.assertFalse(second_worker.is_alive())
+        self.assertEqual(second_errors, [])
+        self.assertEqual(second_out.get("result"), "second-ok")
+        self.assertEqual(first_out.get("result"), "first-ok")
+        terminate.assert_called_once_with(old, None)
+        assert provider._session is not None
+        self.assertIs(provider._session.proc, fresh)
+
+    def test_slot_wait_timeout_retires_stuck_session(self) -> None:
+        # A previous writer that never releases: the second request times
+        # out, retires the stuck generation, and a third request starts new.
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        old.stdin = mock.Mock()
+        session = self._session_for(provider, old)
+        with session.lock:
+            session.pending = None
+            session.write_wire = "stuck-wire"
+            session.write_error = ""
+            session.write_done.clear()
+        with self.assertRaises(ProviderActionError) as raised:
+            provider._request_locked("send", {"text": "stuck"}, time.monotonic() + 0.3)
+        self.assertIn("timed out", raised.exception.failure.message)
+        self.assertTrue(session.closed)
+        assert provider._session is None
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+
+        def fake_start(inner_self) -> None:
+            fresh_session = _WorkerSession(proc=fresh, job=None)
+            inner_self._session = fresh_session
+            self._spawn_writer(inner_self, fresh_session)
+
+        third_out: dict[str, object] = {}
+
+        def third_request() -> None:
+            third_out["result"] = provider._request("send", {"text": "third"}, 5.0)
+
+        with (
             mock.patch.object(
-                provider, "_wait_for_response", return_value="next-ok"
+                WorkerChatProvider, "_start_session_locked", fake_start
+            ),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
             ),
         ):
-            result = provider._request_locked(
-                "send", {"text": "hi"}, self._deadline()
+            third_worker = threading.Thread(target=third_request, daemon=True)
+            third_worker.start()
+            fresh_session = None
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                current = provider._session
+                if current is not None and current is not session:
+                    fresh_session = current
+                    try:
+                        self._wait_for_pending(fresh_session, timeout=1.0)
+                        break
+                    except AssertionError:
+                        pass
+                time.sleep(0.01)
+            assert fresh_session is not None
+            third_pending = self._wait_for_pending(fresh_session)
+            provider._deliver_response(
+                fresh_session,
+                {"id": third_pending.request_id, "ok": True, "result": "third-ok"},
             )
-        self.assertEqual(result, "next-ok")
-        terminate.assert_called_once_with(old, None)
+            third_worker.join(timeout=10.0)
+        self.assertFalse(third_worker.is_alive())
+        self.assertEqual(third_out.get("result"), "third-ok")
         assert provider._session is not None
         self.assertIs(provider._session.proc, fresh)
 

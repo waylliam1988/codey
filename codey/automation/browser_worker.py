@@ -98,14 +98,57 @@ class BrowserWorker:
         self._failed_jobs = 0
         self._cancelled_jobs = 0
         self._closed = threading.Event()
+        self._lifecycle_lock = threading.Lock()
+        self._close_error = RuntimeError("browser worker is closed")
         self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
         self._thread.start()
 
-    def close(self, timeout: float = 5.0) -> None:
-        """Stop the loop thread; idempotent, bounded, test-owned."""
-        self._closed.set()
+    def close(self, timeout: float = 5.0) -> bool:
+        """Stop receiving work and finish every accepted job explicitly.
+
+        Queued sync calls fail with a close error, queued fire-and-forget
+        jobs run their abandon cleanup once, and the running job gets a
+        cancel signal. Returns True when the loop thread actually stopped.
+        """
+        cleanups: list[Callable[[], None]] = []
+        with self._lifecycle_lock:
+            self._closed.set()
+            while True:
+                try:
+                    job = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                cleanup = None
+                with job.lock:
+                    job.cancel_event.set()
+                    job.abandoned = True
+                    job.state = _JobState.CANCELLED
+                    job.slot.clear()
+                    job.slot.append(self._close_error)
+                    cleanup = job.on_abandoned
+                    job.on_abandoned = None
+                    job.done.set()
+                with self._state_lock:
+                    self._cancelled_jobs += 1
+                if cleanup is not None:
+                    cleanups.append(cleanup)
+            current = None
+            with self._state_lock:
+                current = self._current_job
+            if current is not None:
+                with current.lock:
+                    current.cancel_event.set()
+                    current.abandoned = True
+                    if current.state == _JobState.QUEUED:
+                        current.state = _JobState.CANCELLED
+                    elif current.state == _JobState.RUNNING:
+                        current.state = _JobState.ABANDONED
+        for cleanup in cleanups:
+            with contextlib.suppress(Exception):
+                cleanup()
         with contextlib.suppress(Exception):
             self._thread.join(timeout=max(0.0, float(timeout)))
+        return not self._thread.is_alive()
 
     def _loop(self) -> None:
         self._thread_id = threading.get_ident()
@@ -114,13 +157,25 @@ class BrowserWorker:
                 job = self._queue.get(timeout=_POLL_INTERVAL)
             except queue.Empty:
                 continue
-            with job.lock:
-                if job.state == _JobState.CANCELLED or job.abandoned:
-                    with self._state_lock:
-                        self._cancelled_jobs += 1
-                    job.done.set()
-                    continue
-                job.state = _JobState.RUNNING
+            with self._lifecycle_lock, job.lock:
+                if (
+                    self._closed.is_set()
+                    or job.state == _JobState.CANCELLED
+                    or job.abandoned
+                ):
+                    cancelled = True
+                else:
+                    job.state = _JobState.RUNNING
+                    cancelled = False
+            if cancelled:
+                with self._state_lock:
+                    self._cancelled_jobs += 1
+                with job.lock:
+                    if not job.done.is_set():
+                        if self._closed.is_set() and not job.slot:
+                            job.slot.append(self._close_error)
+                        job.done.set()
+                continue
             with self._state_lock:
                 self._current_job = job
                 self._current_started_at = time.monotonic()
@@ -214,19 +269,20 @@ class BrowserWorker:
         Returns False (dropping the job with a warning) when the bounded
         queue is full, instead of growing memory without limit.
         """
-        if self._closed.is_set():
-            raise RuntimeError("browser worker is closed")
-        job = _Job(fn=fn, args=args, kwargs=kwargs, on_abandoned=on_abandoned)
-        try:
-            self._queue.put_nowait(job)
-        except queue.Full:
-            import logging
+        with self._lifecycle_lock:
+            if self._closed.is_set():
+                raise RuntimeError("browser worker is closed")
+            job = _Job(fn=fn, args=args, kwargs=kwargs, on_abandoned=on_abandoned)
+            try:
+                self._queue.put_nowait(job)
+            except queue.Full:
+                import logging
 
-            logging.getLogger(__name__).warning(
-                "browser worker queue full, dropping fire-and-forget job"
-            )
-            return False
-        return True
+                logging.getLogger(__name__).warning(
+                    "browser worker queue full, dropping fire-and-forget job"
+                )
+                return False
+            return True
 
     def call(
         self,
@@ -236,8 +292,9 @@ class BrowserWorker:
         on_abandoned: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> T:
-        if self._closed.is_set():
-            raise RuntimeError("browser worker is closed")
+        with self._lifecycle_lock:
+            if self._closed.is_set():
+                raise RuntimeError("browser worker is closed")
         if threading.get_ident() == self._thread_id:
             caller_event = cancellation.current_event()
             caller_deadline = cancellation.current_deadline()
@@ -272,16 +329,28 @@ class BrowserWorker:
             job.abandoned = True
             raise cancellation.TaskCancelled("task was cancelled before browser job execution")
 
-        try:
-            self._queue.put_nowait(job)
-        except queue.Full:
-            job.cancel_event.set()
-            job.state = _JobState.CANCELLED
-            job.abandoned = True
-            raise BrowserWorkerBusy("browser worker busy: queue full") from None
+        with self._lifecycle_lock:
+            if self._closed.is_set():
+                raise RuntimeError("browser worker is closed")
+            try:
+                self._queue.put_nowait(job)
+            except queue.Full:
+                job.cancel_event.set()
+                job.state = _JobState.CANCELLED
+                job.abandoned = True
+                raise BrowserWorkerBusy("browser worker busy: queue full") from None
 
         try:
             while not job.done.wait(_POLL_INTERVAL):
+                if self._closed.is_set():
+                    with job.lock:
+                        job.cancel_event.set()
+                        job.abandoned = True
+                        if job.state == _JobState.QUEUED:
+                            job.state = _JobState.CANCELLED
+                        elif job.state == _JobState.RUNNING:
+                            job.state = _JobState.ABANDONED
+                    raise RuntimeError("browser worker is closed")
                 if caller_event is not None and caller_event.is_set():
                     with job.lock:
                         job.cancel_event.set()

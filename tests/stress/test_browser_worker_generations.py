@@ -16,7 +16,7 @@ from codey.automation.browser_worker import BrowserWorker
 class WorkerGenerationTests(unittest.TestCase):
     def _track_worker(self, worker: BrowserWorker) -> BrowserWorker:
         def _close_and_assert() -> None:
-            worker.close()
+            self.assertTrue(worker.close())
             self.assertFalse(worker._thread.is_alive())
         self.addCleanup(_close_and_assert)
         return worker

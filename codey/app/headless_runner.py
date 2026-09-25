@@ -225,15 +225,31 @@ def run_headless(
     except BaseException as exc:
         task_result = None
         task_error = exc
-    # Ghost owns its stores while alive: a False close retains resources
-    # instead of releasing files under the daemon. One bounded second
-    # chance; a still-incomplete close fails the result explicitly without
-    # masking the task's own exception.
-    closed = state.close()
+    run_id_for_event = str(request.run_id or "").strip()
+    if task_result is not None and str(task_result.run_id or "").strip():
+        run_id_for_event = str(task_result.run_id)
+    # Ghost owns its stores while alive: a False close or a close raising
+    # retains resources instead of releasing files under the daemon. One
+    # bounded second chance; a still-incomplete close fails the result
+    # explicitly without masking the task's own exception.
+    close_error: BaseException | None = None
+    try:
+        closed = state.close()
+    except BaseException as exc:
+        close_error = exc
+        closed = False
     if not closed:
         with contextlib.suppress(Exception):
             state.wait_for_ghost_sleep(timeout=30)
-        closed = state.close()
+        try:
+            closed = state.close()
+        except BaseException as exc:
+            if close_error is None:
+                close_error = exc
+            closed = False
+        else:
+            if closed:
+                close_error = None
 
     def _emit_close(run_id: str) -> None:
         # Run-level shutdown status, always bounded and never masking the
@@ -250,12 +266,16 @@ def run_headless(
 
     if task_error is not None:
         if not closed:
-            note = "headless close incomplete: ghost still alive or resources retained"
-            add_note = getattr(task_error, "add_note", None)
-            if callable(add_note):
+            with contextlib.suppress(Exception):
+                task_error.add_note(
+                    "headless close incomplete: ghost still alive or resources retained"
+                )
+            if close_error is not None:
                 with contextlib.suppress(Exception):
-                    add_note(note)
-            _emit_close("")
+                    task_error.add_note(
+                        f"headless close raised {type(close_error).__name__}: {close_error}"
+                    )
+            _emit_close(run_id_for_event)
         raise task_error
     assert task_result is not None
     if not closed:
@@ -263,7 +283,7 @@ def run_headless(
         # event keeps retained resources visible even when the task itself
         # already failed. A green task becomes close_incomplete; a failed
         # task keeps its own exit as the primary result.
-        _emit_close(task_result.run_id)
+        _emit_close(run_id_for_event)
         if task_result.exit_code == 0:
             return HeadlessResult(
                 exit_code=1,

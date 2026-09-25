@@ -32,10 +32,81 @@ class BrowserWorkerTests(unittest.TestCase):
 
     def _track_worker(self, worker: browser_worker.BrowserWorker) -> browser_worker.BrowserWorker:
         def _close_and_assert() -> None:
-            worker.close()
+            self.assertTrue(worker.close())
             self.assertFalse(worker._thread.is_alive())
         self.addCleanup(_close_and_assert)
         return worker
+
+    def test_close_completes_running_and_queued_jobs(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-close-terminal", max_queue_size=8)
+        # Track manually: this close is the assertion itself.
+        running_started = threading.Event()
+
+        def _running() -> str:
+            running_started.set()
+            time.sleep(0.2)
+            return "running-done"
+
+        runner_errors: list[BaseException] = []
+
+        def _run_running() -> None:
+            try:
+                worker.call(_running, timeout=10.0)
+            except BaseException as exc:
+                runner_errors.append(exc)
+
+        runner = threading.Thread(target=_run_running, daemon=True)
+        runner.start()
+        self.assertTrue(running_started.wait(timeout=10.0))
+        queued_errors: list[BaseException] = []
+
+        def _run_queued() -> None:
+            try:
+                worker.call(lambda: "queued-never", timeout=None)
+            except BaseException as exc:
+                queued_errors.append(exc)
+
+        queued = threading.Thread(target=_run_queued, daemon=True)
+        queued.start()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and worker.health_snapshot().queue_size < 1:
+            time.sleep(0.01)
+        self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+        self.assertTrue(worker.close(timeout=5.0))
+        runner.join(timeout=10.0)
+        queued.join(timeout=10.0)
+        self.assertFalse(runner.is_alive())
+        self.assertFalse(queued.is_alive())
+        self.assertFalse(worker._thread.is_alive())
+        self.assertEqual(len(queued_errors), 1)
+        self.assertIsInstance(queued_errors[0], RuntimeError)
+        self.assertIn("closed", str(queued_errors[0]))
+        # Every accepted job got a terminal state, never a silent hang.
+        self.assertGreaterEqual(worker.health_snapshot().cancelled_jobs, 1)
+
+    def test_submit_vs_close_is_atomic(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-submit-close-race", max_queue_size=8)
+        outcomes: list[str] = []
+        stop = threading.Event()
+
+        def _submit_loop() -> None:
+            while not stop.is_set():
+                try:
+                    accepted = worker.submit(lambda: None)
+                    outcomes.append("accepted" if accepted else "dropped")
+                except RuntimeError:
+                    outcomes.append("closed-error")
+                    return
+
+        submitter = threading.Thread(target=_submit_loop, daemon=True)
+        submitter.start()
+        time.sleep(0.1)
+        self.assertTrue(worker.close(timeout=5.0))
+        stop.set()
+        submitter.join(timeout=10.0)
+        self.assertFalse(submitter.is_alive())
+        self.assertIn("closed-error", outcomes)
+        self.assertFalse(worker._thread.is_alive())
 
     def test_reentrant_call_honors_timeout_and_scopes(self) -> None:
         from codey.runtime.core import cancellation

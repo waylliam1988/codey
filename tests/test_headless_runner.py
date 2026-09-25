@@ -438,17 +438,53 @@ class HeadlessRunnerTests(unittest.TestCase):
                     project=Path(td, "project"),
                     task="failing task",
                     provider_id="qwen",
+                    run_id="run-explicit",
+                    session_id="session-explicit",
                     state_home=Path(td, "state"),
                 ),
                 emit_jsonl=rows.append,
                 connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
             )
         # Cleanup failure is attached, never a replacement for the cause,
-        # but the retained resources stay visible in the stream.
+        # but the retained resources stay visible in the stream with the
+        # explicit run id, never an empty id.
         self.assertIn("task blew up", str(cm.exception))
         closing = rows[-1]
         self.assertEqual(closing["type"], "headless_close")
         self.assertEqual(closing["stop_reason"], "close_incomplete")
+        self.assertEqual(closing["run_id"], "run-explicit")
+        self.assertEqual(closing["session_id"], "session-explicit")
+
+    def test_headless_close_raising_keeps_task_error(self) -> None:
+        rows: list[dict[str, object]] = []
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch(
+                "codey.app.headless_runner.run_task_submission",
+                side_effect=RuntimeError("task blew up"),
+            ),
+            mock.patch.object(
+                HeadlessAppContext, "close", side_effect=OSError("close boom")
+            ),
+            self.assertRaises(RuntimeError) as cm,
+        ):
+            run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="failing task",
+                    provider_id="qwen",
+                    run_id="run-explicit",
+                    session_id="session-explicit",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=rows.append,
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+        self.assertIn("task blew up", str(cm.exception))
+        self.assertNotIn("close boom", str(cm.exception))
+        closing = rows[-1]
+        self.assertEqual(closing["type"], "headless_close")
+        self.assertEqual(closing["run_id"], "run-explicit")
 
     def test_headless_close_failure_keeps_failed_task_result(self) -> None:
         from codey.agents.runner import RunResult as _RunResult

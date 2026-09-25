@@ -291,6 +291,8 @@ class WorkerChatProvider:
                     return
                 session.write_wire = None
                 session.write_error = error
+                if error and not session.terminal_error:
+                    session.terminal_error = error
                 session.write_event.clear()
                 session.write_done.set()
 
@@ -482,57 +484,100 @@ class WorkerChatProvider:
             with contextlib.suppress(Exception):
                 self._request_lock.release()
 
+    def _retire_stuck_slot_bounded(self, session: _WorkerSession) -> None:
+        """Bounded cleanup for a slot wait that timed out or stopped.
+
+        Best effort only and never masking the caller's verdict: acquire
+        briefly, retire when the slot is still owned and still stuck, then
+        release. A slot that just freed stays reusable.
+        """
+        acquired = False
+        try:
+            acquired = self._life_lock.acquire(timeout=5.0)
+        except Exception:
+            return
+        if not acquired:
+            return
+        try:
+            if self._session is not session:
+                return
+            with session.lock:
+                stuck = (
+                    session.pending is not None
+                    or session.write_wire is not None
+                    or bool(session.terminal_error)
+                )
+            if stuck:
+                with contextlib.suppress(Exception):
+                    self._retire_session_locked(session)
+        finally:
+            with contextlib.suppress(Exception):
+                self._life_lock.release()
+
     def _request_locked(self, method: str, params: dict, deadline: float):
         # Serialize before touching the session: a serialization failure
-        # must never occupy the single-flight slot.
+        # must never occupy the single-flight slot. A sticky terminal_error
+        # (e.g. a failed stdin write) retires via _ensure on re-entry, so a
+        # cleared slot never wipes it: registration only resets the
+        # per-request write_error, never the generation verdict.
         request_id = uuid.uuid4().hex
         wire = json.dumps(
             {"id": request_id, "method": method, "params": params},
             separators=(",", ":"),
         ) + "\n"
-        self._acquire_with_deadline(self._life_lock, deadline, method)
-        try:
-            session = self._ensure_live_session_locked()
-            while session.pending is not None or session.write_wire is not None:
+        pending: _PendingRequest | None = None
+        proc: subprocess.Popen[str] | None = None
+        session: _WorkerSession | None = None
+        stuck_session: _WorkerSession | None = None
+        while True:
+            # Acquire, check, and decide while holding the lock.
+            try:
+                self._acquire_with_deadline(self._life_lock, deadline, method)
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                if stuck_session is not None:
+                    self._retire_stuck_slot_bounded(stuck_session)
+                raise
+            except ProviderActionError:
+                if stuck_session is not None:
+                    self._retire_stuck_slot_bounded(stuck_session)
+                raise
+            try:
+                session = self._ensure_live_session_locked()
                 if session.pending is not None:
                     raise RuntimeError("provider worker single-flight invariant violated")
-                # Normal early-reply interleave: the previous reply won
-                # before its writer cleared the slot. Wait for the slot
-                # within this deadline instead of failing the new request.
-                with session.lock:
-                    late_error = session.write_error
-                    writer_finished = session.write_done.is_set()
-                if late_error and writer_finished:
-                    # Previous write failed after its verdict: start clean.
-                    self._retire_session_locked(session)
-                    session = self._ensure_live_session_locked()
-                    continue
+                if session.write_wire is None:
+                    if session.proc.poll() is not None or session.proc.stdin is None:
+                        raise RuntimeError("provider worker is not running")
+                    pending = _PendingRequest(request_id=request_id, method=method)
+                    proc = session.proc
+                    with session.lock:
+                        session.pending = pending
+                        session.write_wire = wire
+                        session.write_error = ""
+                        session.write_done.clear()
+                        session.write_event.set()
+                    break
                 prev_write_done = session.write_done
-                self._life_lock.release()
-                try:
-                    cancellation.check()
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise self._timeout_error(method)
-                    prev_write_done.wait(
-                        timeout=min(cancellation.POLL_INTERVAL, remaining)
-                    )
-                finally:
-                    self._acquire_with_deadline(self._life_lock, deadline, method)
-                session = self._ensure_live_session_locked()
-            if session.proc.poll() is not None or session.proc.stdin is None:
-                raise RuntimeError("provider worker is not running")
-            pending = _PendingRequest(request_id=request_id, method=method)
-            proc = session.proc
-            with session.lock:
-                session.pending = pending
-                session.write_wire = wire
-                session.write_error = ""
-                session.write_done.clear()
-                session.write_event.set()
-        finally:
-            with contextlib.suppress(Exception):
-                self._life_lock.release()
+                stuck_session = session
+            finally:
+                with contextlib.suppress(Exception):
+                    self._life_lock.release()
+            # Wait outside the lock, then re-enter a fresh round.
+            try:
+                cancellation.check()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise self._timeout_error(method)
+                prev_write_done.wait(
+                    timeout=min(cancellation.POLL_INTERVAL, remaining)
+                )
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                self._retire_stuck_slot_bounded(stuck_session)
+                raise
+            except ProviderActionError:
+                self._retire_stuck_slot_bounded(stuck_session)
+                raise
+        assert pending is not None and proc is not None and session is not None
         self._await_write(session, pending, proc, deadline)
         return self._wait_for_response(session, pending, deadline)
 

@@ -51,6 +51,29 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - 粘性写失败、有界槽清理、终局关闭、关联事件（未发布）
+
+- 写失败粘滞。`_writer_loop()` 在置 per-request `write_error` 的同时记粘性
+  `terminal_error`；清槽不抹除，当前有效回复保持成功，下一笔经
+  `_ensure_live_session_locked()` 退休重开。
+- 槽等待必清理。`_request_locked()` 为“取锁检查→放锁等待→重进”清晰循环，
+  不在过期 deadline 的 `finally` 里强制重取锁；超时或 Stop 先定裁决，再进
+  有界清理 retire 仍属自己的旧代。永不释放门闩证明第二笔超时退休、第三笔
+  可开新代。
+- 真实连续覆盖。早到槽等待与迟到失败改走真实 writer 与真实 await/wait，
+  门闩 flush 加回复投递，断言同代复用与新进程接管。
+- 关闭有终局。一把生命周期锁覆盖入队、转运行与关闭；关闭给未开始同步 job
+  明确关闭错误并 `done`，异步跑一次放弃清理，运行中发取消信号；
+  `close(timeout)` 返回是否真停。新增运行中加排队加关闭、submit 竞关闭测试。
+- 事件有关联。`run_id_for_event` 任务前建立、成功后更新，异常事件不再空
+  ID；`state.close()` 抛异常不再覆盖原任务错误，附注并仍发事件；3.11+ 直接
+  `add_note()`。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向
+  `239 passed, 6 subtests passed` 与 `25 passed, 15 subtests passed`；收集
+  `4244 tests collected`；最终全量 `python -m pytest -q
+  -o faulthandler_timeout=120`（`4238 passed, 6 skipped, 1374 subtests
+  passed in 363.02s`，零偶发）。
+
 ## Unreleased - 无空转 stderr、真自测、槽等待、关闭标记、关闭常显（未发布）
 
 - 空转 stderr 止步。`_stderr_loop()` 遇非文本流立即结束并记内部协议错误，

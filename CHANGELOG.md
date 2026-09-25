@@ -32,6 +32,39 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Sticky write failures, bounded slot cleanup, terminal browser close, associated headless events (no release)
+
+- Write failures stick. `_writer_loop()` records a sticky `terminal_error`
+  alongside the per-request `write_error`; a cleared slot never wipes it.
+  The current reply keeps its success verdict while the next
+  `_ensure_live_session_locked()` retires to a fresh generation.
+- Slot waits always clean up. `_request_locked()` is a clear acquire, check,
+  release-to-wait, and re-enter loop with no forced reacquire on an expired
+  deadline; timeout or Stop runs a bounded retire of the still-stuck session
+  without masking the verdict. A never-releasing writer latch proves the
+  second timeout retires and the third starts new.
+- Real consecutive coverage. The early-reply slot wait and the late-failure
+  retire now run through the actual writer, `_await_write()`, and
+  `_wait_for_response()` with latch-controlled flushes and reply delivery,
+  asserting same-session reuse and new-process failover.
+- Browser close has a terminal state. One lifecycle lock covers enqueue,
+  queue-to-running, and close; close drains queued sync calls with an explicit
+  close error, runs async abandon cleanups once, signals the running job,
+  and returns whether the thread actually stopped. New tests cover running
+  plus queued with close and submit racing close.
+- Headless close keeps its association. `run_id_for_event` is established
+  before the task and updated on success, so exception events never carry an
+  empty id; `state.close()` raising no longer masks the task error, with the
+  close exception noted and the close event still emitted. Direct
+  `add_note()` replaces the compat branch on 3.11+.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`239 passed, 6 subtests passed` worker/headless/
+  adapter/browser/hardening/deepseek/research; `25 passed, 15 subtests
+  passed` ui-harness/stress/env/readonly/cancellation), collection
+  (`4244 tests collected`), and final full `python -m pytest -q
+  -o faulthandler_timeout=120` (`4238 passed, 6 skipped, 1374 subtests
+  passed in 363.02s`, zero flakes).
+
 ## Unreleased - No spinning stderr, honest self-test, slot-waiting requests, closed-flag replacement, always-visible close (no release)
 
 - Spinning stderr is gone. `_stderr_loop()` ends on non-text streams with an
