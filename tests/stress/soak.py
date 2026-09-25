@@ -30,6 +30,7 @@ operation count replays the identical failure::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import tempfile
 import time
@@ -88,6 +89,8 @@ def run_soak(
             )
         finally:
             elapsed = time.perf_counter() - started
+            with contextlib.suppress(Exception):
+                ctx.close()
         return {
             "seed": seed,
             "operations": operations,

@@ -51,6 +51,28 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - 无空转 stderr、真自测、槽等待、关闭标记、关闭常显（未发布）
+
+- 空转 stderr 止步。`_stderr_loop()` 遇非文本流立即结束并记内部协议错误，
+  不再被 Mock 真值带成无限循环；两项适配器测试改用真 `StringIO`、回收
+  provider 并断言三线程已死。
+- 自测不假绿。research 自测断言 `returncode == 0` 并附有界输出，另加
+  returncode-7 回归测试；240 秒进程树超时保留。
+- 早到回复不卡下一笔。`_request_locked()` 在本次 deadline 内等上一笔
+  writer 槽释放，迟到写失败则退休重开干净代；有连续两笔与迟到失败门闩测试。
+- 热路径只看关闭标记。删除 `_is_replaced()`；retire/close 必置 detached 代
+  的 closed，裁决等待不再被清理持锁拉长；裁决时限与清理有界分开表述。
+- 关闭失败常显。任务已失败或抛异常仍发有界 `headless_close`，原错误与退出
+  码保持主要结果；新增任务失败与任务异常两项测试。
+- 信号更准。DeepSeek 在 `_message_box` 进入后发 Stop 并量 Stop 到退出；
+  UI 测试收集 pageerror/console/失败请求/坏响应与首页状态码，失败同出，不
+  重试不放宽；`BrowserWorker` 加幂等 `close()` 并在显式测试实例中回收断言。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向
+  `235 passed, 6 subtests passed` 与 `25 passed, 15 subtests passed`；收集
+  `4240 tests collected`；最终全量 `python -m pytest -q
+  -o faulthandler_timeout=120`（`4234 passed, 6 skipped, 1374 subtests
+  passed in 361.16s`，零偶发）。
+
 ## Unreleased - 门可响应 Stop、先到裁决胜出、退出快速失败、关闭显式（未发布）
 
 - 门不再卡住 Stop。`_request()` 与 life-lock 等待按

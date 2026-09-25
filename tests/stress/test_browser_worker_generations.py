@@ -14,8 +14,15 @@ from codey.automation.browser_worker import BrowserWorker
 
 
 class WorkerGenerationTests(unittest.TestCase):
+    def _track_worker(self, worker: BrowserWorker) -> BrowserWorker:
+        def _close_and_assert() -> None:
+            worker.close()
+            self.assertFalse(worker._thread.is_alive())
+        self.addCleanup(_close_and_assert)
+        return worker
+
     def test_timed_out_call_abandons_stale_result(self) -> None:
-        worker = BrowserWorker(name="stress-worker-abandon", max_queue_size=8)
+        worker = self._track_worker(BrowserWorker(name="stress-worker-abandon", max_queue_size=8))
         gate = threading.Event()
 
         def _hang_forever():
@@ -30,7 +37,7 @@ class WorkerGenerationTests(unittest.TestCase):
         self.assertGreaterEqual(snapshot.cancelled_jobs, 1)
 
     def test_stale_completion_never_pollutes_next_generation(self) -> None:
-        worker = BrowserWorker(name="stress-worker-generation", max_queue_size=8)
+        worker = self._track_worker(BrowserWorker(name="stress-worker-generation", max_queue_size=8))
         release = threading.Event()
         slow_started = threading.Event()
 
@@ -50,7 +57,7 @@ class WorkerGenerationTests(unittest.TestCase):
             )
 
     def test_fire_and_forget_drop_is_bounded(self) -> None:
-        worker = BrowserWorker(name="stress-worker-bounded", max_queue_size=2)
+        worker = self._track_worker(BrowserWorker(name="stress-worker-bounded", max_queue_size=2))
         accepted = 0
         for _ in range(20):
             if worker.submit(lambda: None):

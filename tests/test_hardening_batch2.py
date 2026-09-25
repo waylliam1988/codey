@@ -186,10 +186,17 @@ class KnowledgeWalTests(unittest.TestCase):
 
 
 class BrowserWorkerBackpressureTests(unittest.TestCase):
+    def _track_worker(self, worker) -> object:
+        def _close_and_assert() -> None:
+            worker.close()
+            self.assertFalse(worker._thread.is_alive())
+        self.addCleanup(_close_and_assert)
+        return worker
+
     def test_submit_drops_when_full(self) -> None:
         from codey.automation.browser_worker import BrowserWorker
 
-        worker = BrowserWorker(name="test-backpressure", max_queue_size=1)
+        worker = self._track_worker(BrowserWorker(name="test-backpressure", max_queue_size=1))
         release = threading.Event()
         started = threading.Event()
 
@@ -208,7 +215,7 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
     def test_call_reports_busy_when_full(self) -> None:
         from codey.automation.browser_worker import BrowserWorker, BrowserWorkerBusy
 
-        worker = BrowserWorker(name="test-call-busy", max_queue_size=1)
+        worker = self._track_worker(BrowserWorker(name="test-call-busy", max_queue_size=1))
         release = threading.Event()
         started = threading.Event()
 
@@ -227,7 +234,7 @@ class BrowserWorkerBackpressureTests(unittest.TestCase):
     def test_abandoned_cleanup_runs(self) -> None:
         from codey.automation.browser_worker import BrowserWorker
 
-        worker = BrowserWorker(name="test-cleanup")
+        worker = self._track_worker(BrowserWorker(name="test-cleanup"))
         cleaned = threading.Event()
         release = threading.Event()
         started = threading.Event()
@@ -552,6 +559,11 @@ class BrowserFetchAbandonTests(unittest.TestCase):
 
         provider = BrowserSearchProvider()
         worker = BrowserWorker(name="test-fetch-abandon")
+
+        def _close_and_assert() -> None:
+            worker.close()
+            self.assertFalse(worker._thread.is_alive())
+        self.addCleanup(_close_and_assert)
         fake_page = mock.Mock()
         release = threading.Event()
 

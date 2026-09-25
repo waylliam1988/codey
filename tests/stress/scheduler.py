@@ -526,6 +526,12 @@ class SoakContext:
             self.supervisor = SelfRepairSupervisor(self.state_home, runner=_ok_repair)
         return self.supervisor
 
+    def close(self) -> None:
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            self.browser.close()
+
 
 # -- executor: randomness-free, script-replayable ---------------------------
 

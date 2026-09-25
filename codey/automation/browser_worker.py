@@ -97,13 +97,23 @@ class BrowserWorker:
         self._completed_jobs = 0
         self._failed_jobs = 0
         self._cancelled_jobs = 0
+        self._closed = threading.Event()
         self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
         self._thread.start()
 
+    def close(self, timeout: float = 5.0) -> None:
+        """Stop the loop thread; idempotent, bounded, test-owned."""
+        self._closed.set()
+        with contextlib.suppress(Exception):
+            self._thread.join(timeout=max(0.0, float(timeout)))
+
     def _loop(self) -> None:
         self._thread_id = threading.get_ident()
-        while True:
-            job = self._queue.get()
+        while not self._closed.is_set():
+            try:
+                job = self._queue.get(timeout=_POLL_INTERVAL)
+            except queue.Empty:
+                continue
             with job.lock:
                 if job.state == _JobState.CANCELLED or job.abandoned:
                     with self._state_lock:
@@ -204,6 +214,8 @@ class BrowserWorker:
         Returns False (dropping the job with a warning) when the bounded
         queue is full, instead of growing memory without limit.
         """
+        if self._closed.is_set():
+            raise RuntimeError("browser worker is closed")
         job = _Job(fn=fn, args=args, kwargs=kwargs, on_abandoned=on_abandoned)
         try:
             self._queue.put_nowait(job)
@@ -224,6 +236,8 @@ class BrowserWorker:
         on_abandoned: Callable[[], None] | None = None,
         **kwargs: Any,
     ) -> T:
+        if self._closed.is_set():
+            raise RuntimeError("browser worker is closed")
         if threading.get_ident() == self._thread_id:
             caller_event = cancellation.current_event()
             caller_deadline = cancellation.current_deadline()

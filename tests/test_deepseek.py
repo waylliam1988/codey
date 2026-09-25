@@ -24,21 +24,41 @@ class DeepSeekTimeoutTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page.goto.assert_not_called()
 
     def test_provider_wait_observes_stop_within_one_second(self) -> None:
-        event = threading.Event()
-        timer = threading.Timer(0.1, event.set)
-        started = time.monotonic()
-        timer.start()
+        stop = threading.Event()
+        entered = threading.Event()
+        state: dict[str, float] = {"stop_issued_at": -1.0}
+
+        def gated_box(*_args: object, **_kwargs: object):
+            entered.set()
+            return None
+
+        def stop_after_entry() -> None:
+            self.assertTrue(entered.wait(timeout=5.0))
+            state["stop_issued_at"] = time.monotonic()
+            stop.set()
+
+        stopper = threading.Thread(target=stop_after_entry, daemon=True)
+        stopper.start()
+        ended_at = -1.0
         try:
             with (
-                cancellation.scope(event),
-                mock.patch.object(deepseek, "_message_box", return_value=None),
+                cancellation.scope(stop),
+                mock.patch.object(deepseek, "_message_box", side_effect=gated_box),
                 self.assertRaises(cancellation.TaskCancelled),
             ):
                 deepseek.wait_ready(object(), timeout=30)
         finally:
-            timer.cancel()
-
-        self.assertLess(time.monotonic() - started, 1.0)
+            ended_at = time.monotonic()
+            stopper.join(timeout=5.0)
+        self.assertFalse(stopper.is_alive())
+        stop_issued_at = state["stop_issued_at"]
+        self.assertGreater(stop_issued_at, 0.0)
+        cleanup_seconds = ended_at - stop_issued_at
+        self.assertLess(
+            cleanup_seconds,
+            1.0,
+            f"Stop to exit took {cleanup_seconds:.3f}s",
+        )
 
     def test_ready_timeout_allows_slow_deepseek_homepage(self) -> None:
         self.assertGreaterEqual(deepseek.READY_TIMEOUT, 90)

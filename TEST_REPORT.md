@@ -166,6 +166,52 @@ Verification (local, Windows):
   `test_server` oversized-body connection abort (WinError 10053).
 - This report entry was written after the final full pytest run.
 
+## No spinning stderr, honest self-test, slot-waiting requests, closed-flag replacement, always-visible close full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (stderr non-text ends with protocol error; early-reply slot wait with late-failure retire; _is_replaced deleted, closed-flag only; verdict vs cleanup bounds split)
+codey/app/headless_runner.py          (headless_close on task fail/exception; primary error/exit preserved)
+codey/automation/browser_worker.py    (idempotent close with poll loop; closed guards)
+tests/test_adapter_self_repair.py     (real stderr, provider close, thread-dead asserts)
+tests/test_research_to_code_ab.py     (returncode assert with bounded output; returncode-7 regression)
+tests/test_coldstart_hardening.py     (consecutive slot-wait, late-failure retire; closed-flag close tests)
+tests/test_headless_runner.py         (task-fail and task-exception close events)
+tests/test_deepseek.py                (entry-gated Stop, Stop-to-exit timing)
+tests/test_ui_inplace_render.py       (pageerror/console/request/response/homepage diagnostics, no retry)
+tests/test_browser_worker.py + test_hardening_batch2.py + stress (worker close tracking)
+tests/stress/scheduler.py + soak.py   (SoakContext close)
+```
+
+Notes:
+
+- The post-be6eba2 slowdown has a concrete contributor: two adapter tests
+  left spinning stderr threads (Mock readline truthy forever, 2s join each
+  then daemon spin). faulthandler stacks confirm the loop. This explains CI
+  load and timing flakiness; it does not alone prove the sole web-timeout
+  cause.
+- No rollback to be6eba2: session ownership of proc/threads/verdict stays
+  clearer than the old split locks. Test-green alone was incomplete evidence
+  while the self-test false-greened and threads leaked; both are fixed here.
+- Verdict timing and cleanup timing are separate contracts; the hot path
+  never waits on cleanup's life lock for a pointer check.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `235 passed, 6 subtests passed` (worker/headless/adapter/research/
+  deepseek/browser/hardening),
+  `25 passed, 15 subtests passed` (ui-harness/stress-generations/env/
+  readonly/cancellation) — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4240 tests collected`).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`
+  (`4234 passed, 6 skipped, 1374 subtests passed in 361.16s (0:06:01)`),
+  zero flakes.
+- This report entry was written after the final full pytest run.
+
 ## Worker session ownership, snapshot health, Ghost close contract full suite (2026-09-24)
 
 Scope (production, no release):

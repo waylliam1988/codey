@@ -30,10 +30,17 @@ class BrowserWorkerTests(unittest.TestCase):
         browser_worker.submit(job)
         self.assertTrue(done.wait(2.0))
 
+    def _track_worker(self, worker: browser_worker.BrowserWorker) -> browser_worker.BrowserWorker:
+        def _close_and_assert() -> None:
+            worker.close()
+            self.assertFalse(worker._thread.is_alive())
+        self.addCleanup(_close_and_assert)
+        return worker
+
     def test_reentrant_call_honors_timeout_and_scopes(self) -> None:
         from codey.runtime.core import cancellation
 
-        worker = browser_worker.BrowserWorker(name="test-reentrant-worker")
+        worker = self._track_worker(browser_worker.BrowserWorker(name="test-reentrant-worker"))
 
         def outer_job() -> None:
             def inner_job() -> int:
@@ -48,7 +55,7 @@ class BrowserWorkerTests(unittest.TestCase):
         worker.call(outer_job, timeout=2.0)
 
     def test_call_timeout_cancels_queued_job_and_raises_timeout_error(self) -> None:
-        worker = browser_worker.BrowserWorker(name="test-timeout-worker")
+        worker = self._track_worker(browser_worker.BrowserWorker(name="test-timeout-worker"))
         blocker_started = threading.Event()
         unblock = threading.Event()
 
@@ -79,7 +86,7 @@ class BrowserWorkerTests(unittest.TestCase):
     def test_running_job_observes_cancellation_scope(self) -> None:
         from codey.runtime.core import cancellation
 
-        worker = browser_worker.BrowserWorker(name="test-cancel-worker")
+        worker = self._track_worker(browser_worker.BrowserWorker(name="test-cancel-worker"))
         job_started = threading.Event()
         saw_cancellation = threading.Event()
 
@@ -115,7 +122,7 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertTrue(any(isinstance(exc, cancellation.TaskCancelled) for exc in worker_error))
 
     def test_health_snapshot_reports_idle_metrics(self) -> None:
-        worker = browser_worker.BrowserWorker(name="test-health-worker")
+        worker = self._track_worker(browser_worker.BrowserWorker(name="test-health-worker"))
 
         self.assertEqual(worker.call(lambda: 7), 7)
         health = worker.health_snapshot()
@@ -129,9 +136,11 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertEqual(health.to_payload()["state"], "idle")
 
     def test_health_snapshot_detects_stuck_cancel_requested_job(self) -> None:
-        worker = browser_worker.BrowserWorker(
-            name="test-stuck-health-worker",
-            stuck_after_seconds=0.01,
+        worker = self._track_worker(
+            browser_worker.BrowserWorker(
+                name="test-stuck-health-worker",
+                stuck_after_seconds=0.01,
+            )
         )
         started = threading.Event()
         release = threading.Event()
@@ -171,7 +180,7 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertEqual(worker.call(lambda: 123, timeout=2.0), 123)
 
     def test_running_job_timeout_abandons_and_discards_late_result(self) -> None:
-        worker = browser_worker.BrowserWorker(name="test-abandon-worker")
+        worker = self._track_worker(browser_worker.BrowserWorker(name="test-abandon-worker"))
         started = threading.Event()
         finish_slow_work = threading.Event()
         slow_work_finished = threading.Event()

@@ -32,6 +32,39 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - No spinning stderr, honest self-test, slot-waiting requests, closed-flag replacement, always-visible close (no release)
+
+- Spinning stderr is gone. `_stderr_loop()` ends on non-text streams with an
+  internal protocol error instead of looping on truthy Mock junk; the two
+  adapter tests use real `StringIO` stderr, close their providers, and assert
+  reader/stderr/writer threads are dead.
+- Self-test cannot false-green. The research self-test asserts
+  `returncode == 0` with bounded stdout/stderr, plus a returncode-7
+  regression test; the 240s process-tree timeout stays.
+- Early replies no longer break the next request. `_request_locked()` waits
+  for a previous writer slot within the verdict deadline and retires on late
+  write failure to a clean generation, with consecutive-request and
+  late-failure latch tests.
+- Hot waits read closed flags only. `_is_replaced()` is deleted; retire and
+  close always mark the detached generation, so verdict waits never block on
+  cleanup's life lock. Verdict timing and cleanup bounds are documented
+  separately.
+- Close stays visible on failure. `headless_close` emits even when the task
+  already failed or raised; the task error/exit stays primary, with new
+  task-fail and task-exception tests.
+- Sharper CI signals. DeepSeek Stop timing starts at entry and measures
+  Stop-to-exit; UI browser tests attach pageerror/console/request/response
+  plus homepage status to every failure without retry or looser timeouts;
+  `BrowserWorker` gains an idempotent `close()` tracked in all explicit-test
+  instances.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`235 passed, 6 subtests passed` worker/headless/
+  adapter/research/deepseek/browser/hardening; `25 passed, 15 subtests
+  passed` ui-harness/stress-generations/env/readonly/cancellation),
+  collection (`4240 tests collected`), and final full `python -m pytest -q
+  -o faulthandler_timeout=120` (`4234 passed, 6 skipped, 1374 subtests
+  passed in 361.16s`, zero flakes).
+
 ## Unreleased - Stop-responsive gate, verdict-wins close race, fast exit drain, honest headless close (no release)
 
 - Stop no longer pins on the request gate. `_request()` and life-lock waits

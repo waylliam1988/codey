@@ -641,13 +641,19 @@ class WorkerSelfHealTests(unittest.TestCase):
             worker.start()
             self.assertTrue(entered.wait(timeout=10.0))
             # A concurrent close wins the race: the late write failure
-            # must not reap the replacement.
+            # must not reap the replacement. Retire marks closed, as in
+            # production; the waiter observes closed, never a pointer.
             fresh = mock.Mock()
             fresh.poll.return_value = None
             fresh.stdin = mock.Mock()
             with provider._life_lock:
                 old_session = provider._session
                 assert old_session is not None
+                with old_session.lock:
+                    old_session.closed = True
+                    if old_session.pending is not None:
+                        old_session.pending.done.set()
+                    old_session.write_event.set()
                 provider._session = _WorkerSession(proc=fresh, job=None)
             release.set()
             worker.join(timeout=10.0)
@@ -954,7 +960,7 @@ class WorkerSelfHealTests(unittest.TestCase):
         self.assertFalse(reader.is_alive())
 
     def test_reply_wins_over_close_replacement(self) -> None:
-        # Valid reply in pending, then a non-Stop close replaces the session:
+        # Valid reply in pending, then a non-Stop close retires the session:
         # the waiter must return the reply, not "provider worker exited".
         provider = self._provider()
         proc = mock.Mock()
@@ -970,6 +976,8 @@ class WorkerSelfHealTests(unittest.TestCase):
         fresh.poll.return_value = None
         fresh.stdin = mock.Mock()
         with provider._life_lock:
+            with session.lock:
+                session.closed = True
             provider._session = _WorkerSession(proc=fresh, job=None)
         result = provider._wait_for_response(session, pending, self._deadline())
         self.assertEqual(result, "done")
@@ -998,6 +1006,88 @@ class WorkerSelfHealTests(unittest.TestCase):
             session.write_error = "provider worker stdin is unavailable: late"
             session.write_done.set()
         provider._await_write(session, pending, proc, self._deadline())
+
+    def test_consecutive_request_waits_for_early_reply_slot(self) -> None:
+        # Early-reply interleave: previous pending cleared but its writer
+        # still holds write_wire. The next request waits for the slot
+        # within its deadline instead of hitting the invariant.
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        with session.lock:
+            session.pending = None
+            session.write_wire = "old-wire"
+            session.write_error = ""
+            session.write_done.clear()
+
+        def free_slot() -> None:
+            time.sleep(0.2)
+            with session.lock:
+                session.write_wire = None
+                session.write_error = ""
+                session.write_done.set()
+
+        freer = threading.Thread(target=free_slot, daemon=True)
+        freer.start()
+        try:
+            with (
+                mock.patch.object(provider, "_await_write", return_value=None),
+                mock.patch.object(
+                    provider, "_wait_for_response", return_value="second-ok"
+                ),
+            ):
+                result = provider._request_locked(
+                    "send", {"text": "hi2"}, self._deadline(5.0)
+                )
+        finally:
+            freer.join(timeout=5.0)
+        self.assertEqual(result, "second-ok")
+        self.assertFalse(freer.is_alive())
+        with session.lock:
+            self.assertIsNotNone(session.write_wire)
+            self.assertIsNotNone(session.pending)
+
+    def test_late_write_failure_retires_before_next_request(self) -> None:
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        old.stdin = mock.Mock()
+        session = self._session_for(provider, old)
+        with session.lock:
+            session.pending = None
+            session.write_wire = "old-wire"
+            session.write_error = "provider worker stdin is unavailable: broken"
+            session.write_done.set()
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+
+        def fake_start(inner_self) -> None:
+            fresh_session = _WorkerSession(proc=fresh, job=None)
+            inner_self._session = fresh_session
+            self._spawn_writer(inner_self, fresh_session)
+
+        with (
+            mock.patch.object(
+                WorkerChatProvider, "_start_session_locked", fake_start
+            ),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ) as terminate,
+            mock.patch.object(provider, "_await_write", return_value=None),
+            mock.patch.object(
+                provider, "_wait_for_response", return_value="next-ok"
+            ),
+        ):
+            result = provider._request_locked(
+                "send", {"text": "hi"}, self._deadline()
+            )
+        self.assertEqual(result, "next-ok")
+        terminate.assert_called_once_with(old, None)
+        assert provider._session is not None
+        self.assertIs(provider._session.proc, fresh)
 
     def test_stop_during_request_gate_is_prompt(self) -> None:
         from codey.runtime.core import cancellation as cancel

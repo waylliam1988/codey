@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import threading
@@ -8,6 +9,62 @@ from pathlib import Path
 from unittest import mock
 
 from codey.app import server as codey_server
+
+
+def _attach_page_diagnostics(page) -> dict[str, object]:
+    diag: dict[str, object] = {
+        "pageerrors": [],
+        "console_errors": [],
+        "request_failed": [],
+        "bad_responses": [],
+        "goto_status": None,
+    }
+
+    def _on_pageerror(exc: object) -> None:
+        errors = diag["pageerrors"]
+        assert isinstance(errors, list)
+        errors.append(str(exc)[:500])
+
+    def _on_console(message: object) -> None:
+        msg_type = getattr(message, "type", "")
+        if msg_type == "error":
+            errors = diag["console_errors"]
+            assert isinstance(errors, list)
+            errors.append(str(getattr(message, "text", message))[:500])
+
+    def _on_request_failed(request: object) -> None:
+        failed = diag["request_failed"]
+        assert isinstance(failed, list)
+        failed.append(
+            f"{getattr(request, 'method', '?')} {getattr(request, 'url', '?')} :: "
+            f"{getattr(request, 'failure', '?')}"[:300]
+        )
+
+    def _on_response(response: object) -> None:
+        try:
+            status = int(getattr(response, "status", 0))
+        except (TypeError, ValueError):
+            return
+        url = str(getattr(response, "url", ""))
+        if status >= 400 and ("127.0.0.1" in url or "localhost" in url):
+            bad = diag["bad_responses"]
+            assert isinstance(bad, list)
+            bad.append(f"{status} {url}"[:300])
+
+    with_ = getattr(page, "on", None)
+    if callable(with_):
+        with_("pageerror", _on_pageerror)
+        with_("console", _on_console)
+        with_("requestfailed", _on_request_failed)
+        with_("response", _on_response)
+    return diag
+
+
+def _format_diagnostics(diag: dict[str, object]) -> str:
+    try:
+        return json.dumps(diag, ensure_ascii=False)[:2000]
+    except Exception:
+        return str(diag)[:2000]
 
 try:
     from playwright.sync_api import sync_playwright
@@ -111,12 +168,20 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
                 cls.state_patch.stop()
 
     def test_in_place_tool_render_preserves_assistant_dom_and_selection_and_respects_scroll(self) -> None:
+        diag: dict[str, object] = {}
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
-                page.goto(self.base_url)
-                page.wait_for_function("typeof window.renderChat === 'function'")
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = page.goto(self.base_url)
+                    diag["goto_status"] = response.status if response else None
+                    page.wait_for_function("typeof window.renderChat === 'function'")
+                except Exception as exc:
+                    raise AssertionError(
+                        f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
+                    ) from exc
 
                 result = page.evaluate("""() => {
                     const sid = 'test-session-inplace';
@@ -232,25 +297,36 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
-        self.assertTrue(result["replaced"])
-        self.assertTrue(result["asstNodeIdentical"], "Assistant DOM node must not be rebuilt")
-        self.assertTrue(result["asstMarkerPreserved"], "Custom marker on assistant node must be preserved")
-        self.assertTrue(result["selectionPreserved"], "Active text selection must be preserved across tool replacement")
-        self.assertIn("reading the codebase", result["selectedTextBefore"])
-        self.assertTrue(result["toolNodeReplaced"], "Pending tool DOM element must be replaced by final tool node")
-        self.assertTrue(result["toolHasFinalResult"], "Final tool node must display final result text")
-        self.assertTrue(result["toolPendingRemoved"], "Pending styling must be removed on final tool node")
-        self.assertTrue(result["scrollAwayPreserved"], "Scroll position must not be forced to bottom when reading history")
-        self.assertTrue(result["nearBottomFollowed"], "Scroll must follow to bottom when user is near bottom (<120px)")
-        self.assertTrue(result["forcedFollowSucceeded"], "Forced scroll must always reach the bottom")
+        try:
+            self.assertTrue(result["replaced"])
+            self.assertTrue(result["asstNodeIdentical"], "Assistant DOM node must not be rebuilt")
+            self.assertTrue(result["asstMarkerPreserved"], "Custom marker on assistant node must be preserved")
+            self.assertTrue(result["selectionPreserved"], "Active text selection must be preserved across tool replacement")
+            self.assertIn("reading the codebase", result["selectedTextBefore"])
+            self.assertTrue(result["toolNodeReplaced"], "Pending tool DOM element must be replaced by final tool node")
+            self.assertTrue(result["toolHasFinalResult"], "Final tool node must display final result text")
+            self.assertTrue(result["toolPendingRemoved"], "Pending styling must be removed on final tool node")
+            self.assertTrue(result["scrollAwayPreserved"], "Scroll position must not be forced to bottom when reading history")
+            self.assertTrue(result["nearBottomFollowed"], "Scroll must follow to bottom when user is near bottom (<120px)")
+            self.assertTrue(result["forcedFollowSucceeded"], "Forced scroll must always reach the bottom")
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 
     def test_shell_result_titles_never_show_failed_runs_as_executed(self) -> None:
+        diag: dict[str, object] = {}
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
-                page.goto(self.base_url)
-                page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = page.goto(self.base_url)
+                    diag["goto_status"] = response.status if response else None
+                    page.wait_for_function("typeof window.appendMessageNode === 'function'")
+                except Exception as exc:
+                    raise AssertionError(
+                        f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
+                    ) from exc
 
                 result = page.evaluate("""() => {
                     const chat = document.createElement('div');
@@ -290,27 +366,38 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
-        self.assertEqual(result["exit|true"], "Executed")
-        self.assertEqual(result["empty|denied"], "Denied")
-        self.assertEqual(result["missing|denied"], "Denied")
-        self.assertEqual(result["exit|denied"], "Denied")
-        self.assertEqual(result["stopped|false"], "Stopped")
-        self.assertEqual(result["timeout|true"], "Timed out")
-        self.assertEqual(result["spawn_error|true"], "Failed to start")
-        self.assertEqual(result["wait_error|true"], "Failed while waiting")
-        self.assertEqual(result["output_read_error|true"], "Failed reading output")
-        self.assertEqual(result["drain_timeout|true"], "Output did not finish")
-        # Unknown approved states must fail closed, never read as success.
-        self.assertEqual(result["future_unknown_status|true"], "Failed")
-        self.assertEqual(result["empty|approved"], "Failed")
+        try:
+            self.assertEqual(result["exit|true"], "Executed")
+            self.assertEqual(result["empty|denied"], "Denied")
+            self.assertEqual(result["missing|denied"], "Denied")
+            self.assertEqual(result["exit|denied"], "Denied")
+            self.assertEqual(result["stopped|false"], "Stopped")
+            self.assertEqual(result["timeout|true"], "Timed out")
+            self.assertEqual(result["spawn_error|true"], "Failed to start")
+            self.assertEqual(result["wait_error|true"], "Failed while waiting")
+            self.assertEqual(result["output_read_error|true"], "Failed reading output")
+            self.assertEqual(result["drain_timeout|true"], "Output did not finish")
+            # Unknown approved states must fail closed, never read as success.
+            self.assertEqual(result["future_unknown_status|true"], "Failed")
+            self.assertEqual(result["empty|approved"], "Failed")
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 
     def test_local_save_failure_keeps_popover_open(self) -> None:
+        diag: dict[str, object] = {}
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
                 page = browser.new_page(viewport={"width": 1024, "height": 768})
-                page.goto(self.base_url)
-                page.wait_for_function("typeof window.CodeyProviderUI !== 'undefined'")
+                diag = _attach_page_diagnostics(page)
+                try:
+                    response = page.goto(self.base_url)
+                    diag["goto_status"] = response.status if response else None
+                    page.wait_for_function("typeof window.CodeyProviderUI !== 'undefined'")
+                except Exception as exc:
+                    raise AssertionError(
+                        f"homepage/scripts failed :: diag={_format_diagnostics(diag)}"
+                    ) from exc
                 result = page.evaluate("""async () => {
                     window.CodeyProviderUI.openLocalConfig();
                     document.getElementById('local-base-url').value = 'http://127.0.0.1:9/v1';
@@ -335,8 +422,11 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
             finally:
                 browser.close()
 
-        self.assertTrue(result["open"])
-        self.assertIn("bad budget", result["error"])
+        try:
+            self.assertTrue(result["open"])
+            self.assertIn("bad budget", result["error"])
+        except AssertionError as exc:
+            raise AssertionError(f"{exc} :: diag={_format_diagnostics(diag)}") from exc
 
 
 if __name__ == "__main__":

@@ -423,6 +423,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(payload["exit_code"], 1)
 
     def test_headless_close_failure_keeps_task_exception(self) -> None:
+        rows: list[dict[str, object]] = []
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch(
@@ -439,11 +440,44 @@ class HeadlessRunnerTests(unittest.TestCase):
                     provider_id="qwen",
                     state_home=Path(td, "state"),
                 ),
-                emit_jsonl=lambda _row: None,
+                emit_jsonl=rows.append,
                 connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
             )
-        # Cleanup failure is attached, never a replacement for the cause.
+        # Cleanup failure is attached, never a replacement for the cause,
+        # but the retained resources stay visible in the stream.
         self.assertIn("task blew up", str(cm.exception))
+        closing = rows[-1]
+        self.assertEqual(closing["type"], "headless_close")
+        self.assertEqual(closing["stop_reason"], "close_incomplete")
+
+    def test_headless_close_failure_keeps_failed_task_result(self) -> None:
+        from codey.agents.runner import RunResult as _RunResult
+
+        rows: list[dict[str, object]] = []
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(HeadlessAppContext, "close", return_value=False),
+        ):
+            result = run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="failing task",
+                    provider_id="qwen",
+                    max_turns=1,
+                    session_id="session-task-fail",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=rows.append,
+                agent_run=lambda *_args, **_kwargs: _RunResult("need approval", "approval", 1),
+                collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+            )
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.stop_reason, "approval")
+        closing = rows[-1]
+        self.assertEqual(closing["type"], "headless_close")
+        self.assertEqual(closing["stop_reason"], "close_incomplete")
+        self.assertEqual(closing["run_id"], result.run_id)
 
 
 if __name__ == "__main__":

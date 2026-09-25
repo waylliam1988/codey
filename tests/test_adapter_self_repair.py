@@ -1523,8 +1523,19 @@ class SelfRepairWorkerTests(unittest.TestCase):
         with (
             mock.patch("codey.providers.worker.subprocess.Popen", return_value=process) as popen,
             mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree"),
         ):
-            WorkerChatProvider("qwen", override, state_home=Path("state"))
+            provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
+            try:
+                session = provider._session
+                assert session is not None
+            finally:
+                provider.close()
+            assert session is not None
+            for thread in (session.reader, session.stderr_reader, session.writer):
+                if thread is not None:
+                    thread.join(timeout=5.0)
+                    self.assertFalse(thread.is_alive())
 
         cmd = popen.call_args.args[0]
         self.assertIn("--profile", cmd)
@@ -1565,6 +1576,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.generation = 3
         process = mock.Mock()
         process.stdout = io.StringIO("")
+        process.stderr = io.StringIO("")
         process.stdin = mock.Mock()
         job = mock.Mock()
 
@@ -1574,7 +1586,13 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
+            session = provider._session
+            assert session is not None
             provider.close()
+            for thread in (session.reader, session.stderr_reader, session.writer):
+                if thread is not None:
+                    thread.join(timeout=5.0)
+                    self.assertFalse(thread.is_alive())
 
         attach.assert_called_once_with(process)
         terminate.assert_called_once_with(process, job)
@@ -1586,6 +1604,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.generation = 3
         process = mock.Mock()
         process.stdout = io.StringIO("")
+        process.stderr = io.StringIO("")
         process.stdin = mock.Mock()
         job = mock.Mock()
 
@@ -1600,7 +1619,12 @@ class SelfRepairWorkerTests(unittest.TestCase):
             with provider._session.lock:
                 provider._session.cdp_port = 9444
                 provider._session.target_id = "target/with space"
+            session = provider._session
             provider.close()
+            for thread in (session.reader, session.stderr_reader, session.writer):
+                if thread is not None:
+                    thread.join(timeout=5.0)
+                    self.assertFalse(thread.is_alive())
 
         urlopen.assert_called_once()
         self.assertIn(

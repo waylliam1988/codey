@@ -234,6 +234,20 @@ def run_headless(
         with contextlib.suppress(Exception):
             state.wait_for_ghost_sleep(timeout=30)
         closed = state.close()
+
+    def _emit_close(run_id: str) -> None:
+        # Run-level shutdown status, always bounded and never masking the
+        # task's own error or exit code.
+        with contextlib.suppress(Exception):
+            emit_jsonl({
+                "schema_version": SCHEMA_VERSION,
+                "type": "headless_close",
+                "run_id": run_id,
+                "session_id": session_id,
+                "stop_reason": "close_incomplete",
+                "exit_code": 1,
+            })
+
     if task_error is not None:
         if not closed:
             note = "headless close incomplete: ghost still alive or resources retained"
@@ -241,22 +255,16 @@ def run_headless(
             if callable(add_note):
                 with contextlib.suppress(Exception):
                     add_note(note)
+            _emit_close("")
         raise task_error
     assert task_result is not None
     if not closed:
+        # task_done already recorded the task verdict; this extra run-level
+        # event keeps retained resources visible even when the task itself
+        # already failed. A green task becomes close_incomplete; a failed
+        # task keeps its own exit as the primary result.
+        _emit_close(task_result.run_id)
         if task_result.exit_code == 0:
-            # task_done already recorded the task verdict (done); this extra
-            # run-level event keeps the JSONL stream consistent with the
-            # non-zero exit instead of ending on a done task_done.
-            with contextlib.suppress(Exception):
-                emit_jsonl({
-                    "schema_version": SCHEMA_VERSION,
-                    "type": "headless_close",
-                    "run_id": task_result.run_id,
-                    "session_id": task_result.session_id,
-                    "stop_reason": "close_incomplete",
-                    "exit_code": 1,
-                })
             return HeadlessResult(
                 exit_code=1,
                 run_id=task_result.run_id,
