@@ -373,6 +373,7 @@ class HeadlessRunnerTests(unittest.TestCase):
     def test_headless_double_close_failure_fails_successful_run(self) -> None:
         from codey.agents.runner import RunResult as _RunResult
 
+        rows: list[dict[str, object]] = []
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(HeadlessAppContext, "close", return_value=False) as mock_close,
@@ -386,7 +387,7 @@ class HeadlessRunnerTests(unittest.TestCase):
                     session_id="session-close-fail",
                     state_home=Path(td, "state"),
                 ),
-                emit_jsonl=lambda _row: None,
+                emit_jsonl=rows.append,
                 agent_run=lambda *_args, **_kwargs: _RunResult("ok", "done", 1),
                 collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
@@ -395,6 +396,31 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(mock_close.call_count, 2)
         self.assertEqual(result.exit_code, 1)
         self.assertEqual(result.stop_reason, "close_incomplete")
+        # task_done keeps the task verdict (done); the run-level close event
+        # keeps the stream consistent with the non-zero exit.
+        task_done = next(row for row in rows if row.get("type") == "task_done")
+        self.assertEqual(task_done["stop_reason"], "done")
+        closing = rows[-1]
+        self.assertEqual(closing["type"], "headless_close")
+        self.assertEqual(closing["stop_reason"], "close_incomplete")
+        self.assertEqual(closing["exit_code"], 1)
+        self.assertEqual(closing["run_id"], result.run_id)
+        self.assertEqual(closing["session_id"], result.session_id)
+
+    def test_headless_close_payload_is_bounded(self) -> None:
+        from codey.app.headless_runner import headless_event_payload
+
+        payload = headless_event_payload({
+            "type": "headless_close",
+            "run_id": "run-1",
+            "session_id": "session-1",
+            "stop_reason": "close_incomplete",
+            "exit_code": 1,
+        })
+        assert payload is not None
+        self.assertEqual(payload["type"], "headless_close")
+        self.assertEqual(payload["stop_reason"], "close_incomplete")
+        self.assertEqual(payload["exit_code"], 1)
 
     def test_headless_close_failure_keeps_task_exception(self) -> None:
         with (

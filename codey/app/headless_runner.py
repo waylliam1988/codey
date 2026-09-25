@@ -245,6 +245,18 @@ def run_headless(
     assert task_result is not None
     if not closed:
         if task_result.exit_code == 0:
+            # task_done already recorded the task verdict (done); this extra
+            # run-level event keeps the JSONL stream consistent with the
+            # non-zero exit instead of ending on a done task_done.
+            with contextlib.suppress(Exception):
+                emit_jsonl({
+                    "schema_version": SCHEMA_VERSION,
+                    "type": "headless_close",
+                    "run_id": task_result.run_id,
+                    "session_id": task_result.session_id,
+                    "stop_reason": "close_incomplete",
+                    "exit_code": 1,
+                })
             return HeadlessResult(
                 exit_code=1,
                 run_id=task_result.run_id,
@@ -445,6 +457,12 @@ def headless_event_payload(event: dict) -> dict[str, object] | None:
         if isinstance(failure, dict):
             payload["provider_failure"] = _bounded_provider_failure(failure)
         return payload
+    if event_type == "headless_close":
+        return {
+            **common,
+            "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
+            "exit_code": _int_or_zero(event.get("exit_code")),
+        }
     return None
 
 

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import tempfile
+import threading
 from pathlib import Path
 
+from codey.runtime.core.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
 from tests.manual import readonly_parallel_ab
 
 
@@ -19,7 +23,10 @@ def _row(report: dict, case: str, arm: str) -> dict:
     raise AssertionError(f"missing row for {case}/{arm}")
 
 
-def test_deterministic_probe_observes_read_files_speedup_and_preserves_order() -> None:
+def test_deterministic_probe_preserves_order() -> None:
+    # CI asserts correctness and ordered commit only. Wall-time speedup
+    # (meaningful_speedup / improvement_ratio) stays in the repeated manual
+    # performance report, never as a shared-machine CI gate.
     report = readonly_parallel_ab.run_deterministic(
         repeats=1,
         delay=0.03,
@@ -29,7 +36,6 @@ def test_deterministic_probe_observes_read_files_speedup_and_preserves_order() -
     read_files = _comparison(report, "read_files_4")
     concurrent = _row(report, "read_files_4", "concurrent")
 
-    assert read_files["meaningful_speedup"]
     assert read_files["correctness_ok"]
     assert concurrent["flags"]["result_order_ok"]
     assert [item["tool"] for item in concurrent["sample_trace"]] == [
@@ -38,6 +44,36 @@ def test_deterministic_probe_observes_read_files_speedup_and_preserves_order() -
         "read",
         "read",
     ]
+
+
+def test_concurrent_arm_enters_reads_simultaneously() -> None:
+    # Barrier proof instead of a wall-time ratio: all four reads must be
+    # inside at once, and results still commit in original order.
+    barrier = threading.Barrier(4, timeout=10.0)
+
+    class _BarrierTools(readonly_parallel_ab.SleepyToolFns):
+        def read_file(self, _root: Path, rel: str, **_options: object) -> ToolOutcome:
+            try:
+                barrier.wait(timeout=10.0)
+            except threading.BrokenBarrierError as exc:
+                raise AssertionError("reads did not overlap") from exc
+            return super().read_file(_root, rel)
+
+    calls = tuple(
+        ToolCall("read", {"path": name}) for name in ("a.py", "b.py", "c.py", "d.py")
+    )
+    with tempfile.TemporaryDirectory(prefix="codey-readonly-barrier-") as td:
+        runner = readonly_parallel_ab.DeterministicBatchRunner(
+            arm="concurrent",
+            root=Path(td),
+            tools=_BarrierTools(delay=0.01),
+            existing_files=frozenset(),
+            max_workers=4,
+        )
+        records = runner.run(calls)
+    assert [record.index for record in records] == [0, 1, 2, 3]
+    assert all(record.outcome.ok for record in records)
+    assert barrier.n_waiting == 0
 
 
 def test_flush_before_edit_keeps_read_before_edit_semantics() -> None:

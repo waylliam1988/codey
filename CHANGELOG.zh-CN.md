@@ -51,6 +51,30 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - 门可响应 Stop、先到裁决胜出、退出快速失败、关闭显式（未发布）
+
+- 门不再卡住 Stop。`_request()` 与 life-lock 等待按
+  `min(POLL_INTERVAL, remaining)` 分段取锁，拿到后重查 Stop 与截止时间。
+  建进程是受检的有界调用，不再声称覆盖管道阻塞。
+- 先到裁决胜过非 Stop 关闭。`_await_write()` 与 `_wait_for_response()` 按
+  Stop、一次性裁决、替换/关闭排序，检出替换后重读一次裁决；回复本身证明
+  已送达，迟到的 `write_done` 状态不再否定它。
+- 退出无回复快速失败。`_read_loop()` 在 `finally` 置 `stdout_done`；reader
+  已排空仍无裁决立即报退出，两秒宽限只留给仍可能吐出缓冲回复的 reader。
+- 关闭结果与事件一致。`task_done` 仍是任务 verdict；`close_incomplete`
+  运行时补发有界 `headless_close` 事件，与非零退出码对齐。
+- 减法。`_request_locked()` 直接复用 `_ensure_live_session_locked()` 返回值，
+  占槽改为内部不变式错误；删除只被测试调用的 `_terminate()`，改走 `close()`。
+- 测试卫生。writer 用 `addCleanup` 有界回收；`test_env_names` 走
+  `git ls-files`；`test_cancellation` 拆分就绪与清理计时并保留证据；只读 CI
+  改用 barrier 重叠加保序断言，速度比留在手动报告；research 自测进 240 秒
+  进程树子进程；本地与 CI 打开 `faulthandler_timeout=120`（45 分钟上限不变）。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向
+  `190 passed, 21 subtests passed`；收集 `4236 tests collected`；最终全量
+  `python -m pytest -q -o faulthandler_timeout=120`（`4228 passed, 6 skipped,
+  1374 subtests passed in 572.44s`；两次无关满载偶发，隔离 1.47 秒均过：
+  `test_cancellation` 清理 29.91 秒/就绪 0.22 秒，`test_server` 超大包连接重置）。
+
 ## Unreleased - Worker 全程截止时间、严格回复、显式关闭（未发布）
 
 - 一次请求只有一个全程截止时间。`_request()` 入口建好后，贯穿门等待、

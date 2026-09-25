@@ -185,16 +185,25 @@ class CancellationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             event = threading.Event()
+            state: dict[str, object] = {
+                "ready_ok": False,
+                "ready_seconds": -1.0,
+                "stop_issued_at": -1.0,
+            }
 
             def stop_after_child_starts() -> None:
-                deadline = time.monotonic() + 15
+                ready_started = time.monotonic()
+                deadline = ready_started + 15
                 while time.monotonic() < deadline and not child_pid.exists():
                     time.sleep(0.01)
+                state["ready_seconds"] = time.monotonic() - ready_started
+                state["ready_ok"] = child_pid.exists()
+                state["stop_issued_at"] = time.monotonic()
                 event.set()
 
             stopper = threading.Thread(target=stop_after_child_starts)
-            started = time.monotonic()
             stopper.start()
+            run_ended_at = -1.0
             try:
                 with cancellation.scope(event), self.assertRaises(cancellation.TaskCancelled):
                     cancellation.run_process(
@@ -210,9 +219,29 @@ class CancellationTests(unittest.TestCase):
                         capture_limit_bytes=65536,
                     )
             finally:
+                run_ended_at = time.monotonic()
                 stopper.join(timeout=15)
 
-            self.assertLess(time.monotonic() - started, 25.0)
+            ready_ok = bool(state["ready_ok"])
+            ready_seconds = float(state["ready_seconds"])
+            stop_issued_at = float(state["stop_issued_at"])
+            self.assertTrue(
+                ready_ok,
+                f"child never became ready in {ready_seconds:.2f}s "
+                f"(parent_pid={parent_pid.exists()}, child_pid={child_pid.exists()})",
+            )
+            self.assertLess(
+                ready_seconds,
+                15.0,
+                f"readiness took {ready_seconds:.2f}s",
+            )
+            cleanup_seconds = run_ended_at - stop_issued_at
+            self.assertLess(
+                cleanup_seconds,
+                10.0,
+                f"cleanup after Stop took {cleanup_seconds:.2f}s "
+                f"(ready took {ready_seconds:.2f}s)",
+            )
             self.assertTrue(parent_pid.exists())
             self.assertTrue(child_pid.exists())
             self.assertFalse(_windows_process_is_active(int(parent_pid.read_text())))

@@ -44,6 +44,7 @@ codey = [
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
 testpaths = ["tests"]
+faulthandler_timeout = 120
 
 [tool.ruff]
 line-length = 120

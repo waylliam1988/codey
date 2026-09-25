@@ -1574,7 +1574,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
-            provider._terminate()
+            provider.close()
 
         attach.assert_called_once_with(process)
         terminate.assert_called_once_with(process, job)
@@ -1600,7 +1600,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             with provider._session.lock:
                 provider._session.cdp_port = 9444
                 provider._session.target_id = "target/with space"
-            provider._terminate()
+            provider.close()
 
         urlopen.assert_called_once()
         self.assertIn(

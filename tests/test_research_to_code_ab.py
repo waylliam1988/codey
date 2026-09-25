@@ -1,13 +1,33 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
+from codey.runtime.core import cancellation
 from tests.manual import research_to_code_ab as probe
+
+ROOT = Path(__file__).resolve().parents[1]
+SELF_TEST_TIMEOUT = 240.0
 
 
 def test_research_to_code_ab_self_test() -> None:
-    probe._self_test()
+    # Bounded subprocess with process-tree cleanup: a hung agent step fails
+    # in minutes under its own test name instead of pinning the CI job.
+    # faulthandler_timeout in CI still dumps thread stacks for the inner cause.
+    script = ROOT / "tests" / "manual" / "research_to_code_ab.py"
+    try:
+        cancellation.run_process(
+            [sys.executable, "-B", str(script), "--self-test"],
+            cwd=ROOT,
+            timeout=SELF_TEST_TIMEOUT,
+            capture_limit_bytes=256 * 1024,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(
+            f"research_to_code_ab self-test hung past {SELF_TEST_TIMEOUT:.0f}s"
+        ) from exc
 
 
 def test_arm_briefs_differ_only_in_rendering_not_facts() -> None:

@@ -120,6 +120,52 @@ Verification (local, Windows):
   passes 9/9 in isolation in 2.40 s, in a code path untouched by this change).
 - This report entry was written after the final full pytest run.
 
+## Stop-responsive gate, verdict-wins close race, fast exit drain, honest headless close full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (segmented gate/life acquisition with post-acquire Stop check; Stop/verdict/replacement order with second verdict check; stdout_done fast fail, grace only for live reader; ensure reuse with invariant error; _terminate deleted)
+codey/app/headless_runner.py          (close_incomplete emits bounded headless_close; payload covers new type)
+.github/workflows/ci.yml + pyproject.toml (faulthandler_timeout=120; 45min cap unchanged)
+tests/test_coldstart_hardening.py     (writer addCleanup joins; reply-wins-over-close, reply-before-write, Stop-during-gate, fast-exit latches)
+tests/test_adapter_self_repair.py     (_terminate -> close)
+tests/test_headless_runner.py         (close event stream vs exit code; payload bound)
+tests/test_env_names.py               (git ls-files)
+tests/test_cancellation.py            (readiness vs cleanup split timing with evidence)
+tests/test_readonly_parallel_ab.py    (barrier overlap + order; no wall-time speedup gate)
+tests/test_research_to_code_ab.py     (240s process-tree subprocess)
+```
+
+Notes:
+
+- Stop wins, then the one-time verdict, then replacement/close. A reply
+  proves delivery even when write_done races; close wakes without a verdict
+  stay exited, never malformed-frame protocol errors.
+- Drained exits fail fast; the grace is only for a live reader that may
+  still flush a buffered reply.
+- `task_done` stays the task verdict; `headless_close` keeps the stream
+  consistent with the exit code.
+- CI keeps wall-time ratios out of the gate; speedup stays in the manual
+  repeated report. The 45min cap is unchanged; faulthandler dumps stacks
+  after 120s stalls.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `190 passed, 21 subtests passed` (worker/headless/env/readonly/research/
+  adapter/cancellation) — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4236 tests collected`).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`
+  (`4228 passed, 6 skipped, 1374 subtests passed in 572.44s (0:09:32)`),
+  plus two unrelated load-flakes, both green in isolation in 1.47s in code
+  paths untouched by this change:
+  `test_cancellation` cleanup 29.91s vs 10s bound with ready 0.22s,
+  `test_server` oversized-body connection abort (WinError 10053).
+- This report entry was written after the final full pytest run.
+
 ## Worker session ownership, snapshot health, Ghost close contract full suite (2026-09-24)
 
 Scope (production, no release):

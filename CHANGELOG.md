@@ -32,6 +32,40 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Stop-responsive gate, verdict-wins close race, fast exit drain, honest headless close (no release)
+
+- Stop no longer pins on the request gate. `_request()` and life-lock waits
+  use segmented `min(POLL_INTERVAL, remaining)` acquisition with a post-acquire
+  Stop/deadline re-check. Spawning stays a bounded syscall checked before and
+  after; the deadline promise now names that bound.
+- First verdict wins over non-Stop close. `_await_write()` and
+  `_wait_for_response()` read Stop, then the one-time pending verdict, then
+  replacement/close, with a second verdict check after detecting replacement.
+  A reply proves delivery even when `write_done` races behind it.
+- Exited children fail fast. `_read_loop()` sets `stdout_done` in `finally`;
+  the waiter fails immediately once the reader drained with no verdict,
+  keeping the 2s grace only for a live reader that may still flush a reply.
+- Headless close is explicit. `task_done` stays the task verdict; a
+  `close_incomplete` run emits a bounded `headless_close` event so the JSONL
+  stream matches the non-zero exit.
+- Less surface. `_request_locked()` reuses `_ensure_live_session_locked()`
+  directly with a single-flight invariant error; `_terminate()` is deleted,
+  callers use `close()`.
+- Test hygiene. Writer threads tracked with `addCleanup` bounded joins;
+  `test_env_names` uses `git ls-files`; `test_cancellation` splits readiness
+  vs cleanup timing with evidence; readonly CI gates on barrier overlap plus
+  ordered commit (speedup stays in the manual report); the research self-test
+  runs in a 240s process-tree subprocess; `faulthandler_timeout=120` is on
+  locally and in CI (45min cap unchanged).
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`190 passed, 21 subtests passed` worker/headless/
+  env/readonly/research/adapter/cancellation), collection
+  (`4236 tests collected`), and final full `python -m pytest -q
+  -o faulthandler_timeout=120` (`4228 passed, 6 skipped, 1374 subtests
+  passed in 572.44s`; two unrelated load-flakes, both green in isolation
+  in 1.47s: `test_cancellation` cleanup 29.91s vs 10s bound with ready 0.22s,
+  `test_server` oversized-body connection abort).
+
 ## Unreleased - Worker full-deadline requests, strict replies, explicit shutdown (no release)
 
 - Requests carry one deadline end to end. `_request()` builds it up front

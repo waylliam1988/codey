@@ -87,17 +87,32 @@ class EnvNameValueTests(unittest.TestCase):
                 self.assertNotIn("CODEY_", source)
 
     def test_no_brand_prefixed_name_outside_allowlist(self) -> None:
+        import subprocess
+
+        completed = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+        )
         offenders: list[str] = []
-        for path in sorted(ROOT.rglob("*")):
-            if not path.is_file():
+        for raw in completed.stdout.split(b"\0"):
+            if not raw:
                 continue
-            try:
-                rel = path.relative_to(ROOT).as_posix()
-            except ValueError:
-                continue
+            rel = raw.decode("utf-8", errors="surrogateescape")
             if rel in CODEY_PREFIX_ALLOWLIST:
                 continue
             if any(part in _SKIP_DIRS for part in Path(rel).parts):
+                continue
+            path = ROOT / rel
+            if not path.is_file():
                 continue
             try:
                 text = path.read_bytes().decode("utf-8")
@@ -105,7 +120,7 @@ class EnvNameValueTests(unittest.TestCase):
                 continue
             if "CODEY_" in text:
                 offenders.append(rel)
-        self.assertEqual(offenders, [])
+        self.assertEqual(sorted(offenders), [])
 
 
 if __name__ == "__main__":

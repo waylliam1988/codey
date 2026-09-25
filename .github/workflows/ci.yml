@@ -41,7 +41,7 @@ jobs:
         run: python -m ruff check .
 
       - name: Pytest
-        run: python -m pytest -q
+        run: python -m pytest -q -o faulthandler_timeout=120
 
       - name: JavaScript syntax
         shell: pwsh

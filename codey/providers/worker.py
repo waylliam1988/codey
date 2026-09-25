@@ -77,6 +77,7 @@ class _WorkerSession:
     write_done: threading.Event = field(default_factory=threading.Event)
     write_wire: str | None = None
     write_error: str = ""
+    stdout_done: threading.Event = field(default_factory=threading.Event)
 
 
 @dataclass
@@ -291,63 +292,68 @@ class WorkerChatProvider:
         return f": {tail[-400:]}" if tail else ""
 
     def _read_loop(self, session: _WorkerSession) -> None:
-        proc = session.proc
-        stdout = proc.stdout
-        if stdout is None:
-            self._fail_session(session, "provider worker stdout is unavailable")
-            return
-        while True:
-            try:
-                line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
-            except (OSError, ValueError) as exc:
-                self._fail_session(
-                    session, f"provider worker stdout unreadable: {exc}",
-                )
+        try:
+            proc = session.proc
+            stdout = proc.stdout
+            if stdout is None:
+                self._fail_session(session, "provider worker stdout is unavailable")
                 return
-            if not line:
-                # EOF on a live process means its framing died with no
-                # verdict; a normally exited child leaves the verdict to the
-                # waiter, which drains buffered replies before failing.
-                if proc.poll() is None:
+            while True:
+                try:
+                    line = stdout.readline(WORKER_LINE_MAX_CHARS + 1)
+                except (OSError, ValueError) as exc:
                     self._fail_session(
-                        session, "provider worker stdout closed unexpectedly",
-                    )
-                return
-            if not line.endswith("\n"):
-                if proc.poll() is not None:
-                    return
-                if len(line) > WORKER_LINE_MAX_CHARS:
-                    self._fail_session(
-                        session,
-                        f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars",
+                        session, f"provider worker stdout unreadable: {exc}",
                     )
                     return
-                self._fail_session(session, "provider worker sent a malformed frame")
-                return
-            # A line of exactly MAX chars plus its newline still fits in
-            # one readline(MAX+1); anything longer arrives here without a
-            # newline and was condemned above. Never drain, so the next
-            # frame is never consumed as this one's tail.
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                self._fail_session(session, "provider worker sent a malformed frame")
-                return
-            if not isinstance(payload, dict):
-                self._fail_session(session, "provider worker sent a malformed frame")
-                return
-            if "event" in payload:
-                # Stdout carries page events and request replies only:
-                # anything else is a protocol failure, never a reply.
-                if payload.get("event") == "page":
-                    self._deliver_page(session, payload)
-                else:
-                    self._fail_session(
-                        session, "provider worker sent an unexpected event",
-                    )
+                if not line:
+                    # EOF on a live process means its framing died with no
+                    # verdict; a normally exited child leaves the verdict to
+                    # the waiter, which drains buffered replies before failing.
+                    # stdout_done (set in finally) lets the waiter fail fast
+                    # once the reader has drained instead of using the grace.
+                    if proc.poll() is None:
+                        self._fail_session(
+                            session, "provider worker stdout closed unexpectedly",
+                        )
                     return
-                continue
-            self._deliver_response(session, payload)
+                if not line.endswith("\n"):
+                    if proc.poll() is not None:
+                        return
+                    if len(line) > WORKER_LINE_MAX_CHARS:
+                        self._fail_session(
+                            session,
+                            f"provider worker output exceeded {WORKER_LINE_MAX_CHARS} chars",
+                        )
+                        return
+                    self._fail_session(session, "provider worker sent a malformed frame")
+                    return
+                # A line of exactly MAX chars plus its newline still fits in
+                # one readline(MAX+1); anything longer arrives here without a
+                # newline and was condemned above. Never drain, so the next
+                # frame is never consumed as this one's tail.
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    self._fail_session(session, "provider worker sent a malformed frame")
+                    return
+                if not isinstance(payload, dict):
+                    self._fail_session(session, "provider worker sent a malformed frame")
+                    return
+                if "event" in payload:
+                    # Stdout carries page events and request replies only:
+                    # anything else is a protocol failure, never a reply.
+                    if payload.get("event") == "page":
+                        self._deliver_page(session, payload)
+                    else:
+                        self._fail_session(
+                            session, "provider worker sent an unexpected event",
+                        )
+                        return
+                    continue
+                self._deliver_response(session, payload)
+        finally:
+            session.stdout_done.set()
 
     def _fail_session(self, session: _WorkerSession, reason: str) -> None:
         """Condemn the generation; complete the waiter once, first verdict wins."""
@@ -423,25 +429,64 @@ class WorkerChatProvider:
             raise RuntimeError("provider worker is not running")
         return session
 
+    def _acquire_with_deadline(
+        self, lock: threading.Lock | threading.RLock, deadline: float, method: str
+    ) -> None:
+        """Acquire a gate without ever pinning Stop past one short tick.
+
+        Callers hold the lock on success and must release it. Stop and the
+        deadline are checked before every tick, during the tick via the
+        bounded timeout, and once more after acquisition so Stop landing
+        inside acquire() still wins.
+        """
+        while True:
+            cancellation.check()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise self._timeout_error(method)
+            if lock.acquire(timeout=min(cancellation.POLL_INTERVAL, remaining)):
+                try:
+                    cancellation.check()
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        lock.release()
+                    raise
+                if deadline - time.monotonic() <= 0:
+                    with contextlib.suppress(Exception):
+                        lock.release()
+                    raise self._timeout_error(method)
+                return
+
+    def _is_replaced(self, session: _WorkerSession) -> bool:
+        """True when our generation is gone; Stop stays responsive.
+
+        Deadline is enforced by the caller via remaining checks, which retire
+        correctly. Raising timeout here would bypass that retire.
+        """
+        while True:
+            cancellation.check()
+            if self._life_lock.acquire(timeout=cancellation.POLL_INTERVAL):
+                try:
+                    return self._session is not session
+                finally:
+                    with contextlib.suppress(Exception):
+                        self._life_lock.release()
+
     def _request(self, method: str, params: dict, timeout: float | None):
-        # One deadline governs the whole request: gate wait, session start,
-        # stdin write, and reply wait. The write runs on the session writer
-        # thread, so Stop and the deadline interrupt the calling thread even
-        # when the pipe is full.
+        # One deadline governs gate wait, life-lock wait, stdin write, and
+        # reply wait. Spawning the child itself is a bounded syscall checked
+        # before and after; it never blocks on the pipe. The write runs on
+        # the session writer thread, so Stop and the deadline interrupt the
+        # caller even when the pipe is full.
         deadline = time.monotonic() + (timeout if timeout is not None else 300.0) + (
             WORKER_TIMEOUT_GRACE
         )
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise self._timeout_error(method)
-        if not self._request_lock.acquire(timeout=max(0.0, remaining)):
-            cancellation.check()
-            raise self._timeout_error(method)
+        self._acquire_with_deadline(self._request_lock, deadline, method)
         try:
-            cancellation.check()
             return self._request_locked(method, params, deadline)
         finally:
-            self._request_lock.release()
+            with contextlib.suppress(Exception):
+                self._request_lock.release()
 
     def _request_locked(self, method: str, params: dict, deadline: float):
         # Serialize before touching the session: a serialization failure
@@ -451,23 +496,13 @@ class WorkerChatProvider:
             {"id": request_id, "method": method, "params": params},
             separators=(",", ":"),
         ) + "\n"
-        with self._life_lock:
-            self._ensure_live_session_locked()
-            session = self._session
-            if (
-                session is None
-                or session.proc.poll() is not None
-                or session.proc.stdin is None
-            ):
+        self._acquire_with_deadline(self._life_lock, deadline, method)
+        try:
+            session = self._ensure_live_session_locked()
+            if session.proc.poll() is not None or session.proc.stdin is None:
                 raise RuntimeError("provider worker is not running")
             if session.pending is not None or session.write_wire is not None:
-                # Defensive: single-flight was violated (or a prior waiter
-                # leaked its slot). Retire instead of multiplexing stdin.
-                self._retire_session_locked(session)
-                self._start_session_locked()
-                session = self._session
-                if session is None or session.proc.stdin is None:
-                    raise RuntimeError("provider worker is not running")
+                raise RuntimeError("provider worker single-flight invariant violated")
             pending = _PendingRequest(request_id=request_id, method=method)
             proc = session.proc
             with session.lock:
@@ -476,6 +511,9 @@ class WorkerChatProvider:
                 session.write_error = ""
                 session.write_done.clear()
                 session.write_event.set()
+        finally:
+            with contextlib.suppress(Exception):
+                self._life_lock.release()
         self._await_write(session, pending, proc, deadline)
         return self._wait_for_response(session, pending, deadline)
 
@@ -486,32 +524,47 @@ class WorkerChatProvider:
         proc: subprocess.Popen[str],
         deadline: float,
     ) -> None:
-        """Wait for the session writer without ever blocking in write()."""
+        """Wait for the session writer without ever blocking in write().
+
+        Order is Stop, then the one-time verdict, then replacement/close:
+        a reply already in pending proves delivery even when write_done or
+        a non-Stop close races behind it.
+        """
         try:
             while True:
                 cancellation.check()
-                with self._life_lock:
-                    replaced = self._session is not session
-                if replaced:
-                    # Never terminate here: the current process belongs to
-                    # someone else.
-                    raise self._exited_error(session, pending.method)
                 with session.lock:
+                    verdict_done = pending.done.is_set()
+                    verdict_response = pending.response
+                    verdict_error = pending.error
                     closed = session.closed
-                    done = session.write_done.is_set()
-                    write_error = session.write_error
+                    write_done_flag = session.write_done.is_set()
+                if verdict_done and (
+                    verdict_response is not None or verdict_error
+                ):
+                    return
                 if closed:
                     raise self._exited_error(session, pending.method)
-                if done:
+                if self._is_replaced(session):
+                    # Never terminate here: the current process belongs to
+                    # someone else. A verdict landing during the life-lock
+                    # wait still wins over the replacement.
+                    with session.lock:
+                        if pending.done.is_set() and (
+                            pending.response is not None or pending.error
+                        ):
+                            return
+                    raise self._exited_error(session, pending.method)
+                if write_done_flag:
                     break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise self._timeout_error(pending.method)
-                if proc.poll() is not None:
-                    # The child died mid-write: the writer observes it on its
-                    # next syscall; keep waiting on the short tick so a
-                    # racing write error still reports precisely.
-                    pass
+                if proc.poll() is not None and session.stdout_done.is_set():
+                    # Reader drained with no verdict: the write can never
+                    # produce a reply, so fail fast instead of waiting for
+                    # the writer tick.
+                    raise self._exited_error(session, pending.method)
                 session.write_done.wait(
                     timeout=min(cancellation.POLL_INTERVAL, remaining)
                 )
@@ -525,6 +578,10 @@ class WorkerChatProvider:
                 if self._session is session:
                     self._retire_session_locked(session)
             raise
+        with session.lock:
+            if pending.done.is_set() and pending.response is not None:
+                return
+            write_error = session.write_error
         if write_error:
             # The writer already cleared its slot; drop the orphaned pending
             # slot (no waiter exists yet) and retire when still current.
@@ -542,7 +599,7 @@ class WorkerChatProvider:
         pending: _PendingRequest,
         deadline: float,
     ):
-        """Wait for the single verdict: Stop, then result, then deadline, then drain."""
+        """Wait for the single verdict: Stop, then verdict, then replacement."""
         drain_deadline: float | None = None
         try:
             while True:
@@ -550,20 +607,13 @@ class WorkerChatProvider:
                 # cancellation. The post-wake check below covers Stop that
                 # lands during the short wait itself.
                 cancellation.check()
-                with self._life_lock:
-                    replaced = self._session is not session
-                if replaced:
-                    # Our generation is gone (closed or restarted): end now
-                    # instead of polling a dead handle until timeout. Never
-                    # terminate here: the current process belongs to someone
-                    # else.
-                    raise self._exited_error(session, pending.method)
                 with session.lock:
                     done = pending.done.is_set()
                     response = pending.response
                     error = pending.error
                     closed = session.closed
                     terminal_error = session.terminal_error
+                    reader_drained = session.stdout_done.is_set()
                 if done:
                     if response is not None:
                         if response.get("ok") is True:
@@ -573,8 +623,23 @@ class WorkerChatProvider:
                         )
                         self.last_failure = failure
                         raise ProviderActionError(failure)
-                    # Protocol verdict for our request: the session is
-                    # unusable, retire it when still current.
+                    if error or terminal_error:
+                        # Protocol verdict wins over a racing close: it is
+                        # the specific condemn cause, not a generic exit.
+                        with self._life_lock:
+                            if self._session is session:
+                                self._retire_session_locked(session)
+                        raise self._protocol_error(pending.method, error or terminal_error)
+                    if closed:
+                        # Woken by close/retire with no verdict: the
+                        # generation is gone, never a protocol failure.
+                        raise self._exited_error(session, pending.method)
+                    # Done with no verdict, no error, and not closed is not
+                    # produced today; treat a gone generation as exited so a
+                    # close without the closed flag still cannot become a
+                    # malformed-frame protocol error.
+                    if self._is_replaced(session):
+                        raise self._exited_error(session, pending.method)
                     with self._life_lock:
                         if self._session is session:
                             self._retire_session_locked(session)
@@ -589,6 +654,15 @@ class WorkerChatProvider:
                         if self._session is session:
                             self._retire_session_locked(session)
                     raise self._protocol_error(pending.method, terminal_error)
+                if self._is_replaced(session):
+                    # Our generation is gone (closed or restarted): a verdict
+                    # landing during the life-lock wait still wins over the
+                    # replacement. Never terminate here: the current process
+                    # belongs to someone else.
+                    with session.lock:
+                        if pending.done.is_set():
+                            continue
+                    raise self._exited_error(session, pending.method)
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     with self._life_lock:
@@ -596,6 +670,15 @@ class WorkerChatProvider:
                             self._retire_session_locked(session)
                     raise self._timeout_error(pending.method)
                 if session.proc.poll() is not None:
+                    if reader_drained:
+                        # Reader already drained with no verdict: fail fast
+                        # instead of holding the waiter for the full grace.
+                        # The grace is only for a live reader that may still
+                        # flush a buffered reply.
+                        with self._life_lock:
+                            if self._session is session:
+                                self._retire_session_locked(session)
+                        raise self._exited_error(session, pending.method)
                     # Exited but possibly with a buffered reply still in the
                     # pipe: let the reader drain briefly instead of failing
                     # a completed operation. The reader reports EOF verdicts
@@ -718,13 +801,6 @@ class WorkerChatProvider:
                 for thread in (session.reader, session.stderr_reader, session.writer)
                 if thread is not None
             ])
-
-    def _terminate(self) -> None:
-        with self._life_lock:
-            session = self._session
-            if session is None:
-                return
-            self._retire_session_locked(session)
 
     @staticmethod
     def _close_pipes(proc: subprocess.Popen[str]) -> None:

@@ -264,9 +264,8 @@ class WorkerSelfHealTests(unittest.TestCase):
         self._spawn_writer(provider, session)
         return session
 
-    @staticmethod
     def _spawn_writer(
-        provider: WorkerChatProvider, session: _WorkerSession
+        self, provider: WorkerChatProvider, session: _WorkerSession
     ) -> threading.Thread:
         """Run the session's stdin owner, as _start_session_locked does."""
         writer = threading.Thread(
@@ -274,7 +273,18 @@ class WorkerSelfHealTests(unittest.TestCase):
         )
         session.writer = writer
         writer.start()
+        self.addCleanup(self._cleanup_test_writer, session, writer)
         return writer
+
+    def _cleanup_test_writer(
+        self, session: _WorkerSession, writer: threading.Thread
+    ) -> None:
+        with session.lock:
+            session.closed = True
+            session.write_event.set()
+        writer.join(timeout=5.0)
+        if writer.is_alive():
+            self.fail(f"writer thread leaked: {writer.name}")
 
     @staticmethod
     def _deadline(seconds: float = 5.0) -> float:
@@ -942,6 +952,103 @@ class WorkerSelfHealTests(unittest.TestCase):
         reader.join(timeout=10.0)
         self.assertEqual(result, "late")
         self.assertFalse(reader.is_alive())
+
+    def test_reply_wins_over_close_replacement(self) -> None:
+        # Valid reply in pending, then a non-Stop close replaces the session:
+        # the waiter must return the reply, not "provider worker exited".
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1", method="send")
+        with session.lock:
+            session.pending = pending
+            pending.response = {"id": "req-1", "ok": True, "result": "done"}
+            pending.done.set()
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+        with provider._life_lock:
+            provider._session = _WorkerSession(proc=fresh, job=None)
+        result = provider._wait_for_response(session, pending, self._deadline())
+        self.assertEqual(result, "done")
+        assert provider._session is not None
+        self.assertIs(provider._session.proc, fresh)
+
+    def test_reply_before_write_done_still_wins(self) -> None:
+        # The reply proves delivery even when the writer has not yet set
+        # write_done; a late write error must not negate it.
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1", method="send")
+        with session.lock:
+            session.pending = pending
+            session.write_done.clear()
+        provider._deliver_response(
+            session, {"id": "req-1", "ok": True, "result": "early"},
+        )
+        provider._await_write(session, pending, proc, self._deadline())
+        result = provider._wait_for_response(session, pending, self._deadline())
+        self.assertEqual(result, "early")
+        with session.lock:
+            session.write_error = "provider worker stdin is unavailable: late"
+            session.write_done.set()
+        provider._await_write(session, pending, proc, self._deadline())
+
+    def test_stop_during_request_gate_is_prompt(self) -> None:
+        from codey.runtime.core import cancellation as cancel
+
+        provider = self._provider()
+        provider._request_lock.acquire()
+        try:
+            stop = threading.Event()
+            errors: list[BaseException] = []
+
+            def do_request() -> None:
+                try:
+                    with cancel.scope(stop):
+                        provider._request("send", {"text": "hi"}, 30.0)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            worker = threading.Thread(target=do_request, daemon=True)
+            worker.start()
+            time.sleep(0.2)
+            stop.set()
+            worker.join(timeout=5.0)
+        finally:
+            with contextlib.suppress(Exception):
+                provider._request_lock.release()
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], cancel.TaskCancelled)
+
+    def test_exited_without_reply_fails_fast(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = 1
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1", method="send")
+        with session.lock:
+            session.pending = pending
+        session.stdout_done.set()
+        started = time.monotonic()
+        with (
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ),
+            self.assertRaises(ProviderActionError) as raised,
+        ):
+            provider._wait_for_response(session, pending, self._deadline(30.0))
+        self.assertIn("exited", raised.exception.failure.message)
+        self.assertLess(time.monotonic() - started, 1.5)
 
     def test_bare_ok_true_is_malformed_send_reply(self) -> None:
         # {"ok": true} without a string result must not degrade to "".
