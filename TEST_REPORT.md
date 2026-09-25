@@ -212,6 +212,42 @@ Verification (local, Windows):
   zero flakes.
 - This report entry was written after the final full pytest run.
 
+## Single-result generations, reported cleanup, profile exclusion full suite (2026-09-25)
+
+Scope (production, no release):
+
+```text
+codey/providers/worker.py             (close/_terminate_session/_join_threads report bool; sticky terminal; bounded slot cleanup)
+tests/test_coldstart_hardening.py     (first-failure fresh proc; close True/False with waiter/thread proof)
+tests/test_adapter_self_repair.py     (close True asserts; urlopen-before-terminate order; cleanup-holds-lock profile test)
+tests/test_browser_worker.py          (queued async cleanup once; hung close False with both waiters terminal)
+```
+
+Notes:
+
+- Answers the four contracts directly: every accepted request/queued task
+  ends with exactly one result; a write-failed generation never serves new
+  requests while delivered successes stay immutable; Stop/timeout/close
+  break every wait and cleanup completion is a return value, not silence;
+  the old generation's tab-close plus tree-kill completes under the life
+  lock before any new Popen reuses the profile.
+- No model-quality claim follows from lifecycle hygiene; keep unreleased.
+
+Verification (local, Windows):
+
+- `python -m ruff check .` (passed); `git diff --check` (clean).
+- Targeted regression before final full suite:
+  `248 passed, 6 subtests passed` (worker/headless/adapter/browser/
+  hardening/generations/deepseek/research),
+  `22 passed, 15 subtests passed` (ui-harness/env/readonly/cancellation)
+  — all green.
+- Collection before final full suite: `python -m pytest --collect-only -q`
+  (`4250 tests collected`).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`
+  (`4244 passed, 6 skipped, 1374 subtests passed in 370.22s (0:06:10)`),
+  zero flakes.
+- This report entry was written after the final full pytest run.
+
 ## Sticky write failures, bounded slot cleanup, terminal browser close, associated headless events full suite (2026-09-25)
 
 Scope (production, no release):

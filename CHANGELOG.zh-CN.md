@@ -51,6 +51,23 @@
   最终全量 `python -m pytest`
   （`4173 passed, 6 skipped, 1374 subtests passed in 361.81s`）。
 
+## Unreleased - 单结果代际、清理报告、profile 互斥（未发布）
+
+- 每个接受单位恰好一个结果。Provider  pending 只完成一次，关闭唤醒归为
+  exit；Browser 排队同步给明确关闭错误，排队异步跑一次放弃清理，运行中发
+  取消信号并丢弃迟到结果。
+- 坏代不再复用。粘性 `terminal_error` 不随清槽消失，首败即退由真实 writer
+  测试覆盖；已交付成功永不追改。
+- 等待必解且清理可报。Stop/超时/关闭打断一切等待；provider `close()` 与
+  browser `close()` 返回线程是否真停，hung 任务证明 False 路径。
+- 旧代清完新代才用 profile。先关标签页再杀树且全程持 `_life_lock`，新
+  `Popen` 在门闩测试中被证明等到清理结束。
+- 验证：`python -m ruff check .` 通过，`git diff --check` 干净；定向
+  `248 passed, 6 subtests passed` 与 `22 passed, 15 subtests passed`；收集
+  `4250 tests collected`；最终全量 `python -m pytest -q
+  -o faulthandler_timeout=120`（`4244 passed, 6 skipped, 1374 subtests
+  passed in 370.22s`，零偶发）。
+
 ## Unreleased - 粘性写失败、有界槽清理、终局关闭、关联事件（未发布）
 
 - 写失败粘滞。`_writer_loop()` 在置 per-request `write_error` 的同时记粘性

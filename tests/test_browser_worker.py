@@ -108,6 +108,92 @@ class BrowserWorkerTests(unittest.TestCase):
         self.assertIn("closed-error", outcomes)
         self.assertFalse(worker._thread.is_alive())
 
+    def test_close_runs_queued_async_cleanup_exactly_once(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-close-async", max_queue_size=8)
+        running_started = threading.Event()
+        running_release = threading.Event()
+
+        def _blocking() -> None:
+            running_started.set()
+            running_release.wait(timeout=10.0)
+
+        worker.submit(_blocking)
+        self.assertTrue(running_started.wait(timeout=10.0))
+        executed: list[bool] = []
+        cleaned: list[bool] = []
+        worker.submit(
+            lambda: executed.append(True), on_abandoned=lambda: cleaned.append(True)
+        )
+        close_out: list[bool] = []
+
+        def _do_close() -> None:
+            close_out.append(worker.close(timeout=5.0))
+
+        closer = threading.Thread(target=_do_close, daemon=True)
+        closer.start()
+        deadline = time.monotonic() + 10.0
+        while not cleaned and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(cleaned, [True])
+        running_release.set()
+        closer.join(timeout=10.0)
+        self.assertFalse(closer.is_alive())
+        self.assertEqual(close_out, [True])
+        self.assertFalse(worker._thread.is_alive())
+        self.assertEqual(executed, [])
+        self.assertGreaterEqual(worker.health_snapshot().cancelled_jobs, 1)
+
+    def test_close_timeout_reports_incomplete_with_hung_job(self) -> None:
+        worker = browser_worker.BrowserWorker(name="test-close-hung", max_queue_size=8)
+        running_started = threading.Event()
+        running_release = threading.Event()
+
+        def _hung() -> str:
+            running_started.set()
+            running_release.wait(timeout=30.0)
+            return "hung-done"
+
+        hung_errors: list[BaseException] = []
+
+        def _run_hung() -> None:
+            try:
+                worker.call(_hung, timeout=30.0)
+            except BaseException as exc:
+                hung_errors.append(exc)
+
+        hung = threading.Thread(target=_run_hung, daemon=True)
+        hung.start()
+        self.assertTrue(running_started.wait(timeout=10.0))
+        queued_errors: list[BaseException] = []
+
+        def _run_queued() -> None:
+            try:
+                worker.call(lambda: "queued-never", timeout=None)
+            except BaseException as exc:
+                queued_errors.append(exc)
+
+        queued = threading.Thread(target=_run_queued, daemon=True)
+        queued.start()
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and worker.health_snapshot().queue_size < 1:
+            time.sleep(0.01)
+        self.assertGreaterEqual(worker.health_snapshot().queue_size, 1)
+        self.assertFalse(worker.close(timeout=0.3))
+        self.assertTrue(worker._thread.is_alive())
+        queued.join(timeout=10.0)
+        self.assertFalse(queued.is_alive())
+        self.assertEqual(len(queued_errors), 1)
+        self.assertIsInstance(queued_errors[0], RuntimeError)
+        self.assertIn("closed", str(queued_errors[0]))
+        running_release.set()
+        hung.join(timeout=10.0)
+        self.assertFalse(hung.is_alive())
+        self.assertEqual(len(hung_errors), 1)
+        self.assertIsInstance(hung_errors[0], RuntimeError)
+        self.assertIn("closed", str(hung_errors[0]))
+        self.assertTrue(worker.close(timeout=5.0))
+        self.assertFalse(worker._thread.is_alive())
+
     def test_reentrant_call_honors_timeout_and_scopes(self) -> None:
         from codey.runtime.core import cancellation
 

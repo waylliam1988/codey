@@ -1588,7 +1588,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             session = provider._session
             assert session is not None
-            provider.close()
+            self.assertTrue(provider.close())
             for thread in (session.reader, session.stderr_reader, session.writer):
                 if thread is not None:
                     thread.join(timeout=5.0)
@@ -1620,7 +1620,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
                 provider._session.cdp_port = 9444
                 provider._session.target_id = "target/with space"
             session = provider._session
-            provider.close()
+            self.assertTrue(provider.close())
             for thread in (session.reader, session.stderr_reader, session.writer):
                 if thread is not None:
                     thread.join(timeout=5.0)
@@ -1657,6 +1657,15 @@ class SelfRepairWorkerTests(unittest.TestCase):
         process.poll.return_value = None
         job = mock.Mock()
 
+        order: list[str] = []
+
+        class _NullContext:
+            def __enter__(self) -> None:
+                return None
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
         with (
             mock.patch("codey.providers.worker.subprocess.Popen", return_value=process),
             mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
@@ -1664,6 +1673,10 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch("codey.providers.worker.urlopen") as urlopen,
             mock.patch("codey.providers.worker.WORKER_TIMEOUT_GRACE", 0.0),
         ):
+            urlopen.side_effect = lambda *args, **kwargs: (
+                order.append("urlopen"), _NullContext()
+            )[1]
+            terminate.side_effect = lambda *args, **kwargs: order.append("terminate")
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             assert provider._session is not None
             with provider._session.lock:
@@ -1676,6 +1689,72 @@ class SelfRepairWorkerTests(unittest.TestCase):
         urlopen.assert_called_once()
         self.assertIn("http://127.0.0.1:9444/json/close/target-1", urlopen.call_args.args[0])
         terminate.assert_called_once_with(process, job)
+        self.assertEqual(order, ["urlopen", "terminate"])
+
+    def test_old_cleanup_blocks_new_profile_reuse(self) -> None:
+        override = mock.Mock()
+        override.root = Path("override")
+        override.generation = 3
+        process = mock.Mock()
+        process.stdout = io.StringIO("")
+        process.stderr = io.StringIO("")
+        process.stdin = mock.Mock()
+        process.poll.return_value = None
+        job = mock.Mock()
+        entered = threading.Event()
+        release = threading.Event()
+
+        def gated_terminate(proc: object, job: object) -> None:
+            entered.set()
+            assert release.wait(timeout=10.0)
+
+        with (
+            mock.patch("codey.providers.worker.subprocess.Popen", return_value=process) as popen,
+            mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+                side_effect=gated_terminate,
+            ),
+            mock.patch("codey.providers.worker.urlopen"),
+        ):
+            provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
+            old_session = provider._session
+            assert old_session is not None
+            initial_popens = popen.call_count
+            closer_errors: list[BaseException] = []
+            closer_done: list[bool] = []
+
+            def do_close() -> None:
+                try:
+                    closer_done.append(provider.close())
+                except BaseException as exc:
+                    closer_errors.append(exc)
+
+            closer = threading.Thread(target=do_close, daemon=True)
+            closer.start()
+            self.assertTrue(entered.wait(timeout=10.0))
+            # Cleanup still holds the life lock: no new generation may start.
+            acquired = provider._life_lock.acquire(blocking=False)
+            try:
+                self.assertFalse(acquired)
+            finally:
+                if acquired:
+                    provider._life_lock.release()
+            with (
+                mock.patch(
+                    "codey.providers.worker.WORKER_TIMEOUT_GRACE", 0.0,
+                ),
+                self.assertRaises(ProviderActionError) as raised,
+            ):
+                provider._request("send", {}, 0.05)
+            self.assertIn("timed out", raised.exception.failure.message)
+            self.assertEqual(popen.call_count, initial_popens)
+            release.set()
+            closer.join(timeout=10.0)
+            self.assertFalse(closer.is_alive())
+            self.assertEqual(closer_errors, [])
+            self.assertEqual(closer_done, [True])
+            self.assertIsNone(provider._session)
 
     def test_provider_worker_startup_failure_is_stderr_text(self) -> None:
         import sys as _sys

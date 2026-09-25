@@ -1266,6 +1266,163 @@ class WorkerSelfHealTests(unittest.TestCase):
         assert provider._session is not None
         self.assertIs(provider._session.proc, fresh)
 
+    def test_write_failure_first_request_retires_for_next(self) -> None:
+        # No reply arrives and the real writer fails: the first request
+        # raises exactly once and the condemned generation is never reused.
+        provider = self._provider()
+        old = mock.Mock()
+        old.poll.return_value = None
+        old.stdin = mock.Mock()
+        session = self._session_for(provider, old)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def failing_flush() -> None:
+            entered.set()
+            assert release.wait(timeout=10.0)
+            raise OSError("broken pipe")
+
+        old.stdin.flush.side_effect = failing_flush
+        first_errors: list[BaseException] = []
+
+        def first_request() -> None:
+            try:
+                provider._request("send", {"text": "first"}, 5.0)
+            except BaseException as exc:
+                first_errors.append(exc)
+
+        worker = threading.Thread(target=first_request, daemon=True)
+        worker.start()
+        self.assertTrue(entered.wait(timeout=10.0))
+        release.set()
+        worker.join(timeout=10.0)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(first_errors), 1)
+        self.assertIsInstance(first_errors[0], RuntimeError)
+        self.assertIn("broken pipe", str(first_errors[0]))
+        with session.lock:
+            self.assertNotEqual(session.terminal_error, "")
+            self.assertIsNone(session.pending)
+        fresh = mock.Mock()
+        fresh.poll.return_value = None
+        fresh.stdin = mock.Mock()
+
+        def fake_start(inner_self) -> None:
+            fresh_session = _WorkerSession(proc=fresh, job=None)
+            inner_self._session = fresh_session
+            self._spawn_writer(inner_self, fresh_session)
+
+        second_out: dict[str, object] = {}
+
+        def second_request() -> None:
+            second_out["result"] = provider._request("send", {"text": "second"}, 5.0)
+
+        with (
+            mock.patch.object(
+                WorkerChatProvider, "_start_session_locked", fake_start
+            ),
+            mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ),
+        ):
+            second_worker = threading.Thread(target=second_request, daemon=True)
+            second_worker.start()
+            fresh_session = None
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                current = provider._session
+                if current is not None and current is not session:
+                    fresh_session = current
+                    try:
+                        self._wait_for_pending(fresh_session, timeout=1.0)
+                        break
+                    except AssertionError:
+                        pass
+                time.sleep(0.01)
+            assert fresh_session is not None
+            second_pending = self._wait_for_pending(fresh_session)
+            provider._deliver_response(
+                fresh_session,
+                {"id": second_pending.request_id, "ok": True, "result": "second-ok"},
+            )
+            second_worker.join(timeout=10.0)
+        self.assertFalse(second_worker.is_alive())
+        self.assertEqual(second_out.get("result"), "second-ok")
+        assert provider._session is not None
+        self.assertIs(provider._session.proc, fresh)
+
+    def test_close_reports_cleanup_completion(self) -> None:
+        from codey.providers.diagnostics import ProviderActionError
+
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        session = self._session_for(provider, proc)
+        pending = _PendingRequest(request_id="req-1", method="send")
+        with session.lock:
+            session.pending = pending
+        waiter_errors: list[BaseException] = []
+
+        def do_wait() -> None:
+            try:
+                provider._wait_for_response(session, pending, self._deadline(30.0))
+            except BaseException as exc:
+                waiter_errors.append(exc)
+
+        waiter = threading.Thread(target=do_wait, daemon=True)
+        waiter.start()
+        deadline = time.monotonic() + 10.0
+        while not waiter.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        with mock.patch(
+            "codey.providers.worker.cancellation.terminate_process_tree",
+        ):
+            self.assertTrue(provider.close())
+        waiter.join(timeout=10.0)
+        self.assertFalse(waiter.is_alive())
+        self.assertEqual(len(waiter_errors), 1)
+        self.assertIsInstance(waiter_errors[0], ProviderActionError)
+        self.assertIn("exited", waiter_errors[0].failure.message)
+        self.assertIsNone(provider._session)
+
+    def test_close_reports_incomplete_cleanup(self) -> None:
+        provider = self._provider()
+        proc = mock.Mock()
+        proc.poll.return_value = None
+        proc.stdin = mock.Mock()
+        release_reader = threading.Event()
+
+        class _StuckStdout:
+            def readline(self, size: int = -1) -> str:
+                assert release_reader.wait(timeout=30.0)
+                return ""
+
+            def close(self) -> None:
+                return None
+
+        proc.stdout = _StuckStdout()
+        session = self._session_for(provider, proc)
+        reader = threading.Thread(
+            target=provider._read_loop, args=(session,), daemon=True,
+        )
+        session.reader = reader
+        reader.start()
+        deadline = time.monotonic() + 10.0
+        while not reader.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        try:
+            with mock.patch(
+                "codey.providers.worker.cancellation.terminate_process_tree",
+            ):
+                self.assertFalse(provider.close())
+            self.assertIsNone(provider._session)
+            self.assertTrue(reader.is_alive())
+        finally:
+            release_reader.set()
+            reader.join(timeout=10.0)
+        self.assertFalse(reader.is_alive())
+
     def test_stop_during_request_gate_is_prompt(self) -> None:
         from codey.runtime.core import cancellation as cancel
 

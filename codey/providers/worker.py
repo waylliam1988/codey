@@ -135,15 +135,16 @@ class WorkerChatProvider:
         )
         return str(result or "")
 
-    def close(self) -> None:
+    def close(self) -> bool:
         # Shutdown never resurrects and never queues behind a long send:
         # detach under the life lock, wake the waiter and the writer, then
         # tear down the detached generation while still holding the lock so
-        # the next start cannot reuse the profile early.
+        # the next start cannot reuse the profile early. Returns True when
+        # the detached generation's threads actually stopped.
         with self._life_lock:
             session = self._session
             if session is None:
-                return
+                return True
             self._session = None
             with session.lock:
                 session.closed = True
@@ -151,7 +152,7 @@ class WorkerChatProvider:
                 if pending is not None:
                     pending.done.set()
                 session.write_event.set()
-            self._terminate_session(session)
+            return self._terminate_session(session)
 
     def _start_session_locked(self) -> None:
         """Create, publish, and serve one generation. Holds _life_lock."""
@@ -819,8 +820,14 @@ class WorkerChatProvider:
         self._terminate_session(session)
         return True
 
-    def _terminate_session(self, session: _WorkerSession) -> None:
-        """Tear down a detached generation: page, tree, job, pipes, threads."""
+    def _terminate_session(self, session: _WorkerSession) -> bool:
+        """Tear down a detached generation: page, tree, job, pipes, threads.
+
+        Page close runs before tree termination while the caller still holds
+        `_life_lock`, so a replacement generation cannot reuse the browser
+        profile early. Returns True when the generation's threads stopped
+        within the bounded join budget.
+        """
         with session.lock:
             port = session.cdp_port
             target_id = session.target_id
@@ -836,6 +843,7 @@ class WorkerChatProvider:
                 pass
         proc = session.proc
         job = session.job
+        joined = False
         try:
             cancellation.terminate_process_tree(proc, job)
         finally:
@@ -843,11 +851,12 @@ class WorkerChatProvider:
                 with contextlib.suppress(Exception):
                     job.close()  # type: ignore[union-attr]
             self._close_pipes(proc)
-            self._join_threads([
+            joined = self._join_threads([
                 thread
                 for thread in (session.reader, session.stderr_reader, session.writer)
                 if thread is not None
             ])
+        return joined
 
     @staticmethod
     def _close_pipes(proc: subprocess.Popen[str]) -> None:
@@ -864,7 +873,7 @@ class WorkerChatProvider:
                 pass
 
     @staticmethod
-    def _join_threads(threads: list[threading.Thread]) -> None:
+    def _join_threads(threads: list[threading.Thread]) -> bool:
         budget = max(0.0, float(READER_JOIN_TIMEOUT))
         deadline = time.monotonic() + budget
         for thread in threads:
@@ -873,6 +882,11 @@ class WorkerChatProvider:
             remaining = deadline - time.monotonic()
             with contextlib.suppress(Exception):
                 thread.join(timeout=max(0.0, remaining))
+        return all(
+            not thread.is_alive()
+            for thread in threads
+            if thread is not threading.current_thread()
+        )
 
 
 def _protocol_error(method: str, payload: dict) -> str | None:

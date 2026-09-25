@@ -32,6 +32,33 @@
   regression suites, collection (`4116 tests collected`), and final full
   `python -m pytest` (`4092 passed, 24 skipped in 341.36s`).
 
+## Unreleased - Single-result generations, reported cleanup, profile exclusion (no release)
+
+- One verdict per accepted unit. Provider pending completes exactly once
+  (success, protocol, timeout, or exit); close/retire wakes map to exit, and
+  the slot is freed in `finally`. Browser queued sync calls fail with an
+  explicit close error, queued async jobs run abandon cleanup exactly once,
+  and running jobs get a cancel signal with late results discarded.
+- Failed generations stay dead. Sticky `terminal_error` survives slot
+  clearing, so a late stdin failure retires before the next request; the
+  delivered success is never rewritten. First-failure-then-fresh is now
+  covered by a real writer test, not only late-after-success.
+- Waiting always ends with a cleanup report. Stop/timeout/close interrupt
+  every wait; provider `close()` and `_terminate_session()` return whether
+  threads actually stopped, and `BrowserWorker.close()` returns whether the
+  loop stopped (False proven by a hung-job test).
+- Profiles never recycle early. Tab close precedes tree kill in that order,
+  and `_life_lock` is held across detach plus cleanup, so a new `Popen`
+  cannot start until the old generation is torn down; both are now latched
+  by tests.
+- Verification: `python -m ruff check .` clean, `git diff --check` clean,
+  targeted suites green (`248 passed, 6 subtests passed` worker/headless/
+  adapter/browser/hardening/generations/deepseek/research; `22 passed, 15
+  subtests passed` ui-harness/env/readonly/cancellation), collection
+  (`4250 tests collected`), and final full `python -m pytest -q
+  -o faulthandler_timeout=120` (`4244 passed, 6 skipped, 1374 subtests
+  passed in 370.22s`, zero flakes).
+
 ## Unreleased - Sticky write failures, bounded slot cleanup, terminal browser close, associated headless events (no release)
 
 - Write failures stick. `_writer_loop()` records a sticky `terminal_error`
