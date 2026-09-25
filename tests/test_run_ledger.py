@@ -316,7 +316,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             (project / "pyproject.toml").write_text(
                 "[tool.pytest.ini_options]\n", encoding="utf-8"
             )
-            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
+            state = server.AppContext(root / "state")
             provider = self._provider()
 
             def fake_agent(request: AgentRequest):
@@ -371,6 +371,9 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
 
+            # Explicit ghost wait replaces the removed sync flag: no daemon
+            # may hold state files while TemporaryDirectory cleans up.
+            state.wait_for_ghost_sleep(timeout=30)
             run_id = state.run_registry.last_terminal_event()["run_id"]
             path = state.run_ledgers.path_for("session-ledger", run_id)
             rows = [item.payload for item in read_ledger(path)]
@@ -402,6 +405,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 state.run_registry.last_terminal_event()["receipt"]["display"]["summary"],
                 "1 file changed · checks passed",
             )
+            state.close()
 
     def test_ledger_append_failure_does_not_break_task(self) -> None:
         class FailingLedger:
@@ -423,7 +427,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
+            state = server.AppContext(root / "state")
             state.run_ledgers = FailingStore()
             provider = self._provider()
 
@@ -444,7 +448,9 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             ):
                 server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
 
+            state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")
+            state.close()
 
     def test_terminal_error_records_provider_failure_in_run_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as td:

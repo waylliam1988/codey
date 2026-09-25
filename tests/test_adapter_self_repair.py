@@ -1069,7 +1069,7 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
 class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(Path(td) / "state", sync_ghost_maintenance=True)
+            state = server.AppContext(Path(td) / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun")
             state.providers.supervisor.record_failure(
                 "deepseek",
@@ -1121,12 +1121,14 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
             ):
                 server._run_task("session-self-repair", td, "task", 8, False, "deepseek")
 
+            state.wait_for_ghost_sleep(timeout=30)
             state.self_repair.maybe_enqueue.assert_called_once()
             args = state.self_repair.maybe_enqueue.call_args.args
             self.assertEqual(args[0], "deepseek")
             self.assertEqual(args[1].kind, FAILURE_RESPONSE_MISSING)
             self.assertEqual(args[2].state, STATE_DEGRADED)
             self.assertEqual(state.run_registry.last_terminal_event()["provider"], "stepfun")
+            state.close()
 
     def test_state_kicks_self_repair_queue_only_when_idle(self) -> None:
         from codey.app import server
@@ -1638,20 +1640,22 @@ class SelfRepairWorkerTests(unittest.TestCase):
         override.generation = 3
 
         class _BlockingStdout:
-            """One blocked read: no reply arrives, then close() releases it."""
+            """One blocked read: released explicitly, never via close()."""
 
             def __init__(self) -> None:
                 self._release = threading.Event()
+                self.close_calls = 0
 
             def readline(self, size: int = -1) -> str:
                 assert self._release.wait(timeout=10.0)
                 return ""
 
             def close(self) -> None:
-                self._release.set()
+                self.close_calls += 1
 
+        blocking_stdout = _BlockingStdout()
         process = mock.Mock()
-        process.stdout = _BlockingStdout()
+        process.stdout = blocking_stdout
         process.stderr = io.StringIO("")
         process.stdin = mock.Mock()
         process.poll.return_value = None
@@ -1679,11 +1683,22 @@ class SelfRepairWorkerTests(unittest.TestCase):
             terminate.side_effect = lambda *args, **kwargs: order.append("terminate")
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             assert provider._session is not None
-            with provider._session.lock:
-                provider._session.cdp_port = 9444
-                provider._session.target_id = "target-1"
-            with self.assertRaises(ProviderActionError) as raised:
-                provider._request("send", {}, 0.05)
+            session = provider._session
+            reader = session.reader
+            with session.lock:
+                session.cdp_port = 9444
+                session.target_id = "target-1"
+            try:
+                with self.assertRaises(ProviderActionError) as raised:
+                    provider._request("send", {}, 0.05)
+            finally:
+                # Bounded cleanup owns the release: a live reader keeps its
+                # pipe, so close() must not have been called to free it.
+                self.assertEqual(blocking_stdout.close_calls, 0)
+                blocking_stdout._release.set()
+                if reader is not None:
+                    reader.join(timeout=5.0)
+                    self.assertFalse(reader.is_alive())
 
         self.assertIn("timed out", raised.exception.failure.message)
         urlopen.assert_called_once()

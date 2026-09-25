@@ -56,7 +56,6 @@ class HeadlessRequest:
     intent: str = "project"
     state_home: Path | None = DEFAULT_STATE_HOME
     port: int = 9222
-    sync_ghost_maintenance: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,12 +75,10 @@ class HeadlessAppContext(AppContext):
         port: int,
         emit_jsonl: Callable[[dict[str, object]], None],
         connect_provider: Callable[..., Any] = default_connect_provider,
-        sync_ghost_maintenance: bool = False,
     ) -> None:
         super().__init__(
             state_home,
             replay_limit=0,
-            sync_ghost_maintenance=sync_ghost_maintenance,
         )
         self.port = int(port)
         self._emit_jsonl = emit_jsonl
@@ -175,7 +172,6 @@ def run_headless(
         port=request.port,
         emit_jsonl=emit_jsonl,
         connect_provider=connect_provider,
-        sync_ghost_maintenance=request.sync_ghost_maintenance,
     )
     try:
         pre_reserved_run_id = _pre_reserve_run_id(
@@ -336,23 +332,19 @@ def _run_headless_task(
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
         )
-        try:
-            run_task_submission(
-                deps,
-                TaskSubmission(
-                    session_id=session_id,
-                    project=str(project),
-                    task=request.task,
-                    max_turns=request.max_turns,
-                    continue_task=False,
-                    provider_id=request.provider_id,
-                    intent=_request_intent(request.intent),
-                    run_id=pre_reserved_run_id,
-                ),
-            )
-        finally:
-            if state.sync_ghost_maintenance:
-                state.wait_for_ghost_sleep(timeout=30)
+        run_task_submission(
+            deps,
+            TaskSubmission(
+                session_id=session_id,
+                project=str(project),
+                task=request.task,
+                max_turns=request.max_turns,
+                continue_task=False,
+                provider_id=request.provider_id,
+                intent=_request_intent(request.intent),
+                run_id=pre_reserved_run_id,
+            ),
+        )
         terminal = dict(state.run_registry.last_terminal_event() or {})
         run_id = str(terminal.get("run_id") or request.run_id or "")
         stop_reason = str(terminal.get("stop_reason") or "error")

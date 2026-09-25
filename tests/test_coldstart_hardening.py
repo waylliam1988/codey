@@ -1815,11 +1815,15 @@ class WorkerSelfHealTests(unittest.TestCase):
         import sys as _sys
 
         provider = self._provider()
+        # Helper contract: the child owns its process group (production
+        # start_process uses start_new_session=True), so terminate signals
+        # the group leader instead of an arbitrary external child.
         proc = _subprocess.Popen(
             [_sys.executable, "-c", "import time; time.sleep(30)"],
             stdin=_subprocess.PIPE,
             stdout=_subprocess.PIPE,
             stderr=_subprocess.PIPE,
+            start_new_session=True,
         )
         try:
             session = _WorkerSession(proc=proc, job=None)  # type: ignore[arg-type]
@@ -1992,25 +1996,20 @@ class PostBodyTimeoutTests(unittest.TestCase):
 
 
 class AppContextLifecycleTests(unittest.TestCase):
-    def test_app_context_sync_ghost_maintenance_flag(self) -> None:
+    def test_app_context_has_no_sync_ghost_flag_and_waits_explicitly(self) -> None:
         ctx_default = AppContext()
         try:
-            self.assertFalse(ctx_default.sync_ghost_maintenance)
+            self.assertFalse(hasattr(ctx_default, "sync_ghost_maintenance"))
+            self.assertTrue(ctx_default.wait_for_ghost_sleep(timeout=0.1))
         finally:
             ctx_default.close()
 
-        ctx_sync = AppContext(sync_ghost_maintenance=True)
-        try:
-            self.assertTrue(ctx_sync.sync_ghost_maintenance)
-        finally:
-            ctx_sync.close()
-
-    def test_app_context_sync_ghost_maintenance_is_always_explicit_and_defaults_false(self) -> None:
+    def test_app_context_ghost_wait_is_always_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             custom_home = Path(td, "state")
             ctx = AppContext(custom_home)
             try:
-                self.assertFalse(ctx.sync_ghost_maintenance)
+                self.assertFalse(hasattr(ctx, "sync_ghost_maintenance"))
             finally:
                 ctx.close()
 

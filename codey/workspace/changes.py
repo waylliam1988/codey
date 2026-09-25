@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
-from codey.storage.file_lock import with_file_lock
+from codey.storage.file_lock import FileLease, LockTimeout, acquire_lease, with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -72,6 +72,10 @@ CHANGE_EXCLUDED_PATH_PARTS = {
     "dist",
     "build",
 }
+
+
+class ProjectWriteBusy(RuntimeError):
+    """A second task tried to persist snapshots for a project already owned."""
 
 
 @dataclass(frozen=True)
@@ -201,15 +205,51 @@ class SnapshotStore:
                     hashes[rel] = digest
             return before, hashes
 
+    def writer_lock_path(self, root: str | Path) -> Path:
+        """Per-project persistent-writer ownership lock (held for a task)."""
+        return self.dir_for(root) / ".writer.lock"
+
+    def acquire_writer(self, root: str | Path, *, timeout_seconds: float = 0.0) -> FileLease:
+        """Claim the single persistent writer for ``root`` or raise busy.
+
+        Non-blocking by default so a second write task fails fast with
+        ``ProjectWriteBusy`` instead of queueing behind the first.
+        """
+        self.dir_for(root).mkdir(parents=True, exist_ok=True)
+        try:
+            return acquire_lease(
+                self.writer_lock_path(root), timeout_seconds=timeout_seconds
+            )
+        except LockTimeout as exc:
+            raise ProjectWriteBusy(
+                f"another task is writing this project: {root}"
+            ) from exc
+
     def put_baseline(
         self,
         root: str | Path,
         rel: str,
         content: str | None,
-    ) -> bool:
-        """First-write baseline; existing entry wins (True=created)."""
+    ) -> str | None:
+        """First-write baseline; returns the persisted baseline.
+
+        The on-disk entry always wins: a second tracker adopting a newer
+        file read converges back to the first persisted value instead of
+        forking memory. A damaged existing entry (bad schema, wrong body
+        name, missing/unreadable body) raises and blocks further edits
+        rather than forking or silently overwriting.
+        """
 
         resolved_root = Path(root).expanduser().resolve()
+        try:
+            probe = _safe_join(resolved_root, rel)
+            canonical = probe.relative_to(resolved_root).as_posix()
+        except (ValueError, OSError) as exc:
+            raise ValueError(f"unsafe snapshot path: {rel!r}") from exc
+        if canonical != rel:
+            raise ValueError(f"unsafe snapshot path: {rel!r}")
+        if content is not None and len(content.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
+            raise ValueError(f"snapshot too large: {rel!r}")
         body_path = self._baseline_path(resolved_root, rel)
         manifest_path = self.path_for(resolved_root)
 
@@ -223,8 +263,11 @@ class SnapshotStore:
             if not isinstance(files, dict):
                 files = {}
             existing = files.get(rel)
-            if isinstance(existing, dict) and "baseline" in existing:
-                return False
+            if existing is not None:
+                persisted = self._persisted_baseline_locked(
+                    resolved_root, rel, existing, body_path
+                )
+                return persisted
             written_body = False
             try:
                 if content is None:
@@ -240,11 +283,62 @@ class SnapshotStore:
                     {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
                     max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
                 )
-                return True
+                return content
             except Exception:
                 if written_body:
                     _remove_file(body_path)
                 raise
+
+    def _persisted_baseline_locked(
+        self,
+        resolved_root: Path,
+        rel: str,
+        existing: object,
+        body_path: Path,
+    ) -> str | None:
+        """Validate an existing entry inside the manifest lock and read it."""
+        if not isinstance(existing, dict):
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline entry not an object: {rel!r}"
+            )
+        if set(existing) - {"baseline", "after_hash"} or "baseline" not in existing:
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline entry schema: {rel!r}"
+            )
+        baseline_ref = existing.get("baseline")
+        if baseline_ref is None:
+            digest = existing.get("after_hash")
+            if digest is not None and not (
+                isinstance(digest, str)
+                and (digest == "missing" or digest.startswith("sha256:"))
+            ):
+                raise StoreCorruption(
+                    self.path_for(resolved_root), f"baseline after_hash: {rel!r}"
+                )
+            return None
+        if not isinstance(baseline_ref, str) or baseline_ref != body_path.name:
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline body name: {rel!r}"
+            )
+        digest = existing.get("after_hash")
+        if digest is not None and not (
+            isinstance(digest, str)
+            and (digest == "missing" or digest.startswith("sha256:"))
+        ):
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline after_hash: {rel!r}"
+            )
+        try:
+            body = _read_text_bounded(body_path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline body unreadable: {rel!r}"
+            ) from exc
+        if len(body.encode("utf-8")) > MAX_SNAPSHOT_FILE_BYTES:
+            raise StoreCorruption(
+                self.path_for(resolved_root), f"baseline body too large: {rel!r}"
+            )
+        return body
 
     def set_after_hash(self, root: str | Path, rel: str, digest: str) -> None:
         resolved_root = Path(root).expanduser().resolve()
@@ -436,32 +530,21 @@ class ChangeTracker:
         with self._lock:
             if rel_posix in self._before:
                 return
+            store = self.store
         before = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
-        added = len((before or "").encode("utf-8"))
-        # The file read above happens outside the lock, so another thread may
-        # have captured this rel in the meantime. Re-check membership before
-        # mutating anything: exactly one thread wins and pays the byte cost.
+        # Disk wins: the persisted baseline is the memory value, so a second
+        # tracker reading a newer file converges back to the first writer
+        # instead of forking. Damaged disk entries raise and publish nothing.
+        persisted: str | None = before
+        if store is not None:
+            persisted = store.put_baseline(self.root, rel_posix, before)
+        added = len((persisted or "").encode("utf-8"))
         with self._lock:
             if rel_posix in self._before:
                 return
-            self._validate_capacity_locked(rel_posix, before)
-            self._before[rel_posix] = before
+            self._validate_capacity_locked(rel_posix, persisted)
+            self._before[rel_posix] = persisted
             self._total_bytes += added
-        try:
-            with self._lock:
-                store = self.store
-            if store is not None:
-                store.put_baseline(self.root, rel_posix, before)
-        except Exception:
-            with self._lock:
-                # Roll back only our own write; prune/restore may already have
-                # removed it, and a concurrent re-capture must survive. The
-                # store cleans its own newly written body; never delete a
-                # pre-existing baseline here.
-                if rel_posix in self._before and self._before[rel_posix] == before:
-                    del self._before[rel_posix]
-                    self._total_bytes -= added
-            raise
 
     def capture_after(self, rel: str) -> None:
         path = _safe_join(self.root, rel)

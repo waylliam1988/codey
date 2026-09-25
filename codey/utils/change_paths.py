@@ -7,8 +7,18 @@ from pathlib import PurePosixPath
 
 def safe_change_path(value: object) -> str:
     """Return a normalized relative POSIX path, or ``""`` when unsafe."""
+    import re as _re
 
-    normalized = str(value or "").replace("\\", "/").strip().strip("/")
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    # Reject on the raw value before any slash stripping: a leading "/"
+    # is a POSIX absolute path and "C:/" / "C:\\" / "\\\\" are Windows
+    # absolute paths. Stripping first would launder them to relative.
+    unified = raw.replace("\\", "/")
+    if unified.startswith("/") or _re.match(r"^[A-Za-z]:/", unified):
+        return ""
+    normalized = unified.strip().strip("/")
     path = PurePosixPath(normalized)
     if not normalized or path.is_absolute() or ".." in path.parts:
         return ""

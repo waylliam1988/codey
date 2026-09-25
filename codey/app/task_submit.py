@@ -89,8 +89,6 @@ def run_task(
         )
     finally:
         state = get_state()
-        if state.sync_ghost_maintenance:
-            state.wait_for_ghost_sleep(timeout=30)
         supervisor = state.self_repair
         if supervisor is not None:
             supervisor.kick_if_idle(state.is_busy)

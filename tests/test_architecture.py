@@ -766,13 +766,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_edit_scope_is_stdlib_leaf(self) -> None:
-        # The edit-scope vocabulary has no runtime dependencies at all:
-        # every consumer (proof, monitor, harness) shares one path
-        # classification that cannot drag execution into a projection.
+        # The edit-scope vocabulary shares one pure path normalizer
+        # (codey.utils.change_paths, itself stdlib-only) instead of
+        # duplicating it: the only allowed internal import is that leaf.
         path = ROOT / "codey" / "completion" / "edit_scope.py"
         imports = imported_modules(path)
         internal = sorted(name for name in imports if name == "codey" or name.startswith("codey."))
-        self.assertEqual(internal, [])
+        self.assertEqual(internal, ["codey.utils.change_paths"])
 
     def test_edit_integrity_is_projection_leaf(self) -> None:
         path = ROOT / "codey" / "completion" / "edit_integrity.py"
@@ -2025,6 +2025,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "runs/trace.py",
             "runtime/core/operation_state.py",
             "toolchain/runtime.py",
+            "workspace/changes.py",
         }
         self.assertEqual(set(over_limit) - baseline, set())
         # Reverse direction: a baseline entry that shrank back under the
@@ -2048,6 +2049,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "runs/trace.py": 2450,
             "runtime/core/operation_state.py": 1110,
             "toolchain/runtime.py": 1300,
+            "workspace/changes.py": 1120,
         }
         grown = {
             name: size

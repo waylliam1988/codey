@@ -445,10 +445,11 @@ def _looks_like_unsupported_tools_error(detail: object) -> bool:
 def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
     """Parse raw tool_calls, returning the usable calls plus a drop count.
 
-    A call without an id or a name can never be answered legally, so callers
-    must treat any drop as a malformed turn (fail closed) rather than storing
-    the raw block. Bad argument payloads are NOT dropped here: they keep
-    their id and flow into validation, which answers them with an error.
+    A call without an id, without a name, or without a JSON-object
+    ``arguments`` payload can never be answered legally, so callers must
+    treat any drop as a malformed turn (fail closed) rather than storing
+    the raw block. Illegal arguments are never coerced to ``{}``: a
+    ``done`` with ``"{bad"`` must not become a valid completion.
     A present-but-non-list ``tool_calls`` is a protocol error, never an
     empty turn: it would silently downgrade a tool turn to plain text.
     """
@@ -471,18 +472,26 @@ def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
             dropped += 1
             continue
         name = str(function.get("name") or "")
+        if not call_id or not name:
+            dropped += 1
+            continue
         raw_args = function.get("arguments")
         if isinstance(raw_args, dict):
             arguments = dict(raw_args)
         elif isinstance(raw_args, str):
-            try:
-                decoded = json.loads(raw_args) if raw_args.strip() else {}
-            except json.JSONDecodeError:
-                decoded = {}
-            arguments = dict(decoded) if isinstance(decoded, dict) else {}
+            if not raw_args.strip():
+                arguments = {}
+            else:
+                try:
+                    decoded = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    dropped += 1
+                    continue
+                if not isinstance(decoded, dict):
+                    dropped += 1
+                    continue
+                arguments = dict(decoded)
         else:
-            arguments = {}
-        if not call_id or not name:
             dropped += 1
             continue
         parsed.append({"id": call_id, "name": name, "arguments": arguments})

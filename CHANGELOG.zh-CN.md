@@ -2,33 +2,32 @@
 
 [English version](CHANGELOG.md)
 
-## Unreleased - 冷启动边界加固（未发布）
+## Unreleased - 冷启动复查跟进（未发布）
 
-- 有界关闭：`cancellation.wait_process()` 先终止所拥有的进程树，再限时
-  等待读取线程，只关闭已停止线程的管道；worker `_terminate_session()`
-  同样先 join 再关已停止的会话管道。存活读取线程保留管道（daemon 遗弃），
-  `close()` 不会卡住调用方。真实 pipe 回归证明外部写端持有时仍能按时
-  返回 `PipeDrainTimeout`。
-- 基线 first-wins：`SnapshotStore.put_baseline()` 保留已有条目（返回是否
-  新建），不再先覆盖正文；`remove()` 先提交 manifest 再删正文；
-  `ChangeTracker.capture_before()` 只回滚内存。替换/删除失败回归证明旧基线
-  仍可加载。
-- 未跟踪 diff 不跟随链接：`_untracked_file_diff()` 先拒符号链接，再用
-  `safe_join` 验证仍在仓库内，最后走 no-follow 读取。链接只保留路径，不展开
-  目标内容。新增 POSIX 链接与越界回归；CI 新增 Ubuntu 文件边界任务并钉住
-  `pip==26.1.2`。
-- worker 显式关闭可重试：第二次 `close()` 对仍存活的直接子进程执行有时限
-  终止与回收；recheck 保持 fast-fail（短时限不等 join、不重发已退出 PID
-  信号）。新增恢复、不重发、存活管道三项回归。
-- 本地模型显错：`content_filter` 在两处 choice 解析均抛明确错误；
-  `tool_calls` 存在但非列表直接报协议错误；历史不提交，无空字符串
-  fallback。补 `send()`/`send_turn()` 回归。
-- Ghost 维护等待加明确期限：`task_submit` 与 headless 路径均用
-  `timeout=30`。
+- 单持久化写入者：`SnapshotStore.acquire_writer()` 按项目跨进程独占
+  （`FileLease`，非阻塞）；任务入口对快照写拿锁，拿不到直接报
+  `project_write_busy`，不再分叉基线。`put_baseline()` 返回实际持久化
+  基线（磁盘恒胜），锁内校验 schema/路径/正文，损坏抛 `StoreCorruption`；
+  `capture_before()` 发布持久化值。补双 tracker 与正文缺失回归。
+- 本地参数边界：`_parse_tool_calls()` 不再把非法 `arguments` 改成 `{}`；
+  非法 JSON/非对象计为 malformed 整轮失败（不提交历史、不执行工具、
+  `done` 不触发）。补 `done` 非法、`read` 非法、合法 `{}` 三用例。
+- 诚实管道清理：`_close_owned_pipes()` 返回遗弃数并记日志；外部持有者
+  重复出现按设计累积有界 daemon，普通子树零遗弃。补重复持有与上报回归。
+- 测试卫生：`_BlockingStdout` 改显式释放并断言活跃时未调 `close()`；
+  越界测试用真实外部文件；已跟踪捕获测试改名并补真实失败路径。
+- POSIX 契约：删 Mock 形 `pid` 非 int 分支；`terminate_process_tree()`
+  只收 `start_new_session` 组长，另设 `terminate_direct_child()` 管直系
+  子进程。真实进程测试用 `start_new_session=True`，单元测试在 OS 边界 mock。
+- 共享路径归一：`edit_scope` 复用 `change_paths.safe_change_path`（删重复）；
+  共享函数先按原始值拒 POSIX 绝对与 Windows 盘符路径。补绝对路径回归。
+- 移除仅测试用的 `sync_ghost_maintenance` 产品接线；测试改显式
+  `wait_for_ghost_sleep(timeout=30)`。
 - 验证：`python -m ruff check .`、`python -m compileall -q codey tests`、
-  `git diff --check`、收集（`4267 tests`）、定向回归与最终全量
-  `python -m pytest -q -o faulthandler_timeout=120`（`4261 passed, 6
-  skipped, 1374 subtests passed in 377.31s`）。未发布。
+  `git diff --check`、收集（`4279 tests`）、定向回归与最终全量
+  `python -m pytest -q -p no:randomly`（`4272 passed, 7 skipped, 1374
+  subtests passed in 365.70s`，0 warning；跳过均为 Windows POSIX/可选 E2E）。
+  未发布。
 
 ## 0.5.9 - 本地模型主路径与 Runtime 卫生
 

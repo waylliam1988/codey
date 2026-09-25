@@ -286,7 +286,7 @@ class ProjectFactsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (backend / "app.js").write_text("before\n", encoding="utf-8")
-            state = server.AppContext(root / "state", sync_ghost_maintenance=True)
+            state = server.AppContext(root / "state")
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
@@ -334,8 +334,10 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 server._run_task("session-1", str(project), "Update backend", 8, False, "deepseek")
 
+            state.wait_for_ghost_sleep(timeout=30)
             facts = state.project_facts.load(project)
             rendered = state.project_facts.render(project)
+            state.close()
 
         self.assertEqual(facts.successful_changes[-1].checks[0].command, "npm test")
         self.assertEqual(facts.successful_changes[-1].checks[0].cwd, "backend")
@@ -372,7 +374,7 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_facts_persistence_failure_does_not_fail_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext(state_td, sync_ghost_maintenance=True)
+            state = server.AppContext(state_td)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
 
@@ -401,7 +403,9 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 server._run_task("session-1", td, "task", 4, False, "deepseek")
 
+            state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_stop_reason(), "done")
+            state.close()
 
 
 if __name__ == "__main__":

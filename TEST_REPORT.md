@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## Cold-start review follow-ups full suite (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/workspace/changes.py            (single writer lease; put returns persisted; corruption blocks)
+codey/storage/file_lock.py            (FileLease/acquire_lease for task-duration ownership)
+codey/app/context.py + operations/task_run.py  (acquire/release writer at task entry; busy fails fast)
+codey/providers/local_openai.py       (illegal arguments fail closed, never {} )
+codey/runtime/core/cancellation.py    (abandoned-pipe count + log; group-only terminate + direct-child API)
+codey/utils/change_paths.py + completion/edit_scope.py (shared normalizer; raw absolute rejection)
+tests                                 (dual-tracker, missing-body, illegal-args x3, pipe diagnosis, absolute paths)
+tests/test_architecture.py            (edit_scope allows shared leaf; changes.py baseline 1120)
+app/headless_runner.py + task_submit.py + task_state.py (removed sync_ghost_maintenance wiring)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .`, `python -m compileall -q
+  codey tests`, and `git diff --check` passed; `4279 tests` collected.
+- Targeted suites: `test_changes` + `test_local_openai_native` +
+  `test_cancellation` + `test_coldstart_hardening`
+  (`156 passed, 1 skipped`); `test_bounded_capture_and_context` (28 passed);
+  `test_server` ghost subset (3 passed); `test_run_id_dedup` +
+  `test_conversation_store` + `test_project_facts` + `test_run_ledger`
+  (44 passed); `test_architecture` (90 passed).
+- Full suite: `python -m pytest tests/ -q -p no:randomly`:
+  `4272 passed, 7 skipped, 1374 subtests passed in 365.70s (0:06:05)`,
+  0 warnings. Skips: 2 POSIX bits (atomic_io), 1 POSIX group
+  (cancellation), 1 posix paths, 1 opt-in browser E2E, 2 O_NOFOLLOW
+  (workspace_paths) — all environment-gated, matching the 7-skip Windows
+  profile (reviewer's 25-skip Linux profile differs by platform).
+- This entry was written after the full suite. No release was made.
+
 ## Cold-start boundary hardening full suite (2026-09-25)
 
 Scope (production, no release):

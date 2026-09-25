@@ -238,7 +238,7 @@ class ConversationStoreTests(unittest.TestCase):
                 "projects": [],
             })
 
-            restarted = server.AppContext(td, sync_ghost_maintenance=True)
+            restarted = server.AppContext(td)
             events = restarted.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -250,10 +250,14 @@ class ConversationStoreTests(unittest.TestCase):
             ):
                 server._run_task("chat-1", None, "Continue", 4, False, "deepseek")
 
+            first.wait_for_ghost_sleep(timeout=30)
+            restarted.wait_for_ghost_sleep(timeout=30)
             prompt = provider.send.call_args.args[0]
             emitted = []
             while not events.empty():
                 emitted.append(events.get_nowait())
+            first.close()
+            restarted.close()
 
         provider.new_chat.assert_called_once_with()
         self.assertIn("Factual handoff", prompt)

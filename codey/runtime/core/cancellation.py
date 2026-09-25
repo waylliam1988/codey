@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import signal
 import subprocess
@@ -19,6 +20,8 @@ from codey.runtime.core.output_capture import (
     READER_JOIN_TIMEOUT_SECONDS,
     BoundedByteCapture,
 )
+
+logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 0.2
 _context = threading.local()
@@ -286,13 +289,17 @@ def _close_pipes(proc: subprocess.Popen[bytes]) -> None:
 def _close_owned_pipes(
     proc: subprocess.Popen[bytes],
     owned: list[tuple[object, threading.Thread]],
-) -> None:
+) -> int:
     """Close only pipes whose reader already stopped; never block on live reads.
 
-    A live reader owns its pipe: another process may still hold the write
-    end, so ``BufferedReader.close()`` would wait on the reader's lock.
-    Skipping it bounds the caller; the daemon reader is abandoned and the
-    original timeout/drain error still reports the incomplete cleanup.
+    Returns the number of abandoned pipes (live readers). A live reader
+    owns its pipe: another process may still hold the write end, so
+    ``BufferedReader.close()`` would wait on the reader's lock. Skipping
+    it bounds the caller; the daemon reader is abandoned and the caller
+    must keep the incomplete-cleanup diagnosis instead of claiming full
+    recovery. Repeated external holders therefore accumulate daemon
+    readers by design; normal subtrees die with the process group and
+    leave zero abandoned.
     """
     by_stream: dict[int, threading.Thread] = {}
     for stream, thread in owned:
@@ -300,11 +307,13 @@ def _close_owned_pipes(
             by_stream[id(stream)] = thread
         except Exception:
             continue
+    abandoned = 0
     for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
         if stream is None:
             continue
         thread = by_stream.get(id(stream))
         if thread is not None and thread.is_alive():
+            abandoned += 1
             continue
         try:
             close = getattr(stream, "close", None)
@@ -312,6 +321,15 @@ def _close_owned_pipes(
                 close()
         except Exception:
             pass
+    if abandoned:
+        logger.warning(
+            "process pipes incomplete: %d reader(s) still hold stdout/stderr; "
+            "args=%r pid=%r",
+            abandoned,
+            getattr(proc, "args", "?"),
+            getattr(proc, "pid", "?"),
+        )
+    return abandoned
 
 
 def wait_process(
@@ -445,15 +463,32 @@ def terminate_process_tree(
     proc: subprocess.Popen[bytes],
     job=None,
 ) -> None:
-    """Terminate a process and its children created in the same tree/group."""
+    """Terminate a process tree started in its own process group.
+
+    Contract: ``proc`` comes from ``start_process()`` (POSIX
+    ``start_new_session=True``, Windows Job Object) so ``proc.pid`` is the
+    group leader. Arbitrary external ``Popen`` objects need their own
+    direct-child termination path and must not share this helper.
+    """
     _terminate_process_tree(proc, job)
+
+
+def terminate_direct_child(proc: subprocess.Popen[bytes]) -> None:
+    """Terminate one direct child without group signalling."""
+    with suppress(Exception):
+        proc.terminate()
+    with suppress(Exception):
+        proc.wait(timeout=1)
+    with suppress(Exception):
+        if proc.poll() is None:
+            proc.kill()
+    with suppress(Exception):
+        proc.wait(timeout=1)
 
 
 def _process_group_exists(pgid: int) -> bool:
     """Check a process group without touching its (possibly reaped) leader."""
     try:
-        if not isinstance(pgid, int):
-            return False
         os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
@@ -484,18 +519,9 @@ def _terminate_process_tree(
     else:
         # Processes from start_process() run in a new session, so the known
         # group id is proc.pid: no getpgid() on a possibly reaped parent.
-        pgid = getattr(proc, "pid", None)
-        if not isinstance(pgid, int):
-            with suppress(Exception):
-                proc.terminate()
-            with suppress(Exception):
-                proc.wait(timeout=1)
-            with suppress(Exception):
-                if proc.poll() is None:
-                    proc.kill()
-            with suppress(Exception):
-                proc.wait(timeout=1)
-            return
+        # Unit tests mock OS signalling at the boundary; real-process tests
+        # use start_new_session=True. No Mock-shaped pid branch lives here.
+        pgid = proc.pid
         try:
             os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
@@ -513,9 +539,3 @@ def _terminate_process_tree(
                 os.killpg(pgid, signal.SIGKILL)
             with suppress(Exception):
                 proc.wait(timeout=1)
-        # A non-leader direct child has no group to signal: reap it alone.
-        with suppress(Exception):
-            if proc.poll() is None:
-                proc.kill()
-        with suppress(Exception):
-            proc.wait(timeout=1)

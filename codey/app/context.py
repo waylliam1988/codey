@@ -78,9 +78,7 @@ class AppContext:
         state_home: str | Path | None = None,
         *,
         replay_limit: int | None = None,
-        sync_ghost_maintenance: bool = False,
     ) -> None:
-        self.sync_ghost_maintenance = bool(sync_ghost_maintenance)
         self._ephemeral_runtime_home = tempfile.TemporaryDirectory() if state_home is None else None
         self.state_home = Path(state_home) if state_home else None
         runtime_state_home = (
@@ -152,8 +150,50 @@ class AppContext:
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
+        self._project_writer_leases: dict[str, object] = {}
         self._close_requested = False
         self._resources_closed = False
+
+    def acquire_project_writer(self, project: str | Path) -> bool:
+        """Claim the single persistent writer for ``project`` (non-blocking).
+
+        Returns True on success; False when another task (this process or
+        another one sharing ``state_home``) already owns it. Empty projects
+        need no guard and always succeed.
+        """
+        from codey.workspace.changes import ProjectWriteBusy
+
+        text = str(project or "").strip()
+        if not text:
+            return True
+        key = str(Path(text).expanduser().resolve())
+        with self.lock:
+            if key in self._project_writer_leases:
+                return False
+        try:
+            lease = self.snapshot_store.acquire_writer(key, timeout_seconds=0.0)
+        except ProjectWriteBusy:
+            return False
+        except Exception:
+            return False
+        with self.lock:
+            if key in self._project_writer_leases:
+                with contextlib.suppress(Exception):
+                    lease.release()
+                return False
+            self._project_writer_leases[key] = lease
+            return True
+
+    def release_project_writer(self, project: str | Path) -> None:
+        text = str(project or "").strip()
+        if not text:
+            return
+        key = str(Path(text).expanduser().resolve())
+        with self.lock:
+            lease = self._project_writer_leases.pop(key, None)
+        if lease is not None:
+            with contextlib.suppress(Exception):
+                lease.release()
 
     def _ghost_store(
         self,

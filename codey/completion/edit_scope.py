@@ -191,11 +191,9 @@ def _posix(path: object) -> PurePosixPath:
 
 
 def _safe_change_path(value: object) -> str:
-    normalized = str(value or "").replace("\\", "/").strip().strip("/")
-    item = PurePosixPath(normalized)
-    if not normalized or item.is_absolute() or ".." in item.parts:
-        return ""
-    return item.as_posix()
+    from codey.utils.change_paths import safe_change_path
+
+    return safe_change_path(value)
 
 
 def _change_file_paths(
@@ -203,18 +201,9 @@ def _change_file_paths(
     raw_previous_path: object = "",
     raw_status: object = "",
 ) -> tuple[str, str]:
-    previous_path = _safe_change_path(raw_previous_path)
-    path_text = str(raw_path or "")
-    status = str(raw_status or "").strip().upper()
-    if " -> " not in path_text or (
-        not previous_path and not status.startswith(("R", "C"))
-    ):
-        return _safe_change_path(path_text), previous_path
-    before, after = path_text.split(" -> ", 1)
-    path = _safe_change_path(after)
-    if not path:
-        return _safe_change_path(path_text), previous_path
-    return path, previous_path or _safe_change_path(before)
+    from codey.utils.change_paths import change_file_paths
+
+    return change_file_paths(raw_path, raw_previous_path, raw_status)
 
 
 def is_generated_or_vendor_path(path: object) -> bool:

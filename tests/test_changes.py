@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
@@ -994,21 +995,21 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertNotIn("big.py", before)
             self.assertIn("good.py", before)
 
-    def test_put_baseline_first_wins_and_ignores_replace(self) -> None:
+    def test_put_baseline_first_wins_returns_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)
-            self.assertTrue(store.put_baseline(root, "app.py", "first\n"))
+            self.assertEqual(store.put_baseline(root, "app.py", "first\n"), "first\n")
             body = store._baseline_path(root, "app.py")
             self.assertEqual(body.read_text(encoding="utf-8"), "first\n")
 
-            # A second write for the same path must not overwrite the
-            # first-write baseline, even when it would otherwise fail.
+            # A second write for the same path returns the persisted value
+            # and must not rewrite the manifest at all.
             with mock.patch(
                 "codey.workspace.changes.write_json_atomic",
                 side_effect=AssertionError("manifest must not be rewritten"),
             ):
-                self.assertFalse(store.put_baseline(root, "app.py", "second\n"))
+                self.assertEqual(store.put_baseline(root, "app.py", "second\n"), "first\n")
 
             before, _ = store.load(root)
             self.assertEqual(before.get("app.py"), "first\n")
@@ -1045,7 +1046,7 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(before.get("app.py"), "first\n")
             self.assertTrue(body.exists())
 
-    def test_capture_before_rollback_keeps_prior_baseline(self) -> None:
+    def test_capture_before_already_tracked_preserves_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)
@@ -1062,6 +1063,94 @@ class ChangeTrackerTests(unittest.TestCase):
                 tracker.capture_before("app.py")
             before, _ = store.load(root)
             self.assertEqual(before.get("app.py"), "first\n")
+
+    def test_capture_before_store_failure_publishes_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            (root / "app.py").write_text("current\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            with (
+                mock.patch.object(
+                    store, "put_baseline", side_effect=OSError("disk full")
+                ),
+                self.assertRaises(OSError),
+            ):
+                tracker.capture_before("app.py")
+            self.assertNotIn("app.py", tracker._before)
+            before, _ = store.load(root)
+            self.assertNotIn("app.py", before)
+
+    def test_second_tracker_adopts_first_persisted_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            first = ChangeTracker(root, store)
+            first.capture_before("app.py")
+            self.assertEqual(first._before.get("app.py"), "old\n")
+            (root / "app.py").write_text("new\n", encoding="utf-8")
+            second = ChangeTracker(root, store)
+            # Fresh loader sees the persisted old baseline...
+            self.assertEqual(second._before.get("app.py"), "old\n")
+            second.capture_after("app.py")
+            # ...and a tracker that read new converges back to old on capture.
+            stale = ChangeTracker(root, None)
+            stale._before = {}
+            stale.store = store
+            # Simulate a tracker that read new before the first writer won:
+            # direct put with new must return the persisted old value.
+            persisted = store.put_baseline(root, "app.py", "new\n")
+            self.assertEqual(persisted, "old\n")
+            stale.capture_before("app.py")
+            self.assertEqual(stale._before.get("app.py"), "old\n")
+            # The second writer sees a real change and must not prune the
+            # first writer's baseline as clean.
+            self.assertTrue(second.snapshots())
+            result = second.restore(["app.py"])
+            self.assertTrue(result.ok)
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "old\n")
+
+    def test_manifest_entry_without_body_blocks_edits(self) -> None:
+        from codey.storage.local_store import StoreCorruption
+
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            (root / "app.py").write_text("current\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            store.put_baseline(root, "app.py", "old\n")
+            body = store._baseline_path(root, "app.py")
+            self.assertTrue(body.exists())
+            body.unlink()
+            # Load skips the damaged entry, but the next capture must fail
+            # closed instead of forking an in-memory-only baseline.
+            tracker = ChangeTracker(root, store)
+            self.assertNotIn("app.py", tracker._before)
+            with self.assertRaises(StoreCorruption):
+                tracker.capture_before("app.py")
+            self.assertNotIn("app.py", tracker._before)
+
+    def test_project_writer_single_owner_rejects_second(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            from codey.app.context import AppContext
+
+            root = Path(td, "proj")
+            root.mkdir()
+            first = AppContext(Path(state_td, "s1"))
+            second = AppContext(Path(state_td, "s1"))
+            try:
+                self.assertTrue(first.acquire_project_writer(root))
+                self.assertFalse(second.acquire_project_writer(root))
+            finally:
+                first.release_project_writer(root)
+                second.release_project_writer(root)
+            # After release the second owner succeeds.
+            try:
+                self.assertTrue(second.acquire_project_writer(root))
+            finally:
+                second.release_project_writer(root)
+                first.close()
+                second.close()
 
     def test_untracked_symlink_never_expands_target(self) -> None:
         import os as _os
@@ -1081,8 +1170,29 @@ class ChangeTrackerTests(unittest.TestCase):
     def test_untracked_escaped_path_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            result = changes._untracked_file_diff(root, "../escape.txt")
-            self.assertIsNone(result)
+            # A real file outside the project must still be rejected: the
+            # old test passed even with the unsafe implementation because
+            # the target did not exist.
+            outside = Path(td).parent / "escape-outside.txt"
+            outside.write_text("OUTSIDE\n", encoding="utf-8")
+            try:
+                self.assertIsNone(changes._untracked_file_diff(root, "../escape-outside.txt"))
+            finally:
+                with contextlib.suppress(OSError):
+                    outside.unlink()
+            self.assertIsNone(changes._untracked_file_diff(root, "../escape.txt"))
+
+    def test_absolute_paths_rejected_on_raw_value(self) -> None:
+        from codey.utils.change_paths import safe_change_path
+
+        self.assertEqual(safe_change_path("/etc/passwd"), "")
+        self.assertEqual(safe_change_path("C:\\secrets\\x.txt"), "")
+        self.assertEqual(safe_change_path("C:/secrets/x.txt"), "")
+        self.assertEqual(safe_change_path("app.py"), "app.py")
+        from codey.completion.edit_scope import _safe_change_path as _scope_path
+
+        self.assertEqual(_scope_path("/etc/passwd"), "")
+        self.assertEqual(_scope_path("C:\\secrets\\x.txt"), "")
 
 
 if __name__ == "__main__":

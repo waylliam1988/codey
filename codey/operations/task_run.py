@@ -156,6 +156,7 @@ class _RunSetup:
     route_result: Any = None
     recovered_resume: bool = False
     previous_cancel_event: Any = None
+    writer_acquired: bool = False
 
 
 @dataclass
@@ -240,6 +241,33 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
     state.run_registry.set_last_provider_failure(None)
     previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
 
+    # Single persistent writer: snapshot projects claim cross-process
+    # ownership here; a busy project fails fast instead of forking baselines.
+    writer_acquired = False
+    needs_writer = bool(project) and baseline_task_kind in {"project", "hybrid", "auto"}
+    if needs_writer:
+        try:
+            is_git = deps.is_git_repository
+            if callable(is_git) and is_git(project):
+                needs_writer = False
+        except Exception:
+            needs_writer = True
+    if needs_writer:
+        acquire = getattr(state, "acquire_project_writer", None)
+        if callable(acquire):
+            try:
+                writer_acquired = bool(acquire(project))
+            except Exception:
+                writer_acquired = False
+            if not writer_acquired:
+                cancellation.set_event(previous_cancel_event)
+                provider_controls.end_task_context()
+                state.release_run(run_id)
+                return None, OperationOutcome.failed(
+                    reason="project_write_busy",
+                    summary="another task is writing this project",
+                )
+
     review_deps = review_flow_deps(deps)
     ghost_deps = ghost_task_deps(deps, review_deps)
     return _RunSetup(
@@ -260,6 +288,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         ghost_deps=ghost_deps,
         review_deps=review_deps,
         previous_cancel_event=previous_cancel_event,
+        writer_acquired=writer_acquired,
     ), None
 
 
@@ -564,6 +593,13 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
                 current_item.close()
         except Exception:
             pass
+        if setup.writer_acquired:
+            try:
+                release = getattr(state, "release_project_writer", None)
+                if callable(release):
+                    release(setup.project)
+            except Exception:
+                pass
 
 
 

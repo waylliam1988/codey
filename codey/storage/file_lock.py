@@ -186,9 +186,88 @@ def with_file_lock(
         _return_process_lock(key, entry)
 
 
+class FileLease:
+    """Held cross-process lock for a task-duration writer guard.
+
+    Unlike ``with_file_lock`` (short critical sections), a lease stays
+    acquired across the whole task so a second process writing the same
+    project fails fast instead of interleaving baselines. Cold start:
+    no re-entrancy, no fallback -- one lease per project per process.
+    """
+
+    def __init__(self, lock_path: Path, key: str, fd: int, entry: _ProcessLockEntry) -> None:
+        self._lock_path = lock_path
+        self._key = key
+        self._fd = fd
+        self._entry = entry
+        self._released = False
+        self._lock = threading.Lock()
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        _release_os_lock(self._fd)
+        with suppress(Exception):
+            self._entry.lock.release()
+        _return_process_lock(self._key, self._entry)
+
+    def __enter__(self) -> FileLease:
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        self.release()
+        return False
+
+    def __del__(self) -> None:  # pragma: no cover - best-effort GC guard
+        with suppress(Exception):
+            self.release()
+
+
+def acquire_lease(
+    path: str | Path,
+    *,
+    timeout_seconds: float = 0.0,
+) -> FileLease:
+    """Acquire a held lease for ``path``; raise ``LockTimeout`` when busy.
+
+    Non-blocking by default (``timeout_seconds=0``) so a second writer
+    fails fast with a clear busy signal instead of queueing behind the
+    first task.
+    """
+    timeout = max(0.0, float(timeout_seconds))
+    lock_path = _lock_path_for(Path(path))
+    key = _lock_key(lock_path)
+    if key in _held_locks():
+        raise LockTimeout(f"project writer busy: {lock_path.name}")
+    entry = _borrow_process_lock(key)
+    acquired_process = False
+    try:
+        acquired_process = entry.lock.acquire(timeout=timeout)
+        if not acquired_process:
+            raise LockTimeout(f"project writer busy: {lock_path.name}")
+        deadline = time.monotonic() + timeout
+        remaining = max(0.0, deadline - time.monotonic())
+        try:
+            fd = _acquire_os_lock(lock_path, timeout_seconds=remaining)
+        except Exception:
+            with suppress(Exception):
+                entry.lock.release()
+            raise
+        return FileLease(lock_path, key, fd, entry)
+    except Exception:
+        if not acquired_process:
+            with suppress(Exception):
+                _return_process_lock(key, entry)
+        raise
+
+
 __all__ = [
+    "FileLease",
     "LockTimeout",
     "LOCK_POLL_INTERVAL",
     "LOCK_TIMEOUT_SECONDS",
+    "acquire_lease",
     "with_file_lock",
 ]

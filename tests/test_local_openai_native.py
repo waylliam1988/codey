@@ -370,3 +370,71 @@ def test_malformed_tool_calls_shape_is_protocol_error(monkeypatch) -> None:
     assert provider._messages == []
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
         local_module._parse_tool_calls({"content": "", "tool_calls": "nope"})
+
+
+def test_done_illegal_json_fails_closed_without_history(monkeypatch) -> None:
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call_done",
+                    "type": "function",
+                    "function": {"name": "done", "arguments": "{bad"},
+                }],
+            },
+        }]
+    }
+    _install_fake(monkeypatch, body)
+    turn = provider.send_turn("finish it")
+    # No tool executes and the task never completes: the turn carries no
+    # calls and the raw assistant block is never committed to history.
+    assert turn.tool_calls == ()
+    assert "malformed" in turn.text.lower()
+    assert provider._messages == []
+
+
+def test_regular_tool_illegal_json_fails_closed_without_history(monkeypatch) -> None:
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "read", "arguments": '{"path":'},
+                }],
+            },
+        }]
+    }
+    _install_fake(monkeypatch, body)
+    turn = provider.send_turn("read app")
+    assert turn.tool_calls == ()
+    assert "malformed" in turn.text.lower()
+    assert provider._messages == []
+
+
+def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
+    provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+    body = {
+        "choices": [{
+            "finish_reason": "tool_calls",
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "read", "arguments": "{}"},
+                }],
+            },
+        }]
+    }
+    _install_fake(monkeypatch, body)
+    turn = provider.send_turn("read app")
+    assert len(turn.tool_calls) == 1
+    assert turn.tool_calls[0].arguments == {}
+    assert provider._messages[-1]["tool_calls"][0]["id"] == "call_1"

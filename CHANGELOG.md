@@ -2,37 +2,40 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
-## Unreleased - Cold-start boundary hardening (no release)
+## Unreleased - Cold-start review follow-ups (no release)
 
-- Bounded close: `cancellation.wait_process()` terminates the owned tree,
-  joins readers bounded, then closes only stopped readers' pipes; worker
-  `_terminate_session()` joins before closing stopped session pipes. A live
-  reader keeps its pipe (abandoned daemon) so `close()` never pins the
-  caller past the join budget. A real-pipe regression proves an external
-  write-end holder still yields `PipeDrainTimeout` on time.
-- First-wins baselines: `SnapshotStore.put_baseline()` preserves an existing
-  entry (returns created flag) instead of overwriting before the manifest
-  commit; `remove()` commits the manifest before deleting the body;
-  `ChangeTracker.capture_before()` rolls back memory only. Replace/remove
-  failure regressions prove the prior baseline stays loadable.
-- No-follow untracked diffs: `_untracked_file_diff()` rejects symlinks and
-  escapes via `safe_join`, then reads via the no-follow boundary. Links keep
-  their path entry with no content. POSIX symlink and escape regressions
-  added; CI adds an Ubuntu file-boundary job and pins `pip==26.1.2`.
-- Worker retry on explicit close: a second `close()` retries a live direct
-  child with bounded terminate/reap; rechecks stay fast-fail (no join, no
-  resignal of an exited PID) so short deadlines never wait. Recovery,
-  no-resignal, and live-pipe regressions added.
-- Local provider fails closed: `content_filter` raises in both choice paths
-  and a present-but-non-list `tool_calls` raises a protocol error; history
-  stays uncommitted with no empty-string fallback. `send()`/`send_turn()`
-  regressions added.
-- Ghost maintenance waits are bounded (`timeout=30`) in `task_submit` and
-  headless paths.
+- Single persistent writer: `SnapshotStore.acquire_writer()` claims one
+  cross-process writer per project (`FileLease`, non-blocking); task entry
+  takes it for snapshot writes and fails fast with `project_write_busy`
+  instead of forking baselines. `put_baseline()` now returns the persisted
+  baseline (disk always wins) and validates schema/body inside the lock,
+  raising `StoreCorruption` on damage; `capture_before()` publishes the
+  persisted value. Dual-tracker and missing-body regressions added.
+- Local provider argument boundary: `_parse_tool_calls()` no longer coerces
+  illegal `arguments` to `{}`; bad JSON or non-object payloads count as
+  malformed turns (history uncommitted, no tool runs, `done` never fires).
+  `done`-bad-JSON, tool-bad-JSON, and legal-`{}` regressions added.
+- Honest pipe cleanup: `_close_owned_pipes()` returns the abandoned count
+  and logs it; repeated external holders accumulate bounded daemons by
+  design, normal subtrees leave zero abandoned. Repeated-holder and
+  close-reporting regressions added.
+- Test hygiene: `_BlockingStdout` releases explicitly and asserts `close()`
+  was never called on a live reader; escape test uses a real outside file;
+  already-tracked capture test renamed with a real store-failure path added.
+- POSIX contract: removed the Mock-shaped non-int `pid` branch;
+  `terminate_process_tree()` requires the `start_new_session` group leader,
+  with `terminate_direct_child()` for direct children. Real-process test
+  uses `start_new_session=True`; group signalling is mocked at the boundary.
+- Shared path normalizer: `edit_scope` reuses `change_paths.safe_change_path`
+  (duplicate removed); the shared function rejects raw POSIX absolutes and
+  Windows drive paths before stripping. Absolute-path regressions added.
+- Removed the test-only `sync_ghost_maintenance` product wiring; tests wait
+  explicitly via `wait_for_ghost_sleep(timeout=30)`.
 - Verification: `python -m ruff check .`, `python -m compileall -q codey
-  tests`, `git diff --check`, collection (`4267 tests`), targeted suites,
-  and final `python -m pytest -q -o faulthandler_timeout=120` (`4261
-  passed, 6 skipped, 1374 subtests passed in 377.31s`). No release was made.
+  tests`, `git diff --check`, collection (`4279 tests`), targeted suites,
+  and final `python -m pytest -q -p no:randomly` (`4272 passed, 7 skipped,
+  1374 subtests passed in 365.70s`, 0 warnings; skips are Windows
+  POSIX/opt-in E2E). No release was made.
 
 ## 0.5.9 - Local Model Runtime Hygiene
 

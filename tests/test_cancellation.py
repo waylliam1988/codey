@@ -249,6 +249,97 @@ class CancellationTests(unittest.TestCase):
 
 
 
+class PipeCleanupDiagnosisTests(unittest.TestCase):
+    def test_close_owned_pipes_reports_abandoned_live_readers(self) -> None:
+        import io as _io
+
+        proc = mock.Mock()
+        live_stream = _io.BytesIO(b"")
+        dead_stream = _io.BytesIO(b"")
+        live_thread = mock.Mock()
+        live_thread.is_alive.return_value = True
+        dead_thread = mock.Mock()
+        dead_thread.is_alive.return_value = False
+        proc.stdout = live_stream
+        proc.stderr = dead_stream
+        owned = [(live_stream, live_thread), (dead_stream, dead_thread)]
+        abandoned = cancellation._close_owned_pipes(proc, owned)
+        self.assertEqual(abandoned, 1)
+        # Dead pipe closed, live pipe left open for its owner.
+        self.assertTrue(dead_stream.closed)
+        self.assertFalse(live_stream.closed)
+
+    def test_repeated_external_holders_accumulate_bounded_daemons(self) -> None:
+        import contextlib as _contextlib
+        import os as _os
+
+        abandoned_total = 0
+        live_pairs: list[tuple[object, object]] = []
+        for _ in range(3):
+            read_fd, write_fd = _os.pipe()
+            read_file = _os.fdopen(read_fd, "rb", buffering=0)
+            # External holder keeps the write end open: the reader blocks.
+            started = threading.Event()
+
+            def _block(stream=read_file, started=started) -> None:
+                started.set()
+                with _contextlib.suppress(Exception):
+                    stream.read(1)
+
+            thread = threading.Thread(target=_block, daemon=True)
+            thread.start()
+            self.assertTrue(started.wait(timeout=5.0))
+            proc = mock.Mock()
+            proc.stdout = read_file
+            proc.stderr = None
+            proc.args = ["external-holder"]
+            proc.pid = 12345
+            abandoned = cancellation._close_owned_pipes(proc, [(read_file, thread)])
+            abandoned_total += abandoned
+            live_pairs.append((read_file, thread, write_fd))
+        # Each external holder abandons exactly one daemon reader by design;
+        # the diagnosis must stay visible instead of claiming full recovery.
+        self.assertEqual(abandoned_total, 3)
+        for read_file, thread, write_fd in live_pairs:
+            self.assertTrue(thread.is_alive())
+            self.assertTrue(thread.daemon)
+            # Releasing the external holder lets the daemon drain and exit.
+            with _contextlib.suppress(OSError):
+                _os.close(write_fd)
+            thread.join(timeout=5.0)
+            with _contextlib.suppress(Exception):
+                read_file.close()
+
+    @unittest.skipIf(os.name == "nt", "POSIX process-group contract")
+    def test_terminate_process_tree_uses_group_contract(self) -> None:
+        proc = mock.Mock()
+        proc.pid = 424242
+        proc.terminate = mock.Mock()
+        proc.wait = mock.Mock()
+        proc.poll = mock.Mock(return_value=0)
+        job = None
+        with (
+            mock.patch.object(cancellation.os, "killpg", create=True) as killpg,
+            mock.patch.object(cancellation, "_process_group_exists", return_value=False),
+        ):
+            cancellation._terminate_process_tree(proc, job)
+            killpg.assert_called_once()
+            args, _ = killpg.call_args
+            self.assertEqual(args[0], 424242)
+
+    def test_terminate_direct_child_does_not_signal_group(self) -> None:
+        proc = mock.Mock()
+        proc.poll.return_value = 0
+        if os.name == "nt":
+            cancellation.terminate_direct_child(proc)
+            proc.terminate.assert_called_once()
+            return
+        with mock.patch.object(cancellation.os, "killpg", create=True) as killpg:
+            cancellation.terminate_direct_child(proc)
+            killpg.assert_not_called()
+        proc.terminate.assert_called_once()
+
+
 def _windows_process_is_active(pid: int) -> bool:
     import ctypes
     from ctypes import wintypes
