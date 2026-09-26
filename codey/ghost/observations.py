@@ -5,9 +5,10 @@
 - Ghost 不再为每轮发起额外的模型调用，也不要求模型每轮输出
   ``ghost_signals`` 隐藏字段。普通单轮 chat 只有一次正常主推理；
   research/agent/consensus 的多轮调用是任务本身需要的，不是 Ghost 的。
-- 这里只保存已发生的回合事实（用户原话、最终回答、任务结果），后台只做
-  非模型的索引工作（分组、去重、保留期限），下一次正常模型调用前检索少量
-  相关原话并判断。语义判断发生在本来就要回答的那次调用里。
+- 这里只保存已发生的回合事实（用户原话、最终回答、任务结果），读取是
+  同步有界扫描（最近 200 条内检索，全文件至多 5000 条），没有后台索引
+  线程；下一次正常模型调用前检索少量相关原话并判断。语义判断发生在
+  本来就要回答的那次调用里。
 - 观察记录以 ``run_id`` 幂等：同 ``run_id`` 重放覆盖，不产生第二条经历；
   不同 ``run_id`` 即使内容相似也保留为不同经历，不做强化合并。现有
   inbox/hebbian 的自动结构化更新在本终态下停止（见 control_surface 文档），
@@ -31,7 +32,7 @@ MAX_USER_TEXT_CHARS = 3_000
 MAX_ASSISTANT_TEXT_CHARS = 4_000
 MAX_OBSERVATION_DIAGNOSTICS = 4
 
-OBSERVABLE_MODES = ("chat", "research", "hybrid", "project", "planning", "review")
+OBSERVABLE_MODES = ("chat", "agent", "research", "hybrid", "project", "planning", "review")
 COMMITTED_STOP_REASONS = ("done",)
 
 
@@ -46,7 +47,6 @@ class GhostObservation:
     stop_reason: str
     committed: bool
     provider_id: str = ""
-    result_ref: str = ""
 
 
 class GhostObservationStore:
@@ -80,7 +80,6 @@ class GhostObservationStore:
         assistant_text: str,
         stop_reason: str,
         provider_id: str = "",
-        result_ref: str = "",
     ) -> bool:
         cleaned_mode = str(mode or "").strip().lower() or "chat"
         if cleaned_mode not in OBSERVABLE_MODES:
@@ -99,14 +98,17 @@ class GhostObservationStore:
             "stop_reason": clip_signal_text(cleaned_stop, 40),
             "committed": cleaned_stop in COMMITTED_STOP_REASONS,
             "provider_id": clip_signal_text(provider_id, 80),
-            "result_ref": clip_signal_text(result_ref, 240),
         }
         if not row["run_id"] or not row["session_id"]:
             return False
         # run_id 幂等：同 run 重放覆盖，不新增第二条。
+        # 读取被阻断（中间坏行）时绝不写回：空列表写回会丢弃已有记录。
+        # 调用方（结算）把 False 记为 ghost_observation_failed 告警。
         with with_file_lock(self.path):
             read = self.log.read_locked()
             self.last_warnings = read.warnings
+            if read.blocked:
+                return False
             rows = [r for r in read.rows if str(r.get("run_id") or "") != row["run_id"]]
             rows.append(row)
             rows = rows[-MAX_OBSERVATIONS:]
@@ -127,19 +129,37 @@ class GhostObservationStore:
         session_id: str = "",
         project: str = "",
         limit: int = 200,
+        scope: str = "session",
     ) -> tuple[dict[str, object], ...]:
+        """Read retrievable rounds under an explicit ownership scope.
+
+        - ``session``: this conversation only (default; never mixes in other
+          sessions' rounds). Empty filters stay permissive as before.
+        - ``project``: same normalized project across sessions; project is
+          required so one project's rounds never leak into another's.
+        - ``user``: every committed round in this local store.
+        """
+        normalized_scope = str(scope or "session").strip().lower()
+        if normalized_scope not in {"session", "project", "user"}:
+            raise ValueError("scope must be session, project, or user")
         rows = list(self.read_all())
         wanted_session = clip_signal_text(session_id, 120)
         wanted_project = _common.normalize_project(project)
+        if normalized_scope == "project" and not wanted_project:
+            raise ValueError("project is required for project scope retrieval")
         out: list[dict[str, object]] = []
         for row in reversed(rows):
             if row.get("committed") is not True:
                 continue
-            if wanted_session and clip_signal_text(row.get("session_id"), 120) != wanted_session:
-                # 跨会话不召回，避免把别人的经历带入本轮。
-                continue
-            if wanted_project and _common.normalize_project(row.get("project")) != wanted_project:
-                continue
+            if normalized_scope == "project":
+                if _common.normalize_project(row.get("project")) != wanted_project:
+                    continue
+            elif normalized_scope == "session":
+                if wanted_session and clip_signal_text(row.get("session_id"), 120) != wanted_session:
+                    # 跨会话不召回，避免把别人的经历带入本轮。
+                    continue
+                if wanted_project and _common.normalize_project(row.get("project")) != wanted_project:
+                    continue
             out.append(row)
             if len(out) >= max(1, int(limit or 1)):
                 break
@@ -164,6 +184,9 @@ class GhostObservationStore:
         with with_file_lock(self.path):
             read = self.log.read_locked()
             self.last_warnings = read.warnings
+            if read.blocked:
+                # 读取被阻断时不写回：保持原文件，调用方以 warnings 为准。
+                return 0
             kept: list[dict[str, object]] = []
             removed = 0
             for row in read.rows:

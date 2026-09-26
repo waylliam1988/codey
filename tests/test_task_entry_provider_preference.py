@@ -304,7 +304,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
         )
 
         with mock.patch(
-            "codey.operations.task_phases.ghost.maybe_route_auto",
+            "codey.operations.task_phases.ghost.maybe_claim_work_item",
             side_effect=ValueError("route exploded"),
         ) as route:
             run_task_submission(runner, TaskSubmission(

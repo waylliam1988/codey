@@ -85,6 +85,7 @@ from codey.storage.managed_outputs import (
     run_command_with_managed_output,
 )
 from codey.task.kind import writer_failover_mode as _writer_failover_mode
+from codey.task.model import execution_task
 from codey.workspace.change_brief import (
     ChangeBrief,
     new_project_change_brief,
@@ -409,7 +410,7 @@ class _ProjectRun:
 def _prepare_project_context(ctx: _ProjectRun) -> None:
     ctx.state = ctx.deps.state
     ctx.request = ctx.frame.request
-    ctx.agent_task = ctx.request.task
+    ctx.agent_task = execution_task(ctx.request)
     ctx.agent_fresh_chat = ctx.frame.fresh_chat
     if ctx.work.ledger is not None:
         ctx.work.record_agent_events_in_ledger = True
@@ -452,7 +453,7 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
-    ctx.agent_task = ctx.request.task
+    ctx.agent_task = execution_task(ctx.request)
     ctx.agent_fresh_chat = ctx.frame.fresh_chat
     _prepare_new_project_context(ctx)
     key = str(Path(ctx.project).expanduser().resolve())
@@ -495,7 +496,7 @@ def _prepare_new_project_context(ctx: _ProjectRun) -> None:
             planned = None
         if planned is not None:
             ctx.change_brief = new_project_change_brief(ctx.request.task, planned.answer)
-            ctx.agent_task = ctx.change_brief.apply_to_task(ctx.request.task)
+            ctx.agent_task = ctx.change_brief.apply_to_task(execution_task(ctx.request))
             ctx.agent_fresh_chat = True
     elif ctx.deps.agent.run_project_audit is not None and ctx.has_user_files:
         context = render_project_context(
@@ -524,7 +525,7 @@ def _prepare_new_project_context(ctx: _ProjectRun) -> None:
             reports = ()
         if reports:
             ctx.change_brief = project_audit_change_brief(ctx.request.task, reports)
-            ctx.agent_task = ctx.change_brief.apply_to_task(ctx.request.task)
+            ctx.agent_task = ctx.change_brief.apply_to_task(execution_task(ctx.request))
             ctx.used_project_audit = True
 
 
@@ -588,6 +589,7 @@ def _run_one_writer_attempt(
             project=ctx.project,
             query=spec.task,
             exclude_run_id=ctx.frame.run_id,
+            scope="project",
         )
     except Exception:
         writer_experiences = ""

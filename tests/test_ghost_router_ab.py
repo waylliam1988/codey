@@ -26,21 +26,12 @@ def test_self_test_router_beats_current_auto_baseline() -> None:
 def test_production_spine_router_beats_current_auto_baseline() -> None:
     """Retirement lock-in: the pre-turn production router is retired, so the
     router arm behaves exactly like the baseline arm on the production task
-    path (unified auto answers with one normal call; the router factory is
-    never invoked)."""
-    calls: list[str] = []
-
-    def counting_factory(provider_id: str):
-        calls.append(provider_id)
-        return ghost_router_ab.FakeProvider()
-
+    path (unified auto answers with one normal call)."""
     payload = ghost_router_production_ab.run_cases(
         provider_id="fake",
         cases=ghost_router_ab.load_cases(),
-        router_provider_factory=counting_factory,
     )
 
-    assert calls == []
     by_case: dict[str, dict[str, str]] = {}
     for row in payload["rows"]:
         by_case.setdefault(row["case"], {})[row["arm"]] = row["observed_mode"]
@@ -56,8 +47,8 @@ def test_production_spine_writes_atomic_partial_progress(monkeypatch) -> None:
         cases = ghost_router_ab.load_cases()[:1]
         calls = 0
 
-        def fake_run_case(case, *, provider_id, arm, router_provider_factory):
-            del case, provider_id, router_provider_factory
+        def fake_run_case(case, *, provider_id, arm):
+            del case, provider_id
             nonlocal calls
             calls += 1
             if calls == 2:
@@ -78,7 +69,6 @@ def test_production_spine_writes_atomic_partial_progress(monkeypatch) -> None:
             ghost_router_production_ab.run_cases(
                 provider_id="fake",
                 cases=cases,
-                router_provider_factory=lambda _provider_id: ghost_router_ab.FakeProvider(),
                 output=output,
             )
         payload = json.loads(output.read_text(encoding="utf-8"))

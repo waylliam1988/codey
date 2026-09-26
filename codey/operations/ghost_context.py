@@ -89,6 +89,7 @@ def ghost_experiences(
     exclude_run_id: str = "",
     max_items: int = MAX_RETRIEVED_ITEMS,
     budget_chars: int = RETRIEVAL_BUDGET_CHARS,
+    scope: str = "session",
 ) -> str:
     """Retrieve committed experience observations for the next normal call.
 
@@ -96,6 +97,8 @@ def ghost_experiences(
     gated on Ghost updates being enabled; callers prepend/append it to their
     existing prompt alongside directive/continuity. Only ``committed``
     (successfully finished) rounds are returned; the current run is excluded.
+    ``scope`` follows the store's ownership scopes (session/project/user);
+    project writers pass ``project`` scope for cross-session recall.
     """
     try:
         inbox = getattr(state, "ghost_inbox", None)
@@ -107,7 +110,7 @@ def ghost_experiences(
         store = getattr(state, "ghost_observations", None)
         if store is None:
             return ""
-        rows = store.read_committed(session_id=session_id, project=project or "")
+        rows = store.read_committed(session_id=session_id, project=project or "", scope=scope)
     except Exception:
         return ""
     try:
@@ -122,7 +125,7 @@ def ghost_experiences(
         return ""
     if not picked:
         return ""
-    return render_retrieved_block(picked)
+    return render_retrieved_block(picked, budget_chars)
 
 
 __all__ = [

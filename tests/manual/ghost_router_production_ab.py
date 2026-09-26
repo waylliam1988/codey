@@ -1,9 +1,9 @@
-"""Manual production-spine A/B for automatic routing.
+"""Manual production-spine routing check.
 
-This harness uses the production ``task_entry`` path and ``codey.ghost.router``
-implementation. The front router can be a live web provider, while the actual
-mode bodies use safe stubs so the A/B does not edit the repository or run shell
-commands.
+The pre-turn router is retired: both arms run the production ``task_entry``
+path with unified auto, so this harness now locks in that the retired router
+arm behaves exactly like the baseline arm. Mode bodies use safe stubs so the
+check does not edit the repository or run shell commands.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from codey.agents.runner import RunResult
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.operations.task_entry import TaskRunDeps, run_task_submission
-from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.providers.registry import provider_ids
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.reviews.core import ReviewResult
@@ -34,7 +34,6 @@ from codey.task.model import TaskSubmission
 from tests.manual.ghost_router_ab import (
     DEFAULT_CASES,
     RESULTS_DIR,
-    FakeProvider,
     RouterCase,
     load_cases,
     route_error_cost,
@@ -63,7 +62,6 @@ def run_cases(
     *,
     provider_id: str,
     cases: tuple[RouterCase, ...],
-    router_provider_factory,
     output: Path | None = None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
@@ -73,14 +71,12 @@ def run_cases(
             case,
             provider_id=provider_id,
             arm="baseline",
-            router_provider_factory=None,
         ))
         _write_progress(output, provider_id, rows, complete=False)
         rows.append(_run_case(
             case,
             provider_id=provider_id,
             arm="router",
-            router_provider_factory=router_provider_factory,
         ))
         _write_progress(output, provider_id, rows, complete=False)
     payload = _payload(provider_id, rows, complete=True)
@@ -105,7 +101,6 @@ def _run_case(
     *,
     provider_id: str,
     arm: str,
-    router_provider_factory,
 ) -> dict[str, Any]:
     started = time.time()
     with tempfile.TemporaryDirectory() as td:
@@ -160,7 +155,6 @@ def _run_case(
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _project: True,
-            ghost_router_provider_factory=router_provider_factory,
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
         )
@@ -321,7 +315,6 @@ def _self_test() -> None:
     payload = run_cases(
         provider_id="fake",
         cases=load_cases(),
-        router_provider_factory=lambda _provider_id: FakeProvider(),
     )
     if not payload["ok"]:
         raise AssertionError(payload)
@@ -348,7 +341,6 @@ def main(argv: list[str] | None = None) -> int:
     payload = run_cases(
         provider_id=provider_id,
         cases=cases,
-        router_provider_factory=lambda provider: connect_fresh_provider_tab(provider, port=args.port),
         output=output,
     )
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))

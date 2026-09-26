@@ -322,7 +322,6 @@ def record_route_trace(
     task_kind: str,
     project: str | None,
     claimed_work_item: GhostWorkItem | None,
-    route_result: Any,
     recovered_resume: bool = False,
 ) -> None:
     route_source = "explicit_user_choice" if str(request.intent or "").strip().lower() != "auto" else "baseline"
@@ -334,10 +333,6 @@ def record_route_trace(
     elif claimed_work_item is not None:
         route_source = "local_work_item"
         route_reason = "claimed_work_item"
-    elif route_result is not None:
-        route_source = "auto_router"
-        route_selected_mode = route_result.selected_mode or route_result.final_mode or task_kind
-        route_reason = "accepted" if route_result.accepted else (route_result.skipped_reason or "baseline_kept")
     trace_sink.call(
         "record_router",
         baseline_mode=trace_mode(baseline_task_kind, project),

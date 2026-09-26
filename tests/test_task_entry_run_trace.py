@@ -70,7 +70,6 @@ def _runner(
     run_review=None,
     run_consensus=None,
     run_project_audit=None,
-    router_provider_factory=None,
 ) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
@@ -96,7 +95,6 @@ def _runner(
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
-        ghost_router_provider_factory=router_provider_factory,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
@@ -276,11 +274,8 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
             },
         )
 
-        def router_factory(_provider_id: str):
-            raise AssertionError("retired router must not run")
-
         with mock.patch.object(state, "get_provider", return_value=main_provider):
-            runner = _runner(state, router_provider_factory=router_factory)
+            runner = _runner(state)
             research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
             with mock.patch(RESEARCH_ITERATION, research_iteration):
                 run_task_submission(runner,

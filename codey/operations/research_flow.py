@@ -36,6 +36,7 @@ from codey.research.topic_continuity import (
 )
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.task.model import execution_task
 
 
 @dataclass(frozen=True)
@@ -380,7 +381,7 @@ def build_research_context(
             trace=frame.trace,
         )
     return ResearchContext(
-        question=request.task,
+        question=execution_task(request),
         session_id=request.session_id,
         run_id=frame.run_id,
         project=frame.project_text,

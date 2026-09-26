@@ -88,11 +88,14 @@ def cmd_agent(args: argparse.Namespace) -> int:
         )
         return result.exit_code
     rows: list[dict[str, object]] = []
-    result = run_headless(request, emit_jsonl=rows.append)
-    for row in rows:
+
+    def _emit_progress(row: dict[str, object]) -> None:
+        rows.append(row)
         line = _human_cli_line(row)
         if line:
             _safe_print(line, file=sys.stderr)
+
+    result = run_headless(request, emit_jsonl=_emit_progress)
     done = next(
         (row for row in reversed(rows) if str(row.get("type") or "") == "task_done"),
         None,

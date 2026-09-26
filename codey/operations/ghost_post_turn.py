@@ -7,12 +7,10 @@ implementation exists.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from codey.ghost.router import GhostRouteResult
 from codey.ghost.work_queue import (
     GhostWorkItem,
     is_strict_work_continuation,
@@ -34,10 +32,6 @@ from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchComplet
 from codey.runs.ledger_projection import load_run_projection
 from codey.utils.refs import digest_text
 
-PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
-PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0
-PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
-
 
 @dataclass(frozen=True)
 class GhostTaskPolicyDeps:
@@ -46,9 +40,6 @@ class GhostTaskPolicyDeps:
     evidence_ledgers: Any = None
     work_checkpoints: Any = None
     knowledge_store: Any = None
-    router_provider_factory: Callable[[str], Any] | None = None
-    learning_provider_factory: Callable[[str], Any] | None = None
-    learning_modes: tuple[str, ...] = ("chat",)
     has_reviewable_diff: Callable[[str | None], bool] | None = None
     record_completion_proof_trace: Callable[[Any, object], None] | None = None
 
@@ -105,23 +96,6 @@ def maybe_claim_work_item(
     return result if getattr(result, "ok", False) and getattr(result, "item", None) is not None else None
 
 
-def maybe_route_auto(
-    deps: GhostTaskPolicyDeps,
-    request: Any,
-    *,
-    baseline_mode: str,
-    run_id: str,
-) -> GhostRouteResult | None:
-    """Pre-turn auto routing is retired (experience-memory final state).
-
-    The unified ``auto`` loop (``codey/operations/auto_loop.py``) makes its
-    single normal first call decide answer-vs-action, so no extra model call
-    happens here. This stub keeps the call sites and patched tests stable
-    while guaranteeing zero model invocations on the Ghost path.
-    """
-    return None
-
-
 def release_work_item(
     deps: GhostTaskPolicyDeps,
     item: GhostWorkItem | None,
@@ -171,63 +145,9 @@ def run_ghost_post_turn(
             run_projection=run_projection,
         )
         return
-    maybe_run_learning(deps, frame, event)
     maybe_sync_continuity(deps, frame, event, run_projection=run_projection)
     maybe_sync_work_queue(deps, frame, event, run_projection=run_projection)
     maybe_kick_sleep(deps, frame, event, run_projection=run_projection)
-
-
-def maybe_run_learning(
-    deps: GhostTaskPolicyDeps,
-    frame: RunFrame,
-    event: dict[str, object],
-) -> None:
-    """Post-turn model learning is retired (experience-memory final state).
-
-    Experience is persisted by settlement into ``GhostObservationStore`` and
-    retrieved on the next normal call. This stub keeps the call sites stable
-    while guaranteeing zero model invocations here: it emits a skipped marker
-    and performs no provider calls and no inbox/hebbian auto-writes.
-    """
-    if getattr(deps, "learning_provider_factory", None) is None:
-        return
-    mode = str(event.get("mode") or "")
-    if mode not in tuple(getattr(deps, "learning_modes", ("chat",)) or ()):
-        return
-    if str(event.get("stop_reason") or "") != "done":
-        return
-    if not _ghost_learning_enabled(deps.state):
-        with contextlib.suppress(Exception):
-            deps.state.emit({
-                "type": "ghost_learning_done",
-                "run_id": frame.run_id,
-                "session_id": frame.request.session_id,
-                "ok": True,
-                "skipped_reason": "learning_disabled",
-                "extracted_count": 0,
-                "signal_audit_written": False,
-                "candidates_changed": 0,
-                "accepted_count": 0,
-                "reinforced_count": 0,
-                "diagnostics": [],
-                "warnings": [],
-            })
-        return
-    with contextlib.suppress(Exception):
-        deps.state.emit({
-            "type": "ghost_learning_done",
-            "run_id": frame.run_id,
-            "session_id": frame.request.session_id,
-            "ok": True,
-            "skipped_reason": "replaced_by_observations",
-            "extracted_count": 0,
-            "signal_audit_written": False,
-            "candidates_changed": 0,
-            "accepted_count": 0,
-            "reinforced_count": 0,
-            "diagnostics": [],
-            "warnings": [],
-        })
 
 
 def maybe_sync_continuity(
@@ -561,7 +481,6 @@ __all__ = [
     "complete_or_block_work_item",
     "maybe_sync_work_queue",
     "maybe_claim_work_item",
-    "maybe_route_auto",
     "release_work_item",
     "run_ghost_post_turn",
     "sync_affinity_terminal_event",

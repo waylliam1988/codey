@@ -18,8 +18,6 @@ class ProviderRegistry:
         self.supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
-        self.ghost_learning_provider_factory = None
-        self.ghost_router_provider_factory = None
 
     def sessions_snapshot(self) -> dict[str, str]:
         return dict(self._sessions)

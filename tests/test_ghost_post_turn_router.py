@@ -75,7 +75,6 @@ def _runner(
     agent_run=None,
     collect_changes=_empty_changes,
     run_review=None,
-    router_provider_factory=None,
     is_git_repository=None,
 ) -> TaskRunDeps:
     return TaskRunDeps(state=state,
@@ -90,7 +89,6 @@ def _runner(
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository or (lambda _project: True),
-        ghost_router_provider_factory=router_provider_factory,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
@@ -122,14 +120,13 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
         state = server.AppContext(td)
         events = state.subscribe()
         main_provider = _Provider("ACTION: research\nPLAN: 查今天的版本变化")
-        router_factory = mock.Mock(side_effect=AssertionError("retired router must not run"))
         order: list[str] = []
 
         def get_provider(_provider_id: str):
             order.append("main")
             return main_provider
 
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult("q", "researched", "done", 1)
@@ -154,7 +151,6 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
             done = _done_events(state)[0]
             observations = state.ghost_observations.read_committed(session_id="session-1")
 
-    router_factory.assert_not_called()
     assert order == ["main"]
     assert len(main_provider.prompts) == 1
     assert start["mode"] == "chat"
@@ -164,6 +160,8 @@ def test_auto_router_result_is_consumed_before_task_start_and_main_connect() -> 
     assert "Codey" not in main_provider.prompts[0]
     assert len(observations) == 1
     assert observations[0]["run_id"] == done["run_id"]
+    assert observations[0]["user_text"] == "查一下今天的版本变化"
+    assert "Auto plan" not in str(observations[0]["user_text"])
 
 
 def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> None:
@@ -178,8 +176,6 @@ def test_auto_router_hard_rule_blocks_writer_when_user_says_not_to_edit() -> Non
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -210,12 +206,9 @@ def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -
         state = server.AppContext(Path(td, "state"))
         main_provider = _Provider("plain chat")
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
-        router_factory = mock.Mock(
-            side_effect=AssertionError("retired router must not run"))
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=router_factory,
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -235,7 +228,6 @@ def test_auto_router_hard_rule_blocks_project_access_when_user_forbids_files() -
             observations = state.ghost_observations.read_committed(session_id="session-1")
 
     agent_run.assert_not_called()
-    router_factory.assert_not_called()
     assert main_provider.prompts
     assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
@@ -255,8 +247,6 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
         events = state.subscribe()
 
@@ -290,8 +280,7 @@ def test_auto_router_chat_route_with_project_stays_in_chat_mode() -> None:
 def test_manual_intent_bypasses_router() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
-        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":1}'))
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult("q", "manual research", "done", 1)
@@ -316,14 +305,13 @@ def test_manual_intent_bypasses_router() -> None:
                 ),
             )
 
-    router_factory.assert_not_called()
     assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert research_iteration.call_count == 1
 
 
-def test_router_failure_falls_back_to_existing_baseline() -> None:
-    """A dead auto first call fails open into the deterministic baseline
-    runner instead of failing the task."""
+def test_router_failure_reports_error_without_second_call() -> None:
+    """A dead auto first call propagates to error settlement instead of
+    re-issuing the abandoned request through a baseline runner."""
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
@@ -332,8 +320,6 @@ def test_router_failure_falls_back_to_existing_baseline() -> None:
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=_FailingProvider()):
@@ -350,8 +336,8 @@ def test_router_failure_falls_back_to_existing_baseline() -> None:
                 ),
             )
 
-    assert agent_run.call_args.args[0].permission_profile == "coding_writer"
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "done"
+    agent_run.assert_not_called()
+    assert state.run_registry.last_terminal_event()["stop_reason"] == "error"
 
 
 def test_router_cancellation_stops_task_without_running_baseline() -> None:
@@ -364,8 +350,6 @@ def test_router_cancellation_stops_task_without_running_baseline() -> None:
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -398,8 +382,6 @@ def test_router_control_teach_cancellation_stops_task_without_running_baseline()
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -431,14 +413,11 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
         state = server.AppContext(Path(td, "state"))
         assert state.ghost_inbox is not None
         state.ghost_inbox.set_learning_enabled(False)
-        router_factory = mock.Mock(
-            side_effect=AssertionError("retired router must not run"))
         main_provider = _Provider("fixed by chat")
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         runner = _runner(
             state,
             agent_run=agent_run,
-            router_provider_factory=router_factory,
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -455,7 +434,6 @@ def test_ghost_disable_skips_auto_router_provider_call() -> None:
                 ),
             )
 
-    router_factory.assert_not_called()
     agent_run.assert_not_called()
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert state.run_registry.last_terminal_event()["summary"] == "fixed by chat"
@@ -482,8 +460,6 @@ def test_review_only_route_does_not_start_writer_or_repair() -> None:
             agent_run=agent_run,
             collect_changes=_reviewable_changes,
             run_review=run_review,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -519,8 +495,6 @@ def test_review_only_provider_failure_is_reported_without_error() -> None:
             state,
             collect_changes=_reviewable_changes,
             run_review=run_review,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -562,8 +536,6 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
             state,
             collect_changes=collect_project_changes,
             run_review=run_review,
-            router_provider_factory=mock.Mock(
-                side_effect=AssertionError("retired router must not run")),
             is_git_repository=lambda _project: False,
         )
 

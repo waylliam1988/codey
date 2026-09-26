@@ -272,9 +272,8 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertIn("invalid JSON", str(seen["project_config_warnings"]))
 
     def test_auto_intent_uses_router_before_headless_task_mode(self) -> None:
-        """Unified auto: the first normal call requests planning; the retired
-        fresh-provider router is never constructed and no second routing call
-        happens."""
+        """Unified auto: the first normal call requests planning; no second
+        routing call happens."""
         seen: dict[str, object] = {}
         rows: list[dict[str, object]] = []
         main_provider = _RouteProvider(
@@ -285,9 +284,6 @@ class HeadlessRunnerTests(unittest.TestCase):
             seen["permission_profile"] = request.permission_profile
             seen["change_tracker"] = request.change_tracker
             return RunResult("plan only", "done", 1)
-
-        def forbid_fresh_provider(*_args, **_kwargs):
-            raise AssertionError("retired router must not run")
 
         with tempfile.TemporaryDirectory() as td:
             result = run_headless(
@@ -309,7 +305,6 @@ class HeadlessRunnerTests(unittest.TestCase):
                     "diff": "",
                 },
                 connect_provider=lambda *_args, **_kwargs: main_provider,
-                connect_fresh_provider=forbid_fresh_provider,
             )
 
         self.assertEqual(result.exit_code, 0)

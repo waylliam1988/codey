@@ -2,6 +2,31 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 审查驱动的 Ghost/auto 加固与实机门槛收紧（未发布）
+
+- 观察存储不再因损坏丢数据：读取被阻断时 `append_completed()` 与
+  `delete_scope()` 直接失败、不写回文件。检索范围显式化（默认 `session`，
+  `project` 必须给项目、`user` 读全部）；项目 writer 跨会话召回同项目经历。
+  `agent` 模式原样存储；从未写入也从未被读的 `result_ref` 列删除。
+- 检索预算是硬字符预算（chars，不是 tokens）：按实际渲染块计费，首条超长
+  截断标 `…` 或跳过；仅助手命中的条目展示其原文片段，不再贴无关用户原话。
+- `auto` 首调用失败不再经 baseline 二次发出（正是制造掐断浪费的形状），
+  直接进错误结算且只有一次 provider 发送。auto PLAN 改走
+  `TaskSubmission.model_hint`，由 project/planning/research/review 执行方经
+  `execution_task()` 读取；ledger 摘要、观察 `user_text`、快照保持用户原话。
+  只读查看导向 `planning_readonly`（不占写锁）；ACTION 窗口重置失败直接传播。
+- 结算提交链：ledger 落盘（持久点）→观察→展示→观察告警→`task_done`
+  压轴。取消与异常回合留下不可检索的经历行，不再静默消失。
+- 删除已退役的 pre-turn 路由/学习空桩、provider 工厂与 `route_result` 链。
+  CLI 人类模式流式打印进度，长任务不再像卡住。
+- 实机门槛名副其实：`auto` 要求文件内容精确相等，`Ran 0 tests` 算 FAIL，
+  每个 case 独立 `state_home`，`exit_code` + `task_done` + 独立验证一致，
+  JSONL 存档失败即 FAIL，ghost 做写→读→检索→删→查无的往返。删除
+  `--include-research` 占位参数。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4356 passed，
+  7 skipped，1387 subtests passed，377.78s`）。未发布。
+
 ## Unreleased - KoboldCpp 实机发布前扫测（未发布）
 
 - 本地默认超时 180 秒 -> 600 秒：`stream=False` 下超时即整轮生成预算，实机

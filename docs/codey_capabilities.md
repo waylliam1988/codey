@@ -67,9 +67,9 @@ observed failures, and repair context.
 ## Local Memory
 
 Ghost is Codey's bounded local continuity layer. It records completed-round
-experience (user words, final answer, verified result refs) and retrieves a
+experience (user words, final answer) and retrieves a
 small number of related past rounds on the next normal model call within a
-strict token budget. Only successfully finished rounds are retrievable, keyed
+strict char budget (chars, not tokens). Only successfully finished rounds are retrievable, keyed
 idempotently by run id. Ghost never adds a model call of its own: no per-turn
 routing call, no per-turn extraction call, and no hidden output contract for
 the main model to fill in.

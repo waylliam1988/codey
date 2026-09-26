@@ -76,11 +76,8 @@ _STATE_LOCK = threading.Lock()
 
 def _build_state() -> AppContext:
     from codey.app import sibling_probe
-    from codey.app.provider_services import connect_fresh_provider_tab
 
     state = AppContext(DEFAULT_STATE_HOME)
-    state.providers.ghost_learning_provider_factory = connect_fresh_provider_tab
-    state.providers.ghost_router_provider_factory = connect_fresh_provider_tab
     sibling_probe.bind_provider_handlers(state)
     return state
 

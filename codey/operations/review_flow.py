@@ -16,6 +16,7 @@ from codey.reviews.impact_map import safe_review_impact_map
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 from codey.runtime.observe.terminalizer import task_done_event
+from codey.task.model import execution_task
 
 
 @dataclass(frozen=True)
@@ -178,7 +179,7 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
         reviewed = deps.run_review(
             session_id=request.session_id,
             project=project,
-            task=request.task,
+            task=execution_task(request),
             writer_summary="Review-only mode did not run a writer.",
             changes=changes,
             recent_log="",

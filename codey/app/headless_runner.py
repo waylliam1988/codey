@@ -29,9 +29,6 @@ from codey.providers import (
     DEFAULT_PROVIDER_ID,
 )
 from codey.providers import (
-    connect_fresh_provider_tab as default_connect_fresh_provider_tab,
-)
-from codey.providers import (
     connect_provider as default_connect_provider,
 )
 from codey.providers.diagnostics import capture_provider_failure as default_capture_provider_failure
@@ -161,7 +158,6 @@ def run_headless(
     collect_changes: Callable | None = None,
     capture_provider_failure: Callable | None = None,
     connect_provider: Callable[..., Any] = default_connect_provider,
-    connect_fresh_provider: Callable[..., Any] = default_connect_fresh_provider_tab,
 ) -> HeadlessResult:
     project = Path(request.project).expanduser().resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -216,7 +212,6 @@ def run_headless(
                 agent_run=agent_run,
                 collect_changes=collect_changes,
                 capture_provider_failure=capture_provider_failure,
-                connect_fresh_provider=connect_fresh_provider,
             )
     except BaseException as exc:
         task_result = None
@@ -303,7 +298,6 @@ def _run_headless_task(
     agent_run: Callable | None,
     collect_changes: Callable | None,
     capture_provider_failure: Callable | None,
-    connect_fresh_provider: Callable[..., Any],
 ) -> tuple[HeadlessResult | None, BaseException | None]:
     """Run the submission; the caller owns shutdown so close never masks this."""
     try:
@@ -324,11 +318,6 @@ def _run_headless_task(
             is_git_repository=is_git_repository,
             review_fix_turns=REVIEW_FIX_TURNS,
             review_log_lines=REVIEW_LOG_LINES,
-            ghost_router_provider_factory=(
-                (lambda provider_id: connect_fresh_provider(provider_id, port=request.port))
-                if _request_intent(request.intent) == "auto"
-                else None
-            ),
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
         )

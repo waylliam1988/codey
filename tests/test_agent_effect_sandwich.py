@@ -600,9 +600,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
 
     def test_recovery_fails_before_ghost_router_provider_send(self) -> None:
         state = server.AppContext(state_home=self.temp_dir.name)
-        router_provider = Mock()
-        router_provider.send = Mock(return_value=Mock(content="auto route output", tool_calls=[]))
-        router_factory = Mock(return_value=router_provider)
 
         deps = TaskRunDeps(
             state=state,
@@ -620,7 +617,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             knowledge_store=state.knowledge_store,
             runtime_mutations=state.runtime_mutations,
             runtime_effects=state.runtime_effects,
-            ghost_router_provider_factory=router_factory,
             is_git_repository=lambda _project: True,
         )
 
@@ -646,9 +642,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        # Recovery failed before router/provider dispatch.
-        router_factory.assert_not_called()
-        router_provider.send.assert_not_called()
+        # Recovery failed before provider dispatch.
         # Registry must NOT be busy
         self.assertFalse(state.run_registry.is_busy())
         # Terminal event must be stop_reason="error"
@@ -740,8 +734,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_phases.ghost.maybe_claim_work_item", autospec=True) as mock_claim, \
-             patch("codey.operations.task_phases.ghost.maybe_route_auto", autospec=True) as mock_route:
+             patch("codey.operations.task_phases.ghost.maybe_claim_work_item", autospec=True) as mock_claim:
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -757,7 +750,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             )
 
         mock_claim.assert_not_called()
-        mock_route.assert_not_called()
         self.assertEqual(len(seen_requests), 1)
         recovered = seen_requests[0].recovered_tool_outcomes
         self.assertEqual(len(recovered), 1)

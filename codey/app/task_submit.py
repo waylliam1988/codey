@@ -68,8 +68,6 @@ def run_task(
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
-        ghost_learning_provider_factory=state.providers.ghost_learning_provider_factory,
-        ghost_router_provider_factory=state.providers.ghost_router_provider_factory,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )

@@ -85,9 +85,6 @@ class TaskRunDeps:
     is_git_repository: Callable[[str | Path], bool] | None = None
     review_fix_turns: int = 12
     review_log_lines: int = 80
-    ghost_learning_provider_factory: Callable[[str], Any] | None = None
-    ghost_learning_modes: tuple[str, ...] = ("chat",)
-    ghost_router_provider_factory: Callable[[str], Any] | None = None
     runtime_mutations: RuntimeMutationLine | None = None
     runtime_effects: RuntimeEffectStore | None = None
 
@@ -156,7 +153,6 @@ class _RunSetup:
     ghost_deps: Any
     review_deps: Any
     claimed_work_item: GhostWorkItem | None = None
-    route_result: Any = None
     recovered_resume: bool = False
     previous_cancel_event: Any = None
     writer_acquired: bool = False
@@ -508,7 +504,6 @@ def _route_ghost_work(
         setup.request = claimed.request
         setup.task_kind = claimed.task_kind
         setup.claimed_work_item = claimed.claimed_work_item
-        setup.route_result = claimed.route_result
         workload.work.claimed_work_item = claimed.claimed_work_item
         setup.task = setup.request.task
         setup.continue_task = setup.request.continue_task
@@ -519,7 +514,6 @@ def _route_ghost_work(
         task_kind=setup.task_kind,
         project=setup.project,
         claimed_work_item=setup.claimed_work_item,
-        route_result=setup.route_result,
         recovered_resume=setup.recovered_resume,
     )
     state.emit({

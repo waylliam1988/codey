@@ -61,8 +61,8 @@ python tools/kobold_live_gate.py --json
 | `references` | `project`：改 `calculate_total` 并更新调用方 | 三个断言全过 |
 | `discussion` | `project`：只讨论不建文件 | 无文件变更且 `done` |
 | `planning` | `planning_readonly`：只给方案不写文件 | 无文件变更 |
-| `auto` | `auto`：小任务自动选路 | `task_done` 必达 |
-| `ghost` | `ghost list/export/directive/continuity/work-list` + 本次 `observations` 落盘 | `ok=true` 且观测到本次 `run_id` |
+| `auto` | `auto`：小任务自动选路 | 文件内容精确等于 `hello auto`（仅容忍末尾换行）+ `done` + exit 0 |
+| `ghost` | 隔离 state 下写→按 run_id 读→检索→删→不可检索 + 默认状态 list/export 只读 | roundtrip 完整 + `ok=true` |
 
 实机要求：
 
@@ -70,7 +70,10 @@ python tools/kobold_live_gate.py --json
 - 每个 case 的 JSONL 存 `.e2e-artifacts/kobold-live-<case>.jsonl`，`summary.json` 存结论。
 - `chat` 允许 `temperature` 默认；`agent` 统一 `max_turns=8~12`，`timeout=600`（`stream=False` 下 timeout 即整代预算，参考 242s 长生成实测）。
 - `python3 -m unittest` 在 Windows 策略里会被拒，门槛任务一律写 `python -m unittest [discover]`。
-- research 的完整联网实机默认不进阻塞门（需要搜索连接器+长生成），要跑用 `--include-research` 显式开。
+- agent case 必须同时满足：`stop_reason=done`、`exit_code=0`、`task_done` 事件存在、独立文件验证通过；`unittest discover` 输出 `Ran 0 tests` 也算 FAIL。
+- agent 实机一律使用隔离的临时 `state_home`，不得污染默认 Ghost 状态；JSONL 存档失败即 FAIL。
+- research 的完整联网实机不在阻塞门内（需要搜索连接器+长生成， harness 也不再保留占位参数，等真正准备好再加）。
+- 600s 非流式超时仍是有限预算：实机的 1 POST、零客户端异常只证明**被观测的请求**正常送达，不能代替 Kobold 服务端日志，也不能证明今后绝无 `10053`。
 
 ## 5. Gate 4：记录（必须写）
 

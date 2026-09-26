@@ -2,6 +2,45 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Review-driven Ghost/auto hardening; live gate tightening (no release)
+
+- Ghost observation writes are lossless on corruption: `append_completed()` and
+  `delete_scope()` return failure without rewriting the file when the read is
+  blocked (middle bad rows previously caused the new row to replace the whole
+  log). Retrieval scopes are explicit (`session` default, `project` requires a
+  project, `user` reads all); the project writer recalls same-project rounds
+  across sessions. `agent` mode is stored as-is, and the never-written,
+  never-read `result_ref` column is gone.
+- Retrieval budget is a hard char budget (chars, not tokens): selection charges
+  the exact rendered block, the first item is truncated with `…` or skipped,
+  and assistant-only hits display their assistant excerpt instead of an
+  unrelated user line.
+- Unified `auto` no longer re-issues a dead first call through a baseline
+  runner (the exact shape that recreated abandoned-socket waste); the failure
+  propagates to error settlement with exactly one provider send. The auto PLAN
+  travels as `TaskSubmission.model_hint` consumed via `execution_task()` by
+  project/planning/research/review executors, while ledger excerpts,
+  observations `user_text`, and snapshots keep the pristine user words.
+  Inspect-only requests are steered to `planning_readonly` (no writer lock),
+  and a failed ACTION window reset propagates instead of inheriting ACTION
+  history.
+- Settlement order is a defined commit chain: ledger finish (durable point),
+  observation, display, observation warning, then `task_done` last. Cancelled
+  and error rounds leave unretrievable experience rows instead of vanishing.
+- Deleted the retired pre-turn router/learning stubs, their provider
+  factories, and the `route_result` chain across `ghost_post_turn`,
+  `task_phases`, `task_run`, app wiring, and `run_headless`. CLI human agent
+  mode now streams progress lines instead of looking hung on long runs.
+- Live gate (`tools/kobold_live_gate.py`) asserts what it claims: exact file
+  content for `auto`, `Ran 0 tests` fails, isolated `state_home` per case,
+  `exit_code` + `task_done` + independent verification must agree, JSONL
+  archive failure fails, and the ghost case roundtrips
+  write→read→retrieve→delete→gone. The `--include-research` placeholder is
+  removed until research live is real.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4356 passed,
+  7 skipped, 1387 subtests passed in 377.78s`). No release was made.
+
 ## Unreleased - Provider-aware auxiliary timeouts; observation stores the visible reply (no release)
 
 - Root-caused a second KoboldCpp `WinError 10053` family: consensus advisor

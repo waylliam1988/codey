@@ -50,13 +50,19 @@ def _display_reply_text(outcome: ModeOutcome) -> str:
     return ""
 
 
-def _persist_experience_observation(
-    deps: Any,
-    frame: RunFrame,
-    event: dict[str, object],
-    outcome: ModeOutcome,
+def _persist_observation_row(
+    state: Any,
+    *,
+    run_id: str,
+    session_id: str,
+    project: str,
+    mode: str,
+    user_text: str,
+    assistant_text: str,
+    stop_reason: str,
+    provider_id: str,
 ) -> tuple[bool, str]:
-    """Persist the completed-round experience before any final display emit.
+    """Write one experience row; False means the file must be left alone.
 
     Returns (ok, status) where status is committed/uncommitted/skipped/failed.
     ``committed`` (stop_reason=done) rows are retrievable; other rows are kept
@@ -65,7 +71,6 @@ def _persist_experience_observation(
     to the user but must not be claimed recoverable for Ghost.
     """
     try:
-        state = getattr(deps, "state", None)
         inbox = getattr(state, "ghost_inbox", None) if state is not None else None
         try:
             learning_on = bool(inbox.learning_enabled()) if inbox is not None else True
@@ -76,29 +81,74 @@ def _persist_experience_observation(
         store = getattr(state, "ghost_observations", None) if state is not None else None
         if store is None:
             return True, "skipped"
-        request = getattr(frame, "request", None)
-        display_text = _display_reply_text(outcome)
         ok = bool(
             store.append_completed(
-                run_id=str(event.get("run_id") or getattr(frame, "run_id", "")),
-                session_id=str(event.get("session_id") or ""),
-                project=str(getattr(request, "project", "") or ""),
-                mode=str(event.get("mode") or getattr(frame, "task_kind", "") or "chat"),
-                user_text=str(getattr(request, "task", "") or ""),
-                assistant_text=display_text or str(event.get("summary") or ""),
-                stop_reason=str(event.get("stop_reason") or ""),
-                provider_id=str(event.get("provider") or ""),
+                run_id=run_id,
+                session_id=session_id,
+                project=str(project or ""),
+                mode=str(mode or "chat"),
+                user_text=str(user_text or ""),
+                assistant_text=str(assistant_text or ""),
+                stop_reason=str(stop_reason or ""),
+                provider_id=str(provider_id or ""),
             )
         )
         if not ok:
             return False, "failed"
         return True, (
             "committed"
-            if str(event.get("stop_reason") or "") == "done"
+            if str(stop_reason or "") == "done"
             else "uncommitted"
         )
     except Exception:
         return False, "failed"
+
+
+def _emit_observation_warning(
+    state: Any,
+    *,
+    run_id: str,
+    session_id: str,
+    status: str,
+) -> None:
+    """Warn about a non-committed observation; always before task_done."""
+    if status == "failed":
+        error_type, error_ref = "GhostObservationFailed", "ghost_observation_failed"
+    else:
+        error_type, error_ref = (
+            "GhostObservationUncommitted", "ghost_observation_uncommitted",
+        )
+    with suppress(Exception):
+        state.emit({
+            "type": "ghost_post_turn_warning",
+            "stage": "observation_commit",
+            "run_id": run_id,
+            "session_id": session_id,
+            "error_type": error_type,
+            "error_ref": error_ref,
+        })
+
+
+def _persist_experience_observation(
+    deps: Any,
+    frame: RunFrame,
+    event: dict[str, object],
+    outcome: ModeOutcome,
+) -> tuple[bool, str]:
+    """Persist the completed-round experience before any final display emit."""
+    request = getattr(frame, "request", None)
+    display_text = _display_reply_text(outcome)
+    return _persist_observation_row(
+        getattr(deps, "state", None),
+        run_id=str(event.get("run_id") or getattr(frame, "run_id", "")),
+        session_id=str(event.get("session_id") or ""),
+        project=str(getattr(request, "project", "") or ""),
+        mode=str(event.get("mode") or getattr(frame, "task_kind", "") or "chat"),
+        user_text=str(getattr(request, "task", "") or ""),
+        assistant_text=display_text or str(event.get("summary") or ""),
+        stop_reason=str(event.get("stop_reason") or ""),
+        provider_id=str(event.get("provider") or ""),
+    )
 
 
 def _publish_display_after_commit(deps: Any, outcome: ModeOutcome) -> None:
@@ -158,6 +208,22 @@ def settle_cancelled_run(
     if work is not None:
         finish_run_operation(deps, work, stopped_event)
     finish_trace(stopped_event)
+    # Cancelled rounds leave an unretrievable experience row so the attempt
+    # stays visible in export instead of vanishing silently.
+    request_task = str(getattr(getattr(frame, "request", None), "task", "") or "")
+    persisted, obs_status = _persist_observation_row(
+        state,
+        run_id=run_id,
+        session_id=session_id,
+        project=str(project or ""),
+        mode=str(stopped_event.get("mode") or task_kind or "chat"),
+        user_text=request_task,
+        assistant_text="",
+        stop_reason="stopped",
+        provider_id=provider_id,
+    )
+    if not persisted or obs_status != "committed":
+        _emit_observation_warning(state, run_id=run_id, session_id=session_id, status=obs_status)
     state.finish_run(run_id, stopped_event)
     release_work_item(
         ghost_deps,
@@ -237,6 +303,21 @@ def settle_error_run(
     if work is not None:
         finish_run_operation(deps, work, error_event)
     finish_trace(error_event)
+    # Failed rounds leave an unretrievable experience row for the same reason.
+    request_task = str(getattr(getattr(frame, "request", None), "task", "") or "")
+    persisted, obs_status = _persist_observation_row(
+        state,
+        run_id=run_id,
+        session_id=session_id,
+        project=str(project or ""),
+        mode=str(error_event.get("mode") or task_kind or "chat"),
+        user_text=request_task,
+        assistant_text=str(error_event.get("summary") or ""),
+        stop_reason="error",
+        provider_id=provider_id,
+    )
+    if not persisted or obs_status != "committed":
+        _emit_observation_warning(state, run_id=run_id, session_id=session_id, status=obs_status)
     state.finish_run(run_id, error_event)
     current_work_item = work.claimed_work_item if work is not None else None
     if frame is not None:
@@ -285,34 +366,21 @@ def _finish_mode_outcome(
     )
     finish_run_operation(deps, work, event)
     finish_trace(event)
-    # Settlement owns the commit order: persist the experience observation
-    # first (committed only when stop_reason=done; empty-signal successes are
-    # still recorded for indexing), then publish final display, then task_done.
-    # A failed observation write lets the answer continue but is reported as
-    # Ghost-record-failed, never as recoverable.
+    # Commit order (crash semantics): the ledger finish above is the durable
+    # commit point — a crash after it leaves a done ledger without an
+    # observation, which export still shows. The observation follows
+    # best-effort, then display, then the observation warning (when the row is
+    # missing or uncommitted), and task_done is always the last task event.
     persisted, obs_status = _persist_experience_observation(deps, frame, event, outcome)
     _publish_display_after_commit(deps, outcome)
+    if not persisted or obs_status != "committed":
+        _emit_observation_warning(
+            deps.state,
+            run_id=frame.run_id,
+            session_id=frame.request.session_id,
+            status=obs_status,
+        )
     deps.state.finish_run(frame.run_id, event)
-    if not persisted:
-        with suppress(Exception):
-            deps.state.emit({
-                "type": "ghost_post_turn_warning",
-                "stage": "observation_commit",
-                "run_id": frame.run_id,
-                "session_id": frame.request.session_id,
-                "error_type": "GhostObservationFailed",
-                "error_ref": "ghost_observation_failed",
-            })
-    elif obs_status == "uncommitted":
-        with suppress(Exception):
-            deps.state.emit({
-                "type": "ghost_post_turn_warning",
-                "stage": "observation_commit",
-                "run_id": frame.run_id,
-                "session_id": frame.request.session_id,
-                "error_type": "GhostObservationUncommitted",
-                "error_ref": "ghost_observation_uncommitted",
-            })
     run_ghost_post_turn(
         ghost_deps,
         frame,

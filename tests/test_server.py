@@ -3690,7 +3690,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("Prefer concise answer-first replies.", prompt)
         self.assertEqual(done["mode"], "chat")
 
-    def test_chat_mode_runs_post_turn_ghost_learning_after_task_done(self) -> None:
+    def test_chat_mode_commits_observation_without_model_call(self) -> None:
         """Experience-memory final state: one normal call, no Ghost model
         call, observation committed before reply/task_done, retrievable next."""
         with tempfile.TemporaryDirectory() as td:
@@ -3700,9 +3700,6 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
-            learning_factory = mock.Mock(
-                side_effect=AssertionError("Ghost must not call a model"))
-            state.providers.ghost_learning_provider_factory = learning_factory
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3726,12 +3723,8 @@ class SessionThreadingTests(unittest.TestCase):
 
         event_types = [event["type"] for event in emitted]
         self.assertEqual(provider.send.call_count, 1)
-        learning_factory.assert_not_called()
         self.assertLess(event_types.index("reply"), event_types.index("task_done"))
-        self.assertLess(event_types.index("task_done"), event_types.index("ghost_learning_done"))
-        learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
-        self.assertTrue(learning_event["ok"])
-        self.assertEqual(learning_event["skipped_reason"], "replaced_by_observations")
+        self.assertNotIn("ghost_learning_done", event_types)
         self.assertEqual(len(observations), 1)
         self.assertIn("以后回答短一点", str(observations[0]["user_text"]))
 
@@ -3745,7 +3738,6 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
-            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3765,10 +3757,7 @@ class SessionThreadingTests(unittest.TestCase):
             while not events.empty():
                 emitted.append(events.get_nowait())
 
-        state.providers.ghost_learning_provider_factory.assert_not_called()
-        learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
         continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
-        self.assertEqual(learning_event["skipped_reason"], "learning_disabled")
         self.assertEqual(continuity_event["skipped_reason"], "learning_disabled")
 
     def test_state_kicks_ghost_sleep_without_sse_event(self) -> None:
@@ -3913,7 +3902,6 @@ class SessionThreadingTests(unittest.TestCase):
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
-            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3934,7 +3922,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "planning",
                 )
 
-        state.providers.ghost_learning_provider_factory.assert_not_called()
+        self.assertEqual(state.run_registry.last_terminal_event()["mode"], "planning")
 
     def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
         self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)

@@ -85,7 +85,6 @@ def _runner(
     agent_run=None,
     collect_changes=_empty_changes,
     run_review=None,
-    router_provider_factory=None,
     is_git_repository=None,
 ) -> TaskRunDeps:
     return TaskRunDeps(state=state,
@@ -102,7 +101,6 @@ def _runner(
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository or (lambda _project: True),
-        ghost_router_provider_factory=router_provider_factory,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
@@ -251,8 +249,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
             queued_item,
             user_request="继续",
         )
-        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         record = _research_record()
         research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
@@ -275,7 +272,6 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
-    router_factory.assert_not_called()
     assert research_iteration.call_count == 1
     assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
@@ -296,8 +292,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         item_id = _seed_research_item(state)
-        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
                 "Should we keep tracking provider recovery?",
@@ -318,7 +313,6 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
-    router_factory.assert_not_called()
     assert research_iteration.call_count == 1
     assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
@@ -357,8 +351,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
             queued_item,
             user_request="继续",
         )
-        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         record = replace(_research_record(), answer_status="partial")
         research_iteration = mock.Mock(return_value=ResearchIterationRun(
             result=ResearchRunResult(
@@ -381,7 +374,6 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
         item = state.ghost_work_queue.list_items()[0]
         trace_payload = _last_trace_payload(state)
 
-    router_factory.assert_not_called()
     assert research_iteration.call_count == 1
     assert state.run_registry.last_terminal_event()["mode"] == "research"
     assert item.id == item_id
@@ -407,16 +399,14 @@ def test_non_strict_continue_does_not_consume_queue_and_answers_directly() -> No
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         _seed_research_item(state)
-        router_factory = mock.Mock(side_effect=AssertionError("retired router must not run"))
         main_provider = _Provider("chat reply")
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             run_task_submission(runner, TaskSubmission("s1", None, "继续查 pytest 变化", 8, False, "deepseek"))
             assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
 
-    router_factory.assert_not_called()
     assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert item.status == "queued"
@@ -446,7 +436,7 @@ def test_post_turn_sync_harvests_research_interest_candidates() -> None:
                 relations=[{"src": "war", "dst": "copper supply", "kind": "affects"}],
                 session_id="s1",
             ))
-            runner = _runner(state, router_provider_factory=None)
+            runner = _runner(state)
 
             with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
                 run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
@@ -505,7 +495,6 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
             state,
             agent_run=agent_run,
             collect_changes=_reviewable_changes,
-            router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
         events = state.subscribe()
 
@@ -551,7 +540,6 @@ def test_project_followup_without_proof_blocks_item() -> None:
             state,
             agent_run=mock.Mock(return_value=RunResult("done", "done", 1, changed=False, checks_passed=False)),
             collect_changes=_empty_changes,
-            router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -577,7 +565,6 @@ def test_review_item_consumes_into_review_without_writer() -> None:
             agent_run=agent_run,
             collect_changes=_reviewable_changes,
             run_review=run_review,
-            router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
 
         with mock.patch.object(
@@ -600,15 +587,13 @@ def test_no_queued_item_answers_with_one_normal_call() -> None:
     factory is never invoked and only one normal model call happens."""
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
-        router_factory = mock.Mock(side_effect=AssertionError("retired router must not run"))
-        runner = _runner(state, router_provider_factory=router_factory)
+        runner = _runner(state)
         main_provider = _Provider("plain chat")
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             assert state.wait_for_ghost_sleep(timeout=30)
 
-    router_factory.assert_not_called()
     assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
 

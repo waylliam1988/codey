@@ -40,7 +40,7 @@ class _Provider:
         pass
 
 
-def _runner(state: server.AppContext, *, agent_run=None, router_provider_factory=None) -> TaskRunDeps:
+def _runner(state: server.AppContext, *, agent_run=None) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=lambda *_args, **_kwargs: {"ok": True, "changed_count": 0, "files": [], "diff": ""},
@@ -55,7 +55,6 @@ def _runner(state: server.AppContext, *, agent_run=None, router_provider_factory
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
-        ghost_router_provider_factory=router_provider_factory,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
@@ -207,10 +206,7 @@ def test_task_entry_uses_affinity_to_order_strict_continue_work_items() -> None:
             ),
             session_id="s1",
         )
-        runner = _runner(
-            state,
-            router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
-        )
+        runner = _runner(state)
         research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
                 result=ResearchRunResult(
@@ -269,7 +265,7 @@ def test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources() -> None:
         reviewed = state.ghost_inbox.review_candidate(created[0].id, "accept", reviewed_by="test")
         assert reviewed is not None
         state.ghost_hebbian.reinforce_candidate(reviewed)
-        runner = _runner(state, router_provider_factory=None)
+        runner = _runner(state)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
             run_task_submission(runner, TaskSubmission("s1", None, "hello", 8, False, "deepseek"))
@@ -294,7 +290,7 @@ def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
             session_id="s1",
         )
         state.ghost_inbox.set_learning_enabled(False)
-        runner = _runner(state, router_provider_factory=None)
+        runner = _runner(state)
 
         with mock.patch.object(state, "get_provider", return_value=_Provider("chat")):
             run_task_submission(runner, TaskSubmission("s1", None, "continue", 8, False, "deepseek"))
@@ -309,7 +305,7 @@ def test_provider_failure_exception_path_syncs_affinity_behavior() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         assert state.ghost_affinity is not None
-        runner = _runner(state, router_provider_factory=None)
+        runner = _runner(state)
 
         with mock.patch.object(
             state,

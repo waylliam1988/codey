@@ -39,6 +39,22 @@ class KoboldLiveGateFixtureTests(unittest.TestCase):
                 (root / "unexpected.txt").write_text("changed", encoding="utf-8")
                 self.assertFalse(gate._verify_fixture(root, case)["ok"])
 
+    def test_auto_verify_requires_exact_content(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "hello_auto.txt"
+            target.write_text("hello auto\n", encoding="utf-8")
+            self.assertTrue(gate._verify_fixture(root, "auto")["ok"])
+            target.write_text("hello auto\nthis should not be here\n", encoding="utf-8")
+            self.assertFalse(gate._verify_fixture(root, "auto")["ok"])
+            target.write_text("say hello auto please", encoding="utf-8")
+            self.assertFalse(gate._verify_fixture(root, "auto")["ok"])
+
+    def test_zero_discovered_tests_fail_verification(self) -> None:
+        self.assertTrue(gate._ran_zero_tests("Ran 0 tests in 0.001s\nOK"))
+        self.assertFalse(gate._ran_zero_tests("Ran 3 tests in 0.001s\nOK"))
+        self.assertFalse(gate._ran_zero_tests(""))
+
 
 if __name__ == "__main__":
     unittest.main()

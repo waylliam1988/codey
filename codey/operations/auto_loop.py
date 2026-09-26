@@ -53,7 +53,8 @@ def is_auto_request(request: Any) -> bool:
 def build_auto_first_prompt(task: str, *, project: str = "") -> str:
     project_line = (
         "An attached project is available; request ACTION: project only when the "
-        "user asks to inspect or change project files."
+        "user asks to change project files, ACTION: planning_readonly for "
+        "inspect or read-only questions."
         if str(project or "").strip()
         else "No project is attached; never request project, planning, or review actions."
     )
@@ -130,12 +131,16 @@ def check_auto_action_permitted(
 
 
 def with_auto_plan(request: Any, plan: str) -> Any:
-    """Forward the model's PLAN into the dispatched action (never discarded)."""
+    """Attach the model's PLAN as a labeled execution hint (never user text).
+
+    The submission's task stays the pristine user request; executors read
+    execution_task() while ledger, observations, and snapshots keep task.
+    """
     plan_text = str(plan or "").strip()
     if not plan_text:
         return request
     try:
-        return replace(request, task=f"{request.task}\n\nAuto plan:\n{plan_text}")
+        return replace(request, model_hint=plan_text)
     except Exception:
         return request
 
@@ -216,17 +221,11 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
             source_ref="provider_send:auto",
             capability_id="auto_runner",
         )
-    try:
-        raw = frame.provider.send(prompt)
-    except Exception as exc:
-        # Fail-open: a dead first call falls back to the deterministic baseline
-        # runner instead of failing the task. Cancellation still propagates:
-        # the first output is never silently replaced by a second routing round.
-        from codey.runtime.core import cancellation as _cancellation
-
-        if isinstance(exc, _cancellation.TaskCancelled) or _is_cancel_signal(exc):
-            raise
-        return _dispatch_baseline(frame, work, hooks, deps)
+    # The first output is never replaced by a second routing round, and a dead
+    # first call is never retried here: provider failure propagates to the
+    # existing error settlement instead of re-issuing the just-abandoned slow
+    # request through a baseline runner.
+    raw = frame.provider.send(prompt)
     decision = parse_auto_first_output(raw)
     if decision.kind == AUTO_DIRECT_ANSWER_KIND:
         return _finish_auto_answer(frame, state, prompt, decision.answer)
@@ -241,13 +240,10 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     frame.request = with_auto_plan(request, decision.plan)
     frame.task_kind = decision.kind
     deps.open_ledger_for(decision.kind)
-    try:
-        frame.provider.new_chat()
-    except Exception as exc:
-        from codey.runtime.core import cancellation as _cancellation
-
-        if isinstance(exc, _cancellation.TaskCancelled) or _is_cancel_signal(exc):
-            raise
+    # The ACTION scaffolding must not leak into the mode runner's window: a
+    # failed reset propagates to error settlement instead of continuing with
+    # inherited ACTION history.
+    frame.provider.new_chat()
     frame.fresh_chat = False
     if decision.kind == "project":
         if not deps.acquire_writer(project_text):
@@ -277,45 +273,6 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     if decision.kind == "review":
         return deps.mode_deps.review(frame)
     return _finish_auto_answer(frame, state, prompt, strip_action_markers(raw))
-
-
-def _is_cancel_signal(exc: BaseException) -> bool:
-    name = type(exc).__name__
-    if name in {"ControlTeachCancelled", "TaskCancelled"}:
-        return True
-    return "cancell" in name.lower() or "cancelled" in str(exc).lower()
-
-
-def _dispatch_baseline(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeOutcome:
-    """Run the deterministic baseline kind with the original request."""
-    from codey.operations.mode_dispatch import dispatch_task_mode
-
-    kind = str(getattr(frame, "task_kind", "") or "chat")
-    deps.open_ledger_for(kind)
-    if kind == "project":
-        if not deps.acquire_writer(str(getattr(frame, "project_text", "") or "")):
-            summary = "另一个任务正在写该项目，稍后重试。"
-            return ModeOutcome({
-                "type": "task_done",
-                "run_id": frame.run_id,
-                "session_id": frame.request.session_id,
-                "summary": summary,
-                "stop_reason": "stopped",
-                "turns": 0,
-                "max_turns": frame.request.max_turns,
-                "provider": frame.provider_id,
-                "mode": "project",
-            })
-        try:
-            return deps.mode_deps.project(
-                frame, work, hooks, config_result=deps.config_result,
-            )
-        finally:
-            with contextlib.suppress(Exception):
-                deps.release_writer(str(getattr(frame, "project_text", "") or ""))
-    return dispatch_task_mode(
-        kind, frame, work, hooks, deps.mode_deps, config_result=deps.config_result,
-    )
 
 
 def _finish_auto_answer(frame: Any, state: Any, prompt: str, answer: str) -> ModeOutcome:

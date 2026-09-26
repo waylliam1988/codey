@@ -1,5 +1,43 @@
 # Codey Test Report
 
+## Review-driven Ghost/auto hardening + live gate tightening (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/ghost/observations.py         (blocked reads fail without rewrite in append/delete_scope; agent mode kept; dead result_ref column removed; session/project/user retrieval scopes)
+codey/ghost/observation_index.py    (hard char budget on rendered blocks: first item truncated with … or skipped; assistant hits show their excerpt; budget documented as chars)
+codey/operations/auto_loop.py       (dead first call propagates to error settlement, baseline fallback deleted; inspect routes to planning_readonly; ACTION window reset failure propagates; _is_cancel_signal deleted)
+codey/task/model.py                 (TaskSubmission.model_hint + execution_task(): executors see the auto PLAN, persistence keeps pristine user words)
+codey/operations/project_completion_flow.py + planning_flow.py + research_flow.py + review_flow.py (executor prompts use execution_task(); writer recalls project scope)
+codey/operations/task_phases/settlement.py (ledger finish is the durable commit point; observation warnings precede task_done; cancel/error rounds leave unretrievable rows)
+codey/operations/ghost_post_turn.py + task_phases/ghost.py + dispatch.py + task_run.py (retired router/learning stubs, factories, and route_result chain deleted)
+codey/app/{task_submit,headless_runner,server,provider_registry}.py (dead ghost factory wiring deleted; run_headless connect_fresh_provider param deleted)
+codey/app/cli.py                    (human agent mode streams progress lines instead of buffering to the end)
+tools/kobold_live_gate.py           (--include-research placeholder deleted; auto requires exact content; Ran-0-tests fails; isolated state_home per case; exit_code + task_done required; JSONL archive failure fails; ghost roundtrip write->read->retrieve->delete->gone)
+docs/release_gate.zh-CN.md + capabilities/event-matrix (gate truth: no research flag, 600s is finite, budget is chars, no result-ref promise)
+tests                               (blocked-read preservation, scope matrix, 5000-row settlement baseline, budget trilogy, PLAN separation, no-second-call, readonly-no-writer-lock, reset-failure, post-turn-needs-no-factory, gate exact/zero-test regressions; stub-only tests deleted or rewritten)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check codey tests tools`, `git diff --check`,
+  and `python -m compileall -q codey tests tools` passed; one self-inflicted
+  try-block indentation break in `test_ghost_post_turn_work_queue.py` was caught
+  by compileall and fixed before any test ran.
+- Targeted suites (experience/ghost-router/work-queue/affinity/headless/run-trace/
+  provider-preference/sandwich/research-continuity/router-ab/server/research/review/
+  coldstart/changes/architecture/matrix/cli/live-gate) green before the full run.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4356 passed, 7 skipped, 1387 subtests passed in 377.78s (0:06:17)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+- Live-fire reference (unchanged code paths, earlier same-day run vs
+  koboldcpp/Gemma-4-Queen-31B): gate 8/8 PASS (chat/create/edit/references/
+  discussion/planning/auto/ghost); live JSONL stays in gitignored
+  `.e2e-artifacts/`. The gate was tightened after that run (exact-match auto,
+  isolated state_home), so the next live run exercises the stricter assertions.
+- This entry was written after the full suite. No release was made.
+
 ## Live-fire release sweep vs KoboldCpp 31B (2026-09-26)
 
 Scope (production, no release):
