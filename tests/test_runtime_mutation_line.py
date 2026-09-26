@@ -551,6 +551,127 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertNotIn("phantom", second.operations)
         self.assertNotIn("phantom", second.lanes)
 
+    def _drive_to_delivery_pending(self) -> None:
+        """Writer stops with a tool delivery never resolved (live: headless
+        denied a shell request and stopped the run from inside delivery)."""
+        self._accept_and_run_writer()
+        read = self._tool_intent("read", 0)
+        items = (DeliveryBatchItem(0, "read", read.effect_id, "safe", False),)
+        self.line.begin_tool_batch(
+            self.session_id,
+            self.run_id,
+            intents=(read,),
+            delivery_intent=DeliveryBatchIntent(
+                batch_id=new_batch_id(self.run_id, 1),
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=read.effect_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+            ),
+        )
+        self.assertEqual(
+            self.operations.load(self.session_id, self.run_id).leaf,
+            LEAF_TOOL_DELIVERY_PENDING,
+        )
+
+    def test_writer_settle_resolves_abandoned_delivery_first(self) -> None:
+        """Regression (live create case): settling the writer while a tool
+        delivery is pending must resolve the abandoned delivery and record
+        the writer end instead of raising an illegal transition that masks
+        the real stop."""
+        self._drive_to_delivery_pending()
+        settled = self.line.mark_writer_settled(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+            turns_used=4,
+            stop_reason="stopped",
+        )
+        self.assertIsNotNone(settled)
+        assert settled is not None
+        self.assertEqual(settled.leaf, LEAF_WRITER_SETTLED)
+        self.assertEqual(settled.stop_reason, "stopped")
+        self.assertEqual(settled.turns_used, 4)
+        self.assertEqual(
+            self.operations.load(self.session_id, self.run_id).leaf,
+            LEAF_WRITER_SETTLED,
+        )
+
+    def test_repair_settle_resolves_abandoned_delivery_first(self) -> None:
+        self._accept_and_run_writer()
+        self.line.mark_writer_settled(
+            self.session_id, self.run_id,
+            provider_id="mock", turns_used=2, stop_reason="done",
+        )
+        self.line.record_completion_proof(
+            self.session_id, self.run_id,
+            proof_ref="completion_proof:" + "b" * 16,
+            proof_status="failed",
+        )
+        self.line.admit_repair_context(
+            self.session_id, self.run_id,
+            context_ref="sha256:" + "a" * 64,
+        )
+        self.line.mark_repair_running(
+            self.session_id, self.run_id, provider_id="mock",
+        )
+        read = self._tool_intent("read", 0)
+        items = (DeliveryBatchItem(0, "read", read.effect_id, "safe", False),)
+        self.line.begin_tool_batch(
+            self.session_id,
+            self.run_id,
+            intents=(read,),
+            delivery_intent=DeliveryBatchIntent(
+                batch_id=new_batch_id(self.run_id, 1),
+                session_id=self.session_id,
+                run_id=self.run_id,
+                turn=1,
+                items=items,
+                batch_digest=compute_batch_digest(items),
+            ),
+            driver="repair",
+        )
+        self.line.settle_tool_effect(
+            self.session_id,
+            self.run_id,
+            RuntimeEffectSettlement(
+                effect_id=read.effect_id,
+                effect_category=EFFECT_CATEGORY_TOOL_CALL,
+                session_id=self.session_id,
+                run_id=self.run_id,
+                status=SETTLEMENT_STATUS_OK,
+                sent_state="settled",
+                replay_class=ReplayClass.SAFE,
+            ),
+        )
+        self.assertEqual(
+            self.operations.load(self.session_id, self.run_id).leaf,
+            LEAF_TOOL_DELIVERY_PENDING,
+        )
+        repaired = self.line.mark_repair_settled(
+            self.session_id,
+            self.run_id,
+            provider_id="mock",
+            stop_reason="stopped",
+        )
+        self.assertIsNotNone(repaired)
+        assert repaired is not None
+        self.assertEqual(repaired.leaf, LEAF_REPAIR_SETTLED)
+
 
 if __name__ == "__main__":
     unittest.main()

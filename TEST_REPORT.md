@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## Tightened live gate vs KoboldCpp 31B + writer-settle crash fix (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/runtime/write/mutation_line.py   (_resolve_abandoned_delivery: writer/repair settle resolves a pending delivery back to its driver first; pure machine stays strict)
+tests/test_runtime_mutation_line.py    (writer + repair settle with abandoned delivery regressions, red-first with the exact live error)
+```
+
+Live gate (tightened harness: exact-match auto, isolated state_home, Ran-0-tests
+fails, exit_code + task_done + independent verification must agree):
+
+- PASS (6/8): chat (1.8s `KOBOLD_OK`), edit (`pricing.py` fix, `done` +
+  `trusted`), discussion, planning, auto (exact `hello auto`), ghost
+  (isolated write->read->retrieve->delete->gone roundtrip).
+- references: work complete 2/2 runs (2 edits + `python -m unittest discover`
+  exit 0, 3 tests pass) but the final done-turn output hit Kobold's 1024-token
+  generation cap (`finish_reason=length`) 2/2 runs, so the gate honestly stays
+  FAIL. Accepted as serving-limit status, not a production bug.
+- create: 1/4 across runs (one 9-turn `done` two days earlier); three failures
+  were model-side each time (4x invalid tool calls; shell `mkdir` denied;
+  final-turn truncation). Latest settlement verified clean (no transition
+  error, zero-test guard fired correctly). Not a production bug.
+- Production bug found live and fixed: headless shell-deny stops the run from
+  inside tool delivery, leaving `tool_delivery_pending`; the unconditional
+  `mark_writer_settled` then raised `illegal transition
+  tool_delivery_pending -> writer_settled`, masking the real stop as a crash.
+  Locked with 2 red-first unit tests, fixed, live re-verified with an
+  edit-then-shell scenario (`shell_rejected` -> `task_done stop=stopped`,
+  no transition error).
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check codey tests tools`,
+  `git diff --check`, and `python -m compileall -q codey tests tools` passed;
+  targeted runtime/operations/headless/server/architecture suites
+  (`191 passed, 397 subtests passed`) green.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4358 passed, 7 skipped, 1387 subtests passed in 432.16s (0:07:12)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+- Live JSONL stays in gitignored `.e2e-artifacts/`.
+- This entry was written after the full suite. No release was made.
+
 ## Review-driven Ghost/auto hardening + live gate tightening (2026-09-26)
 
 Scope (production, no release):

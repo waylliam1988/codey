@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterable
 
 from codey.runtime.core.operation_state import (
     LEAF_TERMINAL,
+    LEAF_TOOL_DELIVERY_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
     new_operation_state,
@@ -38,6 +39,9 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.operation_state import (
     mark_terminal as state_mark_terminal,
+)
+from codey.runtime.core.operation_state import (
+    mark_tool_delivery_settled as state_mark_tool_delivery_settled,
 )
 from codey.runtime.core.operation_state import (
     mark_writer_running as state_mark_writer_running,
@@ -68,9 +72,26 @@ from codey.runtime.write.tool_batches import (
 )
 
 
+def _resolve_abandoned_delivery(
+    state: RuntimeOperationState,
+) -> RuntimeOperationState:
+    """Resolve a delivery the driver stopped inside of before settling.
+
+    A run stopped from inside tool delivery (e.g. headless denied a shell
+    request) leaves the leaf at tool_delivery_pending. Settling the writer or
+    repair directly from there is illegal and would mask the real stop with a
+    transition error, so the abandoned delivery is resolved back to its driver
+    first. The denial itself stays recorded in events; this only unblocks the
+    honest settle. The pure machine stays strict: this composition lives only
+    in the two settle entries that own a driver lifecycle end.
+    """
+    if state.leaf == LEAF_TOOL_DELIVERY_PENDING:
+        return state_mark_tool_delivery_settled(state)
+    return state
+
+
 class RuntimeMutationLine:
     """Single writer-facing API for runtime durable mutations."""
-
     def __init__(self, session_log: RuntimeSessionLog) -> None:
         self.session_log = session_log
 
@@ -178,7 +199,7 @@ class RuntimeMutationLine:
             session_id,
             run_id,
             lambda state: state_mark_writer_settled(
-                state,
+                _resolve_abandoned_delivery(state),
                 provider_id=provider_id,
                 turns_used=turns_used,
                 stop_reason=stop_reason,
@@ -246,7 +267,7 @@ class RuntimeMutationLine:
             session_id,
             run_id,
             lambda state: state_mark_repair_settled(
-                state,
+                _resolve_abandoned_delivery(state),
                 provider_id=provider_id,
                 stop_reason=stop_reason,
                 blocked_reason=blocked_reason,

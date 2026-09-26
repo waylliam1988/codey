@@ -2,6 +2,21 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - writer/repair 结算不再被悬空 delivery 掀翻（未发布）
+
+- 实机发现的崩溃：headless 拒绝 shell 后从 delivery 内部停止，leaf 停在
+  `tool_delivery_pending`，无条件的 `mark_writer_settled` 抛出跃迁错误，把
+  真实停止原因掩盖成运行时崩溃。现在 settle 在同一次提交内先把 abandon 的
+  delivery 解回 driver，再记 writer/repair 结束；纯状态机每条边保持严格。
+  writer + repair 双回归测试先红锁定，实机重放验证（`shell_rejected` →
+  `task_done stop=stopped`，无跃迁错误）。
+- 实机门槛现状（收紧版 harness）：6/8 通过；`references` 两次活全干完但终轮
+  撞 1024-token 上限（接受为 serving 现状）；`create` 受模型方差限制（1/4）。
+  均非生产 bug。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4358 passed，
+  7 skipped，1387 subtests passed，432.16s`）。未发布。
+
 ## Unreleased - 审查驱动的 Ghost/auto 加固与实机门槛收紧（未发布）
 
 - 观察存储不再因损坏丢数据：读取被阻断时 `append_completed()` 与

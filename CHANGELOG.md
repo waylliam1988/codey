@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Writer/repair settle survives abandoned tool delivery (no release)
+
+- Live-found crash: when a run stops from inside tool delivery (headless denied
+  a shell request), the leaf stays at `tool_delivery_pending` and the
+  unconditional `mark_writer_settled` raised `illegal transition
+  tool_delivery_pending -> writer_settled`, masking the real stop as a runtime
+  error. `RuntimeMutationLine` now resolves the abandoned delivery back to its
+  driver inside the same settle commit before recording the writer/repair end;
+  the pure state machine keeps every edge strict. Locked with writer + repair
+  red-first regressions and re-verified live (`shell_rejected` ->
+  `task_done stop=stopped`, no transition error).
+- Live gate status (tightened harness, koboldcpp/Gemma-4-Queen-31B): 6/8 PASS;
+  `references` completes its work 2/2 runs but its final done-turn hits the
+  1024-token serving cap (accepted status); `create` is model-variance limited
+  (1/4). Neither is a production bug.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4358 passed,
+  7 skipped, 1387 subtests passed in 432.16s`). No release was made.
+
 ## Unreleased - Review-driven Ghost/auto hardening; live gate tightening (no release)
 
 - Ghost observation writes are lossless on corruption: `append_completed()` and
