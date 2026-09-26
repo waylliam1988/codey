@@ -43,8 +43,11 @@
   自造的三错重连循环（只留断线提示与 hello 对账）；研究图静止约 30 帧后停
   rAF（`stepResearchGraph()` 返回最大位移，拖动释放重启，96 节点上限，不加
   第二调度器）；删除未调用的 `_decide_done()`；`dispatch.py` 用 `TaskRunDeps`
-  类型并直取字段；`provider_ui.js` 抽纯 `extractCatalog()`；Ghost 告警改为中性
+  类型并直取字段；  `provider_ui.js` 抽纯 `extractCatalog()`；Ghost 告警改为中性
   文案；`read_file()` 明确 LF/CRLF 行定义并修正注释。
+- 仅 CI Linux 修复：POSIX `_terminate_process_tree()` 先校验 `proc.pid`
+  为真实组 id 才调 `killpg`，否则走直接子进程终止，避免非进程替身抛
+  `TypeError` 掩盖真正的 writer 失败；已加强制 posix 分支回归测试。
 - 验证：`python -m ruff check codey tests tools`、`git diff --check`、定向套件，
   最后全量 `python -m pytest -q -o faulthandler_timeout=120`（`4315 passed,
   7 skipped, 1374 subtests passed in 380.34s`）。web 资产 `node --check` 由 CI

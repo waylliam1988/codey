@@ -51,10 +51,15 @@
   (status hint plus hello reconciliation only); the research graph stops its
   rAF after ~30 still frames via `stepResearchGraph()` displacement and
   restarts on drag release (96-node cap, no second scheduler); dead
-  `_decide_done()` deleted; `dispatch.py` builders type against `TaskRunDeps`
+  `_decide_done()` deleted;   `dispatch.py` builders type against `TaskRunDeps`
   with direct field access; `provider_ui.js` shares `extractCatalog()`; Ghost
   warning copy is neutral (`Local update paused`); `read_file()` documents
   LF/CRLF paging and drops the `splitlines`/`O(page)` overclaim.
+- CI-only Linux fix: POSIX `_terminate_process_tree()` validates `proc.pid`
+  is a real group id before `killpg` and falls back to direct-child
+  termination otherwise, so a non-process double can no longer raise
+  `TypeError` and mask the actual writer failure; covered by a forced-posix
+  regression test.
 - Verification: `python -m ruff check codey tests tools`, `git diff --check`,
   targeted suites, then final `python -m pytest -q
   -o faulthandler_timeout=120` (`4315 passed, 7 skipped, 1374 subtests passed

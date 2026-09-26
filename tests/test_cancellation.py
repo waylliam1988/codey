@@ -327,6 +327,21 @@ class PipeCleanupDiagnosisTests(unittest.TestCase):
             args, _ = killpg.call_args
             self.assertEqual(args[0], 424242)
 
+    def test_terminate_process_tree_falls_back_without_group_id(self) -> None:
+        # CI regression (Linux): a non-process double carries a non-int pid.
+        # Signalling it via killpg raised TypeError and masked the real
+        # writer failure; fall back to direct-child termination instead.
+        proc = mock.Mock()
+        proc.pid = mock.Mock()
+        proc.poll.return_value = 0
+        with (
+            mock.patch.object(cancellation.os, "name", "posix"),
+            mock.patch.object(cancellation.os, "killpg", create=True) as killpg,
+        ):
+            cancellation._terminate_process_tree(proc, None)
+            killpg.assert_not_called()
+        proc.terminate.assert_called_once()
+
     def test_terminate_direct_child_does_not_signal_group(self) -> None:
         proc = mock.Mock()
         proc.poll.return_value = 0

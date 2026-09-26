@@ -43,6 +43,13 @@ Verification (local, Windows):
 - This entry was written after the full suite. No release was made. Ghost was kept;
   no worker split, no store merge, no mechanical affinity/work_queue split,
   no bulk except sweep, no Qwen timing changes.
+- Follow-up (CI-only, Linux): `WorkerSelfHealTests` two cases failed on CI
+  with `TypeError: 'Mock' object cannot be interpreted as an integer` from
+  POSIX `killpg` on a non-int pid, masking the expected writer errors.
+  Fixed in `cancellation.py` (validate group id, fall back to direct-child
+  termination) with a forced-posix regression test in `test_cancellation.py`;
+  `test_cancellation.py` + `test_coldstart_hardening.py` green locally
+  (87 passed, 1 skipped).
 
 ## Recovery ownership and small-subtraction full suite (2026-09-26)
 

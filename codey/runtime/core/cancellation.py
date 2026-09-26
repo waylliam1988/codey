@@ -519,9 +519,13 @@ def _terminate_process_tree(
     else:
         # Processes from start_process() run in a new session, so the known
         # group id is proc.pid: no getpgid() on a possibly reaped parent.
-        # Unit tests mock OS signalling at the boundary; real-process tests
-        # use start_new_session=True. No Mock-shaped pid branch lives here.
         pgid = proc.pid
+        if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 0:
+            # Not a real group leader (closed proc or non-process double):
+            # fall back to direct-child termination instead of signalling
+            # a meaningless group id.
+            terminate_direct_child(proc)
+            return
         try:
             os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
