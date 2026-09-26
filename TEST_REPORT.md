@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## Live probe p4/p5 done + harness semantic verdicts (2026-09-26)
+
+Scope (production, no release):
+
+```text
+tools/live_probe_split.py           (verdicts rewritten from string-contains to structured rows: crash signals scoped to codey-originated rows, search usage = tool row, recipe-as-target = make <t> outside Makefile target set; main() table-driven; queue_itemiono typo fixed; dead CODEY_ROW_TYPES constant deleted)
+tests/test_live_probe_split.py      (12 new unit tests for the analyzers + replay of all 4 saved live artifacts)
+```
+
+P4 (forced search sweep, hostile fixture): done in 3 turns, exit 0. Single
+`search` tool call with truncated/paged output; reported hits exactly
+(pricing.py:1 + 3 test lines); symlink never appears in any structured
+tool result; zero crash signals.
+
+P5 (`make lint` + `make test`): the environment has no `make` binary, and
+the agent adapted honestly — `make lint`/`make test` failed clean with
+structured `ERROR: command not found` (no crash), it read the Makefile,
+ran `ruff check .` (exit 0) and `python -m pytest` (exit 1, the fixture's
+real sign bug) directly, and reported the AssertionError truthfully in
+`task_done`. The old harness scored this `ok=false` purely because the
+summary string contains "AssertionError" — a harness false positive, NOT a
+production bug. Semantic re-evaluation (`evaluate_p5_semantics`: make
+attempted cleanly + lint ran + test ran + failure backed by a failed tool
+row + zero codey crash signals) evaluates the saved run clean, and that
+evaluation itself is locked by unit tests. Recorded explicitly as harness
+refinement, not an architecture issue.
+
+Incidental guardrail trip: the first full run in this round failed only on
+`test_env_names` — the new harness defined an unused `CODEY_ROW_TYPES`
+constant tripping the `CODEY_` brand guardrail. Deleted the dead constant
+(it was never referenced); no production code touched.
+
+Verification (local, Windows, koboldcpp serving throughout):
+
+- Before the full suite: `python -m ruff check .` clean, `git diff --check`
+  clean, `python -m compileall -q codey tests tools` passed; analyzer unit
+  tests (12 passed, incl. 4 artifact replays) + env-names guardrail green
+  before the full run.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4528 passed, 7 skipped, 1391 subtests passed in 556.70s (0:09:16)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+  Environmental note (kept honest, suite NOT re-run to hide it): with
+  koboldcpp serving, `test_adapter_self_repair.py::test_structural_writer_...`
+  reached the live endpoint and stalled ~2min until faulthandler dumped
+  threads, then completed and passed; wall time is ~3min above the usual
+  ~6min baseline for that reason.
+- Live JSONL in gitignored `.e2e-artifacts/live-probe-*.jsonl`.
+- This entry was written after the full suite. No release was made.
+
 ## CI-only audit blackout fixed: symlinked root silently emptied scans (2026-09-26)
 
 Scope (production, no release):

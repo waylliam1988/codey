@@ -11,6 +11,15 @@ does NOT cover:
   (exercises verification discovery, search scan, symlink guard, audit and
   map paths live)
 - P3 tiny create task (protocol-repair / stagnation stress + clean done)
+- P4 forced project-wide search over the hostile fixture (search scan +
+  symlink guard under a reporting task)
+- P5 `make lint` + `make test` through the Makefile (headless denies shell;
+  proves adaptation, honest reporting, and clean settle)
+
+Verdicts are semantic, not string-contains: crash signals only count on
+codey-originated rows, search usage means a tool row with tool == "search",
+and recipe-as-target means a `make <t>` outside the Makefile target set
+(see the analyzer helpers; unit-tested in tests/test_live_probe_split.py).
 
 Usage:
     python tools/live_probe_split.py --json
@@ -110,7 +119,7 @@ def run_p1() -> dict:
                     "error": f"expected 1 queued item, got {len(queued)}"}
         item_id = queued[0].id
         back_to_queue = store.queue_item(item_id)
-        notes.append(f"queue_itemiono={back_to_queue is not None}")
+        notes.append(f"queue_item_ok={back_to_queue is not None}")
         claim = store.claim_next(session_id="probe-s1", run_id="probe-run",
                                  user_request="continue")
         notes.append(f"claim_ok={claim.ok} reason={claim.skipped_reason}")
@@ -200,12 +209,9 @@ def _run_agent_probe(case: str, task: str, make_fixture, max_turns: int) -> dict
         dt = round(time.time() - t0, 1)
         done = next((r for r in reversed(rows) if str(r.get("type") or "") == "task_done"), None)
         stop_reason = str((done or {}).get("stop_reason") or result.stop_reason)
-        blob = json.dumps(rows, ensure_ascii=False)
+        signals = codey_crash_signals(rows)
         tripwires = {
-            "traceback": "Traceback" in blob,
-            "assertion_error": "AssertionError" in blob,
-            "illegal_transition": "illegal transition" in blob,
-            "none_task_crash": "NoneType" in blob and "strip" in blob,
+            **signals,
             "shell_rejected": any(str(r.get("type") or "") == "shell_rejected" for r in rows),
         }
         return {
@@ -228,6 +234,144 @@ def _archive(case: str, rows: list[dict]) -> None:
     with open(ARTIFACT_DIR / f"live-probe-{case}.jsonl", "w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+# --- Semantic row analyzers (pure functions, unit-tested) ---
+#
+# String-contains over the whole JSONL blob cannot prove anything: model and
+# test output honestly contains words like "AssertionError" when a fixture
+# test fails. These analyzers read STRUCTURED rows instead:
+# - crash signals only count on codey-originated rows (never tool results
+#   or the model-written task_done summary);
+# - "was search used" means a tool row with tool == "search";
+# - "recipe taken as target" means a `make <t>` command with t outside the
+#   Makefile target set (running the recipe body directly is legitimate).
+
+FAIL_WORDS = ("assertionerror", "failed", "failure", "exit 1")
+
+
+def _row_text(row: dict) -> str:
+    parts = [row.get("summary"), row.get("result"), row.get("message"), row.get("text")]
+    return " ".join(str(part) for part in parts if part)
+
+
+def tool_rows(rows: list[dict]) -> list[dict]:
+    return [row for row in rows if str(row.get("type") or "") == "tool"]
+
+
+def tool_commands(rows: list[dict]) -> list[str]:
+    return [str(row.get("command") or "") for row in tool_rows(rows) if row.get("command")]
+
+
+def codey_crash_signals(rows: list[dict]) -> dict[str, bool]:
+    """True crash evidence, scoped to codey-originated rows only."""
+    codey_text = " ".join(
+        _row_text(row) for row in rows if str(row.get("type") or "") != "tool"
+    )
+    # The model-written task_done summary may honestly quote a fixture
+    # failure ("AssertionError: 120.0 != 80"); that is evidence of honest
+    # reporting, not a codey crash, so it is excluded here and checked by
+    # honest_failure_report() instead.
+    non_summary = " ".join(
+        _row_text(row)
+        for row in rows
+        if str(row.get("type") or "") not in ("tool", "task_done")
+    )
+    blob = json.dumps(rows, ensure_ascii=False)
+    return {
+        # A real interpreter traceback escaping from codey itself. Tool
+        # output may honestly paste tracebacks from fixture tests, so tool
+        # rows are excluded here.
+        "python_traceback": "Traceback (most recent call last)" in codey_text,
+        # Runtime state-machine corruption signature; models never write it.
+        "illegal_transition": "illegal transition" in blob,
+        # Known-fixed map bug signature (None task); same scoping as above.
+        "none_task_crash": "NoneType" in codey_text and "strip" in codey_text,
+        # An AssertionError outside tool results and outside the model
+        # summary means codey itself asserted (e.g. a contract assert).
+        "codey_assertion": "AssertionError" in non_summary,
+    }
+
+
+def used_structured_search(rows: list[dict]) -> bool:
+    return any(str(row.get("tool") or "") == "search" for row in tool_rows(rows))
+
+
+def makefile_targets(makefile_text: str) -> tuple[set[str], list[str]]:
+    """Split a Makefile into (targets, recipe bodies)."""
+    targets: set[str] = set()
+    recipes: list[str] = []
+    for line in makefile_text.splitlines():
+        if line and not line[0].isspace() and line.rstrip().endswith(":"):
+            name = line.split(":")[0].strip()
+            if name and not name.startswith(("#", ".")):
+                targets.add(name)
+        elif line.startswith("\t") and line.strip():
+            recipes.append(line.strip())
+    return targets, recipes
+
+
+def make_misuse(commands: list[str], targets: set[str]) -> list[str]:
+    """Commands that invoke a non-target as `make <t>`.
+
+    Running a recipe body directly (e.g. `ruff check .`) is legitimate
+    adaptation, not misuse; only `make` with an unknown target counts.
+    """
+    bad: list[str] = []
+    for command in commands:
+        text = command.strip()
+        if not text.startswith("make "):
+            continue
+        target = text[5:].strip().strip("\"'")
+        if target and target not in targets:
+            bad.append(command)
+    return bad
+
+
+def honest_failure_report(rows: list[dict], summary: str) -> bool:
+    """A failure-quoting summary must be backed by a failed tool row."""
+    if not any(word in summary.lower() for word in FAIL_WORDS):
+        return True
+    return any(not row.get("ok", True) for row in tool_rows(rows))
+
+
+def evaluate_p5_semantics(rows: list[dict], summary: str) -> dict[str, object]:
+    """Prove `make lint / make test` reached their intended semantics.
+
+    Accepts honest adaptation: when `make` is missing, running the recipe
+    bodies (`ruff check .`, `python -m pytest`) directly still counts, as
+    long as lint + test both demonstrably ran and the reported outcome is
+    backed by tool rows.
+    """
+    commands = tool_commands(rows)
+    make_rows = [row for row in tool_rows(rows) if str(row.get("command") or "").strip().startswith("make ")]
+    lint_ran = any(
+        cmd.strip() == "make lint" or cmd.strip() == "ruff check ."
+        for cmd in commands
+    )
+    test_ran = any(
+        cmd.strip() == "make test" or cmd.strip().startswith("python -m pytest")
+        for cmd in commands
+    )
+    signals = codey_crash_signals(rows)
+    findings = {
+        "make_attempted": bool(make_rows),
+        # A structured outcome (clean ERROR or a real exit) as opposed to
+        # a crash; crash-freedom itself is covered by crash_signals.
+        "make_clean": bool(make_rows) and all(str(row.get("result") or "") for row in make_rows),
+        "lint_ran": lint_ran,
+        "test_ran": test_ran,
+        "honest_report": honest_failure_report(rows, summary),
+        "crash_signals": signals,
+    }
+    findings["ok"] = bool(
+        findings["make_attempted"]
+        and findings["lint_ran"]
+        and findings["test_ran"]
+        and findings["honest_report"]
+        and not any(signals.values())
+    )
+    return findings
 
 
 P2_TASK = (
@@ -264,22 +408,23 @@ def run_p2() -> dict:
         )
         findings["suite_exit"] = proc.returncode
         findings["suite_tail"] = (proc.stdout + proc.stderr)[-300:]
-        blob = json.dumps(rows, ensure_ascii=False)
-        # Recipe lines must never surface as verification targets.
-        findings["recipe_as_target"] = (
-            "ruff check ." in blob and "lint:" in blob and "check ." in blob
-            and ("target" in blob and "ruff check ." in blob)
+        # Recipe lines must never surface as `make` targets: parse the
+        # fixture Makefile and check every invoked `make <t>`.
+        targets, _ = makefile_targets(
+            "lint:\n\truff check .\n\ntest:\n\tpython -m pytest\n"
         )
-        # Symlink must not produce duplicated pricing rows in tool output.
-        pricing_hits = blob.count("pricing.py")
-        link_hits = blob.count("link_pricing.py")
-        findings["pricing_mentions"] = pricing_hits
-        findings["link_mentions"] = link_hits
+        misuse = make_misuse(tool_commands(rows), targets)
+        findings["make_misuse"] = misuse
+        # Symlink must not appear in any structured tool result.
+        tool_text = " ".join(
+            str(row.get("result") or "") for row in tool_rows(rows)
+        )
+        findings["link_in_tool_results"] = "link_pricing.py" in tool_text
         data["ok"] = (
             bool(findings["bug_text_gone"]) and proc.returncode == 0
-            and not data["tripwires"]["traceback"]
-            and not data["tripwires"]["assertion_error"]
-            and not data["tripwires"]["illegal_transition"]
+            and not misuse
+            and "link_pricing.py" not in tool_text
+            and not any(codey_crash_signals(rows).values())
         )
         data["findings"] = findings
         return data
@@ -312,9 +457,7 @@ def run_p3() -> dict:
         data["note_content"] = content[:100]
         data["ok"] = (
             bool(data["note_ok"]) and data.get("stop_reason") == "done"
-            and not data["tripwires"]["traceback"]
-            and not data["tripwires"]["assertion_error"]
-            and not data["tripwires"]["illegal_transition"]
+            and not any(codey_crash_signals(rows).values())
         )
         return data
     finally:
@@ -332,15 +475,15 @@ def run_p4() -> dict:
     try:
         if data.get("error"):
             return data
-        blob = json.dumps(rows, ensure_ascii=False)
-        link_rows = [part for part in blob.split("link_pricing.py")]
-        data["link_mentions"] = len(link_rows) - 1
-        data["used_search"] = ("search" in blob.lower()) or ("grep" in blob.lower())
+        tool_text = " ".join(
+            str(row.get("result") or "") for row in tool_rows(rows)
+        )
+        data["link_in_tool_results"] = "link_pricing.py" in tool_text
+        data["used_search"] = used_structured_search(rows)
         data["ok"] = (
             data.get("stop_reason") == "done"
-            and not data["tripwires"]["traceback"]
-            and not data["tripwires"]["assertion_error"]
-            and not data["tripwires"]["illegal_transition"]
+            and "link_pricing.py" not in tool_text
+            and not any(codey_crash_signals(rows).values())
         )
         return data
     finally:
@@ -360,12 +503,10 @@ def run_p5() -> dict:
     try:
         if data.get("error"):
             return data
-        data["ok"] = (
-            not data["tripwires"]["traceback"]
-            and not data["tripwires"]["assertion_error"]
-            and not data["tripwires"]["illegal_transition"]
-            and not data["tripwires"]["none_task_crash"]
-        )
+        summary = str(data.get("summary") or "")
+        findings = evaluate_p5_semantics(rows, summary)
+        data["findings"] = findings
+        data["ok"] = bool(findings["ok"])
         return data
     finally:
         _archive("p5-make-shell-deny", rows)
@@ -376,32 +517,27 @@ def run_p5() -> dict:
             shutil.rmtree(state_home, ignore_errors=True)
 
 
+_CASES: tuple[tuple[str, object, int], ...] = (
+    ("p0", run_p0, 300),
+    ("p1", run_p1, 500),
+    ("p2", run_p2, 800),
+    ("p3", run_p3, 800),
+    ("p4", run_p4, 800),
+    ("p5", run_p5, 800),
+)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="p0,p1,p2,p3")
+    ap.add_argument("--only", default=",".join(name for name, _, _ in _CASES))
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     selected = [s.strip() for s in str(args.only).split(",") if s.strip()]
     results: list[dict] = []
-    if "p0" in selected:
-        results.append(run_p0())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:300])
-    if "p1" in selected:
-        results.append(run_p1())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:500])
-    if "p2" in selected:
-        results.append(run_p2())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:800])
-    if "p3" in selected:
-        results.append(run_p3())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:800])
-    if "p4" in selected:
-        results.append(run_p4())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:800])
-    if "p5" in selected:
-        results.append(run_p5())
-        _log(json.dumps(results[-1], ensure_ascii=False)[:800])
-        _log(json.dumps(results[-1], ensure_ascii=False)[:800])
+    for name, func, preview in _CASES:
+        if name in selected:
+            results.append(func())  # type: ignore[operator]
+            _log(json.dumps(results[-1], ensure_ascii=False)[:preview])
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))
     else:

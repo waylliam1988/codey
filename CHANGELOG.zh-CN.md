@@ -2,6 +2,23 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 实机p4/p5收尾 + harness语义化判定（未发布）
+
+- P4（hostile夹具全量搜索）3轮done：命中精确，symlink未进任何结构化
+  tool结果，零crash信号。P5（无`make` environments下跑`make lint/test`）：
+  agent诚实适配——干净的结构化拒绝，直跑recipe本体，如实上报夹具真失败。
+  旧harness仅因summary含“AssertionError”判`ok=false`：harness误报，明确
+  记为harness refinement，非生产bug。
+- `tools/live_probe_split.py`判定从字符串包含改为结构化行（crash信号只
+  看codey源行、search看tool行、recipe误用看未知`make <t>`）；`main()`改
+  表驱动；typo与死常量修复（死`CODEY_ROW_TYPES`触发过一次品牌守卫，已删）。
+  `tests/test_live_probe_split.py`新增12个分析器单测，含4份实机存档回放。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4528 passed，
+  7 skipped，1391 subtests passed，556.70s`；比基线多3分钟因kobold开着、
+  一个self-repair测试连到真模型卡约2分钟后通过——如实记录，未为数字重跑）。
+  未发布。
+
 ## Unreleased - 修CI独有的审计扫描黑洞（symlink root，未发布）
 
 - 0.4.14分包时埋下的潜伏bug，被新的consensus拆分测试在CI上钓出：

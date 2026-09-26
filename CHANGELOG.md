@@ -2,6 +2,29 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Live probe p4/p5 + harness semantic verdicts (no release)
+
+- P4 (hostile-fixture search sweep) done in 3 turns: exact hits, symlink
+  absent from every structured tool result, zero crash signals. P5 (`make
+  lint/test` with no `make` binary): agent adapted honestly — clean
+  structured rejection, ran recipe bodies directly, truthfully reported the
+  fixture's real test failure. The old harness scored P5 `ok=false` on the
+  substring "AssertionError": a harness false positive, explicitly recorded
+  as harness refinement, not a production bug.
+- `tools/live_probe_split.py` verdicts rewritten from string-contains to
+  structured rows (crash signals scoped to codey-originated rows, search =
+  tool row, recipe-as-target = unknown `make <t>`); `main()` table-driven;
+  typo + dead constant fixed (the dead `CODEY_ROW_TYPES` tripped the
+  `CODEY_` brand guardrail once, then deleted). 12 new analyzer unit tests
+  in `tests/test_live_probe_split.py` incl. replay of all 4 saved live
+  artifacts.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4528 passed,
+  7 skipped, 1391 subtests passed in 556.70s`; +3min vs baseline because
+  koboldcpp was serving and one self-repair test reached the live endpoint
+  and stalled ~2min before passing — kept on record, suite not re-run to
+  hide it). No release was made.
+
 ## Unreleased - Fix CI-only audit blackout on symlinked roots (no release)
 
 - Latent bug since the 0.4.14 package split, exposed on CI by the new
