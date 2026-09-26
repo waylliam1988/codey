@@ -15,7 +15,9 @@
   误解析为 target（`_make_targets`）；`queries` 为 `None` 时 `TypeError`
   （`_render_search_coverage`）；普通 `set` 被误报为无支撑断言
   （`_overclaim_warnings`）；budgeted 引用搜索跟随软链并输出重复行
-  （`find_reference_hints`）。`tests/test_plr_split_b1..b8.py` 新增95个测试。
+  （`find_reference_hints`）。`tests/test_*_split.py`（work-queue-transition、verification-policy、
+  research-run、research-evidence、runtime-state、ghost-cli、search-scan、
+  agent-loop）新增95个测试。
 - `test_architecture.py` 千行 guardrail 按仓库惯例同步（3个新增基线 +
   9个 ceiling 上调）：helper 为内聚保留在原模块，未做硬伤可读性的子模块硬拆。
 - 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终

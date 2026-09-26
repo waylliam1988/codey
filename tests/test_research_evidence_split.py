@@ -1,4 +1,4 @@
-"""PLR split B4: preservation + deterministic bug hunts (no full pytest)."""
+"""Preservation + deterministic bug hunts for research evidence helpers."""
 
 from __future__ import annotations
 

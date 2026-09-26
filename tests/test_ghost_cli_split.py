@@ -1,4 +1,4 @@
-"""PLR split B6 parity tests: cmd_ghost dispatch + headless payload/receipt.
+"""Parity tests: cmd_ghost dispatch + headless payload/receipt.
 
 Pure-extraction guard: dispatch conditions, JSON structure, exit codes unchanged.
 """

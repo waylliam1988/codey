@@ -1,4 +1,4 @@
-"""PLR split B2: refactor locks + deterministic bug hunts."""
+"""Refactor locks + deterministic bug hunts for verification_policy."""
 
 from __future__ import annotations
 

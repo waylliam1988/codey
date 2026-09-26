@@ -1,4 +1,4 @@
-"""PLR split B1 regression lock for work_queue transition helpers (pure extraction)."""
+"""Regression lock for work_queue transition helpers (pure extraction)."""
 
 from __future__ import annotations
 

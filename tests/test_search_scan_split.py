@@ -1,4 +1,4 @@
-"""PLR split B7 behavior locks (pure-extraction safety net).
+"""Behavior locks for search/scan helpers (pure-extraction safety net).
 
 Covers the four refactored surfaces only: ``search_files``,
 ``iter_bounded_files``, ``collect_git_changes`` and ``find_reference_hints``.

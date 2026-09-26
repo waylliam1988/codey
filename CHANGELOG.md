@@ -17,7 +17,9 @@
   `TypeError` on `None` queries (`_render_search_coverage`); plain `set`
   misreported as unsupported claims (`_overclaim_warnings`); budgeted
   reference search followed symlinks and duplicated rows
-  (`find_reference_hints`). 95 new tests in `tests/test_plr_split_b1..b8.py`.
+  (`find_reference_hints`). 95 new tests in `tests/test_*_split.py` (work-queue-transition,
+  verification-policy, research-run, research-evidence, runtime-state,
+  ghost-cli, search-scan, agent-loop).
 - `test_architecture.py` 1000-line guardrail updated per repo convention
   (3 new baseline entries + 9 ceiling bumps): in-module helpers were kept
   for cohesion instead of forced submodule splits.

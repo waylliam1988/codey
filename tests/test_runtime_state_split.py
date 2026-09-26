@@ -1,4 +1,4 @@
-"""PLR-split B5 parity tests: lock behavior of the four refactored functions.
+"""Parity tests: lock behavior of the four refactored runtime functions.
 
 Pure-extraction guard for:
 - RuntimeOperationState.from_payload (operation_state.py)

@@ -1,4 +1,4 @@
-"""PLR split B8 regression: pure-extraction equivalence for five targets.
+"""Regression lock: pure-extraction equivalence for agent loop + provider helpers.
 
 Covers helpers introduced to bring PLR0912/PLR0915 under limits with zero
 behavior change. No deterministic product bugs were found during the hunt

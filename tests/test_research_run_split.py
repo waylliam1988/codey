@@ -1,4 +1,4 @@
-"""Regression lock for the pure-extractive PLR0912/PLR0915 split (b3).
+"""Regression lock for the pure-extractive PLR0912/PLR0915 split of research run flow.
 
 Covers only behavior preservation of the extracted helpers in
 ``codey/research/runner.py``, ``codey/research/plan_executor.py`` and

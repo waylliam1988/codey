@@ -31,7 +31,7 @@ codey/utils/references.py           (find_reference_hints 21 -> ~6: candidate/re
 codey/workspace/bounded_scan.py     (iter_bounded_files 25 -> ~10: entry-kind/collect/partition helpers)
 codey/workspace/changes.py          (collect_git_changes 23 -> ~7: root/status/numstat/diff/untracked/finalize helpers)
 tests/test_architecture.py          (1000-line guardrail: 3 new baseline entries + 9 ceiling bumps, all tagged "PLR split 2026-09-26")
-tests/test_plr_split_b1..b8.py      (95 new tests: parity locks + 4 red-first bug regressions)
+tests/test_*_split.py                (95 new tests: work-queue-transition, verification-policy, research-run, research-evidence, runtime-state, ghost-cli, search-scan, agent-loop parity locks + 4 red-first bug regressions)
 ```
 
 Deterministic bugs found while splitting (all red-first: failing test written
@@ -41,7 +41,7 @@ before the fix, green after; no timing/network/model dependence):
   (`stripped` is already lstripped, so never true) — a tab-indented recipe
   line was misparsed as a make target (`('lint','check')` instead of
   `('lint',)`). Fixed to `line.startswith("\t")`
-  (`tests/test_plr_split_b2.py::MakeTargetsRecipeTests::test_tab_indented_recipe_is_not_a_target`).
+  (`tests/test_verification_policy_split.py::MakeTargetsRecipeTests::test_tab_indented_recipe_is_not_a_target`).
 - `record_merge._render_search_coverage`: `coverage.get("queries", ())`
   raises `TypeError` when the key exists with value `None` (the sibling
   `skipped` field already used `or []`). Fixed to
