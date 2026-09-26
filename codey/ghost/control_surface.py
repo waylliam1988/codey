@@ -205,15 +205,27 @@ class GhostControlSurface:
             "available": True,
             "generated_at": _common.now_iso_z(),
         }
-        payload["inbox"] = self.inbox.export_state() if self.inbox is not None else {}
-        payload["signals"] = list(self.signals.read_all()) if self.signals is not None else []
-        payload["hebbian"] = self.hebbian.export_state() if self.hebbian is not None else {}
-        payload["continuity"] = self.continuity.export_state() if self.continuity is not None else {}
-        payload["router"] = self.router.export_state() if self.router is not None else {}
-        payload["sleep"] = self.sleep.export_state() if self.sleep is not None else {}
-        payload["work_queue"] = self.work_queue.export_state() if self.work_queue is not None else {}
-        payload["affinity"] = self.affinity.export_state() if self.affinity is not None else {}
-        payload["observations"] = self.observations.export_state() if self.observations is not None else {}
+        errors: list[str] = []
+
+        def _export(name: str, load) -> object:
+            try:
+                return load()
+            except Exception as exc:  # noqa: BLE001 - export must report, not raise
+                errors.append(f"{name}_export_failed: {type(exc).__name__}")
+                return {"error": f"{name}_export_failed"}
+
+        payload["inbox"] = _export("inbox", lambda: self.inbox.export_state()) if self.inbox is not None else {}
+        payload["signals"] = _export("signals", lambda: list(self.signals.read_all())) if self.signals is not None else []
+        payload["hebbian"] = _export("hebbian", lambda: self.hebbian.export_state()) if self.hebbian is not None else {}
+        payload["continuity"] = _export("continuity", lambda: self.continuity.export_state()) if self.continuity is not None else {}
+        payload["router"] = _export("router", lambda: self.router.export_state()) if self.router is not None else {}
+        payload["sleep"] = _export("sleep", lambda: self.sleep.export_state()) if self.sleep is not None else {}
+        payload["work_queue"] = _export("work_queue", lambda: self.work_queue.export_state()) if self.work_queue is not None else {}
+        payload["affinity"] = _export("affinity", lambda: self.affinity.export_state()) if self.affinity is not None else {}
+        payload["observations"] = _export("observations", lambda: self.observations.export_state()) if self.observations is not None else {}
+        if errors:
+            payload["ok"] = False
+            payload["errors"] = errors
         return payload
 
     def _review_candidate(self, body: Mapping[str, object], *, review_action: str) -> tuple[int, dict[str, object]]:

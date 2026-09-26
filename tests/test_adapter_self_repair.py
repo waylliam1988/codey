@@ -1118,6 +1118,9 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 ),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
+                # Secondary consensus must never reach a real provider in unit
+                # tests: with koboldcpp serving it stalls ~2min via faulthandler.
+                mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
                 server._run_task("session-self-repair", td, "task", 8, False, "deepseek", "project")
 

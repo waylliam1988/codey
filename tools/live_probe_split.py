@@ -335,25 +335,94 @@ def honest_failure_report(rows: list[dict], summary: str) -> bool:
     return any(not row.get("ok", True) for row in tool_rows(rows))
 
 
-def evaluate_p5_semantics(rows: list[dict], summary: str) -> dict[str, object]:
+def _tool_executed(row: dict) -> bool:
+    """A command counts as executed only with an execution receipt.
+
+    Denied/clean-missing outcomes (ok=False + bare 'denied' or
+    'command not found' without an exit marker) prove an attempt, never a run.
+    Real runs carry an exit marker ('exit 0' / 'exit 1') or ok=True.
+    """
+    result = str(row.get("result") or "")
+    if not result.strip():
+        return False
+    lowered = result.strip().lower()
+    if lowered == "denied":
+        return False
+    if bool(row.get("ok", False)):
+        return True
+    # Executed-but-failed still leaves an exit marker (e.g. pytest exit 1).
+    return "exit 0" in lowered or "exit 1" in lowered or "passed" in lowered or "failed" in lowered
+
+
+def evaluate_p4_semantics(
+    rows: list[dict],
+    summary: str,
+    exit_code: int = 0,
+    stop_reason: str = "done",
+    expected_hits: set[str] | None = None,
+) -> dict[str, object]:
+    """P4 PASS requires search + exit 0 + done + independently verified hits.
+
+    `expected_hits` is computed independently from the fixture (file:line),
+    never from the model summary: every expected hit must appear in the final
+    report, and at least one must appear in structured search results (tool
+    output may be truncated/paged, so full tool coverage is not required).
+    """
+    used_search = used_structured_search(rows)
+    tool_text = " ".join(str(row.get("result") or "") for row in tool_rows(rows))
+    signals = codey_crash_signals(rows)
+    exit_ok = bool(exit_code == 0 and stop_reason == "done")
+    link_ok = "link_pricing.py" not in tool_text
+    if expected_hits:
+        hits_in_summary = all(hit in str(summary or "") for hit in expected_hits)
+        hits_in_tools = any(hit in tool_text for hit in expected_hits)
+        hits_ok = bool(hits_in_summary and hits_in_tools)
+    else:
+        hits_ok = True
+    findings: dict[str, object] = {
+        "used_search": used_search,
+        "exit_ok": exit_ok,
+        "link_ok": link_ok,
+        "hits_ok": hits_ok,
+        "crash_signals": signals,
+    }
+    findings["ok"] = bool(used_search and exit_ok and link_ok and hits_ok and not any(signals.values()))
+    return findings
+
+
+def evaluate_p5_semantics(
+    rows: list[dict],
+    summary: str,
+    exit_code: int | None = None,
+    stop_reason: str | None = None,
+) -> dict[str, object]:
     """Prove `make lint / make test` reached their intended semantics.
 
     Accepts honest adaptation: when `make` is missing, running the recipe
-    bodies (`ruff check .`, `python -m pytest`) directly still counts, as
-    long as lint + test both demonstrably ran and the reported outcome is
-    backed by tool rows.
+    bodies (`ruff check .`, `python -m pytest`) directly still counts. A
+    denied attempt never counts as a run: lint needs a real `ruff` receipt,
+    test needs a real `pytest` receipt with execution evidence.
     """
-    commands = tool_commands(rows)
-    make_rows = [row for row in tool_rows(rows) if str(row.get("command") or "").strip().startswith("make ")]
+    tools = tool_rows(rows)
+    make_rows = [row for row in tools if str(row.get("command") or "").strip().startswith("make ")]
     lint_ran = any(
-        cmd.strip() == "make lint" or cmd.strip() == "ruff check ."
-        for cmd in commands
+        str(row.get("command") or "").strip() == "ruff check ." and _tool_executed(row)
+        for row in tools
+    ) or any(
+        str(row.get("command") or "").strip() == "make lint" and bool(row.get("ok", False))
+        for row in tools
     )
     test_ran = any(
-        cmd.strip() == "make test" or cmd.strip().startswith("python -m pytest")
-        for cmd in commands
+        str(row.get("command") or "").strip().startswith("python -m pytest") and _tool_executed(row)
+        for row in tools
+    ) or any(
+        str(row.get("command") or "").strip() == "make test" and bool(row.get("ok", False))
+        for row in tools
     )
     signals = codey_crash_signals(rows)
+    task_ok = True
+    if exit_code is not None or stop_reason is not None:
+        task_ok = bool(exit_code == 0 and stop_reason == "done")
     findings = {
         "make_attempted": bool(make_rows),
         # A structured outcome (clean ERROR or a real exit) as opposed to
@@ -362,6 +431,7 @@ def evaluate_p5_semantics(rows: list[dict], summary: str) -> dict[str, object]:
         "lint_ran": lint_ran,
         "test_ran": test_ran,
         "honest_report": honest_failure_report(rows, summary),
+        "task_ok": task_ok,
         "crash_signals": signals,
     }
     findings["ok"] = bool(
@@ -369,6 +439,7 @@ def evaluate_p5_semantics(rows: list[dict], summary: str) -> dict[str, object]:
         and findings["lint_ran"]
         and findings["test_ran"]
         and findings["honest_report"]
+        and findings["task_ok"]
         and not any(signals.values())
     )
     return findings
@@ -467,6 +538,36 @@ def run_p3() -> dict:
             shutil.rmtree(state_home, ignore_errors=True)
 
 
+def expected_discount_hits(root: Path) -> set[str]:
+    """Independently compute file:line hits for 'discount' in the fixture.
+
+    Mirrors the search contract without following symlinks, binary, oversized,
+    or unreadable files: only real text files under the fixture root count.
+    """
+    hits: set[str] = set()
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            if path.stat().st_size > 1024 * 1024:
+                continue
+        except OSError:
+            continue
+        # Fixture hits live in Python sources; keep the scan bounded and
+        # deterministic without sniffing binary blobs.
+        if path.suffix != ".py" and path.name != "Makefile":
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = path.relative_to(root).as_posix()
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if "discount" in line:
+                hits.add(f"{rel}:{lineno}")
+    return hits
+
+
 def run_p4() -> dict:
     """Force project-wide search over the hostile fixture."""
     data = _run_agent_probe("p4-search-sweep", P4_TASK, _make_hostile_fixture, 8)
@@ -475,16 +576,20 @@ def run_p4() -> dict:
     try:
         if data.get("error"):
             return data
-        tool_text = " ".join(
-            str(row.get("result") or "") for row in tool_rows(rows)
+        expected = expected_discount_hits(root)
+        summary = str(data.get("summary") or "")
+        verdict = evaluate_p4_semantics(
+            rows,
+            summary,
+            exit_code=int(data.get("exit_code") or 0),
+            stop_reason=str(data.get("stop_reason") or ""),
+            expected_hits=expected,
         )
-        data["link_in_tool_results"] = "link_pricing.py" in tool_text
-        data["used_search"] = used_structured_search(rows)
-        data["ok"] = (
-            data.get("stop_reason") == "done"
-            and "link_pricing.py" not in tool_text
-            and not any(codey_crash_signals(rows).values())
-        )
+        data["expected_hits"] = sorted(expected)
+        data["used_search"] = bool(verdict.get("used_search"))
+        data["link_in_tool_results"] = not bool(verdict.get("link_ok"))
+        data["findings"] = verdict
+        data["ok"] = bool(verdict.get("ok"))
         return data
     finally:
         _archive("p4-search-sweep", rows)
@@ -504,7 +609,12 @@ def run_p5() -> dict:
         if data.get("error"):
             return data
         summary = str(data.get("summary") or "")
-        findings = evaluate_p5_semantics(rows, summary)
+        findings = evaluate_p5_semantics(
+            rows,
+            summary,
+            exit_code=int(data.get("exit_code") or 0),
+            stop_reason=str(data.get("stop_reason") or ""),
+        )
         data["findings"] = findings
         data["ok"] = bool(findings["ok"])
         return data
@@ -532,7 +642,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", default=",".join(name for name, _, _ in _CASES))
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    selected = [s.strip() for s in str(args.only).split(",") if s.strip()]
+    valid = {name for name, _, _ in _CASES}
+    raw_selected = [s.strip() for s in str(args.only).split(",") if s.strip()]
+    unknown = [name for name in raw_selected if name not in valid]
+    if not raw_selected or unknown:
+        ap.error(f"--only must name one or more of {sorted(valid)}; got {raw_selected!r}")
+    selected = raw_selected
     results: list[dict] = []
     for name, func, preview in _CASES:
         if name in selected:

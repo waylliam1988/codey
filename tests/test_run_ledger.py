@@ -374,6 +374,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_consensus", return_value=None),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
                 server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project")
@@ -452,6 +453,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent),
                 mock.patch.object(task_submit, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
                 server._run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek")
 
@@ -474,6 +476,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
+                mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
                 server._run_task(
                     "session-error-ledger",

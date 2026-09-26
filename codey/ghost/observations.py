@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from codey.ghost import _common
@@ -36,17 +35,15 @@ OBSERVABLE_MODES = ("chat", "agent", "research", "hybrid", "project", "planning"
 COMMITTED_STOP_REASONS = ("done",)
 
 
-@dataclass(frozen=True)
-class GhostObservation:
-    run_id: str
-    session_id: str
-    project: str
-    mode: str
-    user_text: str
-    assistant_text: str
-    stop_reason: str
-    committed: bool
-    provider_id: str = ""
+class GhostObservationCorruptedError(OSError):
+    """Observation log is unreadable (mid-file corruption)."""
+
+
+def _blocked_error(read) -> GhostObservationCorruptedError:
+    detail = ";".join(read.warnings) or "observations.jsonl:corrupted"
+    return GhostObservationCorruptedError(
+        f"observations log is blocked, delete/export refused: {detail}"
+    )
 
 
 class GhostObservationStore:
@@ -185,8 +182,9 @@ class GhostObservationStore:
             read = self.log.read_locked()
             self.last_warnings = read.warnings
             if read.blocked:
-                # 读取被阻断时不写回：保持原文件，调用方以 warnings 为准。
-                return 0
+                # 读取被阻断时不写回且绝不报成功：保持原文件并抛出，
+                # 控制面将其转为 500 + 部分完成标记。
+                raise _blocked_error(read)
             kept: list[dict[str, object]] = []
             removed = 0
             for row in read.rows:
@@ -207,9 +205,13 @@ class GhostObservationStore:
         self.log.delete()
 
     def export_state(self) -> dict[str, object]:
+        read = self.log.read()
+        self.last_warnings = read.warnings
+        if read.blocked:
+            raise _blocked_error(read)
         return {
             "schema_version": OBSERVATIONS_SCHEMA_VERSION,
-            "observations": list(self.read_all()),
+            "observations": list(read.rows),
         }
 
 
@@ -234,6 +236,6 @@ __all__ = [
     "MAX_USER_TEXT_CHARS",
     "OBSERVABLE_MODES",
     "OBSERVATIONS_SCHEMA_VERSION",
-    "GhostObservation",
+    "GhostObservationCorruptedError",
     "GhostObservationStore",
 ]

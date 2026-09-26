@@ -2,6 +2,52 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fix corruption false-success, abandoned delivery, probe false-pass, budget overflow (no release)
+
+- Ghost corruption contract: `GhostObservationStore.delete_scope()` no longer
+  returns `0` on mid-file corruption; it raises
+  `GhostObservationCorruptedError` (an `OSError`, so the control plane maps it
+  to 500 with explicit partial `results`/`errors`). `export_state()` raises on
+  `blocked` instead of returning `ok=true` with empty observations, and
+  `GhostControlSurface.export_state()` now returns `ok=false` + `errors` on any
+  store export failure. Removed the unused `GhostObservation` dataclass (no
+  callers). Locked with `tests/test_ghost_corruption_contract.py` (4 tests) and
+  strengthened `test_blocked_read_never_rewrites_the_file`.
+- Delivery abandoned terminal: writer/repair settle from
+  `tool_delivery_pending` now writes an explicit `abandoned` receipt
+  (`writer_settled`/`repair_settled`) in the same mutation as the operation
+  settle. `abandoned` is exclusive with `delivered`/`recovered` (recovered then
+  delivered remains a valid resume path); `can_recover_before_provider_send`
+  and `pending_for` exclude all terminals; `send_attempt`/`recovered` reject
+  abandoned batches; compaction keeps `abandoned` like `recovered`. Locked with
+  `tests/test_delivery_abandoned_contract.py` (2 tests) and strengthened both
+  settle regressions in `tests/test_runtime_mutation_line.py`.
+- Probe verdicts: new `evaluate_p4_semantics()` requires `used_search` + exit 0
+  + `done` + independently computed `file:line` hits in both summary and
+  structured search results (`expected_discount_hits()` scans the fixture
+  without following symlinks/binary/oversized files); `run_p4()` uses it.
+  `evaluate_p5_semantics()` now requires real `ruff`/`pytest` execution
+  receipts (`_tool_executed()`: denied/`command not found` never counts as ran;
+  failing `pytest` with an exit marker still counts), plus optional
+  `exit_code`/`stop_reason` gating; `run_p5()` passes them. `main --only` with
+  empty/unknown names is now an argument error (exit 2), not `[]` + exit 0.
+  Locked with `tests/test_live_probe_verdicts_contract.py` (8 tests); saved
+  live P4/P5 artifacts still evaluate `ok=true` under the stricter gate.
+- Budget + isolation: `RETRIEVAL_BUDGET_CHARS` now covers the whole rendered
+  block (header charged first, `+1` per newline, `""` when budget < header,
+  hard `len(rendered) <= budget` clamp). Locked with
+  `tests/test_observation_budget_contract.py` (3 tests). Unit-test isolation:
+  `test_structural_writer_failure_...` and 3 `test_run_ledger` paths now pin
+  `consensus_service.run_consensus` to `None`, so the suite no longer reaches a
+  live endpoint when koboldcpp is serving.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4544 passed,
+  7 skipped, 1391 subtests passed, 1 failed in 351.74s`; the single failure was
+  the `tool_result_delivery.py` long-file ceiling at 1100 after the abandoned
+  feature grew it to 1194 — ceiling raised to 1250 with reason, then that one
+  architecture test re-verified green; no production change after the full
+  run). No live kobold gate was re-run. No release was made.
+
 ## Unreleased - Live probe p4/p5 + harness semantic verdicts (no release)
 
 - P4 (hostile-fixture search sweep) done in 3 turns: exact hits, symlink

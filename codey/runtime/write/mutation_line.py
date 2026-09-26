@@ -56,7 +56,7 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
 )
-from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent
+from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, abandoned_entry
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view
@@ -168,6 +168,66 @@ class RuntimeMutationLine:
         self.session_log.mutate(session_id, mutation)
         return committed
 
+    def _commit_settle(
+        self,
+        session_id: str,
+        run_id: str,
+        transition: Callable[[RuntimeOperationState], RuntimeOperationState],
+        *,
+        abandoned_reason: str,
+    ) -> RuntimeOperationState | None:
+        """Settle writer/repair, closing any undelivered batch as abandoned.
+
+        The abandoned receipt and the operation settle commit in the same
+        mutation: the batch never hangs as pending, and replay never treats
+        it as recoverable. Abandoned is terminal, never disguised as
+        delivered/recovered.
+        """
+        committed: RuntimeOperationState | None = None
+
+        def mutation(projection, entries):
+            nonlocal committed
+            current = _require_state(entries, session_id=session_id, run_id=run_id)
+            op = projection.operations.get(current.operation_id)
+            if op is not None and op.status != "open":
+                if current.leaf == LEAF_TERMINAL:
+                    next_state = transition(current)
+                    if next_state == current:
+                        committed = current
+                        return ()
+                    raise RuntimeOperationTransitionError("terminal operation is immutable")
+                raise RuntimeOperationTransitionError("operation already settled")
+            operation_is_open(projection, current)
+            rows: list[dict[str, object]] = []
+            if current.leaf == LEAF_TOOL_DELIVERY_PENDING:
+                view = load_session_view(entries, session_id=session_id, run_id=run_id)
+                for batch in view.batches:
+                    if batch.intent.turn != current.turn:
+                        continue
+                    if batch.is_terminal:
+                        continue
+                    entry = abandoned_entry(
+                        session_id,
+                        run_id,
+                        batch_id=batch.intent.batch_id,
+                        reason=abandoned_reason,
+                        batches=view.batches,
+                    )
+                    if entry is not None:
+                        rows.append(entry)
+            next_state = transition(current)
+            if next_state == current and not rows:
+                committed = current
+                return ()
+            rows.append(operation_state_entry(next_state))
+            if next_state.leaf == LEAF_TERMINAL:
+                rows.append(_operation_settled_entry(next_state))
+            committed = next_state
+            return tuple(rows)
+
+        self.session_log.mutate(session_id, mutation)
+        return committed
+
     def mark_writer_running(
         self,
         session_id: str,
@@ -195,7 +255,7 @@ class RuntimeMutationLine:
         turns_used: int,
         stop_reason: str,
     ) -> RuntimeOperationState | None:
-        return self._commit_state(
+        return self._commit_settle(
             session_id,
             run_id,
             lambda state: state_mark_writer_settled(
@@ -204,6 +264,7 @@ class RuntimeMutationLine:
                 turns_used=turns_used,
                 stop_reason=stop_reason,
             ),
+            abandoned_reason="writer_settled",
         )
 
     def record_completion_proof(
@@ -263,7 +324,7 @@ class RuntimeMutationLine:
         blocked_reason: str = "",
         turns_used: int | None = None,
     ) -> RuntimeOperationState | None:
-        return self._commit_state(
+        return self._commit_settle(
             session_id,
             run_id,
             lambda state: state_mark_repair_settled(
@@ -273,6 +334,7 @@ class RuntimeMutationLine:
                 blocked_reason=blocked_reason,
                 turns_used=turns_used,
             ),
+            abandoned_reason="repair_settled",
         )
 
     def mark_completion_blocked(

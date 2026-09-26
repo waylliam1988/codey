@@ -14,6 +14,7 @@ SETTLEMENT_STATUS_ERROR = "error"
 SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
 SENT_STATE_MAYBE_SENT = "maybe_sent"
 RECORD_KIND_RECOVERED = "recovered"
+RECORD_KIND_ABANDONED = "abandoned"
 
 
 def keep_effect_pair_for_compaction(
@@ -44,8 +45,8 @@ def keep_delivery_entry_for_compaction(*, record_kind: str, is_open: bool) -> bo
     """Compaction retention policy for one delivery record.
 
     Open operations keep every delivery record so resume can finish the
-    batch. Settled operations keep only recovered facts.
+    batch. Settled operations keep only terminal facts (recovered/abandoned).
     """
     if is_open:
         return True
-    return record_kind == RECORD_KIND_RECOVERED
+    return record_kind in {RECORD_KIND_RECOVERED, RECORD_KIND_ABANDONED}

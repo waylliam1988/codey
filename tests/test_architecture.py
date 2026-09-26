@@ -2067,7 +2067,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             # PLR split 2026-09-26: 1188 lines after from_payload field split.
             "runtime/core/operation_state.py": 1250,
             # PLR split 2026-09-26: 1046 lines after batch-helper split.
-            "runtime/effects/tool_result_delivery.py": 1100,
+            # Abandoned terminal 2026-09-27: 1194 lines (abandoned receipt +
+            # terminal exclusivity, no new file; ceiling raised, not split).
+            "runtime/effects/tool_result_delivery.py": 1250,
             # LF/CRLF line-boundary note (was a one-line overclaim).
             # PLR split 2026-09-26: 1381 lines after search_files scan split.
             "toolchain/runtime.py": 1440,

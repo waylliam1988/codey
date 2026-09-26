@@ -42,6 +42,10 @@ def build_delivery_recovered_rows(
         raise RuntimeOperationTransitionError(
             "delivery recovery requires matching delivery_pending state"
         )
+    if projection_batch.is_abandoned or projection_batch.is_delivered:
+        raise RuntimeOperationTransitionError(
+            "delivery recovery requires matching delivery_pending state"
+        )
     pending = pending_for(view)
     if (
         state.leaf != LEAF_TOOL_DELIVERY_PENDING

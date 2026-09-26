@@ -126,7 +126,7 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
         open_batches = tuple(
             batch
             for batch in current_batches
-            if not batch.is_delivered and not batch.is_recovered
+            if not batch.is_terminal
         )
         # A same-turn failover may record a fresh batch after a prior
         # provider attempt failed: prefer the untouched batch.

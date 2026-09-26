@@ -2,6 +2,42 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 修损坏误报成功、delivery悬空、探针假阳性、预算超限（未发布）
+
+- Ghost损坏契约：`GhostObservationStore.delete_scope()`在中间坏行时不再返回
+  `0`，改为抛`GhostObservationCorruptedError`（`OSError`子类，控制面转为500
+  并带明确的部分完成`results`/`errors`）；`export_state()`在`blocked`时抛错，
+  不再返回`ok=true`空观察列表；`GhostControlSurface.export_state()`任一库导出
+  失败即`ok=false`+`errors`。删除无调用方的`GhostObservation`数据类。
+  `tests/test_ghost_corruption_contract.py`（4个）锁定，
+  `test_blocked_read_never_rewrites_the_file`同步收紧。
+- Delivery终结：writer/repair从`tool_delivery_pending`结算时，同一次mutation
+  内为未送达batch写`abandoned`（`writer_settled`/`repair_settled`）终结事件，
+  再转operation leaf；`abandoned`与`delivered`/`recovered`互斥（recovered后再
+  delivered仍是合法resume路径）；`can_recover_before_provider_send`与
+  `pending_for`排除所有终态；`send_attempt`/`recovered`拒绝abandoned；
+  compaction保留`abandoned`。`tests/test_delivery_abandoned_contract.py`
+  （2个）锁定，`test_runtime_mutation_line.py`双回归同步断言终结。
+- 探针判定：新增`evaluate_p4_semantics()`，要求`used_search`+exit 0+done+
+  独立计算的`file:line`命中在总结与结构化搜索结果中同时出现
+  （`expected_discount_hits()`直扫夹具，不跟symlink/binary/超大文件）；
+  `run_p4()`接入。`evaluate_p5_semantics()`要求真实`ruff`/`pytest`执行凭证
+  （`_tool_executed()`：denied/`command not found`不算跑过，带exit标记的失败
+  pytest仍算跑过），另支持`exit_code`/`stop_reason`门槛；`run_p5()`透传。
+  `main --only`空集/未知名改为参数错误（exit 2），不再`[]`+exit 0。
+  `tests/test_live_probe_verdicts_contract.py`（8个）锁定；旧实机P4/P5存档在
+  更严门槛下仍`ok=true`。
+- 预算与隔离：`RETRIEVAL_BUDGET_CHARS`改为整块预算（先扣标题与换行，
+  预算小于标题返回空串，硬保证`len(rendered) <= budget`）。
+  `tests/test_observation_budget_contract.py`（3个）锁定。单测隔离：
+  `test_structural_writer_failure_...`与3处`test_run_ledger`固定
+  `run_consensus`为`None`，kobold serving时不再连真模型。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4544 passed，
+  7 skipped，1391 subtests passed，1 failed，351.74s`；唯一失败是abandoned
+  特性把`tool_result_delivery.py`撑到1194行触发1100 ceiling，已上调至1250并
+  单测复绿，全量后生产代码未再动）。未重跑消耗Kobold的实机门槛。未发布。
+
 ## Unreleased - 实机p4/p5收尾 + harness语义化判定（未发布）
 
 - P4（hostile夹具全量搜索）3轮done：命中精确，symlink未进任何结构化

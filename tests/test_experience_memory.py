@@ -344,7 +344,8 @@ class ObservationStoreTests(unittest.TestCase):
 
     def test_blocked_read_never_rewrites_the_file(self) -> None:
         """Regression: good/bad/good rows block reads; append and delete
-        must fail without touching the original bytes."""
+        must fail without touching the original bytes. Delete must raise,
+        never report 0-removed success."""
         with tempfile.TemporaryDirectory() as td:
             store = GhostObservationStore(Path(td))
             for run_id in ("r1", "r2"):
@@ -361,8 +362,11 @@ class ObservationStoreTests(unittest.TestCase):
                 user_text="hi", assistant_text="hello",
                 stop_reason="done", provider_id="local"))
             self.assertEqual(store.path.read_bytes(), before)
-            self.assertEqual(store.delete_scope("session", session_id="s"), 0)
+            with self.assertRaises(OSError):
+                store.delete_scope("session", session_id="s")
             self.assertEqual(store.path.read_bytes(), before)
+            with self.assertRaises(OSError):
+                store.export_state()
 
     def test_cjk_paraphrase_retrieves_without_shared_word_runs(self) -> None:
         """Regression: Chinese has no spaces, so punctuation-split word runs

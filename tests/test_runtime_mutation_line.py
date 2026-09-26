@@ -592,7 +592,8 @@ class RuntimeMutationLineTests(unittest.TestCase):
         """Regression (live create case): settling the writer while a tool
         delivery is pending must resolve the abandoned delivery and record
         the writer end instead of raising an illegal transition that masks
-        the real stop."""
+        the real stop. The batch must also close as abandoned (never hang
+        as pending, never disguise as delivered/recovered)."""
         self._drive_to_delivery_pending()
         settled = self.line.mark_writer_settled(
             self.session_id,
@@ -609,6 +610,15 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertEqual(
             self.operations.load(self.session_id, self.run_id).leaf,
             LEAF_WRITER_SETTLED,
+        )
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertTrue(batches[0].is_abandoned)
+        self.assertFalse(batches[0].is_delivered)
+        self.assertFalse(batches[0].is_recovered)
+        self.assertEqual(batches[0].abandoned_reason, "writer_settled")
+        self.assertEqual(
+            self.delivery.undelivered_replayable_batches(self.session_id, self.run_id), ()
         )
 
     def test_repair_settle_resolves_abandoned_delivery_first(self) -> None:
@@ -671,6 +681,12 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertIsNotNone(repaired)
         assert repaired is not None
         self.assertEqual(repaired.leaf, LEAF_REPAIR_SETTLED)
+        batches = self.delivery.load_batches(self.session_id, self.run_id)
+        self.assertEqual(len(batches), 1)
+        self.assertTrue(batches[0].is_abandoned)
+        self.assertFalse(batches[0].is_delivered)
+        self.assertFalse(batches[0].is_recovered)
+        self.assertEqual(batches[0].abandoned_reason, "repair_settled")
 
 
 if __name__ == "__main__":

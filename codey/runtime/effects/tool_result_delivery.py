@@ -26,6 +26,7 @@ from typing import Any
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.keep_policies import (
+    RECORD_KIND_ABANDONED,
     RECORD_KIND_RECOVERED,
     keep_delivery_entry_for_compaction,
 )
@@ -46,7 +47,10 @@ RECORD_KINDS = frozenset({
     RECORD_KIND_SEND_SUPERSEDED,
     RECORD_KIND_DELIVERED,
     RECORD_KIND_RECOVERED,
+    RECORD_KIND_ABANDONED,
 })
+
+ABANDONED_REASONS = frozenset({"writer_settled", "repair_settled"})
 
 MAX_BATCH_ID_CHARS = 128
 MAX_EFFECT_ID_CHARS = 128
@@ -152,6 +156,20 @@ _RECOVERED_PAYLOAD_KEYS = frozenset({
     "recovered_effect_ids",
     "recovered_reads",
     "recovered_lookups",
+    "created_at",
+})
+
+_ABANDONED_PAYLOAD_KEYS = frozenset({
+    "schema_version",
+    "effect_kind",
+    "record_kind",
+    "ref",
+    "batch_id",
+    "session_id",
+    "run_id",
+    "lane",
+    "operation_id",
+    "reason",
     "created_at",
 })
 
@@ -399,6 +417,13 @@ class DeliveryBatchProjection:
     recovered_reads: int = 0
     recovered_lookups: int = 0
     is_recovered: bool = False
+    abandoned_reason: str = ""
+    is_abandoned: bool = False
+
+    @property
+    def is_terminal(self) -> bool:
+        """Exactly one of delivered / recovered / abandoned may hold."""
+        return bool(self.is_delivered or self.is_recovered or self.is_abandoned)
 
     @property
     def active_attempts(self) -> tuple[str, ...]:
@@ -419,13 +444,16 @@ class DeliveryBatchProjection:
 
     @property
     def can_recover_before_provider_send(self) -> bool:
-        """True only if entire batch is all-safe, never delivered, and no live send attempt.
+        """True only if entire batch is all-safe, never terminal, no live send attempt.
 
         Attempts voided by send_superseded (deterministically unsent, e.g. a
-        context-overflow rejection) do not block recovery.
+        context-overflow rejection) do not block recovery. Delivered,
+        recovered, and abandoned are mutually exclusive terminals.
         """
         return (
             not self.is_delivered
+            and not self.is_recovered
+            and not self.is_abandoned
             and not bool(self.active_attempts)
             and self.is_all_safe
         )
@@ -501,8 +529,8 @@ def send_attempt_entry(
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
     if projection is None:
         raise ToolResultDeliveryError(f"cannot record send_attempt for unknown batch: {clean_batch_id!r}")
-    if projection.is_delivered:
-        raise ToolResultDeliveryError(f"cannot record send_attempt for delivered batch: {clean_batch_id!r}")
+    if projection.is_delivered or projection.is_abandoned:
+        raise ToolResultDeliveryError(f"cannot record send_attempt for terminal batch: {clean_batch_id!r}")
     if clean_peid in projection.send_attempts:
         return None
     if projection.active_attempts:
@@ -543,8 +571,8 @@ def send_superseded_entry(
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
     if projection is None:
         raise ToolResultDeliveryError(f"cannot record send_superseded for unknown batch: {clean_batch_id!r}")
-    if projection.is_delivered:
-        raise ToolResultDeliveryError(f"cannot record send_superseded for delivered batch: {clean_batch_id!r}")
+    if projection.is_delivered or projection.is_abandoned:
+        raise ToolResultDeliveryError(f"cannot record send_superseded for terminal batch: {clean_batch_id!r}")
     if clean_peid in projection.superseded_effect_ids:
         return None
     if clean_peid not in projection.send_attempts:
@@ -581,6 +609,8 @@ def delivered_entry(
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
     if projection is None:
         raise ToolResultDeliveryError(f"cannot record delivered for unknown batch: {clean_batch_id!r}")
+    if projection.is_abandoned:
+        raise ToolResultDeliveryError(f"cannot record delivered for abandoned batch: {clean_batch_id!r}")
     if clean_peid in projection.delivered_effect_ids:
         return None
     if projection.delivered_effect_ids:
@@ -628,6 +658,8 @@ def recovered_entry(
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
     if projection is None:
         raise ToolResultDeliveryError(f"cannot record recovered for unknown batch: {clean_batch_id!r}")
+    if projection.is_abandoned:
+        raise ToolResultDeliveryError(f"cannot record recovered for abandoned batch: {clean_batch_id!r}")
     if projection.is_recovered:
         if (
             list(projection.recovered_effect_ids) == clean_effect_ids
@@ -652,6 +684,49 @@ def recovered_entry(
         "created_at": datetime.now(UTC).isoformat(),
     }
     _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
+    return delivery_record_entry(payload)
+
+
+def abandoned_entry(
+    session_id: str,
+    run_id: str,
+    *,
+    batch_id: str,
+    reason: str,
+    batches: tuple[DeliveryBatchProjection, ...],
+) -> dict[str, object] | None:
+    """Close an undelivered batch when writer/repair settles past it.
+
+    Never disguised as delivered/recovered: the three terminals are mutually
+    exclusive. Idempotent on same reason, conflicting on different reason.
+    """
+    clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
+    clean_reason = _require_bounded_str(reason, "reason", 80)
+    if clean_reason not in ABANDONED_REASONS:
+        raise ToolResultDeliveryError(f"invalid abandoned reason: {clean_reason!r}")
+    projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
+    if projection is None:
+        raise ToolResultDeliveryError(f"cannot record abandoned for unknown batch: {clean_batch_id!r}")
+    if projection.is_delivered or projection.is_recovered:
+        raise ToolResultDeliveryError(f"cannot record abandoned for terminal batch: {clean_batch_id!r}")
+    if projection.is_abandoned:
+        if projection.abandoned_reason == clean_reason:
+            return None
+        raise ToolResultDeliveryError(f"conflicting abandoned record for batch {clean_batch_id!r}")
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "effect_kind": EFFECT_KIND,
+        "record_kind": RECORD_KIND_ABANDONED,
+        "ref": f"delivery_abandoned:{clean_batch_id}",
+        "batch_id": clean_batch_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "lane": lane_for_run(run_id),
+        "operation_id": operation_id_for_run(run_id),
+        "reason": clean_reason,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    _validate_delivery_record_envelope(payload, RECORD_KIND_ABANDONED, _ABANDONED_PAYLOAD_KEYS)
     return delivery_record_entry(payload)
 
 
@@ -704,6 +779,12 @@ def iter_delivery_records_from_entries(
                 raise ToolResultDeliveryError("recovered_effect_ids must be a list")
             for eid in effect_ids:
                 _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
+        elif rkind == RECORD_KIND_ABANDONED:
+            _validate_delivery_record_envelope(payload, RECORD_KIND_ABANDONED, _ABANDONED_PAYLOAD_KEYS)
+            reason = payload.get("reason")
+            _require_bounded_str(reason, "reason in abandoned", 80)
+            if str(reason) not in ABANDONED_REASONS:
+                raise ToolResultDeliveryError(f"invalid abandoned reason: {reason!r}")
 
         yield rkind, payload
 
@@ -720,6 +801,7 @@ def batches_from_entries(
     superseded: dict[str, list[str]] = {}
     delivered: dict[str, list[str]] = {}
     recovered_facts: dict[str, dict[str, Any]] = {}
+    abandoned_facts: dict[str, dict[str, Any]] = {}
 
     for rkind, payload in iter_delivery_records_from_entries(
         entries,
@@ -752,16 +834,30 @@ def batches_from_entries(
                 recovered_facts=recovered_facts,
             )
 
+        elif rkind == RECORD_KIND_ABANDONED:
+            _apply_abandoned_record(
+                payload=payload,
+                batch_id=batch_id,
+                abandoned_facts=abandoned_facts,
+            )
+
     _check_delivery_orphans(
         intents=intents,
         send_attempts=send_attempts,
         superseded=superseded,
         delivered=delivered,
+        recovered_facts=recovered_facts,
+        abandoned_facts=abandoned_facts,
     )
     _check_delivery_links(
         send_attempts=send_attempts,
         superseded=superseded,
         delivered=delivered,
+    )
+    _check_delivery_terminals(
+        delivered=delivered,
+        recovered_facts=recovered_facts,
+        abandoned_facts=abandoned_facts,
     )
 
     return _build_delivery_projections(
@@ -771,6 +867,7 @@ def batches_from_entries(
         superseded=superseded,
         delivered=delivered,
         recovered_facts=recovered_facts,
+        abandoned_facts=abandoned_facts,
     )
 
 
@@ -834,12 +931,28 @@ def _apply_recovered_record(
         recovered_facts[batch_id] = payload
 
 
+def _apply_abandoned_record(
+    *,
+    payload: dict[str, Any],
+    batch_id: str,
+    abandoned_facts: dict[str, dict[str, Any]],
+) -> None:
+    if batch_id in abandoned_facts:
+        existing = abandoned_facts[batch_id]
+        if existing.get("reason") != payload.get("reason"):
+            raise ToolResultDeliveryError(f"conflicting abandoned facts for batch {batch_id!r}")
+    else:
+        abandoned_facts[batch_id] = payload
+
+
 def _check_delivery_orphans(
     *,
     intents: dict[str, DeliveryBatchIntent],
     send_attempts: dict[str, list[str]],
     superseded: dict[str, list[str]],
     delivered: dict[str, list[str]],
+    recovered_facts: dict[str, dict[str, Any]] | None = None,
+    abandoned_facts: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     known_intent_ids = set(intents.keys())
     orphan_attempts = set(send_attempts.keys()) - known_intent_ids
@@ -856,6 +969,16 @@ def _check_delivery_orphans(
     if orphan_delivered:
         raise ToolResultDeliveryError(
             f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
+        )
+    orphan_recovered = set((recovered_facts or {}).keys()) - known_intent_ids
+    if orphan_recovered:
+        raise ToolResultDeliveryError(
+            f"orphan recovered records without corresponding batch_intent: {orphan_recovered}"
+        )
+    orphan_abandoned = set((abandoned_facts or {}).keys()) - known_intent_ids
+    if orphan_abandoned:
+        raise ToolResultDeliveryError(
+            f"orphan abandoned records without corresponding batch_intent: {orphan_abandoned}"
         )
 
 
@@ -902,6 +1025,23 @@ def _check_delivery_links(
         )
 
 
+def _check_delivery_terminals(
+    *,
+    delivered: dict[str, list[str]],
+    recovered_facts: dict[str, dict[str, Any]],
+    abandoned_facts: dict[str, dict[str, Any]],
+) -> None:
+    """Abandoned is exclusive with delivered/recovered.
+
+    Recovered then delivered is a valid resume path (reconstructed results
+    still need a provider send), so delivered+recovered may coexist.
+    """
+    for bid in set(delivered) & set(abandoned_facts):
+        raise ToolResultDeliveryError(f"batch has both delivered and abandoned: {bid!r}")
+    for bid in set(recovered_facts) & set(abandoned_facts):
+        raise ToolResultDeliveryError(f"batch has both recovered and abandoned: {bid!r}")
+
+
 def _build_delivery_projections(
     *,
     ordered_batch_ids: list[str],
@@ -910,7 +1050,9 @@ def _build_delivery_projections(
     superseded: dict[str, list[str]],
     delivered: dict[str, list[str]],
     recovered_facts: dict[str, dict[str, Any]],
+    abandoned_facts: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[DeliveryBatchProjection, ...]:
+    abandoned_facts = abandoned_facts or {}
     projections: list[DeliveryBatchProjection] = []
     for bid in ordered_batch_ids:
         intent = intents[bid]
@@ -918,6 +1060,7 @@ def _build_delivery_projections(
         voided = tuple(s for s in superseded.get(bid, ()) if s in set(attempts))
         delivered_ids = tuple(delivered.get(bid, ()))
         rec = recovered_facts.get(bid)
+        abd = abandoned_facts.get(bid)
 
         projections.append(
             DeliveryBatchProjection(
@@ -930,6 +1073,8 @@ def _build_delivery_projections(
                 recovered_reads=int(rec.get("recovered_reads", 0)) if rec else 0,
                 recovered_lookups=int(rec.get("recovered_lookups", 0)) if rec else 0,
                 is_recovered=rec is not None,
+                abandoned_reason=str(abd.get("reason") or "") if abd else "",
+                is_abandoned=abd is not None,
             )
         )
 
@@ -1018,7 +1163,9 @@ class ToolResultDeliveryStore:
 
 
 __all__ = [
+    "ABANDONED_REASONS",
     "EFFECT_KIND",
+    "RECORD_KIND_ABANDONED",
     "RECORD_KIND_BATCH_INTENT",
     "RECORD_KIND_DELIVERED",
     "RECORD_KIND_RECOVERED",
@@ -1031,6 +1178,7 @@ __all__ = [
     "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",
+    "abandoned_entry",
     "batch_intent_entry",
     "batches_from_entries",
     "compute_batch_digest",
