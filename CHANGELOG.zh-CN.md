@@ -2,6 +2,22 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 修CI独有的审计扫描黑洞（symlink root，未发布）
+
+- 0.4.14分包时埋下的潜伏bug，被新的consensus拆分测试在CI上钓出：
+  `safe_join`返回resolve后路径，而审计守卫拿未resolve的caller root做
+  `relative_to`，CI Temp这类带symlink/短名的root会导致
+  `_audit_search_files`静默报“无匹配”、`_audit_visible_entries`报空、
+  `_audit_read_file`报错。现入口处统一resolve一次。
+  `tests/test_audit_resolve_paths.py` 3个先红测试锁定。
+- 新增实机探针 `tools/live_probe_split.py`（非发布门禁、非生产代码）：
+  kobold直连、工作队列生命周期、hostile夹具修复、tiny创建，目前全绿、
+  零tripwire；`tools/`放的本就是这类运维脚本（如`kobold_live_gate.py`），
+  不进打包产物也不进体积门禁。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4516 passed，
+  7 skipped，1391 subtests passed，396.94s`）。未发布。
+
 ## Unreleased - C901≤20 门禁 + 5个怪物拆分，修2个bug（未发布）
 
 - `pyproject.toml` 中 `C901（McCabe≤20）` 加入 CI 门禁（`tests/`/`tools/`

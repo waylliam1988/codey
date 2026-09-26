@@ -2,6 +2,24 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fix CI-only audit blackout on symlinked roots (no release)
+
+- Latent bug since the 0.4.14 package split, exposed on CI by the new
+  consensus split tests: `safe_join` resolves paths while the audit guards
+  compared against the unresolved caller root, so any symlinked/short-name
+  root (CI temp dirs) silently emptied `_audit_search_files`
+  ("(no literal matches)"), `_audit_visible_entries` ("(empty)"), and broke
+  `_audit_read_file`. Root is now resolved once at each entry point.
+  Locked with 3 red-first tests in `tests/test_audit_resolve_paths.py`.
+- New live harness `tools/live_probe_split.py` (not the release gate, not
+  production code): direct kobold reply, work-queue lifecycle, hostile
+  Makefile/symlink fixture fix, tiny create — all green so far with zero
+  tripwires; `tools/` holds operator harnesses like `kobold_live_gate.py`
+  and stays out of the packaged product and the size gates.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4516 passed,
+  7 skipped, 1391 subtests passed in 396.94s`). No release was made.
+
 ## Unreleased - C901<=20 gate + 5 monsters split, 2 bugs fixed (no release)
 
 - `C901 (McCabe <= 20)` joins the CI gate in `pyproject.toml`

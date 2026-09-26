@@ -1,5 +1,47 @@
 # Codey Test Report
 
+## CI-only audit blackout fixed: symlinked root silently emptied scans (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/agents/consensus.py           (resolve audit root once at _audit_search_files / _audit_visible_entries / _audit_read_file entry + inside _audit_searchable_files, so safe_join output and every relative_to guard share one path form)
+tests/test_audit_resolve_paths.py   (3 red-first regressions: search/visible/read through a symlinked root)
+tools/live_probe_split.py           (new live harness, NOT the release gate: p0 direct kobold reply, p1 work-queue lifecycle, p2 hostile-fixture fix, p3 tiny create; p4/p5 pending)
+```
+
+Root cause (latent since 0.4.14 package split, exposed by the new
+`test_consensus_audit_split.py` on CI): `safe_join` returns a *resolved*
+path while the audit `allow_*` guards and `relative_to` calls used the
+*unresolved* caller root. When the root itself contains a symlink (or a
+Windows 8.3 short-name component, as in CI temp dirs), every file and dir
+was silently rejected, so `_audit_search_files` reported "(no literal
+matches)" with ok=True, `_audit_visible_entries` reported "(empty)", and
+`_audit_read_file` errored. Reproduced locally with a symlinked root
+(3 red), fixed, green. `find_reference_hints` already resolves internally
+and needed no change.
+
+Live-fire status (koboldcpp/Gemma-4-Queen-31B, harness reads replies itself):
+p0 direct reply PROBE_OK (8.3s); p1 work-queue lifecycle incl. invalid
+transitions all fail clean (double-claim/wrong-run/re-complete rejected,
+missing-proof completion parks at blocked by design); p2 hostile-fixture
+fix done in 5 turns with independent verification (bug gone, suite exit 0,
+no recipe-as-target, symlink never surfaced); p3 tiny create done in 3
+turns. Zero tripwires so far (no Traceback/AssertionError/illegal
+transition). p4 (forced search sweep) and p5 (make -> shell-deny settle)
+pending: the p4 run was aborted mid-flight by the operator.
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .` clean, `git diff --check`
+  clean, `python -m compileall -q codey tests tools` passed; consensus +
+  audit + resolve-path suites (46 passed) green before the full run.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4516 passed, 7 skipped, 1391 subtests passed in 396.94s (0:06:36)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+- Live JSONL in gitignored `.e2e-artifacts/live-probe-*.jsonl`.
+- This entry was written after the full suite. No release was made.
+
 ## C901<=20 gate + 5 monsters split, 2 deterministic bugs fixed (2026-09-26)
 
 Scope (production, no release):

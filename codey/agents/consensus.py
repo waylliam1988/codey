@@ -499,6 +499,9 @@ def _audit_scannable_file_allowed(path: Path, root: Path) -> bool:
 
 
 def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
+    # See _audit_searchable_files: resolve so iterdir entries and the
+    # relative_to guards below share one path form.
+    root = root.expanduser().resolve()
     reason = _audit_path_block_reason(rel)
     if reason:
         return ToolOutcome.error(reason)
@@ -547,6 +550,9 @@ def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
 
 
 def _audit_read_file(root: Path, rel: str, **options) -> ToolOutcome:
+    # See _audit_searchable_files: resolve so safe_join output and the
+    # _audit_file_allowed guard share one path form.
+    root = root.expanduser().resolve()
     reason = _audit_path_block_reason(rel)
     if reason:
         return ToolOutcome.error(reason)
@@ -580,13 +586,17 @@ def _audit_scan_budget() -> BoundedScanBudget:
 
 
 def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget):
-    resolved_root = root.resolve()
+    # Resolve once: `start` comes from safe_join (resolved) while callers
+    # may pass a symlinked/short-name root (e.g. CI temp dirs). Comparing
+    # resolved entries against an unresolved root makes every allow_* guard
+    # fail closed with ValueError, silently emptying the whole scan.
+    resolved_root = root.expanduser().resolve()
     return iter_bounded_files(
         start,
         excluded_dirs=AUDIT_EXCLUDED_DIRS,
         budget=budget,
-        allow_dir=lambda path: _audit_dir_allowed(path, root),
-        allow_file=lambda path: _audit_scannable_file_allowed(path, root),
+        allow_dir=lambda path: _audit_dir_allowed(path, resolved_root),
+        allow_file=lambda path: _audit_scannable_file_allowed(path, resolved_root),
         skip_start_if_excluded=start.resolve() != resolved_root,
     )
 
@@ -706,6 +716,9 @@ def _audit_search_files(
         return error
     if start is None:
         return ToolOutcome.error("path could not be resolved")
+    # See _audit_searchable_files: match results must be relativized
+    # against the same resolved form the scanner yields.
+    root = root.expanduser().resolve()
     needle = query.lower()
     matches: list[str] = []
     result_limited = False
