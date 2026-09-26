@@ -64,20 +64,25 @@ def _persist_observation_row(
 ) -> tuple[bool, str]:
     """Write one experience row; False means the file must be left alone.
 
-    Returns (ok, status) where status is committed/uncommitted/skipped/failed.
+    Returns (ok, status) where status is
+    committed/uncommitted/skipped/settings_error/failed.
     ``committed`` (stop_reason=done) rows are retrievable; other rows are kept
     as experience but never retrieved as successful facts. A ``failed`` write
     must be reported as Ghost-record-failed with a warning: the round is shown
-    to the user but must not be claimed recoverable for Ghost.
+    to the user but must not be claimed recoverable for Ghost. A
+    ``settings_error`` means the learning switch itself is unreadable: the
+    write is skipped fail-closed and the caller must surface a visible
+    config warning instead of silently re-enabling learning.
     """
     try:
         inbox = getattr(state, "ghost_inbox", None) if state is not None else None
-        try:
-            learning_on = bool(inbox.learning_enabled()) if inbox is not None else True
-        except Exception:
-            learning_on = True
-        if not learning_on:
-            return True, "skipped"
+        if inbox is not None:
+            try:
+                learning_on = bool(inbox.learning_enabled())
+            except Exception:
+                return False, "settings_error"
+            if not learning_on:
+                return True, "skipped"
         store = getattr(state, "ghost_observations", None) if state is not None else None
         if store is None:
             return True, "skipped"
@@ -114,6 +119,8 @@ def _emit_observation_warning(
     """Warn about a non-committed observation; always before task_done."""
     if status == "failed":
         error_type, error_ref = "GhostObservationFailed", "ghost_observation_failed"
+    elif status == "settings_error":
+        error_type, error_ref = "GhostSettingsCorrupt", "ghost_settings_corrupt"
     else:
         error_type, error_ref = (
             "GhostObservationUncommitted", "ghost_observation_uncommitted",

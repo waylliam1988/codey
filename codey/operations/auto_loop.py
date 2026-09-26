@@ -139,10 +139,7 @@ def with_auto_plan(request: Any, plan: str) -> Any:
     plan_text = str(plan or "").strip()
     if not plan_text:
         return request
-    try:
-        return replace(request, model_hint=plan_text)
-    except Exception:
-        return request
+    return replace(request, model_hint=plan_text)
 
 
 @dataclass(frozen=True)
@@ -209,8 +206,8 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
         prompt = f"{prompt}\n\n{experiences.strip()}"
     if frame.fresh_chat:
         # Same window discipline as chat: the decision call runs in a fresh
-        # window. Action paths reset again below so mode runners start clean
-        # and the ACTION scaffolding never pollutes their history.
+        # window. Executors own their ACTION-after reset so the ACTION
+        # scaffolding never pollutes their history.
         frame.provider.new_chat()
     with contextlib.suppress(Exception):
         record_provider_send_prompt(
@@ -240,11 +237,14 @@ def run_auto_mode(frame: Any, work: Any, hooks: Any, deps: AutoRunDeps) -> ModeO
     frame.request = with_auto_plan(request, decision.plan)
     frame.task_kind = decision.kind
     deps.open_ledger_for(decision.kind)
-    # The ACTION scaffolding must not leak into the mode runner's window: a
-    # failed reset propagates to error settlement instead of continuing with
-    # inherited ACTION history.
-    frame.provider.new_chat()
-    frame.fresh_chat = False
+    # Ownership: the mode executor owns the ACTION-after reset. Auto only
+    # marks the handoff as requiring an isolated fresh window; it must not
+    # reset here, otherwise project/planning executors would see
+    # fresh_chat=False and send the short "continue" prompt into a window
+    # that was just cleared (missing project_intro + tool protocol).
+    # Research resets inside its own runner; project/planning reset on
+    # their first strict attempt; review uses no provider window.
+    frame.fresh_chat = True
     if decision.kind == "project":
         if not deps.acquire_writer(project_text):
             summary = "另一个任务正在写该项目，稍后重试。"

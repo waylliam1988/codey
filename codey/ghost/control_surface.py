@@ -121,7 +121,7 @@ class GhostControlSurface:
             lambda: bool(self.inbox.learning_enabled()) if self.inbox is not None else False,
             warnings,
             "settings_read_failed",
-            default=True,
+            default=False,
         )
 
         warning_rows = _ui_warnings((*warnings, *affinity_health.get("warnings", ())))

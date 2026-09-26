@@ -80,7 +80,11 @@ class GhostLearningLoop:
     ) -> GhostLearningResult:
         if self.signal_store is None or self.inbox_store is None or self.hebbian_store is None:
             return GhostLearningResult(True, skipped_reason="ghost_store_disabled")
-        if not self.inbox_store.learning_enabled():
+        try:
+            learning_on = bool(self.inbox_store.learning_enabled())
+        except Exception:
+            return GhostLearningResult(True, skipped_reason="learning_settings_corrupt")
+        if not learning_on:
             return GhostLearningResult(True, skipped_reason="learning_disabled")
         if provider_factory is None:
             return GhostLearningResult(True, skipped_reason="provider_factory_missing")

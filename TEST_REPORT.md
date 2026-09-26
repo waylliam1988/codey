@@ -1,5 +1,70 @@
 # Codey Test Report
 
+## Review fix batch: learning-switch / auto-window / P5-honesty (2026-09-27)
+
+Scope (production, no release):
+
+```text
+codey/ghost/inbox.py                  (GhostSettingsError; missing-only default; no silent quarantine; strict bool; ingest fail-closed)
+codey/operations/task_phases/settlement.py (settings_error status + GhostSettingsCorrupt warning; no fail-open write)
+codey/operations/ghost_context.py     (ghost_experiences fail-closed + visible settings warning)
+codey/ghost/learning_loop.py          (settings_corrupt skip, no crash)
+codey/ghost/control_surface.py        (settings_read_failed defaults disabled)
+codey/operations/auto_loop.py         (no ACTION-after new_chat; fresh_chat=True handoff; with_auto_plan no swallow)
+codey/operations/project_completion_flow.py (drop duplicate agent_task/agent_fresh_chat assign)
+codey/agents/writer_failover.py       (first attempt strict_fresh_chat=True)
+codey/operations/planning_flow.py     (strict_fresh_chat=True)
+tools/live_probe_split.py             (bidirectional honest_failure_report; failed make counts as ran; lint_failed/test_failed; probe exception returns _state_home)
+tests/test_learning_switch_fail_closed.py   (new, 8 tests incl. off->corrupt贯穿 + repair)
+tests/test_auto_fresh_chat_ownership.py     (new, 5 tests incl. near-real intro + reset-failure)
+tests/test_p5_honest_failure_report.py      (new, 3 tests)
+tests/test_probe_cleanup_and_autoplan.py    (new, 2 tests)
+tests/test_writer_failover.py               (first-attempt strict expectation updated)
+```
+
+Repro (all deterministic, temp dirs / synthetic rows, no live model):
+
+- Learning: set `False`, corrupt `settings.json` -> old code read `True`
+  (and quarantined the file away); `"false"` string read `True`;
+  settlement with raising switch still wrote; retrieval with raising switch
+  still served old rows. Now: raises / fail-closed, file kept, no write, no
+  retrieval + visible `ghost_settings_corrupt`, background learning off,
+  explicit `set_learning_enabled()` recovers.
+- Auto: ACTION project/planning saw `fresh_chat=False` with 2 `new_chat`
+  calls already done by Auto (decision + ACTION-after). Now: handoff sees
+  `fresh_chat=True` with 1 call at handoff; executor does the single strict
+  reset and sends the full intro; reset failure raises, never reuses the
+  ACTION window.
+- P5: failing ruff + failing pytest receipts with "All checks passed"
+  summary + exit 0/done evaluated `ok=True`. Now `honest_report=False`,
+  `ok=False`; honest failure naming and clean green still pass.
+- Probe: `_run_agent_probe` exception missed `_state_home` (temp state dir
+  leak). Now returned on all paths.
+- Auto plan: `with_auto_plan` on a dataclass without `model_hint`
+  silently returned the input. Now raises `TypeError`.
+
+Verification (local, Windows, no live browser/model re-run):
+
+- Before the full suite: `ruff check` clean on all touched files,
+  `git diff --check` clean, no frontend JS changed (node unavailable, JS
+  check not applicable); targeted suites green
+  (`test_learning_switch_fail_closed` 8 + `test_auto_fresh_chat_ownership` 5 +
+  `test_p5_honest_failure_report` 3 + `test_probe_cleanup_and_autoplan` 2 +
+  `test_live_probe_verdicts_contract` 8 + `test_writer_failover` +
+  `test_experience_memory` + ghost suites + `test_server -k ghost/learning/
+  settlement/auto`).
+- Full suite: `python -m pytest -q -p no:cacheprovider` with isolated
+  `USERPROFILE`/`HOME`:
+  `4563 passed, 7 skipped, 1391 subtests passed in 356.54s (0:05:56)`.
+  Skips are the known Windows/opt-in family (no real-browser runs, so green
+  pytest still does not prove interactive or local-model latency). No live
+  kobold gate was re-run.
+- Deferred without change (not deterministic correctness bugs): JSONL linear
+  scan (unmeasured), pipe-reader abandon accumulation (known residual),
+  continuity/work-queue/affinity/sleep chains (wired; needs product call),
+  long-file ceiling (advisory).
+- This entry was written after the full suite. No release was made.
+
 ## Review-driven correctness batch: corruption/abandoned/probe/budget (2026-09-27)
 
 Scope (production, no release):

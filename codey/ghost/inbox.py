@@ -76,6 +76,23 @@ _INBOX_EVENT_TYPES = frozenset(
 )
 
 
+class GhostSettingsError(ValueError):
+    """Learning settings exist but cannot be trusted.
+
+    Raised only when ``settings.json`` is present yet unreadable: corrupt
+    JSON, non-dict payload, schema mismatch, or a non-bool
+    ``learning_enabled`` flag. Callers must fail closed (no write, no
+    retrieval, no background learning) and surface a visible config
+    warning. A missing file is first-install and defaults to enabled
+    without raising.
+    """
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f"corrupt ghost settings {path}: {reason}")
+        self.path = Path(path)
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class GhostMemoryCandidate:
     id: str
@@ -221,7 +238,10 @@ class GhostInboxStore:
         project: str = "",
         user_text: str = "",
     ) -> tuple[GhostMemoryCandidate, ...]:
-        if not self.learning_enabled():
+        try:
+            if not self.learning_enabled():
+                return ()
+        except GhostSettingsError:
             return ()
         signals = tuple(getattr(result, "signals", ()) or ())
         if not signals:
@@ -549,8 +569,13 @@ class GhostInboxStore:
         return audit_ok
 
     def learning_enabled(self) -> bool:
+        """Return the user switch; raise GhostSettingsError when corrupt.
+
+        Missing file means first install and defaults to True. Any present
+        but invalid file raises instead of silently re-enabling learning.
+        """
         with with_file_lock(self.events_path):
-            return bool(self._read_settings_unlocked().get("learning_enabled", True))
+            return bool(self._read_settings_unlocked()["learning_enabled"])
 
     def compact_if_needed(self) -> dict[str, object]:
         try:
@@ -822,18 +847,20 @@ class GhostInboxStore:
             return default
         try:
             payload = read_json_strict(self.settings_path, max_bytes=MAX_INBOX_BYTES)
-        except StoreCorruption:
-            self._quarantine(self.settings_path)
-            return default
+        except StoreCorruption as exc:
+            raise GhostSettingsError(self.settings_path, str(exc)) from exc
         if not isinstance(payload, dict):
-            self._quarantine(self.settings_path)
-            return default
+            raise GhostSettingsError(self.settings_path, "not a dict")
         if payload.get("schema_version") != INBOX_SCHEMA_VERSION:
-            self._quarantine(self.settings_path)
-            return default
+            raise GhostSettingsError(self.settings_path, "schema mismatch")
+        if "learning_enabled" not in payload:
+            raise GhostSettingsError(self.settings_path, "learning_enabled missing")
+        flag = payload.get("learning_enabled")
+        if type(flag) is not bool:
+            raise GhostSettingsError(self.settings_path, "learning_enabled must be bool")
         return {
             "schema_version": INBOX_SCHEMA_VERSION,
-            "learning_enabled": bool(payload.get("learning_enabled", True)),
+            "learning_enabled": flag,
             "updated_at": clip_signal_text(payload.get("updated_at"), 80),
         }
 

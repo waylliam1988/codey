@@ -2,6 +2,62 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Fix learning-switch fail-open, Auto fresh-window ownership, P5 honest-report gap (no release)
+
+- Learning switch fail-closed: `GhostInboxStore._read_settings_unlocked()`
+  only defaults to enabled when `settings.json` never existed. A present but
+  invalid file (bad JSON, non-dict, schema mismatch, missing/non-bool
+  `learning_enabled`) now raises `GhostSettingsError` and the file is left in
+  place for inspection/repair (no silent quarantine + enabled). Strict bool:
+  `"false"`/`0`/`1` no longer coerce via `bool(...)`. Settlement
+  `_persist_observation_row()` returns `(False, "settings_error")` without
+  writing on switch-read failure and `_emit_observation_warning()` surfaces
+  `GhostSettingsCorrupt`/`ghost_settings_corrupt`; `ghost_experiences()`
+  returns `""` without touching the store and emits the same visible
+  `ghost_post_turn_warning`. `GhostLearningLoop.learn_from_turn()` returns
+  `settings_corrupt` skip instead of crashing; control-surface summary
+  defaults to disabled on settings-read failure. Locked with
+  `tests/test_learning_switch_fail_closed.py` (8 tests, incl. the
+  off -> corrupt -> no-write/no-retrieval/no-background-learning贯穿 test and
+  repair recovery).
+- Auto fresh-window ownership: `run_auto_mode()` no longer does the
+  ACTION-after `new_chat()`; it marks `frame.fresh_chat=True` and the mode
+  executor owns the single reset. Project writer first attempt and planning
+  are now `strict_fresh_chat=True`, so a failed reset raises instead of
+  reusing the ACTION window with the short "continue" prompt (full
+  `project_intro()` is sent). Research keeps its own runner reset; review
+  uses no provider window. Removed the duplicate `agent_task`/
+  `agent_fresh_chat` assignment in project context prep and the broad
+  `except Exception` fallback in `with_auto_plan()` (contract errors now
+  surface). Locked with `tests/test_auto_fresh_chat_ownership.py` (5 tests,
+  incl. near-real executor intro + reset-failure-never-executes). Updated
+  `test_writer_failover.py` first-attempt expectation to strict.
+- P5 honest report: `honest_failure_report()` is now bidirectional. Any
+  executed-but-failed lint/test receipt requires the summary to name that
+  check (`lint`/`ruff`, `test`/`pytest`) plus a failure word; failure-quoting
+  summaries still require a backing failed row. `evaluate_p5_semantics()`
+  counts failed `make lint`/`make test` as ran (via `_tool_executed()`) and
+  exposes `lint_failed`/`test_failed`. A failing-ruff + failing-pytest +
+  "All checks passed" + clean exit case now yields `ok=False`. Locked with
+  `tests/test_p5_honest_failure_report.py` (3 tests); existing
+  `test_live_probe_verdicts_contract.py` (8 tests) still green.
+- Deterministic cleanup: `_run_agent_probe()` exception path now returns
+  `_state_home` so callers can clean both temp dirs (locked with
+  `tests/test_probe_cleanup_and_autoplan.py`, 2 tests).
+- Deferred (not correctness bugs, no change): observation JSONL linear
+  scan (unmeasured; SQLite migration needs a measured plan, no dual
+  JSONL fallback), pipe-reader abandon accumulation (known residual for
+  external holders; needs cancellable reads + handle/thread metrics),
+  continuity/work-queue/affinity/sleep auto chains (wired; removal needs a
+  product decision plus joint entry/state/UI/test deletion), long-file
+  ceiling (advisory reminder, not a hard gate).
+- Verification: `ruff check` clean on all touched files,
+  `git diff --check` clean, no frontend JS changed (node unavailable in this
+  env, JS check not applicable). Targeted suites green, then full
+  `python -m pytest -q -p no:cacheprovider` with isolated
+  `USERPROFILE`/`HOME`: `4563 passed, 7 skipped, 1391 subtests passed in
+  356.54s`. Skips are the known Windows/opt-in family. No release was made.
+
 ## Unreleased - Fix corruption false-success, abandoned delivery, probe false-pass, budget overflow (no release)
 
 - Ghost corruption contract: `GhostObservationStore.delete_scope()` no longer

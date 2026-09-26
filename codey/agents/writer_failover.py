@@ -13,8 +13,9 @@ correct as provider resilience grows.
 * refresh the checkpoint view so the next Writer sees local facts,
 * share the turn budget across attempts (a dropped provider has no full
   ``RunResult``, so the latest observed turn is used),
-* honour Stop first, switch at most twice, and force a strict fresh chat after a
-  switch.
+* honour Stop first, switch at most twice, and always use a strict fresh
+  chat (a failed reset raises instead of reusing a window that may still
+  hold the Auto ACTION scaffolding or a prior task's history).
 
 It deliberately knows nothing about prompts, verification, project facts,
 review, diffs, receipts or UI events. The caller supplies those through the
@@ -134,7 +135,7 @@ class WriterFailoverRunner:
                 provider=self.provider,
                 remaining_turns=max(1, turn_budget - turns_used),
                 fresh_chat=cur_fresh,
-                strict_fresh_chat=self.switches > 0,
+                strict_fresh_chat=True,
                 handoff=cur_handoff,
                 checkpoint=cur_checkpoint,
             )

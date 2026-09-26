@@ -2,6 +2,46 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 修学习开关 fail-open、Auto 新会话归属、P5 诚实报告缺口（未发布）
+
+- 学习开关 fail-closed：`GhostInboxStore._read_settings_unlocked()`仅在
+  `settings.json`从未存在时默认启用。文件存在但无效（坏JSON、非dict、
+  版本不对、缺`learning_enabled`或非bool）即抛`GhostSettingsError`，文件原地
+  保留供检查与修复（不再静默隔离后返回启用）。严格bool：`"false"`/`0`/`1`
+  不再经`bool(...)`变成True。结算`_persist_observation_row()`在开关不可读时
+  直接返回`(False, "settings_error")`且不写文件，
+  `_emit_observation_warning()`报`GhostSettingsCorrupt`/
+  `ghost_settings_corrupt`；`ghost_experiences()`不碰store直接返回`""`并发出
+  同样的可见`ghost_post_turn_warning`。`GhostLearningLoop.learn_from_turn()`
+  返回`settings_corrupt`跳过而非抛错；控制面summary在设置不可读时默认关闭。
+  `tests/test_learning_switch_fail_closed.py`（8个，含关闭→损坏→不写/不检/
+  不学贯穿与修复恢复）锁定。
+- Auto新会话归属：`run_auto_mode()`不再做ACTION后第二次`new_chat()`，只置
+  `frame.fresh_chat=True`，由模式执行器独占一次重置。项目Writer首尝试与规划
+  均改为`strict_fresh_chat=True`，重置失败直接抛错，不再沿用含ACTION的旧会话
+  发短“continue”提示（首条必走完整`project_intro()`）。Research保持自有重置，
+  Review不走provider会话。删除项目上下文准备的重复赋值，
+  `with_auto_plan()`删除宽泛`except Exception`回退（契约错误直接暴露）。
+  `tests/test_auto_fresh_chat_ownership.py`（5个，含近真实执行器intro与重置
+  失败不执行）锁定；`test_writer_failover.py`首尝试期望同步改为strict。
+- P5诚实报告：`honest_failure_report()`改为双向。有执行失败的lint/test回执
+  必须在总结中点名对应检查（`lint`/`ruff`、`test`/`pytest`）并写明失败；
+  含失败词的总结仍需有失败回执支撑。`evaluate_p5_semantics()`把失败的
+  `make lint`/`make test`也计为跑过（经`_tool_executed()`），并输出
+  `lint_failed`/`test_failed`。ruff失败+pytest失败+“全部通过”总结+正常退出
+  现判`ok=False`。`tests/test_p5_honest_failure_report.py`（3个）锁定；
+  原有`test_live_probe_verdicts_contract.py`（8个）仍绿。
+- 确定性清理：`_run_agent_probe()`异常路径补回`_state_home`，调用方可清理两个
+  临时目录（`tests/test_probe_cleanup_and_autoplan.py`，2个锁定）。
+- 暂缓（非确定性正确性bug，未改）：观察JSONL线性扫描（未测耗时，SQLite需
+  实测方案，不保留双写回退）、外部管道逃逸的daemon堆积（已知残余，需可取消
+  读取+句柄/线程指标）、continuity/work-queue/affinity/sleep自动链（有接线，
+  删除需产品定夺并联合入口/状态/UI/测试）、长文件上限（提醒而非硬门禁）。
+- 验证：触及文件`ruff check`全过，`git diff --check`全过，未改前端JS（本环境
+  无node，JS检查不适用）。先过针对性套件，再以隔离`USERPROFILE`/`HOME`跑全量
+  `python -m pytest -q -p no:cacheprovider`：`4563 passed、7 skipped、1391
+  subtests passed，356.54s`。跳过为已知Windows/手动启用项。未发布。
+
 ## Unreleased - 修损坏误报成功、delivery悬空、探针假阳性、预算超限（未发布）
 
 - Ghost损坏契约：`GhostObservationStore.delete_scope()`在中间坏行时不再返回

@@ -99,13 +99,18 @@ def ghost_experiences(
     (successfully finished) rounds are returned; the current run is excluded.
     ``scope`` follows the store's ownership scopes (session/project/user);
     project writers pass ``project`` scope for cross-session recall.
+
+    A corrupt learning switch fails closed: no retrieval and a visible
+    ``ghost_post_turn_warning`` so the UI shows "Local update paused"
+    instead of silently serving stale observations.
     """
     try:
         inbox = getattr(state, "ghost_inbox", None)
         if inbox is not None and not bool(inbox.learning_enabled()):
             return ""
     except Exception:
-        pass
+        _emit_settings_warning(state, session_id=session_id)
+        return ""
     try:
         store = getattr(state, "ghost_observations", None)
         if store is None:
@@ -126,6 +131,24 @@ def ghost_experiences(
     if not picked:
         return ""
     return render_retrieved_block(picked, budget_chars)
+
+
+def _emit_settings_warning(state: Any, *, session_id: str = "") -> None:
+    """Surface a corrupt learning switch as a visible local-health warning."""
+    emit = getattr(state, "emit", None)
+    if not callable(emit):
+        return
+    try:
+        emit({
+            "type": "ghost_post_turn_warning",
+            "stage": "learning_settings",
+            "run_id": "",
+            "session_id": str(session_id or ""),
+            "error_type": "GhostSettingsCorrupt",
+            "error_ref": "ghost_settings_corrupt",
+        })
+    except Exception:
+        return
 
 
 __all__ = [

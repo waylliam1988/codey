@@ -167,7 +167,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         self.assertEqual(h.switched, [])
         self.assertIn(("record_success", "p1"), h.log)
         spec = h.specs[0]
-        self.assertFalse(spec.strict_fresh_chat)
+        self.assertTrue(spec.strict_fresh_chat)
         self.assertFalse(spec.fresh_chat)
         self.assertEqual(spec.handoff, "H")
         self.assertEqual(spec.checkpoint.prompt, "init")

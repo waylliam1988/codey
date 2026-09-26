@@ -94,7 +94,7 @@ def run_planning_readonly_mode(
         on_shell_request=None,
         stop_flag=state.run_registry.stop_flag,
         fresh_chat=frame.fresh_chat,
-        strict_fresh_chat=False,
+        strict_fresh_chat=True,
         change_tracker=None,
         conversation=frame.conversation,
         provider_id=frame.provider_id,

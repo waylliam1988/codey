@@ -453,8 +453,6 @@ def _prepare_project_context(ctx: _ProjectRun) -> None:
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
-    ctx.agent_task = execution_task(ctx.request)
-    ctx.agent_fresh_chat = ctx.frame.fresh_chat
     _prepare_new_project_context(ctx)
     key = str(Path(ctx.project).expanduser().resolve())
     ctx.tracker = ctx.state.change_tracker_for(
