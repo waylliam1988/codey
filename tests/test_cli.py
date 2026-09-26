@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 import codey.app.cli as cli
-from codey.agents.runner import RunResult
 from codey.app.cli import _safe_print
 from codey.app.headless_runner import HeadlessResult
 
@@ -79,35 +78,76 @@ class ProviderCliTests(unittest.TestCase):
 
         end_context.assert_called_once_with()
 
-    def test_cmd_agent_cleans_task_context_when_provider_close_fails(self) -> None:
-        args = mock.Mock(provider="deepseek", port=9222, project=".", task=["fix"], max_turns=4)
-        provider = mock.Mock()
-        provider.close.side_effect = RuntimeError("CDP disconnected")
+    def test_cmd_agent_propagates_headless_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            args = mock.Mock(
+                provider="deepseek",
+                port=9222,
+                project=td,
+                task=["fix"],
+                max_turns=4,
+                json=False,
+                readonly=False,
+                auto=False,
+                state_home=td,
+            )
 
-        with (
-            mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.agents.runner.run", return_value=mock.Mock(summary="done")),
-            mock.patch("codey.providers.controls.begin_task_context"),
-            mock.patch("codey.providers.controls.end_task_context") as end_context,
-            mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "CDP disconnected")
-        ):
-            cli.cmd_agent(args)
+            with (
+                mock.patch(
+                    "codey.app.headless_runner.run_headless",
+                    side_effect=RuntimeError("offline"),
+                ),
+                self.assertRaisesRegex(RuntimeError, "offline"),
+            ):
+                cli.cmd_agent(args)
 
-        end_context.assert_called_once_with()
+    def test_cmd_agent_plain_mode_prints_human_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            args = mock.Mock(
+                provider="deepseek",
+                port=9222,
+                project=td,
+                task=["fix"],
+                max_turns=4,
+                json=False,
+                readonly=False,
+                auto=False,
+                state_home=td,
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
 
-    def test_cmd_agent_cleans_task_context_when_provider_connection_fails(self) -> None:
-        args = mock.Mock(provider="stepfun", port=9222, project=".", task=["fix"], max_turns=4)
+            def fake_headless(request, *, emit_jsonl):
+                emit_jsonl({
+                    "schema_version": 1,
+                    "type": "task_start",
+                    "run_id": "run-1",
+                    "session_id": "session-1",
+                    "mode": "agent",
+                    "provider": "deepseek",
+                })
+                emit_jsonl({
+                    "schema_version": 1,
+                    "type": "task_done",
+                    "run_id": "run-1",
+                    "session_id": "session-1",
+                    "summary": "plain summary",
+                    "stop_reason": "done",
+                    "mode": "agent",
+                })
+                return HeadlessResult(0, "run-1", "session-1", "done")
 
-        with (
-            mock.patch("codey.providers.connect_provider", side_effect=RuntimeError("offline")),
-            mock.patch("codey.providers.controls.begin_task_context") as begin_context,
-            mock.patch("codey.providers.controls.end_task_context") as end_context,
-            mock.patch.object(cli, "_safe_print"),self.assertRaisesRegex(RuntimeError, "offline")
-        ):
-            cli.cmd_agent(args)
+            with (
+                mock.patch("codey.app.headless_runner.run_headless", side_effect=fake_headless),
+                mock.patch("sys.stdout", stdout),
+                mock.patch("sys.stderr", stderr),
+            ):
+                exit_code = cli.cmd_agent(args)
 
-        begin_context.assert_called_once_with("cli-agent:stepfun")
-        end_context.assert_called_once_with()
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stdout.getvalue(), "plain summary\n")
+            self.assertIn("[codey] project:", stderr.getvalue())
+            self.assertIn("mode=agent", stderr.getvalue())
 
     def test_cmd_agent_json_emits_machine_readable_events(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -160,28 +200,40 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(request.intent, "project")
 
     def test_cmd_agent_plain_mode_still_prints_summary_text(self) -> None:
-        args = mock.Mock(
-            provider="deepseek",
-            port=9222,
-            project=".",
-            task=["fix"],
-            max_turns=4,
-            json=False,
-        )
-        provider = mock.Mock()
-        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as td:
+            args = mock.Mock(
+                provider="deepseek",
+                port=9222,
+                project=td,
+                task=["fix"],
+                max_turns=4,
+                json=False,
+                readonly=False,
+                auto=False,
+                state_home=td,
+            )
+            stdout = io.StringIO()
 
-        with (
-            mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.agents.runner.run", return_value=RunResult("plain summary")),
-            mock.patch("codey.providers.controls.begin_task_context"),
-            mock.patch("codey.providers.controls.end_task_context"),
-            mock.patch("sys.stdout", stdout),
-        ):
-            exit_code = cli.cmd_agent(args)
+            def fake_headless(request, *, emit_jsonl):
+                emit_jsonl({
+                    "schema_version": 1,
+                    "type": "task_done",
+                    "run_id": "run-1",
+                    "session_id": "session-1",
+                    "summary": "plain summary",
+                    "stop_reason": "done",
+                    "mode": "agent",
+                })
+                return HeadlessResult(0, "run-1", "session-1", "done")
 
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(stdout.getvalue(), "plain summary\n")
+            with (
+                mock.patch("codey.app.headless_runner.run_headless", side_effect=fake_headless),
+                mock.patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.cmd_agent(args)
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(stdout.getvalue(), "plain summary\n")
 
     def test_cmd_agent_json_readonly_maps_to_headless_intent(self) -> None:
         with tempfile.TemporaryDirectory() as td:

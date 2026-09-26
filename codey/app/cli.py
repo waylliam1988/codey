@@ -54,67 +54,74 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project = Path(args.project).resolve()
     json_mode = getattr(args, "json", False) is True
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
-    if json_mode:
-        from codey.app.headless_runner import (
-            HeadlessRequest,
-            emit_jsonl,
-            run_headless,
-        )
-        from codey.storage.local_store import DEFAULT_STATE_HOME
+    from codey.app.headless_runner import (
+        HeadlessRequest,
+        emit_jsonl,
+        run_headless,
+    )
+    from codey.storage.local_store import DEFAULT_STATE_HOME
 
-        state_home_arg = getattr(args, "state_home", None)
-        state_home = (
-            Path(state_home_arg).expanduser()
-            if state_home_arg
-            else DEFAULT_STATE_HOME
-        )
-        request = HeadlessRequest(
-            project=project,
-            task=task,
-            provider_id=args.provider,
-            max_turns=args.max_turns,
-            intent=(
-                "planning_readonly"
-                if getattr(args, "readonly", False) is True
-                else ("auto" if getattr(args, "auto", False) is True else "project")
-            ),
-            state_home=state_home,
-            port=args.port,
-        )
+    state_home_arg = getattr(args, "state_home", None)
+    state_home = (
+        Path(state_home_arg).expanduser()
+        if state_home_arg
+        else DEFAULT_STATE_HOME
+    )
+    project.mkdir(parents=True, exist_ok=True)
+    request = HeadlessRequest(
+        project=project,
+        task=task,
+        provider_id=args.provider,
+        max_turns=args.max_turns,
+        intent=(
+            "planning_readonly"
+            if getattr(args, "readonly", False) is True
+            else ("auto" if getattr(args, "auto", False) is True else "project")
+        ),
+        state_home=state_home,
+        port=args.port,
+    )
+    if json_mode:
         result = run_headless(
             request,
             emit_jsonl=lambda payload: emit_jsonl(payload, file=sys.stdout),
         )
         return result.exit_code
+    rows: list[dict[str, object]] = []
+    result = run_headless(request, emit_jsonl=rows.append)
+    for row in rows:
+        line = _human_cli_line(row)
+        if line:
+            _safe_print(line, file=sys.stderr)
+    done = next(
+        (row for row in reversed(rows) if str(row.get("type") or "") == "task_done"),
+        None,
+    )
+    _safe_print(str((done or {}).get("summary") or ""), file=sys.stdout)
+    return result.exit_code
 
-    from codey.agents.runner import run
-    from codey.providers import connect_provider
-    from codey.providers import controls as provider_controls
-    from codey.runtime.observe.events import render_run_event
 
-    project.mkdir(parents=True, exist_ok=True)
-    provider_controls.begin_task_context(f"cli-agent:{args.provider}")
-    provider = None
-    try:
-        provider = connect_provider(args.provider, port=args.port)
-        def on_event(event) -> None:
-            _safe_print(render_run_event(event), file=sys.stderr)
-
-        result = run(
-            provider,
-            project,
-            task,
-            max_turns=args.max_turns,
-            on_event=on_event,
-        )
-    finally:
-        try:
-            if provider is not None:
-                provider.close()
-        finally:
-            provider_controls.end_task_context()
-    _safe_print(result.summary, file=sys.stdout)
-    return 0
+def _human_cli_line(row: dict[str, object]) -> str:
+    """One quiet human line per headless event; nothing machine-shaped."""
+    kind = str(row.get("type") or "")
+    if kind == "task_start":
+        return f"[codey] start mode={row.get('mode', '')} provider={row.get('provider', '')}"
+    if kind in {"status", "info"}:
+        text = str(row.get("status") or row.get("text") or "").strip()
+        return f"[codey] {text}" if text else ""
+    if kind in {"tool_started", "tool"}:
+        tool = str(row.get("tool") or "")
+        path = str(row.get("path") or "")
+        extra = f" {path}" if path else ""
+        command = str(row.get("command") or "")
+        if command:
+            extra += f" $ {command[:120]}"
+        status = "" if kind == "tool_started" else (
+            "ok" if row.get("ok") else "failed")
+        return f"[turn {row.get('turn', '')}] {tool}{extra} {status}".rstrip()
+    if kind in {"shell_request", "shell_rejected"}:
+        return "[codey] shell commands need approval; denied headlessly."
+    return ""
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
@@ -476,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent.add_argument("--json", action="store_true", help="emit JSONL events on stdout")
     sp_agent.add_argument("--readonly", action="store_true", help="run a read-only planning task in JSONL mode")
     sp_agent.add_argument("--auto", action="store_true", help="let JSONL mode choose the execution path automatically")
-    sp_agent.add_argument("--state-home", default="", help="local Codey state directory for JSONL mode")
+    sp_agent.add_argument("--state-home", default="", help="local Codey state directory")
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
 

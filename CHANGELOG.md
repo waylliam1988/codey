@@ -21,6 +21,21 @@
 - The unified-auto `ACTION` protocol handling is unchanged: unparseable output
   stays a plain answer, denied actions strip markers; no second call ever.
 
+## Unreleased - Live-fire release sweep vs KoboldCpp (no release)
+
+- Local default socket timeout 180s -> 600s: with `stream=False` the timeout
+  is the full-generation budget, and a 400-word advisor-shaped generation took
+  242s live; anything shorter re-creates the 10053 abandon on long outputs.
+  600s covers Kobold's 1024-token window at the slowest observed ~2 tok/s;
+  localhost-refused still fails fast. Verified live: 242s generation delivered
+  with exactly 1 POST. Residual sub-1 tok/s note kept in code for streaming.
+- Fixed `python -m codey agent` non-JSON mode (`run() got an unexpected keyword
+  argument 'max_turns'` on every invocation): it now runs the same headless
+  production spine and renders quiet human lines plus the final summary.
+  Verified live: real tool-loop edit created `hello.txt` (`hello codey`),
+  exit 0. `codey chat --provider local` wording fix covered earlier.
+- Full suite: `4342 passed, 7 skipped, 1387 subtests passed`.
+
 ## Unreleased - Experience memory replaces per-turn Ghost model calls (no release)
 
 - Unified `auto` loop: the first normal model call answers directly or requests

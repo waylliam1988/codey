@@ -2,6 +2,18 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - KoboldCpp 实机发布前扫测（未发布）
+
+- 本地默认超时 180 秒 -> 600 秒：`stream=False` 下超时即整轮生成预算，实机
+  400 词顾问形生成用了 242 秒，短了就会在长输出上复现 10053 掐断。600 秒覆盖
+  Kobold 1024 窗口在最慢约 2 tok/s 下的耗时；本机拒连依然快速失败。实机验证：
+  242 秒生成一次 POST 送达。低于 1 tok/s 的残留记在代码注释，长期答案是流式。
+- 修 `python -m codey agent` 非 JSON 模式（每次调用必报
+  `run() got an unexpected keyword argument 'max_turns'`）：统一走 headless
+  生产脊柱，只渲染安静的人类可读行与最终总结。实机验证：真实工具循环创建
+  `hello.txt`（内容 `hello codey`），exit 0。
+- 全量：`4342 passed, 7 skipped, 1387 subtests passed`。
+
 ## Unreleased - 辅助调用按 provider 超时；观察存真正 reply（未发布）
 
 - 找到第二族 KoboldCpp `WinError 10053` 根因：共识顾问调用固定 60 秒超时

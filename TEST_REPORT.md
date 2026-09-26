@@ -1,5 +1,29 @@
 # Codey Test Report
 
+## Live-fire release sweep vs KoboldCpp 31B (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/providers/local_openai.py (DEFAULT_TIMEOUT 180 -> 600 with generation-window rationale)
+codey/app/cli.py                (non-JSON agent runs headless spine + human lines; stale runner.run removed)
+tests/test_cli.py               (headless-spine + human-summary regression tests)
+```
+
+Verification (local Windows + live KoboldCpp at 127.0.0.1:5001, Gemma-4-Queen-31B Q6_K):
+
+- Instrumented harness logged every Codey->Kobold exchange (method/path/timeout/
+  duration/bytes/error): direct chat, unified-auto chat/research/project, CLI
+  chat — each exactly 1 POST, 0 errors, 0 retries.
+- 242s advisor-shaped generation delivered with 1 POST after the timeout fix
+  (180s demonstrably abandoned the same prompt class live).
+- `python -m codey agent --provider local` created `hello.txt` (`hello codey`)
+  through the real tool loop, exit 0; `ghost list/export` serve the control
+  plane including `observations`.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4342 passed, 7 skipped, 1387 subtests passed in 364.53s (0:06:04)`.
+- This entry was written after the full suite. No release was made.
+
 ## Provider-aware auxiliary timeouts; visible-reply observations (2026-09-26)
 
 Scope (production, no release):

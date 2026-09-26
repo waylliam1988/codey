@@ -12,8 +12,15 @@ import urllib.request
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = 600.0
 DEFAULT_TEMPERATURE = 0.3
+# Socket-timeout rationale (stream=False: the timeout IS the full-generation
+# budget, since Kobold replies only after the whole completion). Kobold's
+# 1024-token window at the slowest observed local speed (~2 tok/s) needs
+# ~540s; 600s covers it with margin. A dead localhost fails fast with
+# connection-refused, so a large cap only binds accepted-but-silent servers.
+# Residual: sub-1 tok/s hardware can still outrun any fixed cap; the durable
+# answer is streaming (progress-observable) output, not a larger number.
 _RESPONSE_PREVIEW_LIMIT = 400
 _RESPONSE_RETRIES = 1
 # Memory bound only (not a total time guarantee): a runaway local service
