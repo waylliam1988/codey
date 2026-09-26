@@ -800,7 +800,10 @@ def read_file(
         line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
     except ValueError as exc:
         return ToolOutcome.error(str(exc))
-    # Streamed paging: O(page) memory, same total/offset/UTF-8 semantics.
+    # Streamed paging: keeps one page in memory. Lines are split on
+    # LF/CRLF by the file iterator (universal newlines); other Unicode
+    # line boundaries such as VT are not line breaks here by intent.
+    # A single over-long line is still read fully before preview cut.
     lines: list[str] = []
     total = 0
     try:

@@ -211,6 +211,7 @@ function draw(canvas, graph, detail, options) {
   const state = { scale: 1, tx: 0, ty: 0, width: 1, height: 1, hover: null, selected: null };
   let frame = 0;
   let running = true;
+  let stillFrames = 0;
   let draggingNode = null;
   let panning = false;
   let start = null;
@@ -242,8 +243,23 @@ function draw(canvas, graph, detail, options) {
 
   function animate() {
     if (!running) return;
-    stepResearchGraph(nodes, edges);
+    const moved = stepResearchGraph(nodes, edges);
     draw();
+    if (moved < 0.4) {
+      stillFrames += 1;
+      if (stillFrames >= 30) {
+        frame = 0;
+        return;
+      }
+    } else {
+      stillFrames = 0;
+    }
+    frame = requestAnimationFrame(animate);
+  }
+
+  function wake() {
+    if (!running || frame) return;
+    stillFrames = 0;
     frame = requestAnimationFrame(animate);
   }
 
@@ -341,6 +357,7 @@ function draw(canvas, graph, detail, options) {
     }
     start = null;
     draw();
+    wake();
   }
 
   function onWheel(event) {
@@ -439,15 +456,21 @@ function stepResearchGraph(nodes, edges) {
       b.vy -= dy * force;
     }
   }
+  let maxMove = 0;
   for (const node of nodes) {
     if (node.fixed) continue;
     node.vx += -node.x * 0.0025;
     node.vy += ((node.layerY || 0) - node.y) * 0.004;
     node.vx *= 0.86;
     node.vy *= 0.86;
-    node.x += Math.max(-6, Math.min(6, node.vx));
-    node.y += Math.max(-6, Math.min(6, node.vy));
+    const stepX = Math.max(-6, Math.min(6, node.vx));
+    const stepY = Math.max(-6, Math.min(6, node.vy));
+    node.x += stepX;
+    node.y += stepY;
+    const move = Math.max(Math.abs(stepX), Math.abs(stepY));
+    if (move > maxMove) maxMove = move;
   }
+  return maxMove;
 }
 
 function drawGraphEdge(ctx, edge, state, neighbors, colors) {

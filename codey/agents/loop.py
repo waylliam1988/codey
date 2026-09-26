@@ -615,33 +615,6 @@ def _finish_max_turns(session, turn: int, summary: str = "") -> RunResult:
     return _finish(session, body, "max_turns", turn)
 
 
-def _decide_done(session, calls: list, control) -> str:
-    """Classify a done control without side effects.
-
-    Returns one of "followup_info", "need_verification", "need_default_check",
-    "accept". Emits nothing; the caller owns reminders and yields.
-    """
-    if any(call.name in INFORMATION_TOOL_NAMES for call in calls):
-        return "followup_info"
-    if (
-        session.config.verification_required
-        and session.progress.wrote_files
-        and not verification_attempted_after_latest_edit(session)
-    ):
-        return "need_verification"
-    candidate = selected_verification_candidate(session)
-    trusted_green = verification_is_fresh(session, candidate)
-    if (
-        not session.config.verification_required
-        and not session.config.verification_forbidden
-        and candidate is not None
-        and not trusted_green
-        and session.verification.default_reminded_epoch != session.verification.edit_epoch
-    ):
-        return "need_default_check"
-    return "accept"
-
-
 def run(request: AgentRequest) -> RunResult:
     session = _setup_loop(request)
     if not request.recovered_tool_outcomes:

@@ -24,7 +24,7 @@ from codey.policies.shell_risk import classify_shell_risk
 from codey.providers import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.supervisor import HealthStoreError
-from codey.runs.ledger import RunLedgerWriter
+from codey.runs.ledger import LedgerWriteFailed, RunLedgerWriter
 from codey.runtime.observe.events import (
     RunEvent,
     render_run_event,
@@ -99,9 +99,10 @@ def build_hooks(
             return
         try:
             action(work.ledger)
-        except Exception as exc:
-            # IO failure marks this run's ledger unavailable; the task itself
-            # still completes. One bounded diagnostic, no new persisted file.
+        except (LedgerWriteFailed, OSError, ValueError, TimeoutError) as exc:
+            # Expected storage faults mark this run's ledger unavailable;
+            # the task itself still completes. One bounded diagnostic, no
+            # new persisted file.
             logger.warning(
                 "run ledger unavailable: %s",
                 str(exc)[:120],

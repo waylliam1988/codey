@@ -301,6 +301,32 @@ class SnapshotStore:
                     _remove_file(body_path)
                 raise
 
+    def require_baseline(self, root: str | Path, rel: str) -> str | None:
+        """Read-only recovery basis; never writes.
+
+        The manifest and the entry must both exist. Missing or damaged
+        state raises ``StoreCorruption`` so a lost manifest can never be
+        rebuilt from the current working file.
+        """
+        resolved_root = Path(root).expanduser().resolve()
+        try:
+            probe = _safe_join(resolved_root, rel)
+            canonical = probe.relative_to(resolved_root).as_posix()
+        except (ValueError, OSError) as exc:
+            raise ValueError(f"unsafe snapshot path: {rel!r}") from exc
+        if canonical != rel:
+            raise ValueError(f"unsafe snapshot path: {rel!r}")
+        body_path = self._baseline_path(resolved_root, rel)
+        manifest_path = self.path_for(resolved_root)
+        with with_file_lock(self._lock_target(resolved_root)):
+            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            if payload is None:
+                raise StoreCorruption(manifest_path, f"baseline manifest missing: {rel!r}")
+            files = _manifest_files_or_raise(payload, manifest_path)
+            if rel not in files:
+                raise StoreCorruption(manifest_path, f"baseline entry missing: {rel!r}")
+            return self._persisted_baseline_locked(resolved_root, rel, files[rel], body_path)
+
     def _persisted_baseline_locked(
         self,
         resolved_root: Path,
@@ -353,16 +379,34 @@ class SnapshotStore:
         return body
 
     def _disk_total_bytes_locked(self, resolved_root: Path, files: dict) -> int:
-        # Disk-view size guard; corrupt entries validate on access, not here.
+        # Disk-view size guard from manifest refs + stat sizes only.
+        # Missing, renamed, linked, or non-regular bodies are corruption:
+        # never silently skipped, never re-decoded here.
+        import stat as _stat
+
         total = 0
         for rel, entry in files.items():
             if not isinstance(entry, dict) or entry.get("baseline") is None:
                 continue
+            if not isinstance(rel, str):
+                raise StoreCorruption(self.path_for(resolved_root), "baseline entry path")
+            baseline_ref = entry.get("baseline")
+            if not isinstance(baseline_ref, str):
+                raise StoreCorruption(self.path_for(resolved_root), f"baseline body name: {rel!r}")
+            if baseline_ref != self._baseline_path(resolved_root, rel).name:
+                raise StoreCorruption(self.path_for(resolved_root), f"baseline body name: {rel!r}")
+            body_path = self._baseline_path(resolved_root, rel)
             try:
-                body = _read_text_bounded(self._baseline_path(resolved_root, str(rel)), max_bytes=MAX_SNAPSHOT_FILE_BYTES)
-            except (OSError, UnicodeDecodeError, ValueError):
-                continue
-            total += len(body.encode("utf-8"))
+                if body_path.is_symlink():
+                    raise StoreCorruption(self.path_for(resolved_root), f"baseline body link: {rel!r}")
+                file_stat = body_path.stat()
+            except OSError as exc:
+                raise StoreCorruption(
+                    self.path_for(resolved_root), f"baseline body missing: {rel!r}"
+                ) from exc
+            if not _stat.S_ISREG(file_stat.st_mode):
+                raise StoreCorruption(self.path_for(resolved_root), f"baseline body type: {rel!r}")
+            total += int(file_stat.st_size)
             if total > MAX_SNAPSHOT_TOTAL_BYTES:
                 break
         return total
@@ -553,13 +597,19 @@ class ChangeTracker:
         rel_posix = path.relative_to(self.root).as_posix()
         with self._lock:
             cached = rel_posix in self._before
+            cached_value = self._before.get(rel_posix) if cached else None
             store = self.store
         if cached:
-            # Even a cached path must see a damaged disk entry: validate via
-            # the read-only branch of put_baseline without rewriting.
+            # Cached paths re-validate the durable basis read-only: a lost
+            # manifest or entry, or a disk value that no longer matches
+            # memory, is corruption -- never rebuilt from the working file.
             if store is not None:
-                current = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
-                store.put_baseline(self.root, rel_posix, current)
+                persisted = store.require_baseline(self.root, rel_posix)
+                if persisted != cached_value:
+                    raise StoreCorruption(
+                        store.path_for(self.root),
+                        f"baseline drift: {rel_posix!r}",
+                    )
             return
         before = _read_text_or_none(path, max_bytes=MAX_SNAPSHOT_FILE_BYTES)
         with self._lock:

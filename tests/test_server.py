@@ -1813,40 +1813,47 @@ class LocalProviderApiTests(unittest.TestCase):
 
     def test_ui_state_post_allows_missing_origin_for_same_origin_beacon(self) -> None:
         httpd, host, port = self._start_server()
-        state = server.AppContext()
-        try:
-            with mock.patch.object(server, "STATE", state):
-                conn = http.client.HTTPConnection(host, port, timeout=5)
-                conn.request(
-                    "POST",
-                    "/api/ui_state",
-                    body=json.dumps({"state": {}}),
-                    headers={"Content-Type": "application/json"},
-                )
-                missing_origin = conn.getresponse()
-                missing_payload = json.loads(missing_origin.read().decode("utf-8"))
-                conn.close()
+        import tempfile
 
-                conn = http.client.HTTPConnection(host, port, timeout=5)
-                conn.request(
-                    "POST",
-                    "/api/ui_state",
-                    body=json.dumps({"state": {}}),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Origin": f"http://{host}:{port}",
-                    },
-                )
-                allowed = conn.getresponse()
-                allowed_payload = json.loads(allowed.read().decode("utf-8"))
-                conn.close()
+        with tempfile.TemporaryDirectory() as td:
+            from codey.app import context as app_context
 
-            self.assertEqual(missing_origin.status, 200)
-            self.assertTrue(missing_payload["ok"])
-            self.assertEqual(allowed.status, 200)
-            self.assertTrue(allowed_payload["ok"])
-        finally:
-            httpd.shutdown()
+            state = app_context.AppContext(td)
+            base = int(state.load_ui_state().get("revision") or 0)
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request(
+                        "POST",
+                        "/api/ui_state",
+                        body=json.dumps({"state": {}, "base_revision": base}),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    missing_origin = conn.getresponse()
+                    missing_payload = json.loads(missing_origin.read().decode("utf-8"))
+                    conn.close()
+
+                    current = int(state.load_ui_state().get("revision") or 0)
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request(
+                        "POST",
+                        "/api/ui_state",
+                        body=json.dumps({"state": {}, "base_revision": current}),
+                        headers={
+                            "Content-Type": "application/json",
+                            "Origin": f"http://{host}:{port}",
+                        },
+                    )
+                    allowed = conn.getresponse()
+                    allowed_payload = json.loads(allowed.read().decode("utf-8"))
+                    conn.close()
+
+                self.assertEqual(missing_origin.status, 200)
+                self.assertTrue(missing_payload["ok"])
+                self.assertEqual(allowed.status, 200)
+                self.assertTrue(allowed_payload["ok"])
+            finally:
+                httpd.shutdown()
 
     def test_new_chat_returns_409_while_session_run_is_active(self) -> None:
         httpd, host, port = self._start_server()
@@ -5517,7 +5524,7 @@ class SessionThreadingTests(unittest.TestCase):
                     ],
                     "projects": [],
                 }
-            )
+            , base_revision=0)
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -5559,7 +5566,7 @@ class SessionThreadingTests(unittest.TestCase):
                 {
                     "active_id": "session-1",
                     "updated_at": 1,
-                    "revision": 1,
+                    "revision": 0,
                     "sessions": [
                         {
                             "id": "session-1",
@@ -5584,7 +5591,8 @@ class SessionThreadingTests(unittest.TestCase):
                             "createdAt": 0,
                         }
                     ],
-                }
+                },
+                base_revision=0,
             )
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -5646,7 +5654,7 @@ class SessionThreadingTests(unittest.TestCase):
                 {
                     "active_id": "session-1",
                     "updated_at": 1,
-                    "revision": 1,
+                    "revision": 0,
                     "sessions": [
                         {
                             "id": "session-1",
@@ -5680,7 +5688,8 @@ class SessionThreadingTests(unittest.TestCase):
                             "createdAt": 0,
                         }
                     ],
-                }
+                },
+                base_revision=0,
             )
 
             restarted = server.AppContext(state_home)
@@ -7253,7 +7262,7 @@ class UiLaunchTests(unittest.TestCase):
             payload = {
                 "active_id": "chat-1",
                 "updated_at": 123,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [
                     {
                         "id": "chat-1",
@@ -7268,9 +7277,12 @@ class UiLaunchTests(unittest.TestCase):
                 "projects": [],
             }
 
-            state.save_ui_state(payload)
+            saved = state.save_ui_state(payload, base_revision=0)
 
-            self.assertEqual(state.load_ui_state(), payload)
+            loaded = state.load_ui_state()
+            self.assertEqual(loaded["active_id"], payload["active_id"])
+            self.assertEqual(loaded["sessions"], saved["sessions"])
+            self.assertEqual(loaded["revision"], 1)
 
     def test_serve_launches_pywebview_window(self) -> None:
         fake_webview = mock.Mock()

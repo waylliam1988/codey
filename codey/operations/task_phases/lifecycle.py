@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from codey.operations.context import RunWork
 from codey.operations.project_completion_flow import MAX_COMPLETION_REPAIR_ROUNDS
 from codey.operations.task_state import TaskState
+from codey.runs.ledger import LedgerWriteFailed
 from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -17,6 +19,8 @@ from codey.runtime.observe.terminalizer import terminal_turns
 from codey.task.kind import trace_mode, ui_mode
 from codey.task.model import TaskSubmission
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -145,7 +149,8 @@ def open_run_ledger(
                 mode=ui_mode(task_kind, request.project),
             )
             work.record_agent_events_in_ledger = task_kind in {"project", "planning_readonly"}
-        except Exception:
+        except (LedgerWriteFailed, OSError, ValueError, TimeoutError) as exc:
+            logger.warning("run ledger open failed: %s", str(exc)[:120])
             work.ledger = None
 
 

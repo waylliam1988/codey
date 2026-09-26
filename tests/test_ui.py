@@ -359,7 +359,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         block = HTML[start:end]
         self.assertIn("type: 'info'", block)
         self.assertIn("Local update paused", block)
-        self.assertIn("Local context", block)
+        self.assertNotIn("Local context", block)
         self.assertNotIn("Post-turn warning (", block)
         self.assertIn("local-health:", block)
         self.assertIn("eventKey: sseEventKey(data", block)
@@ -873,7 +873,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("function uid() { return window.CodeyUiState.uid(); }", HTML)
         self.assertIn("fetch('/api/ui_state'", UI_STATE_JS)
         self.assertIn("method: 'POST'", UI_STATE_JS)
-        self.assertIn("body: JSON.stringify({ state: currentUiState() })", UI_STATE_JS)
+        self.assertIn("state: currentUiState()", UI_STATE_JS)
+        self.assertIn("base_revision", UI_STATE_JS)
         self.assertIn("navigator.sendBeacon('/api/ui_state'", UI_STATE_JS)
         self.assertIn("function connectEvents()", HTML)
         self.assertIn("bindUiStatePagehide();", HTML)

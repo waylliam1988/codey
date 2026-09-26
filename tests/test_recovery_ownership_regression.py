@@ -139,12 +139,13 @@ class RestoreLeaseTests(unittest.TestCase):
     def test_restore_holds_writer_lease(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as home:
             root = Path(td)
-            (root / "a.py").write_text("B", encoding="utf-8")
+            (root / "a.py").write_text("A", encoding="utf-8")
             home_path = Path(home)
             ctx_a = AppContext(home_path)
             ctx_b = AppContext(home_path)
             tracker = ctx_a.change_tracker_for(str(root), persistent=True)
             tracker.capture_before("a.py")
+            (root / "a.py").write_text("B", encoding="utf-8")
             tracker.capture_after("a.py")
             self.assertTrue(ctx_a.acquire_project_writer(str(root)))
             try:
@@ -158,8 +159,8 @@ class RestoreLeaseTests(unittest.TestCase):
             finally:
                 ctx_a.release_project_writer(str(root))
             status, _ = restore_changes_response(ctx_b, {"project": str(root)})
-            # Either restored or conflict, but never silently overwritten while locked.
-            self.assertIn(status, (200, 409, 404))
+            self.assertEqual(status, 200)
+            self.assertEqual((root / "a.py").read_text(encoding="utf-8"), "A")
 
 
 class SetupTerminalTests(unittest.TestCase):

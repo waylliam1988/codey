@@ -2,6 +2,58 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 边界加固：快照、账本、Ghost 输入、UI 冲突（未发布）
+
+- 快照恢复依据只读：新增 `SnapshotStore.require_baseline()` 永不写盘；
+  `capture_before()` 缓存命中只读校验它，manifest/条目丢失或内存与磁盘不一
+  致一律抛 `StoreCorruption`，不再用工作文件重建基线。容量改按 manifest
+  引用加 `stat` 大小统计，缺失/链接/非常规 body 即损坏，不再跳过。新增
+  manifest 消失、条目消失、磁盘漂移三种无写断言，以及旧 body 缺失阻塞新增
+  与容量边界测试。
+- 账本严格化封住 Ghost 输入：任一坏行（坏 JSON/schema、`seq` 不连续、坏尾行）
+  都让 `read_ledger()` 返回 `[]`；writer 重开损坏文件直接拒绝追加
+  （`ledger_corrupt` 快速失败，不再跳行续写）；Ghost `_run_projection()` 额外
+  要求 `projection.complete`，不完整即记一次 `ledger_incomplete` 并返回空。
+  覆盖坏中行/坏尾行/缺 `run_finished`/重开追加，以及 Ghost 不取数且告警。
+  其余独立完整来源的学习照常进行。
+- Ghost Knowledge 删除宽范围回退：去掉不带 `project` 的第二次 `recent()`
+  查询；带 `project` 查询失败记 `knowledge_unreadable` 并返回空。入库前按
+  note 自身 `project`/`session_id` 与请求范围核对，不用当前身份补缺字段；
+  不匹配跳过并记一条有界 `knowledge_scope_mismatch`。覆盖查询失败与外项目
+  note 两 utterly 测试。
+- UI 状态单写者加冲突协议：`serve()` 启动前拿 server 实例租约，第二个实例
+  明确报 state home 被占用；`UiStateStore.save()` 接 `base_revision`，服务端
+  生成下一 revision，内容相同幂等成功，内容不同抛 `UiStateConflict` 永不静默
+  覆盖；API 冲突映射 409 并返回当前 revision。前端单在途请求、排队合并，
+  409 保留本地内容并安静提示，不自动回盖服务端，失败不记成功。覆盖同版本/
+  旧版本冲突、双页面交错、重复幂等、双 serve 争锁。不做浅合并 sessions。
+- Research 保住计数：`_review_done_candidate()` 接收累计 `advisor_count` 并
+  返回命名 `_DoneReview`（不再用七元组，`ReportQualityReview` 实类型，去掉
+  `type: ignore`）；最终 accept 保留计数；`_build_research_result()` 删除未用
+  的 `final_open_questions` 参数并换行整理。advisor 用例断言最终
+  `advisor_count == 1`。
+- 失败只在真边界降级：`_finish_setup_failure()` 去静默吞错，记 traceback，
+  检查 `finish_run()` 返回值（`False` 记警告加防御性放槽，不造第二条
+  `task_done`）；意外初始化异常保留堆栈；`append_ledger()` 只降级
+  `LedgerWriteFailed`/OSError/ValueError/TimeoutError，编程错误直接暴露；
+  `open_run_ledger()` 对预期打开失败记一条有界诊断。Restore 直取 writer
+  租约（去掉 `getattr` 旁路）；锁测试改为先 A 后 B，锁内 409 且仍 B，解锁后
+  200 且回 A。
+- 小而有效的减法：`ConversationStore.delete()` 与 `save()` 同目录锁；SSE 删掉
+  自造的三错重连循环（只留断线提示与 hello 对账）；研究图静止约 30 帧后停
+  rAF（`stepResearchGraph()` 返回最大位移，拖动释放重启，96 节点上限，不加
+  第二调度器）；删除未调用的 `_decide_done()`；`dispatch.py` 用 `TaskRunDeps`
+  类型并直取字段；`provider_ui.js` 抽纯 `extractCatalog()`；Ghost 告警改为中性
+  文案；`read_file()` 明确 LF/CRLF 行定义并修正注释。
+- 验证：`python -m ruff check codey tests tools`、`git diff --check`、定向套件，
+  最后全量 `python -m pytest -q -o faulthandler_timeout=120`（`4315 passed,
+  7 skipped, 1374 subtests passed in 380.34s`）。web 资产 `node --check` 由 CI
+  执行（本地无 node，用 `test_ui.py` 内容断言覆盖）。架构顶按需最小上调并注明
+  原因（`research/runner.py` 1400、`toolchain/runtime.py` 1310、
+  `workspace/changes.py` 1180；同轮 `agents/loop.py` 减 25 行）。未发布。
+  Ghost 作为生产能力保留；不拆 worker、不合五账本、不按行数机械拆分、不批量
+  清扫 `except`。
+
 ## Unreleased - 恢复所有权与小步减法加固（未发布）
 
 - 快照单写者收口：`put_baseline()` 按键存在判定，`null` 条目抛 `StoreCorruption`

@@ -65,14 +65,21 @@ function applyRecommended(data) {
   }
 }
 
-function applyProviderConfig(data) {
-  if (!data || !Array.isArray(data.providers)) return false;
+function extractCatalog(data) {
+  if (!data || !Array.isArray(data.providers)) return null;
   const ids = data.providers.map((item) => item && item.id).filter(Boolean);
-  if (!ids.length) return false;
+  if (!ids.length) return null;
   const labels = {};
   for (const item of data.providers) {
     if (item && item.id) labels[item.id] = item.label || item.id;
   }
+  return { ids, labels };
+}
+
+function applyProviderConfig(data) {
+  const catalog = extractCatalog(data);
+  if (!catalog) return false;
+  const { ids, labels } = catalog;
   let changed = false;
   for (const id of ids) {
     if (!PROVIDERS.includes(id)) { changed = true; break; }
@@ -104,14 +111,10 @@ async function adoptBackendCatalog() {
     const r = await fetch('/api/provider_catalog', { cache: 'no-store' });
     if (!r.ok) return;
     const data = await r.json();
-    if (!data || !Array.isArray(data.providers) || !data.providers.length) return;
-    const ids = data.providers.map((item) => item && item.id).filter(Boolean);
-    const labels = {};
-    for (const item of data.providers) {
-      if (item && item.id) labels[item.id] = item.label || item.id;
-    }
-    if (ids.length && window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
-      window.CodeyUiState.setProviders(ids, labels, data.default);
+    const catalog = extractCatalog(data);
+    if (!catalog) return;
+    if (window.CodeyUiState && typeof window.CodeyUiState.setProviders === 'function') {
+      window.CodeyUiState.setProviders(catalog.ids, catalog.labels, data.default);
     }
   } catch {}
 }

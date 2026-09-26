@@ -567,6 +567,15 @@ def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str):
                 event={"session_id": session_id, "run_id": run_id},
                 run_id=run_id,
             )
+        return None
+    if not projection.complete:
+        _record_ghost_warning(
+            deps, "ledger_incomplete",
+            ValueError("ledger projection incomplete"),
+            event={"session_id": session_id, "run_id": run_id},
+            run_id=run_id,
+        )
+        return None
     return projection
 
 

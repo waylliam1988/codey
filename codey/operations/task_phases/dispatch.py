@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.operations.task_run import TaskRunDeps
 
 from codey.ghost.work_queue import GhostWorkItem
 from codey.operations.chat import run_chat_mode
@@ -46,7 +49,7 @@ from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_f
 
 
 def connect_and_build_frame(
-    deps: Any,
+    deps: TaskRunDeps,
     state: TaskState,
     request: TaskSubmission,
     work: RunWork,
@@ -123,7 +126,7 @@ def connect_and_build_frame(
     return frame, provider, provider_id
 
 
-def review_flow_deps(deps: Any) -> ReviewFlowDeps:
+def review_flow_deps(deps: TaskRunDeps) -> ReviewFlowDeps:
     return ReviewFlowDeps(
         state=deps.state,
         collect_changes=deps.collect_changes,
@@ -133,7 +136,7 @@ def review_flow_deps(deps: Any) -> ReviewFlowDeps:
     )
 
 
-def _research_deps(deps: Any) -> ResearchFlowDeps:
+def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
     return ResearchFlowDeps(
         state=deps.state,
         knowledge_store=deps.knowledge_store,
@@ -141,11 +144,11 @@ def _research_deps(deps: Any) -> ResearchFlowDeps:
         search_factory=deps.search_factory or default_research_search_provider,
         run_research_advisors=deps.run_research_advisors,
         ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-        managed_outputs=getattr(deps, "managed_outputs", None),
+        managed_outputs=deps.managed_outputs,
     )
 
 
-def _planning_deps(deps: Any) -> PlanningFlowDeps:
+def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
     return PlanningFlowDeps(
         state=deps.state,
         agent_run=deps.agent_run,
@@ -157,7 +160,7 @@ def _planning_deps(deps: Any) -> PlanningFlowDeps:
     )
 
 
-def project_completion_deps(deps: Any) -> ProjectCompletionDeps:
+def project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
     return ProjectCompletionDeps(
         state=deps.state,
         agent=AgentAccess(
@@ -183,15 +186,15 @@ def project_completion_deps(deps: Any) -> ProjectCompletionDeps:
             review_log_lines=deps.review_log_lines,
         ),
         runtime=RuntimeAccess(
-            mutations=getattr(deps, "runtime_mutations", None),
-            effects=getattr(deps, "runtime_effects", None),
+            mutations=deps.runtime_mutations,
+            effects=deps.runtime_effects,
             tool_result_delivery=getattr(deps.state, "tool_result_delivery", None),
         ),
     )
 
 
 def dispatch_run_mode(
-    deps: Any,
+    deps: TaskRunDeps,
     project_completion_deps: ProjectCompletionDeps,
     review_deps: ReviewFlowDeps,
     work: RunWork,

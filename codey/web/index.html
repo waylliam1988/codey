@@ -1125,7 +1125,7 @@ function handleServerEvent(data) {
   if (data.type === 'ghost_post_turn_warning') {
     addToSession(sid, {
       type: 'info',
-      text: 'Local update paused — see Local context',
+      text: 'Local update paused',
       sessionId: sid,
       runId,
       eventKey: sseEventKey(data, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),

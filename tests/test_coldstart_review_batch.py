@@ -56,7 +56,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "Cached title",
@@ -67,7 +67,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
             import codey.storage.ui_state_store as ui_mod
             from codey.storage import local_store  # noqa: F401 (documents the wrong patch target)
 
@@ -265,7 +265,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             self.assertGreater(writer.seq, 0)
 
     def test_ledger_fast_path_falls_back_on_size_drift(self) -> None:
-        from codey.runs.ledger import RunLedgerStore
+        from codey.runs.ledger import LedgerWriteFailed, RunLedgerStore
 
         with tempfile.TemporaryDirectory() as td:
             store = RunLedgerStore(td)
@@ -274,15 +274,15 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                 provider="deepseek", mode="project",
             )
             writer.append("first_event", note="one")
-            seq_before = writer.seq
-            # External append behind the writer's back: size drifts.
+            # External splice behind the writer's back: non-continuous seq.
+            # A damaged stream must not be extended; the writer refuses.
             with writer.path.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write('{"schema_version":1,"seq":999,"type":"note","run_id":"r1","session_id":"s1"}\n')
-            writer.append("second_event", note="two")
-            self.assertGreater(writer.seq, seq_before + 1)
+            with self.assertRaises(LedgerWriteFailed):
+                writer.append("second_event", note="two")
 
     def test_ledger_fast_path_detects_same_size_content_change(self) -> None:
-        from codey.runs.ledger import RunLedgerStore, read_ledger
+        from codey.runs.ledger import LedgerWriteFailed, RunLedgerStore, read_ledger
 
         with tempfile.TemporaryDirectory() as td:
             store = RunLedgerStore(td)
@@ -300,11 +300,9 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     break
             assert len(tampered) == len(raw)
             writer.path.write_bytes(bytes(tampered))
-            writer.append("after_tamper", note="two")
-            rows = read_ledger(writer.path)
-            seqs = [row.payload.get("seq") for row in rows]
-            self.assertEqual(seqs, sorted(seqs))
-            self.assertEqual(len(set(seqs)), len(seqs))
+            with self.assertRaises(LedgerWriteFailed):
+                writer.append("after_tamper", note="two")
+            self.assertEqual(read_ledger(writer.path), [])
 
     def test_knowledge_index_close_fails_cleanly_on_reuse(self) -> None:
         from concurrent.futures import ThreadPoolExecutor

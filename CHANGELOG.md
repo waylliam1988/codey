@@ -2,6 +2,69 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Boundary hardening: snapshot, ledger, Ghost inputs, UI conflicts (no release)
+
+- Snapshot recovery basis is read-only: `SnapshotStore.require_baseline()` never
+  writes; `ChangeTracker.capture_before()` revalidates cached paths against it
+  and raises `StoreCorruption` on manifest/entry loss or memory-disk drift
+  instead of rebuilding the baseline from the working file. Capacity now uses
+  manifest refs plus `stat` sizes; missing/linked/non-regular bodies are
+  corruption, never skipped. Regressions cover manifest/entry/drift loss with
+  no-write assertions, missing-body blocks, and capacity bounds.
+- Ledger strictness closes Ghost inputs: any bad row (bad JSON/schema,
+  non-continuous `seq`, torn tail) makes `read_ledger()` return `[]`; the
+  writer refuses to extend a damaged file (`ledger_corrupt` fail-fast instead
+  of skipping rows); Ghost `_run_projection()` additionally requires
+  `projection.complete` and warns `ledger_incomplete`. Tests cover bad middle/
+  tail rows, unfinished prefixes, reopen-refusal, and Ghost silence plus one
+  warning. Ghost otherwise learns from intact independent sources as before.
+- Ghost Knowledge has no wide fallback: the project-less second `recent()`
+  query is deleted; a failed project query records `knowledge_unreadable` and
+  returns empty. Rows are checked against the request scope without filling
+  missing `project`/`session_id` from the caller; mismatches are skipped with
+  one bounded `knowledge_scope_mismatch`. Tests cover query failure and
+  foreign-project notes.
+- UI state is single-writer with conflicts: `serve()` holds a server-instance
+  lease (`acquire_lease`, second instance reports state-home busy);
+  `UiStateStore.save()` takes `base_revision`, mints the next revision
+  server-side, succeeds idempotently on identical content, and raises
+  `UiStateConflict` otherwise; the API maps it to 409 with the current
+  revision. The frontend keeps one in-flight save, merges queued edits, keeps
+  local content on 409 with a quiet conflict note, and never treats failure
+  as success. Tests cover same-base/old-base conflicts, interleaved pages,
+  idempotent retries, and lease contention. No shallow session merge.
+- Research keeps its count: `_review_done_candidate()` takes the accumulated
+  `advisor_count` and returns a named `_DoneReview` (no positional tuple,
+  `ReportQualityReview` typed, no `type: ignore`); the final accept preserves
+  the count; `_build_research_result()` drops the unused `final_open_questions`
+  arg and formats multiline. The advisor path now asserts `advisor_count == 1`.
+- Failures stay visible at real boundaries only: `_finish_setup_failure()`
+  logs tracebacks, checks `finish_run()` (`False` logs plus defensive slot
+  release, no second `task_done`), and unexpected setup errors keep stacks;
+  `append_ledger()` downgrades only `LedgerWriteFailed`/OSError/ValueError/
+  TimeoutError while programming errors surface; `open_run_ledger()` logs one
+  bounded diagnostic on expected open faults. Restore requires the writer
+  lease directly (no `getattr` bypass); its lock test now captures A, edits
+  to B, asserts 409-then-B under lease and 200-then-A after release.
+- Small effective subtractions: `ConversationStore.delete()` takes the same
+  directory lock as `save()`; SSE drops the self-made 3-error reconnect loop
+  (status hint plus hello reconciliation only); the research graph stops its
+  rAF after ~30 still frames via `stepResearchGraph()` displacement and
+  restarts on drag release (96-node cap, no second scheduler); dead
+  `_decide_done()` deleted; `dispatch.py` builders type against `TaskRunDeps`
+  with direct field access; `provider_ui.js` shares `extractCatalog()`; Ghost
+  warning copy is neutral (`Local update paused`); `read_file()` documents
+  LF/CRLF paging and drops the `splitlines`/`O(page)` overclaim.
+- Verification: `python -m ruff check codey tests tools`, `git diff --check`,
+  targeted suites, then final `python -m pytest -q
+  -o faulthandler_timeout=120` (`4315 passed, 7 skipped, 1374 subtests passed
+  in 380.34s`). `node --check` for web assets is CI-gated (no local node
+  binary; `test_ui.py` content assertions passed). Architecture ceilings
+  moved minimally with cause (`research/runner.py` 1400, `toolchain/runtime.py`
+  1310, `workspace/changes.py` 1180; `agents/loop.py` -25 lines same round).
+  No release was made. Ghost kept as production; no worker split, no store
+  merge, no mechanical 2400-line split, no bulk `except` sweep.
+
 ## Unreleased - Recovery ownership and small-subtraction hardening (no release)
 
 - Snapshot single-writer closure: `put_baseline()` uses key-existence (`rel in files`)

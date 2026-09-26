@@ -881,24 +881,29 @@ def _items_from_knowledge(
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
-        try:
-            rows = list(
-                store.index.recent(
-                    5,
-                    session_id=clip_signal_text(session_id, 120),
-                    types=("synthesis", "decision"),
-                )
-            )
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            warnings.append("knowledge_unreadable")
-            return []
+        warnings.append("knowledge_unreadable")
+        return []
+    requested_project = _common.normalize_project(project)
+    requested_session = clip_signal_text(session_id, 120)
     out: list[GhostContinuityItem] = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
+        raw_project = row.get("project")
+        raw_session = row.get("session_id")
+        row_project = _common.normalize_project(raw_project) if raw_project else ""
+        row_session = clip_signal_text(raw_session, 120) if raw_session else ""
+        if row_project and requested_project and row_project != requested_project:
+            if "knowledge_scope_mismatch" not in warnings:
+                warnings.append("knowledge_scope_mismatch")
+            continue
+        if row_session and requested_session and row_session != requested_session:
+            if "knowledge_scope_mismatch" not in warnings:
+                warnings.append("knowledge_scope_mismatch")
+            continue
+        if not row_project and not row_session:
+            continue
         source_ref = clip_signal_text(row.get("id"), 160)
-        row_project = _common.normalize_project(row.get("project") or project)
-        row_session = clip_signal_text(row.get("session_id") or session_id, 120)
         scope = "session" if row_session else "project" if row_project else "user"
         scope_ref = row_session or row_project
         title = _clean_context_text(row.get("title"))

@@ -2044,12 +2044,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "providers/controls.py": 1400,
             "research/browser_search.py": 1230,
             "research/evidence_ledger.py": 1550,
-            "research/runner.py": 1360,
+            # Boundary hardening: named done-review result + multiline build
+            # (advisor_count preserved), loop.py -25 lines in the same round.
+            "research/runner.py": 1400,
             "research/source_connectors.py": 1420,
             "runs/trace.py": 2450,
             "runtime/core/operation_state.py": 1110,
-            "toolchain/runtime.py": 1300,
-            "workspace/changes.py": 1120,
+            # LF/CRLF line-boundary note (was a one-line overclaim).
+            "toolchain/runtime.py": 1310,
+            # Read-only require_baseline + stat-size capacity guard.
+            "workspace/changes.py": 1180,
         }
         grown = {
             name: size

@@ -221,7 +221,7 @@ class ConversationStoreTests(unittest.TestCase):
             first.save_ui_state({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "Memory test",
@@ -236,7 +236,7 @@ class ConversationStoreTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             restarted = server.AppContext(td)
             events = restarted.subscribe()

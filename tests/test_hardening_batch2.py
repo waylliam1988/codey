@@ -117,6 +117,8 @@ class PostBodyCoercionTests(unittest.TestCase):
             change_tracker_for=mock.Mock(
                 return_value=SimpleNamespace(has_snapshots=False)
             ),
+            acquire_project_writer=mock.Mock(return_value=True),
+            release_project_writer=mock.Mock(),
         )
         seen: dict[str, object] = {}
         with mock.patch.object(

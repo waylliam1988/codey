@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.storage.ui_state_store import UiStateStore
+from codey.storage.ui_state_store import UiStateConflict, UiStateStore
 
 
 class UiStateStoreTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class UiStateStoreTests(unittest.TestCase):
                 "projects": [],
             }
 
-            store.save(state)
+            store.save(state, base_revision=0)
             loaded = store.load()
             session = loaded["sessions"][0]
 
@@ -83,7 +83,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-research",
                 "updated_at": 10,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-research",
                     "title": "Research chat",
@@ -97,7 +97,7 @@ class UiStateStoreTests(unittest.TestCase):
                     ],
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             runs = store.load()["sessions"][0]["researchRuns"]
 
@@ -111,7 +111,7 @@ class UiStateStoreTests(unittest.TestCase):
             state = {
                 "active_id": "chat-1",
                 "updated_at": 123,
-                "revision": 7,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "你好",
@@ -133,9 +133,14 @@ class UiStateStoreTests(unittest.TestCase):
                 }],
             }
 
-            store.save(state)
+            saved = store.save(state, base_revision=0)
 
-            self.assertEqual(store.load(), state)
+            loaded = store.load()
+            self.assertEqual(loaded["active_id"], state["active_id"])
+            self.assertEqual(loaded["sessions"], saved["sessions"])
+            self.assertEqual(loaded["projects"], saved["projects"])
+            self.assertEqual(loaded["revision"], 1)
+            self.assertEqual(saved["revision"], 1)
             self.assertEqual(Path(td, "ui-state.json").is_file(), True)
 
     def test_shell_request_risk_fields_are_persisted(self) -> None:
@@ -144,7 +149,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "New chat",
@@ -163,7 +168,7 @@ class UiStateStoreTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             message = store.load()["sessions"][0]["messages"][0]
 
@@ -201,15 +206,15 @@ class UiStateStoreTests(unittest.TestCase):
                 "sessions": {"bad": True},
                 "projects": None,
                 "updated_at": "17.9",
-                "revision": "3",
-            })
+                "revision": 0,
+            }, base_revision=0)
 
             self.assertEqual(store.load(), {
                 "active_id": "42",
                 "sessions": [],
                 "projects": [],
                 "updated_at": 17,
-                "revision": 3,
+                "revision": 1,
             })
 
     def test_save_compares_against_cached_state_not_disk(self) -> None:
@@ -220,7 +225,7 @@ class UiStateStoreTests(unittest.TestCase):
             state = {
                 "active_id": "chat-1",
                 "updated_at": 5,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [],
                 "projects": [],
             }
@@ -230,17 +235,21 @@ class UiStateStoreTests(unittest.TestCase):
                 "load",
                 wraps=store.load,
             ) as load_spy:
-                store.save(state)
-                store.save(state)  # identical: skipped without a write
-                bumped = dict(state, revision=2)
-                store.save(bumped)
+                saved = store.save(state, base_revision=0)
+                self.assertEqual(saved["revision"], 1)
+                # Identical content with matching base succeeds idempotently.
+                same = store.save(state, base_revision=1)
+                self.assertEqual(same["revision"], 1)
+                bumped = dict(state, active_id="chat-2")
+                saved2 = store.save(bumped, base_revision=1)
+                self.assertEqual(saved2["revision"], 2)
 
                 # Exactly one seed read (first save with a cold cache); the
                 # remaining comparisons run against memory.
                 self.assertEqual(load_spy.call_count, 1)
-                self.assertEqual(store.load(), bumped)
+                self.assertEqual(store.load()["revision"], 2)
                 # After the explicit reload, the cache reflects disk again.
-                store.save(bumped)
+                store.save(bumped, base_revision=2)
                 self.assertEqual(load_spy.call_count, 2)
 
     def test_failed_write_keeps_previous_cache_baseline(self) -> None:
@@ -249,89 +258,86 @@ class UiStateStoreTests(unittest.TestCase):
             first = {
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [],
                 "projects": [],
             }
-            store.save(first)
+            saved = store.save(first, base_revision=0)
 
-            second = dict(first, revision=2, active_id="chat-2")
+            second = dict(first, active_id="chat-2")
             with mock.patch(
                 "codey.storage.ui_state_store.write_json_atomic",
                 side_effect=OSError("disk full"),
             ), self.assertRaises(OSError):
-                store.save(second)
+                store.save(second, base_revision=saved["revision"])
 
-            self.assertEqual(store._cached_state, first)
+            self.assertEqual(store._cached_state, saved)
 
-    def test_older_save_cannot_overwrite_newer_state(self) -> None:
+    def test_same_base_conflict_with_different_content_raises(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = UiStateStore(td)
-            newer = {
+            first = {
                 "active_id": "new",
                 "updated_at": 200,
-                "revision": 1,
-                "sessions": [{"id": "new", "title": "newer", "messages": [], "terminalRuns": [], "createdAt": 0, "projectId": None, "provider": ""}],
+                "revision": 0,
+                "sessions": [],
                 "projects": [],
             }
-            older = {
+            saved = store.save(first, base_revision=0)
+            self.assertEqual(saved["revision"], 1)
+            other = {
                 "active_id": "old",
-                "updated_at": 100,
-                "revision": 99,
+                "updated_at": 200,
+                "revision": 0,
                 "sessions": [{"id": "old", "title": "older"}],
                 "projects": [],
             }
+            with self.assertRaises(UiStateConflict) as ctx:
+                store.save(other, base_revision=0)
+            self.assertEqual(ctx.exception.current_revision, 1)
+            self.assertEqual(store.load()["active_id"], "new")
 
-            store.save(newer)
-            store.save(older)
-
-            self.assertEqual(store.load(), newer)
-
-    def test_lower_revision_cannot_overwrite_same_millisecond_state(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            store = UiStateStore(td)
-            newer = {
-                "active_id": "new",
-                "updated_at": 200,
-                "revision": 2,
-                "sessions": [{"id": "new", "title": "newer", "messages": [], "terminalRuns": [], "createdAt": 0, "projectId": None, "provider": ""}],
-                "projects": [],
-            }
-            older = {
-                "active_id": "old",
-                "updated_at": 200,
-                "revision": 1,
-                "sessions": [{"id": "old", "title": "older"}],
-                "projects": [],
-            }
-
-            store.save(newer)
-            store.save(older)
-
-            self.assertEqual(store.load(), newer)
-
-    def test_higher_revision_can_update_same_millisecond_state(self) -> None:
+    def test_stale_base_conflict_reports_current_revision(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = UiStateStore(td)
             first = {
                 "active_id": "first",
                 "updated_at": 200,
-                "revision": 1,
-                "sessions": [{"id": "first", "title": "first"}],
+                "revision": 0,
+                "sessions": [],
                 "projects": [],
             }
+            saved1 = store.save(first, base_revision=0)
             second = {
                 "active_id": "second",
                 "updated_at": 200,
-                "revision": 2,
-                "sessions": [{"id": "second", "title": "second", "messages": [], "terminalRuns": [], "createdAt": 0, "projectId": None, "provider": ""}],
+                "revision": 0,
+                "sessions": [],
                 "projects": [],
             }
+            saved2 = store.save(second, base_revision=saved1["revision"])
+            self.assertEqual(saved2["revision"], 2)
+            stale = dict(first, active_id="stale")
+            with self.assertRaises(UiStateConflict) as ctx:
+                store.save(stale, base_revision=1)
+            self.assertEqual(ctx.exception.current_revision, 2)
+            self.assertEqual(store.load()["active_id"], "second")
 
-            store.save(first)
-            store.save(second)
-
-            self.assertEqual(store.load(), second)
+    def test_identical_content_with_stale_base_succeeds_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            first = {
+                "active_id": "first",
+                "updated_at": 200,
+                "revision": 0,
+                "sessions": [],
+                "projects": [],
+            }
+            saved = store.save(first, base_revision=0)
+            # Same content, stale base: idempotent success, no new revision.
+            same = store.save(first, base_revision=0)
+            self.assertEqual(same["revision"], saved["revision"])
+            self.assertEqual(store.load()["revision"], saved["revision"])
 
     def test_state_schema_is_whitelisted_and_bounded(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -339,7 +345,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 300,
-                "revision": 1,
+                "revision": 0,
                 "ignored": "no",
                 "sessions": [{
                     "id": "chat-1",
@@ -363,7 +369,7 @@ class UiStateStoreTests(unittest.TestCase):
                     "createdAt": 2,
                     "extra": "drop",
                 }],
-            })
+            }, base_revision=0)
 
             state = store.load()
 
@@ -391,7 +397,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "Breathing app",
@@ -412,7 +418,7 @@ class UiStateStoreTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             excerpt = store.visible_session_excerpt("chat-1", current_request="Continue today")
 
@@ -432,7 +438,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "New chat",
@@ -446,7 +452,7 @@ class UiStateStoreTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             excerpt = store.visible_session_excerpt("chat-1", limit=2_000)
 
@@ -458,7 +464,7 @@ class UiStateStoreTests(unittest.TestCase):
             store.save({
                 "active_id": "chat-1",
                 "updated_at": 1,
-                "revision": 1,
+                "revision": 0,
                 "sessions": [{
                     "id": "chat-1",
                     "title": "Project review",
@@ -477,7 +483,7 @@ class UiStateStoreTests(unittest.TestCase):
                     "provider": "deepseek",
                 }],
                 "projects": [],
-            })
+            }, base_revision=0)
 
             excerpt = store.visible_session_excerpt("chat-1", current_request="Continue")
 

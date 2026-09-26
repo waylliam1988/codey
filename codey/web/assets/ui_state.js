@@ -195,6 +195,8 @@ function applyUiState(state) {
   setActiveId(nextActiveId);
   setUpdatedAt(Number(state && state.updated_at || 0) || 0);
   setRevision(Number(state && state.revision || 0) || 0);
+  serverRevision = Number(state && state.revision || 0) || 0;
+  syncConflict = false;
 }
 function currentUiState() {
   return {
@@ -250,12 +252,56 @@ function hasMeaningfulUiState(state) {
     (s.title && s.title !== 'New chat')
   );
 }
+let saveInFlight = false;
+let saveQueued = false;
+let serverRevision = null;
+let syncConflict = false;
+
 function saveUiStateToServer() {
+  if (saveInFlight) {
+    saveQueued = true;
+    return;
+  }
+  saveInFlight = true;
+  saveQueued = false;
+  const base = serverRevision === null ? getRevision() : serverRevision;
   fetch('/api/ui_state', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state: currentUiState() }),
-  }).catch(() => {});
+    body: JSON.stringify({ state: currentUiState(), base_revision: base }),
+  }).then(async (r) => {
+    let data = {};
+    try { data = await r.json(); } catch {}
+    if (r.ok) {
+      const next = Number((data && data.revision) || 0) || 0;
+      if (next) {
+        serverRevision = next;
+        setRevision(next);
+      }
+      syncConflict = false;
+      return;
+    }
+    if (r.status === 409) {
+      const current = Number((data && data.revision) || 0) || 0;
+      if (current) serverRevision = current;
+      if (!syncConflict) {
+        syncConflict = true;
+        try {
+          if (deps.setStatus) deps.setStatus('Sync conflict — reload to see latest', 'warn');
+        } catch {}
+      }
+      return;
+    }
+    // Other failures: keep local content, do not pretend success.
+  }).catch(() => {}).finally(() => {
+    saveInFlight = false;
+    if (saveQueued && !syncConflict) {
+      saveQueued = false;
+      saveUiStateToServer();
+    } else {
+      saveQueued = false;
+    }
+  });
 }
 
 let uiStatePersistTimer = null;
@@ -308,7 +354,8 @@ function bindUiStatePagehide() {
       uiStatePersistTimer = null;
     }
     cacheUiState();
-    const payload = JSON.stringify({ state: currentUiState() });
+    const base = serverRevision === null ? getRevision() : serverRevision;
+    const payload = JSON.stringify({ state: currentUiState(), base_revision: base });
     try {
       if (navigator.sendBeacon) {
         navigator.sendBeacon('/api/ui_state', new Blob([payload], { type: 'application/json' }));

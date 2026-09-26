@@ -8,7 +8,6 @@
   let reconcilePromise = null;
   let bufferedServerEvents = [];
   const BUFFER_LIMIT = 100;
-  let consecutiveFailures = 0;
   let lastKnownEventId = 0;
 
 function init(nextDeps) {
@@ -92,7 +91,6 @@ function connect() {
       lastKnownEventId = data.event_id;
     }
     if (data.type === 'hello') {
-      consecutiveFailures = 0;
       clearReconnectTimer();
       reconcileRunState();
       deps.refreshProviderStatus();
@@ -101,14 +99,6 @@ function connect() {
     ingestServerEvent(data);
   };
   evtSrc.onerror = () => {
-    consecutiveFailures += 1;
-    if (consecutiveFailures >= 3 && evtSrc) {
-      try { evtSrc.close(); } catch { /* ignore */ }
-      evtSrc = null;
-      consecutiveFailures = 0;
-      connect();
-      return;
-    }
     scheduleReconnectStatus();
   };
 }

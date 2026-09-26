@@ -75,13 +75,25 @@ def ui_state_response(ctx: Any) -> tuple[int, dict]:
 
 def save_ui_state_response(ctx: Any, body: dict) -> tuple[int, dict]:
     state = body.get("state") if isinstance(body, dict) else None
+    base_revision = body.get("base_revision") if isinstance(body, dict) else None
+    if isinstance(base_revision, bool) or not isinstance(base_revision, int):
+        try:
+            base_revision = int(base_revision or 0)
+        except (TypeError, ValueError):
+            return 400, {"ok": False, "error": "base_revision required"}
     try:
-        ctx.save_ui_state(state)
-    except ValueError as exc:
-        return 400, {"ok": False, "error": str(exc)}
-    except OSError as exc:
-        return 500, {"ok": False, "error": str(exc)}
-    return 200, {"ok": True}
+        saved = ctx.save_ui_state(state, base_revision=int(base_revision))
+    except Exception as exc:
+        from codey.storage.ui_state_store import UiStateConflict
+
+        if isinstance(exc, UiStateConflict):
+            return 409, {"ok": False, "error": "ui_state_conflict", "revision": exc.current_revision}
+        if isinstance(exc, ValueError):
+            return 400, {"ok": False, "error": str(exc)}
+        if isinstance(exc, OSError):
+            return 500, {"ok": False, "error": str(exc)}
+        raise
+    return 200, {"ok": True, "revision": int(saved.get("revision") or 0)}
 
 
 def _project_directory_error(project: str | None) -> str:
@@ -347,13 +359,10 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
     # Single-writer promise covers tasks and user restore: hold the same
     # project writer lease from reading the recovery basis to finishing
     # file writes. Cross-process contention fails fast with 409.
-    acquired = False
+    acquired = bool(ctx.acquire_project_writer(key))
     try:
-        acquire = getattr(ctx, "acquire_project_writer", None)
-        if callable(acquire):
-            acquired = bool(acquire(key))
-            if not acquired:
-                return 409, {"ok": False, "error": "project writer busy"}
+        if not acquired:
+            return 409, {"ok": False, "error": "project writer busy"}
         tracker = ctx.change_tracker_for(
             key,
             persistent=not is_git_repository(key),
@@ -363,10 +372,8 @@ def restore_changes_response(ctx: Any, body: dict) -> tuple[int, dict]:
         return restore_snapshot_changes(project, tracker, clean_paths)
     finally:
         if acquired:
-            release = getattr(ctx, "release_project_writer", None)
-            if callable(release):
-                with contextlib.suppress(Exception):
-                    release(key)
+            with contextlib.suppress(Exception):
+                ctx.release_project_writer(key)
 
 
 def run_submit_response(

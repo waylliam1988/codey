@@ -322,19 +322,32 @@ def _message_excerpt(message: dict[str, Any]) -> str:
     return f"{label}: {text}" if text else ""
 
 
+class UiStateConflict(ValueError):
+    """Client base revision no longer matches the durable revision."""
+
+    def __init__(self, current_revision: int, message: str = "ui_state_conflict") -> None:
+        super().__init__(message)
+        self.current_revision = int(current_revision or 0)
+
+
+def _content_equal(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    return (
+        first.get("active_id") == second.get("active_id")
+        and first.get("sessions") == second.get("sessions")
+        and first.get("projects") == second.get("projects")
+    )
+
+
 class UiStateStore:
     """Persist the current visible UI state as one bounded local snapshot.
 
-    ``save`` compares against the last state this process wrote (seeded by
-    the first :meth:`load`) instead of re-reading and re-parsing the file on
-    every save, so a save costs one write, not a read-parse-write cycle.
-
-    Single-writer assumption: one Codey server owns ``state_home``. The
-    cache deliberately never re-reads the file after the first load, so two
-    server processes sharing one ``state_home`` could each overwrite the
-    other's freshest state with their own cached baseline. That is
-    acceptable by product design -- local developer tool, one server per
-    user -- and is the price of the single-write fast path.
+    Single-writer protocol: one Codey server owns ``state_home`` (enforced
+    by a server instance lease in ``server.serve``). Within that server,
+    every save carries the client's last confirmed ``base_revision`` and
+    runs under ``AppContext.ui_state_store_lock``. A mismatched base with
+    identical content succeeds idempotently; a mismatched base with
+    different content raises :class:`UiStateConflict` and never writes.
+    The server always mints the next revision.
     """
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
@@ -359,15 +372,18 @@ class UiStateStore:
             return self._cached_state
         return self.load()
 
-    def save(self, state: object) -> None:
+    def save(self, state: object, *, base_revision: int) -> dict[str, Any]:
         clean = _clean_payload(state)
         current = self._current()
-        if _version(current) > _version(clean):
-            return
-        if _version(current) == _version(clean) and current != clean:
-            return
-        if current == clean:
-            return
+        current_revision = _int(current.get("revision"))
+        if int(base_revision or 0) != current_revision:
+            if _content_equal(clean, current):
+                return current
+            raise UiStateConflict(current_revision)
+        if _content_equal(clean, current):
+            return current
+        clean["updated_at"] = max(_int(clean.get("updated_at")), _int(current.get("updated_at")))
+        clean["revision"] = current_revision + 1
         write_json_atomic(
             self.path,
             {
@@ -379,6 +395,7 @@ class UiStateStore:
         # Only a successful write becomes the new comparison baseline; a
         # failed write leaves the cache pointing at the last durable state.
         self._cached_state = clean
+        return clean
 
     def visible_session_excerpt(
         self,

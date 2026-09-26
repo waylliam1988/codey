@@ -134,6 +134,17 @@ class ResearchRunResult:
         )
 
 
+@dataclass(frozen=True)
+class _DoneReview:
+    decision: str
+    followup: str
+    candidate: str
+    review: ReportQualityReview | None
+    turn_limit: int
+    advisor_reviewed: bool
+    advisor_count: int
+
+
 class ResearchRunner:
     def __init__(
         self,
@@ -393,20 +404,25 @@ class ResearchRunner:
                     yield RunEvent.info("stop requested")
                 break
             if plan.control is not None and plan.control.kind == "done":
-                (
-                    decision, followup, candidate, review,
-                    turn_limit, advisor_reviewed, advisor_count,
-                ) = self._review_done_candidate(
+                done = self._review_done_candidate(
                     plan.control.body.strip(), results,
                     turn=turn, turn_limit=turn_limit, extension_limit=extension_limit,
                     question=question, control_state=control_state,
                     advisor_reviewed=advisor_reviewed,
+                    advisor_count=advisor_count,
+                )
+                decision, followup, candidate, review = (
+                    done.decision, done.followup, done.candidate, done.review,
+                )
+                turn_limit, advisor_reviewed, advisor_count = (
+                    done.turn_limit, done.advisor_reviewed, done.advisor_count,
                 )
                 if decision == "retry_failed":
                     message = followup
                     continue
                 if decision == "retry_quality":
-                    yield RunEvent.info(review.message)  # type: ignore[union-attr]
+                    assert review is not None
+                    yield RunEvent.info(review.message)
                     message = followup
                     continue
                 if decision == "retry_advisor":
@@ -416,9 +432,8 @@ class ResearchRunner:
                     )
                     message = followup
                     continue
-                if decision == "accept_advisor_empty":
-                    advisor_count = 0
-                yield RunEvent.info(review.message, warnings=list(review.warnings))  # type: ignore[union-attr]
+                assert review is not None
+                yield RunEvent.info(review.message, warnings=list(review.warnings))
                 summary = candidate
                 final_open_questions = _bounded_open_questions(
                     getattr(self.codec, "last_control_args", {}).get("open_questions")
@@ -445,9 +460,13 @@ class ResearchRunner:
             if synthesis_id:
                 yield RunEvent.info("saved synthesis", names=synthesis_id)
         self.result = self._build_research_result(
-            question=question, summary=summary, stop_reason=stop_reason,
-            turn=turn, turn_limit=turn_limit, synthesis_id=synthesis_id,
-            final_review=final_review, final_open_questions=final_open_questions,
+            question=question,
+            summary=summary,
+            stop_reason=stop_reason,
+            turn=turn,
+            turn_limit=turn_limit,
+            synthesis_id=synthesis_id,
+            final_review=final_review,
             advisor_count=advisor_count,
         )
         self.prompt_trace.call(
@@ -481,13 +500,14 @@ class ResearchRunner:
         question: str,
         control_state: object | None,
         advisor_reviewed: bool,
-    ) -> tuple[str, str, str, object | None, int, bool, int]:
+        advisor_count: int,
+    ) -> _DoneReview:
         # No yields: run() owns yield order.
         def extend(lim: int) -> int:
             return _maybe_extend_completion_turns(lim, extension_limit=extension_limit, turn=turn, tools=self.tools)
         if any(_outcome_model_text(r[1]).startswith(("ERROR:", "NEEDS_OPEN:")) for r in results):
             msg = self._format_results(_tool_results(results)) + "\n\nResolve the ERROR or NEEDS_OPEN results before calling done. Open cited source pages before saving facts, and link only notes that exist."
-            return ("retry_failed", msg, summary_candidate, None, extend(turn_limit), advisor_reviewed, 0)
+            return _DoneReview("retry_failed", msg, summary_candidate, None, extend(turn_limit), advisor_reviewed, advisor_count)
         finalized = finalize_done_answer(summary_candidate, self.tools.ledger, source_ids=getattr(control_state, "source_urls", {}) if control_state is not None else {}, question=question, enforce_claim_support=True)
         if finalized.changed:
             self.prompt_trace.call("record_research_done_compilation", {"reason": finalized.reason, "source_count": finalized.source_count})
@@ -495,19 +515,62 @@ class ResearchRunner:
         review = review_report_quality(candidate, ledger=self.tools.ledger, opened_sources=self.tools.sources_read, search_result_urls=self.tools.search_result_urls)
         if not review.ok:
             msg = _quality_review_followup(self.codec, _tool_results(results), review.message, controller_enabled=self.controller is not None)
-            return ("retry_quality", msg, candidate, review, extend(turn_limit), advisor_reviewed, 0)
+            return _DoneReview("retry_quality", msg, candidate, review, extend(turn_limit), advisor_reviewed, advisor_count)
         if self.review_advisors is not None and not advisor_reviewed:
             advices = self._review_with_advisors(question, candidate, review)
             if advices:
-                return ("retry_advisor", _advisor_followup_prompt(candidate, advices), candidate, review, extend(turn_limit), True, len(advices))
-            return ("accept_advisor_empty", "", candidate, review, turn_limit, True, 0)
-        return ("accept", "", candidate, review, turn_limit, advisor_reviewed, 0)
+                return _DoneReview("retry_advisor", _advisor_followup_prompt(candidate, advices), candidate, review, extend(turn_limit), True, len(advices))
+            return _DoneReview("accept", "", candidate, review, turn_limit, True, advisor_count)
+        return _DoneReview("accept", "", candidate, review, turn_limit, advisor_reviewed, advisor_count)
 
-    def _build_research_result(self, *, question: str, summary: str, stop_reason: str, turn: int, turn_limit: int, synthesis_id: str, final_review: object | None, final_open_questions: list[str], advisor_count: int):
+    def _build_research_result(
+        self,
+        *,
+        question: str,
+        summary: str,
+        stop_reason: str,
+        turn: int,
+        turn_limit: int,
+        synthesis_id: str,
+        final_review: ReportQualityReview | None,
+        advisor_count: int,
+    ):
         research_record = None
         if summary or self.tools.ledger.opened_sources or self.tools.ledger.evidence_items:
-            research_record = build_research_record(question=question, summary=summary, ledger=self.tools.ledger, review=final_review, run_id=self.run_id, session_id=self.session_id, project=self.project, synthesis_id=synthesis_id, stop_reason=stop_reason)
-        return ResearchRunResult(question=question, summary=summary, stop_reason=stop_reason, turns=turn, queries=[item.query for item in self.tools.ledger.searches], search_results=self.tools.ledger.search_results_payload(), opened_sources=self.tools.ledger.opened_sources_payload(), coverage=self.tools.ledger.coverage_payload(), citation_map=final_review.citation_payload() if final_review else [], evidence_items=self.tools.ledger.evidence_payload(), counterpoints=list(final_review.counterpoints) if final_review else [], quality_warnings=list(final_review.warnings) if final_review else [], notes_created=list(self.tools.created_ids), notes_updated=list(self.tools.updated_ids), links_created=self.tools.links_created, sources_read=len(self.tools.sources_read), source_urls=sorted(self.tools.sources_read), synthesis_id=synthesis_id, advisor_count=advisor_count, research_record=research_record, max_turns_used=turn_limit)
+            research_record = build_research_record(
+                question=question,
+                summary=summary,
+                ledger=self.tools.ledger,
+                review=final_review,
+                run_id=self.run_id,
+                session_id=self.session_id,
+                project=self.project,
+                synthesis_id=synthesis_id,
+                stop_reason=stop_reason,
+            )
+        return ResearchRunResult(
+            question=question,
+            summary=summary,
+            stop_reason=stop_reason,
+            turns=turn,
+            queries=[item.query for item in self.tools.ledger.searches],
+            search_results=self.tools.ledger.search_results_payload(),
+            opened_sources=self.tools.ledger.opened_sources_payload(),
+            coverage=self.tools.ledger.coverage_payload(),
+            citation_map=final_review.citation_payload() if final_review else [],
+            evidence_items=self.tools.ledger.evidence_payload(),
+            counterpoints=list(final_review.counterpoints) if final_review else [],
+            quality_warnings=list(final_review.warnings) if final_review else [],
+            notes_created=list(self.tools.created_ids),
+            notes_updated=list(self.tools.updated_ids),
+            links_created=self.tools.links_created,
+            sources_read=len(self.tools.sources_read),
+            source_urls=sorted(self.tools.sources_read),
+            synthesis_id=synthesis_id,
+            advisor_count=advisor_count,
+            research_record=research_record,
+            max_turns_used=turn_limit,
+        )
 
     def _dispatch(self, call, turn: int = 0, tool_index: int = 0):
         cancellation.check()

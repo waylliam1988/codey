@@ -1,5 +1,49 @@
 # Codey Test Report
 
+## Boundary hardening full suite (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/workspace/changes.py            (require_baseline read-only; stat-size capacity; cached revalidate, no rebuild)
+codey/runs/ledger.py + operations/ghost_post_turn.py (strict scan; corrupt-refuse; projection.complete gate)
+codey/ghost/continuity.py             (drop project-less fallback; scope check, no identity fill)
+codey/storage/ui_state_store.py + app/context.py + app/api.py + app/server.py (base_revision CAS; server lease)
+codey/web/assets/ui_state.js + sse.js + research_graph.js + provider_ui.js + index.html (single-flight; no self-reconnect; still-frame stop; extractCatalog; neutral copy)
+codey/research/runner.py              (named _DoneReview; advisor_count preserved; drop unused arg)
+codey/operations/task_run.py + task_phases/hooks.py + lifecycle.py + dispatch.py (visible terminal; expected-fault downgrade; TaskRunDeps types)
+codey/agents/loop.py                  (delete dead _decide_done)
+codey/storage/conversation_store.py   (delete takes directory lock)
+codey/toolchain/runtime.py            (LF/CRLF line boundary note)
+codey/app/api.py                      (restore requires writer lease directly)
+tests/test_boundary_hardening_regression.py (20 new boundary tests)
+tests/test_ui_state_store.py          (CAS conflicts; idempotent retry)
+tests/test_coldstart_review_batch.py  (corrupt-refuse expectations)
+tests/test_hardening_batch2.py        (restore fake implements lease contract)
+tests/test_server.py + test_conversation_store.py (base_revision call sites)
+tests/test_ui.py                      (base_revision body; neutral Ghost copy)
+tests/test_architecture.py            (ceilings: runner 1400, toolchain 1310, changes 1180)
+tests/test_research.py                (advisor_count == 1)
+tests/test_recovery_ownership_regression.py (A->B, 409-then-B, 200-then-A)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check codey tests tools` and
+  `git diff --check` passed; targeted suites
+  (`test_boundary_hardening_regression` + `test_changes` + `test_run_ledger` +
+  `test_run_ledger_projection` + `test_ui_state_store` + `test_research` +
+  `test_server -k ui_state` + `test_coldstart_hardening` + architecture)
+  green.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4315 passed, 7 skipped, 1374 subtests passed in 380.34s (0:06:20)`.
+  Skips are the known Windows POSIX/opt-in family. `node --check` for web
+  assets is CI-gated (no local node binary; `test_ui.py` content assertions
+  passed).
+- This entry was written after the full suite. No release was made. Ghost was kept;
+  no worker split, no store merge, no mechanical affinity/work_queue split,
+  no bulk except sweep, no Qwen timing changes.
+
 ## Recovery ownership and small-subtraction full suite (2026-09-26)
 
 Scope (production, no release):

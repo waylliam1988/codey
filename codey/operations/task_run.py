@@ -249,11 +249,12 @@ def _finish_setup_failure(
     outcome_reason: str,
     task_kind: str,
 ) -> OperationOutcome:
-    """Single setup-failure exit: exactly one user-visible terminal event.
+    """Single setup-failure exit: at most one user-visible terminal event.
 
-    ``finish_run`` already releases the slot and emits ``task_done``, so
-    callers must not also call ``release_run``. Resources are released by
-    ``_release_setup_resources`` before this call.
+    ``finish_run`` releases the slot and emits ``task_done``. When it
+    reports ``False`` the run was already settled elsewhere, and when it
+    raises the slot is released defensively -- no second ``task_done`` is
+    ever emitted as a fallback.
     """
     event = task_done_event(
         run_id=run_id,
@@ -264,8 +265,21 @@ def _finish_setup_failure(
         provider=request.provider_id,
         mode=ui_mode(task_kind, request.project),
     )
-    with contextlib.suppress(Exception):
-        state.finish_run(run_id, event)
+    try:
+        finished = state.finish_run(run_id, event)
+    except Exception:
+        logger.exception("setup failure terminal event failed for run %s", run_id)
+        try:
+            state.release_run(run_id)
+        except Exception:
+            logger.exception("setup failure slot release failed for run %s", run_id)
+        return OperationOutcome.failed(reason=outcome_reason, summary=summary)
+    if not finished:
+        logger.warning("setup failure terminal already settled for run %s", run_id)
+        try:
+            state.release_run(run_id)
+        except Exception:
+            logger.exception("setup failure slot release failed for run %s", run_id)
     return OperationOutcome.failed(reason=outcome_reason, summary=summary)
 
 
@@ -375,7 +389,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
             outcome_reason="setup_failed",
             task_kind=baseline_task_kind,
         )
-        logger.warning("run setup failed: %r", exc)
+        logger.exception("run setup failed")
         return None, outcome
 
 

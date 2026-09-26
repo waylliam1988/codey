@@ -466,6 +466,12 @@ def _wait_for_manual_browser(url: str, exc: Exception) -> None:
 
 
 def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
+    from codey.storage.file_lock import LockTimeout, acquire_lease
+
+    try:
+        server_lease = acquire_lease(DEFAULT_STATE_HOME / ".server.lock", timeout_seconds=0.0)
+    except LockTimeout as exc:
+        raise RuntimeError("该 state home 已在使用") from exc
     httpd = CodeyHTTPServer((host, port), Handler)
     actual_port = httpd.server_address[1]
     url = f"http://{host}:{actual_port}/"
@@ -502,3 +508,5 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             print("\n[codey] shutting down")
     finally:
         httpd.shutdown()
+        with contextlib.suppress(Exception):
+            server_lease.release()

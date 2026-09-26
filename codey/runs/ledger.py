@@ -81,32 +81,62 @@ class _LedgerFileState:
     seq: int
     bytes_written: int
     truncated: bool
+    corrupt: bool = False
+
+
+def _scan_ledger_file(path: Path) -> tuple[list[dict[str, object]], bool, int, bool, int]:
+    """Strict scan: any bad row makes the stream not projectable.
+
+    Bad JSON, bad schema, or a non-continuous ``seq`` all mark the file
+    incomplete. Callers never project a prefix of a damaged stream.
+    """
+    try:
+        exists = path.is_file()
+    except OSError:
+        return [], False, 0, False, 0
+    if not exists:
+        return [], True, 0, False, 0
+    try:
+        bytes_written = path.stat().st_size
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return [], False, 0, False, 0
+    if not lines:
+        return [], True, 0, False, bytes_written
+    payloads: list[dict[str, object]] = []
+    expected_seq = 1
+    truncated = False
+    for line in lines:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return [], False, 0, False, bytes_written
+        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+            return [], False, 0, False, bytes_written
+        seq = _int_or_none(payload.get("seq"))
+        if seq is None or seq != expected_seq:
+            return [], False, 0, False, bytes_written
+        expected_seq += 1
+        if payload.get("type") == "ledger_truncated":
+            truncated = True
+        payloads.append(payload)
+    return payloads, True, expected_seq - 1, truncated, bytes_written
 
 
 def _ledger_file_state(path: Path) -> _LedgerFileState:
-    last_seq = 0
-    truncated = False
+    _payloads, complete, last_seq, truncated, bytes_written = _scan_ledger_file(path)
+    if complete:
+        return _LedgerFileState(
+            seq=last_seq,
+            bytes_written=bytes_written,
+            truncated=truncated,
+            corrupt=False,
+        )
     try:
-        bytes_written = path.stat().st_size if path.is_file() else 0
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
-                continue
-            seq = _int_or_none(payload.get("seq"))
-            if seq is not None and seq > 0:
-                last_seq = max(last_seq, seq)
-            if payload.get("type") == "ledger_truncated":
-                truncated = True
-    except (OSError, UnicodeDecodeError):
-        return _LedgerFileState(seq=0, bytes_written=0, truncated=False)
-    return _LedgerFileState(
-        seq=last_seq,
-        bytes_written=bytes_written,
-        truncated=truncated,
-    )
+        size = path.stat().st_size if path.is_file() else 0
+    except OSError:
+        size = 0
+    return _LedgerFileState(seq=0, bytes_written=size, truncated=False, corrupt=True)
 
 
 class LedgerWriteFailed(OSError):
@@ -173,18 +203,23 @@ class RunLedgerWriter:
         self.seq = file_state.seq
         self.bytes_written = file_state.bytes_written
         self.truncated = file_state.truncated
-        self.disabled = self.truncated
+        self.disabled = self.truncated or file_state.corrupt
         self._mtime_ns = _stat_mtime_ns(path)
         # Observable failure state (cold start, in-memory only): callers
         # and tests read these instead of guessing from missing rows.
-        self.disabled_reason: str = "ledger_truncated" if self.truncated else ""
-        self.last_error_reason: str = ""
+        if file_state.corrupt:
+            self.disabled_reason: str = "ledger_corrupt"
+            self.last_error_reason: str = "ledger corrupt"
+        else:
+            self.disabled_reason: str = "ledger_truncated" if self.truncated else ""
+            self.last_error_reason: str = ""
 
     def append(self, event_type: str, **fields: object) -> None:
         if self.disabled:
-            # Truncation is an expected capacity signal; IO failure must
-            # surface so hooks can mark this run's ledger unavailable.
-            if self.disabled_reason == "ledger_write_failed":
+            # Truncation is an expected capacity signal; IO failure and
+            # corruption must surface so hooks can mark this run's ledger
+            # unavailable instead of extending a damaged stream.
+            if self.disabled_reason in ("ledger_write_failed", "ledger_corrupt"):
                 raise LedgerWriteFailed(self.last_error_reason or "ledger unavailable")
             return
         payload = {
@@ -352,7 +387,7 @@ class RunLedgerWriter:
         allow_over_budget: bool = False,
     ) -> None:
         if self.disabled and not (allow_after_truncation and self.truncated):
-            if self.disabled_reason == "ledger_write_failed":
+            if self.disabled_reason in ("ledger_write_failed", "ledger_corrupt"):
                 raise LedgerWriteFailed(self.last_error_reason or "ledger unavailable")
             return
         try:
@@ -360,6 +395,14 @@ class RunLedgerWriter:
                 current_seq, current_bytes, truncated = self._fast_file_state_locked()
                 if truncated is None:
                     file_state = _ledger_file_state(self.path)
+                    if file_state.corrupt:
+                        self.seq = 0
+                        self.bytes_written = file_state.bytes_written
+                        self.truncated = False
+                        self.disabled = True
+                        self.disabled_reason = "ledger_corrupt"
+                        self.last_error_reason = "ledger corrupt"
+                        raise LedgerWriteFailed(self.last_error_reason)
                     current_seq = file_state.seq
                     current_bytes = file_state.bytes_written
                     truncated = file_state.truncated
@@ -442,25 +485,13 @@ def _int_or_none(value: object) -> int | None:
 
 
 def read_ledger(path: Path) -> list[RunLedgerRecord]:
-    """Read ledger rows; middle corruption yields unavailable (empty).
+    """Read ledger rows; any damage yields unavailable (empty).
 
-    A torn trailing line is tolerated by ignoring that single line, but any
-    bad row with later valid rows after it means the fact stream was spliced
-    and must not be projected into receipts or Ghost learning.
+    A damaged stream -- bad JSON, bad schema, non-continuous ``seq``,
+    torn tail included -- never projects a readable prefix into receipts
+    or Ghost learning. Callers treat ``[]`` as "no complete facts".
     """
-    rows: list[RunLedgerRecord] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
+    payloads, complete, _seq, _truncated, _size = _scan_ledger_file(path)
+    if not complete:
         return []
-    for index, line in enumerate(lines):
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            # Torn tail only: a bad last line is ignored, middle corruption
-            # invalidates the whole stream.
-            return rows if index == len(lines) - 1 else []
-        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
-            return rows if index == len(lines) - 1 else []
-        rows.append(RunLedgerRecord(payload))
-    return rows
+    return [RunLedgerRecord(payload) for payload in payloads]

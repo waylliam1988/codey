@@ -3464,6 +3464,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertIn("Revised helium conclusion", result.summary)
+        self.assertEqual(result.advisor_count, 1)
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0].opened_urls, (url,))
         self.assertTrue(seen[0].citation_map)

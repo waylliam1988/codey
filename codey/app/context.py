@@ -363,9 +363,9 @@ class AppContext:
         with self.ui_state_store_lock:
             return self.ui_state_store.load()
 
-    def save_ui_state(self, state: object) -> None:
+    def save_ui_state(self, state: object, *, base_revision: int) -> dict:
         with self.ui_state_store_lock:
-            self.ui_state_store.save(state)
+            return self.ui_state_store.save(state, base_revision=base_revision)
 
     def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str:
         with self.ui_state_store_lock:
