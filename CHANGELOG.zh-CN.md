@@ -2,6 +2,20 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 辅助调用按 provider 超时；观察存真正 reply（未发布）
+
+- 找到第二族 KoboldCpp `WinError 10053` 根因：共识顾问调用固定 60 秒超时
+  （`codey/agents/consensus.py`），而慢速本地生成需要约 82 秒，Codey 掐断后
+  Kobold 白算（fail-open：起草回答不受影响）。pytest 自身从不碰真模型
+  （死端口 `:9` 与 mock）；请求来自同时运行的 Codey。辅助发送
+  （共识起草/汇总/顾问、项目审计轮次、research 顾问）优先采用 provider 自身
+  超时（本地默认 180 秒），其余保持 60/90 秒；用 70 秒 stub 生成复现验证：
+  一次 POST、送达、不掐断。
+- 经历观察改为存用户实际看到的 reply（模式发布 display 文本则用它），无 display
+  才回退 summary。不增加新抽象。
+- 统一 auto 的 `ACTION` 协议处理不变：解析失败即普通回答，拒绝动作去标记；
+  永不第二次调用。
+
 ## Unreleased - 经历记忆取代每轮 Ghost 模型调用（未发布）
 
 - 统一 `auto` 循环：首次正常模型调用直接作答或请求受权限检查的动作

@@ -1,5 +1,30 @@
 # Codey Test Report
 
+## Provider-aware auxiliary timeouts; visible-reply observations (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/agents/consensus.py   (owner-draft/aggregate/advisor + audit turns prefer provider timeout; fixed 60/90s caps otherwise)
+codey/research/advisors.py  (research advisors same provider-timeout preference)
+codey/operations/task_phases/settlement.py (assistant_text prefers ModeOutcome display reply, falls back to summary)
+tests/test_consensus.py     (slow-provider wins, fixed-cap fallback, deadline-cap unit tests)
+tests/test_research.py      (research advisor timeout preference test)
+tests/test_experience_memory.py (visible-reply vs summary observation tests)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check codey tests tools` and
+  `git diff --check` passed; targeted suites (`test_consensus` +
+  `test_experience_memory` + research advisor slice) green.
+- Incident replay: stub server with 70s delayed generation (past the retired
+  60s advisor cap) completed through the resolved 180s timeout with exactly
+  1 POST and no client-side abandon.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4342 passed, 7 skipped, 1387 subtests passed in 440.97s (0:07:20)`.
+- This entry was written after the full suite. No release was made.
+
 ## Experience memory replaces per-turn Ghost model calls (2026-09-26)
 
 Scope (production, no release):

@@ -411,8 +411,21 @@ def render_project_audit_prompt(
     return "\n".join(parts)
 
 
-def _advisor_timeout(deadline: float) -> float:
-    return max(1.0, min(CONSENSUS_ADVISOR_TIMEOUT, deadline - time.monotonic()))
+def _advisor_timeout(deadline: float, provider: object | None = None) -> float:
+    """Remaining budget for one advisor call, capped by provider profile.
+
+    Fixed caps (60s) assume fast web inference; a local provider carries its
+    own slower timeout (e.g. 180s) and must not be abandoned mid-generation,
+    or the server keeps computing a reply nobody reads (WinError 10053).
+    """
+    cap = getattr(provider, "timeout", CONSENSUS_ADVISOR_TIMEOUT)
+    try:
+        cap_value = float(cap)
+    except (TypeError, ValueError):
+        cap_value = CONSENSUS_ADVISOR_TIMEOUT
+    if not cap_value > 0:
+        cap_value = CONSENSUS_ADVISOR_TIMEOUT
+    return max(1.0, min(cap_value, deadline - time.monotonic()))
 
 
 def _audit_path_block_reason(rel: str) -> str:
@@ -732,7 +745,7 @@ def run_project_audit_advisor(
     )
     deadline = time.monotonic() + PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
     with provider_controls.suppress_assistance():
-        reply = provider.send(prompt, timeout=_advisor_timeout(deadline))
+        reply = provider.send(prompt, timeout=_advisor_timeout(deadline, provider))
 
     for _turn in range(max(1, max_turns)):
         cancellation.check()
@@ -757,7 +770,7 @@ def run_project_audit_advisor(
                 source_ref=_provider_send_ref("project_audit_repair", advisor_id),
             )
             with provider_controls.suppress_assistance():
-                reply = provider.send(repair, timeout=_advisor_timeout(deadline))
+                reply = provider.send(repair, timeout=_advisor_timeout(deadline, provider))
             continue
         if plan.calls:
             results: list[ToolResult] = []
@@ -797,7 +810,7 @@ def run_project_audit_advisor(
                 source_ref=_provider_send_ref("project_audit_followup", advisor_id),
             )
             with provider_controls.suppress_assistance():
-                reply = provider.send(next_prompt, timeout=_advisor_timeout(deadline))
+                reply = provider.send(next_prompt, timeout=_advisor_timeout(deadline, provider))
             continue
         if plan.control is not None and plan.control.kind == "done":
             return _clip(plan.control.body, PROJECT_AUDIT_MAX_REPORT_CHARS)
@@ -812,7 +825,7 @@ def run_project_audit_advisor(
         with provider_controls.suppress_assistance():
             reply = provider.send(
                 repair_prompt,
-                timeout=_advisor_timeout(deadline),
+                timeout=_advisor_timeout(deadline, provider),
             )
     return ""
 
@@ -926,7 +939,12 @@ def run_consensus(
         )
         with provider_controls.suppress_assistance():
             owner_draft = _clip(
-                selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT),
+                selected_provider.send(
+                    prompt,
+                    timeout=getattr(
+                        selected_provider, "timeout", CONSENSUS_AGGREGATE_TIMEOUT,
+                    ),
+                ),
                 12_000,
             )
         if not owner_draft:
@@ -956,7 +974,10 @@ def run_consensus(
                 source_ref=f"provider_send:consensus_advisor:{advisor_id}",
             )
             with provider_controls.suppress_assistance():
-                text = advisor.send(prompt, timeout=CONSENSUS_ADVISOR_TIMEOUT)
+                text = advisor.send(
+                    prompt,
+                    timeout=getattr(advisor, "timeout", CONSENSUS_ADVISOR_TIMEOUT),
+                )
             clipped = _clip(text, MAX_ADVICE_CHARS)
             if clipped:
                 advices.append(ConsensusAdvice(
@@ -1004,7 +1025,12 @@ def run_consensus(
     )
     try:
         with provider_controls.suppress_assistance():
-            answer = selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT)
+            answer = selected_provider.send(
+                prompt,
+                timeout=getattr(
+                    selected_provider, "timeout", CONSENSUS_AGGREGATE_TIMEOUT,
+                ),
+            )
     except cancellation.TaskCancelled:
         raise
     except Exception:

@@ -18,6 +18,7 @@ class FakeProvider:
         self.replies = list(replies or [])
         self.fail = fail
         self.sent: list[str] = []
+        self.timeouts: list[object] = []
         self.new_chat_count = 0
         self.closed = False
 
@@ -25,8 +26,8 @@ class FakeProvider:
         self.new_chat_count += 1
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        del timeout
         self.sent.append(text)
+        self.timeouts.append(timeout)
         if self.fail:
             raise RuntimeError("offline")
         reply = self.replies.pop(0) if self.replies else "reply"
@@ -105,6 +106,74 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("qwen advice", selected.sent[0])
         self.assertIn("glm advice", selected.sent[0])
         self.assertNotIn("tool", selected.sent[0].lower())
+
+    def test_slow_provider_timeout_wins_over_fixed_advisor_caps(self) -> None:
+        """Regression: a fixed 60s advisor cap abandoned slow local advisors
+        mid-generation (KoboldCpp WinError 10053: 82s generation cut at 60s).
+        A provider's own timeout must win; fixed caps stay for the rest."""
+        selected = FakeProvider(["final answer"])
+        selected.timeout = 180.0
+        slow = FakeProvider(["slow advice"])
+        slow.timeout = 180.0
+        providers = {"qwen": slow}
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="_task_",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda provider_id: providers[provider_id],
+            draft_first=True,
+        )
+
+        self.assertIsNotNone(result)
+        # owner draft + aggregate ride the slow provider's own timeout.
+        self.assertEqual(selected.timeouts, [180.0, 180.0])
+        # advisor ditto instead of the retired fixed 60s abandon.
+        self.assertEqual(slow.timeouts, [180.0])
+
+    def test_fixed_caps_stay_without_provider_timeout(self) -> None:
+        selected = FakeProvider(["final answer"])
+        advisor = FakeProvider(["advice"])
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="task",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda _provider_id: advisor,
+            draft_first=True,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(advisor.timeouts, [consensus.CONSENSUS_ADVISOR_TIMEOUT])
+        self.assertEqual(
+            selected.timeouts,
+            [consensus.CONSENSUS_AGGREGATE_TIMEOUT] * 2,
+        )
+
+    def test_advisor_deadline_cap_respects_provider_profile(self) -> None:
+        import time as _time
+
+        provider = FakeProvider()
+        provider.timeout = 180.0
+        remaining = consensus._advisor_timeout(_time.monotonic() + 1000.0, provider)
+        self.assertEqual(remaining, 180.0)
+        tight = consensus._advisor_timeout(_time.monotonic() + 5.0, provider)
+        self.assertLessEqual(tight, 5.0)
+        self.assertGreaterEqual(tight, 1.0)
+        fallback = consensus._advisor_timeout(_time.monotonic() + 1000.0, object())
+        self.assertEqual(fallback, consensus.CONSENSUS_ADVISOR_TIMEOUT)
+        broken = FakeProvider()
+        broken.timeout = "soon"  # type: ignore[assignment]
+        self.assertEqual(
+            consensus._advisor_timeout(_time.monotonic() + 1000.0, broken),
+            consensus.CONSENSUS_ADVISOR_TIMEOUT,
+        )
 
     def test_run_consensus_returns_none_when_no_advisor_is_available(self) -> None:
         selected = FakeProvider(["should not send"])

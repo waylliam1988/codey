@@ -166,7 +166,10 @@ def run_research_advisors(
                 clear_provider_session(advisor_id)
             advisor.new_chat()
             with provider_controls.suppress_assistance():
-                text = advisor.send(prompt, timeout=RESEARCH_ADVISOR_TIMEOUT)
+                text = advisor.send(
+                    prompt,
+                    timeout=getattr(advisor, "timeout", RESEARCH_ADVISOR_TIMEOUT),
+                )
             clipped = _clip(text, MAX_RESEARCH_ADVICE_CHARS)
             if clipped:
                 reports.append(ConsensusAdvice(

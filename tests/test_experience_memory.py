@@ -383,6 +383,61 @@ class SettlementCommitOrderTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["run_id"], "r1")
 
+    def test_observation_records_visible_reply_not_internal_summary(self) -> None:
+        """assistant_text must be what the user actually saw (display reply
+        when the mode publishes one), never the internal settlement summary."""
+        with tempfile.TemporaryDirectory() as td:
+            emitted: list[dict] = []
+            deps = self._settlement_deps(Path(td), emitted)
+            frame = SimpleNamespace(
+                run_id="r1",
+                task_kind="project",
+                request=TaskSubmission("s", "/repo", "fix it", 8, False, "local"),
+            )
+            work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
+            outcome = ModeOutcome(
+                {"type": "task_done", "run_id": "r1", "session_id": "s",
+                 "summary": "completed project task", "stop_reason": "done",
+                 "turns": 2, "max_turns": 8, "provider": "local", "mode": "project"},
+                display=({"type": "reply", "run_id": "r1",
+                          "session_id": "s",
+                          "text": "已经修好了，问题在 xxx，我修改了 xxx。"},),
+            )
+            settlement._finish_mode_outcome(
+                deps, SimpleNamespace(state=deps.state, run_ledgers=None),
+                frame, work, outcome,
+                append_ledger=lambda _action: None,
+                finish_trace=lambda _event: None,
+            )
+            rows = deps.state.ghost_observations.read_committed(session_id="s")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(
+                rows[0]["assistant_text"], "已经修好了，问题在 xxx，我修改了 xxx。")
+
+    def test_observation_falls_back_to_summary_without_display(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            emitted: list[dict] = []
+            deps = self._settlement_deps(Path(td), emitted)
+            frame = SimpleNamespace(
+                run_id="r1",
+                task_kind="research",
+                request=TaskSubmission("s", None, "research x", 8, False, "local"),
+            )
+            work = SimpleNamespace(claimed_work_item=None, operation=None, ledger=None)
+            outcome = ModeOutcome(
+                {"type": "task_done", "run_id": "r1", "session_id": "s",
+                 "summary": "synthesis text", "stop_reason": "done", "turns": 1,
+                 "max_turns": 8, "provider": "local", "mode": "research"},
+            )
+            settlement._finish_mode_outcome(
+                deps, SimpleNamespace(state=deps.state, run_ledgers=None),
+                frame, work, outcome,
+                append_ledger=lambda _action: None,
+                finish_trace=lambda _event: None,
+            )
+            rows = deps.state.ghost_observations.read_committed(session_id="s")
+            self.assertEqual(rows[0]["assistant_text"], "synthesis text")
+
     def test_observation_failure_still_answers_but_warns_unrecoverable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             emitted: list[dict] = []

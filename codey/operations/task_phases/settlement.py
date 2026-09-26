@@ -34,10 +34,27 @@ from codey.runtime.observe.terminalizer import (
 from codey.task.kind import ui_mode
 
 
+def _display_reply_text(outcome: ModeOutcome) -> str:
+    """True user-visible reply carried by the mode, if any.
+
+    Chat/review publish their reply through ``display``; other modes surface
+    the task summary itself. The observation must record what the user
+    actually saw, not the internal settlement summary.
+    """
+    for payload in tuple(getattr(outcome, "display", ()) or ()):
+        if not isinstance(payload, dict):
+            continue
+        text = str(payload.get("text") or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _persist_experience_observation(
     deps: Any,
     frame: RunFrame,
     event: dict[str, object],
+    outcome: ModeOutcome,
 ) -> tuple[bool, str]:
     """Persist the completed-round experience before any final display emit.
 
@@ -60,6 +77,7 @@ def _persist_experience_observation(
         if store is None:
             return True, "skipped"
         request = getattr(frame, "request", None)
+        display_text = _display_reply_text(outcome)
         ok = bool(
             store.append_completed(
                 run_id=str(event.get("run_id") or getattr(frame, "run_id", "")),
@@ -67,7 +85,7 @@ def _persist_experience_observation(
                 project=str(getattr(request, "project", "") or ""),
                 mode=str(event.get("mode") or getattr(frame, "task_kind", "") or "chat"),
                 user_text=str(getattr(request, "task", "") or ""),
-                assistant_text=str(event.get("summary") or ""),
+                assistant_text=display_text or str(event.get("summary") or ""),
                 stop_reason=str(event.get("stop_reason") or ""),
                 provider_id=str(event.get("provider") or ""),
             )
@@ -272,7 +290,7 @@ def _finish_mode_outcome(
     # still recorded for indexing), then publish final display, then task_done.
     # A failed observation write lets the answer continue but is reported as
     # Ghost-record-failed, never as recoverable.
-    persisted, obs_status = _persist_experience_observation(deps, frame, event)
+    persisted, obs_status = _persist_experience_observation(deps, frame, event, outcome)
     _publish_display_after_commit(deps, outcome)
     deps.state.finish_run(frame.run_id, event)
     if not persisted:

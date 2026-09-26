@@ -318,6 +318,7 @@ class FakeAdvisorProvider:
     def __init__(self, reply: str = "advisor note") -> None:
         self.reply = reply
         self.sent: list[str] = []
+        self.timeouts: list[object] = []
         self.new_chat_calls = 0
         self.closed = False
 
@@ -325,8 +326,8 @@ class FakeAdvisorProvider:
         self.new_chat_calls += 1
 
     def send(self, text: str, timeout=None) -> str:
-        del timeout
         self.sent.append(text)
+        self.timeouts.append(timeout)
         return self.reply
 
     def close(self) -> None:
@@ -3157,6 +3158,43 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("https://example.com/helium", advisor.sent[0])
         self.assertIn("https://example.com/search", advisor.sent[0])
         self.assertNotIn("Codey", advisor.sent[0])
+
+    def test_research_advisor_uses_provider_timeout_when_present(self) -> None:
+        """Same family as the consensus 60s abandon: slow local advisors must
+        ride their own timeout instead of the fixed research cap."""
+        from codey.research.advisors import RESEARCH_ADVISOR_TIMEOUT
+
+        advisor = FakeAdvisorProvider("gap found")
+        advisor.timeout = 180.0
+        pack = EvidencePack(
+            question="Research helium",
+            draft="Draft answer",
+            opened_urls=("https://example.com/helium",),
+            search_result_urls=("https://example.com/search",),
+        )
+
+        run_research_advisors(
+            selected_provider_id="deepseek",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda _provider_id: advisor,
+            pack=pack,
+        )
+
+        self.assertEqual(advisor.timeouts, [180.0])
+
+        plain = FakeAdvisorProvider("gap found")
+        run_research_advisors(
+            selected_provider_id="deepseek",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda _provider_id: plain,
+            pack=pack,
+        )
+
+        self.assertEqual(plain.timeouts, [RESEARCH_ADVISOR_TIMEOUT])
 
     def test_research_tools_default_written_notes_to_current_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:

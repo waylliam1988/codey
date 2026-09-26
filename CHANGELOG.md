@@ -2,6 +2,25 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Provider-aware auxiliary timeouts; observation stores the visible reply (no release)
+
+- Root-caused a second KoboldCpp `WinError 10053` family: consensus advisor
+  calls used a fixed 60s cap (`codey/agents/consensus.py`) while slow local
+  generation needed ~82s, so Codey abandoned the socket and Kobold kept
+  computing a reply nobody reads (fail-open: the draft answer was unaffected).
+  pytest itself never touches the model (dead-port `:9` fakes and mocks only);
+  the request came from a concurrently running Codey. Auxiliary sends
+  (consensus owner-draft/aggregate/advisor, project-audit turns, research
+  advisors) now prefer the provider's own timeout when present (local default
+  180s) and keep the fixed 60/90s caps otherwise; replayed with a 70s stub
+  generation: one POST, delivered, no abandon.
+- Experience observations now store the user-visible reply (`ModeOutcome`
+  display text when the mode publishes one) instead of the internal settlement
+  summary, falling back to the summary only when no display exists. No new
+  abstractions.
+- The unified-auto `ACTION` protocol handling is unchanged: unparseable output
+  stays a plain answer, denied actions strip markers; no second call ever.
+
 ## Unreleased - Experience memory replaces per-turn Ghost model calls (no release)
 
 - Unified `auto` loop: the first normal model call answers directly or requests
