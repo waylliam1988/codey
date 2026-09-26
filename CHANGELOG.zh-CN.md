@@ -2,6 +2,27 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - C901≤20 门禁 + 5个怪物拆分，修2个bug（未发布）
+
+- `pyproject.toml` 中 `C901（McCabe≤20）` 加入 CI 门禁（`tests/`/`tools/`
+  同 PLR 豁免）。PLR 拆分后的分布是 312（>8）/ 43（>15）/ 12（>18）/
+  5（>20）；20 这刀只切真怪物，不会把刚拆好的 helper（16~17）打回去。
+  5个全部纯提取拆分：`json_safe_projection`（33→4）、
+  `wait_for_stable_completion`（22→8）、`_audit_search_files`（21→9）、
+  `execute_tool_call`（21→8）、`build_project_map`（21→1）。全仓
+  `ruff check` 干净。
+- 拆分中发现2个确定性 bug，全部先红锁定再修：审计搜索在路径不可解时
+  用 `AssertionError` 崩溃而非返回错误；`build_project_map(task=None)`
+  崩 `AttributeError` 而兄弟函数容忍 `None`。`tests/test_*_split.py`
+  （models-projection、web-driver-wait、consensus-audit、
+  evidence-followup、project-map）新增60个测试。`json_safe_projection`
+  另对 HEAD 差分 fuzz 4000 用例，0 偏差。
+- `test_architecture.py` 中 `agents/consensus.py` ceiling 按仓库惯例
+  1100→1200。
+- 验证：`ruff`、`diff --check`、`compileall`、定向单测，最终
+  `python -m pytest -q -o faulthandler_timeout=120`（`4513 passed，
+  7 skipped，1391 subtests passed，378.39s`）。未发布。
+
 ## Unreleased - PLR 可读性拆分：27个怪物清零，修4个bug（未发布）
 
 - 可读性门禁改为 `pyproject.toml` 中的 `PLR0912（分支≤20）+ PLR0915

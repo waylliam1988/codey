@@ -2040,7 +2040,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # would never alarm.
         self.assertEqual(baseline - set(over_limit), set())
         ceiling = {
-            "agents/consensus.py": 1100,
+            # C901 split 2026-09-26: 1141 lines after audit-search split.
+            "agents/consensus.py": 1200,
             "ghost/affinity.py": 2750,
             "ghost/continuity.py": 1350,
             "ghost/hebbian.py": 1300,

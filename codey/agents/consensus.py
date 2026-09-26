@@ -591,61 +591,72 @@ def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget):
     )
 
 
-def _audit_search_files(
+def _audit_search_resolve_start(
     root: Path,
     rel: str,
-    query: str,
-    *,
-    max_results: int = SEARCH_MAX_RESULTS,
-) -> ToolOutcome:
-    query = query.strip()
-    if not query:
-        return ToolOutcome.error("search query required")
+) -> tuple[Path | None, ToolOutcome | None]:
     reason = _audit_path_block_reason(rel)
     if reason:
-        return ToolOutcome.error(reason)
+        return None, ToolOutcome.error(reason)
     reason = _audit_raw_symlink_reason(root, rel)
     if reason:
-        return ToolOutcome.error(reason)
+        return None, ToolOutcome.error(reason)
     try:
         start = safe_join(root, rel or ".")
     except ValueError as exc:
-        return ToolOutcome.error(str(exc))
+        return None, ToolOutcome.error(str(exc))
     if not start.exists():
-        return ToolOutcome.error(f"path not found: {rel}")
-    needle = query.lower()
-    matches: list[str] = []
-    result_limited = False
-    bytes_read = 0
-    byte_limited = False
-    oversized_files = 0
-    budget = _audit_scan_budget()
-    for path in _audit_searchable_files(root, start, budget):
-        try:
-            size = path.stat().st_size
-            if size > SEARCH_MAX_FILE_BYTES:
-                oversized_files += 1
-                continue
-            if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
-                byte_limited = True
-                break
-            bytes_read += size
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        return None, ToolOutcome.error(f"path not found: {rel}")
+    return start, None
+
+
+def _audit_search_scan_one_file(
+    path: Path,
+    bytes_read: int,
+) -> tuple[str | None, int, bool, bool]:
+    try:
+        size = path.stat().st_size
+        if size > SEARCH_MAX_FILE_BYTES:
+            return None, bytes_read, True, False
+        if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
+            return None, bytes_read, False, True
+        bytes_read += size
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None, bytes_read, False, False
+    return text, bytes_read, False, False
+
+
+def _audit_search_collect_file_matches(
+    path: Path,
+    root: Path,
+    text: str,
+    needle: str,
+    matches: list[str],
+    max_results: int,
+) -> bool:
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if needle not in line.lower():
             continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if needle not in line.lower():
-                continue
-            rel_path = path.relative_to(root).as_posix()
-            clean = line.strip()
-            if len(clean) > 240:
-                clean = clean[:237] + "..."
-            matches.append(f"{rel_path}:{line_no}: {clean}")
-            if len(matches) >= max_results:
-                result_limited = True
-                break
-        if result_limited:
-            break
+        rel_path = path.relative_to(root).as_posix()
+        clean = line.strip()
+        if len(clean) > 240:
+            clean = clean[:237] + "..."
+        matches.append(f"{rel_path}:{line_no}: {clean}")
+        if len(matches) >= max_results:
+            return True
+    return False
+
+
+def _audit_search_append_limit_notes(
+    matches: list[str],
+    *,
+    max_results: int,
+    result_limited: bool,
+    oversized_files: int,
+    byte_limited: bool,
+    budget: BoundedScanBudget,
+) -> None:
     if not matches:
         matches.append("(no literal matches; regex is not supported)")
     if result_limited:
@@ -662,12 +673,78 @@ def _audit_search_files(
         )
     if budget.limited:
         matches.append(budget.stop_message("project audit search scan"))
+
+
+def _audit_search_build_outcome(
+    matches: list[str],
+    *,
+    result_limited: bool,
+    oversized_files: int,
+    byte_limited: bool,
+    budget: BoundedScanBudget,
+) -> ToolOutcome:
     output = "\n".join(matches)
     truncated = result_limited or budget.limited or byte_limited or bool(oversized_files)
     if len(output) > READ_MAX_CHARS:
         output = output[:READ_MAX_CHARS].rstrip() + "\n... truncated"
         truncated = True
     return ToolOutcome(output, True, truncated=truncated)
+
+
+def _audit_search_files(
+    root: Path,
+    rel: str,
+    query: str,
+    *,
+    max_results: int = SEARCH_MAX_RESULTS,
+) -> ToolOutcome:
+    query = query.strip()
+    if not query:
+        return ToolOutcome.error("search query required")
+    start, error = _audit_search_resolve_start(root, rel)
+    if error is not None:
+        return error
+    if start is None:
+        return ToolOutcome.error("path could not be resolved")
+    needle = query.lower()
+    matches: list[str] = []
+    result_limited = False
+    bytes_read = 0
+    byte_limited = False
+    oversized_files = 0
+    budget = _audit_scan_budget()
+    for path in _audit_searchable_files(root, start, budget):
+        text, bytes_read, oversized_hit, byte_hit = _audit_search_scan_one_file(
+            path, bytes_read
+        )
+        if byte_hit:
+            byte_limited = True
+            break
+        if oversized_hit:
+            oversized_files += 1
+            continue
+        if text is None:
+            continue
+        if _audit_search_collect_file_matches(
+            path, root, text, needle, matches, max_results
+        ):
+            result_limited = True
+            break
+    _audit_search_append_limit_notes(
+        matches,
+        max_results=max_results,
+        result_limited=result_limited,
+        oversized_files=oversized_files,
+        byte_limited=byte_limited,
+        budget=budget,
+    )
+    return _audit_search_build_outcome(
+        matches,
+        result_limited=result_limited,
+        oversized_files=oversized_files,
+        byte_limited=byte_limited,
+        budget=budget,
+    )
 
 
 def _audit_find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:

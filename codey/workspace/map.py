@@ -206,14 +206,91 @@ class FocusModule:
     top_files: tuple[FocusCandidate, ...]
 
 
-def build_project_map(
-    project: str | Path,
-    verified_facts: str = "",
-    task: str = "",
-    candidate_commands: Sequence[str] | None = None,
-    ignored_paths: Sequence[str] = (),
-) -> ProjectMap:
-    root = Path(project).expanduser().resolve()
+def _classify_scanned_dir(
+    entry: Path,
+    rel: str,
+    *,
+    dirs: list[str],
+    source_roots: list[str],
+    test_roots: list[str],
+    stack: list[tuple[Path, int]],
+    depth: int,
+) -> None:
+    name = entry.name
+    if name in EXCLUDED_DIRS:
+        return
+    is_test_root = name in {"test", "tests"} or name.endswith("_tests")
+    is_source_root = name in SOURCE_DIR_NAMES and not is_test_root
+    if is_source_root:
+        _append_unique(source_roots, rel + "/")
+    if is_test_root:
+        _append_unique(test_roots, rel + "/")
+    if not is_source_root and not is_test_root and len(dirs) < MAX_LISTED_DIRS:
+        dirs.append(rel + "/")
+    stack.append((entry, depth + 1))
+
+
+def _classify_scanned_file(
+    entry: Path,
+    rel: str,
+    *,
+    files: list[str],
+    manifests: list[str],
+    docs: list[str],
+) -> None:
+    name = entry.name
+    if name in LOCK_FILENAMES:
+        return
+    if name in MANIFEST_NAMES:
+        _append_unique(manifests, rel)
+    if name in DOC_NAMES:
+        _append_unique(docs, rel)
+    if len(files) < MAX_LISTED_FILES:
+        files.append(rel)
+
+
+def _process_scan_entry(
+    entry: Path,
+    root: Path,
+    ignored_paths: Sequence[str],
+    *,
+    dirs: list[str],
+    files: list[str],
+    manifests: list[str],
+    docs: list[str],
+    source_roots: list[str],
+    test_roots: list[str],
+    stack: list[tuple[Path, int]],
+    depth: int,
+) -> None:
+    rel = _safe_relative(root, entry)
+    if not rel or _path_blocked(rel, ignored_paths):
+        return
+    try:
+        if entry.is_symlink():
+            return
+        if entry.is_dir():
+            _classify_scanned_dir(
+                entry,
+                rel,
+                dirs=dirs,
+                source_roots=source_roots,
+                test_roots=test_roots,
+                stack=stack,
+                depth=depth,
+            )
+            return
+        if not entry.is_file():
+            return
+        _classify_scanned_file(entry, rel, files=files, manifests=manifests, docs=docs)
+    except OSError:
+        return
+
+
+def _scan_directory_tree(
+    root: Path,
+    ignored_paths: Sequence[str],
+) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str], bool]:
     dirs: list[str] = []
     files: list[str] = []
     manifests: list[str] = []
@@ -221,7 +298,6 @@ def build_project_map(
     source_roots: list[str] = []
     test_roots: list[str] = []
     truncated = False
-
     entries_seen = 0
     stack: list[tuple[Path, int]] = [(root, 0)]
     while stack:
@@ -242,49 +318,58 @@ def build_project_map(
             truncated = True
         entries_seen += len(entries)
         for entry in entries:
-            rel = _safe_relative(root, entry)
-            if not rel or _path_blocked(rel, ignored_paths):
-                continue
-            try:
-                if entry.is_symlink():
-                    continue
-                if entry.is_dir():
-                    name = entry.name
-                    if name in EXCLUDED_DIRS:
-                        continue
-                    is_test_root = name in {"test", "tests"} or name.endswith("_tests")
-                    is_source_root = name in SOURCE_DIR_NAMES and not is_test_root
-                    if is_source_root:
-                        _append_unique(source_roots, rel + "/")
-                    if is_test_root:
-                        _append_unique(test_roots, rel + "/")
-                    if not is_source_root and not is_test_root and len(dirs) < MAX_LISTED_DIRS:
-                        dirs.append(rel + "/")
-                    stack.append((entry, depth + 1))
-                elif entry.is_file():
-                    name = entry.name
-                    if name in LOCK_FILENAMES:
-                        continue
-                    if name in MANIFEST_NAMES:
-                        _append_unique(manifests, rel)
-                    if name in DOC_NAMES:
-                        _append_unique(docs, rel)
-                    if len(files) < MAX_LISTED_FILES:
-                        files.append(rel)
-            except OSError:
-                continue
+            _process_scan_entry(
+                entry,
+                root,
+                ignored_paths,
+                dirs=dirs,
+                files=files,
+                manifests=manifests,
+                docs=docs,
+                source_roots=source_roots,
+                test_roots=test_roots,
+                stack=stack,
+                depth=depth,
+            )
         if entries_truncated:
             break
+    return dirs, files, manifests, docs, source_roots, test_roots, truncated
 
+
+def _resolve_map_annotations(
+    root: Path,
+    task: str,
+    verified_facts: str,
+    ignored_paths: Sequence[str],
+) -> tuple[list[str], str, str]:
     observed = _observed_successful_checks(verified_facts)
+    source_task = task or ""
+    clean_task = source_task.strip()
     focused_subtree = (
-        build_focused_subtree_overview(root, task, ignored_paths=ignored_paths)
-        if task.strip()
+        build_focused_subtree_overview(root, source_task, ignored_paths=ignored_paths)
+        if clean_task
         else ""
     )
     symbol_overview = ""
-    if task.strip() and not focused_subtree:
-        symbol_overview = build_symbol_overview(root, task, ignored_paths=ignored_paths)
+    if clean_task and not focused_subtree:
+        symbol_overview = build_symbol_overview(root, source_task, ignored_paths=ignored_paths)
+    return observed, focused_subtree, symbol_overview
+
+
+def build_project_map(
+    project: str | Path,
+    verified_facts: str = "",
+    task: str = "",
+    candidate_commands: Sequence[str] | None = None,
+    ignored_paths: Sequence[str] = (),
+) -> ProjectMap:
+    root = Path(project).expanduser().resolve()
+    dirs, files, manifests, docs, source_roots, test_roots, truncated = _scan_directory_tree(
+        root, ignored_paths
+    )
+    observed, focused_subtree, symbol_overview = _resolve_map_annotations(
+        root, task, verified_facts, ignored_paths
+    )
     commands = candidate_commands or ()
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),

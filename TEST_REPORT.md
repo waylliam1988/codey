@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## C901<=20 gate + 5 monsters split, 2 deterministic bugs fixed (2026-09-26)
+
+Scope (production, no release):
+
+```text
+pyproject.toml                      (C901 McCabe max-complexity 20 joins the gate; tests/tools excluded from C901 like PLR)
+codey/runtime/core/models.py        (json_safe_projection 33 -> 4: sanitize-value/leaf/key/mapping/sequence/text/unsupported helpers + explicit ProjectionState)
+codey/providers/web_drivers/base.py (wait_for_stable_completion 22 -> 8: finish/observe/poll-action/ready/recover helpers)
+codey/agents/consensus.py           (_audit_search_files 21 -> 9: resolve-start/scan-one/collect-matches/limit-notes/build-outcome helpers)
+codey/research/evidence_followup.py (execute_tool_call 21 -> 8: forbidden-tool/extra-args/note-type/source/evidence gate helpers)
+codey/workspace/map.py              (build_project_map 21 -> 1: tree-scan/entry/classify/annotation helpers)
+tests/test_architecture.py          (1000-line guardrail: consensus.py ceiling 1100 -> 1200, tagged "C901 split 2026-09-26")
+tests/test_models_projection_split.py / test_web_driver_wait_split.py / test_consensus_audit_split.py / test_evidence_followup_split.py / test_project_map_split.py (60 new tests: parity locks + 2 red-first bug regressions)
+```
+
+Deterministic bugs found while splitting (both red-first):
+
+- `consensus._audit_search_files`: an unreachable-path `assert start is
+  not None` crashed with `AssertionError` instead of returning an error
+  (resolve-start can return `(None, None)` on a bad path). Replaced with
+  `ToolOutcome.error("path could not be resolved")`, same message shape as
+  the writer side
+  (`tests/test_consensus_audit_split.py::test_search_files_resolve_contract_never_raises`).
+- `map.build_project_map(task=None)`: crashed with
+  `AttributeError: 'NoneType'.strip` while siblings
+  (`build_symbol_overview`, `build_focused_subtree_overview`) tolerate
+  `None` via `(task or "")`. Fixed with `source_task = task or ""`
+  (identical for normal strings)
+  (`tests/test_project_map_split.py::test_none_task_matches_empty_task`).
+- No deterministic bugs in `json_safe_projection` (additionally verified
+  with a 4000-case randomized differential fuzz vs HEAD: 0 mismatches), in
+  `wait_for_stable_completion` (poll-count probes identical pre/post), or
+  in `execute_tool_call`.
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .` clean (C901/PLR0912/
+  PLR0915 zero repo-wide), `git diff --check` clean,
+  `python -m compileall -q codey tests tools` passed; per-batch targeted
+  suites (models/projection/runtime, web-driver/provider, consensus,
+  evidence-followup/ledger, project-map/workspace) green before the full run.
+- One guardrail round-trip: the first full run surfaced
+  `test_long_files_do_not_grow` (`agents/consensus.py` 1141 > ceiling
+  1100); ceiling bumped per repo convention, architecture file re-verified
+  green (90 passed).
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4513 passed, 7 skipped, 1391 subtests passed in 378.39s (0:06:18)`,
+  single run, zero flakes. Skips are the known Windows POSIX/opt-in family.
+- This entry was written after the full suite. No release was made.
+
 ## PLR readability split: 27 monsters down, 4 deterministic bugs fixed (2026-09-26)
 
 Scope (production, no release):

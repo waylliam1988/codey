@@ -147,6 +147,93 @@ def build_evidence_followup_repair_prompt(
     return clip("\n".join(lines), _context_char_limit(max_context_chars))
 
 
+def _reject_forbidden_tool(tool_name: str) -> str | None:
+    if tool_name != "knowledge_write":
+        return f"ERROR: Tool '{tool_name}' is forbidden in evidence-only follow-up mode. ONLY 'knowledge_write' is allowed."
+    return None
+
+
+def _reject_extra_write_args(args: dict[str, Any]) -> str | None:
+    extra_keys = sorted(str(key) for key in args if str(key) not in _ALLOWED_KNOWLEDGE_WRITE_ARGS)
+    if extra_keys:
+        return "ERROR: Evidence-only follow-up accepts only type/title/body/sources/evidence args; forbidden key(s): " + ", ".join(extra_keys)
+    return None
+
+
+def _reject_bad_note_type(args: dict[str, Any]) -> str | None:
+    if "type" not in args or not str(args.get("type") or "").strip():
+        return "ERROR: knowledge_write in evidence-only mode requires explicit type='fact'."
+    note_type = str(args.get("type") or "").strip().lower()
+    if note_type != "fact":
+        return f"ERROR: Evidence-only follow-up requires type='fact', got '{note_type}'."
+    return None
+
+
+def _extract_source_list(args: dict[str, Any]) -> tuple[list[str], str | None]:
+    sources = args.get("sources")
+    if not isinstance(sources, list):
+        return ([], "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs.")
+    source_list = [str(s).strip() for s in sources if str(s).strip()]
+    if not source_list:
+        return ([], "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs.")
+    return (source_list, None)
+
+
+def _check_single_source(s: str, allowed_urls: set[str]) -> str | None:
+    if _SOURCE_ID_FORBIDDEN_RE.search(s) and not (s.startswith("http://") or s.startswith("https://")):
+        return f"ERROR: Invalid source reference '{s}'. Internal IDs like s1/s2 are strictly forbidden; use canonical URLs."
+    if s not in allowed_urls:
+        return f"ERROR: Source URL '{s}' is not in the allowed fresh material whitelist."
+    return None
+
+
+def _check_source_allowlist(source_list: list[str], allowed_urls: set[str]) -> str | None:
+    for s in source_list:
+        if error := _check_single_source(s, allowed_urls):
+            return error
+    return None
+
+
+def _extract_evidence_items(args: dict[str, Any]) -> tuple[list[Any], str | None]:
+    evidence_raw = args.get("evidence")
+    if not evidence_raw:
+        return ([], "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list.")
+    if not isinstance(evidence_raw, list) or not evidence_raw:
+        return ([], "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list.")
+    return (evidence_raw, None)
+
+
+def _check_single_evidence_item(item: Any, allowed_urls: set[str], source_list: list[str]) -> str | None:
+    if not isinstance(item, dict):
+        return "ERROR: Each evidence item must be a JSON object."
+    if "source_url" not in item:
+        if "source" in item:
+            return "ERROR: evidence item requires explicit source_url; 'source' alias is not accepted."
+        return "ERROR: evidence item requires explicit source_url."
+    ev_src = str(item.get("source_url") or "").strip()
+    if not ev_src:
+        return "ERROR: evidence item requires explicit source_url."
+    if _SOURCE_ID_FORBIDDEN_RE.search(ev_src) and not (ev_src.startswith("http://") or ev_src.startswith("https://")):
+        return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs like s1/s2 are strictly forbidden."
+    if ev_src not in allowed_urls:
+        return f"ERROR: Evidence source_url '{ev_src}' is not in the allowed fresh material whitelist."
+    if ev_src not in source_list:
+        return f"ERROR: Evidence source_url '{ev_src}' must be declared in the note's 'sources' list."
+    excerpt = str(item.get("excerpt") or item.get("quote") or "").strip()
+    if not excerpt:
+        return "ERROR: Evidence item requires a non-empty excerpt string."
+    return None
+
+
+def _check_evidence_allowlist(
+    evidence_items: list[Any], allowed_urls: set[str], source_list: list[str]
+) -> str | None:
+    for item in evidence_items:
+        if error := _check_single_evidence_item(item, allowed_urls, source_list):
+            return error
+    return None
+
+
 class EvidenceFollowupController:
     """Enforces tool allowlist and URL whitelist for evidence-only follow-up."""
 
@@ -160,52 +247,22 @@ class EvidenceFollowupController:
 
     def execute_tool_call(self, name: str, args: dict[str, Any]) -> str:
         tool_name = str(name or "").strip().lower()
-        if tool_name != "knowledge_write":
-            return f"ERROR: Tool '{tool_name}' is forbidden in evidence-only follow-up mode. ONLY 'knowledge_write' is allowed."
-        extra_keys = sorted(str(key) for key in args if str(key) not in _ALLOWED_KNOWLEDGE_WRITE_ARGS)
-        if extra_keys:
-            return "ERROR: Evidence-only follow-up accepts only type/title/body/sources/evidence args; forbidden key(s): " + ", ".join(extra_keys)
-        if "type" not in args or not str(args.get("type") or "").strip():
-            return "ERROR: knowledge_write in evidence-only mode requires explicit type='fact'."
-        note_type = str(args.get("type") or "").strip().lower()
-        if note_type != "fact":
-            return f"ERROR: Evidence-only follow-up requires type='fact', got '{note_type}'."
-        sources = args.get("sources")
-        if not isinstance(sources, list):
-            return "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs."
-        source_list = [str(s).strip() for s in sources if str(s).strip()]
-        if not source_list:
-            return "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs."
-        for s in source_list:
-            if _SOURCE_ID_FORBIDDEN_RE.search(s) and not (s.startswith("http://") or s.startswith("https://")):
-                return f"ERROR: Invalid source reference '{s}'. Internal IDs like s1/s2 are strictly forbidden; use canonical URLs."
-            if s not in self.allowed_urls:
-                return f"ERROR: Source URL '{s}' is not in the allowed fresh material whitelist."
-        evidence_raw = args.get("evidence")
-        if not evidence_raw:
-            return "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list."
-        if not isinstance(evidence_raw, list) or not evidence_raw:
-            return "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list."
-        evidence_items = evidence_raw
-        for item in evidence_items:
-            if not isinstance(item, dict):
-                return "ERROR: Each evidence item must be a JSON object."
-            if "source_url" not in item:
-                if "source" in item:
-                    return "ERROR: evidence item requires explicit source_url; 'source' alias is not accepted."
-                return "ERROR: evidence item requires explicit source_url."
-            ev_src = str(item.get("source_url") or "").strip()
-            if not ev_src:
-                return "ERROR: evidence item requires explicit source_url."
-            if _SOURCE_ID_FORBIDDEN_RE.search(ev_src) and not (ev_src.startswith("http://") or ev_src.startswith("https://")):
-                return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs like s1/s2 are strictly forbidden."
-            if ev_src not in self.allowed_urls:
-                return f"ERROR: Evidence source_url '{ev_src}' is not in the allowed fresh material whitelist."
-            if ev_src not in source_list:
-                return f"ERROR: Evidence source_url '{ev_src}' must be declared in the note's 'sources' list."
-            excerpt = str(item.get("excerpt") or item.get("quote") or "").strip()
-            if not excerpt:
-                return "ERROR: Evidence item requires a non-empty excerpt string."
+        if error := _reject_forbidden_tool(tool_name):
+            return error
+        if error := _reject_extra_write_args(args):
+            return error
+        if error := _reject_bad_note_type(args):
+            return error
+        source_list, error = _extract_source_list(args)
+        if error:
+            return error
+        if error := _check_source_allowlist(source_list, self.allowed_urls):
+            return error
+        evidence_items, error = _extract_evidence_items(args)
+        if error:
+            return error
+        if error := _check_evidence_allowlist(evidence_items, self.allowed_urls, source_list):
+            return error
         return self.tools.knowledge_write(args)
 
 

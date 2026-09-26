@@ -63,7 +63,13 @@ target-version = "py311"
 # Thresholds were tuned 2026-09-26: defaults (12/50) flagged 145 functions
 # including clean state machines (e.g. find_safe_cut with 13 branches);
 # 20/80 leaves 27 true monsters, all with >= 21 branches.
-select = ["E4", "E7", "E9", "F", "W", "B", "UP", "I", "SIM", "PLR0912", "PLR0915"]
+# C901 (McCabe <= 20) joined the gate 2026-09-26: after the PLR split the
+# C901 distribution is 312 (>8) / 43 (>15) / 12 (>18) / 5 (>20); 20 cuts
+# only true monsters without re-flagging the just-split helpers (16-17).
+select = ["E4", "E7", "E9", "F", "W", "B", "UP", "I", "SIM", "PLR0912", "PLR0915", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20
 
 [tool.ruff.lint.pylint]
 max-branches = 20
@@ -72,8 +78,8 @@ max-statements = 80
 [tool.ruff.lint.per-file-ignores]
 # Tests/tools are scenario scripts, not production readability surface:
 # a 180-statement e2e flow is expected, don't gate them on size.
-"tests/**" = ["PLR0912", "PLR0915"]
-"tools/**" = ["PLR0912", "PLR0915"]
+"tests/**" = ["PLR0912", "PLR0915", "C901"]
+"tools/**" = ["PLR0912", "PLR0915", "C901"]
 
 [tool.mypy]
 # Baseline only, not a CI gate (CI runs ruff + pytest + node --check):

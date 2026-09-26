@@ -98,113 +98,140 @@ def _nonnegative_int(value: object) -> int:
     return 0
 
 
+@dataclass
+class _ProjectionState:
+    """Mutable budget/warning accumulator for one projection call."""
+
+    label: str
+    warnings: list[str] = field(default_factory=list)
+    item_count: int = 0
+
+    def warn(self, message: str) -> None:
+        if len(self.warnings) < PROJECTION_MAX_WARNINGS:
+            self.warnings.append(message)
+
+    def count_item(self) -> bool:
+        if self.item_count >= PROJECTION_MAX_ITEMS:
+            self.warn(f"{self.label} projection omitted extra items")
+            return False
+        self.item_count += 1
+        return True
+
+
+def _projection_bounded_text(text: str, path: str, state: _ProjectionState) -> str:
+    if len(text) <= PROJECTION_MAX_STRING_CHARS:
+        return text
+    state.warn(f"{path} string clipped")
+    return text[:PROJECTION_MAX_STRING_CHARS]
+
+
+def _projection_unsupported(obj: object, path: str, state: _ProjectionState) -> str:
+    state.warn(f"{path} converted non-json {type(obj).__name__}")
+    return f"<non-json {type(obj).__name__}>"
+
+
+def _projection_sanitize_key(raw_key: object, path: str, state: _ProjectionState) -> str:
+    if isinstance(raw_key, str):
+        key = raw_key
+    else:
+        state.warn(f"{path} key converted to string")
+        if raw_key is None or isinstance(raw_key, (bool, int, float)):
+            key = str(raw_key)
+        else:
+            key = f"<non-json-key {type(raw_key).__name__}>"
+    if not key:
+        state.warn(f"{path} empty key renamed")
+        key = "_"
+    if len(key) > PROJECTION_MAX_KEY_CHARS:
+        state.warn(f"{path} key clipped")
+        key = key[:PROJECTION_MAX_KEY_CHARS]
+    return key
+
+
+def _projection_sanitize_leaf(obj: object, path: str, state: _ProjectionState) -> tuple[bool, object]:
+    if obj is None or isinstance(obj, bool):
+        return True, obj
+    if isinstance(obj, str):
+        return True, _projection_bounded_text(obj, path, state)
+    if isinstance(obj, int):
+        return True, obj
+    if isinstance(obj, float):
+        if math.isfinite(obj):
+            return True, obj
+        state.warn(f"{path} converted non-finite float")
+        return True, str(obj)
+    return False, None
+
+
+def _projection_sanitize_mapping(
+    mapping: Mapping[object, object],
+    path: str,
+    depth: int,
+    state: _ProjectionState,
+) -> dict[str, object]:
+    sanitized: dict[str, object] = {}
+    for raw_key, raw_value in mapping.items():
+        if state.item_count >= PROJECTION_MAX_ITEMS:
+            state.warn(f"{path} object omitted extra items")
+            break
+        key = _projection_sanitize_key(raw_key, f"{path}.key", state)
+        if key == PROJECTION_WARNING_KEY:
+            state.warn(f"{path}.{key} reserved key renamed")
+            key = "_input_projection_warnings"
+        if key in sanitized:
+            state.warn(f"{path}.{key} duplicate key omitted")
+            continue
+        sanitized[key] = _projection_sanitize_value(raw_value, f"{path}.{key}", depth, state)
+    return sanitized
+
+
+def _projection_sanitize_sequence(
+    obj: list[object] | tuple[object, ...],
+    path: str,
+    depth: int,
+    state: _ProjectionState,
+) -> list[object]:
+    items: list[object] = []
+    for index, item in enumerate(obj):
+        if state.item_count >= PROJECTION_MAX_ITEMS:
+            state.warn(f"{path} list omitted extra items")
+            break
+        items.append(_projection_sanitize_value(item, f"{path}[{index}]", depth + 1, state))
+    return items
+
+
+def _projection_sanitize_value(obj: object, path: str, depth: int, state: _ProjectionState) -> object:
+    if not state.count_item():
+        return None
+    if depth > PROJECTION_MAX_DEPTH:
+        state.warn(f"{path} exceeded max depth")
+        return f"<max-depth {type(obj).__name__}>"
+    handled, leaf = _projection_sanitize_leaf(obj, path, state)
+    if handled:
+        return leaf
+    if isinstance(obj, Mapping):
+        return _projection_sanitize_mapping(obj, path, depth + 1, state)
+    if isinstance(obj, (list, tuple)):
+        return _projection_sanitize_sequence(obj, path, depth, state)
+    return _projection_unsupported(obj, path, state)
+
+
 def json_safe_projection(
     value: object,
     *,
     label: str,
 ) -> dict[str, object]:
     """Return a bounded, JSON-safe projection mapping."""
-
-    warnings: list[str] = []
-    item_count = 0
-
-    def warn(message: str) -> None:
-        if len(warnings) < PROJECTION_MAX_WARNINGS:
-            warnings.append(message)
-
-    def count_item() -> bool:
-        nonlocal item_count
-        if item_count >= PROJECTION_MAX_ITEMS:
-            warn(f"{label} projection omitted extra items")
-            return False
-        item_count += 1
-        return True
-
-    def bounded_text(text: str, path: str) -> str:
-        if len(text) <= PROJECTION_MAX_STRING_CHARS:
-            return text
-        warn(f"{path} string clipped")
-        return text[:PROJECTION_MAX_STRING_CHARS]
-
-    def unsupported(obj: object, path: str) -> str:
-        warn(f"{path} converted non-json {type(obj).__name__}")
-        return f"<non-json {type(obj).__name__}>"
-
-    def sanitize_key(raw_key: object, path: str) -> str:
-        if isinstance(raw_key, str):
-            key = raw_key
-        else:
-            warn(f"{path} key converted to string")
-            if raw_key is None or isinstance(raw_key, (bool, int, float)):
-                key = str(raw_key)
-            else:
-                key = f"<non-json-key {type(raw_key).__name__}>"
-        if not key:
-            warn(f"{path} empty key renamed")
-            key = "_"
-        if len(key) > PROJECTION_MAX_KEY_CHARS:
-            warn(f"{path} key clipped")
-            key = key[:PROJECTION_MAX_KEY_CHARS]
-        return key
-
-    def sanitize(obj: object, path: str, depth: int) -> object:
-        if not count_item():
-            return None
-        if depth > PROJECTION_MAX_DEPTH:
-            warn(f"{path} exceeded max depth")
-            return f"<max-depth {type(obj).__name__}>"
-        if obj is None or isinstance(obj, bool):
-            return obj
-        if isinstance(obj, str):
-            return bounded_text(obj, path)
-        if isinstance(obj, int):
-            return obj
-        if isinstance(obj, float):
-            if math.isfinite(obj):
-                return obj
-            warn(f"{path} converted non-finite float")
-            return str(obj)
-        if isinstance(obj, Mapping):
-            return sanitize_mapping(obj, path, depth + 1)
-        if isinstance(obj, (list, tuple)):
-            items: list[object] = []
-            for index, item in enumerate(obj):
-                if item_count >= PROJECTION_MAX_ITEMS:
-                    warn(f"{path} list omitted extra items")
-                    break
-                items.append(sanitize(item, f"{path}[{index}]", depth + 1))
-            return items
-        return unsupported(obj, path)
-
-    def sanitize_mapping(
-        mapping: Mapping[object, object],
-        path: str,
-        depth: int,
-    ) -> dict[str, object]:
-        sanitized: dict[str, object] = {}
-        for raw_key, raw_value in mapping.items():
-            if item_count >= PROJECTION_MAX_ITEMS:
-                warn(f"{path} object omitted extra items")
-                break
-            key = sanitize_key(raw_key, f"{path}.key")
-            if key == PROJECTION_WARNING_KEY:
-                warn(f"{path}.{key} reserved key renamed")
-                key = "_input_projection_warnings"
-            if key in sanitized:
-                warn(f"{path}.{key} duplicate key omitted")
-                continue
-            sanitized[key] = sanitize(raw_value, f"{path}.{key}", depth)
-        return sanitized
-
+    state = _ProjectionState(label=label)
     if value is None:
         result: dict[str, object] = {}
     elif isinstance(value, Mapping):
-        result = sanitize_mapping(value, label, 0)
+        result = _projection_sanitize_mapping(value, label, 0, state)
     else:
         result = {}
-        warn(f"{label} projection replaced non-mapping {type(value).__name__}")
-    if warnings:
-        result[PROJECTION_WARNING_KEY] = warnings
+        state.warn(f"{label} projection replaced non-mapping {type(value).__name__}")
+    if state.warnings:
+        result[PROJECTION_WARNING_KEY] = state.warnings
     return result
 
 

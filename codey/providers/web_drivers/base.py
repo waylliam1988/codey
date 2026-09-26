@@ -12,81 +12,93 @@ from codey.providers.submission import SendAttempt, SubmissionUncertain, confirm
 from codey.runtime.core import cancellation
 
 
-def wait_for_stable_completion(
+def _finish_wait(
+    ctx: send_loop.ProviderSendContext,
+    reader: Callable[[], str],
+    before_return: Callable[[], None] | None,
+) -> str:
+    if before_return is not None:
+        before_return()
+    return send_loop.read_completion(ctx, reader)
+
+
+def _observe_stable_response(
+    ctx: send_loop.ProviderSendContext,
+    attempt: SendAttempt,
+    current: str,
+    min_wait: float,
+) -> provider_flow.FlowObservation | None:
+    confirm_submission(attempt, ctx.provider_id)
+    ctx.appeared = True
+    same = ctx.same_as_last(current)
+    observation = provider_flow.FlowObservation(
+        response_stable=same,
+        response_nonempty=True,
+    )
+    ctx.record_response(current, observation)
+    if not same or (time.time() - ctx.sent_at) < min_wait:
+        return None
+    return observation
+
+
+def _json_tool_poll_action(
+    current: str,
+    stable: int,
+    *,
+    stable_ticks: int,
+    json_tool_stable_ticks: int,
+    is_json_tool: Callable[[str], bool] | None,
+    looks_like_json_tool: Callable[[str], bool] | None,
+    repair_json_tool: Callable[[str], str] | None,
+) -> str | None:
+    is_json = bool(is_json_tool and is_json_tool(current))
+    repairable_json = False
+    if looks_like_json_tool and looks_like_json_tool(current) and not is_json:
+        repairable_json = bool(repair_json_tool and repair_json_tool(current))
+        if not repairable_json and stable < stable_ticks:
+            return "continue"
+    if stable >= json_tool_stable_ticks and is_json:
+        return "finish"
+    if repairable_json and stable < stable_ticks:
+        return "continue"
+    if repairable_json:
+        return "finish"
+    return None
+
+
+def _poll_completion_ready(
+    ctx: send_loop.ProviderSendContext,
+    observation: provider_flow.FlowObservation,
+    *,
+    stable: int,
+    stable_ticks: int,
+    built_in_ready: Callable[[int, provider_flow.FlowObservation], bool] | None,
+    allow_recovery: bool,
+) -> bool:
+    return send_loop.completion_ready(
+        ctx,
+        observation,
+        built_in_ready=(
+            built_in_ready(stable, observation)
+            if built_in_ready is not None
+            else stable >= stable_ticks
+        ),
+        allow_recovery=allow_recovery,
+    )
+
+
+def _recover_after_timeout(
     ctx: send_loop.ProviderSendContext,
     attempt: SendAttempt,
     *,
-    response_timeout: float,
-    stable_ticks: int,
-    tick: float,
-    min_wait: float,
-    read_current: Callable[[], str],
     read_final: Callable[[], str],
     read_late: Callable[[], str],
+    before_return: Callable[[], None] | None,
+    before_recover: Callable[[], None] | None,
+    response_timeout: float,
     uncertain_message: str,
-    before_poll: Callable[[send_loop.ProviderSendContext], bool | None] | None = None,
-    before_return: Callable[[], None] | None = None,
-    is_json_tool: Callable[[str], bool] | None = None,
-    looks_like_json_tool: Callable[[str], bool] | None = None,
-    repair_json_tool: Callable[[str], str] | None = None,
-    json_tool_stable_ticks: int = 2,
-    built_in_ready: Callable[[int, provider_flow.FlowObservation], bool] | None = None,
-    allow_recovery: bool = False,
-    before_recover: Callable[[], None] | None = None,
-    missing_message: str | None = None,
+    missing_message: str | None,
 ) -> str:
-    """Wait for a provider response to stabilize, then read final text."""
-
-    def finish(reader: Callable[[], str]) -> str:
-        if before_return is not None:
-            before_return()
-        return send_loop.read_completion(ctx, reader)
-
-    overall_deadline = time.time() + max(0.0, response_timeout)
-    while time.time() < overall_deadline:
-        cancellation.wait(tick)
-        if before_poll is not None and before_poll(ctx):
-            continue
-        current = read_current()
-        if not current:
-            continue
-        confirm_submission(attempt, ctx.provider_id)
-        ctx.appeared = True
-        same = ctx.same_as_last(current)
-        observation = provider_flow.FlowObservation(
-            response_stable=same,
-            response_nonempty=True,
-        )
-        ctx.record_response(current, observation)
-        if not same or (time.time() - ctx.sent_at) < min_wait:
-            continue
-
-        is_json = bool(is_json_tool and is_json_tool(current))
-        repairable_json = False
-        if looks_like_json_tool and looks_like_json_tool(current) and not is_json:
-            repairable_json = bool(repair_json_tool and repair_json_tool(current))
-            if not repairable_json and ctx.stable < stable_ticks:
-                continue
-        if ctx.stable >= json_tool_stable_ticks and is_json:
-            return finish(read_final)
-        if repairable_json and ctx.stable < stable_ticks:
-            continue
-        if repairable_json:
-            return finish(read_final)
-
-        ready = send_loop.completion_ready(
-            ctx,
-            observation,
-            built_in_ready=(
-                built_in_ready(ctx.stable, observation)
-                if built_in_ready is not None
-                else ctx.stable >= stable_ticks
-            ),
-            allow_recovery=allow_recovery,
-        )
-        if ready:
-            return finish(read_final)
-
     if before_recover is not None:
         before_recover()
     late = read_late()
@@ -116,6 +128,79 @@ def wait_for_stable_completion(
     raise ResponseMissing(
         missing_message
         or f"{ctx.display_name} response timed out after {response_timeout:.0f}s"
+    )
+
+
+def wait_for_stable_completion(
+    ctx: send_loop.ProviderSendContext,
+    attempt: SendAttempt,
+    *,
+    response_timeout: float,
+    stable_ticks: int,
+    tick: float,
+    min_wait: float,
+    read_current: Callable[[], str],
+    read_final: Callable[[], str],
+    read_late: Callable[[], str],
+    uncertain_message: str,
+    before_poll: Callable[[send_loop.ProviderSendContext], bool | None] | None = None,
+    before_return: Callable[[], None] | None = None,
+    is_json_tool: Callable[[str], bool] | None = None,
+    looks_like_json_tool: Callable[[str], bool] | None = None,
+    repair_json_tool: Callable[[str], str] | None = None,
+    json_tool_stable_ticks: int = 2,
+    built_in_ready: Callable[[int, provider_flow.FlowObservation], bool] | None = None,
+    allow_recovery: bool = False,
+    before_recover: Callable[[], None] | None = None,
+    missing_message: str | None = None,
+) -> str:
+    """Wait for a provider response to stabilize, then read final text."""
+    overall_deadline = time.time() + max(0.0, response_timeout)
+    while time.time() < overall_deadline:
+        cancellation.wait(tick)
+        if before_poll is not None and before_poll(ctx):
+            continue
+        current = read_current()
+        if not current:
+            continue
+        observation = _observe_stable_response(ctx, attempt, current, min_wait)
+        if observation is None:
+            continue
+
+        action = _json_tool_poll_action(
+            current,
+            ctx.stable,
+            stable_ticks=stable_ticks,
+            json_tool_stable_ticks=json_tool_stable_ticks,
+            is_json_tool=is_json_tool,
+            looks_like_json_tool=looks_like_json_tool,
+            repair_json_tool=repair_json_tool,
+        )
+        if action == "continue":
+            continue
+        if action == "finish":
+            return _finish_wait(ctx, read_final, before_return)
+
+        if _poll_completion_ready(
+            ctx,
+            observation,
+            stable=ctx.stable,
+            stable_ticks=stable_ticks,
+            built_in_ready=built_in_ready,
+            allow_recovery=allow_recovery,
+        ):
+            return _finish_wait(ctx, read_final, before_return)
+
+    return _recover_after_timeout(
+        ctx,
+        attempt,
+        read_final=read_final,
+        read_late=read_late,
+        before_return=before_return,
+        before_recover=before_recover,
+        response_timeout=response_timeout,
+        uncertain_message=uncertain_message,
+        missing_message=missing_message,
     )
 
 

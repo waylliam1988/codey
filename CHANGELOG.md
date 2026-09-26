@@ -2,6 +2,28 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - C901<=20 gate + 5 monsters split, 2 bugs fixed (no release)
+
+- `C901 (McCabe <= 20)` joins the CI gate in `pyproject.toml`
+  (`tests/`/`tools/` excluded like PLR). Post-PLR-split distribution was
+  312 (>8) / 43 (>15) / 12 (>18) / 5 (>20); 20 cuts only true monsters
+  without re-flagging the just-split helpers (16-17). All 5 split by pure
+  extraction: `json_safe_projection` (33->4), `wait_for_stable_completion`
+  (22->8), `_audit_search_files` (21->9), `execute_tool_call` (21->8),
+  `build_project_map` (21->1). `ruff check` is clean repo-wide.
+- 2 deterministic bugs found while splitting, each locked red-first: audit
+  search crashed with `AssertionError` instead of returning an error on
+  unresolvable paths; `build_project_map(task=None)` crashed with
+  `AttributeError` while its siblings tolerate `None`. 60 new tests in
+  `tests/test_*_split.py` (models-projection, web-driver-wait,
+  consensus-audit, evidence-followup, project-map). `json_safe_projection`
+  additionally differential-fuzzed vs HEAD (4000 cases, 0 mismatches).
+- `test_architecture.py` ceiling for `agents/consensus.py` 1100->1200 per
+  repo convention.
+- Verification: `ruff`, `diff --check`, `compileall`, targeted suites, then
+  final `python -m pytest -q -o faulthandler_timeout=120` (`4513 passed,
+  7 skipped, 1391 subtests passed in 378.39s`). No release was made.
+
 ## Unreleased - PLR readability split: 27 monsters down, 4 bugs fixed (no release)
 
 - Readability gate is now `PLR0912 (branches <= 20) + PLR0915 (statements
