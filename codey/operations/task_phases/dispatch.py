@@ -10,10 +10,19 @@ if TYPE_CHECKING:
     from codey.operations.task_run import TaskRunDeps
 
 from codey.ghost.work_queue import GhostWorkItem
+from codey.operations.auto_loop import (
+    AutoRunDeps,
+    is_auto_request,
+    run_auto_mode,
+)
 from codey.operations.chat import run_chat_mode
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_plan import build_conversation_plan
-from codey.operations.ghost_context import ghost_continuity, ghost_directive
+from codey.operations.ghost_context import (
+    ghost_continuity,
+    ghost_directive,
+    ghost_experiences,
+)
 from codey.operations.mode_dispatch import ModeDispatchDeps, dispatch_task_mode
 from codey.operations.planning_flow import (
     PlanningFlowDeps,
@@ -157,6 +166,7 @@ def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
         review_log_lines=deps.review_log_lines,
         ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
         ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
+        ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
     )
 
 
@@ -226,8 +236,8 @@ def dispatch_run_mode(
             run_consensus=deps.run_consensus,
             ghost_directive=lambda **kwargs: ghost_directive(deps.state, **kwargs),
             ghost_continuity=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
-        ),
-        project=run_project_operation,
+            ghost_experiences=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+        ),        project=run_project_operation,
         research=lambda active_frame, active_hooks: run_research_mode(
             research_deps,
             active_frame,
@@ -264,6 +274,36 @@ def dispatch_run_mode(
             **kwargs,
         ),
     )
+    # Unified auto runs in the same batch as the Ghost-route removal: the first
+    # normal model call decides direct answer vs permission-checked action, so
+    # unprojected auto research never degrades to pure chat. Recovered tool
+    # replays and claimed Ghost work items bypass auto: their mode is already
+    # decided and the first output must not override it.
+    if (
+        is_auto_request(frame.request)
+        and not frame.recovered_tool_outcomes
+        and work.claimed_work_item is None
+    ):
+        from codey.operations.review_flow import has_reviewable_diff as _has_diff
+        from codey.operations.task_phases.lifecycle import open_run_ledger as _open_ledger
+
+        auto_deps = AutoRunDeps(
+            state=deps.state,
+            mode_deps=mode_deps,
+            config_result=config_result,
+            acquire_writer=lambda project: deps.state.acquire_project_writer(project),
+            release_writer=lambda project: deps.state.release_project_writer(project),
+            open_ledger_for=lambda kind: _open_ledger(
+                deps, work, frame.request,
+                run_id=frame.run_id, task_kind=kind, provider_id=frame.provider_id,
+            ),
+            ghost_directive_fn=lambda **kwargs: ghost_directive(deps.state, **kwargs),
+            ghost_continuity_fn=lambda **kwargs: ghost_continuity(deps.state, **kwargs),
+            experiences_fn=lambda **kwargs: ghost_experiences(deps.state, **kwargs),
+            has_reviewable_diff_fn=lambda: _has_diff(review_deps, frame.request.project),
+            research_available=True,
+        )
+        return run_auto_mode(frame, work, hooks, auto_deps)
     return dispatch_task_mode(
         task_kind,
         frame,

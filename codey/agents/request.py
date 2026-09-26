@@ -76,6 +76,7 @@ class AgentRequest:
     coding_context_enabled: bool = True
     ghost_directive: str = ""
     ghost_continuity: str = ""
+    ghost_experiences: str = ""
     completion_repair_context: str = ""
     completion_repair_context_payload: dict[str, object] | None = None
     permission_profile: str = "coding_writer"

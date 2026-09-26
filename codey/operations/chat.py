@@ -29,6 +29,7 @@ def run_chat_mode(
     run_consensus: Callable[..., Any] | None,
     ghost_directive: Callable[..., Any],
     ghost_continuity: Callable[..., Any],
+    ghost_experiences: Callable[..., Any] | None = None,
 ) -> ModeOutcome:
     request = frame.request
     if frame.provider is None:
@@ -45,6 +46,17 @@ def run_chat_mode(
     record_local_context_trace(frame.trace, directive, continuity)
     ghost_context = join_local_contexts(directive.text, continuity.text)
     prompt = prepend_ghost_directive(prompt, ghost_context)
+    if ghost_experiences is not None:
+        try:
+            experiences = ghost_experiences(
+                session_id=request.session_id,
+                project=request.project or "",
+                query=request.task,
+            )
+        except Exception:
+            experiences = ""
+        if str(experiences or "").strip():
+            prompt = f"{prompt}\n\n{str(experiences).strip()}"
     trace = FailOpenPromptTrace(frame.trace)
     trace.call("record_permission_profile", "chat", phase="chat")
     consulted = None
@@ -113,12 +125,8 @@ def run_chat_mode(
             latest_reply=reply,
         ),
     )
-    state.emit({
-        "type": "reply",
-        "run_id": frame.run_id,
-        "session_id": request.session_id,
-        "text": reply,
-    })
+    # Settlement owns final display: persist the experience observation first,
+    # then publish reply + task_done. Modes never emit final events themselves.
     result = RunResult(reply, "done", 1)
     return ModeOutcome({
         "type": "task_done",
@@ -130,7 +138,12 @@ def run_chat_mode(
         "max_turns": request.max_turns,
         "provider": frame.provider_id,
         "mode": "chat",
-    })
+    }, display=({
+        "type": "reply",
+        "run_id": frame.run_id,
+        "session_id": request.session_id,
+        "text": reply,
+    },))
 
 
 __all__ = ["run_chat_mode"]

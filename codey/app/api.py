@@ -306,6 +306,7 @@ def ghost_control_surface(ctx: Any) -> GhostControlSurface:
         work_queue=ctx.ghost_work_queue,
         affinity=ctx.ghost_affinity,
         signals=ctx.ghost_signals,
+        observations=ctx.ghost_observations,
     )
 
 

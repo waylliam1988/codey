@@ -316,7 +316,15 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         # Single persistent writer: snapshot projects claim cross-process
         # ownership here; a busy project fails fast instead of forking baselines.
         # Only lock contention maps to project_write_busy; IO errors propagate.
-        needs_writer = bool(project) and baseline_task_kind in {"project", "hybrid", "auto"}
+        # Unified auto defers the lock: an auto greeting with a project must not
+        # claim the writer before the first model output chooses an edit action;
+        # auto_loop.py acquires it only when the chosen action needs it.
+        intent = str(request.intent or "auto").strip().lower()
+        needs_writer = (
+            bool(project)
+            and baseline_task_kind in {"project", "hybrid"}
+            and intent != "auto"
+        )
         if needs_writer:
             try:
                 is_git = deps.is_git_repository
@@ -608,10 +616,21 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             return early
 
         completion_deps = project_completion_deps(deps)
-        open_run_ledger(
-            deps, workload.work, setup.request,
-            run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,
-        )
+        # Unified auto defers the ledger mode until the first model output
+        # chooses an action; auto_loop opens it via open_ledger_for(). Recovered
+        # replays and claimed Ghost work items keep the existing path: their
+        # mode is already decided before this point.
+        from codey.operations.auto_loop import is_auto_request as _is_auto
+
+        if not (
+            _is_auto(setup.request)
+            and not workload.recovered_tool_outcomes
+            and setup.claimed_work_item is None
+        ):
+            open_run_ledger(
+                deps, workload.work, setup.request,
+                run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,
+            )
 
         hooks = build_hooks(
             deps,
@@ -643,6 +662,11 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             setup.task_kind,
             setup.project_config_result,
         )
+        # Unified auto may decide a different kind on its first normal call;
+        # sync it back so trace finish, ledger projection, and settlement all
+        # report the executed mode instead of the deferred baseline.
+        if frame.task_kind != setup.task_kind:
+            setup.task_kind = frame.task_kind
         return finish_mode_outcome(
             deps,
             setup.ghost_deps,

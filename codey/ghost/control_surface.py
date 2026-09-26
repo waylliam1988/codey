@@ -11,6 +11,7 @@ from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
+from codey.ghost.observations import GhostObservationStore
 from codey.ghost.router import GhostRouteStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sleep import GhostSleepStore
@@ -45,6 +46,7 @@ class GhostControlSurface:
     work_queue: GhostWorkQueueStore | None = None
     affinity: GhostAffinityStore | None = None
     signals: GhostSignalStore | None = None
+    observations: GhostObservationStore | None = None
 
     @classmethod
     def from_state_home(cls, state_home: str | Path | None) -> GhostControlSurface:
@@ -59,6 +61,7 @@ class GhostControlSurface:
             work_queue=GhostWorkQueueStore(state_home),
             affinity=GhostAffinityStore(state_home),
             signals=GhostSignalStore(state_home),
+            observations=GhostObservationStore(state_home),
         )
 
     @property
@@ -122,6 +125,15 @@ class GhostControlSurface:
         )
 
         warning_rows = _ui_warnings((*warnings, *affinity_health.get("warnings", ())))
+        observation_rows = _safe_rows(
+            lambda: self.observations.read_committed(
+                session_id=session_ref, project=project_ref, limit=MAX_SUMMARY_ITEMS,
+            )
+            if self.observations is not None
+            else (),
+            warnings,
+            "observation_read_failed",
+        )
         return {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": True,
@@ -137,11 +149,13 @@ class GhostControlSurface:
                 "continuity": len(continuity_items),
                 "tasks": len(work_items),
                 "warnings": len(warning_rows),
+                "observations": len(observation_rows),
             },
             "context": [_continuity_payload(item) for item in continuity_items[:MAX_CONTEXT_ITEMS]],
             "review": [_candidate_payload(row) for row in pending[:MAX_SUMMARY_ITEMS]],
             "active": [_node_payload(node, project=project_ref, session_id=session_ref) for node in active_nodes[:MAX_SUMMARY_ITEMS]],
             "tasks": [_work_item_payload(item) for item in work_items[:MAX_SUMMARY_ITEMS]],
+            "observations": [_observation_payload(row) for row in observation_rows[:MAX_SUMMARY_ITEMS]],
             "health": {
                 "status": "warning" if warning_rows else "ok",
                 "associations": affinity_health.get("status") or "unavailable",
@@ -199,6 +213,7 @@ class GhostControlSurface:
         payload["sleep"] = self.sleep.export_state() if self.sleep is not None else {}
         payload["work_queue"] = self.work_queue.export_state() if self.work_queue is not None else {}
         payload["affinity"] = self.affinity.export_state() if self.affinity is not None else {}
+        payload["observations"] = self.observations.export_state() if self.observations is not None else {}
         return payload
 
     def _review_candidate(self, body: Mapping[str, object], *, review_action: str) -> tuple[int, dict[str, object]]:
@@ -347,6 +362,7 @@ class GhostControlSurface:
             ("sleep", self.sleep),
             ("work_queue", self.work_queue),
             ("affinity", self.affinity),
+            ("observations", self.observations),
         ]
         if include_signals:
             stores.insert(1, ("signals", self.signals))
@@ -532,6 +548,21 @@ def _work_item_payload(item: GhostWorkItem) -> dict[str, object]:
         "status": item.status,
         "status_label": _work_status_label(item.status),
         "updated_at": _safe_text(item.updated_at, 80),
+    }
+
+
+def _observation_payload(row: object) -> dict[str, object]:
+    item = row if isinstance(row, dict) else {}
+    user_text = _safe_text(item.get("user_text"), MAX_EVIDENCE_PREVIEW_CHARS)
+    return {
+        "id": _safe_text(item.get("run_id"), 120),
+        "type": "observation",
+        "summary": user_text,
+        "kind": _safe_text(item.get("mode"), 40),
+        "scope": "session",
+        "scope_label": _scope_label("session"),
+        "status": "committed" if item.get("committed") is True else "recorded",
+        "updated_at": _safe_text(item.get("ts"), 80),
     }
 
 

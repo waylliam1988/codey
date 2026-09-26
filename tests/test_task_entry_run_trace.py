@@ -240,11 +240,13 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
 
 
 def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
+    """Unified auto research: the first normal call carries the ACTION, the
+    trace records the deferred baseline plus the executed research mode, and
+    no retired router call happens."""
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         state = server.AppContext(root / "state")
-        route_provider = _Provider('{"mode":"research","confidence":0.92,"reason":"fresh info"}')
-        main_provider = _Provider()
+        main_provider = _Provider("ACTION: research\nPLAN: 查最新 storage 方案")
 
         result = ResearchRunResult(
             question="Research storage",
@@ -275,7 +277,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         )
 
         def router_factory(_provider_id: str):
-            return route_provider
+            raise AssertionError("retired router must not run")
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             runner = _runner(state, router_provider_factory=router_factory)
@@ -302,9 +304,9 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert payload["mode_initial"] == "chat"
         assert payload["mode_final"] == "research"
         assert payload["permission_profile"] == "research"
-        assert payload["router"]["source"] == "auto_router"
-        assert payload["router"]["reason_code"] == "accepted"
-        assert payload["router"]["selected_mode"] == "research"
+        assert payload["router"]["source"] == "baseline"
+        assert payload["router"]["reason_code"] == "baseline_kept"
+        assert len(main_provider.prompts) == 1
         assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
         assert payload["research_source_refs"][0]["host"] == "example.com"
         assert payload["research_pipeline_runs"]

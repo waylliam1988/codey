@@ -376,7 +376,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek")
+                server._run_task("session-ledger", str(project), "Update app.py", 8, False, "deepseek", "project")
 
             # Explicit ghost wait replaces the removed sync flag: no daemon
             # may hold state files while TemporaryDirectory cleans up.
@@ -482,6 +482,7 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             run_id = state.run_registry.last_terminal_event()["run_id"]

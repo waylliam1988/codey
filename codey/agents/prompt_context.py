@@ -163,6 +163,7 @@ def project_intro(
         ghost_directive=session.request.ghost_directive,
         ghost_continuity=session.request.ghost_continuity,
         completion_repair_context=session.request.completion_repair_context,
+        ghost_experiences=session.request.ghost_experiences,
         include_ghost_directive=include_ghost_directive,
     )
     epoch = context_epoch_id(rendered.text)

@@ -9,6 +9,8 @@ from typing import Any
 
 from codey.agents.request import AgentRequest
 from codey.operations.context import RunFrame, RunWork
+from codey.operations.ghost_context import ghost_continuity as _ghost_continuity_fn
+from codey.operations.ghost_context import ghost_directive as _ghost_directive_fn
 from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
@@ -27,6 +29,7 @@ class PlanningFlowDeps:
     review_log_lines: int = 80
     ghost_directive: Callable[..., Any] | None = None
     ghost_continuity: Callable[..., Any] | None = None
+    ghost_experiences: Callable[..., Any] | None = None
 
 
 def run_planning_readonly_mode(
@@ -62,12 +65,25 @@ def run_planning_readonly_mode(
     ghost_directive = deps.ghost_directive(
         project=project,
         session_id=request.session_id,
-    )
+    ) if deps.ghost_directive is not None else None
     ghost_continuity = deps.ghost_continuity(
         project=project,
         session_id=request.session_id,
-    )
+    ) if deps.ghost_continuity is not None else None
+    if ghost_directive is None or ghost_continuity is None:
+        ghost_directive = ghost_directive or _ghost_directive_fn(deps.state, project=project, session_id=request.session_id)
+        ghost_continuity = ghost_continuity or _ghost_continuity_fn(deps.state, project=project, session_id=request.session_id)
     record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
+    experiences = ""
+    if deps.ghost_experiences is not None:
+        try:
+            experiences = deps.ghost_experiences(
+                session_id=request.session_id,
+                project=project,
+                query=request.task,
+            )
+        except Exception:
+            experiences = ""
     result = deps.agent_run(AgentRequest(
         provider=frame.provider,
         project=Path(project),
@@ -88,6 +104,7 @@ def run_planning_readonly_mode(
         project_config_warnings=project_context.project_config_warnings,
         ghost_directive=ghost_directive.text,
         ghost_continuity=ghost_continuity.text,
+        ghost_experiences=str(experiences or ""),
         permission_profile="planning_readonly",
         trace_recorder=frame.trace,
     ))

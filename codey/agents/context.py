@@ -41,6 +41,7 @@ INITIAL_LISTING_CONTEXT_BUDGET = 4000
 CODING_CURRENT_CONTEXT_BUDGET = 3000
 GHOST_DIRECTIVE_CONTEXT_BUDGET = 900
 GHOST_CONTINUITY_CONTEXT_BUDGET = 900
+GHOST_EXPERIENCES_CONTEXT_BUDGET = 1800
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,7 @@ def build_agent_context(
     ghost_directive: str,
     ghost_continuity: str,
     completion_repair_context: str,
+    ghost_experiences: str = "",
     include_ghost_directive: bool = True,
 ) -> AgentContext:
     def intro_source(
@@ -163,6 +165,14 @@ def build_agent_context(
             "bounded local continuity projection",
             capability_id="local_context",
         ))
+        if str(ghost_experiences or "").strip():
+            sources.append(intro_source(
+                "ghost_experiences",
+                lambda: ghost_experiences,
+                GHOST_EXPERIENCES_CONTEXT_BUDGET,
+                "related past experiences; history only, current request wins",
+                capability_id="local_context",
+            ))
     sources.extend((
         intro_source(
             "project_instructions",

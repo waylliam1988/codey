@@ -41,6 +41,7 @@ from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunHooks, RunWork
+from codey.operations.ghost_context import ghost_experiences as _ghost_experiences
 from codey.operations.prompting import (
     record_secondary_input_prepared_trace as _record_secondary_input_prepared_trace,
 )
@@ -580,6 +581,16 @@ def _run_one_writer_attempt(
     ctx.frame.recovered_tool_outcomes = ()
     recovered_batch_id = ctx.frame.recovered_tool_result_batch_id
     ctx.frame.recovered_tool_result_batch_id = ""
+    try:
+        writer_experiences = _ghost_experiences(
+            ctx.state,
+            session_id=ctx.request.session_id,
+            project=ctx.project,
+            query=spec.task,
+            exclude_run_id=ctx.frame.run_id,
+        )
+    except Exception:
+        writer_experiences = ""
     return ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
@@ -605,6 +616,7 @@ def _run_one_writer_attempt(
         verification_successful_checks=spec.checkpoint.successful_checks,
         ghost_directive="",
         ghost_continuity="",
+        ghost_experiences=str(writer_experiences or ""),
         completion_repair_context=(
             ctx.repair_projection.prompt_text
             if ctx.repair_projection is not None

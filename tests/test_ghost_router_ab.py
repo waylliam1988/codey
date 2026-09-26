@@ -24,15 +24,30 @@ def test_self_test_router_beats_current_auto_baseline() -> None:
 
 
 def test_production_spine_router_beats_current_auto_baseline() -> None:
+    """Retirement lock-in: the pre-turn production router is retired, so the
+    router arm behaves exactly like the baseline arm on the production task
+    path (unified auto answers with one normal call; the router factory is
+    never invoked)."""
+    calls: list[str] = []
+
+    def counting_factory(provider_id: str):
+        calls.append(provider_id)
+        return ghost_router_ab.FakeProvider()
+
     payload = ghost_router_production_ab.run_cases(
         provider_id="fake",
         cases=ghost_router_ab.load_cases(),
-        router_provider_factory=lambda _provider_id: ghost_router_ab.FakeProvider(),
+        router_provider_factory=counting_factory,
     )
 
-    assert payload["ok"]
-    assert payload["summary"]["router"]["exact"] == payload["summary"]["router"]["total"]
-    assert payload["summary"]["baseline"]["cost"] > payload["summary"]["router"]["cost"]
+    assert calls == []
+    by_case: dict[str, dict[str, str]] = {}
+    for row in payload["rows"]:
+        by_case.setdefault(row["case"], {})[row["arm"]] = row["observed_mode"]
+    assert by_case
+    for case, arms in by_case.items():
+        assert arms["router"] == arms["baseline"], case
+        assert arms["router"] == "chat", case
 
 
 def test_production_spine_writes_atomic_partial_progress(monkeypatch) -> None:

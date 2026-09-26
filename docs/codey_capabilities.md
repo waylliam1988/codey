@@ -17,10 +17,13 @@ overview, not a release gate.
 - `New Chat` keeps the conversation detached from local project files.
 - `Choose folder` attaches the current conversation to one local project.
 - `Research` starts a research run for the current request.
-- Automatic mode can route a task to chat, read-only planning, Research,
-  Writer, Hybrid, or Review before execution starts.
+- Automatic mode lets the first normal model call answer directly or request
+  a permission-checked action (chat, read-only planning, Research, Writer,
+  or Review; Hybrid stays available through explicit mode selection). There is
+  no separate routing model call, and the project writer lock is only claimed
+  after an edit action is actually chosen.
 - Manual mode, project scope, and permission settings still win over automatic
-  routing.
+  mode.
 
 ## Coding Loop
 
@@ -63,11 +66,16 @@ observed failures, and repair context.
 
 ## Local Memory
 
-Ghost is Codey's bounded local continuity layer. It can remember explicit
-preferences, recent verified work facts, project habits, research open
-questions, and follow-up work items.
+Ghost is Codey's bounded local continuity layer. It records completed-round
+experience (user words, final answer, verified result refs) and retrieves a
+small number of related past rounds on the next normal model call within a
+strict token budget. Only successfully finished rounds are retrievable, keyed
+idempotently by run id. Ghost never adds a model call of its own: no per-turn
+routing call, no per-turn extraction call, and no hidden output contract for
+the main model to fill in.
 
-Ghost state remains controllable:
+Ghost state remains controllable (preview, export, delete, reset, and disable
+apply to experience observations as well as older stores):
 
 ```text
 preview

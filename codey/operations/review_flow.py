@@ -79,12 +79,6 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
     )
     if project is None:
         summary = "No attached project is available to review."
-        state.emit({
-            "type": "review",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": summary,
-        })
         return ModeOutcome(
             task_done_event(
                 run_id=frame.run_id,
@@ -96,7 +90,13 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
                 provider=frame.provider_id,
                 mode="review",
                 changed=False,
-            )
+            ),
+            display=({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            },),
         )
     changes = collect_review_changes(deps, project)
     trace.record_section(
@@ -110,12 +110,6 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
     )
     if not isinstance(changes, dict) or changes.get("ok") is not True:
         summary = "Could not collect a local diff to review."
-        state.emit({
-            "type": "review",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": summary,
-        })
         return ModeOutcome(
             task_done_event(
                 run_id=frame.run_id,
@@ -127,16 +121,16 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
                 provider=frame.provider_id,
                 mode="review",
                 changed=False,
-            )
+            ),
+            display=({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            },),
         )
     if not has_reviewable_changes(changes):
         summary = "No reviewable local diff was found."
-        state.emit({
-            "type": "review",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "text": summary,
-        })
         return ModeOutcome(
             task_done_event(
                 run_id=frame.run_id,
@@ -154,7 +148,13 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
                     "mode": changes.get("mode"),
                     "project": project,
                 },
-            )
+            ),
+            display=({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            },),
         )
     try:
         try:
@@ -215,12 +215,8 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
             latest_reply=summary,
         )
     )
-    state.emit({
-        "type": "review",
-        "run_id": frame.run_id,
-        "session_id": request.session_id,
-        "text": summary,
-    })
+    # Settlement owns final display: persist the experience observation first,
+    # then publish review + task_done. Modes never emit final events themselves.
     return ModeOutcome(
         {
             "type": "task_done",
@@ -239,7 +235,13 @@ def run_review_mode(deps: ReviewFlowDeps, frame: RunFrame) -> ModeOutcome:
                 "mode": changes.get("mode"),
                 "project": project,
             },
-        }
+        },
+        display=({
+            "type": "review",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "text": summary,
+        },),
     )
 
 

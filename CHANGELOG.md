@@ -2,6 +2,30 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Experience memory replaces per-turn Ghost model calls (no release)
+
+- Unified `auto` loop: the first normal model call answers directly or requests
+  a permission-checked action (`codey/operations/auto_loop.py`); the retired
+  12s-timeout pre-turn LLM route that produced KoboldCpp `WinError 10053`
+  (abandoned client socket after the server kept generating) is gone, with zero
+  extra model calls on the Ghost path. The project writer lock and run-ledger
+  mode for `auto` are deferred until the chosen action needs them; first-call
+  failure fails open to the deterministic baseline, cancellation still
+  propagates, and claimed/recovered work never passes through auto.
+- Settlement owns the commit order: experience observations
+  (`codey/ghost/observations.py`, idempotent by `run_id`, retrievable only when
+  `stop_reason=done`) are persisted before final `reply`/`review` display and
+  `task_done`; a failed write still answers but warns `ghost_observation_failed`
+  and is never claimed recoverable. Retrieval (`codey/ghost/observation_index.py`)
+  is non-model text overlap plus time weight, max 3 items / 1800 chars, and feeds
+  the next normal call in chat, auto, planning, and project-writer prompts.
+  Structured inbox/hebbian auto-updates stop; existing confirmed rows stay
+  readable as legacy; disable/view/export/delete/retention cover observations.
+- Tests: 19 new acceptance tests (`tests/test_experience_memory.py`), retired
+  router A/B premise rewritten as a retirement lock-in, and mode-specific server
+  tests now pass explicit intents. Full suite: `4335 passed, 7 skipped,
+  1382 subtests passed`.
+
 ## Unreleased - Boundary hardening: snapshot, ledger, Ghost inputs, UI conflicts (no release)
 
 - Snapshot recovery basis is read-only: `SnapshotStore.require_baseline()` never

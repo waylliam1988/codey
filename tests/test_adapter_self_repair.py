@@ -1119,7 +1119,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(consensus_service, "run_project_audit", return_value=()),
             ):
-                server._run_task("session-self-repair", td, "task", 8, False, "deepseek")
+                server._run_task("session-self-repair", td, "task", 8, False, "deepseek", "project")
 
             state.wait_for_ghost_sleep(timeout=30)
             state.self_repair.maybe_enqueue.assert_called_once()

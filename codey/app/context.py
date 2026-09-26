@@ -33,6 +33,7 @@ from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.observations import GhostObservationStore
 from codey.ghost.router import GhostRouteStore
 from codey.ghost.sleep import GhostSleepStore
 from codey.ghost.store import GhostSignalStore
@@ -137,6 +138,7 @@ class AppContext:
         self._ghost_work_queue: GhostWorkQueueStore | None = None
         self._ghost_affinity: GhostAffinityStore | None = None
         self._ghost_signals: GhostSignalStore | None = None
+        self._ghost_observations: GhostObservationStore | None = None
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
@@ -305,6 +307,17 @@ class AppContext:
     @ghost_signals.setter
     def ghost_signals(self, value: GhostSignalStore | None) -> None:
         self._ghost_signals = value
+
+    @property
+    def ghost_observations(self) -> GhostObservationStore | None:
+        return cast(
+            GhostObservationStore | None,
+            self._ghost_store("_ghost_observations", GhostObservationStore),
+        )
+
+    @ghost_observations.setter
+    def ghost_observations(self, value: GhostObservationStore | None) -> None:
+        self._ghost_observations = value
 
     @property
     def knowledge_store(self) -> object | None:

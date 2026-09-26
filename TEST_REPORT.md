@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## Experience memory replaces per-turn Ghost model calls (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/ghost/observations.py               (new: durable experience log, run_id idempotent, committed-only retrieval)
+codey/ghost/observation_index.py          (new: non-model overlap + time-weight retrieval, 3 items / 1800 chars)
+codey/operations/auto_loop.py             (new: unified auto; first normal call answers or requests a gated action)
+codey/operations/task_run.py              (auto defers writer lock + ledger; syncs decided kind back to setup)
+codey/operations/task_phases/dispatch.py  (auto branch with claimed/recovery bypass; ledger opened after decision)
+codey/operations/task_phases/settlement.py (observation persisted before display + task_done; failure warns unrecoverable)
+codey/operations/chat.py + review_flow.py (final display moved to ModeOutcome.display; settlement publishes)
+codey/operations/ghost_post_turn.py       (pre-turn route and post-turn learning are zero-model-call stubs)
+codey/operations/ghost_context.py         (ghost_experiences retrieval; legacy hebbian/continuity documented)
+codey/operations/planning_flow.py + project_completion_flow.py + agents/* (experience injection with budgets)
+codey/ghost/control_surface.py + app/api.py + app/context.py (observations under disable/view/export/delete/retention)
+docs/codey_event_matrix.md                (auto_runner capability; ghost.observations row)
+docs/codey_capabilities{,.zh-CN}.md       (unified auto + experience memory product description)
+tests/test_experience_memory.py           (19 new acceptance tests: call counts, commit order, budgets, control plane)
+tests/test_ghost_post_turn_router.py + test_ghost_post_turn_work_queue.py + test_headless_runner.py + test_task_entry_run_trace.py (rewritten to unified auto)
+tests/test_server.py + test_work_checkpoint_flow.py + test_project_facts.py + test_run_ledger.py + test_conversation_store.py + test_adapter_self_repair.py (mode-specific runs use explicit intents)
+tests/test_ghost_router_ab.py             (production-spine premise rewritten as retirement lock-in)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check codey tests tools` and
+  `git diff --check` passed; targeted suites (`test_experience_memory` +
+  `test_ghost_post_turn_router` + `test_ghost_post_turn_work_queue` +
+  `test_task_entry_run_trace` + `test_headless_runner` + `test_server` +
+  `test_work_checkpoint_flow` + `test_project_facts` + `test_run_ledger` +
+  `test_conversation_store` + `test_adapter_self_repair` +
+  `test_ghost_router_ab` + `test_architecture`) green.
+- Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
+  `4335 passed, 7 skipped, 1382 subtests passed in 382.65s (0:06:22)`.
+  Skips are the known Windows POSIX/opt-in family.
+- Real-machine equivalent: stub OpenAI-compatible server with 15s delayed
+  generation (longer than the retired 12s router timeout) answered through
+  `LocalOpenAIProvider.send` with exactly 1 `/chat/completions` POST and no
+  client-side abandon, matching the reported KoboldCpp `WinError 10053`
+  scenario; `python -m codey --help` still serves the CLI surface.
+- This entry was written after the full suite. No release was made.
+
 ## Boundary hardening full suite (2026-09-26)
 
 Scope (production, no release):

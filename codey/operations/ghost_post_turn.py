@@ -7,21 +7,12 @@ implementation exists.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from codey.ghost.learning_loop import (
-    DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
-    DEFAULT_GHOST_LEARNING_TIMEOUT,
-    GhostLearningLoop,
-    GhostLearningTurn,
-)
-from codey.ghost.router import (
-    GhostRouter,
-    GhostRouteRequest,
-    GhostRouteResult,
-)
+from codey.ghost.router import GhostRouteResult
 from codey.ghost.work_queue import (
     GhostWorkItem,
     is_strict_work_continuation,
@@ -39,10 +30,8 @@ from codey.operations.research_flow import (
     research_queue_item_title,
 )
 from codey.operations.task_state import TaskState
-from codey.providers import controls as provider_controls
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.runs.ledger_projection import load_run_projection
-from codey.runtime.core import cancellation
 from codey.utils.refs import digest_text
 
 PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
@@ -123,41 +112,14 @@ def maybe_route_auto(
     baseline_mode: str,
     run_id: str,
 ) -> GhostRouteResult | None:
-    intent = str(request.intent or "auto").strip().lower()
-    if intent != "auto":
-        return None
-    store = getattr(deps.state, "ghost_router", None)
-    if store is None:
-        return None
-    if not _ghost_learning_enabled(deps.state):
-        return None
-    provider_factory = deps.router_provider_factory
-    if provider_factory is None:
-        return None
-    route_request = GhostRouteRequest(
-        task=request.task,
-        baseline_mode=baseline_mode,
-        run_id=run_id,
-        session_id=request.session_id,
-        project=request.project or "",
-        provider_id=request.provider_id,
-        continue_request=request.continue_task,
-        has_reviewable_diff=deps.has_reviewable_diff(request.project) if deps.has_reviewable_diff else False,
-    )
-    try:
-        with provider_controls.suppress_assistance():
-            return GhostRouter(store).route(
-                route_request,
-                provider_factory=provider_factory,
-                timeout=PRODUCTION_GHOST_ROUTER_TIMEOUT,
-                new_chat_timeout=PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT,
-                max_attempts=PRODUCTION_GHOST_ROUTER_ATTEMPTS,
-            )
-    except cancellation.TaskCancelled:
-        raise
-    except Exception as exc:
-        _record_ghost_warning(deps, "route_auto", exc, request=request, run_id=run_id)
-        return None
+    """Pre-turn auto routing is retired (experience-memory final state).
+
+    The unified ``auto`` loop (``codey/operations/auto_loop.py``) makes its
+    single normal first call decide answer-vs-action, so no extra model call
+    happens here. This stub keeps the call sites and patched tests stable
+    while guaranteeing zero model invocations on the Ghost path.
+    """
+    return None
 
 
 def release_work_item(
@@ -220,37 +182,52 @@ def maybe_run_learning(
     frame: RunFrame,
     event: dict[str, object],
 ) -> None:
-    if deps.learning_provider_factory is None:
+    """Post-turn model learning is retired (experience-memory final state).
+
+    Experience is persisted by settlement into ``GhostObservationStore`` and
+    retrieved on the next normal call. This stub keeps the call sites stable
+    while guaranteeing zero model invocations here: it emits a skipped marker
+    and performs no provider calls and no inbox/hebbian auto-writes.
+    """
+    if getattr(deps, "learning_provider_factory", None) is None:
         return
     mode = str(event.get("mode") or "")
-    if mode not in deps.learning_modes:
+    if mode not in tuple(getattr(deps, "learning_modes", ("chat",)) or ()):
         return
     if str(event.get("stop_reason") or "") != "done":
         return
-    try:
-        loop = GhostLearningLoop(
-            signal_store=getattr(deps.state, "ghost_signals", None),
-            inbox_store=getattr(deps.state, "ghost_inbox", None),
-            hebbian_store=getattr(deps.state, "ghost_hebbian", None),
-        )
-        result = loop.learn_from_turn(
-            GhostLearningTurn(
-                mode=mode,
-                user_text=frame.request.task,
-                assistant_text=str(event.get("summary") or ""),
-                session_id=frame.request.session_id,
-                run_id=frame.run_id,
-                project=frame.project_text if mode != "chat" else "",
-                provider_id=frame.provider_id,
-            ),
-            provider_factory=deps.learning_provider_factory,
-            timeout=DEFAULT_GHOST_LEARNING_TIMEOUT,
-            new_chat_timeout=DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
-        )
-        deps.state.emit(result.to_event(run_id=frame.run_id, session_id=frame.request.session_id))
-    except Exception as exc:
-        _record_ghost_warning(deps, "learning", exc, frame=frame, event=event)
+    if not _ghost_learning_enabled(deps.state):
+        with contextlib.suppress(Exception):
+            deps.state.emit({
+                "type": "ghost_learning_done",
+                "run_id": frame.run_id,
+                "session_id": frame.request.session_id,
+                "ok": True,
+                "skipped_reason": "learning_disabled",
+                "extracted_count": 0,
+                "signal_audit_written": False,
+                "candidates_changed": 0,
+                "accepted_count": 0,
+                "reinforced_count": 0,
+                "diagnostics": [],
+                "warnings": [],
+            })
         return
+    with contextlib.suppress(Exception):
+        deps.state.emit({
+            "type": "ghost_learning_done",
+            "run_id": frame.run_id,
+            "session_id": frame.request.session_id,
+            "ok": True,
+            "skipped_reason": "replaced_by_observations",
+            "extracted_count": 0,
+            "signal_audit_written": False,
+            "candidates_changed": 0,
+            "accepted_count": 0,
+            "reinforced_count": 0,
+            "diagnostics": [],
+            "warnings": [],
+        })
 
 
 def maybe_sync_continuity(

@@ -2,6 +2,23 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 经历记忆取代每轮 Ghost 模型调用（未发布）
+
+- 统一 `auto` 循环：首次正常模型调用直接作答或请求受权限检查的动作
+  （`codey/operations/auto_loop.py`）；曾导致 KoboldCpp `WinError 10053`
+  （客户端 12 秒掐断、服务端算完发现连接已断）的 12 秒前置 LLM 路由已删除，
+  Ghost 路径零额外模型调用。`auto` 的项目写锁与账本模式延迟到选定动作后再定；
+  首调用失败回退确定性基线，取消仍向上传播，已认领/恢复工作不经过 auto。
+- 结算拥有提交顺序：经历观察（`codey/ghost/observations.py`，按 `run_id` 幂等，
+  仅 `stop_reason=done` 可检索）先持久化，再发最终 `reply`/`review` 与 `task_done`；
+  写入失败仍作答但告警 `ghost_observation_failed`，不声称可恢复。检索
+  （`codey/ghost/observation_index.py`）为非模型文本重合加时间权重，最多 3 条/1800 字符，
+  接入 chat、auto、planning 与项目 writer 的下一次正常调用。结构化 inbox/hebbian
+  自动更新停止，既有已确认数据仍作为旧画像可读；禁用/查看/导出/删除/保留期限覆盖观察记录。
+- 测试：19 个新验收测试（`tests/test_experience_memory.py`），退役路由 A/B 改写为
+  退役锁定，模式专用 server 测试改显式 intent。全量：`4335 passed, 7 skipped,
+  1382 subtests passed`。
+
 ## Unreleased - 边界加固：快照、账本、Ghost 输入、UI 冲突（未发布）
 
 - 快照恢复依据只读：新增 `SnapshotStore.require_baseline()` 永不写盘；

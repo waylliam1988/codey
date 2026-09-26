@@ -248,7 +248,7 @@ class ConversationStoreTests(unittest.TestCase):
                 mock.patch.object(restarted, "get_provider", return_value=provider),
                 mock.patch.object(consensus_service, "run_consensus", return_value=None),
             ):
-                server._run_task("chat-1", None, "Continue", 4, False, "deepseek")
+                server._run_task("chat-1", None, "Continue", 4, False, "deepseek", "chat")
 
             first.wait_for_ghost_sleep(timeout=30)
             restarted.wait_for_ghost_sleep(timeout=30)

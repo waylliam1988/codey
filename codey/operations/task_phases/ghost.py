@@ -32,7 +32,12 @@ def claim_or_route_ghost_work(
     baseline_task_kind: str,
     run_id: str,
 ) -> _ClaimRoute:
-    """Claim a ghost work item or auto-route; raises TaskCancelled to the caller."""
+    """Claim a ghost work item; auto model routing lives in auto_loop.
+
+    Pre-turn LLM routing is retired: ``maybe_route_auto()`` is a no-op and
+    ``route_result`` is always None. The unified ``auto`` loop makes its first
+    normal model call decide answer-vs-action (same batch as this removal).
+    """
     claimed_work_item: GhostWorkItem | None = None
     task_kind = baseline_task_kind
     route_result = None

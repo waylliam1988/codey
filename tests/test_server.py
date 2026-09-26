@@ -3691,6 +3691,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(done["mode"], "chat")
 
     def test_chat_mode_runs_post_turn_ghost_learning_after_task_done(self) -> None:
+        """Experience-memory final state: one normal call, no Ghost model
+        call, observation committed before reply/task_done, retrievable next."""
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             events = state.subscribe()
@@ -3698,18 +3700,9 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.return_value = "normal reply"
-            learning_provider = mock.Mock()
-            learning_provider.send.return_value = (
-                '{"signals":[{'
-                '"kind":"style_preference",'
-                '"scope":"user",'
-                '"summary":"Prefer concise replies.",'
-                '"evidence_quote":"以后回答短一点",'
-                '"confidence":0.94,'
-                '"metadata":{"conflict_key":"reply_length","value_key":"concise"}'
-                "}]}"
-            )
-            state.providers.ghost_learning_provider_factory = mock.Mock(return_value=learning_provider)
+            learning_factory = mock.Mock(
+                side_effect=AssertionError("Ghost must not call a model"))
+            state.providers.ghost_learning_provider_factory = learning_factory
 
             with (
                 mock.patch.object(server, "STATE", state),
@@ -3728,24 +3721,19 @@ class SessionThreadingTests(unittest.TestCase):
             emitted = []
             while not events.empty():
                 emitted.append(events.get_nowait())
-            assert state.ghost_hebbian is not None
-            from codey.ghost.directive import build_ghost_directive
-
-            directive_text = build_ghost_directive(state.ghost_hebbian).text
+            observations = state.ghost_observations.read_committed(
+                session_id="session-learn")
 
         event_types = [event["type"] for event in emitted]
+        self.assertEqual(provider.send.call_count, 1)
+        learning_factory.assert_not_called()
+        self.assertLess(event_types.index("reply"), event_types.index("task_done"))
         self.assertLess(event_types.index("task_done"), event_types.index("ghost_learning_done"))
-        self.assertLess(event_types.index("ghost_learning_done"), event_types.index("ghost_continuity_done"))
         learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
-        continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
         self.assertTrue(learning_event["ok"])
-        self.assertEqual(learning_event["accepted_count"], 1)
-        self.assertEqual(learning_event["reinforced_count"], 1)
-        self.assertTrue(continuity_event["ok"])
-        self.assertGreaterEqual(continuity_event["items_changed"], 1)
-        self.assertIn("User message:", learning_provider.send.call_args.args[0])
-        self.assertNotIn("User message:", provider.send.call_args.args[0])
-        self.assertIn("reply length = concise", directive_text)
+        self.assertEqual(learning_event["skipped_reason"], "replaced_by_observations")
+        self.assertEqual(len(observations), 1)
+        self.assertIn("以后回答短一点", str(observations[0]["user_text"]))
 
     def test_chat_ghost_disable_skips_post_turn_provider_call(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -4365,7 +4353,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, True),
             ) as agent_run,
         ):
-            server._run_task("session-1", td, "task", 8, False, "qwen")
+            server._run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         get_provider.assert_called_once_with("qwen")
         agent_request = agent_run.call_args.args[0]
@@ -4479,6 +4467,7 @@ class SessionThreadingTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             run_id = state.run_registry.last_terminal_event()["run_id"]
@@ -4671,6 +4660,7 @@ class SessionThreadingTests(unittest.TestCase):
                 8,
                 False,
                 "deepseek",
+                "project",
             )
 
         self.assertEqual(
@@ -4761,7 +4751,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
-            server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
+            server._run_task("session-1", td, "Set up the project", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -4789,7 +4779,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
         ):
-            server._run_task("session-1", td, "Run long command", 8, False, "deepseek")
+            server._run_task("session-1", td, "Run long command", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -4817,7 +4807,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
         ):
             Path(td, "empty.txt").write_text("", encoding="utf-8")
-            server._run_task("session-empty", td, "Read empty.txt", 8, False, "deepseek")
+            server._run_task("session-empty", td, "Read empty.txt", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -5366,8 +5356,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
-            server._run_task("session-1", None, "First question", 8, False, "deepseek")
-            server._run_task("session-1", None, "Follow-up question", 8, False, "deepseek")
+            server._run_task("session-1", None, "First question", 8, False, "deepseek", "chat")
+            server._run_task("session-1", None, "Follow-up question", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         first.new_chat.assert_called_once_with()
@@ -5387,7 +5377,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
-            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         provider.new_chat.assert_called_once_with()
@@ -5421,7 +5411,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
-            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         provider.new_chat.assert_called_once_with()
@@ -5446,7 +5436,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
-            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         provider.send.assert_not_called()
@@ -5474,8 +5464,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", side_effect=[first, second]),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                server._run_task("session-1", None, "Choose a database", 8, False, "deepseek")
-                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
+                server._run_task("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
+                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         second.send.assert_not_called()
@@ -5535,7 +5525,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
+                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -5619,6 +5609,7 @@ class SessionThreadingTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
         self.assertEqual(agent_run.call_count, 1)
@@ -5718,6 +5709,7 @@ class SessionThreadingTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
         self.assertEqual(agent_run.call_count, 1)
@@ -5748,8 +5740,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", side_effect=[writer, next_model]),
         ):
-            server._run_task("session-1", None, "Choose a database", 8, False, "deepseek")
-            server._run_task("session-1", None, "Add a migration plan", 8, False, "qwen")
+            server._run_task("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
+            server._run_task("session-1", None, "Add a migration plan", 8, False, "qwen", "chat")
 
         next_model.new_chat.assert_called_once_with()
         prompt = next_model.send.call_args.args[0]
@@ -5781,9 +5773,9 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[first_a, session_b, second_a],
             ),
         ):
-            server._run_task("session-a", None, "Choose a database", 8, False, "deepseek")
-            server._run_task("session-b", None, "Explain Python", 8, False, "deepseek")
-            server._run_task("session-a", None, "Add migrations", 8, False, "deepseek")
+            server._run_task("session-a", None, "Choose a database", 8, False, "deepseek", "chat")
+            server._run_task("session-b", None, "Explain Python", 8, False, "deepseek", "chat")
+            server._run_task("session-a", None, "Add migrations", 8, False, "deepseek", "chat")
 
         second_a.new_chat.assert_called_once_with()
         prompt = second_a.send.call_args.args[0]
@@ -5810,7 +5802,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "STATE", state),
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
         ):
-            server._run_task("session-1", td, "Build the calculator", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build the calculator", 8, False, "deepseek", "project")
             server._run_task(
                 "session-1",
                 td,
@@ -5818,6 +5810,7 @@ class SessionThreadingTests(unittest.TestCase):
                 8,
                 True,
                 "deepseek",
+                "project",
             )
 
         first.new_chat.assert_called_once_with()
@@ -5868,7 +5861,7 @@ class SessionThreadingTests(unittest.TestCase):
             # A pytest manifest gives the run a selectable verification
             # candidate covering app.py.
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -5950,6 +5943,7 @@ class SessionThreadingTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             emitted = []
@@ -6024,7 +6018,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=reviewer,
             ) as connect_review,
         ):
-            server._run_task("session-diff-retry", td, "task", 8, False, "deepseek")
+            server._run_task("session-diff-retry", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(collect_changes.call_count, 2)
         connect_review.assert_called_once_with("mimo")
@@ -6076,7 +6070,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 1)
         collect_changes.assert_called_once()
@@ -6130,7 +6124,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 20, False, "deepseek")
+            server._run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 2)
         followup_request = agent_run.call_args_list[1].args[0]
@@ -6190,7 +6184,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 20, False, "deepseek")
+            server._run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         connect_self_review.assert_called_once_with("deepseek")
         reviewer.new_chat.assert_called_once_with()
@@ -6269,7 +6263,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-review-failover", td, "task", 12, False, "deepseek")
+            server._run_task("session-review-failover", td, "task", 12, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 3)
         self.assertEqual(collect_changes.call_count, 2)
@@ -6326,7 +6320,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 20, False, "deepseek")
+            server._run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6376,7 +6370,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            server._run_task("session-1", td, "task", 20, False, "deepseek")
+            server._run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6426,7 +6420,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            server._run_task("session-1", td, "task", 20, False, "deepseek")
+            server._run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6469,7 +6463,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 1)
         connect_self_review.assert_called_once_with("deepseek")
@@ -6513,7 +6507,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(reviewer.send.call_count, 2)
         emitted = []
@@ -6562,7 +6556,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(states, [(False, False)])
 
@@ -6595,7 +6589,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
-            server._run_task("session-1", td, "task", 8, False, "deepseek")
+            server._run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         connect_review.assert_not_called()
         emitted = []
@@ -6635,7 +6629,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
+            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -6678,7 +6672,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
+            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
 
         self.project_audit_mock.assert_called_once()
         self.assertIn("Project Map", self.project_audit_mock.call_args.kwargs["context"])
@@ -6718,7 +6712,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
+            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
 
         self.project_audit_mock.assert_called_once()
         self.assertEqual(agent_run.call_args.args[0].task, "Review this project for bugs")
@@ -6747,7 +6741,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
+            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         self.assertNotIn("deepseek", state.providers.sessions_snapshot())
@@ -6797,7 +6791,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_not_called()
         agent_request = agent_run.call_args.args[0]
@@ -6878,7 +6872,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "lockfileVersion: 9\n",
                 encoding="utf-8",
             )
-            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek", "project")
 
         prompt = reviewer.send.call_args.args[0]
         verification_map = prompt.split(
@@ -6913,7 +6907,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -6956,7 +6950,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek", "project")
 
         writer_task = agent_run.call_args.args[0].task
         review_prompt = reviewer.send.call_args.args[0]
@@ -6989,7 +6983,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
-            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
+            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -7032,7 +7026,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
         ):
-            server._run_task("session-1", td, "task", 8, False, "stepfun")
+            server._run_task("session-1", td, "task", 8, False, "stepfun", "project")
 
         emitted = []
         while not events.empty():
@@ -7103,7 +7097,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=provider_controls.ControlTeachCancelled("cancelled"),
             ),
         ):
-            server._run_task("session-1", td, "task", 8, False, "qwen")
+            server._run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         emitted = []
         while not events.empty():
@@ -7135,7 +7129,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=cancelled_agent,
             ),
         ):
-            server._run_task("session-1", td, "hello", 8, False, "qwen")
+            server._run_task("session-1", td, "hello", 8, False, "qwen", "project")
 
         emitted = []
         while not events.empty():
@@ -7165,7 +7159,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=stopped_agent),
         ):
-            server._run_task("session-1", td, "task", 8, False, "qwen")
+            server._run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         self.assertTrue(state.provider_session_changed("qwen", "session-1"))
 
@@ -7222,7 +7216,7 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                server._run_task("session-1", str(root), "task", 4, False, "deepseek")
+                server._run_task("session-1", str(root), "task", 4, False, "deepseek", "project")
 
             self.assertFalse(state.snapshot_store.path_for(root).exists())
 

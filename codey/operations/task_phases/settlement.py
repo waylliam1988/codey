@@ -34,6 +34,66 @@ from codey.runtime.observe.terminalizer import (
 from codey.task.kind import ui_mode
 
 
+def _persist_experience_observation(
+    deps: Any,
+    frame: RunFrame,
+    event: dict[str, object],
+) -> tuple[bool, str]:
+    """Persist the completed-round experience before any final display emit.
+
+    Returns (ok, status) where status is committed/uncommitted/skipped/failed.
+    ``committed`` (stop_reason=done) rows are retrievable; other rows are kept
+    as experience but never retrieved as successful facts. A ``failed`` write
+    must be reported as Ghost-record-failed with a warning: the round is shown
+    to the user but must not be claimed recoverable for Ghost.
+    """
+    try:
+        state = getattr(deps, "state", None)
+        inbox = getattr(state, "ghost_inbox", None) if state is not None else None
+        try:
+            learning_on = bool(inbox.learning_enabled()) if inbox is not None else True
+        except Exception:
+            learning_on = True
+        if not learning_on:
+            return True, "skipped"
+        store = getattr(state, "ghost_observations", None) if state is not None else None
+        if store is None:
+            return True, "skipped"
+        request = getattr(frame, "request", None)
+        ok = bool(
+            store.append_completed(
+                run_id=str(event.get("run_id") or getattr(frame, "run_id", "")),
+                session_id=str(event.get("session_id") or ""),
+                project=str(getattr(request, "project", "") or ""),
+                mode=str(event.get("mode") or getattr(frame, "task_kind", "") or "chat"),
+                user_text=str(getattr(request, "task", "") or ""),
+                assistant_text=str(event.get("summary") or ""),
+                stop_reason=str(event.get("stop_reason") or ""),
+                provider_id=str(event.get("provider") or ""),
+            )
+        )
+        if not ok:
+            return False, "failed"
+        return True, (
+            "committed"
+            if str(event.get("stop_reason") or "") == "done"
+            else "uncommitted"
+        )
+    except Exception:
+        return False, "failed"
+
+
+def _publish_display_after_commit(deps: Any, outcome: ModeOutcome) -> None:
+    """Emit final display events carried by the mode (settlement-owned)."""
+    for payload in tuple(getattr(outcome, "display", ()) or ()):
+        if not isinstance(payload, dict) or not payload.get("type"):
+            continue
+        try:
+            deps.state.emit(dict(payload))
+        except Exception:
+            continue
+
+
 def settle_cancelled_run(
     deps: Any,
     state: TaskState,
@@ -207,7 +267,34 @@ def _finish_mode_outcome(
     )
     finish_run_operation(deps, work, event)
     finish_trace(event)
+    # Settlement owns the commit order: persist the experience observation
+    # first (committed only when stop_reason=done; empty-signal successes are
+    # still recorded for indexing), then publish final display, then task_done.
+    # A failed observation write lets the answer continue but is reported as
+    # Ghost-record-failed, never as recoverable.
+    persisted, obs_status = _persist_experience_observation(deps, frame, event)
+    _publish_display_after_commit(deps, outcome)
     deps.state.finish_run(frame.run_id, event)
+    if not persisted:
+        with suppress(Exception):
+            deps.state.emit({
+                "type": "ghost_post_turn_warning",
+                "stage": "observation_commit",
+                "run_id": frame.run_id,
+                "session_id": frame.request.session_id,
+                "error_type": "GhostObservationFailed",
+                "error_ref": "ghost_observation_failed",
+            })
+    elif obs_status == "uncommitted":
+        with suppress(Exception):
+            deps.state.emit({
+                "type": "ghost_post_turn_warning",
+                "stage": "observation_commit",
+                "run_id": frame.run_id,
+                "session_id": frame.request.session_id,
+                "error_type": "GhostObservationUncommitted",
+                "error_ref": "ghost_observation_uncommitted",
+            })
     run_ghost_post_turn(
         ghost_deps,
         frame,

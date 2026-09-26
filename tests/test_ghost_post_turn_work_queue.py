@@ -401,12 +401,13 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
     assert completion_proofs[0]["blocked_reason"] == "research_proof_partial_answer"
 
 
-def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
+def test_non_strict_continue_does_not_consume_queue_and_answers_directly() -> None:
+    """Non-strict continuation leaves the queue alone; unified auto answers
+    with one normal call and never invokes the retired router factory."""
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         _seed_research_item(state)
-        route_provider = _Provider('{"mode":"chat","confidence":0.99,"reason":"chat"}')
-        router_factory = mock.Mock(return_value=route_provider)
+        router_factory = mock.Mock(side_effect=AssertionError("retired router must not run"))
         main_provider = _Provider("chat reply")
         runner = _runner(state, router_provider_factory=router_factory)
 
@@ -415,7 +416,8 @@ def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
             assert state.wait_for_ghost_sleep(timeout=30)
         item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
 
-    router_factory.assert_called_once()
+    router_factory.assert_not_called()
+    assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
     assert item.status == "queued"
 
@@ -593,18 +595,21 @@ def test_review_item_consumes_into_review_without_writer() -> None:
     assert item.status == "done"
 
 
-def test_no_queued_item_falls_back_to_router() -> None:
+def test_no_queued_item_answers_with_one_normal_call() -> None:
+    """No queued item: unified auto answers directly; the retired router
+    factory is never invoked and only one normal model call happens."""
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
-        route_provider = _Provider('{"mode":"chat","confidence":0.99,"reason":"chat"}')
-        router_factory = mock.Mock(return_value=route_provider)
+        router_factory = mock.Mock(side_effect=AssertionError("retired router must not run"))
         runner = _runner(state, router_provider_factory=router_factory)
+        main_provider = _Provider("plain chat")
 
-        with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
+        with mock.patch.object(state, "get_provider", return_value=main_provider):
             run_task_submission(runner, TaskSubmission("s1", None, "继续", 8, False, "deepseek"))
             assert state.wait_for_ghost_sleep(timeout=30)
 
-    router_factory.assert_called_once()
+    router_factory.assert_not_called()
+    assert len(main_provider.prompts) == 1
     assert state.run_registry.last_terminal_event()["mode"] == "chat"
 
 

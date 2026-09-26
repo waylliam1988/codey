@@ -108,7 +108,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
-                server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project")
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertIsNotNone(checkpoint)
@@ -134,7 +134,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=None,
                 ),
             ):
-                server._run_task("session-1", str(project), "Continue safely", 8, True, "deepseek")
+                server._run_task("session-1", str(project), "Continue safely", 8, True, "deepseek", "project")
 
             resumed_request = captured["request"]
             self.assertIn("Local execution checkpoint", resumed_request.work_checkpoint)
@@ -214,6 +214,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             self.assertEqual(get_provider.call_args_list[1].args, ("stepfun",))
@@ -267,6 +268,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             self.assertEqual(
@@ -322,6 +324,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             self.assertEqual(
@@ -396,6 +399,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             resumed_request = captured["request"]
@@ -446,6 +450,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             get_provider.assert_called_once_with("deepseek")
@@ -488,6 +493,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             self.assertEqual(agent_run.call_count, 3)
@@ -530,7 +536,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                server._run_task("session-1", str(project), "New task", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "New task", 8, False, "deepseek", "project")
 
             self.assertEqual(captured["request"].work_checkpoint, "")
             self.assertIsNone(state.work_checkpoints.load("session-1"))
@@ -586,7 +592,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "Do work", 8, False, "deepseek", "project")
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertIsNotNone(checkpoint)
@@ -652,7 +658,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
             ):
-                server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project")
 
             rendered = review.call_args.kwargs["verification_map"]
             execution = review.call_args.kwargs["execution_evidence"]
@@ -704,7 +710,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):
-                server._run_task("session-1", str(project), "Change app", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "Change app", 8, False, "deepseek", "project")
 
             self.assertEqual(review.call_args.kwargs["verification_map"], "")
 
@@ -750,7 +756,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "agent_run", side_effect=interrupted),
                 mock.patch.object(task_submit, "collect_changes", return_value=changes),
             ):
-                server._run_task("session-1", str(project), "Fix app", 8, False, "deepseek")
+                server._run_task("session-1", str(project), "Fix app", 8, False, "deepseek", "project")
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertEqual(checkpoint.successful_checks_after_last_change, ())
@@ -818,6 +824,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     8,
                     False,
                     "deepseek",
+                    "project",
                 )
 
             self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
