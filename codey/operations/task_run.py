@@ -9,12 +9,17 @@ Mode behavior lives in the mode flow modules.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 from codey.app import sibling_probe
 from codey.ghost.work_queue import GhostWorkItem
@@ -85,8 +90,8 @@ class TaskRunDeps:
     ghost_learning_provider_factory: Callable[[str], Any] | None = None
     ghost_learning_modes: tuple[str, ...] = ("chat",)
     ghost_router_provider_factory: Callable[[str], Any] | None = None
-    runtime_mutations: Any = None
-    runtime_effects: Any = None
+    runtime_mutations: RuntimeMutationLine | None = None
+    runtime_effects: RuntimeEffectStore | None = None
 
 
 def prepare_submission(state: TaskState, request: TaskSubmission) -> TaskSubmission | None:
@@ -219,6 +224,8 @@ def _fail_early_run(
 
 def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSetup | None, OperationOutcome | None]:
     """Phase 1 -- RunSetup: reserve the slot, open trace, load config."""
+    from codey.workspace.changes import ProjectWriteBusy
+
     state = deps.state
     reservation, aborted = ensure_run_reserved_and_started(state, request)
     if reservation is None:
@@ -230,66 +237,85 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
     provider_id = request.provider_id
     baseline_task_kind = resolve_task_kind(request)
 
-    trace = open_run_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
-    trace_sink = FailOpenPromptTrace(trace)
-    project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
-
-    provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
-    provider_controls.set_doctor_handler(functools.partial(sibling_probe.handle_profile_doctor, state))
-    provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
-    provider_controls.begin_task_context(session_id)
-    state.run_registry.set_last_provider_failure(None)
-    previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
-
-    # Single persistent writer: snapshot projects claim cross-process
-    # ownership here; a busy project fails fast instead of forking baselines.
+    previous_cancel_event: Any = None
+    task_context_started = False
     writer_acquired = False
-    needs_writer = bool(project) and baseline_task_kind in {"project", "hybrid", "auto"}
-    if needs_writer:
-        try:
-            is_git = deps.is_git_repository
-            if callable(is_git) and is_git(project):
-                needs_writer = False
-        except Exception:
-            needs_writer = True
-    if needs_writer:
-        acquire = getattr(state, "acquire_project_writer", None)
-        if callable(acquire):
-            try:
-                writer_acquired = bool(acquire(project))
-            except Exception:
-                writer_acquired = False
-            if not writer_acquired:
-                cancellation.set_event(previous_cancel_event)
-                provider_controls.end_task_context()
-                state.release_run(run_id)
-                return None, OperationOutcome.failed(
-                    reason="project_write_busy",
-                    summary="another task is writing this project",
-                )
+    try:
+        trace = open_run_trace(deps, session_id, run_id, project, baseline_task_kind, provider_id)
+        trace_sink = FailOpenPromptTrace(trace)
+        project_config_result = load_project_config(project) if project else ProjectConfigLoadResult()
 
-    review_deps = review_flow_deps(deps)
-    ghost_deps = ghost_task_deps(deps, review_deps)
-    return _RunSetup(
-        state=state,
-        request=request,
-        run_id=run_id,
-        session_id=session_id,
-        project=project,
-        task=request.task,
-        max_turns=request.max_turns,
-        continue_task=request.continue_task,
-        provider_id=provider_id,
-        baseline_task_kind=baseline_task_kind,
-        task_kind=baseline_task_kind,
-        trace=trace,
-        trace_sink=trace_sink,
-        project_config_result=project_config_result,
-        ghost_deps=ghost_deps,
-        review_deps=review_deps,
-        previous_cancel_event=previous_cancel_event,
-        writer_acquired=writer_acquired,
-    ), None
+        provider_controls.set_teach_handler(functools.partial(sibling_probe.handle_control_teach, state))
+        provider_controls.set_doctor_handler(functools.partial(sibling_probe.handle_profile_doctor, state))
+        provider_flow.set_recovery_handler(functools.partial(sibling_probe.handle_flow_recovery, state))
+        provider_controls.begin_task_context(session_id)
+        state.run_registry.set_last_provider_failure(None)
+        previous_cancel_event = cancellation.set_event(state.run_registry.stop_flag)
+        task_context_started = True
+
+        # Single persistent writer: snapshot projects claim cross-process
+        # ownership here; a busy project fails fast instead of forking baselines.
+        # Only lock contention maps to project_write_busy; IO errors propagate.
+        needs_writer = bool(project) and baseline_task_kind in {"project", "hybrid", "auto"}
+        if needs_writer:
+            try:
+                is_git = deps.is_git_repository
+                if callable(is_git) and is_git(project):
+                    needs_writer = False
+            except Exception:
+                needs_writer = True
+        if needs_writer:
+            acquire = getattr(state, "acquire_project_writer", None)
+            if callable(acquire):
+                try:
+                    writer_acquired = bool(acquire(project))
+                except ProjectWriteBusy:
+                    writer_acquired = False
+                if not writer_acquired:
+                    cancellation.set_event(previous_cancel_event)
+                    provider_controls.end_task_context()
+                    state.release_run(run_id)
+                    return None, OperationOutcome.failed(
+                        reason="project_write_busy",
+                        summary="another task is writing this project",
+                    )
+
+        review_deps = review_flow_deps(deps)
+        ghost_deps = ghost_task_deps(deps, review_deps)
+        return _RunSetup(
+            state=state,
+            request=request,
+            run_id=run_id,
+            session_id=session_id,
+            project=project,
+            task=request.task,
+            max_turns=request.max_turns,
+            continue_task=request.continue_task,
+            provider_id=provider_id,
+            baseline_task_kind=baseline_task_kind,
+            task_kind=baseline_task_kind,
+            trace=trace,
+            trace_sink=trace_sink,
+            project_config_result=project_config_result,
+            ghost_deps=ghost_deps,
+            review_deps=review_deps,
+            previous_cancel_event=previous_cancel_event,
+            writer_acquired=writer_acquired,
+        ), None
+    except Exception:
+        if writer_acquired:
+            with contextlib.suppress(Exception):
+                release = getattr(state, "release_project_writer", None)
+                if callable(release):
+                    release(project)
+        if task_context_started:
+            with contextlib.suppress(Exception):
+                cancellation.set_event(previous_cancel_event)
+            with contextlib.suppress(Exception):
+                provider_controls.end_task_context()
+        with contextlib.suppress(Exception):
+            state.release_run(run_id)
+        raise
 
 
 def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | None, OperationOutcome | None]:

@@ -13,6 +13,7 @@ from codey.agents.handoff import (
     ConversationSnapshot,
     compact_text,
 )
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -131,31 +132,36 @@ class ConversationStore:
 
     def save(self, session_id: str, context: ConversationContext) -> None:
         path = self.path_for(session_id)
-        write_json_atomic(
-            path,
-            {
-                "schema_version": SCHEMA_VERSION,
-                "hard_limit": max(0, context.hard_limit),
-                "reserve_tokens": max(0, context.reserve_tokens),
-                "keep_recent_tokens": max(0, context.keep_recent_tokens),
-                "used_tokens": max(0, context.used_tokens),
-                "provider_id": context.provider_id,
-                "mode": context.mode,
-                "project": context.project,
-                "initialized": context.initialized,
-                "handoff_summary": compact_text(
-                    context.handoff_summary,
-                    MAX_MODEL_SUMMARY_CHARS,
-                ),
-                "snapshot": _snapshot_payload(context.snapshot),
-            },
-        )
-        self._prune(path)
+        with with_file_lock(self.directory):
+            write_json_atomic(
+                path,
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "hard_limit": max(0, context.hard_limit),
+                    "reserve_tokens": max(0, context.reserve_tokens),
+                    "keep_recent_tokens": max(0, context.keep_recent_tokens),
+                    "used_tokens": max(0, context.used_tokens),
+                    "provider_id": context.provider_id,
+                    "mode": context.mode,
+                    "project": context.project,
+                    "initialized": context.initialized,
+                    "handoff_summary": compact_text(
+                        context.handoff_summary,
+                        MAX_MODEL_SUMMARY_CHARS,
+                    ),
+                    "snapshot": _snapshot_payload(context.snapshot),
+                },
+            )
+            self._prune_locked(path)
 
     def delete(self, session_id: str) -> None:
         delete_file(self.path_for(session_id))
 
     def _prune(self, keep: Path) -> None:
+        with with_file_lock(self.directory):
+            self._prune_locked(keep)
+
+    def _prune_locked(self, keep: Path) -> None:
         try:
             candidates = [
                 path for path in self.directory.glob("*.json") if path != keep

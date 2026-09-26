@@ -25,6 +25,7 @@ from codey.providers.local_config import (
 )
 from codey.providers.local_discovery import LocalEndpoint, probe_local_endpoint_detail
 from codey.runs.details import load_run_details
+from codey.storage.local_store import StoreCorruption
 from codey.workspace.changes import collect_changes, is_git_repository, restore_snapshot_changes
 
 
@@ -314,12 +315,20 @@ def ghost_action_response(ctx: Any, body: dict) -> tuple[int, dict]:
 def changes_response(ctx: Any, project: object) -> tuple[int, dict]:
     project_text = str(project or "").strip()
     key = str(Path(project_text).expanduser().resolve()) if project_text else ""
-    tracker = (
-        ctx.change_tracker_for(key, persistent=not is_git_repository(key))
-        if key
-        else None
-    )
-    payload = collect_changes(project_text, tracker)
+    try:
+        tracker = (
+            ctx.change_tracker_for(key, persistent=not is_git_repository(key))
+            if key
+            else None
+        )
+        payload = collect_changes(project_text, tracker)
+    except StoreCorruption:
+        payload = {
+            "ok": False,
+            "error": "snapshot needs repair",
+            "files": [],
+            "diff": "",
+        }
     return 200 if payload.get("ok") else 400, payload
 
 

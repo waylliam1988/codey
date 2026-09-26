@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -281,6 +282,40 @@ class ManagedRunCommandTests(unittest.TestCase):
 
         self.assertFalse(outcome.truncated)
         self.assertEqual(outcome.managed_output(), {})
+
+    def test_concurrent_same_content_gets_distinct_handles(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = ManagedOutputStore(Path(td) / "state")
+            refs: list = []
+            errors: list = []
+
+            def worker() -> None:
+                try:
+                    refs.append(
+                        store.write_tool_output(
+                            session_id="s",
+                            run_id="r",
+                            tool_id="1",
+                            permission_profile="coding_writer",
+                            tool_name="read",
+                            display_ref="app.py",
+                            text="same content\n",
+                        )
+                    )
+                except BaseException as exc:  # pragma: no cover
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(errors, [])
+            self.assertEqual(len(refs), 2)
+            self.assertNotEqual(refs[0].handle, refs[1].handle)
+            for ref in refs:
+                assert ref is not None
+                self.assertTrue(ref.path.is_file())
 
 
 if __name__ == "__main__":

@@ -642,13 +642,15 @@ class WorkerChatProvider:
         if write_error:
             # The writer already cleared its slot; drop the orphaned pending
             # slot (no waiter exists yet) and retire when still current.
+            # Keep the structured failure taxonomy: a stdin failure is a
+            # protocol-class failure, never a bare RuntimeError.
             with self._life_lock:
                 if self._session is session:
                     self._retire_session_locked(session)
             with session.lock:
                 if session.pending is pending:
                     session.pending = None
-            raise RuntimeError(write_error)
+            raise self._protocol_error(pending.method, write_error)
 
     def _wait_for_response(
         self,
@@ -827,6 +829,9 @@ class WorkerChatProvider:
             # signalled again (its PID may already be recycled).
             threads_stopped = self._terminate_session(session)
         else:
+            # A first retire may have skipped pipes owned by still-alive
+            # threads; re-close idempotently so a later close finishes them.
+            self._close_stopped_session_pipes(session)
             threads_stopped = all(
                 not thread.is_alive() for thread in self._session_threads(session)
             )

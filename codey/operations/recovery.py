@@ -132,19 +132,11 @@ def recover_effects_for_resume(
 
 
 def _runtime_mutations(deps: Any) -> RuntimeMutationLine | None:
-    mutations = getattr(deps, "runtime_mutations", None)
-    if mutations is not None:
-        return mutations
-    state = getattr(deps, "state", None)
-    return getattr(state, "runtime_mutations", None)
+    return getattr(deps, "runtime_mutations", None)
 
 
 def _runtime_effect_store(deps: Any) -> Any:
-    store = getattr(deps, "runtime_effects", None)
-    if store is not None:
-        return store
-    state = getattr(deps, "state", None)
-    return getattr(state, "runtime_effects", None)
+    return getattr(deps, "runtime_effects", None)
 
 
 def _tool_result_delivery_store(deps: Any) -> Any:

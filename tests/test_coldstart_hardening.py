@@ -1358,8 +1358,11 @@ class WorkerSelfHealTests(unittest.TestCase):
         worker.join(timeout=10.0)
         self.assertFalse(worker.is_alive())
         self.assertEqual(len(first_errors), 1)
-        self.assertIsInstance(first_errors[0], RuntimeError)
-        self.assertIn("broken pipe", str(first_errors[0]))
+        from codey.providers.diagnostics import ProviderActionError
+
+        self.assertIsInstance(first_errors[0], ProviderActionError)
+        assert isinstance(first_errors[0], ProviderActionError)
+        self.assertIn("broken pipe", first_errors[0].failure.message)
         with session.lock:
             self.assertNotEqual(session.terminal_error, "")
             self.assertIsNone(session.pending)

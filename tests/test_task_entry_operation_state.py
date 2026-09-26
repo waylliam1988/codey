@@ -169,6 +169,8 @@ def _runner(
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 

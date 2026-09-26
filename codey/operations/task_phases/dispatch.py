@@ -183,8 +183,8 @@ def project_completion_deps(deps: Any) -> ProjectCompletionDeps:
             review_log_lines=deps.review_log_lines,
         ),
         runtime=RuntimeAccess(
-            mutations=deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None),
-            effects=deps.runtime_effects or getattr(deps.state, "runtime_effects", None),
+            mutations=getattr(deps, "runtime_mutations", None),
+            effects=getattr(deps, "runtime_effects", None),
             tool_result_delivery=getattr(deps.state, "tool_result_delivery", None),
         ),
     )

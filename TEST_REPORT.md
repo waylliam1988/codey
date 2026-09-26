@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Verified recovery and lifecycle hardening full suite (2026-09-26)
+
+Scope (production, no release):
+
+```text
+codey/workspace/changes.py            (four-path StoreCorruption block, no auto-backup; set_after_hash requires entry; forget persists first)
+codey/app/api.py                      (read-only snapshot needs repair; writes stay blocked)
+codey/operations/task_run.py          (setup-phase reverse cleanup; only contention is busy)
+codey/app/context.py                  (acquire_writer no longer maps IO errors to busy)
+codey/storage/file_lock.py            (acquire_lease exact ownership return)
+codey/providers/local_openai.py       (blank/null arguments malformed; "{}" legal)
+codey/providers/worker.py             (structured write failure; idempotent re-close)
+codey/storage/managed_outputs.py      (run-dir lock across count/quota/write)
+codey/operations/recovery.py + task_phases/dispatch.py + task_phases/lifecycle.py (explicit runtime wiring, no state fallback)
+codey/utils/change_paths.py           (reject C:foo/C:/.)
+codey/runtime/log/session_log.py      (independent projection copy)
+codey/storage/conversation_store.py   (directory lock across save+prune)
+tests                                 (corrupt-manifest four-path block, hash/forget, setup cleanup x5, lease-ownership, blank/null args, worker x2, concurrent outputs, explicit deps incl. manual AB, safe-path, projection copy)
+tests/test_architecture.py            (unchanged gates; no new compat layers)
+```
+
+Verification (local, Windows):
+
+- Before the full suite: `python -m ruff check .`, `python -m compileall -q
+  codey tests`, and `git diff --check` passed; `4293 tests` collected.
+- Targeted suites: `test_changes` + `test_file_lock` + `test_task_setup_cleanup` +
+  `test_worker_local_fixes` + `test_local_openai_native` + `test_managed_outputs` +
+  `test_runtime_mutation_line` (projection copy) + completion-flow/task-entry/agent-sandwich
+  explicit-deps suites (`215 passed` in the final targeted pass).
+- Full suite: `python -m pytest -q -p no:randomly`:
+  `4286 passed, 7 skipped, 1374 subtests passed in 366.77s (0:06:06)`,
+  0 warnings. Skips: Windows POSIX/opt-in E2E profile (2 atomic_io, 1 group,
+  1 posix paths, 1 opt-in browser E2E, 2 O_NOFOLLOW) — same 7-skip family as
+  the prior `4272 passed` run. One mid-cycle full run showed 6 failures
+  (1 worker message-shape assert + 5 manual-AB explicit-deps misses); both were
+  fixed by asserting `ProviderActionError.failure.message` and passing
+  runtime wiring explicitly in `tests/manual/*`, then the suite above went green.
+- This entry was written after the full suite. No release was made. Ghost was kept;
+  no `ghost/explain.py`, `ProvenanceRefs`, Epoch, or worker-rewrite shells were added.
+
 ## Cold-start review follow-ups full suite (2026-09-26)
 
 Scope (production, no release):

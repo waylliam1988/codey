@@ -91,6 +91,8 @@ def _runner(
         knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository or (lambda _project: True),
         ghost_router_provider_factory=router_provider_factory,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 

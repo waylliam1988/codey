@@ -79,6 +79,8 @@ def _build_runner(state: server.AppContext, *, agent_run) -> TaskRunDeps:
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 
@@ -142,6 +144,8 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
             capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         with mock.patch.object(
             state,
@@ -193,6 +197,8 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
             capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         with mock.patch.object(
             state,
@@ -258,6 +264,8 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
             capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         with mock.patch.object(
             state,
@@ -291,6 +299,8 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
             capture_provider_failure=task_submit.capture_provider_failure,
             workspace_revisions=state.workspace_revisions,
             is_git_repository=lambda _project: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
 
         with mock.patch(

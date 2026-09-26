@@ -16,11 +16,13 @@ def safe_change_path(value: object) -> str:
     # is a POSIX absolute path and "C:/" / "C:\\" / "\\\\" are Windows
     # absolute paths. Stripping first would launder them to relative.
     unified = raw.replace("\\", "/")
-    if unified.startswith("/") or _re.match(r"^[A-Za-z]:/", unified):
+    if unified.startswith("/") or _re.match(r"^[A-Za-z]:", unified):
         return ""
     normalized = unified.strip().strip("/")
+    if not normalized or normalized == ".":
+        return ""
     path = PurePosixPath(normalized)
-    if not normalized or path.is_absolute() or ".." in path.parts:
+    if path.is_absolute() or ".." in path.parts or path.as_posix() == ".":
         return ""
     return path.as_posix()
 

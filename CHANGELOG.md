@@ -2,6 +2,49 @@
 
 [中文版本](CHANGELOG.zh-CN.md)
 
+## Unreleased - Verified recovery and lifecycle hardening (no release)
+
+- Snapshot corruption blocks instead of silent reset: `load()`,
+  `put_baseline()`, `remove()`, and `_update_manifest_locked()` raise
+  `StoreCorruption` when the manifest exists but is unreadable or
+  top-level invalid; the file stays in place for explicit repair.
+  Per-entry dirt is still skipped. `set_after_hash()` requires an existing
+  baseline entry and never creates an `after_hash`-only row.
+  `ChangeTracker._forget_locked()` persists first, then drops memory, so a
+  disk failure keeps tracking and raises. The read-only changes endpoint
+  catches `StoreCorruption` as `snapshot needs repair`; writes stay blocked.
+  Regressions cover A/B-preserved corrupt-manifest blocking across all four
+  paths, missing-entry hash rejection, and persist-first forget.
+- Task setup owns its init failures: `_setup_run_state()` releases the
+  acquired writer, restores the cancellation event, ends the task context,
+  and releases the reserved run when trace/config/writer/review/ghost init
+  fails, then re-raises. Only lock contention returns
+  `project_write_busy`; `AppContext.acquire_project_writer()` no longer maps
+  IO errors to busy. Injected review/ghost failure regressions added.
+- File lease ownership is exact: `acquire_lease()` releases the thread lock
+  and always returns the borrowed process-lock ref on failure; only a
+  returned `FileLease` transfers ownership. OS-lock-failure registry
+  regression added.
+- Narrow protocol/worker/output gaps: blank/whitespace/`null` `arguments`
+  count as malformed (only dict or dict-decoded JSON passes; `"{}"` stays
+  legal) with done-no-commit regressions; `worker._await_write()` raises the
+  existing `ProviderActionError` taxonomy instead of bare `RuntimeError`;
+  `worker._retire_session_locked()` re-closes pipes skipped while threads
+  were alive; `ManagedOutputStore` holds one run-dir file lock across
+  count/quota/write so concurrent same-content writes get distinct handles.
+- Explicit runtime wiring without new layers: `TaskRunDeps` carries concrete
+  `RuntimeMutationLine`/`RuntimeEffectStore` types, the `deps`-or-`state`
+  fallbacks are gone from `recovery`/`dispatch`/`lifecycle`, and formal
+  (`task_submit`/`headless`) plus test/manual AB constructors pass both
+  explicitly. `safe_change_path()` also rejects drive-relative `C:foo`/`C:`
+  and `"."`. `RuntimeSessionLog.projection()` returns an independent copy.
+  `ConversationStore.save()` holds one directory lock across write+prune.
+- Verification: `python -m ruff check .`, `python -m compileall -q codey
+  tests`, `git diff --check`, collection (`4293 tests`), targeted suites,
+  and final `python -m pytest -q -p no:randomly` (`4286 passed, 7 skipped,
+  1374 subtests passed in 366.77s`, 0 warnings; skips are Windows
+  POSIX/opt-in E2E). No release was made.
+
 ## Unreleased - Cold-start review follow-ups (no release)
 
 - Single persistent writer: `SnapshotStore.acquire_writer()` claims one

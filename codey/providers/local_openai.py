@@ -480,17 +480,17 @@ def _parse_tool_calls(message: dict) -> tuple[list[dict[str, object]], int]:
             arguments = dict(raw_args)
         elif isinstance(raw_args, str):
             if not raw_args.strip():
-                arguments = {}
-            else:
-                try:
-                    decoded = json.loads(raw_args)
-                except json.JSONDecodeError:
-                    dropped += 1
-                    continue
-                if not isinstance(decoded, dict):
-                    dropped += 1
-                    continue
-                arguments = dict(decoded)
+                dropped += 1
+                continue
+            try:
+                decoded = json.loads(raw_args)
+            except json.JSONDecodeError:
+                dropped += 1
+                continue
+            if not isinstance(decoded, dict):
+                dropped += 1
+                continue
+            arguments = dict(decoded)
         else:
             dropped += 1
             continue

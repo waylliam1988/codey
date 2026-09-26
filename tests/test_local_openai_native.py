@@ -438,3 +438,26 @@ def test_legal_empty_object_arguments_pass_through(monkeypatch) -> None:
     assert len(turn.tool_calls) == 1
     assert turn.tool_calls[0].arguments == {}
     assert provider._messages[-1]["tool_calls"][0]["id"] == "call_1"
+
+
+def test_blank_and_null_arguments_fail_closed_without_history(monkeypatch) -> None:
+    for raw in ("", "   ", "null", "123"):
+        provider = LocalOpenAIProvider(base_url="http://127.0.0.1:9/v1", model="qwen-test")
+        body = {
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call_done",
+                        "type": "function",
+                        "function": {"name": "done", "arguments": raw},
+                    }],
+                },
+            }]
+        }
+        _install_fake(monkeypatch, body)
+        turn = provider.send_turn("finish it")
+        assert turn.tool_calls == (), raw
+        assert "malformed" in turn.text.lower(), raw
+        assert provider._messages == [], raw

@@ -56,6 +56,8 @@ def _runner(state: server.AppContext, *, agent_run=None, router_provider_factory
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
         ghost_router_provider_factory=router_provider_factory,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 

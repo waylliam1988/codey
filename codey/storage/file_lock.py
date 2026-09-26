@@ -249,17 +249,14 @@ def acquire_lease(
             raise LockTimeout(f"project writer busy: {lock_path.name}")
         deadline = time.monotonic() + timeout
         remaining = max(0.0, deadline - time.monotonic())
-        try:
-            fd = _acquire_os_lock(lock_path, timeout_seconds=remaining)
-        except Exception:
-            with suppress(Exception):
-                entry.lock.release()
-            raise
+        fd = _acquire_os_lock(lock_path, timeout_seconds=remaining)
         return FileLease(lock_path, key, fd, entry)
     except Exception:
-        if not acquired_process:
+        if acquired_process:
             with suppress(Exception):
-                _return_process_lock(key, entry)
+                entry.lock.release()
+        with suppress(Exception):
+            _return_process_lock(key, entry)
         raise
 
 

@@ -16,7 +16,6 @@ from codey.storage.file_lock import FileLease, LockTimeout, acquire_lease, with_
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
-    backup_corrupt_file,
     delete_file,
     project_key,
     read_json_strict,
@@ -76,6 +75,21 @@ CHANGE_EXCLUDED_PATH_PARTS = {
 
 class ProjectWriteBusy(RuntimeError):
     """A second task tried to persist snapshots for a project already owned."""
+
+
+def _manifest_files_or_raise(payload: dict, manifest_path: Path) -> dict:
+    """Return the top-level ``files`` index or raise ``StoreCorruption``.
+
+    Per-entry dirt is skipped by callers; a missing/broken top-level index
+    blocks writes so one edit never rebuilds an empty index over good bodies.
+    The corrupt file stays in place for explicit repair.
+    """
+    if payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+        raise StoreCorruption(manifest_path, "manifest schema_version")
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, dict):
+        raise StoreCorruption(manifest_path, "manifest files not a dict")
+    return raw_files
 
 
 @dataclass(frozen=True)
@@ -139,19 +153,15 @@ class SnapshotStore:
         except OSError:
             return {}, {}
         with with_file_lock(self._lock_target(resolved_root)):
-            try:
-                payload = read_json_strict(
-                    manifest_path,
-                    max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
-                )
-            except StoreCorruption:
-                _backup_corrupt_manifest(manifest_path)
+            # Missing -> empty. Present-but-unreadable or top-level-invalid
+            # -> raise and keep the file in place for explicit repair.
+            payload = read_json_strict(
+                manifest_path,
+                max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
+            )
+            if payload is None:
                 return {}, {}
-            if not payload or payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
-                return {}, {}
-            raw_files = payload.get("files")
-            if not isinstance(raw_files, dict):
-                return {}, {}
+            raw_files = _manifest_files_or_raise(payload, manifest_path)
 
             before: dict[str, str | None] = {}
             hashes: dict[str, str] = {}
@@ -254,14 +264,11 @@ class SnapshotStore:
         manifest_path = self.path_for(resolved_root)
 
         with with_file_lock(self._lock_target(resolved_root)):
-            try:
-                payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
-            except StoreCorruption:
-                _backup_corrupt_manifest(manifest_path)
-                payload = None
-            files = payload.get("files") if isinstance(payload, dict) else None
-            if not isinstance(files, dict):
-                files = {}
+            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            if payload is None:
+                files: dict = {}
+            else:
+                files = _manifest_files_or_raise(payload, manifest_path)
             existing = files.get(rel)
             if existing is not None:
                 persisted = self._persisted_baseline_locked(
@@ -363,13 +370,13 @@ class SnapshotStore:
         manifest_path = self.path_for(resolved_root)
 
         with with_file_lock(self._lock_target(resolved_root)):
-            try:
-                payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
-            except StoreCorruption:
-                _backup_corrupt_manifest(manifest_path)
+            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+            if payload is None:
+                _remove_file(body_path)
+                _remove_dir_if_empty(body_path.parent)
                 return
-            files = payload.get("files") if isinstance(payload, dict) else None
-            if not isinstance(files, dict) or rel not in files:
+            files = _manifest_files_or_raise(payload, manifest_path)
+            if rel not in files:
                 _remove_file(body_path)
                 _remove_dir_if_empty(body_path.parent)
                 return
@@ -409,27 +416,24 @@ class SnapshotStore:
         mutate,
     ) -> None:
         manifest_path = self.path_for(resolved_root)
-        try:
-            payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
-        except StoreCorruption:
-            _backup_corrupt_manifest(manifest_path)
-            payload = None
-        files = payload.get("files") if isinstance(payload, dict) else None
-        if not isinstance(files, dict):
-            files = {}
+        payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
+        if payload is None:
+            raise StoreCorruption(manifest_path, "missing manifest for update")
+        files = _manifest_files_or_raise(payload, manifest_path)
+        if rel not in files:
+            raise StoreCorruption(manifest_path, f"missing baseline entry: {rel!r}")
         entry = files.get(rel)
-        entry = dict(entry) if isinstance(entry, dict) else {}
-        files[rel] = mutate(entry)
+        if not isinstance(entry, dict) or "baseline" not in entry:
+            raise StoreCorruption(manifest_path, f"baseline entry schema: {rel!r}")
+        updated = mutate(dict(entry))
+        if not isinstance(updated, dict) or "baseline" not in updated:
+            raise StoreCorruption(manifest_path, f"baseline entry schema: {rel!r}")
+        files[rel] = updated
         write_json_atomic(
             manifest_path,
             {"schema_version": SNAPSHOT_SCHEMA_VERSION, "files": files},
             max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES,
         )
-
-
-def _backup_corrupt_manifest(manifest_path: Path) -> None:
-    """Preserve a corrupt manifest for forensics, then let callers reset."""
-    backup_corrupt_file(manifest_path)
 
 
 def _write_bytes_atomic(path: Path, data: bytes) -> None:
@@ -658,14 +662,17 @@ class ChangeTracker:
         return pruned
 
     def _forget_locked(self, rel: str) -> None:
-        content = self._before.pop(rel, None)
-        self._after_hashes.pop(rel, None)
-        self._total_bytes -= len((content or "").encode("utf-8"))
+        # Persistent removal first: a disk failure keeps the in-memory
+        # tracking so the next run still sees the old baseline instead of
+        # silently losing its recovery point.
         with self._lock:
             store = self.store
         if store is not None:
-            with contextlib.suppress(OSError, ValueError):
-                store.remove(self.root, rel)
+            store.remove(self.root, rel)
+        with self._lock:
+            content = self._before.pop(rel, None)
+            self._after_hashes.pop(rel, None)
+            self._total_bytes -= len((content or "").encode("utf-8"))
 
     def restore(self, paths: list[str] | None = None) -> RestoreResult:
         with self._lock:

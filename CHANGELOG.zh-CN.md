@@ -2,6 +2,41 @@
 
 [English version](CHANGELOG.md)
 
+## Unreleased - 已核验的恢复与生命周期加固（未发布）
+
+- 快照损坏改为阻断而非静默重置：`load()`、`put_baseline()`、`remove()`、
+  `_update_manifest_locked()` 在 manifest 已存在但不可读或顶层非法时抛
+  `StoreCorruption`，文件原地保留待显式修复；单条目脏数据仍跳过。
+  `set_after_hash()` 要求基线条目已存在，不再凭空造出只有 `after_hash`
+  的条目。`ChangeTracker._forget_locked()` 先落盘再删内存，落盘失败保留
+  跟踪并报错。只读 changes 接口把 `StoreCorruption` 转为
+  `snapshot needs repair`；写入侧保持阻断。新增 A/B 保留的四路径阻断回归、
+  缺失条目 hash 拒绝回归、持久化优先 forget 回归。
+- 任务初始化失败自清理：`_setup_run_state()` 在 trace/配置/writer/review/ghost
+  初始化失败时逆序释放已拿到的 writer、恢复 cancellation、结束 task context、
+  释放预留 run，再原样抛出。只有锁竞争返回 `project_write_busy`；
+  `AppContext.acquire_project_writer()` 不再把 IO 错误映射成 busy。新增
+  review/ghost 注入失败回归。
+- 文件锁所有权收紧：`acquire_lease()` 失败时释放线程锁并归还本次借用的进程锁
+  引用，仅成功返回 `FileLease` 时转移所有权。新增 OS 锁失败的 registry 回归。
+- 小范围协议/worker/输出缺口：空白/`null` 的 `arguments` 计 malformed（仅字典或
+  解析为字典的 JSON 通过，`"{}"` 仍合法），补 done 不提交回归；
+  `worker._await_write()` 沿用现有 `ProviderActionError` 分类，不抛裸
+  `RuntimeError`；`worker._retire_session_locked()` 对首次因线程活跃跳过的 pipe
+  幂等补关；`ManagedOutputStore` 以 run 目录为粒度对计数/配额/写入持同一文件锁，
+  并发同内容得到不同 handle。
+- 显式运行时接线，不加新层：`TaskRunDeps` 改为具体
+  `RuntimeMutationLine`/`RuntimeEffectStore` 类型，`recovery`/`dispatch`/`lifecycle`
+  的 deps-or-state 回退已删除，正式装配（`task_submit`/`headless`）与测试/manual AB
+  构造器均显式传入。`safe_change_path()` 另拒绝盘符相对路径 `C:foo`/`C:` 与
+  `"."`。`RuntimeSessionLog.projection()` 返回独立拷贝。
+  `ConversationStore.save()` 对写入+修剪持同一目录锁。
+- 验证：`python -m ruff check .`、`python -m compileall -q codey tests`、
+  `git diff --check`、收集（`4293 tests`）、定向回归与最终全量
+  `python -m pytest -q -p no:randomly`（`4286 passed, 7 skipped, 1374
+  subtests passed in 366.77s`，0 warning；跳过均为 Windows POSIX/可选 E2E）。
+  未发布。
+
 ## Unreleased - 冷启动复查跟进（未发布）
 
 - 单持久化写入者：`SnapshotStore.acquire_writer()` 按项目跨进程独占

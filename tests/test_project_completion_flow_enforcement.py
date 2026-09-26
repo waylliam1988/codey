@@ -139,6 +139,8 @@ def _runner(state: server.AppContext, writer: ScriptedWriter) -> TaskRunDeps:
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 
@@ -305,6 +307,8 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         with mock.patch.object(
             project_completion_module,
@@ -446,6 +450,8 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         event = _run(runner, state, project)
 
@@ -546,6 +552,8 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         event = _run(runner, state, project)
 
@@ -587,6 +595,8 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         event = _run(runner, state, project)
 
@@ -629,6 +639,8 @@ def test_docs_only_change_keeps_limited_done() -> None:
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         event = _run(runner, state, project)
 

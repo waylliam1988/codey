@@ -205,6 +205,8 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
             ghost_router_provider_factory=None,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         try:
             with mock.patch.object(state, "get_provider", return_value=tracing):
@@ -268,6 +270,8 @@ def test_digest_only_journal_keeps_no_transcript_files() -> None:
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
             ghost_router_provider_factory=None,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
         try:
             with mock.patch.object(state, "get_provider", return_value=tracing):

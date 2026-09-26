@@ -57,14 +57,21 @@ class RuntimeSessionLog:
             return self._read_unlocked(session_id, repair_tail=False)
 
     def projection(self, session_id: str):
-        """Return the cached projection for a session.
+        """Return an independent projection copy for a session.
 
-        The returned projection is the process-cache object; callers must treat
-        it as read-only and derive new state through reducer.apply_entries().
+        The cache stays authoritative; callers may read the returned value
+        freely without polluting later ``mutate()`` decisions.
         """
         path = self.path_for(session_id)
         with with_file_lock(path):
-            return self._cache_for_session_unlocked(session_id).projection
+            cached = self._cache_for_session_unlocked(session_id).projection
+            from codey.runtime.log.session_projection import (
+                RuntimeProjection,
+                _clone_projection_parts,
+            )
+
+            lanes, operations = _clone_projection_parts(cached)
+            return RuntimeProjection(lanes=lanes, operations=operations)
 
     def entries(self, session_id: str) -> tuple[_log_entries.RuntimeLogEntry, ...]:
         """Return cached valid entries, repairing a torn tail before caching."""

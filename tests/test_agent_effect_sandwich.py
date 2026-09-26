@@ -572,6 +572,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
+            runtime_mutations=state.runtime_mutations,
             runtime_effects=self.effects,
             is_git_repository=lambda _project: True,
         )

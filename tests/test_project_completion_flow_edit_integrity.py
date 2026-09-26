@@ -116,6 +116,8 @@ def _runner(state, writer: ScriptedWriter, files: tuple[str, ...]) -> TaskRunDep
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 
@@ -138,6 +140,8 @@ def _runner_with_changes(state, writer: ScriptedWriter, collected: list[dict]) -
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
+        runtime_mutations=state.runtime_mutations,
+        runtime_effects=state.runtime_effects,
     )
 
 

@@ -162,7 +162,7 @@ def start_run_operation(
     task_kind: str,
 ) -> bool:
     try:
-        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
+        mutations = getattr(deps, "runtime_mutations", None)
         if mutations is None:
             raise RuntimeOperationTransitionError("runtime mutation line is missing")
         work.operation = mutations.accept_operation(
@@ -185,7 +185,7 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
         return
     max_turns = int(event.get("max_turns") or 0)
     try:
-        mutations = deps.runtime_mutations or getattr(deps.state, "runtime_mutations", None)
+        mutations = getattr(deps, "runtime_mutations", None)
         if mutations is None:
             raise RuntimeOperationTransitionError("runtime mutation line is missing")
         work.operation = mutations.mark_terminal(

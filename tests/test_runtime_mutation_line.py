@@ -543,6 +543,14 @@ class RuntimeMutationLineTests(unittest.TestCase):
         self.assertEqual(blocked.leaf, LEAF_COMPLETION_PROOF_RECORDED)
         self.assertEqual(blocked.blocked_reason, "verification_failed")
 
+    def test_projection_returns_independent_copy(self) -> None:
+        first = self.log.projection(self.session_id)
+        first.operations["phantom"] = object()  # type: ignore[assignment]
+        first.lanes["phantom"] = object()  # type: ignore[assignment]
+        second = self.log.projection(self.session_id)
+        self.assertNotIn("phantom", second.operations)
+        self.assertNotIn("phantom", second.lanes)
+
 
 if __name__ == "__main__":
     unittest.main()

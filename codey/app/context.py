@@ -174,8 +174,6 @@ class AppContext:
             lease = self.snapshot_store.acquire_writer(key, timeout_seconds=0.0)
         except ProjectWriteBusy:
             return False
-        except Exception:
-            return False
         with self.lock:
             if key in self._project_writer_leases:
                 with contextlib.suppress(Exception):

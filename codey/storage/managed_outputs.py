@@ -19,6 +19,7 @@ from codey.policies.action import (
     evaluate_action,
 )
 from codey.runtime.core import cancellation
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
@@ -62,56 +63,57 @@ class ManagedOutputStore:
     ) -> ManagedOutputRef | None:
         try:
             run_dir = self._run_dir(session_id, run_id)
-            existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
-            original_text = str(text or "")
-            original_bytes = len(original_text.encode("utf-8"))
-            policy = evaluate_action(ActionSubject(
-                kind="managed_output",
-                phase="managed_output",
-                permission_profile=permission_profile,
-                byte_count=original_bytes,
-                item_count=len(existing),
-            ))
-            if policy.decision == DECISION_DENY:
-                return None
-            stored_text, original_bytes, stored_bytes, stored_truncated = _cap_utf8_text(
-                original_text,
-                MAX_MANAGED_OUTPUT_BYTES,
-            )
-            digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
-            original_digest = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
-            handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
-            path = self.path_for(session_id, run_id, handle)
-            metadata_path = self.metadata_path_for(session_id, run_id, handle)
-            _write_text_atomic(path, stored_text)
-            write_json_atomic(
-                metadata_path,
-                {
-                    "schema_version": 1,
-                    "handle": handle,
-                    "created_at": _now(),
-                    "tool_id": _clip(tool_id, 80),
-                    "tool_name": _clip(tool_name, 80),
-                    "display_ref": _clip(display_ref, MAX_CWD_CHARS),
-                    "command": _clip(command or f"{tool_name} {display_ref}".strip(), MAX_COMMAND_CHARS),
-                    "cwd": _clip(cwd or ".", MAX_CWD_CHARS),
-                    "original_bytes": original_bytes,
-                    "stored_bytes": stored_bytes,
-                    "sha256": digest,
-                    "original_sha256": original_digest,
-                    "stored_truncated": stored_truncated,
-                },
-                max_bytes=MAX_METADATA_BYTES,
-            )
-            return ManagedOutputRef(
-                handle=handle,
-                path=path,
-                original_bytes=original_bytes,
-                stored_bytes=stored_bytes,
-                sha256=digest,
-                stored_truncated=stored_truncated,
-                original_sha256=original_digest,
-            )
+            with with_file_lock(run_dir):
+                existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
+                original_text = str(text or "")
+                original_bytes = len(original_text.encode("utf-8"))
+                policy = evaluate_action(ActionSubject(
+                    kind="managed_output",
+                    phase="managed_output",
+                    permission_profile=permission_profile,
+                    byte_count=original_bytes,
+                    item_count=len(existing),
+                ))
+                if policy.decision == DECISION_DENY:
+                    return None
+                stored_text, original_bytes, stored_bytes, stored_truncated = _cap_utf8_text(
+                    original_text,
+                    MAX_MANAGED_OUTPUT_BYTES,
+                )
+                digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
+                original_digest = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
+                handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
+                path = self.path_for(session_id, run_id, handle)
+                metadata_path = self.metadata_path_for(session_id, run_id, handle)
+                _write_text_atomic(path, stored_text)
+                write_json_atomic(
+                    metadata_path,
+                    {
+                        "schema_version": 1,
+                        "handle": handle,
+                        "created_at": _now(),
+                        "tool_id": _clip(tool_id, 80),
+                        "tool_name": _clip(tool_name, 80),
+                        "display_ref": _clip(display_ref, MAX_CWD_CHARS),
+                        "command": _clip(command or f"{tool_name} {display_ref}".strip(), MAX_COMMAND_CHARS),
+                        "cwd": _clip(cwd or ".", MAX_CWD_CHARS),
+                        "original_bytes": original_bytes,
+                        "stored_bytes": stored_bytes,
+                        "sha256": digest,
+                        "original_sha256": original_digest,
+                        "stored_truncated": stored_truncated,
+                    },
+                    max_bytes=MAX_METADATA_BYTES,
+                )
+                return ManagedOutputRef(
+                    handle=handle,
+                    path=path,
+                    original_bytes=original_bytes,
+                    stored_bytes=stored_bytes,
+                    sha256=digest,
+                    stored_truncated=stored_truncated,
+                    original_sha256=original_digest,
+                )
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except (OSError, TypeError, ValueError):

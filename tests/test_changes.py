@@ -554,10 +554,12 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(tracker._after_hashes, {})
             self.assertFalse(tracker.has_snapshots)
 
-    def test_incompatible_manifest_layouts_are_ignored(self) -> None:
-        # The recovery store reads exactly one manifest shape: an unknown
-        # schema version or a legacy flat layout starts empty instead of
-        # being half-interpreted.
+    def test_incompatible_manifest_layouts_block(self) -> None:
+        # Only one manifest shape is read. An unknown schema version or a
+        # legacy flat layout blocks instead of being half-interpreted or
+        # silently reset.
+        from codey.storage.local_store import StoreCorruption
+
         for payload in (
             '{"schema_version":99,"files":{}}',
             '{"schema_version":1,"before":{"../outside.py":"x"},"after_hashes":{}}',
@@ -569,9 +571,10 @@ class ChangeTrackerTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_text(payload, encoding="utf-8")
 
-                tracker = ChangeTracker(root, store)
-
-                self.assertFalse(tracker.has_snapshots)
+                with self.assertRaises(StoreCorruption):
+                    ChangeTracker(root, store)
+                # File stays for explicit repair.
+                self.assertTrue(path.exists())
 
     def test_manifest_entries_require_canonical_baseline_shape(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -959,7 +962,9 @@ class ChangeTrackerTests(unittest.TestCase):
 
             self.assertIn("good.py", before)
             self.assertNotIn("bad.py", before)
-    def test_corrupt_manifest_is_backed_up_not_silently_emptied(self) -> None:
+    def test_corrupt_manifest_blocks_and_keeps_file(self) -> None:
+        from codey.storage.local_store import StoreCorruption
+
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)
@@ -967,12 +972,49 @@ class ChangeTrackerTests(unittest.TestCase):
             manifest.parent.mkdir(parents=True)
             manifest.write_text("not json", encoding="utf-8")
 
-            before, hashes = SnapshotStore(state_td).load(root)
+            with self.assertRaises(StoreCorruption):
+                SnapshotStore(state_td).load(root)
+            # No silent reset: the corrupt file stays for explicit repair.
+            self.assertTrue(manifest.exists())
+            self.assertFalse(manifest.with_name(manifest.name + ".corrupt").exists())
 
-            self.assertEqual(before, {})
-            self.assertEqual(hashes, {})
-            self.assertFalse(manifest.exists())
-            self.assertTrue(manifest.with_name(manifest.name + ".corrupt").exists())
+    def test_corrupt_manifest_blocks_all_mutations_without_touching_data(self) -> None:
+        from codey.storage.local_store import StoreCorruption
+
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            (root / "a.py").write_text("a\n", encoding="utf-8")
+            (root / "b.py").write_text("b\n", encoding="utf-8")
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("a.py")
+            tracker.capture_before("b.py")
+            manifest = store.path_for(root)
+            before_bytes = manifest.read_bytes()
+            body_a = store._baseline_path(root, "a.py").read_bytes()
+            body_b = store._baseline_path(root, "b.py").read_bytes()
+
+            manifest.write_text("not json", encoding="utf-8")
+            (root / "c.py").write_text("c\n", encoding="utf-8")
+
+            with self.assertRaises(StoreCorruption):
+                SnapshotStore(state_td).load(root)
+            with self.assertRaises(StoreCorruption):
+                store.put_baseline(root, "c.py", "c\n")
+            with self.assertRaises(StoreCorruption):
+                store.set_after_hash(root, "a.py", "sha256:abc")
+            with self.assertRaises(StoreCorruption):
+                store.remove(root, "a.py")
+
+            # Manifest still corrupt and bodies untouched.
+            self.assertEqual(manifest.read_text(encoding="utf-8"), "not json")
+            self.assertEqual(store._baseline_path(root, "a.py").read_bytes(), body_a)
+            self.assertEqual(store._baseline_path(root, "b.py").read_bytes(), body_b)
+            # Repair the manifest and the original index is intact.
+            manifest.write_bytes(before_bytes)
+            before, _ = SnapshotStore(state_td).load(root)
+            self.assertIn("a.py", before)
+            self.assertIn("b.py", before)
 
     def test_dirty_entry_does_not_consume_total_budget(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -994,6 +1036,32 @@ class ChangeTrackerTests(unittest.TestCase):
 
             self.assertNotIn("big.py", before)
             self.assertIn("good.py", before)
+
+    def test_set_after_hash_requires_existing_entry(self) -> None:
+        from codey.storage.local_store import StoreCorruption
+
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            (root / "app.py").write_text("x\n", encoding="utf-8")
+            with self.assertRaises(StoreCorruption):
+                store.set_after_hash(root, "app.py", "sha256:abc")
+            # No phantom entry with only after_hash was created.
+            self.assertFalse(store.path_for(root).exists())
+
+    def test_forget_keeps_memory_when_persisted_remove_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            store = SnapshotStore(state_td)
+            (root / "app.py").write_text("x\n", encoding="utf-8")
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("app.py")
+            with mock.patch.object(
+                store, "remove", side_effect=OSError("disk full")
+            ), self.assertRaises(OSError):
+                tracker._forget_locked("app.py")
+            # Memory retained so the next run still sees the baseline.
+            self.assertIn("app.py", tracker._before)
 
     def test_put_baseline_first_wins_returns_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
@@ -1188,6 +1256,9 @@ class ChangeTrackerTests(unittest.TestCase):
         self.assertEqual(safe_change_path("/etc/passwd"), "")
         self.assertEqual(safe_change_path("C:\\secrets\\x.txt"), "")
         self.assertEqual(safe_change_path("C:/secrets/x.txt"), "")
+        self.assertEqual(safe_change_path("C:foo"), "")
+        self.assertEqual(safe_change_path("C:"), "")
+        self.assertEqual(safe_change_path("."), "")
         self.assertEqual(safe_change_path("app.py"), "app.py")
         from codey.completion.edit_scope import _safe_change_path as _scope_path
 

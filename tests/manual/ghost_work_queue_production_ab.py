@@ -213,6 +213,8 @@ def _run_case(
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _project: True,
             ghost_router_provider_factory=None,
+            runtime_mutations=state.runtime_mutations,
+            runtime_effects=state.runtime_effects,
         )
 
         def research_task(*_args, **_kwargs):

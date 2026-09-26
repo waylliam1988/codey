@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey.storage.file_lock import (
     LockTimeout,
@@ -202,6 +203,25 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
             leaked = [key for key in fl._PROCESS_LOCKS if root_text in key.lower()]
 
         self.assertEqual(leaked, [])
+
+
+    def test_acquire_lease_os_failure_returns_process_lock(self) -> None:
+        import codey.storage.file_lock as fl
+        from codey.storage.file_lock import acquire_lease
+
+        target = self.root / "lease_state.json"
+        before = dict(fl._PROCESS_LOCKS)
+        with mock.patch.object(
+            fl, "_acquire_os_lock", side_effect=fl.LockTimeout("busy")
+        ), self.assertRaises(fl.LockTimeout):
+            acquire_lease(target, timeout_seconds=0.0)
+        root_text = str(self.root).lower()
+        with fl._PROCESS_LOCKS_MUTEX:
+            leaked = [key for key in fl._PROCESS_LOCKS if root_text in key.lower()]
+        self.assertEqual(leaked, [])
+        # Pre-existing unrelated entries are untouched.
+        for key in before:
+            self.assertIn(key, fl._PROCESS_LOCKS)
 
 
 if __name__ == "__main__":
