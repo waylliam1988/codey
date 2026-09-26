@@ -302,6 +302,19 @@ class ObservationStoreTests(unittest.TestCase):
             self.assertGreater(store.delete_scope("session", session_id="s"), 0)
             self.assertEqual(store.read_committed(session_id="s"), ())
 
+    def test_cjk_paraphrase_retrieves_without_shared_word_runs(self) -> None:
+        """Regression: Chinese has no spaces, so punctuation-split word runs
+        almost never overlap. CJK bigram matching must find related rounds."""
+        rows = [{
+            "run_id": "r1",
+            "user_text": "请记住：以后回答尽量简短，不超过两句话",
+            "assistant_text": "好的",
+            "mode": "chat",
+            "ts": "2026-09-26T00:00:00Z",
+        }]
+        picked = retrieve_relevant_observations(rows, "介绍北京，要求简短一点")
+        self.assertEqual([row["run_id"] for row in picked], ["r1"])
+
     def test_retrieval_budget_and_isolation(self) -> None:
         rows = [
             {"run_id": f"r{i}", "user_text": f"第{i}条 以后回答短一点 短一点",

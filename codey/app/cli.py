@@ -33,7 +33,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     from codey.providers import controls as provider_controls
 
     prompt = " ".join(args.prompt)
-    _safe_print("[codey] attaching browser ...", file=sys.stderr)
+    _safe_print(f"[codey] connecting provider ({args.provider}) ...", file=sys.stderr)
     provider_controls.begin_task_context(f"cli-chat:{args.provider}")
     provider = None
     try:

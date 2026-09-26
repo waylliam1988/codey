@@ -23,8 +23,12 @@
   readable as legacy; disable/view/export/delete/retention cover observations.
 - Tests: 19 new acceptance tests (`tests/test_experience_memory.py`), retired
   router A/B premise rewritten as a retirement lock-in, and mode-specific server
-  tests now pass explicit intents. Full suite: `4335 passed, 7 skipped,
-  1382 subtests passed`.
+  tests now pass explicit intents. Full suite: `4336 passed, 7 skipped,
+  1387 subtests passed`.
+- Live-fire fixes against KoboldCpp: CJK experience retrieval now uses
+  character-bigram matching (punctuation-split runs never overlapped for
+  spaceless Chinese, leaving retrieval dead); `codey chat --provider local`
+  no longer prints a misleading "attaching browser" status.
 
 ## Unreleased - Boundary hardening: snapshot, ledger, Ghost inputs, UI conflicts (no release)
 

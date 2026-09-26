@@ -16,8 +16,11 @@
   接入 chat、auto、planning 与项目 writer 的下一次正常调用。结构化 inbox/hebbian
   自动更新停止，既有已确认数据仍作为旧画像可读；禁用/查看/导出/删除/保留期限覆盖观察记录。
 - 测试：19 个新验收测试（`tests/test_experience_memory.py`），退役路由 A/B 改写为
-  退役锁定，模式专用 server 测试改显式 intent。全量：`4335 passed, 7 skipped,
-  1382 subtests passed`。
+  退役锁定，模式专用 server 测试改显式 intent。全量：`4336 passed, 7 skipped,
+  1387 subtests passed`。
+- KoboldCpp 实机修复：中文经历检索改用字 bigram 匹配（按标点切词对无空格中文
+  几乎永不命中，检索原是死的）；`codey chat --provider local` 不再误报
+  "attaching browser" 状态。
 
 ## Unreleased - 边界加固：快照、账本、Ghost 输入、UI 冲突（未发布）
 

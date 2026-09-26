@@ -16,12 +16,50 @@ RETRIEVAL_BUDGET_CHARS = 1800
 RECENT_SCAN_LIMIT = 200
 MIN_TOKEN_LEN = 2
 
-_TOKEN_RE = re.compile(r"[0-9a-zA-Z\u4e00-\u9fff]{2,}")
+_TOKEN_RE = re.compile(r"[0-9a-zA-Z\u4e00-\u9fff]+")
+
+
+def _is_cjk(char: str) -> bool:
+    return "\u4e00" <= char <= "\u9fff"
 
 
 def tokenize(text: object) -> frozenset[str]:
-    words = _TOKEN_RE.findall(str(text or "").casefold())
-    return frozenset(w for w in words if len(w) >= MIN_TOKEN_LEN)
+    """Split text into matchable tokens.
+
+    Latin/digit runs become whole words; CJK runs become overlapping character
+    bigrams (single stray characters stay unigrams). Chinese has no spaces, so
+    punctuation-split runs alone would almost never overlap between a stored
+    round and a paraphrased query; bigrams keep paraphrase retrieval working
+    without any model call or language-specific dictionary.
+    """
+    tokens: set[str] = set()
+    for run in _TOKEN_RE.findall(str(text or "").casefold()):
+        latin: list[str] = []
+        cjk: list[str] = []
+        for char in run:
+            if _is_cjk(char):
+                word = "".join(latin)
+                if len(word) >= MIN_TOKEN_LEN:
+                    tokens.add(word)
+                latin.clear()
+                cjk.append(char)
+            else:
+                chunk = "".join(cjk)
+                if len(chunk) == 1:
+                    tokens.add(chunk)
+                for index in range(len(chunk) - 1):
+                    tokens.add(chunk[index:index + 2])
+                cjk.clear()
+                latin.append(char)
+        word = "".join(latin)
+        if len(word) >= MIN_TOKEN_LEN:
+            tokens.add(word)
+        chunk = "".join(cjk)
+        if len(chunk) == 1:
+            tokens.add(chunk)
+        for index in range(len(chunk) - 1):
+            tokens.add(chunk[index:index + 2])
+    return frozenset(tokens)
 
 
 def _row_time_score(row: dict[str, object], now: float) -> float:

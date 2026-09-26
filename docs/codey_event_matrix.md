@@ -81,6 +81,7 @@ Policy-gated capabilities:
 Durable state vocabulary:
 
 - `change_snapshots`
+- `ghost_observations`
 - `local_context`
 - `managed_outputs`
 - `project_facts`

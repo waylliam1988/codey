@@ -34,8 +34,10 @@ Verification (local, Windows):
   `test_conversation_store` + `test_adapter_self_repair` +
   `test_ghost_router_ab` + `test_architecture`) green.
 - Full suite: `python -m pytest -q -o faulthandler_timeout=120`:
-  `4335 passed, 7 skipped, 1382 subtests passed in 382.65s (0:06:22)`.
-  Skips are the known Windows POSIX/opt-in family.
+  `4336 passed, 7 skipped, 1387 subtests passed in 373.22s (0:06:13)`.
+  Skips are the known Windows POSIX/opt-in family. The run also caught one
+  vocabulary gap (`ghost_observations` durable-state vocabulary in
+  `docs/codey_event_matrix.md`), fixed and covered by `test_event_matrix.py`.
 - Real-machine equivalent: stub OpenAI-compatible server with 15s delayed
   generation (longer than the retired 12s router timeout) answered through
   `LocalOpenAIProvider.send` with exactly 1 `/chat/completions` POST and no
